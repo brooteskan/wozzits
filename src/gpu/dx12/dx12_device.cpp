@@ -203,6 +203,38 @@ namespace wz::gpu::dx12
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
         impl->cmd->ResourceBarrier(1, &barrier);
+
+        // ────── RTV BINDING ─────────────────────────────────────────────
+        auto rtv_handle =
+            impl->rtv_heap->GetCPUDescriptorHandleForHeapStart();
+
+        rtv_handle.ptr += impl->frame_index * impl->rtv_stride;
+
+        impl->cmd->OMSetRenderTargets(
+            1,
+            &rtv_handle,
+            FALSE,
+            nullptr
+        );
+
+
+        // ────── viewport + scissor ───────────────────────────────────────────────────────
+        D3D12_VIEWPORT vp = {};
+        vp.TopLeftX = 0.0f;
+        vp.TopLeftY = 0.0f;
+        vp.Width = static_cast<float>(impl->width);
+        vp.Height = static_cast<float>(impl->height);
+        vp.MinDepth = 0.0f;
+        vp.MaxDepth = 1.0f;
+
+        D3D12_RECT scissor = {};
+        scissor.left = 0;
+        scissor.top = 0;
+        scissor.right = static_cast<LONG>(impl->width);
+        scissor.bottom = static_cast<LONG>(impl->height);
+
+        impl->cmd->RSSetViewports(1, &vp);
+        impl->cmd->RSSetScissorRects(1, &scissor);
     }
 
     void clear(Device& d, float r, float g, float b, float a)
@@ -311,7 +343,6 @@ namespace wz::gpu::dx12
                         INFINITE
                     );
 
-                    // THIS is the corrected line (fixing the ??? issue)
                     assert(res == WAIT_OBJECT_0);
                 }
 

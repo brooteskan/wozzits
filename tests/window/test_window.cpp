@@ -34,9 +34,9 @@ int main()
         {
             if (event.type == PlatformEvent::Type::Resize)
             {
-                std::cout << "Resize: "
-                    << event.resize.width << " x "
-                    << event.resize.height << std::endl;
+                //std::cout << "Resize: "
+                //    << event.resize.width << " x "
+                //    << event.resize.height << std::endl;
 
                 wz::gpu::resize(
                     device,
