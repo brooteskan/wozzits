@@ -12,6 +12,7 @@
 #include <wrl/client.h>
 
 #include <gpu/gpu.h>
+#include <gpu/dx12/dx12_internal.h>
 #include <window/window2.h>
 #include <cassert>
 
@@ -407,3 +408,20 @@ namespace wz::gpu::dx12
             );
     }
 } // namespace wz::gpu::dx12
+
+namespace wz::gpu::dx12::internal
+{
+    ID3D12Device* get_device(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+        assert(impl);
+        return impl->device;
+    }
+
+    ID3D12GraphicsCommandList* get_command_list(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+        assert(impl);
+        return impl->cmd;
+    }
+}
