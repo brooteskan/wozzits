@@ -19,7 +19,10 @@ namespace wz::gpu::dx12
 
 	void begin_frame(Device& device); // acquire backbuffer
 	void clear(Device& device, float r, float g, float b, float a); // record commands
+
 	void draw_test_triangle(Device& d); // temporary
+	void draw_test_triangle_2(Device& d); // also temporary
+
 	void end_frame(Device& device); // close + submit command list
 	void present(Device& device); // swapchain present
 }

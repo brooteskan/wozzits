@@ -35,10 +35,6 @@ int main()
         {
             if (event.type == PlatformEvent::Type::Resize)
             {
-                //std::cout << "Resize: "
-                //    << event.resize.width << " x "
-                //    << event.resize.height << std::endl;
-
                 wz::gpu::resize(
                     device,
                     event.resize.width,
@@ -54,7 +50,10 @@ int main()
 
         wz::gpu::begin_frame(device);
         wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
-        wz::gpu::dx12::draw_test_triangle(device);
+
+        // wz::gpu::dx12::draw_test_triangle(device);
+        wz::gpu::dx12::draw_test_triangle_2(device);
+
         wz::gpu::end_frame(device);
         wz::gpu::present(device);
     }

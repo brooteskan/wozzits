@@ -5,6 +5,7 @@
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
 
+#include <iostream>
 
 namespace wz::render::backend::dx12
 {
@@ -72,21 +73,32 @@ namespace wz::render::backend::dx12
 
     void submit(Context* ctx, const RenderFrame& frame)
     {
-        auto* cmd = wz::gpu::dx12::internal::get_command_list(*ctx->device);
 
-        // later:
-        // bind PSO
-        cmd->SetPipelineState(ctx->pso);
-        cmd->SetGraphicsRootSignature(ctx->root_sig);
+        assert(ctx);
+        assert(ctx->device);
+        assert(ctx->device->impl);
 
-        // bind root signature
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        auto* cmdList =
+            wz::gpu::dx12::internal::get_command_list(*ctx->device);
 
-        // bind VB
-        cmd->IASetVertexBuffers(0, 1, &ctx->vb_view);
+        // ────── bind invariant state ─────────────────────────────
+        cmdList->SetGraphicsRootSignature(ctx->root_sig);
+        cmdList->SetPipelineState(ctx->pso);
 
-        // draw
-        cmd->DrawInstanced(3, 1, 0, 0);
+        cmdList->IASetPrimitiveTopology(
+            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+        );
+
+        // cmdList->IASetVertexBuffers(0, 1, &ctx->vb_view);
+
+        // ────── iterate draw commands ─────────────────────────────
+        for (const DrawCommand& dc : frame.commands)
+        {
+            if (dc.stage != PipelineStage::OpaqueGeometry)
+                continue;
+
+            cmdList->DrawInstanced(3, 1, 0, 0);
+        }
     }
 
         void destroy(Context* ctx)

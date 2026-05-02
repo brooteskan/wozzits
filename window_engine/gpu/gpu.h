@@ -14,6 +14,14 @@ namespace wz::gpu
 	struct Device
 	{
 		void* impl{}; // dx12_device or vk_device 
+
+		Device() = default;
+
+		Device(const Device&) = delete;
+		Device& operator=(const Device&) = delete;
+
+		Device(Device&&) noexcept = default;
+		Device& operator=(Device&&) noexcept = default;
 	};
 
 	// every function should assume assert(device.impl != nullptr);

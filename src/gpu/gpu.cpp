@@ -3,6 +3,7 @@
 #include <gpu/dx12/dx12_internal.h>
 #include <platform/win32/win32.h>
 #include <engine/render_backends/dx12/dx12_submit.h>
+#include <render/frame/render_frame.h>
 
 namespace wz::gpu
 {
@@ -14,6 +15,12 @@ namespace wz::gpu
         static_assert(false, "Platform not implemented");
 #endif
     }
+
+    //void submit_frame(Device& d, wz::render::RenderFrame& f)
+    //{
+    //    auto* impl = (wz::gpu::dx12::DX12Device*)d.impl;
+    //    auto* ctx = impl->ctx;
+    //}
 
     void destroy_device(Device& d)
     {

@@ -17,8 +17,19 @@
 #include <window/window2.h>
 #include <cassert>
 
+
+#include <render/frame/render_frame.h>
+#include <scene/scene_graph.h>
+#include <render/ir/render_ir.h>
+#include <scene/compile/scene_compiler.h>
+#include <render/frame/render_frame.h>
+
+#include <iostream>
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
+
+
+
 
 namespace wz::gpu::dx12
 {
@@ -193,6 +204,7 @@ namespace wz::gpu::dx12
 
     void draw_test_triangle(Device& d)
     {
+        // this was Day 2
         auto* impl = (DX12Device*)d.impl;
 
         ID3D12GraphicsCommandList* cmd = impl->cmd;
@@ -212,6 +224,83 @@ namespace wz::gpu::dx12
         cmd->IASetVertexBuffers(0, 1, &ctx->vb_view);
 
         cmd->DrawInstanced(3, 1, 0, 0);
+    }
+
+
+    using namespace wz::scene;
+    using namespace wz::core::graph;
+    using namespace wz::math;
+
+    SceneStorage build_test_scene()
+    {
+        SceneBuilder b;
+
+        TransformNode root{};
+        root.local = mat4_identity();
+        auto root_h = add_node(b, root);
+
+        TransformNode node{};
+        node.local = mat4_identity(); // no transform yet
+        node.flags = TransformNodeFlag::RenderDomain;
+
+        auto h = add_node(b, node);
+        add_edge(b, root_h, h);
+
+        auto result = build(std::move(b));
+        assert(result.has_value());
+
+        return std::move(*result);
+    }
+
+
+    std::vector<RenderableDescriptor> build_descriptors()
+    {
+        std::vector<RenderableDescriptor> descs(2);
+
+        descs[0] = { RenderPipeline::None };
+
+        descs[1] = {
+            RenderPipeline::OpaqueGeometry,
+            /*mesh=*/0,
+            /*material=*/0,
+            {}
+        };
+
+        return descs;
+    }
+
+    ViewData make_camera()
+    {
+        ViewData v{};
+        v.view = mat4_identity();
+        v.projection = mat4_identity();
+        v.view_projection = mat4_identity();
+        v.camera_position = Vec3{ 0,0,0 };
+        return v;
+    }
+
+    void draw_test_triangle_2(Device& d)
+    {
+        // We are at Day 3 now.
+        auto* impl = (DX12Device*)d.impl;
+        auto* ctx = impl->ctx;
+
+        // ────── build scene ─────────────────────────────
+        auto scene = build_test_scene();
+        auto descs = build_descriptors();
+        auto view = make_camera();
+
+        propagate_all(scene.polytree);
+
+        auto compiled = compile(scene.polytree, descs, {}, view);
+
+        // ────── IR → Frame ───────────────────────────────
+        using namespace wz::render;
+        auto ir = build_render_ir(compiled.scene);
+        RenderFrameStorage storage = build_frame(ir, compiled.scene);
+
+        // ────── submit (IMPORTANT: unwrap frame) ─────────
+        wz::render::backend::dx12::submit(ctx, storage.frame);
     }
 
     void begin_frame(Device& d)

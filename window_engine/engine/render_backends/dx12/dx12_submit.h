@@ -8,6 +8,17 @@
 
 namespace wz::render::backend::dx12
 {
+    struct GpuMesh
+    {
+        ID3D12Resource* vertex_buffer;
+        ID3D12Resource* index_buffer;
+
+        D3D12_VERTEX_BUFFER_VIEW vb_view;
+        D3D12_INDEX_BUFFER_VIEW ib_view;
+
+        uint32_t index_count;
+    };
+
     struct Context
     {
         wz::gpu::Device* device;
@@ -20,6 +31,8 @@ namespace wz::render::backend::dx12
         D3D12_VERTEX_BUFFER_VIEW vb_view{};
 
         UINT vertex_count = 3;
+
+        std::vector<GpuMesh> mesh_table;
     };
 
     Context* create(wz::gpu::Device& device);
