@@ -10,11 +10,10 @@
 namespace wz::render::backend::dx12
 {
 
-
     Context* create(wz::gpu::Device& device)
     {
         ID3D12Device* dev = wz::gpu::dx12::internal::get_device(device);
-        // auto* dev = wz::gpu::dx12::internal::get_device(device);
+
         Context* ctx = new Context();
         ctx->device = &device;
 
@@ -22,10 +21,7 @@ namespace wz::render::backend::dx12
         ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(dev, ctx->root_sig);
         assert(ctx->pso);
 
-        struct Vertex
-        {
-            float x, y, z;
-        };
+        struct Vertex { float x, y, z; };
 
         Vertex tri[3] =
         {
@@ -34,15 +30,15 @@ namespace wz::render::backend::dx12
             { -0.5f, -0.5f, 0.0f }
         };
 
-        const UINT buffer_size = sizeof(tri);
+        const UINT vb_size = sizeof(tri);
 
-
+        // ────── vertex buffer ──────
         D3D12_HEAP_PROPERTIES heap = {};
         heap.Type = D3D12_HEAP_TYPE_UPLOAD;
 
         D3D12_RESOURCE_DESC desc = {};
         desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        desc.Width = buffer_size;
+        desc.Width = vb_size;
         desc.Height = 1;
         desc.DepthOrArraySize = 1;
         desc.MipLevels = 1;
@@ -61,19 +57,30 @@ namespace wz::render::backend::dx12
 
         void* mapped = nullptr;
         ctx->vertex_buffer->Map(0, nullptr, &mapped);
-        memcpy(mapped, tri, buffer_size);
+        memcpy(mapped, tri, vb_size);
         ctx->vertex_buffer->Unmap(0, nullptr);
 
         ctx->vb_view.BufferLocation = ctx->vertex_buffer->GetGPUVirtualAddress();
         ctx->vb_view.StrideInBytes = sizeof(Vertex);
-        ctx->vb_view.SizeInBytes = buffer_size;
+        ctx->vb_view.SizeInBytes = vb_size;
+
+        // ────── mesh table ──────
+        ctx->mesh_table.resize(1);
+
+        GpuMesh mesh{};
+        mesh.vertex_buffer = ctx->vertex_buffer;
+        mesh.index_buffer = nullptr;          // IMPORTANT: no IB yet
+        mesh.vb_view = ctx->vb_view;
+        mesh.ib_view = {};                    // unused
+        mesh.index_count = 3;
+
+        ctx->mesh_table[0] = mesh;
 
         return ctx;
     }
 
     void submit(Context* ctx, const RenderFrame& frame)
     {
-
         assert(ctx);
         assert(ctx->device);
         assert(ctx->device->impl);
@@ -81,7 +88,6 @@ namespace wz::render::backend::dx12
         auto* cmdList =
             wz::gpu::dx12::internal::get_command_list(*ctx->device);
 
-        // ────── bind invariant state ─────────────────────────────
         cmdList->SetGraphicsRootSignature(ctx->root_sig);
         cmdList->SetPipelineState(ctx->pso);
 
@@ -89,15 +95,43 @@ namespace wz::render::backend::dx12
             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
         );
 
-        cmdList->IASetVertexBuffers(0, 1, &ctx->vb_view);
+        struct
+        {
+            Mat4 world;
+            Mat4 view_proj;
+        } data;
 
-        // ────── iterate draw commands ─────────────────────────────
         for (const DrawCommand& dc : frame.commands)
         {
             if (dc.stage != PipelineStage::OpaqueGeometry)
                 continue;
 
-            cmdList->DrawInstanced(3, 1, 0, 0);
+            if (dc.mesh >= ctx->mesh_table.size())
+                continue;
+
+            const auto& mesh = ctx->mesh_table[dc.mesh];
+
+            cmdList->IASetVertexBuffers(0, 1, &mesh.vb_view);
+
+            data.world = dc.world;
+            data.view_proj = ctx->view_proj;
+
+            cmdList->SetGraphicsRoot32BitConstants(
+                0,
+                32,
+                &data,
+                0
+            );
+
+            if (mesh.index_buffer)
+            {
+                cmdList->IASetIndexBuffer(&mesh.ib_view);
+                cmdList->DrawIndexedInstanced(mesh.index_count, 1, 0, 0, 0);
+            }
+            else
+            {
+                cmdList->DrawInstanced(mesh.index_count, 1, 0, 0);
+            }
         }
     }
 

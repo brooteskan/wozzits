@@ -231,6 +231,12 @@ namespace wz::gpu::dx12
     using namespace wz::core::graph;
     using namespace wz::math;
 
+    Mat4 translation_x(float z)
+    {
+        Mat4 m = mat4_identity();
+        m.m[12] = z;
+        return m;
+    }
     SceneStorage build_test_scene()
     {
         SceneBuilder b;
@@ -240,7 +246,7 @@ namespace wz::gpu::dx12
         auto root_h = add_node(b, root);
 
         TransformNode node{};
-        node.local = mat4_identity(); // no transform yet
+        node.local = translation_x( -0.8f); // no transform yet
         node.flags = TransformNodeFlag::RenderDomain;
 
         auto h = add_node(b, node);
@@ -269,13 +275,40 @@ namespace wz::gpu::dx12
         return descs;
     }
 
+    Mat4 perspective(float fov, float aspect, float nearZ, float farZ)
+    {
+        float f = 1.0f / tanf(fov * 0.5f);
+
+        Mat4 m = {};
+
+        m.m[0] = f / aspect;
+        m.m[5] = f;
+
+        m.m[10] = farZ / (farZ - nearZ);
+        m.m[11] = 1.0f;
+
+        m.m[14] = (-nearZ * farZ) / (farZ - nearZ);
+
+        return m;
+    }
+
     ViewData make_camera()
     {
         ViewData v{};
+
         v.view = mat4_identity();
+        v.view = translation_x(1.0f);
+
+        float fov = 60.0f * 3.14159265f / 180.0f;
+        float aspect = 1280.0f / 720.0f;
+        float nearZ = 0.1f;
+        float farZ = 100.0f;
+
+        // v.projection = perspective(fov, aspect, nearZ, farZ);
         v.projection = mat4_identity();
-        v.view_projection = mat4_identity();
-        v.camera_position = Vec3{ 0,0,0 };
+        v.view_projection = mul(v.projection,v.view); // IMPORTANT ORDER
+        v.camera_position = Vec3{ 1.5,0,0 };
+
         return v;
     }
 
@@ -289,6 +322,7 @@ namespace wz::gpu::dx12
         auto scene = build_test_scene();
         auto descs = build_descriptors();
         auto view = make_camera();
+        ctx->view_proj = view.view_projection;
 
         propagate_all(scene.polytree);
 
@@ -298,6 +332,52 @@ namespace wz::gpu::dx12
         using namespace wz::render;
         auto ir = build_render_ir(compiled.scene);
         RenderFrameStorage storage = build_frame(ir, compiled.scene);
+
+        if (ctx->mesh_table.empty())
+        {
+            // TEMP: bootstrap one GPU mesh for mesh=0
+
+            struct Vertex { float x, y, z; };
+            Vertex tri[3] = {
+                { 0.0f,  0.5f, 0.0f },
+                { 0.5f, -0.5f, 0.0f },
+                {-0.5f, -0.5f, 0.0f }
+            };
+
+            auto* dev = wz::gpu::dx12::internal::get_device(*ctx->device);
+
+            ID3D12Resource* vb = nullptr;
+
+            D3D12_HEAP_PROPERTIES heap = { D3D12_HEAP_TYPE_UPLOAD };
+            D3D12_RESOURCE_DESC desc = {};
+            desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+            desc.Width = sizeof(tri);
+            desc.Height = 1;
+            desc.DepthOrArraySize = 1;
+            desc.MipLevels = 1;
+            desc.SampleDesc.Count = 1;
+            desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+            dev->CreateCommittedResource(
+                &heap, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr, IID_PPV_ARGS(&vb));
+
+            void* mapped;
+            vb->Map(0, nullptr, &mapped);
+            memcpy(mapped, tri, sizeof(tri));
+            vb->Unmap(0, nullptr);
+
+            wz::render::backend::dx12::GpuMesh m{};
+            m.vertex_buffer = vb;
+            m.vb_view.BufferLocation = vb->GetGPUVirtualAddress();
+            m.vb_view.StrideInBytes = sizeof(Vertex);
+            m.vb_view.SizeInBytes = sizeof(tri);
+            m.index_buffer = nullptr;
+            m.index_count = 3;
+
+            ctx->mesh_table.push_back(m);
+        }
 
         // ────── submit (IMPORTANT: unwrap frame) ─────────
         wz::render::backend::dx12::submit(ctx, storage.frame);
@@ -564,13 +644,19 @@ namespace wz::gpu::dx12::internal
 
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device)
     {
+        D3D12_ROOT_PARAMETER param = {};
+        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        param.Constants.Num32BitValues = 32; // 4x4 matrix
+        param.Constants.RegisterSpace = 0;
+        param.Constants.ShaderRegister = 0;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
         D3D12_ROOT_SIGNATURE_DESC desc = {};
-        desc.NumParameters = 0;
-        desc.pParameters = nullptr;
+        desc.NumParameters = 1;
+        desc.pParameters = &param;
         desc.NumStaticSamplers = 0;
         desc.pStaticSamplers = nullptr;
-        desc.Flags =
-            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
         ID3DBlob* sig_blob = nullptr;
         ID3DBlob* error_blob = nullptr;
@@ -621,17 +707,27 @@ namespace wz::gpu::dx12::internal
         ID3DBlob* error = nullptr;
 
         const char* vs_src = R"(
-        struct VSOut {
-            float4 pos : SV_POSITION;
-        };
+            cbuffer Transform : register(b0)
+            {
+                float4x4 world;
+                float4x4 view_proj;
+            };
 
-        VSOut main(float3 pos : POSITION)
-        {
-            VSOut o;
-            o.pos = float4(pos, 1.0);
-            return o;
-        }
-    )";
+            struct VSOut {
+                float4 pos : SV_POSITION;
+            };
+
+            VSOut main(float3 pos : POSITION)
+            {
+                VSOut o;
+
+                float4 p = float4(pos, 1.0);
+                p = mul(world, p);
+                o.pos = mul(view_proj, p);
+
+                return o;
+            }
+            )";
 
         hr = D3DCompile(
             vs_src, strlen(vs_src),
