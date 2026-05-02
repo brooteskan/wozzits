@@ -8,13 +8,17 @@
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
-
+#include <gpu/dx12/external/d3dx12.h>
+#include <engine/render_backends/dx12/dx12_submit.h>
 #include <wrl/client.h>
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12_internal.h>
 #include <window/window2.h>
 #include <cassert>
+
+#include <d3dcompiler.h>
+#pragma comment(lib, "d3dcompiler.lib")
 
 namespace wz::gpu::dx12
 {
@@ -44,6 +48,8 @@ namespace wz::gpu::dx12
         HWND hwnd = nullptr;
         UINT width = 0;
         UINT height = 0;
+
+        wz::render::backend::dx12::Context* ctx = nullptr;
     };
 
     Device create_device(void* native_window)
@@ -177,10 +183,35 @@ namespace wz::gpu::dx12
 
         impl->rtv_stride = rtv_stride;
 
+
         // ────── return ───────────────────────────────────────────────────────
         Device out{};
         out.impl = impl;
+        impl->ctx = wz::render::backend::dx12::create(out);
         return out;
+    }
+
+    void draw_test_triangle(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+
+        ID3D12GraphicsCommandList* cmd = impl->cmd;
+
+        auto* ctx = impl->ctx; // assuming you still have it stored
+
+        assert(ctx->pso != nullptr);
+        assert(ctx->root_sig != nullptr);
+        assert(impl->cmd != nullptr);
+
+        cmd->SetGraphicsRootSignature(ctx->root_sig);
+        cmd->SetPipelineState(ctx->pso);
+
+        assert(impl);
+        assert(impl->cmd);
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd->IASetVertexBuffers(0, 1, &ctx->vb_view);
+
+        cmd->DrawInstanced(3, 1, 0, 0);
     }
 
     void begin_frame(Device& d)
@@ -195,6 +226,7 @@ namespace wz::gpu::dx12
 
         hr = impl->cmd->Reset(impl->allocator, nullptr);
         assert(SUCCEEDED(hr));
+        // impl->cmd->SetGraphicsRootSignature(nullptr); // harmless placeholder sanity reset
 
         // transition to render target
         D3D12_RESOURCE_BARRIER barrier = {};
@@ -313,6 +345,12 @@ namespace wz::gpu::dx12
         if (impl->fence) impl->fence->Release();
         if (impl->fence_event) CloseHandle(impl->fence_event);
 
+        if (impl->ctx)
+        {
+            wz::render::backend::dx12::destroy(impl->ctx);
+            impl->ctx = nullptr;
+        }
+
         delete impl;
         d.impl = nullptr;
     }
@@ -410,7 +448,17 @@ namespace wz::gpu::dx12
 } // namespace wz::gpu::dx12
 
 namespace wz::gpu::dx12::internal
-{
+{   // file: src/gpu/dx12/dx12_device.cpp
+    namespace wz::gpu::dx12::internal
+    {
+        DX12Device* get_backend(Device& d)
+        {
+            auto* impl = (DX12Device*)d.impl;
+            assert(impl);
+            return impl;
+        }
+    }
+
     ID3D12Device* get_device(Device& d)
     {
         auto* impl = (DX12Device*)d.impl;
@@ -423,5 +471,146 @@ namespace wz::gpu::dx12::internal
         auto* impl = (DX12Device*)d.impl;
         assert(impl);
         return impl->cmd;
+    }
+
+    ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device)
+    {
+        D3D12_ROOT_SIGNATURE_DESC desc = {};
+        desc.NumParameters = 0;
+        desc.pParameters = nullptr;
+        desc.NumStaticSamplers = 0;
+        desc.pStaticSamplers = nullptr;
+        desc.Flags =
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        ID3DBlob* sig_blob = nullptr;
+        ID3DBlob* error_blob = nullptr;
+
+        HRESULT hr = D3D12SerializeRootSignature(
+            &desc,
+            D3D_ROOT_SIGNATURE_VERSION_1,
+            &sig_blob,
+            &error_blob
+        );
+
+        assert(SUCCEEDED(hr));
+
+        ID3D12RootSignature* root_sig = nullptr;
+
+        hr = device->CreateRootSignature(
+            0,
+            sig_blob->GetBufferPointer(),
+            sig_blob->GetBufferSize(),
+            IID_PPV_ARGS(&root_sig)
+        );
+
+        assert(SUCCEEDED(hr));
+
+        sig_blob->Release();
+        if (error_blob) error_blob->Release();
+
+        return root_sig;
+    }
+
+    extern const BYTE g_VS[];
+    //extern const SIZE_T g_VS_size;
+
+    extern const BYTE g_PS[];
+    extern const SIZE_T g_PS_size;
+
+
+
+    ID3D12PipelineState* create_triangle_pso(
+        ID3D12Device* device,
+        ID3D12RootSignature* root_sig)
+    {
+        HRESULT hr;
+
+        // ────── compile vertex shader ──────
+        ID3DBlob* vs = nullptr;
+        ID3DBlob* ps = nullptr;
+        ID3DBlob* error = nullptr;
+
+        const char* vs_src = R"(
+        struct VSOut {
+            float4 pos : SV_POSITION;
+        };
+
+        VSOut main(float3 pos : POSITION)
+        {
+            VSOut o;
+            o.pos = float4(pos, 1.0);
+            return o;
+        }
+    )";
+
+        hr = D3DCompile(
+            vs_src, strlen(vs_src),
+            nullptr, nullptr, nullptr,
+            "main", "vs_5_0",
+            0, 0,
+            &vs, &error
+        );
+        assert(SUCCEEDED(hr));
+
+        // ────── compile pixel shader ──────
+        const char* ps_src = R"(
+        float4 main() : SV_TARGET
+        {
+            return float4(1, 0, 0, 1);
+        }
+    )";
+
+        hr = D3DCompile(
+            ps_src, strlen(ps_src),
+            nullptr, nullptr, nullptr,
+            "main", "ps_5_0",
+            0, 0,
+            &ps, &error
+        );
+        assert(SUCCEEDED(hr));
+
+        // ────── input layout ──────
+        D3D12_INPUT_ELEMENT_DESC layout[] =
+        {
+            {
+                "POSITION",
+                0,
+                DXGI_FORMAT_R32G32B32_FLOAT,
+                0,
+                0,
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                0
+            }
+        };
+
+        // ────── PSO desc ──────
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature = root_sig;
+
+        desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        desc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+
+        desc.InputLayout = { layout, 1 };
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+        desc.SampleMask = UINT_MAX;
+        desc.SampleDesc.Count = 1;
+
+        ID3D12PipelineState* pso = nullptr;
+        hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso));
+        assert(SUCCEEDED(hr));
+
+        vs->Release();
+        ps->Release();
+
+        return pso;
     }
 }

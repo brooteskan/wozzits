@@ -3,9 +3,10 @@
 #include <event/platform_event.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
-
+#include <gpu/dx12/dx12.h>
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
+
 
 int main()
 {
@@ -53,6 +54,7 @@ int main()
 
         wz::gpu::begin_frame(device);
         wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
+        wz::gpu::dx12::draw_test_triangle(device);
         wz::gpu::end_frame(device);
         wz::gpu::present(device);
     }

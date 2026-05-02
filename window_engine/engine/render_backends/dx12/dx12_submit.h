@@ -1,14 +1,26 @@
-// file: render_backends/dx12/dx12_submit.h
-
 #pragma once
+// file: engine/render_backends/dx12/dx12_submit.h
+
+
 
 #include <render/frame/render_frame.h>
 #include <gpu/gpu.h>
 
 namespace wz::render::backend::dx12
 {
-    struct Context;
-    // opaque DX12 state (device, PSOs, root signatures, etc.)
+    struct Context
+    {
+        wz::gpu::Device* device;
+
+        // DX12 objects
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso = nullptr;
+
+        ID3D12Resource* vertex_buffer = nullptr;
+        D3D12_VERTEX_BUFFER_VIEW vb_view{};
+
+        UINT vertex_count = 3;
+    };
 
     Context* create(wz::gpu::Device& device);
 

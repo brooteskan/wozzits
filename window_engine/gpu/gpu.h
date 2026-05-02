@@ -1,6 +1,8 @@
+#pragma once
+
 // file: gpu/gpu.h
 
-#pragma once
+#include <render/frame/render_frame.h>
 
 namespace wz::window
 {
@@ -17,6 +19,9 @@ namespace wz::gpu
 	// every function should assume assert(device.impl != nullptr);
 
 	Device create_device(const wz::window::WindowHandle& window);  // create + initialize swapchain-bound device
+
+	// void* get_backend_context(Device& d);
+	void render(Device& device, const wz::render::RenderFrame& frame);
 
 	void destroy_device(Device& device); // impl rule: must say device.impl = nullptr;
 
