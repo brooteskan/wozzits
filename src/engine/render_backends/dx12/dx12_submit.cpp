@@ -89,7 +89,7 @@ namespace wz::render::backend::dx12
             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
         );
 
-        // cmdList->IASetVertexBuffers(0, 1, &ctx->vb_view);
+        cmdList->IASetVertexBuffers(0, 1, &ctx->vb_view);
 
         // ────── iterate draw commands ─────────────────────────────
         for (const DrawCommand& dc : frame.commands)
