@@ -28,8 +28,22 @@
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
 
+#define _DEBUG
 
+namespace
+{
+    static constexpr DXGI_FORMAT BACKBUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 
+    namespace
+    {
+        struct alignas(16) TransformConstants
+        {
+            float world[16];
+            float view_proj[16];
+        };
+    }
+
+}
 
 namespace wz::gpu::dx12
 {
@@ -75,6 +89,18 @@ namespace wz::gpu::dx12
         );
         assert(SUCCEEDED(hr));
 
+                // Add this before D3D12CreateDevice:
+        #if defined(_DEBUG)
+                {
+                    ID3D12Debug* debug = nullptr;
+                    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))
+                    {
+                        debug->EnableDebugLayer();
+                        debug->Release();
+                    }
+                }
+        #endif
+
         ID3D12Device* device = nullptr;
         hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
         assert(SUCCEEDED(hr));
@@ -91,7 +117,7 @@ namespace wz::gpu::dx12
         scdesc.BufferCount = 2;
         scdesc.Width = 1280;
         scdesc.Height = 720;
-        scdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // attention: hardcoded format, must match in resize()
+        scdesc.Format = BACKBUFFER_FORMAT; // attention: hardcoded format, must match in resize()
         scdesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         scdesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         scdesc.SampleDesc.Count = 1;
@@ -202,41 +228,26 @@ namespace wz::gpu::dx12
         return out;
     }
 
-    void draw_test_triangle(Device& d)
-    {
-        // this was Day 2
-        auto* impl = (DX12Device*)d.impl;
 
-        ID3D12GraphicsCommandList* cmd = impl->cmd;
-
-        auto* ctx = impl->ctx; // assuming you still have it stored
-
-        assert(ctx->pso != nullptr);
-        assert(ctx->root_sig != nullptr);
-        assert(impl->cmd != nullptr);
-
-        cmd->SetGraphicsRootSignature(ctx->root_sig);
-        cmd->SetPipelineState(ctx->pso);
-
-        assert(impl);
-        assert(impl->cmd);
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->IASetVertexBuffers(0, 1, &ctx->vb_view);
-
-        cmd->DrawInstanced(3, 1, 0, 0);
-    }
 
 
     using namespace wz::scene;
     using namespace wz::core::graph;
     using namespace wz::math;
 
-    Mat4 translation_x(float z)
+    Mat4 translation_x(float c)
     {
         Mat4 m = mat4_identity();
-        m.m[12] = z;
+        m.m[12] = c;
         return m;
     }
+    Mat4 translation_z(float c)
+    {
+        Mat4 m = mat4_identity();
+        m.m[14] = c;
+        return m;
+    }
+
     SceneStorage build_test_scene()
     {
         SceneBuilder b;
@@ -246,7 +257,8 @@ namespace wz::gpu::dx12
         auto root_h = add_node(b, root);
 
         TransformNode node{};
-        node.local = translation_x( -0.8f); // no transform yet
+        node.local = translation_z(-3.0f); //
+        // node.local = translation_x(0.1f);
         node.flags = TransformNodeFlag::RenderDomain;
 
         auto h = add_node(b, node);
@@ -275,20 +287,21 @@ namespace wz::gpu::dx12
         return descs;
     }
 
-    Mat4 perspective(float fov, float aspect, float nearZ, float farZ)
+    Mat4 _perspective(float fov, float aspect, float nearZ, float farZ)
     {
         float f = 1.0f / tanf(fov * 0.5f);
 
-        Mat4 m = {};
+        // DX [0,1] depth — different A/B from OpenGL [-1,1]
+        float A = farZ / (nearZ - farZ);
+        float B = (nearZ * farZ) / (nearZ - farZ);
 
+        Mat4 m = {};
+        // column-major layout — matches scene graph convention
         m.m[0] = f / aspect;
         m.m[5] = f;
-
-        m.m[10] = farZ / (farZ - nearZ);
-        m.m[11] = 1.0f;
-
-        m.m[14] = (-nearZ * farZ) / (farZ - nearZ);
-
+        m.m[10] = A;
+        m.m[11] = -1.0f;   // col 2, row 3
+        m.m[14] = B;        // col 3, row 2
         return m;
     }
 
@@ -296,18 +309,18 @@ namespace wz::gpu::dx12
     {
         ViewData v{};
 
-        v.view = mat4_identity();
-        v.view = translation_x(1.0f);
+        v.camera_position = Vec3{ 0.0f, 0, 0 };
 
-        float fov = 60.0f * 3.14159265f / 180.0f;
+        v.view = translation_x(-v.camera_position.x);
+        
+
+        float fov = 90.0f * 3.14159265f / 180.0f;
         float aspect = 1280.0f / 720.0f;
         float nearZ = 0.1f;
         float farZ = 100.0f;
 
-        // v.projection = perspective(fov, aspect, nearZ, farZ);
-        v.projection = mat4_identity();
-        v.view_projection = mul(v.projection,v.view); // IMPORTANT ORDER
-        v.camera_position = Vec3{ 1.5,0,0 };
+        v.projection = _perspective(fov, aspect, nearZ, farZ);
+        v.view_projection = mul(v.projection,v.view); // IMPORTANT ORDER*/
 
         return v;
     }
@@ -315,6 +328,9 @@ namespace wz::gpu::dx12
     void draw_test_triangle_2(Device& d)
     {
         // We are at Day 3 now.
+
+
+
         auto* impl = (DX12Device*)d.impl;
         auto* ctx = impl->ctx;
 
@@ -333,51 +349,15 @@ namespace wz::gpu::dx12
         auto ir = build_render_ir(compiled.scene);
         RenderFrameStorage storage = build_frame(ir, compiled.scene);
 
-        if (ctx->mesh_table.empty())
-        {
-            // TEMP: bootstrap one GPU mesh for mesh=0
+        
 
-            struct Vertex { float x, y, z; };
-            Vertex tri[3] = {
-                { 0.0f,  0.5f, 0.0f },
-                { 0.5f, -0.5f, 0.0f },
-                {-0.5f, -0.5f, 0.0f }
-            };
+        // ────── Set up draw call ─────────────────────
+        auto* cmd = impl->cmd;
+        assert(cmd);
 
-            auto* dev = wz::gpu::dx12::internal::get_device(*ctx->device);
+        // Bind the vertex buffer
+        D3D12_VERTEX_BUFFER_VIEW vbv = ctx->mesh_table[0].vb_view;
 
-            ID3D12Resource* vb = nullptr;
-
-            D3D12_HEAP_PROPERTIES heap = { D3D12_HEAP_TYPE_UPLOAD };
-            D3D12_RESOURCE_DESC desc = {};
-            desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            desc.Width = sizeof(tri);
-            desc.Height = 1;
-            desc.DepthOrArraySize = 1;
-            desc.MipLevels = 1;
-            desc.SampleDesc.Count = 1;
-            desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-            dev->CreateCommittedResource(
-                &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                nullptr, IID_PPV_ARGS(&vb));
-
-            void* mapped;
-            vb->Map(0, nullptr, &mapped);
-            memcpy(mapped, tri, sizeof(tri));
-            vb->Unmap(0, nullptr);
-
-            wz::render::backend::dx12::GpuMesh m{};
-            m.vertex_buffer = vb;
-            m.vb_view.BufferLocation = vb->GetGPUVirtualAddress();
-            m.vb_view.StrideInBytes = sizeof(Vertex);
-            m.vb_view.SizeInBytes = sizeof(tri);
-            m.index_buffer = nullptr;
-            m.index_count = 3;
-
-            ctx->mesh_table.push_back(m);
-        }
 
         // ────── submit (IMPORTANT: unwrap frame) ─────────
         wz::render::backend::dx12::submit(ctx, storage.frame);
@@ -495,23 +475,57 @@ namespace wz::gpu::dx12
 
     }
 
+    namespace
+    {
+
+        void wait_for_gpu(DX12Device* impl)
+        {
+            HRESULT hr;
+
+            // Signal GPU with current fence value
+            hr = impl->queue->Signal(impl->fence, impl->fence_value);
+            assert(SUCCEEDED(hr));
+
+            // If GPU hasn't reached this fence value yet → wait
+            if (impl->fence->GetCompletedValue() < impl->fence_value)
+            {
+                hr = impl->fence->SetEventOnCompletion(
+                    impl->fence_value,
+                    impl->fence_event
+                );
+                assert(SUCCEEDED(hr));
+
+                DWORD res = WaitForSingleObject(
+                    impl->fence_event,
+                    INFINITE
+                );
+
+                assert(res == WAIT_OBJECT_0);
+            }
+
+            // advance fence for next use
+            impl->fence_value++;
+        }
+
+    }
+
     void destroy_device(Device& d)
     {
         auto* impl = (DX12Device*)d.impl;
-
         if (!impl) return;
+
+        wait_for_gpu(impl);
 
         for (int i = 0; i < 2; ++i)
             if (impl->backbuffers[i]) impl->backbuffers[i]->Release();
 
-        if (impl->rtv_heap) impl->rtv_heap->Release();
-        if (impl->cmd) impl->cmd->Release();
-        if (impl->allocator) impl->allocator->Release();
-        if (impl->queue) impl->queue->Release();
-        if (impl->swapchain) impl->swapchain->Release();
-        if (impl->device) impl->device->Release();
+        if (impl->rtv_heap)   impl->rtv_heap->Release();
+        if (impl->cmd)        impl->cmd->Release();
+        if (impl->allocator)  impl->allocator->Release();
+        if (impl->queue)      impl->queue->Release();
+        if (impl->swapchain)  impl->swapchain->Release();
 
-        if (impl->fence) impl->fence->Release();
+        if (impl->fence)       impl->fence->Release();
         if (impl->fence_event) CloseHandle(impl->fence_event);
 
         if (impl->ctx)
@@ -520,45 +534,33 @@ namespace wz::gpu::dx12
             impl->ctx = nullptr;
         }
 
+        // Report before final device release so object names are still valid
+#if defined(_DEBUG)
+        if (impl->device)
+        {
+            ID3D12DebugDevice* debug_device = nullptr;
+            if (SUCCEEDED(impl->device->QueryInterface(IID_PPV_ARGS(&debug_device))))
+            {
+                impl->device->Release();
+                impl->device = nullptr;
+
+                debug_device->ReportLiveDeviceObjects(
+                    D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL
+                );
+                debug_device->Release();
+            }
+        }
+#endif
+
+        if (impl->device) impl->device->Release();  // fallback if debug query failed
+
         delete impl;
         d.impl = nullptr;
     }
 
 
     // ────── resize ───────────────────────────────────────────────────────
-    namespace
-    {
 
-            void wait_for_gpu(DX12Device* impl)
-            {
-                HRESULT hr;
-
-                // Signal GPU with current fence value
-                hr = impl->queue->Signal(impl->fence, impl->fence_value);
-                assert(SUCCEEDED(hr));
-
-                // If GPU hasn't reached this fence value yet → wait
-                if (impl->fence->GetCompletedValue() < impl->fence_value)
-                {
-                    hr = impl->fence->SetEventOnCompletion(
-                        impl->fence_value,
-                        impl->fence_event
-                    );
-                    assert(SUCCEEDED(hr));
-
-                    DWORD res = WaitForSingleObject(
-                        impl->fence_event,
-                        INFINITE
-                    );
-
-                    assert(res == WAIT_OBJECT_0);
-                }
-
-                // advance fence for next use
-                impl->fence_value++;
-            }
-        
-    }
 
     void resize(Device& d, int w, int h)
     {
@@ -587,7 +589,7 @@ namespace wz::gpu::dx12
             2,
             w,
             h,
-            DXGI_FORMAT_R8G8B8A8_UNORM,// attention: hardcoded format
+            BACKBUFFER_FORMAT,// attention: hardcoded format
             0
         );
         assert(SUCCEEDED(hr));
@@ -618,15 +620,7 @@ namespace wz::gpu::dx12
 
 namespace wz::gpu::dx12::internal
 {   // file: src/gpu/dx12/dx12_device.cpp
-    namespace wz::gpu::dx12::internal
-    {
-        DX12Device* get_backend(Device& d)
-        {
-            auto* impl = (DX12Device*)d.impl;
-            assert(impl);
-            return impl;
-        }
-    }
+
 
     ID3D12Device* get_device(Device& d)
     {
@@ -701,6 +695,10 @@ namespace wz::gpu::dx12::internal
     {
         HRESULT hr;
 
+        char buf[128];
+        sprintf_s(buf, "create_triangle_pso called, device: %p\n", device);
+        OutputDebugStringA(buf);
+
         // ────── compile vertex shader ──────
         ID3DBlob* vs = nullptr;
         ID3DBlob* ps = nullptr;
@@ -709,25 +707,24 @@ namespace wz::gpu::dx12::internal
         const char* vs_src = R"(
             cbuffer Transform : register(b0)
             {
-                float4x4 world;
-                float4x4 view_proj;
+                column_major float4x4 world;
+                column_major float4x4 view_proj;
             };
 
             struct VSOut {
-                float4 pos : SV_POSITION;
+                float4 pos       : SV_POSITION;
+                float3 world_pos : TEXCOORD0;
             };
 
             VSOut main(float3 pos : POSITION)
             {
                 VSOut o;
-
-                float4 p = float4(pos, 1.0);
-                p = mul(world, p);
+                float4 p = mul(world, float4(pos, 1.0));
+                o.world_pos = p.xyz;
                 o.pos = mul(view_proj, p);
-
                 return o;
             }
-            )";
+        )";
 
         hr = D3DCompile(
             vs_src, strlen(vs_src),
@@ -739,12 +736,23 @@ namespace wz::gpu::dx12::internal
         assert(SUCCEEDED(hr));
 
         // ────── compile pixel shader ──────
+
         const char* ps_src = R"(
-        float4 main() : SV_TARGET
-        {
-            return float4(1, 0, 0, 1);
-        }
-    )";
+            struct PSIn {
+                float4 pos       : SV_POSITION;  // must be here even if unused
+                float3 world_pos : TEXCOORD0;
+            };
+
+            float4 main(PSIn input) : SV_TARGET
+            {
+                return float4(
+                    abs(input.world_pos.x),
+                    abs(input.world_pos.y),
+                    abs(input.world_pos.z) * 0.1,
+                    1.0
+                );
+            }
+        )";
 
         hr = D3DCompile(
             ps_src, strlen(ps_src),
@@ -782,16 +790,25 @@ namespace wz::gpu::dx12::internal
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-
+        desc.DepthStencilState.DepthEnable = FALSE;
+        desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
         desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.RTVFormats[0] = BACKBUFFER_FORMAT;
 
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
 
         ID3D12PipelineState* pso = nullptr;
         hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso));
+        if (FAILED(hr))
+        {
+            // Print the HRESULT so you know the specific failure code
+            char buf[256];
+            sprintf_s(buf, "CreateGraphicsPipelineState failed: 0x%08X\n", (unsigned)hr);
+            OutputDebugStringA(buf);
+        }
         assert(SUCCEEDED(hr));
+
 
         vs->Release();
         ps->Release();

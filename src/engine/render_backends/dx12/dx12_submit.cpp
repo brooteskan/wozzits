@@ -19,6 +19,9 @@ namespace wz::render::backend::dx12
 
         ctx->root_sig = wz::gpu::dx12::internal::create_empty_root_signature(dev);
         ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(dev, ctx->root_sig);
+        char buf[128];
+        sprintf_s(buf, "  PSO created: %p\n", ctx->pso);
+        OutputDebugStringA(buf);
         assert(ctx->pso);
 
         struct Vertex { float x, y, z; };
@@ -103,8 +106,9 @@ namespace wz::render::backend::dx12
 
         for (const DrawCommand& dc : frame.commands)
         {
-            if (dc.stage != PipelineStage::OpaqueGeometry)
-                continue;
+            //if (dc.stage != PipelineStage::OpaqueGeometry)
+            //    continue;
+
 
             if (dc.mesh >= ctx->mesh_table.size())
                 continue;
@@ -115,6 +119,9 @@ namespace wz::render::backend::dx12
 
             data.world = dc.world;
             data.view_proj = ctx->view_proj;
+
+             //data.world = mat4_identity();
+            // data.view_proj = mat4_identity();
 
             cmdList->SetGraphicsRoot32BitConstants(
                 0,
@@ -135,24 +142,32 @@ namespace wz::render::backend::dx12
         }
     }
 
-        void destroy(Context* ctx)
+    void destroy(Context* ctx)
     {
         if (!ctx) return;
 
+        OutputDebugStringA("dx12::destroy called\n");
+
         if (ctx->vertex_buffer)
         {
+            OutputDebugStringA("  releasing vertex_buffer\n");
             ctx->vertex_buffer->Release();
             ctx->vertex_buffer = nullptr;
         }
 
         if (ctx->pso)
         {
+            char buf[128];
+            sprintf_s(buf, "  releasing pso: %p\n", ctx->pso);
+            OutputDebugStringA(buf);
             ctx->pso->Release();
             ctx->pso = nullptr;
+
         }
 
         if (ctx->root_sig)
         {
+            OutputDebugStringA("  releasing root_sig\n");
             ctx->root_sig->Release();
             ctx->root_sig = nullptr;
         }
