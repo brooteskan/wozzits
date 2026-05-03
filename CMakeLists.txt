@@ -161,6 +161,10 @@ endfunction()
 
 if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(engine engine)
+
     rs_add_test_group(logging logging)
+
     rs_add_test_group(window test_window)
+
+    rs_add_test_group(asset asset_test_1)
 endif()
