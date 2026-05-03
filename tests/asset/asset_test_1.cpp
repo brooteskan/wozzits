@@ -362,3 +362,135 @@ TEST_F(AssetSystemTest, Cache_SoftInvalidate_HidesEntryUntilRestore)
     ASSERT_TRUE(std::holds_alternative<GPUHandle>(r));
     EXPECT_TRUE(sys->cache().contains(kKeyA));
 }
+
+TEST_F(AssetSystemTest, CacheInvalidateTriggersRecompile_0)
+{
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg;
+    reg.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&](const AssetNode& in,
+                       std::span<const AssetNode>,
+                       std::span<const GPUHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = in;
+            out.stage = AssetStage::Compiled;
+            out.payload = GPUHandle{ 42, 1 };
+            return out;
+        }
+        });
+    AssetSystem sys2(std::move(reg));
+
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    auto r1 = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r1));
+    EXPECT_EQ(compile_count, 1u);   // compiled once
+
+    sys2.cache().invalidate(kKeyA);
+
+    auto r2 = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r2));
+    EXPECT_EQ(compile_count, 2u);   // recompiled after invalidation
+
+    // Same input → same output. This is correct and expected.
+    EXPECT_EQ(std::get<GPUHandle>(r1), std::get<GPUHandle>(r2));
+}
+
+// sugartits' tests ====================================================
+
+TEST_F(AssetSystemTest, Resolve_MultipleCallsNoChanges)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    auto r1 = sys->resolve(kKeyA);
+    auto r2 = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r1));
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r2));
+    EXPECT_EQ(std::get<GPUHandle>(r1), std::get<GPUHandle>(r2));
+}
+
+TEST_F(AssetSystemTest, Resolve_DependencyFailure)
+{
+    // Register a failing asset (no compiler available)
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, SchemaID{ 999 })));
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyB, AssetType::Mesh, kMeshSchema), { kKeyA }));
+    ASSERT_TRUE(sys->commit());
+
+    // Resolve kKeyB which depends on kKeyA — should fail due to kKeyA being unresolved.
+    auto r = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(r));
+    EXPECT_EQ(std::get<ResolveError>(r), ResolveError::DependencyFailed);
+}
+
+
+
+TEST_F(AssetSystemTest, LargeDependencyChain)
+{
+    constexpr size_t chain_length = 100;
+    std::vector<AssetKey> keys(chain_length);
+    for (size_t i = 0; i < chain_length; ++i) {
+        keys[i] = AssetKey{ Hash{1,1}, Hash{2,2}, Hash{3,3}, Hash{4,4} };
+    }
+
+    // Register assets with a deep dependency chain
+    for (size_t i = 0; i < chain_length - 1; ++i) {
+        sys->register_asset(make_node(keys[i], AssetType::Mesh, kMeshSchema), { keys[i + 1] });
+    }
+    sys->register_asset(make_node(keys[chain_length - 1], AssetType::Mesh, kMeshSchema));
+
+    ASSERT_TRUE(sys->commit());
+
+    // Resolve the last asset; it should resolve the entire chain
+    auto r = sys->resolve(keys[0]);
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r));
+}
+
+TEST_F(AssetSystemTest, CacheEvictionAndCompilation)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    // Resolve once to store in cache
+    sys->resolve(kKeyA);
+    sys->cache().evict(kKeyA);
+
+    // Eviction and resolve should trigger a fresh compile
+    auto r = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<GPUHandle>(r));
+}
+
+TEST_F(AssetSystemTest, CacheClearOnDeviceReset)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    // Resolve once to populate the cache
+    sys->resolve(kKeyA);
+    ASSERT_TRUE(sys->cache().contains(kKeyA));
+
+    // Simulate a device reset (clear cache)
+    sys->cache().clear();
+    EXPECT_FALSE(sys->cache().contains(kKeyA));  // Cache should be cleared
+}
+
+TEST_F(AssetSystemTest, PerformanceTest_ManyAssets)
+{
+    constexpr size_t num_assets = 10000;
+
+    for (size_t i = 0; i < num_assets; ++i) {
+        sys->register_asset(make_node(AssetKey{ Hash{i,i}, Hash{i + 1,i + 1}, Hash{i + 2,i + 2}, Hash{i + 3,i + 3} },
+            AssetType::Texture, kTexSchema));
+    }
+
+    ASSERT_TRUE(sys->commit());
+
+    // Resolve all registered assets
+    uint32_t resolved = sys->resolve_all();
+    EXPECT_EQ(resolved, num_assets);
+}
+
