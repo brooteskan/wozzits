@@ -347,3 +347,60 @@ wz/asset/
 ```
 
 `types.h` has no dependency on the graph library and can be included anywhere. The graph library (`wz::core::graph`) is an implementation detail of `dag.h` and `system.h`.
+
+
+## Performance Tips
+
+### Prefer `resolve_all` at load time
+
+`resolve(key)` is recursive — each call walks prerequisites depth-first via the call stack. For deep dependency chains this is fine at runtime (cache hits short-circuit immediately after the first resolve), but on a cold cache it can produce long call chains and redundant cache lookups at each level.
+
+`resolve_all` avoids this entirely. It iterates the pre-computed topological order stored in the graph, so prerequisites are always already cached by the time their dependents are compiled. No recursion, no redundant lookups:
+
+```cpp
+// At load time — compile everything in one linear pass.
+sys.resolve_all();
+
+// At runtime — guaranteed cache hit, O(1) per call.
+auto r = sys.resolve(mat_key);
+```
+
+The practical pattern is: `resolve_all` once at load time (or level transition), then `resolve` freely at runtime.
+
+### Reserve cache capacity upfront
+
+`AssetCache` is backed by `std::unordered_map`. If you know the number of assets ahead of commit, pass that count to the `AssetSystem` constructor to avoid rehashing during `resolve_all`:
+
+```cpp
+const uint32_t expected_asset_count = 4096;
+AssetSystem sys(std::move(registry), expected_asset_count);
+```
+
+### Soft-invalidate instead of evicting on hot-reload
+
+`evict(key)` removes the hash table entry entirely. On the next resolve the slot must be reallocated and reinserted. For hot-reload — where the same set of assets cycle repeatedly through invalidation — prefer `invalidate(key)`, which marks the entry stale in place. The slot is reused on the next `store`, avoiding repeated allocation churn:
+
+```cpp
+// Prefer this for hot-reload:
+sys.cache().invalidate(key);
+sys.resolve(key);               // recompiles, reuses existing slot
+
+// Reserve evict() for assets being permanently unloaded:
+sys.cache().evict(key);
+```
+
+### Shared dependencies are compiled once
+
+Any asset referenced as a prerequisite by multiple nodes is compiled exactly once per cache lifetime, regardless of how many times it appears in the graph. The cache is checked at the top of every `resolve` call, so a shared texture depended on by fifty materials costs one compilation and fifty lookups.
+
+If you suspect over-compilation, add a counter to your compiler's `compile` lambda during development — a correctly memoized asset should report exactly one invocation between cache clears.
+
+### Clear the cache on device reset, not on level load
+
+The cache stores `GPUHandle` values owned by the renderer. On a GPU device loss or context reset, all handles become invalid and the cache must be fully cleared:
+
+```cpp
+gpu.on_device_reset([&]() { sys.cache().clear(); });
+```
+
+Level transitions do not require a full clear. Assets shared across levels (common textures, UI materials) remain valid in the cache and will not be recompiled. Only `evict` assets you know are being unloaded.
