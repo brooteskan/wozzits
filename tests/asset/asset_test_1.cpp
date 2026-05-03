@@ -78,14 +78,27 @@ static constexpr AssetKey kKeyD{ Hash{13,13},Hash{14,14},Hash{15,15},Hash{16,16}
 class AssetSystemTest : public ::testing::Test {
 protected:
     CompilerRegistry registry;
-    // Populated in SetUp so subclasses can override before build.
+    uint32_t compile_counter = 0;  // Add counter to track compile invocations
     std::unique_ptr<AssetSystem> sys;
 
     void SetUp() override {
-        // Register stub compilers for the types used across all tests.
+        // Register custom compiler with compile counter
+        registry.register_compiler(AssetCompiler{
+            .input_schema = kTexSchema,
+            .output_type = AssetType::Texture,
+            .compile = [&](const AssetNode& in,
+                           std::span<const AssetNode>,
+                           std::span<const GPUHandle>) -> AssetNode {
+                ++compile_counter;  // Increment counter on each compile call
+                AssetNode out = in;
+                out.stage = AssetStage::Compiled;
+                out.payload = GPUHandle{ 42, 1 };  // Dummy handle
+                return out;
+            }
+            });
         registry.register_compiler(make_stub_compiler(kMeshSchema, AssetType::Mesh));
-        registry.register_compiler(make_stub_compiler(kTexSchema, AssetType::Texture));
         registry.register_compiler(make_stub_compiler(kMatSchema, AssetType::Material));
+
         sys = std::make_unique<AssetSystem>(std::move(registry));
     }
 };
@@ -427,7 +440,22 @@ TEST_F(AssetSystemTest, Resolve_DependencyFailure)
     EXPECT_EQ(std::get<ResolveError>(r), ResolveError::DependencyFailed);
 }
 
+TEST_F(AssetSystemTest, CacheInvalidateTriggersRecompile)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    ASSERT_TRUE(sys->commit());
 
+    // Resolve once to trigger initial compile
+    sys->resolve(kKeyA);
+    uint32_t initial_compile_count = compile_counter;
+
+    // Invalidate the cache and resolve again
+    sys->cache().invalidate(kKeyA);
+    sys->resolve(kKeyA);  // Should trigger recompilation
+
+    // Verify that the compile counter has incremented (recompile happened)
+    EXPECT_EQ(compile_counter, initial_compile_count + 1);
+}
 
 TEST_F(AssetSystemTest, LargeDependencyChain)
 {
