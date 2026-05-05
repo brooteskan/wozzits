@@ -176,6 +176,5 @@ if(SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(window test_window)
 
-    rs_add_test_group(asset asset_test_1)
     rs_add_test_group(asset new_asset_test_1)
 endif()

@@ -101,8 +101,7 @@ namespace wz::asset {
         bool valid() const noexcept
         {
             return id != 0 &&
-                epoch != 0 &&
-                type != AssetType::Unknown;
+                epoch != 0;
         }
 
         explicit operator bool() const noexcept
