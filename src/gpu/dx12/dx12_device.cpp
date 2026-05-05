@@ -45,6 +45,7 @@ namespace
         };
     }
 
+
 }
 
 
@@ -83,28 +84,7 @@ namespace wz::gpu::dx12
         wz::render::backend::dx12::Context* ctx = nullptr;
     };
 
-    void create_triangle_test_context(
-        wz::gpu::Device& device,
-        const TriangleTestContextDesc& desc)
-    {
-        assert(desc.valid());
 
-        auto* impl = (DX12Device*)device.impl;
-        assert(impl);
-        assert(!impl->ctx);
-
-        wz::render::backend::dx12::TrianglePipelineDesc pipeline_desc{
-            .vertex_shader = desc.vertex_shader,
-            .pixel_shader = desc.pixel_shader,
-        };
-
-        impl->ctx = wz::render::backend::dx12::create(
-            device,
-            pipeline_desc
-        );
-
-        assert(impl->ctx);
-    }
 
     Device create_device(void* native_window)
     {
@@ -334,6 +314,10 @@ namespace wz::gpu::dx12
         return m;
     }
 
+
+
+    using namespace wz::render;
+
     ViewData make_camera()
     {
         ViewData v{};
@@ -354,6 +338,50 @@ namespace wz::gpu::dx12
         return v;
     }
 
+    static  RenderFrameStorage build_triangle_test_frame()
+    {
+        auto scene = build_test_scene();
+        auto descs = build_descriptors();
+        auto view = make_camera();
+
+        propagate_all(scene.polytree);
+
+        auto compiled = compile(scene.polytree, descs, {}, view);
+        auto ir = wz::render::build_render_ir(compiled.scene);
+
+        return wz::render::build_frame(ir, compiled.scene);
+    }
+
+    void create_triangle_test_context(
+        wz::gpu::Device& device,
+        const TriangleTestContextDesc& desc)
+    {
+        assert(desc.valid());
+
+        auto* impl = (DX12Device*)device.impl;
+        assert(impl);
+        assert(!impl->ctx);
+
+        wz::render::backend::dx12::TrianglePipelineDesc pipeline_desc{
+            .vertex_shader = desc.vertex_shader,
+            .pixel_shader = desc.pixel_shader,
+        };
+
+        impl->ctx = wz::render::backend::dx12::create(
+            device,
+            pipeline_desc
+        );
+
+        assert(impl->ctx);
+
+
+        auto view = wz::gpu::dx12::make_camera();
+        impl->ctx->view_proj = view.view_projection;
+        impl->ctx->test_frame_storage = build_triangle_test_frame();
+
+    }
+
+
 
     void draw_test_triangle_2(Device& d)
     {
@@ -363,29 +391,13 @@ namespace wz::gpu::dx12
 
         auto* ctx = impl->ctx;
 
-        // ────── build scene ─────────────────────────────
-        auto scene = build_test_scene();
-        auto descs = build_descriptors();
         auto view = make_camera();
         ctx->view_proj = view.view_projection;
 
-        propagate_all(scene.polytree);
-
-        auto compiled = compile(scene.polytree, descs, {}, view);
-
-        // ────── IR → Frame ───────────────────────────────
-        using namespace wz::render;
-        auto ir = build_render_ir(compiled.scene);
-        RenderFrameStorage storage = build_frame(ir, compiled.scene);
-
-
-
-        // ────── Set up draw call ─────────────────────
-        auto* cmd = impl->cmd;
-        assert(cmd);
-
-        // ────── submit (IMPORTANT: unwrap frame) ─────────
-        wz::render::backend::dx12::submit(ctx, storage.frame);
+        wz::render::backend::dx12::submit(
+            ctx,
+            ctx->test_frame_storage.frame
+        );
     }
 
     void begin_frame(Device& d)
@@ -660,6 +672,7 @@ namespace wz::gpu::dx12
 
 namespace wz::gpu::dx12::internal
 {   // file: src/gpu/dx12/dx12_device.cpp
+
 
 
     GPUHandle store_shader(
