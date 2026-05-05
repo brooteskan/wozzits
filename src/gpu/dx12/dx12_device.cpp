@@ -897,4 +897,78 @@ namespace wz::gpu::dx12::internal
         release_blob(ps);
         return pso;
     }
+
+    ID3D12PipelineState* create_triangle_pso(
+        wz::gpu::Device& device,
+        ID3D12RootSignature* root_sig,
+        wz::gpu::GPUHandle vertex_shader,
+        wz::gpu::GPUHandle pixel_shader)
+    {
+        const DX12Shader* vs = get_shader(device, vertex_shader);
+        const DX12Shader* ps = get_shader(device, pixel_shader);
+
+        assert(vs);
+        assert(ps);
+        assert(vs->blob);
+        assert(ps->blob);
+        assert(vs->stage == ShaderStage::Vertex);
+        assert(ps->stage == ShaderStage::Pixel);
+
+        D3D12_INPUT_ELEMENT_DESC layout[] =
+        {
+            {
+                "POSITION",
+                0,
+                DXGI_FORMAT_R32G32B32_FLOAT,
+                0,
+                0,
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                0
+            }
+        };
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature = root_sig;
+
+        desc.VS = {
+            vs->blob->GetBufferPointer(),
+            vs->blob->GetBufferSize()
+        };
+
+        desc.PS = {
+            ps->blob->GetBufferPointer(),
+            ps->blob->GetBufferSize()
+        };
+
+        desc.InputLayout = { layout, 1 };
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState.DepthEnable = FALSE;
+        desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = BACKBUFFER_FORMAT;
+
+        desc.SampleMask = UINT_MAX;
+        desc.SampleDesc.Count = 1;
+
+        ID3D12PipelineState* pso = nullptr;
+        HRESULT hr = get_device(device)->CreateGraphicsPipelineState(
+            &desc,
+            IID_PPV_ARGS(&pso)
+        );
+
+        if (FAILED(hr))
+        {
+            char buf[256];
+            sprintf_s(buf, "CreateGraphicsPipelineState failed: 0x%08X\n", (unsigned)hr);
+            OutputDebugStringA(buf);
+            return nullptr;
+        }
+
+        return pso;
+    }
 }
