@@ -82,7 +82,17 @@ namespace wz::gpu::dx12
         wz::render::backend::dx12::Context* ctx = nullptr;
     };
 
+    void create_test_context(
+        wz::gpu::Device& device,
+        wz::gpu::GPUHandle vs,
+        wz::gpu::GPUHandle ps)
+    {
+        auto* impl = (DX12Device*)device.impl;
+        assert(impl);
+        assert(!impl->ctx);
 
+        impl->ctx = wz::render::backend::dx12::create(device, vs, ps);
+    }
 
     Device create_device(void* native_window)
     {
@@ -231,7 +241,7 @@ namespace wz::gpu::dx12
         // ────── return ───────────────────────────────────────────────────────
         Device out{};
         out.impl = impl;
-        impl->ctx = wz::render::backend::dx12::create(out);
+        impl->ctx = nullptr;
         return out;
     }
 
@@ -332,9 +342,9 @@ namespace wz::gpu::dx12
         return v;
     }
 
+
     void draw_test_triangle_2(Device& d)
     {
-        // We are at Day 3 now.
 
 
 
@@ -897,6 +907,8 @@ namespace wz::gpu::dx12::internal
         release_blob(ps);
         return pso;
     }
+
+
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,

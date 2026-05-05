@@ -60,7 +60,7 @@ namespace wz::asset {
         //
         // Returns false (and does nothing) if the node's key is already registered.
 
-        inline bool register_asset(AssetNode node, std::vector<AssetKey> dep_keys = {}) {
+        bool register_asset(AssetNode node, std::vector<AssetKey> dep_keys = {}) {
             assert(!committed_ && "register_asset() called after commit()");
 
             if (pending_index_.count(node.key)) return false;
@@ -81,9 +81,46 @@ namespace wz::asset {
         // On false, the system remains in the registration phase so the caller can
         // inspect / correct the problem and retry.
 
-        bool commit();
+        bool commit() {
+            assert(!committed_ && "commit() already called");
 
-        inline bool committed() const { return committed_; }
+            AssetBuilder builder;
+
+            // Pass 1: add every node (registration order = provisional handle).
+            for (auto& e : pending_)
+                wz::core::graph::add_node(builder, e.node);
+
+            // Pass 2: wire prerequisite → dependent edges.
+            // Edge direction: prerequisite(A) → dependent(B)
+            //   → parents(g, B) == prerequisites of B   (resolved first)
+            //   → children(g, A) == dependents of A     (compiled after A)
+            for (uint32_t i = 0; i < static_cast<uint32_t>(pending_.size()); ++i) {
+                for (const AssetKey& dep_key : pending_[i].dep_keys) {
+                    auto it = pending_index_.find(dep_key);
+                    if (it == pending_index_.end()) return false;  // missing dep
+
+                    // add_edge(from=prerequisite, to=dependent)
+                    wz::core::graph::add_edge(
+                        builder,
+                        static_cast<NodeHandle>(it->second),   // prerequisite
+                        static_cast<NodeHandle>(i));            // dependent
+                }
+            }
+
+            // Build immutable DAG. kahn_topo inside build() rejects cycles.
+            auto result = wz::core::graph::build(std::move(builder));
+            if (!result.has_value()) return false;   // cycle detected
+
+            storage_ = std::move(result);
+            index_ = build_asset_index(storage_->dag);
+            committed_ = true;
+
+            pending_.clear();
+            pending_index_.clear();
+            return true;
+        }
+
+        bool committed() const { return committed_; }
 
         // ── Runtime phase — demand-driven resolve ─────────────────────────────────
         //
@@ -97,7 +134,69 @@ namespace wz::asset {
         // For very deep graphs, prefer resolve_all() which uses the pre-computed
         // topological order instead of the call stack.
 
-        Result<ResourceHandle> resolve(const AssetKey& key);
+        Result<ResourceHandle> resolve(const AssetKey& key) {
+            // Resolving before commit is not a crash — the node simply cannot exist
+            // in a graph that hasn't been built yet.
+            if (!committed_) return ResolveError::NodeNotFound;
+
+            // Fast path: already compiled and cached.
+            if (auto h = cache_.lookup(key)) return *h;
+
+            // Locate node in committed DAG.
+            const AssetGraph& g = storage_->dag;
+            const NodeHandle  nh = find_asset_node(index_, key);
+            if (nh == INVALID_ASSET_NODE) return ResolveError::NodeNotFound;
+
+            const AssetNode& node = wz::core::graph::node_data(g, nh);
+
+            // Find the compiler for this (schema, type) pair.
+            const AssetCompiler* compiler = registry_.find(node.schema, node.type);
+            if (!compiler) return ResolveError::CompilerNotFound;
+
+            // Recursively resolve all prerequisites.
+            // Because we call resolve() on each, they are memoized in the cache
+            // before we proceed — no prerequisite is compiled more than once.
+            const auto prereqs = prerequisites(g, nh);
+
+            std::vector<AssetNode>  dep_nodes;
+            std::vector<ResourceHandle> dep_handles;
+            dep_nodes.reserve(prereqs.size());
+            dep_handles.reserve(prereqs.size());
+
+            for (NodeHandle ph : prereqs) {
+                const AssetKey& dep_key = wz::core::graph::node_data(g, ph).key;
+
+                auto dep_result = resolve(dep_key);
+                if (std::holds_alternative<ResolveError>(dep_result))
+                    return ResolveError::DependencyFailed;
+
+                // Use the post-compile node from compiled_nodes_ so compilers
+                // see the live payload (e.g. bytes preserved by a carrier compiler),
+                // not the original source-stage data from the DAG.
+                dep_nodes.push_back(compiled_nodes_.at(dep_key));
+                dep_handles.push_back(std::get<ResourceHandle>(dep_result));
+            }
+
+            // Compile.
+            AssetNode compiled = compiler->compile(node, dep_nodes, dep_handles);
+
+            // Validate: stage must be Compiled. Payload may be either a
+            // ResourceHandle (GPU-backed asset) or vector<uint8_t> (carrier node
+            // that carries bytes for its dependents but has no GPU resource itself).
+            if (compiled.stage != AssetStage::Compiled)
+                return ResolveError::CompileFailed;
+
+            ResourceHandle handle{};
+            if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload))
+                handle = *h;
+            // Carrier nodes (bytes payload) legitimately have no handle — that is fine.
+
+            // Store the compiled node so dependents can read its payload.
+            compiled_nodes_.emplace(key, compiled);
+
+            cache_.store(key, handle);
+            return handle;
+        }
 
         // ── Runtime phase — eager batch resolve ───────────────────────────────────
         //
@@ -110,9 +209,26 @@ namespace wz::asset {
         // Returns the count of successfully compiled nodes.
 
         uint32_t resolve_all(
-            std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr);
-        
+            std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr)
+        {
+            assert(committed_);
 
+            uint32_t ok = 0;
+            for (NodeHandle nh : compilation_order(storage_->dag)) {
+                const AssetKey& key = wz::core::graph::node_data(storage_->dag, nh).key;
+
+                if (cache_.contains(key)) { ++ok; continue; }
+
+                auto r = resolve(key);
+                if (std::holds_alternative<ResourceHandle>(r)) {
+                    ++ok;
+                }
+                else if (errors) {
+                    errors->emplace_back(key, std::get<ResolveError>(r));
+                }
+            }
+            return ok;
+        }
 
         // ── Queries ───────────────────────────────────────────────────────────────
         //
@@ -130,7 +246,7 @@ namespace wz::asset {
         };
 
         // All compiled assets of the given type.
-        inline std::vector<CompiledAsset> query(AssetType type) const {
+        std::vector<CompiledAsset> query(AssetType type) const {
             std::vector<CompiledAsset> out;
             for (const auto& [key, node] : compiled_nodes_) {
                 if (node.type != type) continue;
@@ -144,7 +260,7 @@ namespace wz::asset {
         // All compiled assets of the given type produced by a specific schema.
         // Useful when multiple schemas produce the same AssetType (e.g. HLSL vs
         // SPIRV shaders both produce AssetType::Shader).
-        inline std::vector<CompiledAsset> query(AssetType type, SchemaID schema) const {
+        std::vector<CompiledAsset> query(AssetType type, SchemaID schema) const {
             std::vector<CompiledAsset> out;
             for (const auto& [key, node] : compiled_nodes_) {
                 if (node.type != type || node.schema != schema) continue;
@@ -158,7 +274,7 @@ namespace wz::asset {
         // Terminal compiled assets — nodes that nothing else depends on.
         // These are the outputs the renderer consumes directly. Carrier nodes
         // (file sources) are excluded even if they happen to be terminal.
-        inline std::vector<CompiledAsset> compiled_terminals() const {
+        std::vector<CompiledAsset> compiled_terminals() const {
             if (!committed_) return {};
             std::vector<CompiledAsset> out;
             const AssetGraph& g = storage_->dag;
@@ -175,7 +291,7 @@ namespace wz::asset {
 
         // Look up a single compiled asset by key without triggering compilation.
         // Returns nullptr if the key has not been resolved yet.
-        inline const CompiledAsset* find_compiled(const AssetKey& key) const {
+        const CompiledAsset* find_compiled(const AssetKey& key) const {
             auto it = compiled_nodes_.find(key);
             if (it == compiled_nodes_.end()) return nullptr;
             const auto* h = std::get_if<ResourceHandle>(&it->second.payload);
@@ -220,9 +336,8 @@ namespace wz::asset {
         CompilerRegistry registry_;
         AssetCache       cache_;
 
-        // Stores each node after compilation so its live payload (e.g. preserved
-        // bytes in a carrier node) is available to dependents via dep_nodes.
-        // Keyed by AssetKey, parallel to the cache.
+        // Stores each node after compilation so its live payload is available
+        // to dependents and to query methods.
         std::unordered_map<AssetKey, AssetNode, AssetKeyHash> compiled_nodes_;
 
         // Scratch buffer for find_compiled() — avoids allocating a CompiledAsset

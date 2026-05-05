@@ -119,6 +119,19 @@ static wz::FileResult<AssetNode> make_file_node(
     return { std::move(node), wz::FileError::None };
 }
 
+static AssetKey make_shader_key(
+    std::string_view name,
+    std::span<const AssetKey> deps)
+{
+    return AssetKey{
+        .content_hash = hash_str(name),
+        .schema_hash = hash_u64(kHLSLSchema.value),
+        .compiler_hash = hash_str("hlsl_compile_v1"),
+        .deps_hash = combine_keys(deps),
+    };
+}
+
+
 // ─── compile_failed_node ──────────────────────────────────────────────────────
 // Returns the node unchanged (still Source stage) so resolve() sees
 // stage != Compiled and produces ResolveError::CompileFailed.
@@ -140,7 +153,6 @@ int main()
         "D:\\code\\wozzits-window-engine\\window_engine\\resources\\shaders\\triangle";
 
     const Path assets_path{ assets_dir };
-    logger.info("assets directory: " + assets_path);
 
     wz::window::WindowDesc desc;
     desc.title = "Wozzits Window Test";
@@ -250,77 +262,81 @@ int main()
 
     AssetSystem asset_sys(std::move(registry));
 
-    auto dir_result = wz::fs::list_directory(assets_path);
-    if (!dir_result) {
-        logger.error("Failed to list directory: " + assets_path);
+    const Path vs_path = wz::fs::join(assets_path, "triangle_vs.hlsl");
+    const Path ps_path = wz::fs::join(assets_path, "triangle_ps.hlsl");
+
+    auto vs_file = make_file_node(
+        vs_path,
+        kHLSLFileSchema,
+        AssetType::ShaderSource
+    );
+
+    if (!vs_file) {
+        logger.error("failed to read vertex shader: " + vs_path);
         return 1;
     }
 
-    std::vector<AssetKey>    file_keys;
-    std::vector<std::string> load_errors;
+    auto ps_file = make_file_node(
+        ps_path,
+        kHLSLFileSchema,
+        AssetType::ShaderSource
+    );
 
-    auto sorted_entries = std::move(dir_result.value);
-
-    std::sort(sorted_entries.begin(), sorted_entries.end(),
-        [](const auto& a, const auto& b) {
-            return a.name < b.name;
-        });
-
-    for (const auto& entry : sorted_entries) {
-        if (entry.is_directory) {
-            logger.info("skipping dir: " + entry.name);
-            continue;
-        }
-
-        const auto full_path = wz::fs::join(assets_path, entry.name);
-        logger.info("loading: " + full_path);
-
-        auto node_result = make_file_node(full_path, kHLSLFileSchema, AssetType::ShaderSource);
-        if (!node_result) {
-            // Collect all failures before deciding whether to abort.
-            load_errors.push_back("failed to read " + entry.name
-                + " (" + "unknown file error code" + ")");
-            continue;
-        }
-
-        file_keys.push_back(node_result.value.key);
-        asset_sys.register_asset(std::move(node_result.value));
-    }
-
-    if (!load_errors.empty()) {
-        for (const auto& e : load_errors) logger.error(e);
-        return 1;   // don't commit a partial graph
-    }
-
-    if (file_keys.empty()) {
-        logger.error("no shader source files found in " + assets_path);
+    if (!ps_file) {
+        logger.error("failed to read pixel shader: " + ps_path);
         return 1;
     }
 
-    // ── Shader node ───────────────────────────────────────────────────────────
-    // One logical shader depends on all the .hlsl files loaded above.
+    AssetKey vs_file_key = vs_file.value.key;
+    AssetKey ps_file_key = ps_file.value.key;
 
-    AssetKey shader_key{
-        .content_hash = hash_str("triangle_shader"),
-        .schema_hash = hash_u64(kHLSLSchema.value),
-        .compiler_hash = hash_str("hlsl_stub_v1"),
-        .deps_hash = combine_keys(file_keys),
-    };
+    asset_sys.register_asset(std::move(vs_file.value));
+    asset_sys.register_asset(std::move(ps_file.value));
 
-    AssetNode shader_node;
-    shader_node.key = shader_key;
-    shader_node.type = AssetType::Shader;
-    shader_node.schema = kHLSLSchema;
-    shader_node.stage = AssetStage::Source;
-    shader_node.payload = std::vector<uint8_t>{};
-    shader_node.meta = wz::gpu::HLSLCompileDesc{
+
+    AssetKey vs_deps[] = { vs_file_key };
+
+    AssetKey vs_shader_key = make_shader_key("triangle_vs", vs_deps);
+
+    AssetNode vs_shader_node;
+    vs_shader_node.key = vs_shader_key;
+    vs_shader_node.type = AssetType::Shader;
+    vs_shader_node.schema = kHLSLSchema;
+    vs_shader_node.stage = AssetStage::Source;
+    vs_shader_node.payload = std::vector<uint8_t>{};
+    vs_shader_node.meta = wz::gpu::HLSLCompileDesc{
         .stage = wz::gpu::ShaderStage::Vertex,
         .entry = "main",
         .target = "vs_5_0",
         .primary_source_index = 0,
     };
 
-    asset_sys.register_asset(std::move(shader_node), file_keys);
+    asset_sys.register_asset(
+        std::move(vs_shader_node),
+        std::vector<AssetKey>{ vs_file_key }
+    );
+
+    AssetKey ps_deps[] = { ps_file_key };
+
+    AssetKey ps_shader_key = make_shader_key("triangle_ps", ps_deps);
+
+    AssetNode ps_shader_node;
+    ps_shader_node.key = ps_shader_key;
+    ps_shader_node.type = AssetType::Shader;
+    ps_shader_node.schema = kHLSLSchema;
+    ps_shader_node.stage = AssetStage::Source;
+    ps_shader_node.payload = std::vector<uint8_t>{};
+    ps_shader_node.meta = wz::gpu::HLSLCompileDesc{
+        .stage = wz::gpu::ShaderStage::Pixel,
+        .entry = "main",
+        .target = "ps_5_0",
+        .primary_source_index = 0,
+    };
+
+    asset_sys.register_asset(
+        std::move(ps_shader_node),
+        std::vector<AssetKey>{ ps_file_key }
+    );
 
     // ── Commit ────────────────────────────────────────────────────────────────
 
@@ -332,28 +348,42 @@ int main()
 
     // ── Resolve ───────────────────────────────────────────────────────────────
 
-    auto result = asset_sys.resolve(shader_key);
+    auto errors = std::vector<std::pair<AssetKey, ResolveError>>{};
+    uint32_t resolved_count = asset_sys.resolve_all(&errors);
 
-    if (const auto* err = std::get_if<ResolveError>(&result)) {
-        const char* msg = [&] {
-            switch (*err) {
-            case ResolveError::NodeNotFound:     return "node not found";
-            case ResolveError::CompilerNotFound: return "no compiler registered";
-            case ResolveError::CompileFailed:    return "compilation failed";
-            case ResolveError::DependencyFailed: return "dependency failed";
-            }
-            return "unknown error";
-            }();
-        logger.error(std::string("shader resolve failed: ") + msg);
+    logger.info("resolved asset count: " + std::to_string(resolved_count));
+
+    auto shaders = asset_sys.query(AssetType::Shader, kHLSLSchema);
+
+    if (shaders.size() != 2)
+    {
+        logger.error("expected exactly 2 compiled HLSL shaders, got "
+            + std::to_string(shaders.size()));
         return 1;
     }
 
-    const ResourceHandle handle = std::get<ResourceHandle>(result);
-    logger.info("shader compiled — handle id: " + std::to_string(handle.id));
+    wz::gpu::GPUHandle vs{};
+    wz::gpu::GPUHandle ps{};
 
+    for (const auto& shader : shaders)
+    {
+        const auto* desc =
+            std::any_cast<wz::gpu::HLSLCompileDesc>(&shader.node->meta);
 
+        if (!desc)
+            continue;
 
+        if (desc->stage == wz::gpu::ShaderStage::Vertex)
+            vs = shader.handle;
 
+        if (desc->stage == wz::gpu::ShaderStage::Pixel)
+            ps = shader.handle;
+    }
+
+    assert(vs.valid());
+    assert(ps.valid());
+
+    wz::gpu::dx12::create_test_context(device, vs, ps);
 
 
     while (!window_should_close(window))

@@ -10,7 +10,10 @@
 namespace wz::render::backend::dx12
 {
 
-    Context* create(wz::gpu::Device& device)
+    Context* create(
+        wz::gpu::Device& device,
+        wz::gpu::GPUHandle vs,
+        wz::gpu::GPUHandle ps)
     {
         ID3D12Device* dev = wz::gpu::dx12::internal::get_device(device);
 
@@ -18,7 +21,12 @@ namespace wz::render::backend::dx12
         ctx->device = &device;
 
         ctx->root_sig = wz::gpu::dx12::internal::create_empty_root_signature(dev);
-        ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(dev, ctx->root_sig);
+        ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(
+            device,
+            ctx->root_sig,
+            vs,
+            ps
+        );
         char buf[128];
         sprintf_s(buf, "  PSO created: %p\n", ctx->pso);
         OutputDebugStringA(buf);

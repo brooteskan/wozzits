@@ -18,9 +18,19 @@ namespace wz::gpu::dx12
 
 	void draw_test_triangle_2(wz::gpu::Device& d); // also temporary
 
+	void create_test_context(
+		wz::gpu::Device& device,
+		wz::gpu::GPUHandle vs,
+		wz::gpu::GPUHandle ps
+	);
+
 	void end_frame(wz::gpu::Device& device); // close + submit command list
 	void present(wz::gpu::Device& device); // swapchain present
 
-
+	void create_test_context(
+		wz::gpu::Device& device,
+		wz::gpu::GPUHandle vs,
+		wz::gpu::GPUHandle ps
+	);
 
 }

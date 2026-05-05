@@ -36,7 +36,11 @@ namespace wz::render::backend::dx12
         std::vector<GpuMesh> mesh_table;
     };
 
-    Context* create(wz::gpu::Device& device);
+    Context* create(
+        wz::gpu::Device& device,
+        wz::gpu::GPUHandle vs,
+        wz::gpu::GPUHandle ps
+    );
 
     void destroy(Context* ctx);
 
