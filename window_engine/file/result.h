@@ -2,7 +2,7 @@
 
 namespace wz
 {
-    enum class Error
+    enum class FileError
     {
         None,
         InvalidArgument,
@@ -15,11 +15,11 @@ namespace wz
     };
 
     template <typename T>
-    struct Result
+    struct FileResult
     {
         T value{};
-        Error error = Error::None;
+        FileError error = FileError::None;
 
-        explicit operator bool() const { return error == Error::None; }
+        explicit operator bool() const { return error == FileError::None; }
     };
 }

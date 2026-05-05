@@ -1,4 +1,5 @@
 #pragma once
+// window/window_types.h
 
 namespace wz::window
 {

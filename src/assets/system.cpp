@@ -43,7 +43,7 @@ namespace wz::asset
     }
 
 
-    Result<GPUHandle> AssetSystem::resolve(const AssetKey& key) {
+    Result<ResourceHandle> AssetSystem::resolve(const AssetKey& key) {
         // Resolving before commit is not a crash — the node simply cannot exist
         // in a graph that hasn't been built yet.
         if (!committed_) return ResolveError::NodeNotFound;
@@ -68,33 +68,41 @@ namespace wz::asset
         const auto prereqs = prerequisites(g, nh);
 
         std::vector<AssetNode>  dep_nodes;
-        std::vector<GPUHandle>  dep_handles;
+        std::vector<ResourceHandle> dep_handles;
         dep_nodes.reserve(prereqs.size());
         dep_handles.reserve(prereqs.size());
 
         for (NodeHandle ph : prereqs) {
-            const AssetNode& dep = wz::core::graph::node_data(g, ph);
+            const AssetKey& dep_key = wz::core::graph::node_data(g, ph).key;
 
-            auto dep_result = resolve(dep.key);
+            auto dep_result = resolve(dep_key);
             if (std::holds_alternative<ResolveError>(dep_result))
                 return ResolveError::DependencyFailed;
 
-            dep_nodes.push_back(dep);
-            dep_handles.push_back(std::get<GPUHandle>(dep_result));
+            // Use the post-compile node from compiled_nodes_ so compilers
+            // see the live payload (e.g. bytes preserved by a carrier compiler),
+            // not the original source-stage data from the DAG.
+            dep_nodes.push_back(compiled_nodes_.at(dep_key));
+            dep_handles.push_back(std::get<ResourceHandle>(dep_result));
         }
 
         // Compile.
         AssetNode compiled = compiler->compile(node, dep_nodes, dep_handles);
 
-        // Validate the compiler's output.
-        if (compiled.stage != AssetStage::Compiled
-            || !std::holds_alternative<GPUHandle>(compiled.payload))
+        // Validate: stage must be Compiled. Payload may be either a
+        // ResourceHandle (GPU-backed asset) or vector<uint8_t> (carrier node
+        // that carries bytes for its dependents but has no GPU resource itself).
+        if (compiled.stage != AssetStage::Compiled)
             return ResolveError::CompileFailed;
 
-        GPUHandle handle = std::get<GPUHandle>(compiled.payload);
-        if (!handle.valid()) return ResolveError::CompileFailed;
+        ResourceHandle handle{};
+        if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload))
+            handle = *h;
+        // Carrier nodes (bytes payload) legitimately have no handle — that is fine.
 
-        // Memoize.
+        // Store the compiled node so dependents can read its payload.
+        compiled_nodes_.emplace(key, compiled);
+
         cache_.store(key, handle);
         return handle;
     }
@@ -111,7 +119,7 @@ namespace wz::asset
             if (cache_.contains(key)) { ++ok; continue; }
 
             auto r = resolve(key);
-            if (std::holds_alternative<GPUHandle>(r)) {
+            if (std::holds_alternative<ResourceHandle>(r)) {
                 ++ok;
             }
             else if (errors) {

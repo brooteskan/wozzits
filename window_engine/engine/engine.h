@@ -1,9 +1,7 @@
 #pragma once
 
-// #include <cstdint>
 #include <time/w_time.h>
 #include <input/input.h>
-// #include <render/render.h>
 
 namespace wz::engine
 {

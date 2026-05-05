@@ -18,7 +18,7 @@ namespace wz::asset {
 
 struct CacheEntry {
     AssetKey  key;
-    GPUHandle gpu_handle;
+    ResourceHandle gpu_handle;
     bool      valid = false;   // false = soft-invalidated, entry still occupies slot
 };
 
@@ -33,7 +33,7 @@ public:
     // ── Writes ────────────────────────────────────────────────────────────────
 
     // Store a successfully compiled GPU resource.
-    void store(const AssetKey& key, GPUHandle handle) {
+    void store(const AssetKey& key, ResourceHandle handle) {
         entries_.insert_or_assign(key, CacheEntry{ key, handle, /*valid=*/true });
     }
 
@@ -56,7 +56,7 @@ public:
     // ── Reads ─────────────────────────────────────────────────────────────────
 
     // Returns the GPU handle on hit, nullopt on miss or soft-invalidated entry.
-    std::optional<GPUHandle> lookup(const AssetKey& key) const {
+    std::optional<ResourceHandle> lookup(const AssetKey& key) const {
         auto it = entries_.find(key);
         if (it == entries_.end() || !it->second.valid) return std::nullopt;
         return it->second.gpu_handle;

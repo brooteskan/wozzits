@@ -32,7 +32,7 @@ namespace wz::asset {
 using CompileFn = std::function<AssetNode(
     const AssetNode&            input,
     std::span<const AssetNode>  dep_nodes,
-    std::span<const GPUHandle>  dep_handles
+    std::span<const ResourceHandle>  dep_handles
 )>;
 
 // ─── AssetCompiler ────────────────────────────────────────────────────────────

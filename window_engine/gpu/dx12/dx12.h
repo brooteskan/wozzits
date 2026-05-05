@@ -1,27 +1,26 @@
 #pragma once
 
 // file: gpu/dx12/dx12.h
+#include <gpu/gpu.h>
 
-
-namespace wz::gpu
-{
-	struct Device;
-}
 
 
 namespace wz::gpu::dx12
 {
 	wz::gpu::Device create_device(void* native_window); // create + initialize swapchain-bound device
 
-	void destroy_device(Device& device); // impl rule: must say device.impl = nullptr;
+	void destroy_device(wz::gpu::Device& device); // impl rule: must say device.impl = nullptr;
 
-	void resize(Device& device, int w, int h); // This MUST recreate swapchain safely.
+	void resize(wz::gpu::Device& device, int w, int h); // This MUST recreate swapchain safely.
 
-	void begin_frame(Device& device); // acquire backbuffer
-	void clear(Device& device, float r, float g, float b, float a); // record commands
+	void begin_frame(wz::gpu::Device& device); // acquire backbuffer
+	void clear(wz::gpu::Device& device, float r, float g, float b, float a); // record commands
 
-	void draw_test_triangle_2(Device& d); // also temporary
+	void draw_test_triangle_2(wz::gpu::Device& d); // also temporary
 
-	void end_frame(Device& device); // close + submit command list
-	void present(Device& device); // swapchain present
+	void end_frame(wz::gpu::Device& device); // close + submit command list
+	void present(wz::gpu::Device& device); // swapchain present
+
+
+
 }

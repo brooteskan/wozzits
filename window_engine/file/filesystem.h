@@ -21,15 +21,15 @@ namespace wz::fs
     };
 
     //
-    Result<Buffer> read_file(const Path &path);
+    FileResult<Buffer> read_file(const Path &path);
 
     //
-    Error write_file(const Path &path,
+    FileError write_file(const Path &path,
                      const Buffer &data,
                      bool overwrite = true);
 
     //
-    Error write_file_text(const Path &path,
+    FileError write_file_text(const Path &path,
                           const std::string &text,
                           bool overwrite = true);
 
@@ -37,19 +37,19 @@ namespace wz::fs
     bool exists(const Path &path);
 
     //
-    std::uint64_t file_size(const Path &path, Error *out_error = nullptr);
+    std::uint64_t file_size(const Path &path, FileError *out_error = nullptr);
 
     //
-    Error create_directories(const Path &path);
+    FileError create_directories(const Path &path);
 
     //
-    Error remove_file(const Path &path);
+    FileError remove_file(const Path &path);
 
     //
-    Error remove_directory(const Path &path, bool recursive = false);
+    FileError remove_directory(const Path &path, bool recursive = false);
 
     //
-    Result<std::vector<DirEntry>> list_directory(const Path &path);
+    FileResult<std::vector<DirEntry>> list_directory(const Path &path);
 
     //
     Path normalize(const Path &path);
@@ -72,8 +72,8 @@ namespace wz::fs
     //
     bool is_absolute(const Path &path);
 
-    using ReadCallback = std::function<void(Result<Buffer>)>;
-    using WriteCallback = std::function<void(Error)>;
+    using ReadCallback = std::function<void(FileResult<Buffer>)>;
+    using WriteCallback = std::function<void(FileError)>;
 
     //
     void async_read_file(const Path &path,
@@ -87,7 +87,7 @@ namespace wz::fs
 
     Path current_directory();
 
-    Error set_current_directory(const Path &path);
+    FileError set_current_directory(const Path &path);
 
     Path executable_path();
 }

@@ -9,6 +9,7 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <gpu/dx12/external/d3dx12.h>
+#include <gpu/dx12/dx12_shader.h>
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <wrl/client.h>
 
@@ -45,6 +46,8 @@ namespace
 
 }
 
+
+
 namespace wz::gpu::dx12
 {
     struct DX12Device
@@ -74,8 +77,12 @@ namespace wz::gpu::dx12
         UINT width = 0;
         UINT height = 0;
 
+        wz::gpu::dx12::DX12ShaderTable shaders;
+
         wz::render::backend::dx12::Context* ctx = nullptr;
     };
+
+
 
     Device create_device(void* native_window)
     {
@@ -516,6 +523,9 @@ namespace wz::gpu::dx12
 
         wait_for_gpu(impl);
 
+        impl->shaders.destroy();
+
+
         for (int i = 0; i < 2; ++i)
             if (impl->backbuffers[i]) impl->backbuffers[i]->Release();
 
@@ -527,6 +537,7 @@ namespace wz::gpu::dx12
 
         if (impl->fence)       impl->fence->Release();
         if (impl->fence_event) CloseHandle(impl->fence_event);
+
 
         if (impl->ctx)
         {
@@ -621,6 +632,29 @@ namespace wz::gpu::dx12
 namespace wz::gpu::dx12::internal
 {   // file: src/gpu/dx12/dx12_device.cpp
 
+
+    GPUHandle store_shader(
+        Device& d,
+        ID3DBlob* blob,
+        wz::gpu::ShaderStage stage)
+    {
+        auto* impl = (wz::gpu::dx12::DX12Device*)d.impl;
+        assert(impl);
+        assert(blob);
+
+        return impl->shaders.add(blob, stage);
+    }
+
+    const DX12Shader* get_shader(
+        wz::gpu::Device& d,
+        wz::gpu::GPUHandle handle)
+    {
+        auto* impl = (wz::gpu::dx12::DX12Device*)d.impl;
+        assert(impl);
+
+        return impl->shaders.get(handle);
+    }
+    
 
     ID3D12Device* get_device(Device& d)
     {
