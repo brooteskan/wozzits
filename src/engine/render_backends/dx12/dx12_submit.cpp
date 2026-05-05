@@ -15,6 +15,9 @@ namespace wz::render::backend::dx12
         wz::gpu::GPUHandle vs,
         wz::gpu::GPUHandle ps)
     {
+        assert(vs.valid());
+        assert(ps.valid());
+
         ID3D12Device* dev = wz::gpu::dx12::internal::get_device(device);
 
         Context* ctx = new Context();
@@ -27,6 +30,9 @@ namespace wz::render::backend::dx12
             vs,
             ps
         );
+
+
+
         char buf[128];
         sprintf_s(buf, "  PSO created: %p\n", ctx->pso);
         OutputDebugStringA(buf);
@@ -87,6 +93,11 @@ namespace wz::render::backend::dx12
 
         ctx->mesh_table[0] = mesh;
 
+        assert(ctx->root_sig);
+        assert(ctx->pso);
+        assert(ctx->vertex_buffer);
+
+
         return ctx;
     }
 
@@ -128,8 +139,8 @@ namespace wz::render::backend::dx12
             data.world = dc.world;
             data.view_proj = ctx->view_proj;
 
-             //data.world = mat4_identity();
-            // data.view_proj = mat4_identity();
+            //data.world = mat4_identity();
+           // data.view_proj = mat4_identity();
 
             cmdList->SetGraphicsRoot32BitConstants(
                 0,

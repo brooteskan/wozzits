@@ -138,6 +138,63 @@ static AssetKey make_shader_key(
 
 static AssetNode compile_failed_node(const AssetNode& input) { return input; }
 
+// ─── Triangle test resources ─────────────────────────────────────────────────
+// Owns the shader handles needed to initialize the temporary triangle test
+// render context. The handles refer to blobs owned by the DX12 shader table.
+
+struct TriangleTestResources
+{
+    wz::gpu::GPUHandle vertex_shader{};
+    wz::gpu::GPUHandle pixel_shader{};
+
+    bool valid() const noexcept
+    {
+        return vertex_shader.valid() && pixel_shader.valid();
+    }
+};
+
+static TriangleTestResources load_triangle_test_resources(
+    const AssetSystem& asset_sys,
+    wz::Logger& logger)
+{
+    TriangleTestResources out{};
+
+    auto shaders = asset_sys.query(AssetType::Shader, kHLSLSchema);
+
+    if (shaders.size() != 2)
+    {
+        logger.error("expected exactly 2 compiled HLSL shaders, got "
+            + std::to_string(shaders.size()));
+        return out;
+    }
+
+    for (const auto& shader : shaders)
+    {
+        const auto* desc =
+            std::any_cast<wz::gpu::HLSLCompileDesc>(&shader.node->meta);
+
+        if (!desc)
+        {
+            logger.error("compiled shader missing HLSLCompileDesc metadata");
+            continue;
+        }
+
+        if (desc->stage == wz::gpu::ShaderStage::Vertex)
+            out.vertex_shader = shader.handle;
+
+        if (desc->stage == wz::gpu::ShaderStage::Pixel)
+            out.pixel_shader = shader.handle;
+    }
+
+    if (!out.vertex_shader.valid())
+        logger.error("triangle test vertex shader handle was not found");
+
+    if (!out.pixel_shader.valid())
+        logger.error("triangle test pixel shader handle was not found");
+
+    return out;
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -353,37 +410,17 @@ int main()
 
     logger.info("resolved asset count: " + std::to_string(resolved_count));
 
-    auto shaders = asset_sys.query(AssetType::Shader, kHLSLSchema);
+    TriangleTestResources triangle_resources =
+        load_triangle_test_resources(asset_sys, logger);
 
-    if (shaders.size() != 2)
-    {
-        logger.error("expected exactly 2 compiled HLSL shaders, got "
-            + std::to_string(shaders.size()));
+    if (!triangle_resources.valid())
         return 1;
-    }
 
-    wz::gpu::GPUHandle vs{};
-    wz::gpu::GPUHandle ps{};
-
-    for (const auto& shader : shaders)
-    {
-        const auto* desc =
-            std::any_cast<wz::gpu::HLSLCompileDesc>(&shader.node->meta);
-
-        if (!desc)
-            continue;
-
-        if (desc->stage == wz::gpu::ShaderStage::Vertex)
-            vs = shader.handle;
-
-        if (desc->stage == wz::gpu::ShaderStage::Pixel)
-            ps = shader.handle;
-    }
-
-    assert(vs.valid());
-    assert(ps.valid());
-
-    wz::gpu::dx12::create_test_context(device, vs, ps);
+    wz::gpu::dx12::create_triangle_test_context(
+        device,
+        triangle_resources.vertex_shader,
+        triangle_resources.pixel_shader
+    );
 
 
     while (!window_should_close(window))
@@ -420,7 +457,7 @@ int main()
     wz::input::shutdown_raw_input();
     wz::gpu::destroy_device(device);
     destroy_window(window);
-    
+
 
     return 0;
 }

@@ -10,18 +10,20 @@ namespace wz::render::backend::dx12
 {
     struct GpuMesh
     {
-        ID3D12Resource* vertex_buffer;
-        ID3D12Resource* index_buffer;
+        // Non-owning in the current triangle test path. The buffer is owned by
+        // Context::vertex_buffer until real mesh-resource ownership exists.
+        ID3D12Resource* vertex_buffer = nullptr;
+        ID3D12Resource* index_buffer = nullptr;
 
-        D3D12_VERTEX_BUFFER_VIEW vb_view;
-        D3D12_INDEX_BUFFER_VIEW ib_view;
+        D3D12_VERTEX_BUFFER_VIEW vb_view{};
+        D3D12_INDEX_BUFFER_VIEW ib_view{};
 
-        uint32_t index_count;
+        uint32_t index_count = 0;
     };
 
     struct Context
     {
-        wz::gpu::Device* device;
+        wz::gpu::Device* device = nullptr;
 
         // DX12 objects
         ID3D12RootSignature* root_sig = nullptr;

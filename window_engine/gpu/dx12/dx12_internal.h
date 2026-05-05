@@ -23,9 +23,7 @@ namespace wz::gpu::dx12::internal
     ID3D12GraphicsCommandList* get_command_list(Device& d);
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device);
 
-    ID3D12PipelineState* create_triangle_pso(
-        ID3D12Device* device,
-        ID3D12RootSignature* root_sig);
+
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,

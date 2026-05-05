@@ -82,11 +82,14 @@ namespace wz::gpu::dx12
         wz::render::backend::dx12::Context* ctx = nullptr;
     };
 
-    void create_test_context(
+    void create_triangle_test_context(
         wz::gpu::Device& device,
         wz::gpu::GPUHandle vs,
         wz::gpu::GPUHandle ps)
     {
+        assert(vs.valid());
+        assert(ps.valid());
+
         auto* impl = (DX12Device*)device.impl;
         assert(impl);
         assert(!impl->ctx);
@@ -106,17 +109,17 @@ namespace wz::gpu::dx12
         );
         assert(SUCCEEDED(hr));
 
-                // Add this before D3D12CreateDevice:
-        #if defined(_DEBUG)
-                {
-                    ID3D12Debug* debug = nullptr;
-                    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))
-                    {
-                        debug->EnableDebugLayer();
-                        debug->Release();
-                    }
-                }
-        #endif
+        // Add this before D3D12CreateDevice:
+#if defined(_DEBUG)
+        {
+            ID3D12Debug* debug = nullptr;
+            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))
+            {
+                debug->EnableDebugLayer();
+                debug->Release();
+            }
+        }
+#endif
 
         ID3D12Device* device = nullptr;
         hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
@@ -161,7 +164,7 @@ namespace wz::gpu::dx12
         hr = temp->QueryInterface(IID_PPV_ARGS(&swapchain));
         assert(SUCCEEDED(hr));
 
-        
+
 
         factory->Release();
         temp->Release();
@@ -329,7 +332,7 @@ namespace wz::gpu::dx12
         v.camera_position = Vec3{ 0.0f, 0, 0 };
 
         v.view = translation_x(-v.camera_position.x);
-        
+
 
         float fov = 90.0f * 3.14159265f / 180.0f;
         float aspect = 1280.0f / 720.0f;
@@ -337,7 +340,7 @@ namespace wz::gpu::dx12
         float farZ = 100.0f;
 
         v.projection = _perspective(fov, aspect, nearZ, farZ);
-        v.view_projection = mul(v.projection,v.view); // IMPORTANT ORDER*/
+        v.view_projection = mul(v.projection, v.view); // IMPORTANT ORDER*/
 
         return v;
     }
@@ -345,10 +348,10 @@ namespace wz::gpu::dx12
 
     void draw_test_triangle_2(Device& d)
     {
-
-
-
         auto* impl = (DX12Device*)d.impl;
+        assert(impl);
+        assert(impl->ctx && "triangle test context was not created");
+
         auto* ctx = impl->ctx;
 
         // ────── build scene ─────────────────────────────
@@ -366,15 +369,11 @@ namespace wz::gpu::dx12
         auto ir = build_render_ir(compiled.scene);
         RenderFrameStorage storage = build_frame(ir, compiled.scene);
 
-        
+
 
         // ────── Set up draw call ─────────────────────
         auto* cmd = impl->cmd;
         assert(cmd);
-
-        // Bind the vertex buffer
-        D3D12_VERTEX_BUFFER_VIEW vbv = ctx->mesh_table[0].vb_view;
-
 
         // ────── submit (IMPORTANT: unwrap frame) ─────────
         wz::render::backend::dx12::submit(ctx, storage.frame);
@@ -673,7 +672,7 @@ namespace wz::gpu::dx12::internal
 
         return impl->shaders.get(handle);
     }
-    
+
 
     ID3D12Device* get_device(Device& d)
     {
@@ -761,153 +760,6 @@ namespace wz::gpu::dx12::internal
                 blob = nullptr;
             }
         };
-
-    ID3D12PipelineState* create_triangle_pso(
-        ID3D12Device* device,
-        ID3D12RootSignature* root_sig)
-    {
-        HRESULT hr;
-
-        char buf[128];
-        sprintf_s(buf, "create_triangle_pso called, device: %p\n", device);
-        OutputDebugStringA(buf);
-
-        // ────── compile vertex shader ──────
-        ID3DBlob* vs = nullptr;
-        ID3DBlob* ps = nullptr;
-        ID3DBlob* error = nullptr;
-
-        const char* vs_src = R"(
-            cbuffer Transform : register(b0)
-            {
-                column_major float4x4 world;
-                column_major float4x4 view_proj;
-            };
-
-            struct VSOut {
-                float4 pos       : SV_POSITION;
-                float3 world_pos : TEXCOORD0;
-            };
-
-            VSOut main(float3 pos : POSITION)
-            {
-                VSOut o;
-                float4 p = mul(world, float4(pos, 1.0));
-                o.world_pos = p.xyz;
-                o.pos = mul(view_proj, p);
-                return o;
-            }
-        )";
-
-        hr = D3DCompile(
-            vs_src, strlen(vs_src),
-            nullptr, nullptr, nullptr,
-            "main", "vs_5_0",
-            0, 0,
-            &vs, &error
-        );
-        if (error)
-        {
-            OutputDebugStringA(
-                static_cast<const char*>(error->GetBufferPointer())
-            );
-            release_blob(error);
-        }
-
-        assert(SUCCEEDED(hr));
-        // ────── compile pixel shader ──────
-
-        const char* ps_src = R"(
-            struct PSIn {
-                float4 pos       : SV_POSITION;  // must be here even if unused
-                float3 world_pos : TEXCOORD0;
-            };
-
-            float4 main(PSIn input) : SV_TARGET
-            {
-                return float4(
-                    abs(input.world_pos.x),
-                    abs(input.world_pos.y),
-                    abs(input.world_pos.z) * 0.1,
-                    1.0
-                );
-            }
-        )";
-
-        hr = D3DCompile(
-            ps_src, strlen(ps_src),
-            nullptr, nullptr, nullptr,
-            "main", "ps_5_0",
-            0, 0,
-            &ps, &error
-        );
-        if (error)
-        {
-            OutputDebugStringA(
-                static_cast<const char*>(error->GetBufferPointer())
-            );
-            release_blob(error);
-        }
-
-        assert(SUCCEEDED(hr));
-
-        // ────── input layout ──────
-        D3D12_INPUT_ELEMENT_DESC layout[] =
-        {
-            {
-                "POSITION",
-                0,
-                DXGI_FORMAT_R32G32B32_FLOAT,
-                0,
-                0,
-                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                0
-            }
-        };
-
-        // ────── PSO desc ──────
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-        desc.pRootSignature = root_sig;
-
-        desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
-        desc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-
-        desc.InputLayout = { layout, 1 };
-        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        desc.DepthStencilState.DepthEnable = FALSE;
-        desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
-        desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = BACKBUFFER_FORMAT;
-
-        desc.SampleMask = UINT_MAX;
-        desc.SampleDesc.Count = 1;
-
-        ID3D12PipelineState* pso = nullptr;
-        hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso));
-        if (FAILED(hr))
-        {
-            // Print the HRESULT so you know the specific failure code
-            char buf[256];
-            sprintf_s(buf, "CreateGraphicsPipelineState failed: 0x%08X\n", (unsigned)hr);
-            OutputDebugStringA(buf);
-            release_blob(error);
-            release_blob(vs);
-            release_blob(ps);
-            return nullptr;
-        }
-        assert(SUCCEEDED(hr));
-
-        vs->Release();
-        ps->Release();
-        release_blob(vs);
-        release_blob(ps);
-        return pso;
-    }
-
 
 
     ID3D12PipelineState* create_triangle_pso(
