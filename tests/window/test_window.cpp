@@ -131,6 +131,7 @@ static AssetNode compile_failed_node(const AssetNode& input) { return input; }
 int main()
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    // _CrtSetBreakAlloc(380);
 
     wz::Logger logger;
     logger.set_callback(wz::LogSinkType::Stderr);

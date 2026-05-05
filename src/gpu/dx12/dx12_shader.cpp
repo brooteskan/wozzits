@@ -102,6 +102,7 @@ namespace wz::gpu
             error_blob = nullptr;
         }
 
+        // On success, ownership of shader_blob transfers to the device shader table.
         return wz::gpu::dx12::internal::store_shader(
             device,
             shader_blob,

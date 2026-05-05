@@ -523,29 +523,35 @@ namespace wz::gpu::dx12
 
         wait_for_gpu(impl);
 
-        impl->shaders.destroy();
-
-
-        for (int i = 0; i < 2; ++i)
-            if (impl->backbuffers[i]) impl->backbuffers[i]->Release();
-
-        if (impl->rtv_heap)   impl->rtv_heap->Release();
-        if (impl->cmd)        impl->cmd->Release();
-        if (impl->allocator)  impl->allocator->Release();
-        if (impl->queue)      impl->queue->Release();
-        if (impl->swapchain)  impl->swapchain->Release();
-
-        if (impl->fence)       impl->fence->Release();
-        if (impl->fence_event) CloseHandle(impl->fence_event);
-
-
+        // 1. Destroy renderer/backend context first.
         if (impl->ctx)
         {
             wz::render::backend::dx12::destroy(impl->ctx);
             impl->ctx = nullptr;
         }
 
-        // Report before final device release so object names are still valid
+        // 2. Destroy GPU resource tables.
+        impl->shaders.destroy();
+
+        // 3. Release swapchain/backbuffer resources.
+        for (int i = 0; i < 2; ++i)
+        {
+            if (impl->backbuffers[i])
+            {
+                impl->backbuffers[i]->Release();
+                impl->backbuffers[i] = nullptr;
+            }
+        }
+
+        if (impl->rtv_heap) { impl->rtv_heap->Release();  impl->rtv_heap = nullptr; }
+        if (impl->cmd) { impl->cmd->Release();       impl->cmd = nullptr; }
+        if (impl->allocator) { impl->allocator->Release(); impl->allocator = nullptr; }
+        if (impl->swapchain) { impl->swapchain->Release(); impl->swapchain = nullptr; }
+        if (impl->queue) { impl->queue->Release();     impl->queue = nullptr; }
+
+        if (impl->fence) { impl->fence->Release(); impl->fence = nullptr; }
+        if (impl->fence_event) { CloseHandle(impl->fence_event); impl->fence_event = nullptr; }
+
 #if defined(_DEBUG)
         if (impl->device)
         {
@@ -558,20 +564,23 @@ namespace wz::gpu::dx12
                 debug_device->ReportLiveDeviceObjects(
                     D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL
                 );
+
                 debug_device->Release();
             }
         }
 #endif
 
-        if (impl->device) impl->device->Release();  // fallback if debug query failed
+        if (impl->device)
+        {
+            impl->device->Release();
+            impl->device = nullptr;
+        }
 
         delete impl;
         d.impl = nullptr;
     }
 
-
     // ────── resize ───────────────────────────────────────────────────────
-
 
     void resize(Device& d, int w, int h)
     {
@@ -696,7 +705,19 @@ namespace wz::gpu::dx12::internal
             &error_blob
         );
 
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr))
+        {
+            if (error_blob)
+            {
+                OutputDebugStringA(
+                    static_cast<const char*>(error_blob->GetBufferPointer())
+                );
+                error_blob->Release();
+            }
+
+            assert(false);
+            return nullptr;
+        }
 
         ID3D12RootSignature* root_sig = nullptr;
 
@@ -722,6 +743,14 @@ namespace wz::gpu::dx12::internal
     extern const SIZE_T g_PS_size;
 
 
+    auto release_blob = [](ID3DBlob*& blob)
+        {
+            if (blob)
+            {
+                blob->Release();
+                blob = nullptr;
+            }
+        };
 
     ID3D12PipelineState* create_triangle_pso(
         ID3D12Device* device,
@@ -767,8 +796,15 @@ namespace wz::gpu::dx12::internal
             0, 0,
             &vs, &error
         );
-        assert(SUCCEEDED(hr));
+        if (error)
+        {
+            OutputDebugStringA(
+                static_cast<const char*>(error->GetBufferPointer())
+            );
+            release_blob(error);
+        }
 
+        assert(SUCCEEDED(hr));
         // ────── compile pixel shader ──────
 
         const char* ps_src = R"(
@@ -795,6 +831,14 @@ namespace wz::gpu::dx12::internal
             0, 0,
             &ps, &error
         );
+        if (error)
+        {
+            OutputDebugStringA(
+                static_cast<const char*>(error->GetBufferPointer())
+            );
+            release_blob(error);
+        }
+
         assert(SUCCEEDED(hr));
 
         // ────── input layout ──────
@@ -840,13 +884,17 @@ namespace wz::gpu::dx12::internal
             char buf[256];
             sprintf_s(buf, "CreateGraphicsPipelineState failed: 0x%08X\n", (unsigned)hr);
             OutputDebugStringA(buf);
+            release_blob(error);
+            release_blob(vs);
+            release_blob(ps);
+            return nullptr;
         }
         assert(SUCCEEDED(hr));
 
-
         vs->Release();
         ps->Release();
-
+        release_blob(vs);
+        release_blob(ps);
         return pso;
     }
 }
