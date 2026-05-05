@@ -9,7 +9,6 @@
 #include <gpu/gpu.h>
 #include <input/input.h>
 #include <gpu/dx12/dx12.h>
-#include <crtdbg.h>
 #include <asset/types.h>
 #include <asset/system.h>
 #include <engine/assets/schema_registry.h>
@@ -17,8 +16,9 @@
 #include <asset/compiler.h>
 #include <gpu/shader.h>
 
-#include <crtdbg.h>
 #define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 // These would normally be hashes of the schema name strings, produced once at
 // startup. Hard-coded here for the test main.
@@ -39,6 +39,11 @@ using namespace wz::fs;
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+static Path triangle_shader_assets_path()
+{
+    return Path{ "resources\\shaders\\triangle" };
+}
 
 // FNV-1a 64-bit — good enough for content hashing in a test main.
 static Hash fnv1a(std::span<const uint8_t> data)
@@ -375,6 +380,35 @@ static TriangleTestResources load_triangle_test_resources(
     return out;
 }
 
+static TriangleTestResources initialize_triangle_test_assets(
+    AssetSystem& asset_sys,
+    const Path& assets_path,
+    wz::Logger& logger)
+{
+    TriangleTestResources out{};
+
+    if (!register_triangle_shader_assets(asset_sys, assets_path, logger))
+        return out;
+
+    if (!asset_sys.commit()) {
+        logger.error("asset graph rejected — cycle or missing dependency");
+        return out;
+    }
+
+    logger.info("asset graph committed");
+
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    const uint32_t resolved_count = asset_sys.resolve_all(&errors);
+
+    logger.info("resolved asset count: " + std::to_string(resolved_count));
+
+    if (!errors.empty()) {
+        logger.error("asset resolve failed");
+        return out;
+    }
+
+    return load_triangle_test_resources(asset_sys, logger);
+}
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -387,10 +421,7 @@ int main()
     wz::Logger logger;
     logger.set_callback(wz::LogSinkType::Stderr);
 
-    static constexpr char assets_dir[] =
-        "D:\\code\\wozzits-window-engine\\window_engine\\resources\\shaders\\triangle";
-
-    const Path assets_path{ assets_dir };
+    
 
     wz::window::WindowDesc desc;
     desc.title = "Wozzits Window Test";
@@ -413,31 +444,19 @@ int main()
 
     // ── build triangle test assets ────────────────────────────────────────────────
 
+    const Path assets_path = triangle_shader_assets_path();
+
     CompilerRegistry registry =
         make_triangle_test_compiler_registry(device, logger);
 
     AssetSystem asset_sys(std::move(registry));
 
-    if (!register_triangle_shader_assets(asset_sys, assets_path, logger))
-        return 1;
-
-    if (!asset_sys.commit()) {
-        logger.error("asset graph rejected — cycle or missing dependency");
-        return 1;
-    }
-
-    auto errors = std::vector<std::pair<AssetKey, ResolveError>>{};
-    const uint32_t resolved_count = asset_sys.resolve_all(&errors);
-
-    if (!errors.empty()) {
-        logger.error("asset resolve failed");
-        return 1;
-    }
-
-    logger.info("resolved asset count: " + std::to_string(resolved_count));
-
     TriangleTestResources triangle_resources =
-        load_triangle_test_resources(asset_sys, logger);
+        initialize_triangle_test_assets(
+            asset_sys,
+            assets_path,
+            logger
+        );
 
     if (!triangle_resources.valid())
         return 1;

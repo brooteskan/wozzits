@@ -130,7 +130,8 @@ function(rs_add_test_group category name)
 
     add_executable(${target}
         tests/${category}/${name}.cpp
-     "src/event/event.cpp")
+        "src/event/event.cpp"
+    )
 
     set_target_properties(${target}
         PROPERTIES FOLDER "tests/${category}"
@@ -149,10 +150,19 @@ function(rs_add_test_group category name)
             window_engine
     )
 
+    if(category STREQUAL "window" AND name STREQUAL "test_window")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
+                "$<TARGET_FILE_DIR:${target}>/resources"
+            COMMENT "Copying resources for ${target}"
+        )
+    endif()
+
     add_test(NAME ${target} COMMAND ${target})
 
     get_target_property(GTEST_INCLUDES GTest::gtest INTERFACE_INCLUDE_DIRECTORIES)
-message(STATUS "gtest include dirs: ${GTEST_INCLUDES}")
+    message(STATUS "gtest include dirs: ${GTEST_INCLUDES}")
 endfunction()
 
 # ----------------------------
