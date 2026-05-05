@@ -53,95 +53,92 @@ static Path triangle_shader_assets_path()
 
 int main()
 {
-    // ── setup window / device / inputs ─────────────────────────────────────────────────────────────
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-    // _CrtSetBreakAlloc(380);
-
-    wz::Logger logger;
-    logger.set_callback(wz::LogSinkType::Stderr);
-
-    
-
-    wz::window::WindowDesc desc;
-    desc.title = "Wozzits Window Test";
-    desc.width = 800;
-    desc.height = 600;
-
-    wz::window::WindowHandle window = create_window(desc);
-
-    wz::gpu::Device device =
-        wz::gpu::create_device(window);
-
-    wz::input::init_raw_input();
-
-
-    // ── register compilers ─────────────────────────────────────────────────────────────
-    //
-    // File carrier compiler — preserves the byte payload so the shader
-    // compiler's dep_nodes contain live bytes, not an overwritten handle.
-    // Returns Compiled stage with an empty ResourceHandle (no GPU resource).
-
-    // ── build triangle test assets ────────────────────────────────────────────────
-
-    namespace test_assets = wz::engine::assets::test;
-
-    wz::asset::CompilerRegistry registry =
-        test_assets::make_triangle_test_compiler_registry(device, logger);
-
-    wz::asset::AssetSystem asset_sys(std::move(registry));
-
-    test_assets::TriangleTestResources triangle_resources =
-        test_assets::initialize_triangle_test_assets(
-            asset_sys,
-            triangle_shader_assets_path(),
-            logger
-        );
-
-    wz::gpu::dx12::TriangleTestContextDesc triangle_desc{
-    .vertex_shader = triangle_resources.vertex_shader,
-    .pixel_shader = triangle_resources.pixel_shader,
-    };
-
-    wz::gpu::dx12::create_triangle_test_context(device, triangle_desc);
-
-    // ── run frame loop ───────────────────────────────────────────────────────────────
-    while (!window_should_close(window))
+#define _CRTDBG_MAP_ALLOC
+    //_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF);
+    //_CrtSetBreakAlloc(329);
     {
-        wz::window::pump_messages();
 
-        PlatformEvent event{};
-        while (poll_event(window, event))
+
+        wz::Logger logger;
+        logger.set_callback(wz::LogSinkType::Stderr);
+
+
+
+        wz::window::WindowDesc desc;
+        desc.title = "Wozzits Window Test";
+        desc.width = 800;
+        desc.height = 600;
+
+        wz::window::WindowHandle window = create_window(desc);
+
+        wz::gpu::Device device =
+            wz::gpu::create_device(window);
+
+        wz::input::init_raw_input();
+
+
+        // ── build triangle test assets ────────────────────────────────────────────────
+
+        namespace test_assets = wz::engine::assets::test;
+
+        wz::asset::CompilerRegistry registry =
+            test_assets::make_triangle_test_compiler_registry(device, logger);
+
+        wz::asset::AssetSystem asset_sys(std::move(registry));
+
+        test_assets::TriangleTestResources triangle_resources =
+            test_assets::initialize_triangle_test_assets(
+                asset_sys,
+                triangle_shader_assets_path(),
+                logger
+            );
+
+        wz::gpu::dx12::TriangleTestContextDesc triangle_desc{
+        .vertex_shader = triangle_resources.vertex_shader,
+        .pixel_shader = triangle_resources.pixel_shader,
+        };
+
+        wz::gpu::dx12::create_triangle_test_context(device, triangle_desc);
+
+        // ── run frame loop ───────────────────────────────────────────────────────────────
+        while (!window_should_close(window))
         {
-            if (event.type == PlatformEvent::Type::Resize)
+            wz::window::pump_messages();
+
+            PlatformEvent event{};
+            while (poll_event(window, event))
             {
-                wz::gpu::resize(
-                    device,
-                    event.resize.width,
-                    event.resize.height
-                );
+                if (event.type == PlatformEvent::Type::Resize)
+                {
+                    wz::gpu::resize(
+                        device,
+                        event.resize.width,
+                        event.resize.height
+                    );
+                }
+
+                if (event.type == PlatformEvent::Type::Close)
+                {
+                    std::cout << "Close event\n";
+                }
             }
 
-            if (event.type == PlatformEvent::Type::Close)
-            {
-                std::cout << "Close event\n";
-            }
+            wz::gpu::begin_frame(device);
+            wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
+
+            wz::gpu::dx12::submit_triangle_test_frame(device);
+
+            wz::gpu::end_frame(device);
+            wz::gpu::present(device);
         }
 
-        wz::gpu::begin_frame(device);
-        wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
-
-        // wz::gpu::dx12::draw_test_triangle(device);
-        wz::gpu::dx12::submit_triangle_test_frame(device);
-
-        wz::gpu::end_frame(device);
-        wz::gpu::present(device);
+        // ── shutdown ───────────────────────────────────────────────────────────────
+        wz::input::shutdown_raw_input();
+        wz::gpu::destroy_device(device);
+        destroy_window(window);
     }
-
-    // ── shutdown ───────────────────────────────────────────────────────────────
-    wz::input::shutdown_raw_input();
-    wz::gpu::destroy_device(device);
-    destroy_window(window);
-
+    _CrtDumpMemoryLeaks();
 
     return 0;
 }

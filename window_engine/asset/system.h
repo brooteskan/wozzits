@@ -113,7 +113,6 @@ namespace wz::asset {
             std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr);
         
 
-
         // ── Queries ───────────────────────────────────────────────────────────────
         //
         // All query methods operate on compiled_nodes_ — they only return nodes
@@ -130,7 +129,7 @@ namespace wz::asset {
         };
 
         // All compiled assets of the given type.
-        inline std::vector<CompiledAsset> query(AssetType type) const {
+        std::vector<CompiledAsset> query(AssetType type) const {
             std::vector<CompiledAsset> out;
             for (const auto& [key, node] : compiled_nodes_) {
                 if (node.type != type) continue;
@@ -144,7 +143,7 @@ namespace wz::asset {
         // All compiled assets of the given type produced by a specific schema.
         // Useful when multiple schemas produce the same AssetType (e.g. HLSL vs
         // SPIRV shaders both produce AssetType::Shader).
-        inline std::vector<CompiledAsset> query(AssetType type, SchemaID schema) const {
+        std::vector<CompiledAsset> query(AssetType type, SchemaID schema) const {
             std::vector<CompiledAsset> out;
             for (const auto& [key, node] : compiled_nodes_) {
                 if (node.type != type || node.schema != schema) continue;
@@ -158,10 +157,10 @@ namespace wz::asset {
         // Terminal compiled assets — nodes that nothing else depends on.
         // These are the outputs the renderer consumes directly. Carrier nodes
         // (file sources) are excluded even if they happen to be terminal.
-        inline std::vector<CompiledAsset> compiled_terminals() const {
+        std::vector<CompiledAsset> compiled_terminals() const {
             if (!committed_) return {};
             std::vector<CompiledAsset> out;
-            const AssetGraph& g = storage_->dag;
+            const AssetGraph& g = storage_->dag();
             for (const auto& [key, node] : compiled_nodes_) {
                 const NodeHandle nh = find_asset_node(index_, key);
                 if (nh == INVALID_ASSET_NODE) continue;
@@ -175,7 +174,7 @@ namespace wz::asset {
 
         // Look up a single compiled asset by key without triggering compilation.
         // Returns nullptr if the key has not been resolved yet.
-        inline const CompiledAsset* find_compiled(const AssetKey& key) const {
+        const CompiledAsset* find_compiled(const AssetKey& key) const {
             auto it = compiled_nodes_.find(key);
             if (it == compiled_nodes_.end()) return nullptr;
             const auto* h = std::get_if<ResourceHandle>(&it->second.payload);
@@ -190,7 +189,7 @@ namespace wz::asset {
 
         // Returns the committed graph, or nullptr if not yet committed.
         const AssetGraph* graph() const {
-            return committed_ ? &storage_->dag : nullptr;
+            return committed_ ? &storage_->dag() : nullptr;
         }
 
         const AssetIndex& index()    const { return index_; }
@@ -220,9 +219,8 @@ namespace wz::asset {
         CompilerRegistry registry_;
         AssetCache       cache_;
 
-        // Stores each node after compilation so its live payload (e.g. preserved
-        // bytes in a carrier node) is available to dependents via dep_nodes.
-        // Keyed by AssetKey, parallel to the cache.
+        // Stores each node after compilation so its live payload is available
+        // to dependents and to query methods.
         std::unordered_map<AssetKey, AssetNode, AssetKeyHash> compiled_nodes_;
 
         // Scratch buffer for find_compiled() — avoids allocating a CompiledAsset

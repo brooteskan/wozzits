@@ -10,7 +10,7 @@ namespace wz::asset
 
         // Pass 1: add every node (registration order = provisional handle).
         for (auto& e : pending_)
-            wz::core::graph::add_node(builder, e.node);
+            wz::core::graph::add_node(builder, std::move(e.node));
 
         // Pass 2: wire prerequisite → dependent edges.
         // Edge direction: prerequisite(A) → dependent(B)
@@ -33,8 +33,8 @@ namespace wz::asset
         auto result = wz::core::graph::build(std::move(builder));
         if (!result.has_value()) return false;   // cycle detected
 
-        storage_ = std::move(result);
-        index_ = build_asset_index(storage_->dag);
+        storage_ = AssetStorage(std::move(*result));
+        index_ = build_asset_index(storage_->dag());
         committed_ = true;
 
         pending_.clear();
@@ -52,7 +52,7 @@ namespace wz::asset
         if (auto h = cache_.lookup(key)) return *h;
 
         // Locate node in committed DAG.
-        const AssetGraph& g = storage_->dag;
+        const AssetGraph& g = storage_->dag();
         const NodeHandle  nh = find_asset_node(index_, key);
         if (nh == INVALID_ASSET_NODE) return ResolveError::NodeNotFound;
 
@@ -113,8 +113,8 @@ namespace wz::asset
         assert(committed_);
 
         uint32_t ok = 0;
-        for (NodeHandle nh : compilation_order(storage_->dag)) {
-            const AssetKey& key = wz::core::graph::node_data(storage_->dag, nh).key;
+        for (NodeHandle nh : compilation_order(storage_->dag())) {
+            const AssetKey& key = wz::core::graph::node_data(storage_->dag(), nh).key;
 
             if (cache_.contains(key)) { ++ok; continue; }
 
