@@ -131,7 +131,7 @@ int main()
         wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
 
         // wz::gpu::dx12::draw_test_triangle(device);
-        wz::gpu::dx12::draw_test_triangle_2(device);
+        wz::gpu::dx12::submit_triangle_test_frame(device);
 
         wz::gpu::end_frame(device);
         wz::gpu::present(device);

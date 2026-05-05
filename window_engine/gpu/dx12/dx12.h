@@ -16,7 +16,7 @@ namespace wz::gpu::dx12
 	void begin_frame(wz::gpu::Device& device); // acquire backbuffer
 	void clear(wz::gpu::Device& device, float r, float g, float b, float a); // record commands
 
-	void draw_test_triangle_2(wz::gpu::Device& d); // also temporary
+	void submit_triangle_test_frame(wz::gpu::Device& d); // also temporary
 
 	struct TriangleTestContextDesc
 	{
