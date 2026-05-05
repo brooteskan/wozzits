@@ -18,10 +18,20 @@ namespace wz::gpu::dx12
 
 	void draw_test_triangle_2(wz::gpu::Device& d); // also temporary
 
+	struct TriangleTestContextDesc
+	{
+		wz::gpu::GPUHandle vertex_shader{};
+		wz::gpu::GPUHandle pixel_shader{};
+
+		bool valid() const noexcept
+		{
+			return vertex_shader.valid() && pixel_shader.valid();
+		}
+	};
+
 	void create_triangle_test_context(
 		wz::gpu::Device& device,
-		wz::gpu::GPUHandle vs,
-		wz::gpu::GPUHandle ps
+		const TriangleTestContextDesc& desc
 	);
 
 	void end_frame(wz::gpu::Device& device); // close + submit command list

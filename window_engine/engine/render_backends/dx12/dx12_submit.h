@@ -38,10 +38,20 @@ namespace wz::render::backend::dx12
         std::vector<GpuMesh> mesh_table;
     };
 
+    struct TrianglePipelineDesc
+    {
+        wz::gpu::GPUHandle vertex_shader{};
+        wz::gpu::GPUHandle pixel_shader{};
+
+        bool valid() const noexcept
+        {
+            return vertex_shader.valid() && pixel_shader.valid();
+        }
+    };
+
     Context* create(
         wz::gpu::Device& device,
-        wz::gpu::GPUHandle vs,
-        wz::gpu::GPUHandle ps
+        const TrianglePipelineDesc& desc
     );
 
     void destroy(Context* ctx);

@@ -14,6 +14,7 @@
 #include <wrl/client.h>
 
 #include <gpu/gpu.h>
+#include <gpu/dx12/dx12.h>
 #include <gpu/dx12/dx12_internal.h>
 #include <window/window2.h>
 #include <cassert>
@@ -84,17 +85,25 @@ namespace wz::gpu::dx12
 
     void create_triangle_test_context(
         wz::gpu::Device& device,
-        wz::gpu::GPUHandle vs,
-        wz::gpu::GPUHandle ps)
+        const TriangleTestContextDesc& desc)
     {
-        assert(vs.valid());
-        assert(ps.valid());
+        assert(desc.valid());
 
         auto* impl = (DX12Device*)device.impl;
         assert(impl);
         assert(!impl->ctx);
 
-        impl->ctx = wz::render::backend::dx12::create(device, vs, ps);
+        wz::render::backend::dx12::TrianglePipelineDesc pipeline_desc{
+            .vertex_shader = desc.vertex_shader,
+            .pixel_shader = desc.pixel_shader,
+        };
+
+        impl->ctx = wz::render::backend::dx12::create(
+            device,
+            pipeline_desc
+        );
+
+        assert(impl->ctx);
     }
 
     Device create_device(void* native_window)
@@ -645,6 +654,8 @@ namespace wz::gpu::dx12
                 D3D12_DESCRIPTOR_HEAP_TYPE_RTV
             );
     }
+
+
 } // namespace wz::gpu::dx12
 
 namespace wz::gpu::dx12::internal

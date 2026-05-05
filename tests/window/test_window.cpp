@@ -442,10 +442,14 @@ int main()
     if (!triangle_resources.valid())
         return 1;
 
+    wz::gpu::dx12::TriangleTestContextDesc triangle_context_desc{
+        .vertex_shader = triangle_resources.vertex_shader,
+        .pixel_shader = triangle_resources.pixel_shader,
+    };
+
     wz::gpu::dx12::create_triangle_test_context(
         device,
-        triangle_resources.vertex_shader,
-        triangle_resources.pixel_shader
+        triangle_context_desc
     );
 
     // ── run frame loop ───────────────────────────────────────────────────────────────

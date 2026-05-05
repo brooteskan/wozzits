@@ -11,25 +11,25 @@ namespace wz::render::backend::dx12
 {
 
     Context* create(
-        wz::gpu::Device& device,
-        wz::gpu::GPUHandle vs,
-        wz::gpu::GPUHandle ps)
-    {
-        assert(vs.valid());
-        assert(ps.valid());
+    wz::gpu::Device& device,
+    const TrianglePipelineDesc& tri_desc)
+{
+    assert(tri_desc.valid());
 
-        ID3D12Device* dev = wz::gpu::dx12::internal::get_device(device);
+    ID3D12Device* dev = wz::gpu::dx12::internal::get_device(device);
 
-        Context* ctx = new Context();
-        ctx->device = &device;
+    Context* ctx = new Context();
+    ctx->device = &device;
 
-        ctx->root_sig = wz::gpu::dx12::internal::create_empty_root_signature(dev);
-        ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(
-            device,
-            ctx->root_sig,
-            vs,
-            ps
-        );
+    ctx->root_sig =
+        wz::gpu::dx12::internal::create_empty_root_signature(dev);
+
+    ctx->pso = wz::gpu::dx12::internal::create_triangle_pso(
+        device,
+        ctx->root_sig,
+        tri_desc.vertex_shader,
+        tri_desc.pixel_shader
+    );
 
 
 
@@ -53,19 +53,19 @@ namespace wz::render::backend::dx12
         D3D12_HEAP_PROPERTIES heap = {};
         heap.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-        D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        desc.Width = vb_size;
-        desc.Height = 1;
-        desc.DepthOrArraySize = 1;
-        desc.MipLevels = 1;
-        desc.SampleDesc.Count = 1;
-        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        D3D12_RESOURCE_DESC vb_desc = {};
+        vb_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        vb_desc.Width = vb_size;
+        vb_desc.Height = 1;
+        vb_desc.DepthOrArraySize = 1;
+        vb_desc.MipLevels = 1;
+        vb_desc.SampleDesc.Count = 1;
+        vb_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
         HRESULT hr = dev->CreateCommittedResource(
             &heap,
             D3D12_HEAP_FLAG_NONE,
-            &desc,
+            &vb_desc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
             IID_PPV_ARGS(&ctx->vertex_buffer)
