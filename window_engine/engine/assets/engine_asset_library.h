@@ -78,6 +78,27 @@ namespace wz::engine::assets
         ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
     };
 
+    // Describes a procedural scalar field asset to register.
+    // No file path is required — values are generated from the parameters alone.
+    // name contributes to the asset key so differently-named procedural fields
+    // with identical parameters are treated as distinct assets.
+    struct ProceduralScalarFieldDesc
+    {
+        std::string name;
+
+        uint32_t width = 0;
+        uint32_t height = 1;
+        uint32_t depth = 1;   // must be 1 for V1
+
+        ScalarFieldGenerator  generator = ScalarFieldGenerator::GradientX;
+
+        float frequency = 1.0f;
+        float amplitude = 1.0f;
+
+        ScalarFieldFormat     format = ScalarFieldFormat::Float32;
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
     // Returned by create_scalar_field(). Wraps the DAG output node key.
     struct ScalarFieldAsset
     {
@@ -129,6 +150,12 @@ namespace wz::engine::assets
         // Call commit() and resolve_all() before querying handles.
         ScalarFieldAsset create_scalar_field(const ScalarFieldFileDesc& desc);
 
+        // Register a procedural scalar field asset in the DAG.
+        // Values are generated entirely from the descriptor parameters; no file
+        // dependency is required. Call commit() and resolve_all() before querying.
+        ScalarFieldAsset create_procedural_scalar_field(
+            const ProceduralScalarFieldDesc& desc);
+
         // Retrieve the ResourceHandle for a resolved scalar field asset.
         // Returns an invalid handle if the asset has not been resolved.
         ScalarFieldHandle get_scalar_field(const ScalarFieldAsset& asset) const;
@@ -163,6 +190,11 @@ namespace wz::engine::assets
         wz::asset::AssetKey register_scalar_field_node(
             wz::asset::AssetKey        source_file,
             const ScalarFieldCompileDesc& desc
+        );
+
+        wz::asset::AssetKey register_procedural_scalar_field_node(
+            const ProceduralScalarFieldCompileDesc& desc,
+            std::string_view name
         );
 
     private:

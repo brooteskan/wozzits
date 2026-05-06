@@ -36,6 +36,13 @@ namespace wz::engine::assets {
     // All produce kAssetTypeScalarField output.
     inline constexpr wz::asset::SchemaID kScalarFieldFromRawF32Schema{ 0xF11E'CA55'E7'000004ull };
 
+    // Procedural scalar field recipe.
+    // Compiled directly from metadata; has no file dependency.
+    // Produces kAssetTypeScalarField output.
+    // Multiple procedural recipes may coexist alongside file-backed recipes;
+    // all share the same output type and ScalarFieldTable.
+    inline constexpr wz::asset::SchemaID kScalarFieldProceduralSchema{ 0xF11E'CA55'E7'000007ull };
+
     // Gaussian splat cloud loaded from a PLY file.
     inline constexpr wz::asset::SchemaID kGaussianSplatPLYSchema{ 0xF11E'CA55'E7'000005ull };
 

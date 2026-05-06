@@ -13,9 +13,12 @@
 //
 // ── Separation of concerns ────────────────────────────────────────────────────
 //
-// ScalarFieldData   — immutable CPU-side sampled field, no GPU knowledge
-// ScalarFieldTable  — runtime owner of resolved field data
-// ScalarFieldCompileDesc — metadata stored in AssetNode::meta for compile nodes
+// ScalarFieldData                — immutable CPU-side sampled field, no GPU knowledge
+// ScalarFieldTable               — runtime owner of resolved field data
+// ScalarFieldCompileDesc         — metadata for file-backed compile nodes
+// ProceduralScalarFieldCompileDesc — metadata for procedural compile nodes
+//   (name is an identity input to the key factory, not a compile input,
+//    so it is intentionally absent from both compile descriptors)
 
 #include <asset/types.h>
 
@@ -49,6 +52,21 @@ namespace wz::engine::assets {
     enum class ScalarFieldOrigin : uint8_t
     {
         TopLeft,
+    };
+
+    // ─── ScalarFieldGenerator ─────────────────────────────────────────────────────
+    //
+    // Identifies the procedural generation algorithm for a procedural scalar field
+    // recipe node. Used as an ordinal in the key factory so different generators
+    // produce distinct AssetKeys even with identical dimensions and parameters.
+
+    enum class ScalarFieldGenerator : uint8_t
+    {
+        GradientX,       // x / (width  - 1), left=0 right=1
+        GradientY,       // y / (height - 1), top=0  bottom=1
+        RadialGradient,  // normalized distance from center; center=0, corners=1
+        Checkerboard,    // alternating 0 / amplitude; frequency used as cell size
+        SineWaves,       // (0.5 + 0.5 * sin(u * freq * 2π)) * amplitude
     };
 
 
@@ -96,7 +114,7 @@ namespace wz::engine::assets {
 
     // ─── ScalarFieldCompileDesc ───────────────────────────────────────────────────
     //
-    // Stored in AssetNode::meta for scalar field compile nodes.
+    // Stored in AssetNode::meta for file-backed scalar field compile nodes.
     // Describes how to interpret the raw float32 bytes from the file dependency.
 
     struct ScalarFieldCompileDesc
@@ -104,6 +122,32 @@ namespace wz::engine::assets {
         uint32_t width = 0;
         uint32_t height = 1;
         uint32_t depth = 1;
+
+        ScalarFieldFormat     format = ScalarFieldFormat::Float32;
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
+
+    // ─── ProceduralScalarFieldCompileDesc ─────────────────────────────────────────
+    //
+    // Stored in AssetNode::meta for procedural scalar field compile nodes.
+    // The procedural compiler generates values from these parameters alone —
+    // no file dependency is present in dep_nodes.
+    //
+    // name is intentionally absent: it is an identity input to the key factory
+    // (so differently-named fields with identical parameters are distinct assets),
+    // but the compiler does not need it to generate values.
+
+    struct ProceduralScalarFieldCompileDesc
+    {
+        uint32_t width = 0;
+        uint32_t height = 1;
+        uint32_t depth = 1;
+
+        ScalarFieldGenerator  generator = ScalarFieldGenerator::GradientX;
+
+        float frequency = 1.0f;
+        float amplitude = 1.0f;
 
         ScalarFieldFormat     format = ScalarFieldFormat::Float32;
         ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
