@@ -5,7 +5,7 @@ using namespace wz::core::graph;
 using namespace wz::math;
 
 
-namespace wx::gpu::dx12
+namespace wz::gpu::dx12
 {
 
     Mat4 translation_x(float c)

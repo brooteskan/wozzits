@@ -1,35 +1,21 @@
 // file: src/gpu/dx12/dx12_device.cpp
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
 
-#include <windows.h>
+#include "dx12_device_internal.h"
 
-#include <d3d12.h>
-#include <dxgi1_4.h>
 #include <gpu/dx12/external/d3dx12.h>
-#include <gpu/dx12/dx12_shader.h>
-#include <engine/render_backends/dx12/dx12_submit.h>
 #include <wrl/client.h>
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
-#include <gpu/dx12/dx12_internal.h>
 #include <window/window2.h>
 #include <cassert>
 
-
-// #include <render/frame/render_frame.h>
-// #include <scene/scene_graph.h>
-// #include <render/ir/render_ir.h>
-// #include <scene/compile/scene_compiler.h>
 #include <engine/render/test/test_triangle_scene.h>
 #include <iostream>
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
 
-#define _DEBUG
 
 namespace
 {
@@ -47,43 +33,8 @@ namespace
 
 }
 
-
-
 namespace wz::gpu::dx12
 {
-    struct DX12Device
-    {
-        //fences
-        ID3D12Fence* fence = nullptr;
-        HANDLE fence_event = nullptr;
-        UINT64 fence_value = 0;
-
-        // core
-        ID3D12Device* device = nullptr;
-        IDXGISwapChain3* swapchain = nullptr;
-        ID3D12CommandQueue* queue = nullptr;
-
-        // frame
-        ID3D12CommandAllocator* allocator = nullptr;
-        ID3D12GraphicsCommandList* cmd = nullptr;
-
-        // render target
-        ID3D12DescriptorHeap* rtv_heap = nullptr;
-        ID3D12Resource* backbuffers[2] = {};
-        UINT rtv_stride = 0;
-
-        UINT frame_index = 0;
-
-        HWND hwnd = nullptr;
-        UINT width = 0;
-        UINT height = 0;
-
-        wz::gpu::dx12::DX12ShaderTable shaders;
-
-        wz::render::backend::dx12::Context* ctx = nullptr;
-    };
-
-
 
     Device create_device(void* native_window)
     {
@@ -213,6 +164,26 @@ namespace wz::gpu::dx12
         impl->width = 1280;
         impl->height = 720;
 
+        // ────── scalar fields ───────────────────────────────────────────────
+        D3D12_DESCRIPTOR_HEAP_DESC srv_heap_desc = {};
+        srv_heap_desc.NumDescriptors = 16;
+        srv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        srv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+        hr = device->CreateDescriptorHeap(
+            &srv_heap_desc,
+            IID_PPV_ARGS(&impl->scalar_field_srv_heap)
+        );
+        assert(SUCCEEDED(hr));
+
+        impl->scalar_field_srv_stride =
+            device->GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+            );
+
+        impl->scalar_field_srv_capacity = 16;
+        impl->scalar_field_srv_count = 0;
+
         // ────── initialize fences ───────────────────────────────────────────────────────
         hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&impl->fence));
         assert(SUCCEEDED(hr));
@@ -265,7 +236,7 @@ namespace wz::gpu::dx12
 
         assert(impl->ctx);
 
-        auto test_frame = wx::gpu::dx12::build_triangle_test_frame();
+        auto test_frame = wz::gpu::dx12::build_triangle_test_frame();
 
         impl->ctx->view_proj = test_frame.view.view_projection;
         impl->ctx->test_frame_storage = std::move(test_frame.frame_storage);
@@ -448,6 +419,12 @@ namespace wz::gpu::dx12
 
         // 2. Destroy GPU resource tables.
         impl->shaders.destroy();
+        impl->scalar_field_textures.destroy();
+
+        if (impl->scalar_field_srv_heap) {
+            impl->scalar_field_srv_heap->Release();
+            impl->scalar_field_srv_heap = nullptr;
+        }
 
         // 3. Release swapchain/backbuffer resources.
         for (int i = 0; i < 2; ++i)
