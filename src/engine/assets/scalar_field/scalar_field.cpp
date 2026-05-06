@@ -65,6 +65,7 @@ namespace wz::engine::assets {
     void ScalarFieldTable::destroy()
     {
         slots_.clear();
+        slots_.emplace_back(); // restore sentinel slot 0
     }
 
 } // namespace wz::engine::assets
