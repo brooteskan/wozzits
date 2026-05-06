@@ -90,7 +90,18 @@ namespace wz::asset {
     // Opaque reference to a renderer-owned resource.
     // The asset system does not interpret this value; it only stores and returns it.
     // epoch provides a generation counter so callers can detect stale references.
-
+    //
+    // Convention:
+    //   id == 0 is the null/invalid sentinel.
+    //   valid() returns true iff id != 0.
+    //   Runtime resource tables must never assign id 0 to a real resource.
+    //   Table slot/index 0 should be reserved or unused.
+    //
+    // This convention is shared by all table-backed resources:
+    //   GPU shader tables
+    //   scalar field tables
+    //   future gaussian splat tables
+    //   future wavelet/pipeline/material tables
 
     struct ResourceHandle
     {
