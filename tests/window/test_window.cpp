@@ -1,55 +1,25 @@
 #include <iostream>
-#include <cstdio>
-#include <expected>
-#include <utility>
+
 #include <window/window2.h>
+#include <event/platform_event.h>
+#include <input/input.h>
+
+#include <gpu/gpu.h>
+#include <gpu/gpu_types.h>
+#include <gpu/scalar_field_texture.h>
+#include <gpu/dx12/dx12.h>
+
+#include <engine/assets/engine_asset_library.h>
+#include <engine/assets/scalar_field/scalar_field.h>
+
 #include <logging/logger.h>
 #include <file/filesystem.h>
-#include <event/platform_event.h>
-#include <gpu/gpu.h>
-#include <input/input.h>
-#include <gpu/dx12/dx12.h>
-#include <asset/types.h>
-#include <asset/system.h>
-#include <engine/assets/shader/shader_types.h>
-#include <asset/compiler.h>
-#include <gpu/shader.h>
-#include <engine/assets/engine_asset_library.h>
-#include <engine/assets/test/triangle_shader_assets.h>
 
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
-// These would normally be hashes of the schema name strings, produced once at
-// startup. Hard-coded here for the test main.
-
-//static constexpr wz::asset::SchemaID kHLSLFileSchema{ 0x1a2b3c4d };  // carrier
-//static constexpr wz::asset::SchemaID kHLSLSchema{ 0x5e6f7a8b };  // linker
-// NOTE: defined in engine/assets/schema_registry.h
-
-using namespace wz::asset;
-using namespace wz::fs;
-
-// ─── Compile descriptor ───────────────────────────────────────────────────────
-// Carried on the shader node's meta field. Tells the compiler which entry
-// point, target profile, and source ordering to use.
-
-
-
-
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const Path resource_root{ "resources" };
-
-
-// ─── main ─────────────────────────────────────────────────────────────────────
-
-
 int main()
 {
-#define _CRTDBG_MAP_ALLOC
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF);
 
     _CrtMemState mem_start;
@@ -59,68 +29,106 @@ int main()
     _CrtMemCheckpoint(&mem_start);
 
     {
-
-
+        // ── logger ────────────────────────────────────────────────────────
         wz::Logger logger;
         logger.set_callback(wz::LogSinkType::Stderr);
 
-
-
+        // ── window ────────────────────────────────────────────────────────
         wz::window::WindowDesc desc;
-        desc.title = "Wozzits Window Test";
+        desc.title = "Wozzits Scalar Field Debug";
         desc.width = 800;
         desc.height = 600;
 
-        wz::window::WindowHandle window = create_window(desc);
+        wz::window::WindowHandle window = wz::window::create_window(desc);
+        if (!window.valid())
+            return 1;
 
-        wz::gpu::Device device =
-            wz::gpu::create_device(window);
+        // ── device ────────────────────────────────────────────────────────
+        wz::gpu::Device device = wz::gpu::create_device(window);
+        if (!device.valid())
+            return 1;
 
         wz::input::init_raw_input();
 
-
-        // ── build triangle test assets ────────────────────────────────────────────────
-
-        namespace test_assets = wz::engine::assets::test;
-
+        // ── asset library ─────────────────────────────────────────────────
         wz::engine::assets::EngineAssetLibrary assets{
             device,
             logger,
             wz::fs::Path{ "resources" }
         };
 
-        auto triangle = assets.create_shader_pair({
-            .name = "triangle",
-            .vertex_path = "shaders/triangle/triangle_vs.hlsl",
-            .pixel_path = "shaders/triangle/triangle_ps.hlsl",
+        using namespace wz::engine::assets;
+
+        // ── scalar field asset ────────────────────────────────────────────
+        ScalarFieldAsset field = assets.create_procedural_scalar_field({
+            .name = "debug/gradient_x",
+            .width = 256,
+            .height = 256,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
             });
 
-        if (!triangle.valid())
+        if (!field.valid())
             return 1;
 
+        // ── scalar field debug shaders ────────────────────────────────────
+        auto shaders = assets.create_shader_pair({
+            .name = "scalar_field_debug",
+            .vertex_path = "shaders/scalar_field/scalar_field_vs.hlsl",
+            .pixel_path = "shaders/scalar_field/scalar_field_ps.hlsl",
+            });
+
+        if (!shaders.valid())
+            return 1;
+
+        // ── resolve assets ────────────────────────────────────────────────
         if (!assets.commit())
             return 1;
 
         assets.resolve_all();
 
-        auto shader_handles = assets.get_shader_pair(triangle);
+        auto shader_handles = assets.get_shader_pair(shaders);
         if (!shader_handles.valid())
             return 1;
 
-        wz::gpu::dx12::TriangleTestContextDesc triangle_desc{
+        ScalarFieldHandle scalar_handle = assets.get_scalar_field(field);
+        if (!scalar_handle.valid())
+            return 1;
+
+        const ScalarFieldData* scalar_data =
+            assets.get_scalar_field_data(scalar_handle);
+
+        if (!scalar_data || !scalar_data->valid())
+            return 1;
+
+        // ── upload scalar field to GPU texture ────────────────────────────
+        wz::gpu::GPUHandle texture =
+            wz::gpu::upload_scalar_field_texture(device, *scalar_data);
+
+        if (!texture.valid())
+            return 1;
+
+        if (texture.type != wz::gpu::GPUResourceType::Texture)
+            return 1;
+
+        // ── create scalar field debug draw context ────────────────────────
+        wz::gpu::dx12::create_scalar_field_debug_context(device, {
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
-        };
+            .scalar_field_texture = texture,
+            });
 
-        wz::gpu::dx12::create_triangle_test_context(device, triangle_desc);
-
-        // ── run frame loop ───────────────────────────────────────────────────────────────
-        while (!window_should_close(window))
+        // ── frame loop ────────────────────────────────────────────────────
+        while (!wz::window::window_should_close(window))
         {
             wz::window::pump_messages();
 
             PlatformEvent event{};
-            while (poll_event(window, event))
+            while (wz::window::poll_event(window, event))
             {
                 if (event.type == PlatformEvent::Type::Resize)
                 {
@@ -138,19 +146,20 @@ int main()
             }
 
             wz::gpu::begin_frame(device);
-            wz::gpu::clear(device, 0.1f, 0.2f, 0.6f, 1.0f);
+            wz::gpu::clear(device, 0.05f, 0.05f, 0.05f, 1.0f);
 
-            wz::gpu::dx12::submit_triangle_test_frame(device);
+            wz::gpu::dx12::submit_scalar_field_debug_frame(device);
 
             wz::gpu::end_frame(device);
             wz::gpu::present(device);
         }
 
-        // ── shutdown ───────────────────────────────────────────────────────────────
+        // ── shutdown ──────────────────────────────────────────────────────
         wz::input::shutdown_raw_input();
         wz::gpu::destroy_device(device);
-        destroy_window(window);
+        wz::window::destroy_window(window);
     }
+
     _CrtMemCheckpoint(&mem_end);
 
     if (_CrtMemDifference(&mem_diff, &mem_start, &mem_end))

@@ -419,6 +419,25 @@ namespace wz::gpu::dx12
 
         // 2. Destroy GPU resource tables.
         impl->shaders.destroy();
+
+
+        if (impl->scalar_debug_ctx)
+        {
+            if (impl->scalar_debug_ctx->pso)
+            {
+                impl->scalar_debug_ctx->pso->Release();
+                impl->scalar_debug_ctx->pso = nullptr;
+            }
+
+            if (impl->scalar_debug_ctx->root_sig)
+            {
+                impl->scalar_debug_ctx->root_sig->Release();
+                impl->scalar_debug_ctx->root_sig = nullptr;
+            }
+
+            delete impl->scalar_debug_ctx;
+            impl->scalar_debug_ctx = nullptr;
+        }
         impl->scalar_field_textures.destroy();
 
         if (impl->scalar_field_srv_heap) {
