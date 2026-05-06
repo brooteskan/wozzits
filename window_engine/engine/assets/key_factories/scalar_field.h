@@ -22,15 +22,19 @@ namespace wz::engine::assets {
         uint32_t width,
         uint32_t height,
         uint32_t depth,
-        uint8_t  format_ordinal) noexcept
+        uint8_t  format_ordinal,
+        uint8_t  domain_kind_ordinal) noexcept
     {
         const uint64_t dims =
             (static_cast<uint64_t>(width) << 32) |
-            (static_cast<uint64_t>(height));
+            static_cast<uint64_t>(height);
 
-        const uint64_t params =
+        const uint64_t depth_format =
             (static_cast<uint64_t>(depth) << 8) |
             static_cast<uint64_t>(format_ordinal);
+
+        const uint64_t params =
+            detail::mix64(depth_format, static_cast<uint64_t>(domain_kind_ordinal));
 
         return wz::asset::AssetKey{
             .content_hash = { detail::mix64(dims, params), 0 },

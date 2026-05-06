@@ -419,7 +419,8 @@ namespace wz::engine::assets
             desc.width,
             desc.height,
             desc.depth,
-            static_cast<uint8_t>(desc.format)
+            static_cast<uint8_t>(desc.format),
+            static_cast<uint8_t>(desc.domain_kind) // new argument
         );
 
         wz::asset::AssetNode node;

@@ -314,4 +314,26 @@ namespace wz::engine::assets::test {
         EXPECT_FLOAT_EQ(data->max_value, 1.00f);
     }
 
+    TEST(ScalarFieldTableTests, DestroyRestoresNullSentinel)
+    {
+        ScalarFieldTable table;
+
+        ScalarFieldData field;
+        field.width = 1;
+        field.height = 1;
+        field.depth = 1;
+        field.values = { 42.0f };
+
+        auto h1 = table.add(field);
+        EXPECT_TRUE(h1.valid());
+        EXPECT_NE(h1.id, 0u);
+
+        table.destroy();
+
+        auto h2 = table.add(field);
+        EXPECT_TRUE(h2.valid());
+        EXPECT_NE(h2.id, 0u);
+    }
+
 } // namespace wz::engine::assets::test
+
