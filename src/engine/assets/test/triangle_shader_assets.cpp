@@ -1,10 +1,13 @@
 #include <engine/assets/test/triangle_shader_assets.h>
-#include <engine/assets/schema_registry.h>
 #include <engine/assets/shader/shader_types.h>
 #include <asset/types.h>
 #include <file/filesystem.h>
 #include <gpu/dx12/dx12.h>
 #include <gpu/shader.h>
+
+#include <engine/assets/key_factories/file_carrier.h>
+#include <engine/assets/key_factories/hlsl_shader.h>
+#include <engine/assets/schema_ids.h>
 
 using namespace wz::asset;
 using namespace wz::fs;
@@ -12,68 +15,11 @@ using namespace wz::fs;
 namespace wz::engine::assets::test
 {
 
-    // FNV-1a 64-bit — good enough for content hashing in a test main.
-    static Hash fnv1a(std::span<const uint8_t> data)
-    {
-        uint64_t h = 0xcbf29ce484222325ull;
-        for (uint8_t b : data) {
-            h ^= b;
-            h *= 0x100000001b3ull;
-        }
-        return { h, ~h };   // fill both halves
-    }
-
-    static Hash hash_u64(uint64_t v)
-    {
-        v ^= v >> 33;
-        v *= 0xff51afd7ed558ccdull;
-        v ^= v >> 33;
-        v *= 0xc4ceb9fe1a85ec53ull;
-        v ^= v >> 33;
-        return { v, ~v };
-    }
-
-    static Hash hash_str(std::string_view s)
-    {
-        return fnv1a({ reinterpret_cast<const uint8_t*>(s.data()), s.size() });
-    }
-
-    // Combine a sequence of keys into one hash for deps_hash.
-    static void mix_hash(uint64_t& lo, uint64_t& hi, Hash h)
-    {
-        lo ^= h.lo + 0x9e3779b97f4a7c15ull + (lo << 6) + (lo >> 2);
-        hi ^= h.hi + 0x9e3779b97f4a7c15ull + (hi << 6) + (hi >> 2);
-    }
-
-    static Hash combine_keys(std::span<const AssetKey> keys)
-    {
-        uint64_t lo = 0xcbf29ce484222325ull;
-        uint64_t hi = 0x100000001b3ull;
-
-        for (const auto& k : keys) {
-            mix_hash(lo, hi, k.content_hash);
-            mix_hash(lo, hi, k.schema_hash);
-            mix_hash(lo, hi, k.compiler_hash);
-            mix_hash(lo, hi, k.deps_hash);
-        }
-
-        return { lo, hi };
-    }
-
-    static AssetKey make_file_key(std::span<const uint8_t> bytes, std::string_view path)
-    {
-        return AssetKey{
-            .content_hash = fnv1a(bytes),
-            .schema_hash = hash_u64(wz::asset::kHLSLFileSchema.value),
-            .compiler_hash = {},             // carrier nodes have no transform logic
-            .deps_hash = hash_str(path), // disambiguates identical files at different paths
-        };
-    }
-
-    // Returns FileResult<AssetNode> so the caller handles I/O errors before
-    // touching the asset system.
     static wz::FileResult<AssetNode> make_file_node(
-        const Path& path, SchemaID schema, AssetType type)
+        const Path& path,
+        AssetKey key,
+        SchemaID schema,
+        AssetType type)
     {
         auto file_result = read_file(path);
         if (!file_result)
@@ -82,29 +28,14 @@ namespace wz::engine::assets::test
         Buffer& bytes = file_result.value;
 
         AssetNode node;
-        node.key = make_file_key(bytes, path.c_str());
+        node.key = key;
         node.type = type;
         node.schema = schema;
         node.stage = AssetStage::Source;
-        node.payload = std::move(bytes);   // raw bytes live on the node
+        node.payload = std::move(bytes);
 
         return { std::move(node), wz::FileError::None };
     }
-
-    static AssetKey make_shader_key(
-        std::string_view name,
-        std::span<const AssetKey> deps)
-    {
-        return AssetKey{
-            .content_hash = hash_str(name),
-            .schema_hash = hash_u64(kHLSLSchema.value),
-            .compiler_hash = hash_str("hlsl_compile_v1"),
-            .deps_hash = combine_keys(deps),
-        };
-    }
-
-
-
 
     // ─── compile_failed_node ──────────────────────────────────────────────────────
     // Returns the node unchanged (still Source stage) so resolve() sees
@@ -116,8 +47,6 @@ namespace wz::engine::assets::test
     // Owns the shader handles needed to initialize the temporary triangle test
     // render context. The handles refer to blobs owned by the DX12 shader table.
 
-
-
     CompilerRegistry make_triangle_test_compiler_registry(
         wz::gpu::Device& device,
         wz::Logger& logger)
@@ -125,7 +54,7 @@ namespace wz::engine::assets::test
         CompilerRegistry registry;
 
         registry.register_compiler(AssetCompiler{
-            .input_schema = kHLSLFileSchema,
+            .input_schema = wz::engine::assets::kHLSLFileSchema,
             .output_type = AssetType::ShaderSource,
             .compile = [](const AssetNode& input, auto, auto) -> AssetNode {
                 AssetNode out = input;
@@ -135,7 +64,7 @@ namespace wz::engine::assets::test
             });
 
         registry.register_compiler(AssetCompiler{
-            .input_schema = kHLSLSchema,
+            .input_schema = wz::engine::assets::kHLSLShaderSchema,
             .output_type = AssetType::Shader,
             .compile = [&logger, &device](
                 const AssetNode& input,
@@ -206,15 +135,37 @@ namespace wz::engine::assets::test
 
     static bool register_triangle_shader_assets(
         AssetSystem& asset_sys,
-        const Path& assets_path,
+        const Path& resource_root,
         wz::Logger& logger)
     {
-        const Path vs_path = wz::fs::join(assets_path, "triangle_vs.hlsl");
-        const Path ps_path = wz::fs::join(assets_path, "triangle_ps.hlsl");
+        static constexpr std::string_view kTriangleVSRel =
+            "shaders/triangle/triangle_vs.hlsl";
+
+        static constexpr std::string_view kTrianglePSRel =
+            "shaders/triangle/triangle_ps.hlsl";
+
+        const Path vs_path =
+            wz::fs::join(resource_root, "shaders\\triangle\\triangle_vs.hlsl");
+
+        const Path ps_path =
+            wz::fs::join(resource_root, "shaders\\triangle\\triangle_ps.hlsl");
+
+        AssetKey vs_file_key =
+            wz::engine::assets::make_file_key(
+                kTriangleVSRel,
+                wz::engine::assets::kHLSLFileSchema
+            );
+
+        AssetKey ps_file_key =
+            wz::engine::assets::make_file_key(
+                kTrianglePSRel,
+                wz::engine::assets::kHLSLFileSchema
+            );
 
         auto vs_file = make_file_node(
             vs_path,
-            kHLSLFileSchema,
+            vs_file_key,
+            wz::engine::assets::kHLSLFileSchema,
             AssetType::ShaderSource
         );
 
@@ -225,7 +176,8 @@ namespace wz::engine::assets::test
 
         auto ps_file = make_file_node(
             ps_path,
-            kHLSLFileSchema,
+            ps_file_key,
+            wz::engine::assets::kHLSLFileSchema,
             AssetType::ShaderSource
         );
 
@@ -233,9 +185,6 @@ namespace wz::engine::assets::test
             logger.error("failed to read pixel shader: " + ps_path);
             return false;
         }
-
-        AssetKey vs_file_key = vs_file.value.key;
-        AssetKey ps_file_key = ps_file.value.key;
 
         if (!asset_sys.register_asset(std::move(vs_file.value))) {
             logger.error("failed to register vertex shader source");
@@ -247,13 +196,18 @@ namespace wz::engine::assets::test
             return false;
         }
 
-        AssetKey vs_deps[] = { vs_file_key };
-        AssetKey vs_shader_key = make_shader_key("triangle_vs", vs_deps);
+        AssetKey vs_shader_key =
+            wz::engine::assets::make_hlsl_shader_key(
+                vs_file_key,
+                static_cast<uint8_t>(wz::gpu::ShaderStage::Vertex),
+                "main",
+                "vs_5_0"
+            );
 
         AssetNode vs_shader_node;
         vs_shader_node.key = vs_shader_key;
         vs_shader_node.type = AssetType::Shader;
-        vs_shader_node.schema = kHLSLSchema;
+        vs_shader_node.schema = wz::engine::assets::kHLSLShaderSchema;
         vs_shader_node.stage = AssetStage::Source;
         vs_shader_node.payload = std::vector<uint8_t>{};
         vs_shader_node.meta = wz::gpu::HLSLCompileDesc{
@@ -271,13 +225,18 @@ namespace wz::engine::assets::test
             return false;
         }
 
-        AssetKey ps_deps[] = { ps_file_key };
-        AssetKey ps_shader_key = make_shader_key("triangle_ps", ps_deps);
+        AssetKey ps_shader_key =
+            wz::engine::assets::make_hlsl_shader_key(
+                ps_file_key,
+                static_cast<uint8_t>(wz::gpu::ShaderStage::Pixel),
+                "main",
+                "ps_5_0"
+            );
 
         AssetNode ps_shader_node;
         ps_shader_node.key = ps_shader_key;
         ps_shader_node.type = AssetType::Shader;
-        ps_shader_node.schema = kHLSLSchema;
+        ps_shader_node.schema = wz::engine::assets::kHLSLShaderSchema;
         ps_shader_node.stage = AssetStage::Source;
         ps_shader_node.payload = std::vector<uint8_t>{};
         ps_shader_node.meta = wz::gpu::HLSLCompileDesc{
@@ -304,7 +263,10 @@ namespace wz::engine::assets::test
     {
         TriangleTestResources out{};
 
-        auto shaders = asset_sys.query(AssetType::Shader, kHLSLSchema);
+        auto shaders = asset_sys.query(
+            AssetType::Shader,
+            wz::engine::assets::kHLSLShaderSchema
+        );
 
         if (shaders.size() != 2)
         {
@@ -342,12 +304,13 @@ namespace wz::engine::assets::test
 
     TriangleTestResources initialize_triangle_test_assets(
         AssetSystem& asset_sys,
-        const Path& assets_path,
+        const Path& resource_root,
         wz::Logger& logger)
     {
+
         TriangleTestResources out{};
 
-        if (!register_triangle_shader_assets(asset_sys, assets_path, logger))
+        if (!register_triangle_shader_assets(asset_sys, resource_root, logger))
             return out;
 
         if (!asset_sys.commit()) {

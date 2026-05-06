@@ -11,11 +11,10 @@
 #include <gpu/dx12/dx12.h>
 #include <asset/types.h>
 #include <asset/system.h>
-#include <engine/assets/schema_registry.h>
 #include <engine/assets/shader/shader_types.h>
 #include <asset/compiler.h>
 #include <gpu/shader.h>
-
+#include <engine/assets/engine_asset_library.h>
 #include <engine/assets/test/triangle_shader_assets.h>
 
 #define _CRTDBG_MAP_ALLOC
@@ -42,10 +41,7 @@ using namespace wz::fs;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-static Path triangle_shader_assets_path()
-{
-    return Path{ "resources\\shaders\\triangle" };
-}
+const Path resource_root{ "resources" };
 
 
 // ─── main ─────────────────────────────────────────────────────────────────────
@@ -54,9 +50,14 @@ static Path triangle_shader_assets_path()
 int main()
 {
 #define _CRTDBG_MAP_ALLOC
-    //_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF);
-    //_CrtSetBreakAlloc(329);
+
+    _CrtMemState mem_start;
+    _CrtMemState mem_end;
+    _CrtMemState mem_diff;
+
+    _CrtMemCheckpoint(&mem_start);
+
     {
 
 
@@ -82,21 +83,33 @@ int main()
 
         namespace test_assets = wz::engine::assets::test;
 
-        wz::asset::CompilerRegistry registry =
-            test_assets::make_triangle_test_compiler_registry(device, logger);
+        wz::engine::assets::EngineAssetLibrary assets{
+            device,
+            logger,
+            wz::fs::Path{ "resources" }
+        };
 
-        wz::asset::AssetSystem asset_sys(std::move(registry));
+        auto triangle = assets.create_shader_pair({
+            .name = "triangle",
+            .vertex_path = "shaders/triangle/triangle_vs.hlsl",
+            .pixel_path = "shaders/triangle/triangle_ps.hlsl",
+            });
 
-        test_assets::TriangleTestResources triangle_resources =
-            test_assets::initialize_triangle_test_assets(
-                asset_sys,
-                triangle_shader_assets_path(),
-                logger
-            );
+        if (!triangle.valid())
+            return 1;
+
+        if (!assets.commit())
+            return 1;
+
+        assets.resolve_all();
+
+        auto shader_handles = assets.get_shader_pair(triangle);
+        if (!shader_handles.valid())
+            return 1;
 
         wz::gpu::dx12::TriangleTestContextDesc triangle_desc{
-        .vertex_shader = triangle_resources.vertex_shader,
-        .pixel_shader = triangle_resources.pixel_shader,
+            .vertex_shader = shader_handles.vertex,
+            .pixel_shader = shader_handles.pixel,
         };
 
         wz::gpu::dx12::create_triangle_test_context(device, triangle_desc);
@@ -138,7 +151,13 @@ int main()
         wz::gpu::destroy_device(device);
         destroy_window(window);
     }
-    _CrtDumpMemoryLeaks();
+    _CrtMemCheckpoint(&mem_end);
+
+    if (_CrtMemDifference(&mem_diff, &mem_start, &mem_end))
+    {
+        _CrtMemDumpStatistics(&mem_diff);
+        _CrtMemDumpAllObjectsSince(&mem_start);
+    }
 
     return 0;
 }

@@ -27,7 +27,7 @@ namespace wz::engine::assets::test
 
     TriangleTestResources initialize_triangle_test_assets(
         wz::asset::AssetSystem& asset_sys,
-        const wz::fs::Path& assets_path,
+        const wz::fs::Path& resource_root,
         wz::Logger& logger
     );
 }

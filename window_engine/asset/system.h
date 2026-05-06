@@ -161,7 +161,7 @@ namespace wz::asset {
         inline std::vector<CompiledAsset> compiled_terminals() const {
             if (!committed_) return {};
             std::vector<CompiledAsset> out;
-            const AssetGraph& g = storage_->dag;
+            const AssetGraph& g = storage_->dag();
             for (const auto& [key, node] : compiled_nodes_) {
                 const NodeHandle nh = find_asset_node(index_, key);
                 if (nh == INVALID_ASSET_NODE) continue;
@@ -190,7 +190,7 @@ namespace wz::asset {
 
         // Returns the committed graph, or nullptr if not yet committed.
         const AssetGraph* graph() const {
-            return committed_ ? &storage_->dag : nullptr;
+            return committed_ ? &storage_->dag() : nullptr;
         }
 
         const AssetIndex& index()    const { return index_; }
