@@ -16,9 +16,20 @@
 
 #include <logging/logger.h>
 
+#include <scene/compile/scene_compiler.h>
+#include <render/frame/render_frame.h>
+
 
 namespace wz::app
 {
+    struct DebugObjectRuntime
+    {
+        wz::scene::SceneStorage scene{};
+        std::vector<wz::scene::RenderableDescriptor> descriptors{};
+
+        bool ready = false;
+    };
+
     struct ScalarFieldDebugRuntime
     {
         wz::gpu::GPUHandle texture{};
@@ -48,6 +59,8 @@ namespace wz::app
         RuntimeCamera camera{};
 
         ScalarFieldDebugRuntime scalar_debug{};
+
+        DebugObjectRuntime debug_object{};
 
         bool initialized = false;
     };

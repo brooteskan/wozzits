@@ -23,7 +23,10 @@ int main()
     wz::app::GameApp app{};
 
     if (!wz::app::init(app))
+    {
+        wz::app::shutdown(app);
         return 1;
+    }
 
     wz::engine::run(app_update, &app);
 

@@ -107,6 +107,16 @@ namespace wz::render::backend::dx12
         assert(ctx->device);
         assert(ctx->device->impl);
 
+        //{
+        //    char buf[128];
+        //    sprintf_s(
+        //        buf,
+        //        "RenderFrame submit: commands=%zu\n",
+        //        frame.commands.size()
+        //    );
+        //    OutputDebugStringA(buf);
+        //}
+
         auto* cmdList =
             wz::gpu::dx12::internal::get_command_list(*ctx->device);
 
@@ -125,8 +135,8 @@ namespace wz::render::backend::dx12
 
         for (const DrawCommand& dc : frame.commands)
         {
-            //if (dc.stage != PipelineStage::OpaqueGeometry)
-            //    continue;
+            if (dc.stage != PipelineStage::OpaqueGeometry)
+                continue;
 
 
             if (dc.mesh >= ctx->mesh_table.size())
@@ -137,10 +147,7 @@ namespace wz::render::backend::dx12
             cmdList->IASetVertexBuffers(0, 1, &mesh.vb_view);
 
             data.world = dc.world;
-            data.view_proj = ctx->view_proj;
-
-            //data.world = mat4_identity();
-           // data.view_proj = mat4_identity();
+            data.view_proj = frame.view.view_projection;
 
             cmdList->SetGraphicsRoot32BitConstants(
                 0,
@@ -156,6 +163,7 @@ namespace wz::render::backend::dx12
             }
             else
             {
+                OutputDebugStringA("Drawing opaque debug mesh\n");
                 cmdList->DrawInstanced(mesh.index_count, 1, 0, 0);
             }
         }

@@ -33,10 +33,8 @@ namespace wz::render::backend::dx12
 
         UINT vertex_count = 3;
 
-        Mat4 view_proj{};
         std::vector<GpuMesh> mesh_table;
 
-        RenderFrameStorage test_frame_storage{};
     };
 
     struct TrianglePipelineDesc

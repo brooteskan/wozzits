@@ -11,7 +11,7 @@
 #include <window/window2.h>
 #include <cassert>
 
-#include <engine/render/test/test_triangle_scene.h>
+// #include <engine/render/test/test_triangle_scene.h>
 #include <iostream>
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
@@ -207,16 +207,23 @@ namespace wz::gpu::dx12
         return out;
     }
 
-
-
-
-
-
- 
-
-    void create_triangle_test_context(
+    void submit_render_frame(
         wz::gpu::Device& device,
-        const TriangleTestContextDesc& desc)
+        const wz::render::RenderFrame& frame)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        assert(impl);
+        assert(impl->ctx && "render context was not created");
+
+        wz::render::backend::dx12::submit(
+            impl->ctx,
+            frame
+        );
+    }
+
+    void create_debug_opaque_context(
+        wz::gpu::Device& device,
+        const DebugOpaqueContextDesc& desc)
     {
         assert(desc.valid());
 
@@ -236,25 +243,18 @@ namespace wz::gpu::dx12
 
         assert(impl->ctx);
 
-        auto test_frame = wz::gpu::dx12::build_triangle_test_frame();
-
-        impl->ctx->view_proj = test_frame.view.view_projection;
-        impl->ctx->test_frame_storage = std::move(test_frame.frame_storage);
-
     }
 
-
+    void create_debug_triangle_opaque_context(
+        wz::gpu::Device& device,
+        const TriangleTestContextDesc& desc)
+    {
+        assert(false && "deprecated triangle test path removed");
+    }
 
     void submit_triangle_test_frame(Device& d)
     {
-        auto* impl = (DX12Device*)d.impl;
-        assert(impl);
-        assert(impl->ctx && "triangle test context was not created");
-
-        wz::render::backend::dx12::submit(
-            impl->ctx,
-            impl->ctx->test_frame_storage.frame
-        );
+        assert(false && "deprecated triangle test path removed");
     }
 
     void begin_frame(Device& d)

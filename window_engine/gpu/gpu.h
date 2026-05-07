@@ -2,7 +2,6 @@
 
 // file: gpu/gpu.h
 
-#include <render/frame/render_frame.h>
 #include <gpu/gpu_types.h>
 namespace wz::window
 {
@@ -40,8 +39,5 @@ namespace wz::gpu
 	void end_frame(Device& device); // close + submit command list
 	void present(Device& device); // swapchain present
 	void resize(Device& device, int w, int h); // This MUST recreate swapchain safely.
-
-	// void* get_backend_context(Device& d);
-	void render(Device& device, const wz::render::RenderFrame& frame); // TODO: is this defined?
 
 }

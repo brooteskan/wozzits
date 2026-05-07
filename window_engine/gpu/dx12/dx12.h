@@ -3,6 +3,7 @@
 // file: gpu/dx12/dx12.h
 #include <gpu/gpu.h>
 
+#include <render/frame/render_frame.h>
 
 
 namespace wz::gpu::dx12
@@ -14,6 +15,7 @@ namespace wz::gpu::dx12
 
     void begin_frame(wz::gpu::Device& device);
     void clear(wz::gpu::Device& device, float r, float g, float b, float a);
+
 
     // ── Triangle test path ───────────────────────────────────────────────
 
@@ -30,9 +32,33 @@ namespace wz::gpu::dx12
         }
     };
 
-    void create_triangle_test_context(
+    void create_debug_triangle_opaque_context(
         wz::gpu::Device& device,
         const TriangleTestContextDesc& desc
+    );
+
+    // ── Debug opaque object path ─────────────────────────────────────────
+
+
+    struct DebugOpaqueContextDesc
+    {
+        wz::gpu::GPUHandle vertex_shader{};
+        wz::gpu::GPUHandle pixel_shader{};
+
+        bool valid() const noexcept
+        {
+            return vertex_shader.valid() && pixel_shader.valid();
+        }
+    };
+
+    void create_debug_opaque_context(
+        wz::gpu::Device& device,
+        const DebugOpaqueContextDesc& desc
+    );
+
+    void submit_render_frame(
+        wz::gpu::Device& device,
+        const wz::render::RenderFrame& frame
     );
 
     // ── Scalar field debug path ──────────────────────────────────────────
