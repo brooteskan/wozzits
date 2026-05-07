@@ -43,6 +43,10 @@ namespace wz::gpu::dx12
         wz::gpu::GPUHandle pixel_shader{};
         wz::gpu::GPUHandle scalar_field_texture{};
 
+        float display_min = 0.0f;
+        float display_max = 1.0f;
+        bool normalize_for_display = true;
+
         bool valid() const noexcept
         {
             return vertex_shader.valid()

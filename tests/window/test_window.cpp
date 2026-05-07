@@ -120,7 +120,10 @@ int main()
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
             .scalar_field_texture = texture,
-            });
+            .display_min = scalar_data->min_value,
+            .display_max = scalar_data->max_value,
+            .normalize_for_display = true,
+                    });
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))

@@ -22,6 +22,10 @@ namespace wz::gpu::dx12
         ID3D12RootSignature* root_sig = nullptr;
         ID3D12PipelineState* pso = nullptr;
         GPUHandle scalar_field_texture{};
+
+        float display_min = 0.0f;
+        float display_max = 1.0f;
+        bool normalize_for_display = true;
     };
 
     struct DX12Device

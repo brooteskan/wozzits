@@ -15,19 +15,28 @@ namespace
     ID3D12RootSignature* create_scalar_field_root_signature(
         ID3D12Device* device)
     {
+        D3D12_ROOT_PARAMETER params[2]{};
+
+        // param 0: SRV table
         D3D12_DESCRIPTOR_RANGE srv_range{};
         srv_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         srv_range.NumDescriptors = 1;
-        srv_range.BaseShaderRegister = 0; // t0
+        srv_range.BaseShaderRegister = 0;
         srv_range.RegisterSpace = 0;
         srv_range.OffsetInDescriptorsFromTableStart =
             D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-        D3D12_ROOT_PARAMETER param{};
-        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        param.DescriptorTable.NumDescriptorRanges = 1;
-        param.DescriptorTable.pDescriptorRanges = &srv_range;
-        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[0].DescriptorTable.NumDescriptorRanges = 1;
+        params[0].DescriptorTable.pDescriptorRanges = &srv_range;
+        params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        // param 1: debug constants
+        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[1].Constants.Num32BitValues = 4;
+        params[1].Constants.ShaderRegister = 0; // b0
+        params[1].Constants.RegisterSpace = 0;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
         D3D12_STATIC_SAMPLER_DESC sampler{};
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -45,8 +54,8 @@ namespace
         sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
         D3D12_ROOT_SIGNATURE_DESC desc{};
-        desc.NumParameters = 1;
-        desc.pParameters = &param;
+        desc.NumParameters = 2;
+        desc.pParameters = params;
         desc.NumStaticSamplers = 1;
         desc.pStaticSamplers = &sampler;
         desc.Flags =
@@ -164,6 +173,9 @@ namespace wz::gpu::dx12
 
         auto* ctx = new ScalarFieldDebugContext{};
         ctx->scalar_field_texture = desc.scalar_field_texture;
+        ctx->display_min = desc.display_min;
+        ctx->display_max = desc.display_max;
+        ctx->normalize_for_display = desc.normalize_for_display;
 
         ctx->root_sig = create_scalar_field_root_signature(impl->device);
         assert(ctx->root_sig);
@@ -184,7 +196,11 @@ namespace wz::gpu::dx12
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         assert(impl);
+        assert(impl->cmd);
         assert(impl->scalar_debug_ctx);
+        assert(impl->scalar_debug_ctx->root_sig);
+        assert(impl->scalar_debug_ctx->pso);
+        assert(impl->scalar_field_srv_heap);
 
         const auto* tex =
             impl->scalar_field_textures.get(
@@ -199,16 +215,49 @@ namespace wz::gpu::dx12
         };
 
         impl->cmd->SetDescriptorHeaps(1, heaps);
+
         impl->cmd->SetGraphicsRootSignature(
             impl->scalar_debug_ctx->root_sig
-        );
-        impl->cmd->SetGraphicsRootDescriptorTable(
-            0,
-            tex->srv_gpu
         );
 
         impl->cmd->SetPipelineState(
             impl->scalar_debug_ctx->pso
+        );
+
+        impl->cmd->SetGraphicsRootDescriptorTable(
+            0,          // root parameter 0: SRV table t0
+            tex->srv_gpu
+        );
+
+        struct DebugParams
+        {
+            float display_min;
+            float display_max;
+            float inv_range;
+            uint32_t flags;
+        };
+
+        static_assert(sizeof(DebugParams) == 16);
+
+        DebugParams params{};
+        params.display_min = impl->scalar_debug_ctx->display_min;
+        params.display_max = impl->scalar_debug_ctx->display_max;
+
+        const float range = params.display_max - params.display_min;
+
+        params.inv_range =
+            (range > 0.0f)
+            ? (1.0f / range)
+            : 0.0f;
+
+        params.flags =
+            impl->scalar_debug_ctx->normalize_for_display ? 1u : 0u;
+
+        impl->cmd->SetGraphicsRoot32BitConstants(
+            1,          // root parameter 1: debug constants b0
+            4,          // display_min, display_max, inv_range, flags
+            &params,
+            0
         );
 
         impl->cmd->IASetPrimitiveTopology(
