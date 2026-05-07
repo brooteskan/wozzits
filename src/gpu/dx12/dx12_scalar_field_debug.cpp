@@ -33,7 +33,7 @@ namespace
 
         // param 1: debug constants
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        params[1].Constants.Num32BitValues = 4;
+        params[1].Constants.Num32BitValues = 8;
         params[1].Constants.ShaderRegister = 0; // b0
         params[1].Constants.RegisterSpace = 0;
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -192,7 +192,8 @@ namespace wz::gpu::dx12
     }
 
     void submit_scalar_field_debug_frame(
-        wz::gpu::Device& device)
+        wz::gpu::Device& device,
+        const ScalarFieldDebugView& view)
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         assert(impl);
@@ -235,27 +236,37 @@ namespace wz::gpu::dx12
             float display_max;
             float inv_range;
             uint32_t flags;
+
+            float offset_x;
+            float offset_y;
+            float zoom;
+            float pad0;
         };
 
-        static_assert(sizeof(DebugParams) == 16);
+        static_assert(sizeof(DebugParams) == 32);
 
         DebugParams params{};
+
         params.display_min = impl->scalar_debug_ctx->display_min;
         params.display_max = impl->scalar_debug_ctx->display_max;
 
-        const float range = params.display_max - params.display_min;
+        const float range =
+            params.display_max - params.display_min;
 
         params.inv_range =
-            (range > 0.0f)
-            ? (1.0f / range)
-            : 0.0f;
+            range != 0.0f ? 1.0f / range : 0.0f;
 
         params.flags =
             impl->scalar_debug_ctx->normalize_for_display ? 1u : 0u;
 
+        params.offset_x = view.offset_x;
+        params.offset_y = view.offset_y;
+        params.zoom = view.zoom;
+        params.pad0 = 0.0f;
+
         impl->cmd->SetGraphicsRoot32BitConstants(
             1,          // root parameter 1: debug constants b0
-            4,          // display_min, display_max, inv_range, flags
+            8,          // display_min, display_max, inv_range, flags, offset_x, offset_y, zoom, pad0
             &params,
             0
         );

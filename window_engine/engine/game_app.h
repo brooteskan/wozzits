@@ -19,6 +19,12 @@
 
 namespace wz::app
 {
+    struct ScalarFieldDebugRuntime
+    {
+        wz::gpu::GPUHandle texture{};
+        bool ready = false;
+    };
+
     struct RuntimeCamera
     {
         float x = 0.0f;
@@ -40,6 +46,8 @@ namespace wz::app
         std::unique_ptr<wz::engine::assets::EngineAssetLibrary> assets{};
 
         RuntimeCamera camera{};
+
+        ScalarFieldDebugRuntime scalar_debug{};
 
         bool initialized = false;
     };

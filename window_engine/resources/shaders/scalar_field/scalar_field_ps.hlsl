@@ -1,12 +1,17 @@
 Texture2D<float> scalar_field : register(t0);
 SamplerState scalar_sampler : register(s0);
 
-cbuffer ScalarFieldDebugParams : register(b0)
+cbuffer DebugParams : register(b0)
 {
     float display_min;
     float display_max;
     float inv_range;
-    uint display_flags;
+    uint flags;
+
+    float offset_x;
+    float offset_y;
+    float zoom;
+    float pad0;
 };
 
 struct PSIn
@@ -17,9 +22,20 @@ struct PSIn
 
 float4 main(PSIn input) : SV_TARGET
 {
-    float v = scalar_field.Sample(scalar_sampler, input.uv);
+    float safe_zoom = max(zoom, 0.0001f);
 
-    bool normalize_for_display = (display_flags & 1u) != 0u;
+    float2 field_uv =
+        (input.uv - float2(0.5f, 0.5f)) / safe_zoom
+        + float2(0.5f, 0.5f)
+        + float2(offset_x, offset_y);
+
+    // First-pass behavior: clamp at edges.
+    // Later, use wrap sampling if you want infinite-feeling pan.
+    field_uv = saturate(field_uv);
+
+    float v = scalar_field.Sample(scalar_sampler, field_uv);
+
+    bool normalize_for_display = (flags & 1u) != 0u;
 
     float out_v = v;
 

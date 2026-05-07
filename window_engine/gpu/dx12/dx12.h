@@ -37,6 +37,14 @@ namespace wz::gpu::dx12
 
     // ── Scalar field debug path ──────────────────────────────────────────
 
+    struct ScalarFieldDebugView
+    {
+        float offset_x = 0.0f;
+        float offset_y = 0.0f;
+        float zoom = 1.0f;
+        float pad0 = 0.0f;
+    };
+
     struct ScalarFieldDebugContextDesc
     {
         wz::gpu::GPUHandle vertex_shader{};
@@ -61,7 +69,8 @@ namespace wz::gpu::dx12
     );
 
     void submit_scalar_field_debug_frame(
-        wz::gpu::Device& device
+        wz::gpu::Device& device,
+        const ScalarFieldDebugView& view
     );
 
     void end_frame(wz::gpu::Device& device);

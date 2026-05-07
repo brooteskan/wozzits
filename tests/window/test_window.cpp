@@ -151,7 +151,8 @@ int main()
             wz::gpu::begin_frame(device);
             wz::gpu::clear(device, 0.05f, 0.05f, 0.05f, 1.0f);
 
-            wz::gpu::dx12::submit_scalar_field_debug_frame(device);
+            wz::gpu::dx12::ScalarFieldDebugView view{};
+            wz::gpu::dx12::submit_scalar_field_debug_frame(device, view);
 
             wz::gpu::end_frame(device);
             wz::gpu::present(device);

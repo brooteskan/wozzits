@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <engine/game_app.h>
 
+#include <gpu/scalar_field_texture.h>
+#include <gpu/dx12/dx12.h>
+#include <engine/assets/scalar_field/scalar_field.h>
 
 namespace wz::app
 {
@@ -39,6 +42,69 @@ namespace wz::app
             app.logger,
             wz::fs::Path{"resources" }
         );
+
+        using namespace wz::engine::assets;
+
+        ScalarFieldAsset field = app.assets->create_procedural_scalar_field({
+            .name = "debug/gradient_x",
+            .width = 256,
+            .height = 256,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+            });
+
+        if (!field.valid())
+            return false;
+
+        auto shaders = app.assets->create_shader_pair({
+            .name = "scalar_field_debug",
+            .vertex_path = "shaders/scalar_field/scalar_field_vs.hlsl",
+            .pixel_path = "shaders/scalar_field/scalar_field_ps.hlsl",
+            });
+
+        if (!shaders.valid())
+            return false;
+
+        if (!app.assets->commit())
+            return false;
+
+        app.assets->resolve_all();
+
+        auto shader_handles = app.assets->get_shader_pair(shaders);
+        if (!shader_handles.valid())
+            return false;
+
+        ScalarFieldHandle scalar_handle = app.assets->get_scalar_field(field);
+        if (!scalar_handle.valid())
+            return false;
+
+        const ScalarFieldData* scalar_data =
+            app.assets->get_scalar_field_data(scalar_handle);
+
+        if (!scalar_data || !scalar_data->valid())
+            return false;
+
+        wz::gpu::GPUHandle texture =
+            wz::gpu::upload_scalar_field_texture(app.device, *scalar_data);
+
+        if (!texture.valid())
+            return false;
+
+        wz::gpu::dx12::create_scalar_field_debug_context(app.device, {
+            .vertex_shader = shader_handles.vertex,
+            .pixel_shader = shader_handles.pixel,
+            .scalar_field_texture = texture,
+            .display_min = scalar_data->min_value,
+            .display_max = scalar_data->max_value,
+            .normalize_for_display = true,
+            });
+
+        app.scalar_debug.texture = texture;
+        app.scalar_debug.ready = true;
 
         wz::input::init_raw_input();
 
@@ -87,9 +153,6 @@ namespace wz::app
         if (input.keyboard.pressed[VK_ESCAPE])
             ctx.running = false;
 
-        const float dt_ticks =
-            static_cast<float>(fctx.frame.interval.end - fctx.frame.interval.start);
-
         const float dt =
             static_cast<float>(fctx.frame.delta_seconds());
 
@@ -133,11 +196,24 @@ namespace wz::app
         GameApp& app,
         const wz::engine::FrameContext& fctx)
     {
-        const float r = 0.05f + 0.05f * app.camera.x;
-        const float g = 0.07f + 0.05f * app.camera.y;
-
         wz::gpu::begin_frame(app.device);
-        wz::gpu::clear(app.device, r, g, 0.10f, 1.0f);
+        wz::gpu::clear(app.device, 0.05f, 0.05f, 0.05f, 1.0f);
+
+        if (app.scalar_debug.ready)
+        {
+            wz::gpu::dx12::ScalarFieldDebugView view{};
+            view.offset_x = app.camera.x * 0.10f;
+            view.offset_y = app.camera.y * 0.10f;
+            //view.offset_x = 0.50f;
+            //view.offset_y = 0.0f;
+            view.zoom = 1.0f;
+
+            wz::gpu::dx12::submit_scalar_field_debug_frame(
+                app.device,
+                view
+            );
+        }
+
         wz::gpu::end_frame(app.device);
         wz::gpu::present(app.device);
     }

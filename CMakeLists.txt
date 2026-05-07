@@ -150,7 +150,12 @@ function(rs_add_test_group category name)
             window_engine
     )
 
-    if(category STREQUAL "window" AND name STREQUAL "test_window")
+    set(WZ_TESTS_REQUIRING_RESOURCES
+    test_window
+    game_app_main
+    )
+
+    if(name IN_LIST WZ_TESTS_REQUIRING_RESOURCES)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
