@@ -32,8 +32,8 @@ namespace wz::input
             switch (e.type)
             {
             case wz::event::Event::Type::MouseMove:
-                input.mouse.dx = e.mouse_move.dx;
-                input.mouse.dy = e.mouse_move.dy;
+                input.mouse.dx += e.mouse_move.dx;
+                input.mouse.dy += e.mouse_move.dy;
                 break;
 
             case wz::event::Event::Type::MouseButton:

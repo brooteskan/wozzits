@@ -131,7 +131,7 @@ function(rs_add_test_group category name)
     add_executable(${target}
         tests/${category}/${name}.cpp
         "src/event/event.cpp"
-    )
+     "src/engine/game_app.cpp")
 
     set_target_properties(${target}
         PROPERTIES FOLDER "tests/${category}"
@@ -181,4 +181,6 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset scalar_field_tests)
     rs_add_test_group(asset scalar_field_procedural_tests)
     rs_add_test_group(asset scalar_field_texture_test)
+
+    rs_add_test_group(game_app game_app_main)
 endif()

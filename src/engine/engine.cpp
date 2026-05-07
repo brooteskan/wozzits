@@ -6,6 +6,7 @@
 #include <logging/logger.h>
 #include <input/input.h>
 #include <event/event.h>
+#include <window/window2.h>
 
 // #include <render/submit.h>
 
@@ -30,8 +31,6 @@ namespace wz::engine
         Context &ctx = context();
         ctx.running = true;
 
-        const double seconds_per_tick =
-            1.0 / double(TimeSource::ticks_per_second());
 
         Tick last = TimeSource::now_ticks();
         uint64_t frame_index = 0;
@@ -41,18 +40,21 @@ namespace wz::engine
 
         while (ctx.running)
         {
-            platform::win32::w32_pump_messages();
+            
 
-            Tick now = TimeSource::now_ticks();
+            Tick end = TimeSource::now_ticks();
 
-            Tick dt = (now > last) ? (now - last) : 1;
-            Tick end = last + dt;
+            if (end <= last)
+                end = last + 1;
 
             FrameContext fctx;
 
             fctx.frame.index = frame_index++;
             fctx.frame.interval.start = last;
             fctx.frame.interval.end = end;
+
+            last = end;
+
 
             std::vector<wz::event::Event> frame_events;
             frame_events.reserve(4096);
@@ -75,9 +77,6 @@ namespace wz::engine
 
             input = fctx.input;
 
-            // wz::core::render::submit(fctx.render_ir);
-
-            last = end;
 
             update(ctx, fctx, user_data);
         }

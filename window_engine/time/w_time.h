@@ -112,8 +112,8 @@ namespace wz::time
 {
     struct Interval
     {
-        Tick start;
-        Tick end;
+        Tick start{};
+        Tick end{};
 
         Tick duration() const
         {
@@ -123,10 +123,10 @@ namespace wz::time
 
     struct Frame
     {
-        Interval interval;
+        Interval interval{};
+        uint64_t index{};
 
-        uint64_t index; // frame number
-        Tick delta_ticks() const 
+        Tick delta_ticks() const
         {
             return interval.duration();
         }
