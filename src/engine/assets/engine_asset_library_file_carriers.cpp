@@ -111,6 +111,14 @@ namespace wz::engine::assets::internal
             kAssetTypeBinaryBlob,
             "custom binary file carrier"
         );
+
+        register_byte_file_carrier(
+            registry,
+            logger,
+            kCSVFileSchema,
+            kAssetTypeRawFile,
+            "CSV file carrier"
+        );
     }
 
 } // namespace wz::engine::assets::internal

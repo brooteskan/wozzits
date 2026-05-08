@@ -5,6 +5,7 @@
 #include <asset/compiler.h>
 #include <logging/logger.h>
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/csv/csv.h>
 #include <gpu/shader.h>
 
 namespace wz::engine::assets::internal {
@@ -22,7 +23,8 @@ namespace wz::engine::assets::internal {
     wz::asset::CompilerRegistry make_engine_compiler_registry(
         wz::gpu::Device& device,
         wz::Logger& logger,
-        ScalarFieldTable& scalar_field_table
+        ScalarFieldTable& scalar_field_table,
+        CSVTable& csv_table
     );
 
     void register_file_carrier_compilers(

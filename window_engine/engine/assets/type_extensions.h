@@ -204,6 +204,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeTerrainLayer =
         static_cast<wz::asset::AssetType>(149);
 
+    // Implemented: parsed CSV document (headers + ragged rows of raw strings).
+    // Runtime data is owned by CSVTable.
+    inline constexpr wz::asset::AssetType kAssetTypeCSVTable =
+        static_cast<wz::asset::AssetType>(150);
+
 
     // ─── Texture / image CPU and intermediate asset types: 160–191 ──────────────
     // Texture specializations that may need distinct recipe/runtime paths.

@@ -93,10 +93,12 @@ namespace wz::engine::assets
         , logger_(logger)
         , resource_root_(std::move(resource_root))
         , scalar_fields_table_{}
-        , system_(internal::make_engine_compiler_registry(device, logger, scalar_fields_table_))
+        , csv_table_{}
+        , system_(internal::make_engine_compiler_registry(device, logger, scalar_fields_table_, csv_table_))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
+        , csv_(system_, logger_, files_, csv_table_)
     {
     }
 
