@@ -44,10 +44,9 @@ namespace wz::engine::assets
             .canonical_path = canonical,
         };
 
-        if (!system_.register_asset(std::move(node))) {
-            logger_.error("failed to register file node: " + canonical);
-            return {};
-        }
+        // register_asset returns false when the key is already present — that is
+        // intentional here: multiple asset nodes may share the same file carrier.
+        system_.register_asset(std::move(node));
 
         return key;
     }
