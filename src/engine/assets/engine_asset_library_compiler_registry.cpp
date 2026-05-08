@@ -20,41 +20,41 @@ namespace wz::engine::assets::internal
     {
         wz::asset::CompilerRegistry registry;
 
-
+        register_file_carrier_compilers(registry, logger);
         // ── Raw file carrier compiler ─────────────────────────────────────────
         //
         // Dispatches on kRawFileSchema. Reads the file from FileSourceDesc
         // metadata and returns a compiled node carrying the raw bytes.
         // Used as the upstream dependency for the scalar field compiler.
 
-        registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kRawFileSchema,
-            .output_type = kAssetTypeRawFile,
-            .compile = [&logger](
-                const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
-                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
-            {
-                const auto* file =
-                    std::any_cast<FileSourceDesc>(&input.meta);
+        //registry.register_compiler(wz::asset::AssetCompiler{
+        //    .input_schema = kRawFileSchema,
+        //    .output_type = kAssetTypeRawFile,
+        //    .compile = [&logger](
+        //        const wz::asset::AssetNode& input,
+        //        std::span<const wz::asset::AssetNode>,
+        //        std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+        //    {
+        //        const auto* file =
+        //            std::any_cast<FileSourceDesc>(&input.meta);
 
-                if (!file) {
-                    logger.error("raw file carrier missing FileSourceDesc");
-                    return compile_failed_node(input);
-                }
+        //        if (!file) {
+        //            logger.error("raw file carrier missing FileSourceDesc");
+        //            return compile_failed_node(input);
+        //        }
 
-                auto file_result = wz::fs::read_file(file->full_path);
-                if (!file_result) {
-                    logger.error("failed to read file: " + file->full_path);
-                    return compile_failed_node(input);
-                }
+        //        auto file_result = wz::fs::read_file(file->full_path);
+        //        if (!file_result) {
+        //            logger.error("failed to read file: " + file->full_path);
+        //            return compile_failed_node(input);
+        //        }
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = std::move(file_result.value);
-                return out;
-            }
-            });
+        //        wz::asset::AssetNode out = input;
+        //        out.stage = wz::asset::AssetStage::Compiled;
+        //        out.payload = std::move(file_result.value);
+        //        return out;
+        //    }
+        //    });
 
 
         // ── HLSL file carrier compiler ────────────────────────────────────────

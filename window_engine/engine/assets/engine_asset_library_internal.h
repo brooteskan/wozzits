@@ -25,6 +25,11 @@ namespace wz::engine::assets::internal {
         ScalarFieldTable& scalar_field_table
     );
 
+    void register_file_carrier_compilers(
+        wz::asset::CompilerRegistry& registry,
+        wz::Logger& logger
+    );
+
     bool compute_min_max(
         const std::vector<float>& values,
         float& min_value,

@@ -186,6 +186,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset scalar_field_tests)
     rs_add_test_group(asset scalar_field_procedural_tests)
     rs_add_test_group(asset scalar_field_texture_test)
+    rs_add_test_group(asset foundational_assets)
 
     rs_add_test_group(game_app game_app_main)
 endif()

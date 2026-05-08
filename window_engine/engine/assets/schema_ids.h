@@ -62,6 +62,9 @@ namespace wz::engine::assets {
     //
     // The high bits (0xF11ECA55E7______) are a fixed magic prefix to reduce
     // collision probability with any external schema registries.
+
+
+    // ───First schemas implemented for testing, but they are real ───────────────────────────────
     inline constexpr wz::asset::SchemaID kRawFileSchema{
     0xF11E'CA55'E7'000001ull
     };
@@ -105,4 +108,64 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000501ull
     };
 
+    // ─── Foundation / carrier asset types  ───────────────────────────────
+    inline constexpr wz::asset::SchemaID kTextFileSchema{
+        0xF11E'CA55'E7'000003ull
+    };
+
+    inline constexpr wz::asset::SchemaID kBinaryBlobSchema{
+        0xF11E'CA55'E7'000004ull
+    };
+
+    inline constexpr wz::asset::SchemaID kManifestSchema{
+        0xF11E'CA55'E7'000005ull
+    };
+
+    inline constexpr wz::asset::SchemaID kAssetBundleSchema{
+        0xF11E'CA55'E7'000006ull
+    };
+
+    inline constexpr wz::asset::SchemaID kPackageSchema{
+        0xF11E'CA55'E7'000007ull
+    };
+
+    inline constexpr wz::asset::SchemaID kImportedSourceFileSchema{
+        0xF11E'CA55'E7'000008ull
+    };
+
+    inline constexpr wz::asset::SchemaID kExternalReferenceSchema{
+        0xF11E'CA55'E7'000009ull
+    };
+
+    inline constexpr wz::asset::SchemaID kJSONFileSchema{
+        0xF11E'CA55'E7'00000Aull
+    };
+
+    inline constexpr wz::asset::SchemaID kYAMLFileSchema{
+        0xF11E'CA55'E7'00000Bull
+    };
+
+    inline constexpr wz::asset::SchemaID kTOMLFileSchema{
+        0xF11E'CA55'E7'00000Cull
+    };
+
+    inline constexpr wz::asset::SchemaID kXMLFileSchema{
+        0xF11E'CA55'E7'00000Dull
+    };
+
+    inline constexpr wz::asset::SchemaID kCSVFileSchema{
+        0xF11E'CA55'E7'00000Eull
+    };
+
+    inline constexpr wz::asset::SchemaID kCustomBinaryFileSchema{
+        0xF11E'CA55'E7'00000Full
+    };
+
+    inline constexpr wz::asset::SchemaID kDirectoryAssetSchema{
+        0xF11E'CA55'E7'000010ull
+    };
+
+    inline constexpr wz::asset::SchemaID kArchiveAssetSchema{
+        0xF11E'CA55'E7'000011ull
+    };
 }
