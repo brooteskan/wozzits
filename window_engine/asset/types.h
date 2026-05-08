@@ -134,6 +134,9 @@ namespace wz::asset {
     // Mesh and texture assets will eventually have both CPU and GPU forms; keep
     // the ownership boundary explicit when implementing those compilers.
 
+    // id == 0 is the null sentinel.
+    // epoch == 0 is invalid/stale.
+    // Resource tables must never return id 0 for a live resource.
     struct ResourceHandle
     {
         uint32_t id = 0;

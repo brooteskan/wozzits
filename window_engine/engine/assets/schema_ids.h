@@ -40,26 +40,26 @@ namespace wz::engine::assets {
 
     // HLSL shader recipe — compiled by the HLSL shader compiler.
     // Expects a kHLSLFileSchema dependency carrying source bytes.
-    inline constexpr wz::asset::SchemaID kHLSLShaderSchema{ 0xF11E'CA55'E7'000003ull };
+    inline constexpr wz::asset::SchemaID kHLSLShaderSchema{ 0xF11E'CA55'E7'000100ull };
 
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types
     // (e.g. kScalarFieldProceduralSchema, kScalarFieldFromWaveletBandSchema).
     // All produce kAssetTypeScalarField output.
-    inline constexpr wz::asset::SchemaID kScalarFieldFromRawF32Schema{ 0xF11E'CA55'E7'000004ull };
+    inline constexpr wz::asset::SchemaID kScalarFieldFromRawF32Schema{ 0xF11E'CA55'E7'000200ull };
 
     // Procedural scalar field recipe.
     // Compiled directly from metadata; has no file dependency.
     // Produces kAssetTypeScalarField output.
     // Multiple procedural recipes may coexist alongside file-backed recipes;
     // all share the same output type and ScalarFieldTable.
-    inline constexpr wz::asset::SchemaID kScalarFieldProceduralSchema{ 0xF11E'CA55'E7'000007ull };
+    inline constexpr wz::asset::SchemaID kScalarFieldProceduralSchema{ 0xF11E'CA55'E7'000201ull };
 
     // Gaussian splat cloud loaded from a PLY file.
-    inline constexpr wz::asset::SchemaID kGaussianSplatPLYSchema{ 0xF11E'CA55'E7'000005ull };
+    inline constexpr wz::asset::SchemaID kGaussianSplatFromPLYSchema{ 0xF11E'CA55'E7'000500ull };
 
     // Gaussian splat cloud generated from a scalar field.
-    inline constexpr wz::asset::SchemaID kGaussianSplatFromFieldSchema{ 0xF11E'CA55'E7'000006ull };
+    inline constexpr wz::asset::SchemaID kGaussianSplatFromFieldSchema{ 0xF11E'CA55'E7'000501ull };
 
 }
