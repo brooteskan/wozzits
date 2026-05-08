@@ -678,4 +678,18 @@ namespace wz::fs
         return wide_to_utf8(buffer);
     }
 
+    Path wz::fs::temp_directory_path()
+    {
+        std::wstring buffer(MAX_PATH, L'\0');
+
+        DWORD size = GetTempPathW((DWORD)buffer.size(), buffer.data());
+
+        if (size == 0)
+            return {};
+
+        buffer.resize(size);
+
+        return wide_to_utf8(buffer);
+    }
+
 }
