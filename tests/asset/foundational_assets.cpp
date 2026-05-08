@@ -85,7 +85,7 @@ TEST(FoundationSchemas, StableNumericValues)
 
     EXPECT_EQ(wz::engine::assets::kJSONFileSchema.value,
         0xF11E'CA55'E7'00000Aull);
-    };
+    
 }
 
 TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
