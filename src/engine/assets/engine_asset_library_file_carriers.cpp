@@ -87,6 +87,22 @@ namespace wz::engine::assets::internal
             wz::asset::AssetType::ShaderSource,
             "HLSL file carrier"
         );
+
+        register_byte_file_carrier(
+            registry,
+            logger,
+            kBinaryBlobSchema,
+            kAssetTypeBinaryBlob,
+            "binary blob carrier"
+        );
+
+        register_byte_file_carrier(
+            registry,
+            logger,
+            kImportedSourceFileSchema,
+            kAssetTypeImportedSourceFile,
+            "imported source file carrier"
+        );
     }
 
 } // namespace wz::engine::assets::internal
