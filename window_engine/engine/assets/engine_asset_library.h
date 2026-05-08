@@ -15,9 +15,11 @@
 #include <logging/logger.h>
 
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/csv/csv.h>
 #include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/shader_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/csv_asset_module.h>
 
 #include <string>
 #include <vector>
@@ -71,10 +73,12 @@ namespace wz::engine::assets
         FileCarrierAssetModule&       files()         { return files_; }
         ShaderAssetModule&            shaders()       { return shaders_; }
         ScalarFieldAssetModule&       scalar_fields() { return scalar_fields_; }
+        CSVAssetModule&               csv()           { return csv_; }
 
         const FileCarrierAssetModule&  files()         const { return files_; }
         const ShaderAssetModule&       shaders()       const { return shaders_; }
         const ScalarFieldAssetModule&  scalar_fields() const { return scalar_fields_; }
+        const CSVAssetModule&          csv()           const { return csv_; }
 
         // ── Direct access ─────────────────────────────────────────────────────────
 
@@ -84,25 +88,26 @@ namespace wz::engine::assets
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.
         //
-        // scalar_fields_table_ before system_: the compiler registry lambda
-        //   captures a reference to the table; it must be alive when system_
-        //   is constructed.
+        // *_table_ members before system_: compiler registry lambdas capture
+        //   references to the tables; they must be alive when system_ is constructed.
         //
         // system_ before the modules: modules hold a reference to system_.
         //
-        // files_ before shaders_ and scalar_fields_: both modules hold a
-        //   reference to files_.
+        // files_ before shaders_, scalar_fields_, and csv_: all three modules
+        //   hold a reference to files_.
 
         wz::gpu::Device& device_;
         wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
 
         ScalarFieldTable       scalar_fields_table_;
+        CSVTable               csv_table_;
         wz::asset::AssetSystem system_;
 
         FileCarrierAssetModule  files_;
         ShaderAssetModule       shaders_;
         ScalarFieldAssetModule  scalar_fields_;
+        CSVAssetModule          csv_;
     };
 
 } // namespace wz::engine::assets
