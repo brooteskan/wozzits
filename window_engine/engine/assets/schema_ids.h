@@ -6,60 +6,103 @@
 
 namespace wz::engine::assets {
 
-    // ─── Schema ID constants ──────────────────────────────────────────────────────
-    //
-    // Each schema identifies the compiler recipe a node participates in — it
-    // describes the input contract the compiler expects, not the file format.
-    //
-    // Pattern:
-    //   file/carrier node   → schema selects which file carrier compiler reads it
-    //   compile/recipe node → schema selects which domain compiler processes it
-    //
-    // Values are stable compile-time constants; do not change them once shipped
-    // as that would silently invalidate persisted caches.
-    //
     // Numeric range allocation (low 24 bits of the uint64 value):
     //
-    //   0x000001 – 0x0000FF   File carriers (raw bytes, no domain interpretation)
+    //   0x000001 – 0x0000FF   File carriers
+    //                          Raw bytes, text files, external refs, archives,
+    //                          and other source/carrier schemas.
+    //
     //   0x000100 – 0x0001FF   Shaders and GPU pipelines
-    //   0x000200 – 0x0002FF   Scalar fields (file-backed and procedural)
-    //   0x000300 – 0x0003FF   Textures
-    //   0x000400 – 0x0004FF   Meshes
-    //   0x000500 – 0x0005FF   Gaussian splat clouds
-    //   0x000600+             Reserved for future asset families
+    //                          HLSL/GLSL/WGSL recipes, shader modules,
+    //                          root signatures, pipeline recipes.
+    //
+    //   0x000200 – 0x0002FF   Scalar fields
+    //                          File-backed, procedural, derived fields,
+    //                          field transforms, field-to-field recipes.
+    //
+    //   0x000300 – 0x0003FF   Textures and images
+    //                          Raw RGBA, procedural textures, image imports,
+    //                          texture transforms, mip generation.
+    //
+    //   0x000400 – 0x0004FF   Meshes and geometry
+    //                          Procedural meshes, file-backed meshes,
+    //                          mesh transforms, LODs, collision/nav derivations.
+    //
+    //   0x000500 – 0x0005FF   Gaussian splat clouds and point-based geometry
+    //                          PLY/custom imports, scalar-field-derived splats,
+    //                          splat LOD/chunk recipes.
+    //
+    //   0x000600 – 0x0006FF   Materials and binding descriptions
+    //
+    //   0x000700 – 0x0007FF   Scenes, prefabs, worlds, and authored content
+    //
+    //   0x000800 – 0x0008FF   Animation
+    //
+    //   0x000900 – 0x0009FF   Physics
+    //
+    //   0x000A00 – 0x000AFF   Terrain and world-data recipes
+    //
+    //   0x000B00 – 0x000BFF   Audio
+    //
+    //   0x000C00 – 0x000CFF   UI and text
+    //
+    //   0x000D00 – 0x000DFF   Gameplay/data
+    //
+    //   0x000E00 – 0x000EFF   AI
+    //
+    //   0x000F00 – 0x000FFF   VFX and particles
+    //
+    //   0x001000 – 0x0010FF   Lighting and rendering environment
+    //
+    //   0x001100 – 0x0011FF   Cinematics
+    //
+    //   0x001200 – 0x0012FF   Editor/tooling/build/import/cooked assets
+    //
+    //   0x001300 – 0xFFFFFF   Unallocated extension range
     //
     // The high bits (0xF11ECA55E7______) are a fixed magic prefix to reduce
     // collision probability with any external schema registries.
-
-    // Generic raw file carrier — bytes only, no domain interpretation.
-    // Used as the source file node schema for any raw binary asset (e.g. .rawf32).
-    inline constexpr wz::asset::SchemaID kRawFileSchema{ 0xF11E'CA55'E7'000001ull };
+    inline constexpr wz::asset::SchemaID kRawFileSchema{
+    0xF11E'CA55'E7'000001ull
+    };
 
     // HLSL source file carrier — read by the HLSL file carrier compiler.
-    inline constexpr wz::asset::SchemaID kHLSLFileSchema{ 0xF11E'CA55'E7'000002ull };
+    inline constexpr wz::asset::SchemaID kHLSLFileSchema{
+    0xF11E'CA55'E7'000002ull
+    };
 
     // HLSL shader recipe — compiled by the HLSL shader compiler.
     // Expects a kHLSLFileSchema dependency carrying source bytes.
-    inline constexpr wz::asset::SchemaID kHLSLShaderSchema{ 0xF11E'CA55'E7'000100ull };
+    inline constexpr wz::asset::SchemaID kHLSLShaderSchema{
+    0xF11E'CA55'E7'000100ull
+    };
 
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types
     // (e.g. kScalarFieldProceduralSchema, kScalarFieldFromWaveletBandSchema).
     // All produce kAssetTypeScalarField output.
-    inline constexpr wz::asset::SchemaID kScalarFieldFromRawF32Schema{ 0xF11E'CA55'E7'000200ull };
+    inline constexpr wz::asset::SchemaID kScalarFieldFromRawF32Schema{
+    0xF11E'CA55'E7'000200ull
+    };
 
     // Procedural scalar field recipe.
     // Compiled directly from metadata; has no file dependency.
     // Produces kAssetTypeScalarField output.
     // Multiple procedural recipes may coexist alongside file-backed recipes;
     // all share the same output type and ScalarFieldTable.
-    inline constexpr wz::asset::SchemaID kScalarFieldProceduralSchema{ 0xF11E'CA55'E7'000201ull };
+    inline constexpr wz::asset::SchemaID kScalarFieldProceduralSchema{
+    0xF11E'CA55'E7'000201ull
+    };
 
     // Gaussian splat cloud loaded from a PLY file.
-    inline constexpr wz::asset::SchemaID kGaussianSplatFromPLYSchema{ 0xF11E'CA55'E7'000500ull };
+    inline constexpr wz::asset::SchemaID kGaussianSplatFromPLYSchema{
+    0xF11E'CA55'E7'000500ull
+    };
 
     // Gaussian splat cloud generated from a scalar field.
-    inline constexpr wz::asset::SchemaID kGaussianSplatFromFieldSchema{ 0xF11E'CA55'E7'000501ull };
+    inline constexpr wz::asset::SchemaID kGaussianSplatFromFieldSchema{
+    0xF11E'CA55'E7'000501ull
+    };
 
 }
