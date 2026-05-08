@@ -107,10 +107,11 @@ namespace wz::engine::assets
         : device_(device)
         , logger_(logger)
         , resource_root_(std::move(resource_root))
-        , scalar_fields_{}
-        , system_(internal::make_engine_compiler_registry(device, logger, scalar_fields_))
-        // scalar_fields_ is declared before system_ in the class, so it is
-        // fully constructed by the time make_engine_compiler_registry runs.
+        , scalar_fields_table_{}
+        , system_(internal::make_engine_compiler_registry(device, logger, scalar_fields_table_))
+        , files_(system_, logger_, resource_root_)
+        , shaders_(system_, logger_, files_)
+        , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
     {
     }
 

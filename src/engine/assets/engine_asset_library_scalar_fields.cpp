@@ -17,7 +17,7 @@ namespace wz::engine::assets
 
         // Register the raw file carrier node. This is a generic file-bytes node;
         // the scalar field compiler will interpret those bytes.
-        const wz::asset::AssetKey file_key = register_file_node(
+        const wz::asset::AssetKey file_key = files_.register_file_node(
             desc.path,
             kRawFileSchema,
             kAssetTypeRawFile
@@ -72,7 +72,7 @@ namespace wz::engine::assets
         if (!handle.valid())
             return nullptr;
 
-        return scalar_fields_.get(handle.handle);
+        return scalar_fields_table_.get(handle.handle);
     }
 
     wz::asset::AssetKey EngineAssetLibrary::register_scalar_field_node(

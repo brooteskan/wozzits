@@ -12,7 +12,7 @@ namespace wz::engine::assets
     {
         ShaderPairAsset out{};
 
-        const wz::asset::AssetKey vs_file = register_file_node(
+        const wz::asset::AssetKey vs_file = files_.register_file_node(
             desc.vertex_path,
             kHLSLFileSchema,
             wz::asset::AssetType::ShaderSource
@@ -23,7 +23,7 @@ namespace wz::engine::assets
             return out;
         }
 
-        const wz::asset::AssetKey ps_file = register_file_node(
+        const wz::asset::AssetKey ps_file = files_.register_file_node(
             desc.pixel_path,
             kHLSLFileSchema,
             wz::asset::AssetType::ShaderSource

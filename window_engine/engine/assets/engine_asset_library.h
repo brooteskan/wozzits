@@ -15,6 +15,9 @@
 #include <logging/logger.h>
 
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/file_carrier_asset_module.h>
+#include <engine/assets/shader_asset_module.h>
+#include <engine/assets/scalar_field_asset_module.h>
 
 #include <string>
 #include <vector>
@@ -187,21 +190,25 @@ namespace wz::engine::assets
 
         // ── Graph lifecycle ───────────────────────────────────────────────────────
 
-        bool     commit();
+        bool          commit();
         ResolveReport resolve_all();
+
+        // ── Module accessors ──────────────────────────────────────────────────────
+
+        FileCarrierAssetModule&       files()         { return files_; }
+        ShaderAssetModule&            shaders()       { return shaders_; }
+        ScalarFieldAssetModule&       scalar_fields() { return scalar_fields_; }
+
+        const FileCarrierAssetModule&  files()         const { return files_; }
+        const ShaderAssetModule&       shaders()       const { return shaders_; }
+        const ScalarFieldAssetModule&  scalar_fields() const { return scalar_fields_; }
 
         // ── Direct access ─────────────────────────────────────────────────────────
 
-        wz::asset::AssetSystem& system() { return system_; }
+        wz::asset::AssetSystem&       system()       { return system_; }
         const wz::asset::AssetSystem& system() const { return system_; }
 
     private:
-        wz::asset::AssetKey register_file_node(
-            const wz::fs::Path& relative_path,
-            wz::asset::SchemaID   schema,
-            wz::asset::AssetType  type
-        );
-
         wz::asset::AssetKey register_hlsl_shader_node(
             std::string_view           name,
             wz::asset::AssetKey        source_file,
@@ -219,16 +226,27 @@ namespace wz::engine::assets
         );
 
     private:
-        // Declaration order matters: scalar_fields_ must be initialised before
-        // system_, because system_'s constructor captures a reference to it via
-        // the compiler registry lambda. C++ initialises members in declaration
-        // order, so scalar_fields_ being listed first guarantees this.
+        // Member declaration order is load-bearing — C++ initialises in this order.
+        //
+        // scalar_fields_table_ before system_: the compiler registry lambda
+        //   captures a reference to the table; it must be alive when system_
+        //   is constructed.
+        //
+        // system_ before the modules: modules hold a reference to system_.
+        //
+        // files_ before shaders_ and scalar_fields_: both modules hold a
+        //   reference to files_.
+
         wz::gpu::Device& device_;
-        wz::Logger& logger_;
+        wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
 
-        ScalarFieldTable      scalar_fields_;   // owns all resolved ScalarFieldData
-        wz::asset::AssetSystem system_;         // must come after scalar_fields_
+        ScalarFieldTable       scalar_fields_table_;
+        wz::asset::AssetSystem system_;
+
+        FileCarrierAssetModule  files_;
+        ShaderAssetModule       shaders_;
+        ScalarFieldAssetModule  scalar_fields_;
     };
 
 } // namespace wz::engine::assets
