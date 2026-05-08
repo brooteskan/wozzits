@@ -1,6 +1,6 @@
 #pragma once
 
-namespace wz
+namespace wz::fs
 {
     enum class FileError
     {

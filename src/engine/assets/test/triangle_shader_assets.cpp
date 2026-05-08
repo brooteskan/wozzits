@@ -34,7 +34,7 @@ namespace wz::engine::assets::test
         node.stage = AssetStage::Source;
         node.payload = std::move(bytes);
 
-        return { std::move(node), wz::FileError::None };
+        return { std::move(node), wz::fs::FileError::None };
     }
 
     // ─── compile_failed_node ──────────────────────────────────────────────────────
