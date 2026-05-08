@@ -60,7 +60,7 @@ int main()
         using namespace wz::engine::assets;
 
         // ── scalar field asset ────────────────────────────────────────────
-        ScalarFieldAsset field = assets.create_procedural_scalar_field({
+        ScalarFieldAsset field = assets.scalar_fields().create_procedural_scalar_field({
             .name = "debug/gradient_x",
             .width = 256,
             .height = 256,
@@ -76,7 +76,7 @@ int main()
             return 1;
 
         // ── scalar field debug shaders ────────────────────────────────────
-        auto shaders = assets.create_shader_pair({
+        auto shaders = assets.shaders().create_shader_pair({
             .name = "scalar_field_debug",
             .vertex_path = "shaders/scalar_field/scalar_field_vs.hlsl",
             .pixel_path = "shaders/scalar_field/scalar_field_ps.hlsl",
@@ -91,16 +91,16 @@ int main()
 
         assets.resolve_all();
 
-        auto shader_handles = assets.get_shader_pair(shaders);
+        auto shader_handles = assets.shaders().get_shader_pair(shaders);
         if (!shader_handles.valid())
             return 1;
 
-        ScalarFieldHandle scalar_handle = assets.get_scalar_field(field);
+        ScalarFieldHandle scalar_handle = assets.scalar_fields().get_scalar_field(field);
         if (!scalar_handle.valid())
             return 1;
 
         const ScalarFieldData* scalar_data =
-            assets.get_scalar_field_data(scalar_handle);
+            assets.scalar_fields().get_scalar_field_data(scalar_handle);
 
         if (!scalar_data || !scalar_data->valid())
             return 1;

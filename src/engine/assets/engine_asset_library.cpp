@@ -2,23 +2,8 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/engine_asset_library_internal.h>
-#include <engine/assets/schema_ids.h>
-#include <engine/assets/type_extensions.h>
-#include <engine/assets/key_factories/file_carrier.h>
-#include <engine/assets/key_factories/hlsl_shader.h>
-#include <engine/assets/key_factories/scalar_field.h>
-#include <engine/assets/key_factories/scalar_field_procedural.h>
 
-#include <engine/assets/shader/shader_types.h>
-#include <gpu/shader.h>
-
-#include <cassert>
-#include <cmath>
-#include <cstring>
-#include <limits>
-#include <span>
 #include <vector>
-#include <any>
 
 namespace wz::engine::assets
 {
@@ -157,70 +142,5 @@ namespace wz::engine::assets
 
 
 
-
-    wz::asset::AssetKey EngineAssetLibrary::register_procedural_scalar_field_node(
-        const ProceduralScalarFieldCompileDesc& desc,
-        std::string_view name)
-    {
-        const wz::asset::AssetKey key = make_procedural_scalar_field_key(
-            name,
-            desc.width,
-            desc.height,
-            desc.depth,
-            static_cast<uint8_t>(desc.generator),
-            desc.frequency,
-            desc.amplitude,
-            static_cast<uint8_t>(desc.format),
-            static_cast<uint8_t>(desc.domain_kind)
-        );
-
-        wz::asset::AssetNode node;
-        node.key = key;
-        node.type = kAssetTypeScalarField;
-        node.schema = kScalarFieldProceduralSchema;
-        node.stage = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta = desc;
-
-        // No dependency vector — procedural nodes have no file prerequisite.
-        if (!system_.register_asset(std::move(node))) {
-            logger_.error(
-                "duplicate procedural scalar field key — "
-                "name and parameters must be unique: "
-                + std::string(name));
-            return {};
-        }
-
-        return key;
-    }
-
-    ScalarFieldAsset EngineAssetLibrary::create_procedural_scalar_field(
-        const ProceduralScalarFieldDesc& desc)
-    {
-        ScalarFieldAsset out{};
-
-        const ProceduralScalarFieldCompileDesc compile_desc{
-            .width = desc.width,
-            .height = desc.height,
-            .depth = desc.depth,
-            .generator = desc.generator,
-            .frequency = desc.frequency,
-            .amplitude = desc.amplitude,
-            .format = desc.format,
-            .domain_kind = desc.domain_kind,
-        };
-
-        const wz::asset::AssetKey key =
-            register_procedural_scalar_field_node(compile_desc, desc.name);
-
-        if (key == wz::asset::AssetKey{}) {
-            logger_.error(
-                "failed to register procedural scalar field: " + desc.name);
-            return out;
-        }
-
-        out.output = key;
-        return out;
-    }
 
 } // namespace wz::engine::assets
