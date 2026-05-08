@@ -186,8 +186,8 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(asset.valid());
         ASSERT_TRUE(library_->commit());
 
-        const uint32_t resolved = library_->resolve_all();
-        EXPECT_GT(resolved, 0u);
+        const auto report = library_->resolve_all();
+        EXPECT_GT(report.resolved_count, 0u);
 
         const ScalarFieldHandle handle = library_->get_scalar_field(asset);
         EXPECT_TRUE(handle.valid());

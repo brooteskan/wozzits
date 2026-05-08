@@ -17,9 +17,30 @@
 #include <engine/assets/scalar_field/scalar_field.h>
 
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets
 {
+    // ─── ResolveReport ────────────────────────────────────────────────────────────
+    //
+    // Returned by EngineAssetLibrary::resolve_all(). Carries the success count
+    // and a structured list of failures for diagnostic use.
+
+    struct ResolveFailure
+    {
+        wz::asset::AssetKey     key;
+        wz::asset::ResolveError error;
+    };
+
+    struct ResolveReport
+    {
+        uint32_t                  resolved_count = 0;
+        std::vector<ResolveFailure> failures;
+
+        bool ok() const noexcept { return failures.empty(); }
+    };
+
+
     // ─── Shader pair ──────────────────────────────────────────────────────────────
 
     struct ShaderPairDesc
@@ -167,7 +188,7 @@ namespace wz::engine::assets
         // ── Graph lifecycle ───────────────────────────────────────────────────────
 
         bool     commit();
-        uint32_t resolve_all();
+        ResolveReport resolve_all();
 
         // ── Direct access ─────────────────────────────────────────────────────────
 

@@ -87,21 +87,52 @@ namespace wz::asset {
     };
 
     // ─── ResourceHandle ───────────────────────────────────────────────────────────
-    // Opaque reference to a renderer-owned resource.
+    // Opaque reference to a runtime-owned resource (CPU table or GPU backend).
     // The asset system does not interpret this value; it only stores and returns it.
     // epoch provides a generation counter so callers can detect stale references.
     //
-    // Convention:
-    //   id == 0 is the null/invalid sentinel.
-    //   valid() returns true iff id != 0.
-    //   Runtime resource tables must never assign id 0 to a real resource.
-    //   Table slot/index 0 should be reserved or unused.
+    // Global null/stale convention (applies to every resource table in the engine):
+    //   id == 0     — always null/invalid; no real resource is ever assigned id 0.
+    //   epoch == 0  — always invalid/stale; real handles always have epoch >= 1.
+    //   valid()     — returns true iff id != 0 && epoch != 0.
     //
-    // This convention is shared by all table-backed resources:
-    //   GPU shader tables
-    //   scalar field tables
-    //   future gaussian splat tables
-    //   future wavelet/pipeline/material tables
+    // Every resource table (MeshTable, TextureTable, GaussianSplatCloudTable, …)
+    // MUST follow this convention. Slot 0 is permanently reserved as the sentinel.
+    //
+    // ─── Runtime table contract (V1) ─────────────────────────────────────────────
+    //
+    // All CPU-owned asset tables in V1 implement the following policy:
+    //
+    //   Slot 0 sentinel   — reserved at construction; never holds real data.
+    //   Epoch start       — first real slot has epoch == 1.
+    //   Append-only       — slots are never reused; the table only grows.
+    //   destroy()         — releases all memory and invalidates every handle.
+    //   No free-list      — individual-slot deletion is deferred to a later version.
+    //
+    // ScalarFieldTable is the reference implementation. Follow the same pattern
+    // for MeshTable, TextureTable, and any other CPU-owned table added in the future.
+    //
+    // ─── Lifecycle (V1 assumptions) ──────────────────────────────────────────────
+    //
+    // V1 does not support hot reload or partial invalidation.
+    // Assets are resolved once at load time (resolve_all()) and remain live until
+    // the owning table is destroyed. Outstanding handles become invalid after
+    // destroy(). Re-resolving individual nodes or rebuilding dependents is
+    // deferred — do not build future table code that assumes it is possible.
+    //
+    // ─── CPU vs GPU asset ownership boundary ─────────────────────────────────────
+    //
+    // CPU asset compilers produce handles into EngineAssetLibrary-owned tables
+    // (e.g. ScalarFieldTable). The AssetSystem owns neither the table memory
+    // nor the GPU objects — it stores only the ResourceHandle.
+    //
+    // GPU asset compilers call GPU/device APIs and store backend-owned handles.
+    // GPU-side assets (compiled shaders, GPU textures, GPU mesh buffers) are
+    // owned by the GPU backend, not by any CPU table.
+    //
+    // Both flows produce a ResourceHandle. The AssetSystem treats them identically.
+    // Mesh and texture assets will eventually have both CPU and GPU forms; keep
+    // the ownership boundary explicit when implementing those compilers.
 
     struct ResourceHandle
     {

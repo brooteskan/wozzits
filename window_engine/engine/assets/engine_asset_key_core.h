@@ -98,6 +98,17 @@ namespace wz::engine::assets {
         }
 
         // Combine two dep-hashes (for nodes with multiple prerequisites).
+        //
+        // Dependency ordering policy:
+        //   Dependency vectors are ORDERED. combine_dep_hashes() is not commutative —
+        //   swapping the order of deps produces a different key.
+        //   Key factories that declare multiple dependencies MUST document which
+        //   index corresponds to which input (e.g. "dep[0] = source file").
+        //
+        //   If a particular key factory's deps are semantically unordered (e.g. a
+        //   material whose texture bindings have no positional meaning), sort the dep
+        //   keys before folding them and document this explicitly. The default
+        //   assumption everywhere is that order is significant.
         [[nodiscard]] constexpr wz::asset::Hash combine_dep_hashes(
             wz::asset::Hash a, wz::asset::Hash b) noexcept
         {
