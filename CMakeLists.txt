@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(window_engine LANGUAGES CXX)
+project(window_engine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -72,6 +72,14 @@ endif()
 
 
 add_library(window_engine)
+
+target_sources(window_engine PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
+)
+
+target_include_directories(window_engine PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson"
+)
 
 target_link_libraries(window_engine
 PUBLIC
