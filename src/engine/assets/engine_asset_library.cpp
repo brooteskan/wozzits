@@ -138,17 +138,19 @@ namespace wz::engine::assets
         return true;
     }
 
-    uint32_t EngineAssetLibrary::resolve_all()
+    ResolveReport EngineAssetLibrary::resolve_all()
     {
-        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> errors;
+        ResolveReport report{};
 
-        const uint32_t count = system_.resolve_all(&errors);
+        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> raw_errors;
+        report.resolved_count = system_.resolve_all(&raw_errors);
 
-        if (!errors.empty()) {
-            logger_.error("asset resolve_all failed");
+        for (auto& [key, err] : raw_errors) {
+            logger_.error("asset resolve failed");
+            report.failures.push_back({ key, err });
         }
 
-        return count;
+        return report;
     }
 
 

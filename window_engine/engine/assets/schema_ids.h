@@ -12,11 +12,24 @@ namespace wz::engine::assets {
     // describes the input contract the compiler expects, not the file format.
     //
     // Pattern:
-    //   file/carrier node  → schema selects which file carrier compiler reads it
+    //   file/carrier node   → schema selects which file carrier compiler reads it
     //   compile/recipe node → schema selects which domain compiler processes it
     //
     // Values are stable compile-time constants; do not change them once shipped
     // as that would silently invalidate persisted caches.
+    //
+    // Numeric range allocation (low 24 bits of the uint64 value):
+    //
+    //   0x000001 – 0x0000FF   File carriers (raw bytes, no domain interpretation)
+    //   0x000100 – 0x0001FF   Shaders and GPU pipelines
+    //   0x000200 – 0x0002FF   Scalar fields (file-backed and procedural)
+    //   0x000300 – 0x0003FF   Textures
+    //   0x000400 – 0x0004FF   Meshes
+    //   0x000500 – 0x0005FF   Gaussian splat clouds
+    //   0x000600+             Reserved for future asset families
+    //
+    // The high bits (0xF11ECA55E7______) are a fixed magic prefix to reduce
+    // collision probability with any external schema registries.
 
     // Generic raw file carrier — bytes only, no domain interpretation.
     // Used as the source file node schema for any raw binary asset (e.g. .rawf32).

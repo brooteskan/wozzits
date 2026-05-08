@@ -203,8 +203,8 @@ TEST_F(AssetLibraryGpuFixture, ResolveShaderPairProducesValidHandles)
     ASSERT_TRUE(pair.valid());
     ASSERT_TRUE(assets.commit());
 
-    const uint32_t resolved_count = assets.resolve_all();
-    EXPECT_GE(resolved_count, 4u);
+    const auto report = assets.resolve_all();
+    EXPECT_GE(report.resolved_count, 4u);
     // Expected nodes:
     // - VS file carrier
     // - PS file carrier
