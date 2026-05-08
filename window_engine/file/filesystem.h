@@ -37,7 +37,7 @@ namespace wz::fs
     bool exists(const Path &path);
 
     //
-    std::uint64_t file_size(const Path &path, FileError *out_error = nullptr);
+    FileResult<std::uint64_t> file_size(const Path &path);
 
     //
     FileError create_directories(const Path &path);

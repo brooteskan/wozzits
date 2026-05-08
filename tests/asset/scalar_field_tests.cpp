@@ -43,7 +43,7 @@ namespace wz::engine::assets::test {
         const size_t byte_count = values.size() * sizeof(float);
         wz::fs::Buffer bytes(byte_count);
         std::memcpy(bytes.data(), values.data(), byte_count);
-        return wz::fs::write_file(path, bytes, /*overwrite=*/true) == wz::FileError::None;
+        return wz::fs::write_file(path, bytes, /*overwrite=*/true) == wz::fs::FileError::None;
     }
 
     // Generate a flat 2D gradient in X: value = x / (width - 1).

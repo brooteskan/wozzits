@@ -52,25 +52,25 @@ namespace
         return str;
     }
 
-    static wz::FileError from_win32(DWORD err)
+    static wz::fs::FileError from_win32(DWORD err)
     {
         switch (err)
         {
         case ERROR_FILE_NOT_FOUND:
         case ERROR_PATH_NOT_FOUND:
-            return wz::FileError::NotFound;
+            return wz::fs::FileError::NotFound;
 
         case ERROR_ACCESS_DENIED:
-            return wz::FileError::PermissionDenied;
+            return wz::fs::FileError::PermissionDenied;
 
         case ERROR_ALREADY_EXISTS:
-            return wz::FileError::AlreadyExists;
+            return wz::fs::FileError::AlreadyExists;
 
         case ERROR_INVALID_NAME:
-            return wz::FileError::InvalidPath;
+            return wz::fs::FileError::InvalidPath;
 
         default:
-            return wz::FileError::IOError;
+            return wz::fs::FileError::IOError;
         }
     }
 }
@@ -86,7 +86,7 @@ namespace wz::fs
     /// @brief Reads the contents of a file into a buffer.
     /// @param path The path to the file.
     /// @return The result containing the file contents or an error.
-    wz::FileResult<wz::fs::Buffer>
+    wz::fs::FileResult<wz::fs::Buffer>
     wz::fs::read_file(const Path &path)
     {
         FileResult<Buffer> result;
@@ -141,7 +141,7 @@ namespace wz::fs
     /// @param data The data to write.
     /// @param overwrite Whether to overwrite the file if it exists.
     /// @return The error code, or Error::None on success.
-    wz::FileError
+    wz::fs::FileError
     wz::fs::write_file(const Path &path,
                        const Buffer &data,
                        bool overwrite)
@@ -191,10 +191,9 @@ namespace wz::fs
 
     /// @brief Gets the size of a file at the given path.
     /// @param path The path to the file.
-    /// @param out_error Optional pointer to store the error code.
-    /// @return The size of the file, or 0 on error.
-    std::uint64_t
-    wz::fs::file_size(const Path &path, FileError *out_error)
+    /// @return A result containing the file size or an error.
+    FileResult<std::uint64_t>
+    wz::fs::file_size(const Path &path)
     {
         std::wstring wpath = utf8_to_wide(path);
 
@@ -208,32 +207,24 @@ namespace wz::fs
             nullptr);
 
         if (file == INVALID_HANDLE_VALUE)
-        {
-            if (out_error)
-                *out_error = last_error();
-            return 0;
-        }
+            return { 0, last_error() };
 
         LARGE_INTEGER size;
         if (!GetFileSizeEx(file, &size))
         {
-            if (out_error)
-                *out_error = last_error();
+            FileError err = last_error();
             CloseHandle(file);
-            return 0;
+            return { 0, err };
         }
 
         CloseHandle(file);
-
-        if (out_error)
-            *out_error = FileError::None;
-        return static_cast<std::uint64_t>(size.QuadPart);
+        return { static_cast<std::uint64_t>(size.QuadPart), FileError::None };
     }
 
     /// @brief Lists the contents of a directory.
     /// @param path The path to the directory.
     /// @return A result containing the list of entries or an error.
-    wz::FileResult<std::vector<wz::fs::DirEntry>>
+    wz::fs::FileResult<std::vector<wz::fs::DirEntry>>
     wz::fs::list_directory(const Path &path)
     {
         FileResult<std::vector<DirEntry>> result;
@@ -283,7 +274,7 @@ namespace wz::fs
     /// @brief Creates a directory and any necessary parent directories.
     /// @param path The path to the directory to create.
     /// @return An error code indicating the result of the operation.
-    wz::FileError
+    wz::fs::FileError
     wz::fs::create_directories(const Path &path)
     {
         std::wstring wpath = utf8_to_wide(path);
@@ -314,7 +305,7 @@ namespace wz::fs
         return FileError::None;
     }
 
-    wz::FileError
+    wz::fs::FileError
     wz::fs::write_file_text(const Path &path,
                             const std::string &text,
                             bool overwrite)
@@ -329,7 +320,7 @@ namespace wz::fs
         return write_file(path, buffer, overwrite);
     }
 
-    wz::FileError
+    wz::fs::FileError
     wz::fs::remove_file(const Path &path)
     {
         std::wstring wpath = utf8_to_wide(path);
@@ -344,7 +335,7 @@ namespace wz::fs
         return FileError::None;
     }
 
-    wz::FileError
+    wz::fs::FileError
     wz::fs::remove_directory(const Path &path, bool recursive)
     {
         std::wstring wpath = utf8_to_wide(path);
@@ -630,7 +621,7 @@ namespace wz::fs
         return wide_to_utf8(buffer);
     }
 
-    wz::FileError set_current_directory(const Path &path)
+    wz::fs::FileError set_current_directory(const Path &path)
     {
         std::wstring wpath = utf8_to_wide(path);
 
