@@ -103,6 +103,14 @@ namespace wz::engine::assets::internal
             kAssetTypeImportedSourceFile,
             "imported source file carrier"
         );
+
+        register_byte_file_carrier(
+            registry,
+            logger,
+            kCustomBinaryFileSchema,
+            kAssetTypeBinaryBlob,
+            "custom binary file carrier"
+        );
     }
 
 } // namespace wz::engine::assets::internal

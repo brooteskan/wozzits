@@ -79,6 +79,141 @@ TEST(FoundationSchemas, StableNumericValues)
 
     EXPECT_EQ(wz::engine::assets::kImportedSourceFileSchema.value,
         0xF11E'CA55'E7'000008ull);
+
+    EXPECT_EQ(wz::engine::assets::kCustomBinaryFileSchema.value,
+        0xF11E'CA55'E7'00000Full);
+}
+
+TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
+{
+    // ── Arrange file ─────────────────────────────────────────────────────────
+
+    const wz::fs::Path root =
+        wz::fs::join(wz::fs::temp_directory_path(),
+            "wozzits_foundation_asset_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path relative_path = "custom_format_payload.wzbin";
+    const wz::fs::Path full_path = wz::fs::join(root, relative_path);
+
+    const wz::fs::Buffer expected_bytes{
+        'W', 'Z', 'B', 'N',
+        0x01, 0x00, 0x00, 0x00,
+        0x2A, 0x00, 0x00, 0x00
+    };
+
+    ASSERT_EQ(
+        wz::fs::write_file(full_path, expected_bytes, true),
+        wz::fs::FileError::None
+    );
+
+    // ── Arrange registry ─────────────────────────────────────────────────────
+
+    wz::Logger logger;
+
+    wz::asset::CompilerRegistry registry;
+
+    wz::engine::assets::internal::register_file_carrier_compilers(
+        registry,
+        logger
+    );
+
+    registry.register_compiler(wz::asset::AssetCompiler{
+        .input_schema = kTestTextConsumerSchema,
+        .output_type = kTestTextConsumerType,
+        .compile = [expected_bytes](
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+        {
+            if (dep_nodes.size() != 1) {
+                return input;
+            }
+
+            const auto* bytes =
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+
+            if (!bytes) {
+                return input;
+            }
+
+            if (*bytes != expected_bytes) {
+                return input;
+            }
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = wz::asset::ResourceHandle{
+                .id = 1,
+                .epoch = 1,
+                .type = kTestTextConsumerType,
+            };
+
+            return out;
+        }
+        });
+
+    wz::asset::AssetSystem system(std::move(registry));
+
+    // ── Register custom binary carrier node ──────────────────────────────────
+
+    const std::string canonical =
+        wz::engine::assets::detail::canonical_asset_path(relative_path);
+
+    const wz::asset::AssetKey custom_binary_key =
+        wz::engine::assets::make_file_key(
+            canonical,
+            wz::engine::assets::kCustomBinaryFileSchema
+        );
+
+    wz::asset::AssetNode custom_binary_node;
+    custom_binary_node.key = custom_binary_key;
+    custom_binary_node.type = wz::engine::assets::kAssetTypeBinaryBlob;
+    custom_binary_node.schema = wz::engine::assets::kCustomBinaryFileSchema;
+    custom_binary_node.stage = wz::asset::AssetStage::Source;
+    custom_binary_node.payload = std::vector<uint8_t>{};
+    custom_binary_node.meta = wz::engine::assets::internal::FileSourceDesc{
+        .full_path = full_path,
+        .canonical_path = canonical,
+    };
+
+    ASSERT_TRUE(system.register_asset(std::move(custom_binary_node)));
+
+    // ── Register dependent recipe node ───────────────────────────────────────
+
+    const wz::asset::AssetKey consumer_key =
+        make_test_text_consumer_key(custom_binary_key);
+
+    wz::asset::AssetNode consumer_node;
+    consumer_node.key = consumer_key;
+    consumer_node.type = kTestTextConsumerType;
+    consumer_node.schema = kTestTextConsumerSchema;
+    consumer_node.stage = wz::asset::AssetStage::Source;
+    consumer_node.payload = std::vector<uint8_t>{};
+
+    ASSERT_TRUE(system.register_asset(
+        std::move(consumer_node),
+        { custom_binary_key }
+    ));
+
+    // ── Act ──────────────────────────────────────────────────────────────────
+
+    ASSERT_TRUE(system.commit());
+
+    std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> errors;
+    const uint32_t resolved = system.resolve_all(&errors);
+
+    // ── Assert ───────────────────────────────────────────────────────────────
+
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(resolved, 2u);
+
+    const auto* compiled = system.find_compiled(consumer_key);
+
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_TRUE(compiled->handle.valid());
+    EXPECT_EQ(compiled->handle.type, kTestTextConsumerType);
 }
 
 TEST(FoundationCarriers, ImportedSourceFileSchemaFeedsDependentRecipe)
