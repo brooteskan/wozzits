@@ -20,6 +20,6 @@ namespace wz::fs
         T value{};
         FileError error = FileError::None;
 
-        explicit operator bool() const { return error == FileError::None; }
+        operator bool() const { return error == FileError::None; }
     };
 }

@@ -15,7 +15,7 @@ using namespace wz::fs;
 namespace wz::engine::assets::test
 {
 
-    static wz::FileResult<AssetNode> make_file_node(
+    static wz::fs::FileResult<AssetNode> make_file_node(
         const Path& path,
         AssetKey key,
         SchemaID schema,

@@ -90,4 +90,6 @@ namespace wz::fs
     FileError set_current_directory(const Path &path);
 
     Path executable_path();
+
+    Path temp_directory_path();
 }
