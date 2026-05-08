@@ -123,7 +123,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, CreateProceduralScalarFieldReturnsValidAssetKey)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/gradient_x",
                 .width = 4,
                 .height = 4,
@@ -137,7 +137,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralScalarFieldReturnsValidHandle)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/gradient_x",
                 .width = 4,
                 .height = 4,
@@ -148,7 +148,7 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_TRUE(handle.valid());
     }
 
@@ -159,7 +159,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralGradientXHasExpectedCornerValues)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/gradient_x",
                 .width = 4,
                 .height = 2,
@@ -170,10 +170,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->at(0, 0), 0.0f);
@@ -186,7 +186,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralGradientYHasExpectedCornerValues)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/gradient_y",
                 .width = 2,
                 .height = 4,
@@ -197,10 +197,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->at(0, 0), 0.0f);
@@ -216,7 +216,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralCheckerboardAlternatesValues)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/checker",
                 .width = 2,
                 .height = 2,
@@ -229,10 +229,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->at(0, 0), 0.0f);
@@ -247,7 +247,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralRadialGradientHasCenterDarkCornerBright)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/radial",
                 .width = 3,
                 .height = 3,
@@ -259,10 +259,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->at(1, 1), 0.0f); // center
@@ -274,7 +274,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralSineWavesHandlesWidthOne)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/sine_width_one",
                 .width = 1,
                 .height = 1,
@@ -287,10 +287,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         // u == 0 → sin(0) == 0 → (0.5 + 0.5 * 0) * 1.0 == 0.5
@@ -301,7 +301,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralScalarFieldComputesMinMax)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/gradient_x_minmax",
                 .width = 4,
                 .height = 4,
@@ -312,10 +312,10 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->min_value, 0.0f);
@@ -329,7 +329,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralScalarFieldRejectsZeroDimensions)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/zero_dim",
                 .width = 0,   // invalid
                 .height = 4,
@@ -340,7 +340,7 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_FALSE(handle.valid());
     }
 
@@ -348,7 +348,7 @@ namespace wz::engine::assets::test {
     TEST_F(ProceduralScalarFieldTest, ProceduralScalarFieldRejectsDepthGreaterThanOne)
     {
         const ScalarFieldAsset asset =
-            library_->create_procedural_scalar_field({
+            library_->scalar_fields().create_procedural_scalar_field({
                 .name = "debug/depth_two",
                 .width = 4,
                 .height = 4,
@@ -360,7 +360,7 @@ namespace wz::engine::assets::test {
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_FALSE(handle.valid());
     }
 

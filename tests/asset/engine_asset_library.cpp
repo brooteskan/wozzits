@@ -153,7 +153,7 @@ TEST_F(AssetLibraryGpuFixture, CreateShaderPairReturnsValidAssetKeys)
         resources.wz_root()
     };
 
-    auto pair = assets.create_shader_pair({
+    auto pair = assets.shaders().create_shader_pair({
         .name = "triangle",
         .vertex_path = "shaders/triangle/triangle_vs.hlsl",
         .pixel_path = "shaders/triangle/triangle_ps.hlsl",
@@ -173,7 +173,7 @@ TEST_F(AssetLibraryGpuFixture, CommitSucceedsAfterShaderPairRegistration)
         resources.wz_root()
     };
 
-    auto pair = assets.create_shader_pair({
+    auto pair = assets.shaders().create_shader_pair({
         .name = "triangle",
         .vertex_path = "shaders/triangle/triangle_vs.hlsl",
         .pixel_path = "shaders/triangle/triangle_ps.hlsl",
@@ -194,7 +194,7 @@ TEST_F(AssetLibraryGpuFixture, ResolveShaderPairProducesValidHandles)
         resources.wz_root()
     };
 
-    auto pair = assets.create_shader_pair({
+    auto pair = assets.shaders().create_shader_pair({
         .name = "triangle",
         .vertex_path = "shaders/triangle/triangle_vs.hlsl",
         .pixel_path = "shaders/triangle/triangle_ps.hlsl",
@@ -211,7 +211,7 @@ TEST_F(AssetLibraryGpuFixture, ResolveShaderPairProducesValidHandles)
     // - VS shader
     // - PS shader
 
-    auto handles = assets.get_shader_pair(pair);
+    auto handles = assets.shaders().get_shader_pair(pair);
 
     EXPECT_TRUE(handles.valid());
     EXPECT_TRUE(handles.vertex.valid());
@@ -244,7 +244,7 @@ float4 main(PSIn input) : SV_TARGET
         resources.wz_root()
     };
 
-    auto pair = assets.create_shader_pair({
+    auto pair = assets.shaders().create_shader_pair({
         .name = "triangle",
         .vertex_path = "shaders/triangle/missing_vs.hlsl",
         .pixel_path = "shaders/triangle/triangle_ps.hlsl",
@@ -255,7 +255,7 @@ float4 main(PSIn input) : SV_TARGET
 
     assets.resolve_all();
 
-    auto handles = assets.get_shader_pair(pair);
+    auto handles = assets.shaders().get_shader_pair(pair);
 
     EXPECT_FALSE(handles.valid());
     EXPECT_FALSE(handles.vertex.valid());
@@ -286,7 +286,7 @@ float4 main() : SV_TARGET
         resources.wz_root()
     };
 
-    auto pair = assets.create_shader_pair({
+    auto pair = assets.shaders().create_shader_pair({
         .name = "bad_triangle",
         .vertex_path = "shaders/triangle/triangle_vs.hlsl",
         .pixel_path = "shaders/triangle/triangle_ps.hlsl",
@@ -297,7 +297,7 @@ float4 main() : SV_TARGET
 
     assets.resolve_all();
 
-    auto handles = assets.get_shader_pair(pair);
+    auto handles = assets.shaders().get_shader_pair(pair);
 
     EXPECT_FALSE(handles.valid());
     EXPECT_FALSE(handles.vertex.valid());

@@ -50,7 +50,7 @@ namespace wz::app
 
         using namespace wz::engine::assets;
 
-        auto object_shaders = app.assets->create_shader_pair({
+        auto object_shaders = app.assets->shaders().create_shader_pair({
             .name = "debug_opaque_object",
             .vertex_path = "shaders/_debug/debug_object_vs.hlsl",
             .pixel_path = "shaders/_debug/debug_object_ps.hlsl",
@@ -65,7 +65,7 @@ namespace wz::app
         app.assets->resolve_all();
 
         auto object_shader_handles =
-            app.assets->get_shader_pair(object_shaders);
+            app.assets->shaders().get_shader_pair(object_shaders);
 
         if (!object_shader_handles.valid())
             INIT_FAIL("get_shader_pair(debug_opaque_object)");

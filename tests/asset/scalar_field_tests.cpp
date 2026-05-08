@@ -141,7 +141,7 @@ namespace wz::engine::assets::test {
             .domain_kind = ScalarFieldDomainKind::Spatial2D,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
 
         EXPECT_TRUE(asset.valid());
     }
@@ -161,7 +161,7 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid());
 
         EXPECT_TRUE(library_->commit());
@@ -182,14 +182,14 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid());
         ASSERT_TRUE(library_->commit());
 
         const auto report = library_->resolve_all();
         EXPECT_GT(report.resolved_count, 0u);
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_TRUE(handle.valid());
     }
 
@@ -208,15 +208,15 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid());
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         ASSERT_TRUE(data->valid());
@@ -246,14 +246,14 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid()); // registration itself succeeds
 
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
         // Compilation should fail; handle must be invalid.
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_FALSE(handle.valid());
     }
 
@@ -274,13 +274,13 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid());
 
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         EXPECT_FALSE(handle.valid());
     }
 
@@ -299,15 +299,15 @@ namespace wz::engine::assets::test {
             .depth = 1,
         };
 
-        const ScalarFieldAsset asset = library_->create_scalar_field(desc);
+        const ScalarFieldAsset asset = library_->scalar_fields().create_scalar_field(desc);
         ASSERT_TRUE(asset.valid());
         ASSERT_TRUE(library_->commit());
         library_->resolve_all();
 
-        const ScalarFieldHandle handle = library_->get_scalar_field(asset);
+        const ScalarFieldHandle handle = library_->scalar_fields().get_scalar_field(asset);
         ASSERT_TRUE(handle.valid());
 
-        const ScalarFieldData* data = library_->get_scalar_field_data(handle);
+        const ScalarFieldData* data = library_->scalar_fields().get_scalar_field_data(handle);
         ASSERT_NE(data, nullptr);
 
         EXPECT_FLOAT_EQ(data->min_value, 0.00f);
