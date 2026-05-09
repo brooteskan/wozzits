@@ -111,7 +111,7 @@ namespace wz::core
         // before in_flight reflects it. Decrement back on failure.
         in_flight.fetch_add(1, std::memory_order_acq_rel);
 
-        if (!queue_.try_push(event.level, std::move(event.message)))
+        if (!queue_.try_push(event.level, event.message))
         {
             if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1)
             {
@@ -127,7 +127,7 @@ namespace wz::core
         wz::logging::internal::LogMessage msg;
 
         while (queue_.try_pop(msg))
-            callback(msg.level, msg.text.c_str());
+            callback(msg.level, msg.text);
     }
 
     void LoggerWorker::run()
@@ -138,7 +138,7 @@ namespace wz::core
         {
             if (queue_.try_pop(msg))
             {
-                callback(msg.level, msg.text.c_str());
+                callback(msg.level, msg.text);
 
                 if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1)
                 {
@@ -155,7 +155,7 @@ namespace wz::core
         // final drain
         while (queue_.try_pop(msg))
         {
-            callback(msg.level, msg.text.c_str());
+            callback(msg.level, msg.text);
             in_flight.fetch_sub(1, std::memory_order_acq_rel);
         }
 

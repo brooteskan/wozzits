@@ -36,7 +36,7 @@ TEST(LoggerQueue, PushPopSingleMessage)
     EXPECT_TRUE(q.try_pop(msg));
 
     EXPECT_EQ(msg.level, wz::LogLevel::Info);
-    EXPECT_EQ(msg.text, "hello");
+    EXPECT_STREQ(msg.text, "hello");
     EXPECT_GT(msg.sequence, 0u);
     EXPECT_GT(msg.event_ticks, 0u);
 }
@@ -128,7 +128,7 @@ TEST(LoggerQueue, CloseDoesNotDiscardQueuedMessages)
 
     LogMessage msg;
     EXPECT_TRUE(q.try_pop(msg));
-    EXPECT_EQ(msg.text, "queued before close");
+    EXPECT_STREQ(msg.text, "queued before close");
     EXPECT_EQ(msg.level, wz::LogLevel::Warning);
 }
 
