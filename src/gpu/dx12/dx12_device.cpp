@@ -209,7 +209,7 @@ namespace wz::gpu::dx12
 
     void submit_render_frame(
         wz::gpu::Device& device,
-        const wz::render::RenderFrame& frame)
+        const wz::render::RenderFrameView& frame)
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         assert(impl);

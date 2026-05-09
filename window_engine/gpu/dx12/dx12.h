@@ -58,7 +58,7 @@ namespace wz::gpu::dx12
 
     void submit_render_frame(
         wz::gpu::Device& device,
-        const wz::render::RenderFrame& frame
+        const wz::render::RenderFrameView& frame
     );
 
     // ── Scalar field debug path ──────────────────────────────────────────

@@ -9,6 +9,7 @@
 
 #include <scene/compile/scene_compiler.h>
 #include <render/frame/render_frame.h>
+#include <render/ir/render_ir.h>
 
 #include <jobs/job_graph_template.h>
 #include <jobs/frame_execution.h>
@@ -46,6 +47,16 @@ namespace wz::app
         bool ready = false;
     };
 
+    // FrameStorage — owns all CPU-side per-frame products.
+    // Allocated once; overwritten each frame by compile/build_render_ir/build_frame.
+    // Must outlive all jobs that read from it in a given frame.
+    struct FrameStorage
+    {
+        wz::scene::CompiledSceneStorage compiled_scene;
+        wz::render::RenderIRStorage     render_ir;
+        wz::render::RenderFrameStorage  render_frame;
+    };
+
     struct GameApp
     {
         wz::engine::AppContext ctx{};
@@ -55,6 +66,7 @@ namespace wz::app
         ScalarFieldDebugRuntime scalar_debug{};
         DebugObjectRuntime      debug_object{};
         AppJobRuntime           jobs{};
+        FrameStorage            frame{};
     };
 
     bool init(GameApp& app);
