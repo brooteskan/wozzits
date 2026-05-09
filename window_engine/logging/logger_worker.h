@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 
-#include <containers/mpsc_queue.h>
+#include "logging/internal/logger_queue.h"
 #include "logging.h"
 
 namespace wz::core
@@ -31,15 +31,7 @@ namespace wz::core
 
         void set_callback(LogSinkType t);
 
-        void flush()
-        {
-            LogEvent event;
-
-            while (queue.try_pop(event))
-            {
-                callback(event.level, event.message.c_str());
-            }
-        }
+        void flush();
 
         void flush_file();
 
@@ -54,22 +46,19 @@ namespace wz::core
         void run();
 
     private:
-        containers::MPSCQueue<LogEvent> queue;
+        wz::logging::internal::LoggerQueue queue_;
 
-        std::vector<LogEvent> buffer_; // for LogSinkType::Buffer
-
+        std::vector<LogEvent> buffer_;
         mutable std::mutex buffer_mutex_;
 
         std::thread worker;
-        std::atomic<bool> running{false};
+        std::atomic<bool> running{ false };
 
         Callback callback;
 
-        std::atomic<int> in_flight{0};
+        std::atomic<int> in_flight{ 0 };
         std::mutex idle_mutex;
         std::condition_variable idle_cv;
-
-        std::atomic<bool> accepting = true;
 
         std::vector<std::string> file_buffer;
         std::mutex file_mutex;
