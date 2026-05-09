@@ -313,19 +313,20 @@ namespace wz::app
             view.projection = wz::math::projection_perspective_dx(fov, aspect, 0.1f, 100.0f);
             view.view_projection = mul(view.projection, view.view);
 
-            auto compiled = compile(
+            auto cs = compile(
+                app.frame.compiled_scene,
                 app.debug_object.scene.polytree,
                 app.debug_object.descriptors,
                 {},
                 view
             );
 
-            auto ir    = build_render_ir(compiled.scene);
-            auto frame = build_frame(ir, compiled.scene);
+            auto ir    = build_render_ir(app.frame.render_ir, cs);
+            auto frame = build_frame(app.frame.render_frame, ir, cs);
 
             wz::gpu::dx12::submit_render_frame(
                 app.ctx.device,
-                frame.frame
+                frame
             );
         }
 

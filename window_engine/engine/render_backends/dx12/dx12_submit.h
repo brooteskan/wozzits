@@ -56,5 +56,5 @@ namespace wz::render::backend::dx12
     void destroy(Context* ctx);
 
     // THIS is the important function
-    void submit(Context* ctx, const RenderFrame& frame);
+    void submit(Context* ctx, const RenderFrameView& frame);
 }
