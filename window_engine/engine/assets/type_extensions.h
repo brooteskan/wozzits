@@ -209,6 +209,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeCSVTable =
         static_cast<wz::asset::AssetType>(150);
 
+    // Implemented soon: parsed JSON document.
+    // Runtime data is owned by JSONTable.
+    inline constexpr wz::asset::AssetType kAssetTypeJSONDocument =
+        static_cast<wz::asset::AssetType>(151);
+
 
     // ─── Texture / image CPU and intermediate asset types: 160–191 ──────────────
     // Texture specializations that may need distinct recipe/runtime paths.

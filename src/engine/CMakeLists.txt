@@ -12,6 +12,7 @@ target_sources(window_engine PRIVATE
     assets/scalar_field_asset_module.cpp
     assets/scalar_field/scalar_field.cpp
     assets/csv/csv.cpp
+    assets/json/json.cpp
     assets/csv_asset_module.cpp
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
