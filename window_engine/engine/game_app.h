@@ -29,6 +29,7 @@ namespace wz::app
         std::vector<wz::scene::RenderableDescriptor> descriptors{};
 
         bool ready = false;
+        bool transforms_dirty = false;
     };
 
     struct ScalarFieldDebugRuntime

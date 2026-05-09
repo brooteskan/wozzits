@@ -8,12 +8,11 @@
 #include <algorithm>
 #include <engine/game_app.h>
 #include <engine/runtime_camera.h>
+#include <math/projection.h>
 
 #include <gpu/scalar_field_texture.h>
 #include <gpu/dx12/dx12.h>
 #include <engine/assets/scalar_field/scalar_field.h>
-
-#include <cmath>
 
 #define INIT_FAIL(msg) \
     do { OutputDebugStringA("GameApp init failed: " msg "\n"); return false; } while (0)
@@ -125,6 +124,7 @@ namespace wz::app
             propagate_all(app.debug_object.scene.polytree);
 
             app.debug_object.ready = true;
+            app.debug_object.transforms_dirty = false;
         }
 
         // Scalar field debug is deliberately disabled for Session 7 object rendering.
@@ -182,28 +182,6 @@ namespace wz::app
         update_camera(app.camera, input, dt);
     }
 
-    namespace
-    {
-        wz::math::Mat4 perspective_dx(
-            float fov_y_radians,
-            float aspect,
-            float near_z,
-            float far_z)
-        {
-            using namespace wz::math;
-
-            const float f = 1.0f / std::tan(fov_y_radians * 0.5f);
-
-            Mat4 m{};
-            m.m[0] = f / aspect;
-            m.m[5] = f;
-            m.m[10] = far_z / (far_z - near_z);
-            m.m[11] = 1.0f;
-            m.m[14] = (-near_z * far_z) / (far_z - near_z);
-            return m;
-        }
-    }
-
     void render(
         GameApp& app,
         const wz::engine::FrameContext& fctx)
@@ -217,7 +195,11 @@ namespace wz::app
             using namespace wz::render;
             using namespace wz::math;
 
-            propagate_all(app.debug_object.scene.polytree);
+            if (app.debug_object.transforms_dirty)
+            {
+                propagate_all(app.debug_object.scene.polytree);
+                app.debug_object.transforms_dirty = false;
+            }
 
             ViewData view{};
             //view.camera_position = Vec3{ app.camera.x, app.camera.y, 0.0f };
@@ -230,9 +212,14 @@ namespace wz::app
 
             constexpr float Pi = 3.14159265358979323846f;
             const float fov = 70.0f * Pi / 180.0f;
-            const float aspect = 1280.0f / 720.0f;
 
-            view.projection = perspective_dx(fov, aspect, 0.1f, 100.0f);
+            const int win_w = fctx.input.window.width;
+            const int win_h = fctx.input.window.height;
+            const float aspect = (win_w > 0 && win_h > 0)
+                ? static_cast<float>(win_w) / static_cast<float>(win_h)
+                : 1280.0f / 720.0f;
+
+            view.projection = wz::math::projection_perspective_dx(fov, aspect, 0.1f, 100.0f);
             view.view_projection = mul(view.projection, view.view);
 
             auto compiled = compile(

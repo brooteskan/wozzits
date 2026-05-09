@@ -26,7 +26,8 @@ namespace wz::input
         {
             const auto &e = events[i];
 
-            if (e.category != wz::event::Event::Category::Input)
+            if (e.category != wz::event::Event::Category::Input &&
+                e.category != wz::event::Event::Category::Window)
                 continue;
 
             switch (e.type)
