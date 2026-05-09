@@ -49,13 +49,12 @@ namespace wz::core
 
     void LoggerWorker::stop()
     {
-        accepting.store(false, std::memory_order_release);
+        queue_.close();
         running.store(false, std::memory_order_release);
 
         if (worker.joinable())
             worker.join();
 
-        // now everything is guaranteed drained
         flush_file();
     }
 
@@ -108,21 +107,38 @@ namespace wz::core
 
     void LoggerWorker::push(LogEvent event)
     {
-        if (!accepting.load())
-            return;
+        // Increment before push so the worker can never drain the message
+        // before in_flight reflects it. Decrement back on failure.
         in_flight.fetch_add(1, std::memory_order_acq_rel);
-        queue.push(std::move(event));
+
+        if (!queue_.try_push(event.level, std::move(event.message)))
+        {
+            if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            {
+                std::lock_guard lock(idle_mutex);
+                idle_cv.notify_all();
+            }
+            return;
+        }
+    }
+
+    void LoggerWorker::flush()
+    {
+        wz::logging::internal::LogMessage msg;
+
+        while (queue_.try_pop(msg))
+            callback(msg.level, msg.text.c_str());
     }
 
     void LoggerWorker::run()
     {
-        LogEvent e;
+        wz::logging::internal::LogMessage msg;
 
         while (running.load(std::memory_order_acquire))
         {
-            if (queue.try_pop(e))
+            if (queue_.try_pop(msg))
             {
-                callback(e.level, e.message.c_str());
+                callback(msg.level, msg.text.c_str());
 
                 if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1)
                 {
@@ -136,10 +152,10 @@ namespace wz::core
             }
         }
 
-        // final drain safety
-        while (queue.try_pop(e))
+        // final drain
+        while (queue_.try_pop(msg))
         {
-            callback(e.level, e.message.c_str());
+            callback(msg.level, msg.text.c_str());
             in_flight.fetch_sub(1, std::memory_order_acq_rel);
         }
 
