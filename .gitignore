@@ -3,7 +3,7 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
-# this must be from ninja? 
+# this must be from ninja?
 /out
 
 # User-specific files
@@ -27,6 +27,9 @@ mono_crash.*
 x64/
 x86/
 [Ww][Ii][Nn]32/
+# VS template above matches build-output Win32 dirs; exempt our platform source tree
+!src/platform/win32/
+!src/platform/win32/**
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
