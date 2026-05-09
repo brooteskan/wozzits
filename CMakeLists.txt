@@ -76,6 +76,7 @@ add_library(window_engine)
 target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_polytree.cpp"
 )
 
 target_include_directories(window_engine
@@ -203,6 +204,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset csv_tests)
 
     rs_add_test_group(asset_json yyjson_wrapper)
+    rs_add_test_group(asset_json json_polytree)
 
     rs_add_test_group(game_app game_app_main)
 endif()
