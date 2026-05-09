@@ -75,10 +75,15 @@ add_library(window_engine)
 
 target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
 )
 
-target_include_directories(window_engine PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson"
+target_include_directories(window_engine
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson"
 )
 
 target_link_libraries(window_engine
@@ -196,6 +201,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset scalar_field_texture_test)
     rs_add_test_group(asset foundational_assets)
     rs_add_test_group(asset csv_tests)
+
+    rs_add_test_group(asset_json yyjson_wrapper)
 
     rs_add_test_group(game_app game_app_main)
 endif()
