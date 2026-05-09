@@ -21,58 +21,41 @@ namespace wz::app
 {
     bool init(GameApp& app)
     {
-        app.logger.set_callback(wz::LogSinkType::Stderr);
-
-        app.window = wz::window::create_window({
-            .title = "Wozzits Runtime",
-            .width = 1280,
-            .height = 720,
-            // .resizable = true
-            });
-
-        if (!app.window.valid())
+        if (!wz::engine::init(app.ctx, {
+                .window = {
+                    .title  = "Wozzits Runtime",
+                    .width  = 1280,
+                    .height = 720,
+                },
+                .resource_root = "resources",
+            }))
             return false;
-
-        app.device = wz::gpu::create_device(app.window);
-
-        if (!app.device.valid())
-        {
-            wz::window::destroy_window(app.window);
-            app.window = {};
-            return false;
-        }
-
-        app.assets = std::make_unique<wz::engine::assets::EngineAssetLibrary>(
-            app.device,
-            app.logger,
-            wz::fs::Path{ "resources" }
-        );
 
         using namespace wz::engine::assets;
 
-        auto object_shaders = app.assets->shaders().create_shader_pair({
-            .name = "debug_opaque_object",
-            .vertex_path = "shaders/_debug/debug_object_vs.hlsl",
-            .pixel_path = "shaders/_debug/debug_object_ps.hlsl",
+        auto object_shaders = app.ctx.assets->shaders().create_shader_pair({
+            .name         = "debug_opaque_object",
+            .vertex_path  = "shaders/_debug/debug_object_vs.hlsl",
+            .pixel_path   = "shaders/_debug/debug_object_ps.hlsl",
             });
 
         if (!object_shaders.valid())
             INIT_FAIL("create_shader_pair(debug_opaque_object)");
 
-        if (!app.assets->commit())
+        if (!app.ctx.assets->commit())
             INIT_FAIL("assets commit");
 
-        app.assets->resolve_all();
+        app.ctx.assets->resolve_all();
 
         auto object_shader_handles =
-            app.assets->shaders().get_shader_pair(object_shaders);
+            app.ctx.assets->shaders().get_shader_pair(object_shaders);
 
         if (!object_shader_handles.valid())
             INIT_FAIL("get_shader_pair(debug_opaque_object)");
 
-        wz::gpu::dx12::create_debug_opaque_context(app.device, {
+        wz::gpu::dx12::create_debug_opaque_context(app.ctx.device, {
             .vertex_shader = object_shader_handles.vertex,
-            .pixel_shader = object_shader_handles.pixel,
+            .pixel_shader  = object_shader_handles.pixel,
             });
 
         // ── Build one tiny renderable scene object ──────────────────────────
@@ -113,27 +96,26 @@ namespace wz::app
             };
 
             app.debug_object.descriptors[object_h] = RenderableDescriptor{
-                .pipeline = RenderPipeline::OpaqueGeometry,
-                .mesh = 0,
-                .material = 0,
+                .pipeline     = RenderPipeline::OpaqueGeometry,
+                .mesh         = 0,
+                .material     = 0,
                 .local_bounds = {},
-                .splat_data = {},
-                .visible = true,
+                .splat_data   = {},
+                .visible      = true,
             };
 
             propagate_all(app.debug_object.scene.polytree);
 
-            app.debug_object.ready = true;
+            app.debug_object.ready           = true;
             app.debug_object.transforms_dirty = false;
         }
 
         // Scalar field debug is deliberately disabled for Session 7 object rendering.
         app.scalar_debug.texture = {};
-        app.scalar_debug.ready = false;
+        app.scalar_debug.ready   = false;
 
         wz::input::init_raw_input();
 
-        app.initialized = true;
         return true;
     }
 
@@ -145,7 +127,7 @@ namespace wz::app
         wz::window::pump_messages();
 
         PlatformEvent event{};
-        while (wz::window::poll_event(app.window, event))
+        while (wz::window::poll_event(app.ctx.window, event))
         {
             switch (event.type)
             {
@@ -157,7 +139,7 @@ namespace wz::app
                 if (event.resize.width > 0 && event.resize.height > 0)
                 {
                     wz::gpu::resize(
-                        app.device,
+                        app.ctx.device,
                         event.resize.width,
                         event.resize.height
                     );
@@ -169,7 +151,7 @@ namespace wz::app
             }
         }
 
-        if (wz::window::window_should_close(app.window))
+        if (wz::window::window_should_close(app.ctx.window))
             ctx.running = false;
 
         const auto& input = fctx.input;
@@ -186,8 +168,8 @@ namespace wz::app
         GameApp& app,
         const wz::engine::FrameContext& fctx)
     {
-        wz::gpu::begin_frame(app.device);
-        wz::gpu::clear(app.device, 0.0f, 0.15f, 0.35f, 1.0f);
+        wz::gpu::begin_frame(app.ctx.device);
+        wz::gpu::clear(app.ctx.device, 0.0f, 0.15f, 0.35f, 1.0f);
 
         if (app.debug_object.ready)
         {
@@ -202,7 +184,6 @@ namespace wz::app
             }
 
             ViewData view{};
-            //view.camera_position = Vec3{ app.camera.x, app.camera.y, 0.0f };
             view.camera_position = Vec3{ 0.0f, 0.0f, 0.0f };
 
             view.view = mat4_identity();
@@ -229,11 +210,11 @@ namespace wz::app
                 view
             );
 
-            auto ir = build_render_ir(compiled.scene);
+            auto ir    = build_render_ir(compiled.scene);
             auto frame = build_frame(ir, compiled.scene);
 
             wz::gpu::dx12::submit_render_frame(
-                app.device,
+                app.ctx.device,
                 frame.frame
             );
         }
@@ -243,34 +224,20 @@ namespace wz::app
             wz::gpu::dx12::ScalarFieldDebugView view{};
             view.offset_x = app.camera.x * 0.10f;
             view.offset_y = app.camera.y * 0.10f;
-            //view.offset_x = 0.50f;
-            //view.offset_y = 0.0f;
             view.zoom = 1.0f;
 
             wz::gpu::dx12::submit_scalar_field_debug_frame(
-                app.device,
+                app.ctx.device,
                 view
             );
         }
 
-        wz::gpu::end_frame(app.device);
-        wz::gpu::present(app.device);
+        wz::gpu::end_frame(app.ctx.device);
+        wz::gpu::present(app.ctx.device);
     }
 
     void shutdown(GameApp& app)
     {
-        app.assets.reset();
-
-        if (app.device.valid())
-            wz::gpu::destroy_device(app.device);
-
-        if (app.window.valid())
-            wz::window::destroy_window(app.window);
-
-        app.device = {};
-        app.window = {};
-        app.initialized = false;
+        wz::engine::shutdown(app.ctx);
     }
-
-
 }

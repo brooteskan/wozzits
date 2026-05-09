@@ -1,5 +1,6 @@
 target_sources(window_engine PRIVATE
     engine.cpp
+    app_context.cpp
     game_app.cpp
     runtime_camera.cpp
     render_backends/dx12/dx12_submit.cpp
