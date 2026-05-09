@@ -4,6 +4,8 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/csv/csv.h>
+#include <external/json/json_parser.h>
+#include <engine/assets/json/json.h>
 
 #include <gpu/shader.h>
 
@@ -21,7 +23,8 @@ namespace wz::engine::assets::internal
         wz::gpu::Device& device,
         wz::Logger& logger,
         ScalarFieldTable& scalar_field_table,
-        CSVTable& csv_table)
+        CSVTable& csv_table,
+        JSONTable& json_table)
     {
         wz::asset::CompilerRegistry registry;
 
@@ -634,6 +637,54 @@ namespace wz::engine::assets::internal
                 return out;
             }
         });
+
+        // ── JSON document compiler ────────────────────────────────────────────────
+        //
+        // Dispatches on kJSONDocumentSchema.
+        // Expects exactly one dependency: a text/file carrier whose compiled payload
+        // is std::vector<uint8_t>. Parses JSON into JSONData and stores it in JSONTable.
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kJSONDocumentSchema,
+            .output_type = kAssetTypeJSONDocument,
+            .compile = [&logger, &json_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                if (dep_nodes.empty()) {
+                    logger.error("JSON document node has no file dependency");
+                    return compile_failed_node(input);
+                }
+
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+
+                if (!bytes) {
+                    logger.error("JSON file dep node has no byte payload");
+                    return compile_failed_node(input);
+                }
+
+                wz::json::JSONParseResult parsed =
+                    wz::json::parse_json_bytes(*bytes);
+
+                if (!parsed.ok) {
+                    logger.error("failed to parse JSON: " + parsed.error.message);
+                    return compile_failed_node(input);
+                }
+
+                JSONData data;
+                data.document = std::move(parsed.document);
+
+                wz::asset::ResourceHandle handle =
+                    json_table.add(std::move(data));
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
 
         return registry;
     }

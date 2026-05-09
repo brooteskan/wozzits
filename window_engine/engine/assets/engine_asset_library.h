@@ -21,6 +21,9 @@
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/csv_asset_module.h>
 
+#include <engine/assets/json/json.h>
+#include <engine/assets/json_asset_module.h>
+
 #include <string>
 #include <vector>
 
@@ -80,6 +83,9 @@ namespace wz::engine::assets
         const ScalarFieldAssetModule&  scalar_fields() const { return scalar_fields_; }
         const CSVAssetModule&          csv()           const { return csv_; }
 
+        JSONAssetModule&               json()           { return json_; }
+        const JSONAssetModule&         json()     const { return json_; }
+
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -102,12 +108,14 @@ namespace wz::engine::assets
 
         ScalarFieldTable       scalar_fields_table_;
         CSVTable               csv_table_;
+        JSONTable              json_table_;
         wz::asset::AssetSystem system_;
 
         FileCarrierAssetModule  files_;
         ShaderAssetModule       shaders_;
         ScalarFieldAssetModule  scalar_fields_;
         CSVAssetModule          csv_;
+        JSONAssetModule         json_;
     };
 
 } // namespace wz::engine::assets

@@ -175,4 +175,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kArchiveAssetSchema{
         0xF11E'CA55'E7'000011ull
     };
+
+    // Parsed JSON document recipe.
+    // Consumes a file carrier dependency and produces JSONData in JSONTable.
+    inline constexpr wz::asset::SchemaID kJSONDocumentSchema{
+        0xF11E'CA55'E7'000012ull
+    };
 }
