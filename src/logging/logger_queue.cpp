@@ -4,6 +4,10 @@
 
 namespace wz::logging::internal
 {
+    LoggerQueue::LoggerQueue()
+        : queue_(std::make_unique<wz::core::containers::MPSCRingBuffer<LogMessage, kLoggerQueueCapacity>>())
+    {}
+
     bool LoggerQueue::try_push(wz::LogLevel level, std::string text)
     {
         if (!accepting_.load(std::memory_order_acquire))
@@ -18,7 +22,7 @@ namespace wz::logging::internal
         msg.level       = level;
         msg.text        = std::move(text);
 
-        if (!queue_.try_push(std::move(msg)))
+        if (!queue_->try_push(std::move(msg)))
         {
             dropped_count_.fetch_add(1, std::memory_order_relaxed);
             return false;
@@ -30,7 +34,7 @@ namespace wz::logging::internal
 
     bool LoggerQueue::try_pop(LogMessage& out)
     {
-        return queue_.try_pop(out);
+        return queue_->try_pop(out);
     }
 
     void LoggerQueue::close()

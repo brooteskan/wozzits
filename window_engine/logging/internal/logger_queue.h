@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include <containers/mpsc_ring_buffer.h>
@@ -14,7 +15,7 @@ namespace wz::logging::internal
     class LoggerQueue
     {
     public:
-        LoggerQueue() = default;
+        LoggerQueue();
 
         LoggerQueue(const LoggerQueue&)            = delete;
         LoggerQueue& operator=(const LoggerQueue&) = delete;
@@ -42,6 +43,7 @@ namespace wz::logging::internal
         std::atomic<uint64_t> dropped_count_ { 0 };
         std::atomic<uint64_t> submitted_count_{ 0 };
 
-        wz::core::containers::MPSCRingBuffer<LogMessage, kLoggerQueueCapacity> queue_;
+        // Heap-allocated: ~3.5 MB at kLoggerQueueCapacity=65536, too large for stack
+        std::unique_ptr<wz::core::containers::MPSCRingBuffer<LogMessage, kLoggerQueueCapacity>> queue_;
     };
 }
