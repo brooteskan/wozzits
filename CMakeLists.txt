@@ -242,5 +242,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(asset_toml toml_parser)
     rs_add_test_group(asset_toml toml_polytree)
+    rs_add_test_group(asset_toml toml_asset_module)
+
     rs_add_test_group(game_app game_app_main)
 endif()

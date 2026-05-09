@@ -24,13 +24,14 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         ScalarFieldTable& scalar_field_table,
         CSVTable& csv_table,
-        JSONTable& json_table)
+        JSONTable& json_table,
+        TOMLTable& toml_table)
     {
         wz::asset::CompilerRegistry registry;
 
         register_file_carrier_compilers(registry, logger);
-
         register_json_compilers(registry, logger, json_table);
+        register_toml_compilers(registry, logger, toml_table);
 
         // ── HLSL file carrier compiler ────────────────────────────────────────
         //

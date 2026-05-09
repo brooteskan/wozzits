@@ -214,6 +214,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeJSONDocument =
         static_cast<wz::asset::AssetType>(151);
 
+    // Implemented: parsed TOML document.
+    // Runtime data is owned by TOMLTable.
+    inline constexpr wz::asset::AssetType kAssetTypeTOMLDocument =
+        static_cast<wz::asset::AssetType>(152);
 
     // ─── Texture / image CPU and intermediate asset types: 160–191 ──────────────
     // Texture specializations that may need distinct recipe/runtime paths.

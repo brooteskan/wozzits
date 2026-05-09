@@ -21,6 +21,9 @@
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/csv_asset_module.h>
 
+#include <engine/assets/toml/toml.h>
+#include <engine/assets/toml_asset_module.h>
+
 #include <engine/assets/json/json.h>
 #include <engine/assets/json_asset_module.h>
 
@@ -86,6 +89,9 @@ namespace wz::engine::assets
         JSONAssetModule&               json()           { return json_; }
         const JSONAssetModule&         json()     const { return json_; }
 
+        TOMLAssetModule&               toml()           { return toml_; }
+        const TOMLAssetModule&         toml()     const { return toml_; }
+
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -109,6 +115,7 @@ namespace wz::engine::assets
         ScalarFieldTable       scalar_fields_table_;
         CSVTable               csv_table_;
         JSONTable              json_table_;
+        TOMLTable              toml_table_;
         wz::asset::AssetSystem system_;
 
         FileCarrierAssetModule  files_;
@@ -116,6 +123,7 @@ namespace wz::engine::assets
         ScalarFieldAssetModule  scalar_fields_;
         CSVAssetModule          csv_;
         JSONAssetModule         json_;
+        TOMLAssetModule         toml_;
     };
 
 } // namespace wz::engine::assets

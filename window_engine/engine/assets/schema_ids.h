@@ -181,4 +181,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kJSONDocumentSchema{
         0xF11E'CA55'E7'000012ull
     };
+
+    // Parsed TOML document recipe.
+    // Consumes a file carrier dependency and produces TOMLData in TOMLTable.
+    inline constexpr wz::asset::SchemaID kTOMLDocumentSchema{
+        0xF11E'CA55'E7'000013ull
+    };
 }

@@ -7,6 +7,7 @@
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/csv/csv.h>
 #include <engine/assets/json/json.h>
+#include <engine/assets/toml/toml.h>
 
 #include <gpu/shader.h>
 
@@ -27,7 +28,8 @@ namespace wz::engine::assets::internal {
         wz::Logger& logger,
         ScalarFieldTable& scalar_field_table,
         CSVTable& csv_table,
-        JSONTable& json_table
+        JSONTable& json_table,
+        TOMLTable& toml_table
     );
 
     void register_file_carrier_compilers(
@@ -39,6 +41,12 @@ namespace wz::engine::assets::internal {
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         JSONTable& json_table
+    );
+
+    void register_toml_compilers(
+        wz::asset::CompilerRegistry& registry,
+        wz::Logger& logger,
+        TOMLTable& toml_table
     );
 
     bool compute_min_max(

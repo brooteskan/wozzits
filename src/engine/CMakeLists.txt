@@ -20,6 +20,10 @@ target_sources(window_engine PRIVATE
     assets/engine_asset_library_json_compilers.cpp
     assets/json_asset_module.cpp
 
+    assets/toml/toml.cpp
+    assets/toml_asset_module.cpp
+    assets/engine_asset_library_toml_compilers.cpp
+
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
   )
