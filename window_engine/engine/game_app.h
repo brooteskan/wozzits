@@ -1,21 +1,11 @@
 #pragma once
 // engine/game_app.h
 
-#include <memory>
-
-
-#include <window/window2.h>
-#include <input/input.h>
-
-#include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
 
-#include <engine/assets/engine_asset_library.h>
-
+#include <engine/app_context.h>
 #include <engine/engine.h>
 #include <engine/runtime_camera.h>
-
-#include <logging/logger.h>
 
 #include <scene/compile/scene_compiler.h>
 #include <render/frame/render_frame.h>
@@ -40,19 +30,12 @@ namespace wz::app
 
     struct GameApp
     {
-        wz::window::WindowHandle window{};
-        wz::gpu::Device device{};
-        wz::Logger logger{};
-
-        std::unique_ptr<wz::engine::assets::EngineAssetLibrary> assets{};
+        wz::engine::AppContext ctx{};
 
         RuntimeCamera camera{};
 
         ScalarFieldDebugRuntime scalar_debug{};
-
-        DebugObjectRuntime debug_object{};
-
-        bool initialized = false;
+        DebugObjectRuntime      debug_object{};
     };
 
     bool init(GameApp& app);
