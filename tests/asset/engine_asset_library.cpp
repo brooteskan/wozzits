@@ -110,7 +110,7 @@ float4 main(PSIn input) : SV_TARGET
 
         void SetUp() override
         {
-            logger.set_callback(wz::LogSinkType::Stderr);
+            wz::logging::init_logger(logger, {});
 
             wz::window::WindowDesc desc{};
             desc.title = "asset_library_test";

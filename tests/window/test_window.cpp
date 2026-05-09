@@ -31,7 +31,7 @@ int main()
     {
         // ── logger ────────────────────────────────────────────────────────
         wz::Logger logger;
-        logger.set_callback(wz::LogSinkType::Stderr);
+        wz::logging::init_logger(logger, {});
 
         // ── window ────────────────────────────────────────────────────────
         wz::window::WindowDesc desc;
