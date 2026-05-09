@@ -29,41 +29,8 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry registry;
 
         register_file_carrier_compilers(registry, logger);
-        // ── Raw file carrier compiler ─────────────────────────────────────────
-        //
-        // Dispatches on kRawFileSchema. Reads the file from FileSourceDesc
-        // metadata and returns a compiled node carrying the raw bytes.
-        // Used as the upstream dependency for the scalar field compiler.
 
-        //registry.register_compiler(wz::asset::AssetCompiler{
-        //    .input_schema = kRawFileSchema,
-        //    .output_type = kAssetTypeRawFile,
-        //    .compile = [&logger](
-        //        const wz::asset::AssetNode& input,
-        //        std::span<const wz::asset::AssetNode>,
-        //        std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
-        //    {
-        //        const auto* file =
-        //            std::any_cast<FileSourceDesc>(&input.meta);
-
-        //        if (!file) {
-        //            logger.error("raw file carrier missing FileSourceDesc");
-        //            return compile_failed_node(input);
-        //        }
-
-        //        auto file_result = wz::fs::read_file(file->full_path);
-        //        if (!file_result) {
-        //            logger.error("failed to read file: " + file->full_path);
-        //            return compile_failed_node(input);
-        //        }
-
-        //        wz::asset::AssetNode out = input;
-        //        out.stage = wz::asset::AssetStage::Compiled;
-        //        out.payload = std::move(file_result.value);
-        //        return out;
-        //    }
-        //    });
-
+        register_json_compilers(registry, logger, json_table);
 
         // ── HLSL file carrier compiler ────────────────────────────────────────
         //
@@ -637,54 +604,6 @@ namespace wz::engine::assets::internal
                 return out;
             }
         });
-
-        // ── JSON document compiler ────────────────────────────────────────────────
-        //
-        // Dispatches on kJSONDocumentSchema.
-        // Expects exactly one dependency: a text/file carrier whose compiled payload
-        // is std::vector<uint8_t>. Parses JSON into JSONData and stores it in JSONTable.
-
-        registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kJSONDocumentSchema,
-            .output_type = kAssetTypeJSONDocument,
-            .compile = [&logger, &json_table](
-                const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
-            {
-                if (dep_nodes.empty()) {
-                    logger.error("JSON document node has no file dependency");
-                    return compile_failed_node(input);
-                }
-
-                const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
-
-                if (!bytes) {
-                    logger.error("JSON file dep node has no byte payload");
-                    return compile_failed_node(input);
-                }
-
-                wz::json::JSONParseResult parsed =
-                    wz::json::parse_json_bytes(*bytes);
-
-                if (!parsed.ok) {
-                    logger.error("failed to parse JSON: " + parsed.error.message);
-                    return compile_failed_node(input);
-                }
-
-                JSONData data;
-                data.document = std::move(parsed.document);
-
-                wz::asset::ResourceHandle handle =
-                    json_table.add(std::move(data));
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
-            }
-            });
 
         return registry;
     }
