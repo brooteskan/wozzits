@@ -193,6 +193,48 @@ TEST(ThreadedLogger, AcceptsManyProducerThreads)
     wz::logging::shutdown_logger(logger);
 }
 
+// ---------------------------------------------------------------------------
+// Platform sinks (smoke — we can't intercept OS output in GTest)
+// ---------------------------------------------------------------------------
+
+TEST(ThreadedLogger, DebuggerSinkDoesNotCrash)
+{
+    wz::Logger logger;
+    wz::logging::LoggerDesc desc;
+    desc.enable_stderr_sink   = false;
+    desc.enable_debugger_sink = true;
+    wz::logging::init_logger(logger, desc);
+
+    logger.debug("debugger debug");
+    logger.info("debugger info");
+    logger.warn("debugger warn");
+    logger.error("debugger error");
+    logger.critical("debugger critical");
+    wz::logging::wait_until_idle(logger);
+
+    SUCCEED();
+    wz::logging::shutdown_logger(logger);
+}
+
+TEST(ThreadedLogger, ConsoleSinkDoesNotCrash)
+{
+    wz::Logger logger;
+    wz::logging::LoggerDesc desc;
+    desc.enable_stderr_sink  = false;
+    desc.enable_console_sink = true;
+    wz::logging::init_logger(logger, desc);
+
+    logger.debug("console debug");
+    logger.info("console info");
+    logger.warn("console warn");
+    logger.error("console error");
+    logger.critical("console critical");
+    wz::logging::wait_until_idle(logger);
+
+    SUCCEED();
+    wz::logging::shutdown_logger(logger);
+}
+
 TEST(ThreadedLogger, WaitUntilIdleBlocksUntilAllDelivered)
 {
     constexpr int count = 2000;

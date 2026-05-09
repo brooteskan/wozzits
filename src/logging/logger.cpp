@@ -28,7 +28,7 @@ namespace wz::logging
             return false;
 
         auto* s = new internal::LoggerState();
-        s->start(desc.min_level, desc.enable_stderr_sink, desc.test_memory_sink);
+        s->start(desc);
         logger.state = s;
         return true;
     }

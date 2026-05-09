@@ -6,6 +6,7 @@
 #include <thread>
 
 #include <logging/logging.h>
+#include <logging/logger_desc.h>
 #include "logging/internal/logger_queue.h"
 
 namespace wz::logging::internal
@@ -22,7 +23,7 @@ namespace wz::logging::internal
         LoggerState(LoggerState&&)                 = delete;
         LoggerState& operator=(LoggerState&&)      = delete;
 
-        void start(LogLevel min_level, bool stderr_sink, MemoryLogSink* memory_sink);
+        void start(const wz::logging::LoggerDesc& desc);
         void stop();
 
         bool push(LogLevel level, std::string_view text);
@@ -33,9 +34,12 @@ namespace wz::logging::internal
         void run();
         void dispatch(const LogMessage& msg);
 
-        LogLevel         min_level_   = LogLevel::Debug;
-        bool             stderr_sink_ = false;
-        MemoryLogSink*   memory_sink_ = nullptr;
+        LogLevel         min_level_      = LogLevel::Debug;
+        bool             stderr_sink_   = false;
+        bool             debugger_sink_ = false;
+        bool             console_sink_  = false;
+        void*            console_handle_ = nullptr; // HANDLE, avoids <windows.h> in header
+        MemoryLogSink*   memory_sink_   = nullptr;
 
         LoggerQueue               queue_;
         std::thread               worker_;
