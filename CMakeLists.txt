@@ -91,6 +91,10 @@ target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_polytree.cpp"
+
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/toml_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/toml_polytree.cpp"
+
     "${CMAKE_CURRENT_SOURCE_DIR}/external/xml/pugixml/pugixml.cpp"
 
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/api.c"
@@ -235,5 +239,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_json json_polytree)
     rs_add_test_group(asset_json json_table)
     rs_add_test_group(asset_json json_asset_module)
+
+    rs_add_test_group(asset_toml toml_parser)
+    rs_add_test_group(asset_toml toml_polytree)
     rs_add_test_group(game_app game_app_main)
 endif()
