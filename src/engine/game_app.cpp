@@ -124,6 +124,7 @@ namespace wz::app
             propagate_all(app.debug_object.scene.polytree);
 
             app.debug_object.ready = true;
+            app.debug_object.transforms_dirty = false;
         }
 
         // Scalar field debug is deliberately disabled for Session 7 object rendering.
@@ -194,7 +195,11 @@ namespace wz::app
             using namespace wz::render;
             using namespace wz::math;
 
-            propagate_all(app.debug_object.scene.polytree);
+            if (app.debug_object.transforms_dirty)
+            {
+                propagate_all(app.debug_object.scene.polytree);
+                app.debug_object.transforms_dirty = false;
+            }
 
             ViewData view{};
             //view.camera_position = Vec3{ app.camera.x, app.camera.y, 0.0f };
