@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <engine/game_app.h>
+#include <engine/runtime_camera.h>
 
 #include <gpu/scalar_field_texture.h>
 #include <gpu/dx12/dx12.h>
@@ -171,49 +172,14 @@ namespace wz::app
         if (wz::window::window_should_close(app.window))
             ctx.running = false;
 
-        // camera input below
         const auto& input = fctx.input;
 
         if (input.keyboard.pressed[VK_ESCAPE])
             ctx.running = false;
 
-        const float dt =
-            static_cast<float>(fctx.frame.delta_seconds());
+        const float dt = static_cast<float>(fctx.frame.delta_seconds());
 
-        const float move = app.camera.move_speed * dt;
-
-        if (input.keyboard.down['W'])
-            app.camera.y += move;
-
-        if (input.keyboard.down['S'])
-            app.camera.y -= move;
-
-        if (input.keyboard.down['A'])
-            app.camera.x -= move;
-
-        if (input.keyboard.down['D'])
-            app.camera.x += move;
-
-        if (input.keyboard.down[VK_UP])
-            app.camera.pitch += move;
-
-        if (input.keyboard.down[VK_DOWN])
-            app.camera.pitch -= move;
-
-        if (input.keyboard.down[VK_LEFT])
-            app.camera.yaw -= move;
-
-        if (input.keyboard.down[VK_RIGHT])
-            app.camera.yaw += move;
-
-        app.camera.yaw +=
-            static_cast<float>(input.mouse.dx) * app.camera.look_speed;
-
-        app.camera.pitch +=
-            static_cast<float>(input.mouse.dy) * app.camera.look_speed;
-
-        app.camera.pitch =
-            std::clamp(app.camera.pitch, -1.5f, 1.5f);
+        update_camera(app.camera, input, dt);
     }
 
     namespace

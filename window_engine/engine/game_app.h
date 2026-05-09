@@ -13,6 +13,7 @@
 #include <engine/assets/engine_asset_library.h>
 
 #include <engine/engine.h>
+#include <engine/runtime_camera.h>
 
 #include <logging/logger.h>
 
@@ -34,18 +35,6 @@ namespace wz::app
     {
         wz::gpu::GPUHandle texture{};
         bool ready = false;
-    };
-
-    struct RuntimeCamera
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-
-        float yaw = 0.0f;
-        float pitch = 0.0f;
-
-        float move_speed = 2.0f;
-        float look_speed = 0.0025f;
     };
 
     struct GameApp

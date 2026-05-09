@@ -1,5 +1,7 @@
 #pragma once
 
+#include <concepts>
+
 #include <time/w_time.h>
 #include <input/input.h>
 
@@ -77,6 +79,24 @@ namespace wz::engine
      * @param user_data  Opaque pointer forwarded to the update function.
      */
     void run(UpdateFn update, void *user_data);
+
+    /**
+     * @brief Runs the engine main loop with a callable (lambda, functor, or function object).
+     *
+     * Convenience overload that eliminates the need for a trampoline function and void* cast.
+     * The C-style overload above remains available for plugin/FFI boundaries.
+     */
+    template<typename Fn>
+        requires std::invocable<Fn, Context&, FrameContext&>
+    void run(Fn fn)
+    {
+        run(
+            [](Context& ctx, FrameContext& fctx, void* user) {
+                (*static_cast<Fn*>(user))(ctx, fctx);
+            },
+            &fn
+        );
+    }
 
     /**
      * @brief Requests engine shutdown.

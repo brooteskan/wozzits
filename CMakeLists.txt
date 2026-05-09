@@ -190,6 +190,7 @@ endfunction()
 
 if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(engine engine)
+    rs_add_test_group(engine runtime_camera_tests)
 
     rs_add_test_group(logging logging)
 
