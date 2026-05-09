@@ -70,13 +70,37 @@ endif()
 # Core library target
 # ----------------------------
 
+set (YAML_VERSION_MAJOR 0)
+set (YAML_VERSION_MINOR 2)
+set (YAML_VERSION_PATCH 5)
+set (YAML_VERSION_STRING "${YAML_VERSION_MAJOR}.${YAML_VERSION_MINOR}.${YAML_VERSION_PATCH}")
 
 add_library(window_engine)
+
+target_compile_definitions(window_engine PRIVATE
+    
+    YAML_DECLARE_STATIC
+    YAML_DECLARE_STATIC
+    YAML_VERSION_MAJOR=0
+    YAML_VERSION_MINOR=2
+    YAML_VERSION_PATCH=5
+    YAML_VERSION_STRING="0.2.5"
+)
 
 target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_polytree.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/xml/pugixml/pugixml.cpp"
+
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/api.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/dumper.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/emitter.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/loader.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/parser.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/reader.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/scanner.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/writer.c"
 )
 
 target_include_directories(window_engine
@@ -85,6 +109,9 @@ target_include_directories(window_engine
         $<INSTALL_INTERFACE:include>
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/xml/pugixml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/tomlplusplus"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/include"
 )
 
 target_link_libraries(window_engine
