@@ -1,5 +1,6 @@
 add_subdirectory(engine)
 add_subdirectory(logging)
+add_subdirectory(jobs)
 add_subdirectory(time)
 add_subdirectory(input)
 add_subdirectory(platform)
