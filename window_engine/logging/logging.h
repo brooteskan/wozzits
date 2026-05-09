@@ -1,5 +1,5 @@
 #pragma once
-#include <string>
+
 namespace wz
 {
     enum class LogLevel
@@ -9,20 +9,5 @@ namespace wz
         Warning,
         Error,
         Critical
-    };
-
-    enum class LogSinkType
-    {
-        Stderr = 0,
-        File,
-        Debugger,
-        Buffer,
-        Null
-    };
-
-    struct LogEvent
-    {
-        LogLevel level;
-        std::string message;
     };
 }

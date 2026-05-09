@@ -1,11 +1,12 @@
 // src/engine/app_context.cpp
 #include <engine/app_context.h>
+#include <logging/logger.h>
 
 namespace wz::engine
 {
     bool init(AppContext& ctx, const AppDesc& desc)
     {
-        ctx.logger.set_callback(wz::LogSinkType::Stderr);
+        wz::logging::init_logger(ctx.logger, {});
 
         ctx.window = wz::window::create_window(desc.window);
         if (!ctx.window.valid())
@@ -31,6 +32,7 @@ namespace wz::engine
     void shutdown(AppContext& ctx)
     {
         ctx.assets.reset();
+        wz::logging::shutdown_logger(ctx.logger);
 
         if (ctx.device.valid())
             wz::gpu::destroy_device(ctx.device);
