@@ -19,6 +19,8 @@
 #include <gpu/dx12/dx12.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 
+#include <stats/scene_render_storage.h>
+
 #define INIT_FAIL(msg) \
     do { OutputDebugStringA("GameApp init failed: " msg "\n"); return false; } while (0)
 
@@ -85,6 +87,33 @@ namespace wz::app
             return (static_cast<double>(ticks) * 1000.0) / ticks_per_second;
         }
 
+        struct FrameAllocationSummary
+        {
+            uint64_t bytes_owned = 0;
+            uint64_t bytes_allocated_this_frame = 0;
+            uint32_t reallocations_this_frame = 0;
+        };
+
+        FrameAllocationSummary summarize_frame_allocations(
+            const wz::app::GameApp& app)
+        {
+            FrameAllocationSummary out{};
+
+            auto add = [&](const wz::scene_render::AllocationStats& s)
+                {
+                    out.bytes_owned += s.bytes_owned;
+                    out.bytes_allocated_this_frame += s.bytes_allocated_this_build;
+                    out.reallocations_this_frame += s.reallocations_this_build;
+                };
+
+            add(app.frame.compiled_scene.stable_stats);
+            add(app.frame.compiled_scene.view_stats);
+            add(app.frame.render_ir.stats);
+            add(app.frame.render_frame.stats);
+
+            return out;
+        }
+
         void log_job_profile_if_due(
             wz::app::GameApp& app,
             const wz::jobs::FrameJobProfile& profile)
@@ -119,6 +148,8 @@ namespace wz::app
                     slowest = &rec;
             }
 
+            const auto allocs = summarize_frame_allocations(app);
+
             std::ostringstream summary;
             summary << std::fixed << std::setprecision(3);
 
@@ -127,7 +158,10 @@ namespace wz::app
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
                 << " jobs=" << profile.timings.size()
-                << " cmds=" << app.frame.render_frame.frame.commands.size();
+                << " cmds=" << app.frame.render_frame.frame.commands.size()
+                << " allocs=" << allocs.reallocations_this_frame
+                << " alloc_bytes=" << allocs.bytes_allocated_this_frame
+                << " owned=" << allocs.bytes_owned;
 
             if (slowest)
             {
