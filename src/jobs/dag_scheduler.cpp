@@ -1,6 +1,8 @@
 #include "jobs/dag_scheduler.h"
 #include "jobs/job_graph_template.h"
 #include "jobs/frame_execution.h"
+#include "jobs/job_profiler.h"
+#include "time/w_time.h"
 
 #include <cassert>
 
@@ -30,6 +32,9 @@ namespace wz::jobs
         exec.status[n] = JobStatus::Running;
 
         const JobNode& job = wz::core::graph::node_data(tmpl.graph(), n);
+
+        const uint64_t start = wz::time::TimeSource::now_ticks();
+
         if (job.run)
         {
             JobContext ctx;
@@ -38,6 +43,11 @@ namespace wz::jobs
             ctx.frame_user = exec.bindings[n];
             job.run(ctx);
         }
+
+        const uint64_t end = wz::time::TimeSource::now_ticks();
+
+        if (profile_)
+            profile_->record(n, job.name, start, end);
 
         complete_node(tmpl, exec, n);
     }

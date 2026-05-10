@@ -14,6 +14,7 @@
 #include <jobs/job_graph_template.h>
 #include <jobs/frame_execution.h>
 #include <jobs/dag_scheduler.h>
+#include <jobs/job_profiler.h>
 
 
 namespace wz::app
@@ -48,6 +49,8 @@ namespace wz::app
         wz::jobs::NodeHandle compile_scene = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_ir = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_frame = wz::jobs::INVALID_JOB;
+
+        wz::jobs::FrameJobProfile profile{};
 
         bool ready = false;
     };

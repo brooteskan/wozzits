@@ -27,6 +27,7 @@ namespace wz::logging::internal
         std::memcpy(msg.text, text.data(), len);
         msg.text[len] = '\0';
 
+
         if (!queue_->try_push(std::move(msg)))
         {
             dropped_count_.fetch_add(1, std::memory_order_relaxed);
