@@ -101,7 +101,7 @@ namespace wz::render::backend::dx12
         return ctx;
     }
 
-    void submit(Context* ctx, const RenderFrame& frame)
+    void submit(Context* ctx, const RenderFrameView& frame)
     {
         assert(ctx);
         assert(ctx->device);

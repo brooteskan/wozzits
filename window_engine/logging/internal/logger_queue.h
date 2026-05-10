@@ -3,7 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <string>
+#include <string_view>
 
 #include <containers/mpsc_ring_buffer.h>
 #include "logging/internal/log_message.h"
@@ -22,7 +22,7 @@ namespace wz::logging::internal
         LoggerQueue(LoggerQueue&&)                 = delete;
         LoggerQueue& operator=(LoggerQueue&&)      = delete;
 
-        bool try_push(wz::LogLevel level, std::string text);
+        bool try_push(wz::LogLevel level, std::string_view text);
         bool try_pop(LogMessage& out);
 
         void close();

@@ -1,51 +1,58 @@
-#include <logging/logger.h>
-#include <logging/logger_worker.h>
+#include "logging/logger.h"
+#include "logging/internal/logger_state.h"
 
 namespace wz
 {
-    Logger::Logger()
-        : impl(std::make_unique<core::LoggerWorker>())
-    {
-        impl->start();
-    }
-
     Logger::~Logger()
     {
+        if (state)
+        {
+            state->stop();
+            delete state;
+            state = nullptr;
+        }
     }
 
-    void Logger::log(LogLevel level, std::string_view message)
+    void Logger::debug(std::string_view msg)    { logging::log(*this, LogLevel::Debug,    msg); }
+    void Logger::info(std::string_view msg)     { logging::log(*this, LogLevel::Info,     msg); }
+    void Logger::warn(std::string_view msg)     { logging::log(*this, LogLevel::Warning,  msg); }
+    void Logger::error(std::string_view msg)    { logging::log(*this, LogLevel::Error,    msg); }
+    void Logger::critical(std::string_view msg) { logging::log(*this, LogLevel::Critical, msg); }
+}
+
+namespace wz::logging
+{
+    bool init_logger(wz::Logger& logger, const LoggerDesc& desc)
     {
-        impl->push(
-            wz::LogEvent{
-                static_cast<wz::LogLevel>(level),
-                message.data()});
+        if (logger.state)
+            return false;
+
+        auto* s = new internal::LoggerState();
+        s->start(desc);
+        logger.state = s;
+        return true;
     }
 
-    void Logger::set_callback(LogSinkType type)
+    void shutdown_logger(wz::Logger& logger)
     {
-        impl->set_callback(type);
+        if (!logger.state)
+            return;
+
+        logger.state->stop();
+        delete logger.state;
+        logger.state = nullptr;
     }
 
-    void Logger::flush()
+    bool log(wz::Logger& logger, LogLevel level, std::string_view text)
     {
-        impl->flush();
+        if (!logger.state)
+            return false;
+        return logger.state->push(level, text);
     }
 
-    void Logger::debug(std::string_view msg) { log(LogLevel::Debug, msg); }
-    void Logger::info(std::string_view msg) { log(LogLevel::Info, msg); }
-    void Logger::warn(std::string_view msg) { log(LogLevel::Warning, msg); }
-    void Logger::error(std::string_view msg) { log(LogLevel::Error, msg); }
-    void Logger::critical(std::string_view msg) { log(LogLevel::Critical, msg); }
-
-#ifdef WZ_ENABLE_TESTING
-    std::vector<LogEvent> Logger::snapshot_memory() const
+    void wait_until_idle(wz::Logger& logger)
     {
-        return impl->snapshot_memory(); // legal: inside .cpp, incomplete type is OK
+        if (logger.state)
+            logger.state->wait_until_idle();
     }
-
-    void Logger::wait_until_idle()
-    {
-        impl->wait_until_idle();
-    }
-#endif
 }

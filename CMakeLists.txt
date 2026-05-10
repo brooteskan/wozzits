@@ -227,6 +227,10 @@ if(SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(logging logging)
     rs_add_test_group(logging logger_queue_tests)
+    rs_add_test_group(logging threaded_logger_tests)
+
+    rs_add_test_group(jobs job_graph_tests)
+    rs_add_test_group(jobs render_prep_job_tests)
 
     rs_add_test_group(window test_window)
 

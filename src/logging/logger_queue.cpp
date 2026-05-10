@@ -1,6 +1,8 @@
 #include "logging/internal/logger_queue.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstring>
 
 namespace wz::logging::internal
 {
@@ -8,7 +10,7 @@ namespace wz::logging::internal
         : queue_(std::make_unique<wz::core::containers::MPSCRingBuffer<LogMessage, kLoggerQueueCapacity>>())
     {}
 
-    bool LoggerQueue::try_push(wz::LogLevel level, std::string text)
+    bool LoggerQueue::try_push(wz::LogLevel level, std::string_view text)
     {
         if (!accepting_.load(std::memory_order_acquire))
         {
@@ -20,7 +22,11 @@ namespace wz::logging::internal
         msg.sequence    = next_sequence();
         msg.event_ticks = now_ticks();
         msg.level       = level;
-        msg.text        = std::move(text);
+
+        const auto len = std::min(text.size(), kMaxLogMessageText);
+        std::memcpy(msg.text, text.data(), len);
+        msg.text[len] = '\0';
+
 
         if (!queue_->try_push(std::move(msg)))
         {

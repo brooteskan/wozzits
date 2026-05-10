@@ -111,12 +111,16 @@ namespace wz::gpu::dx12
 
         propagate_all(scene.polytree);
 
-        auto compiled = compile(scene.polytree, descs, {}, view);
-        auto ir = wz::render::build_render_ir(compiled.scene);
-
         TriangleTestFrame out{};
         out.view = view;
-        out.frame_storage = wz::render::build_frame(ir, compiled.scene);
+
+        wz::scene::CompiledSceneStorage compiled_storage;
+        wz::render::RenderIRStorage     ir_storage;
+
+        auto cs = wz::scene::compile(compiled_storage, scene.polytree, descs, {}, view);
+        auto ir = wz::render::build_render_ir(ir_storage, cs);
+        wz::render::build_frame(out.frame_storage, ir, cs);
+
         return out;
     }
 }

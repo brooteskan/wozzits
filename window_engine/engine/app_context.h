@@ -29,8 +29,9 @@ namespace wz::engine
 
     struct AppDesc
     {
-        wz::window::WindowDesc window{};
-        wz::fs::Path           resource_root{ "resources" };
+        wz::window::WindowDesc   window{};
+        wz::fs::Path             resource_root{ "resources" };
+        wz::logging::LoggerDesc  logger{ .enable_debugger_sink = true };
     };
 
     bool init(AppContext& ctx, const AppDesc& desc);
