@@ -5,6 +5,11 @@
 #define NOMINMAX
 #include <Windows.h>
 
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <cstring>
+
 #include <algorithm>
 #include <engine/game_app.h>
 #include <engine/runtime_camera.h>
@@ -68,6 +73,88 @@ namespace wz::app
             view.view_projection = mul(view.projection, view.view);
 
             return view;
+        }
+
+        constexpr uint64_t kJobProfileLogEveryNFrames = 120;
+
+        double ticks_to_ms(uint64_t ticks)
+        {
+            const double ticks_per_second =
+                static_cast<double>(wz::time::TimeSource::ticks_per_second());
+
+            return (static_cast<double>(ticks) * 1000.0) / ticks_per_second;
+        }
+
+        void log_job_profile_if_due(
+            wz::app::GameApp& app,
+            const wz::jobs::FrameJobProfile& profile)
+        {
+            if (profile.timings.empty())
+                return;
+
+            if ((profile.frame_index % kJobProfileLogEveryNFrames) != 0)
+                return;
+
+            uint64_t total_ticks = 0;
+            uint64_t render_prep_ticks = 0;
+            const wz::jobs::JobTimingRecord* slowest = nullptr;
+
+            for (const auto& rec : profile.timings)
+            {
+                const uint64_t dt = rec.duration_ticks();
+                total_ticks += dt;
+
+                const char* name = rec.name ? rec.name : "";
+
+                if (
+                    std::strcmp(name, "build_view") == 0 ||
+                    std::strcmp(name, "compile_scene") == 0 ||
+                    std::strcmp(name, "build_render_ir") == 0 ||
+                    std::strcmp(name, "build_render_frame") == 0)
+                {
+                    render_prep_ticks += dt;
+                }
+
+                if (!slowest || dt > slowest->duration_ticks())
+                    slowest = &rec;
+            }
+
+            std::ostringstream summary;
+            summary << std::fixed << std::setprecision(3);
+
+            summary
+                << "jobs frame=" << profile.frame_index
+                << " total=" << ticks_to_ms(total_ticks) << " ms"
+                << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
+                << " jobs=" << profile.timings.size()
+                << " cmds=" << app.frame.render_frame.frame.commands.size();
+
+            if (slowest)
+            {
+                summary
+                    << " slowest="
+                    << (slowest->name ? slowest->name : "<unnamed>")
+                    << " "
+                    << ticks_to_ms(slowest->duration_ticks())
+                    << " ms";
+            }
+
+            app.ctx.logger.info(summary.str());
+
+            for (const auto& rec : profile.timings)
+            {
+                std::ostringstream line;
+                line << std::fixed << std::setprecision(3);
+
+                line
+                    << "  job "
+                    << (rec.name ? rec.name : "<unnamed>")
+                    << " "
+                    << ticks_to_ms(rec.duration_ticks())
+                    << " ms";
+
+                app.ctx.logger.info(line.str());
+            }
         }
 
         void job_build_view(wz::jobs::JobContext& ctx)
@@ -444,6 +531,8 @@ namespace wz::app
         app.jobs.scheduler.set_profile(&app.jobs.profile);
         app.jobs.scheduler.execute(app.jobs.graph, app.jobs.exec);
         app.jobs.scheduler.set_profile(nullptr);
+
+        log_job_profile_if_due(app, app.jobs.profile);
     }
 
     void render(

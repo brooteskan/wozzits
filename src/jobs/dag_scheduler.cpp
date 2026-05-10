@@ -33,21 +33,25 @@ namespace wz::jobs
 
         const JobNode& job = wz::core::graph::node_data(tmpl.graph(), n);
 
-        const uint64_t start = wz::time::TimeSource::now_ticks();
+        uint64_t start = 0;
+
+        if (profile_)
+            start = wz::time::TimeSource::now_ticks();
 
         if (job.run)
         {
             JobContext ctx;
-            ctx.node       = n;
-            ctx.node_user  = job.user;
+            ctx.node = n;
+            ctx.node_user = job.user;
             ctx.frame_user = exec.bindings[n];
             job.run(ctx);
         }
 
-        const uint64_t end = wz::time::TimeSource::now_ticks();
-
         if (profile_)
+        {
+            const uint64_t end = wz::time::TimeSource::now_ticks();
             profile_->record(n, job.name, start, end);
+        }
 
         complete_node(tmpl, exec, n);
     }
