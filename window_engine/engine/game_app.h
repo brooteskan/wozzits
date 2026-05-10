@@ -44,6 +44,11 @@ namespace wz::app
         wz::jobs::NodeHandle shutdown_input = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle camera_update = wz::jobs::INVALID_JOB;
 
+        wz::jobs::NodeHandle build_view = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle compile_scene = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle build_render_ir = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle build_render_frame = wz::jobs::INVALID_JOB;
+
         bool ready = false;
     };
 
@@ -52,6 +57,8 @@ namespace wz::app
     // Must outlive all jobs that read from it in a given frame.
     struct FrameStorage
     {
+        wz::scene::ViewData             view{};
+
         wz::scene::CompiledSceneStorage compiled_scene;
         wz::render::RenderIRStorage     render_ir;
         wz::render::RenderFrameStorage  render_frame;
