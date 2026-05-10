@@ -20,6 +20,7 @@
 #include <engine/assets/scalar_field/scalar_field.h>
 
 #include <stats/scene_render_storage.h>
+#include <scene/compile/legacy_classification.h>
 
 #define INIT_FAIL(msg) \
     do { OutputDebugStringA("GameApp init failed: " msg "\n"); return false; } while (0)
@@ -29,6 +30,7 @@ namespace wz::app
     namespace
     {
         static bool g_logged_job_update_once = false;
+        constexpr uint32_t kDebugObjectCount = 1000;
 
         struct AppUpdateFrameData
         {
@@ -37,6 +39,90 @@ namespace wz::app
             wz::app::GameApp* app = nullptr;
             float                     dt = 0.0f;
         };
+
+        bool build_debug_object_scene(
+            wz::app::GameApp& app,
+            uint32_t object_count)
+        {
+            using namespace wz::scene;
+            using namespace wz::core::graph;
+            using namespace wz::math;
+
+            SceneBuilder b;
+
+            TransformNode root{};
+            root.local = mat4_identity();
+
+            NodeHandle root_h = add_node(b, root);
+
+            std::vector<NodeHandle> object_nodes;
+            object_nodes.reserve(object_count);
+
+            const uint32_t columns = 32;
+            const float spacing = 1.25f;
+
+            for (uint32_t i = 0; i < object_count; ++i)
+            {
+                const uint32_t x = i % columns;
+                const uint32_t y = i / columns;
+
+                TransformNode object{};
+                object.local = mat4_identity();
+
+                object.local.m[12] =
+                    (static_cast<float>(x) - static_cast<float>(columns) * 0.5f) * spacing;
+
+                object.local.m[13] =
+                    (static_cast<float>(y) - static_cast<float>(object_count / columns) * 0.5f) * spacing;
+
+                object.local.m[14] = 8.0f;
+
+                object.flags = TransformNodeFlag::RenderDomain;
+                object.motion_type = TransformNode::MotionType::Static;
+
+                NodeHandle object_h = add_node(b, object);
+                add_edge(b, root_h, object_h);
+
+                object_nodes.push_back(object_h);
+            }
+
+            auto scene_result = build(std::move(b));
+            if (!scene_result.has_value())
+                return false;
+
+            app.debug_object.scene = std::move(*scene_result);
+
+            app.debug_object.descriptors.clear();
+            app.debug_object.descriptors.resize(
+                node_count(app.debug_object.scene.polytree)
+            );
+
+            app.debug_object.descriptors[root_h] = RenderableDescriptor{
+                .node_class = classify_legacy_renderable(RenderPipeline::None),
+            };
+
+            for (NodeHandle object_h : object_nodes)
+            {
+                app.debug_object.descriptors[object_h] = RenderableDescriptor{
+                    .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+                    .mesh = 0,
+                    .material = 0,
+                    .local_bounds = {
+                        .min = Vec3{ -0.5f, -0.5f, -0.5f },
+                        .max = Vec3{  0.5f,  0.5f,  0.5f },
+                    },
+                    .splat_data = {},
+                    .visible = true,
+                };
+            }
+
+            propagate_all(app.debug_object.scene.polytree);
+
+            app.debug_object.ready = true;
+            app.debug_object.transforms_dirty = false;
+
+            return true;
+        }
 
         wz::scene::ViewData build_view_data(
             const wz::app::RuntimeCamera& camera,
@@ -150,6 +236,11 @@ namespace wz::app
 
             const auto allocs = summarize_frame_allocations(app);
 
+            const auto scene_nodes =
+                app.debug_object.ready
+                ? wz::core::graph::node_count(app.debug_object.scene.polytree)
+                : 0;
+
             std::ostringstream summary;
             summary << std::fixed << std::setprecision(3);
 
@@ -158,6 +249,7 @@ namespace wz::app
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
                 << " jobs=" << profile.timings.size()
+                << " nodes=" << scene_nodes
                 << " cmds=" << app.frame.render_frame.frame.commands.size()
                 << " allocs=" << allocs.reallocations_this_frame
                 << " alloc_bytes=" << allocs.bytes_allocated_this_frame
@@ -466,57 +558,9 @@ namespace wz::app
             .pixel_shader  = object_shader_handles.pixel,
             });
 
-        // ── Build one tiny renderable scene object ──────────────────────────
-        {
-            using namespace wz::scene;
-            using namespace wz::core::graph;
-            using namespace wz::math;
-
-            SceneBuilder b;
-
-            TransformNode root{};
-            root.local = mat4_identity();
-
-            NodeHandle root_h = add_node(b, root);
-
-            TransformNode object{};
-            object.local = mat4_identity();
-            object.local.m[14] = 3.0f; // visible in front of the camera
-            object.flags = TransformNodeFlag::RenderDomain;
-            object.motion_type = TransformNode::MotionType::Static;
-
-            NodeHandle object_h = add_node(b, object);
-
-            add_edge(b, root_h, object_h);
-
-            auto scene_result = build(std::move(b));
-            if (!scene_result.has_value())
-                return false;
-
-            app.debug_object.scene = std::move(*scene_result);
-
-            app.debug_object.descriptors.resize(
-                node_count(app.debug_object.scene.polytree)
-            );
-
-            app.debug_object.descriptors[root_h] = RenderableDescriptor{
-                .pipeline = RenderPipeline::None,
-            };
-
-            app.debug_object.descriptors[object_h] = RenderableDescriptor{
-                .pipeline     = RenderPipeline::OpaqueGeometry,
-                .mesh         = 0,
-                .material     = 0,
-                .local_bounds = {},
-                .splat_data   = {},
-                .visible      = true,
-            };
-
-            propagate_all(app.debug_object.scene.polytree);
-
-            app.debug_object.ready           = true;
-            app.debug_object.transforms_dirty = false;
-        }
+        // ── Build a number of renderable scene object ──────────────────────────
+        if (!build_debug_object_scene(app, kDebugObjectCount))
+            INIT_FAIL("build_debug_object_scene");
 
         // Scalar field debug is deliberately disabled for Session 7 object rendering.
         app.scalar_debug.texture = {};

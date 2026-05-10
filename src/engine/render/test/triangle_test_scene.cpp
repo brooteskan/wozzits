@@ -1,4 +1,5 @@
 #include <engine/render/test/test_triangle_scene.h>
+#include <scene/compile/legacy_classification.h>
 
 using namespace wz::scene;
 using namespace wz::core::graph;
@@ -48,10 +49,10 @@ namespace wz::gpu::dx12
     {
         std::vector<RenderableDescriptor> descs(2);
 
-        descs[0] = { RenderPipeline::None };
+        descs[0] = { classify_legacy_renderable(RenderPipeline::None) };
 
         descs[1] = {
-            RenderPipeline::OpaqueGeometry,
+            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
             /*mesh=*/0,
             /*material=*/0,
             {}
