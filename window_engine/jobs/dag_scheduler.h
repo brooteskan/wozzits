@@ -12,6 +12,10 @@
 //
 // The scheduler DOES NOT mutate JobGraphTemplate topology.
 // Only FrameExecution (transient state) is modified during a run.
+//
+// Optional profiling: attach a FrameJobProfile via set_profile() before execute().
+// The scheduler records per-job timing into the profile if one is set.
+// The scheduler does not own the profile.
 
 #include <vector>
 #include "job_types.h"
@@ -20,6 +24,7 @@ namespace wz::jobs
 {
     class JobGraphTemplate;
     struct FrameExecution;
+    struct FrameJobProfile;
 
     class DagScheduler
     {
@@ -30,6 +35,11 @@ namespace wz::jobs
         DagScheduler(const DagScheduler&)            = delete;
         DagScheduler& operator=(const DagScheduler&) = delete;
 
+        // Attach or detach a per-frame profiling sink.
+        // The caller owns the profile; it must remain valid until execute() returns.
+        // Pass nullptr to disable profiling (the default).
+        void set_profile(FrameJobProfile* profile) { profile_ = profile; }
+
         // Execute all jobs in dependency order on the calling thread.
         // exec must have been reset from tmpl before calling.
         void execute(const JobGraphTemplate& tmpl, FrameExecution& exec);
@@ -38,7 +48,8 @@ namespace wz::jobs
         void run_node    (const JobGraphTemplate& tmpl, FrameExecution& exec, NodeHandle n);
         void complete_node(const JobGraphTemplate& tmpl, FrameExecution& exec, NodeHandle n);
 
-        std::vector<NodeHandle> ready_; // reused across execute() calls — avoids per-run alloc
+        std::vector<NodeHandle> ready_;             // reused across execute() calls
+        FrameJobProfile*        profile_ = nullptr; // non-owning; null == profiling disabled
     };
 
 } // namespace wz::jobs

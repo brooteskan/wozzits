@@ -231,6 +231,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(jobs job_graph_tests)
     rs_add_test_group(jobs render_prep_job_tests)
+    rs_add_test_group(jobs profiler_tests)
 
     rs_add_test_group(window test_window)
 

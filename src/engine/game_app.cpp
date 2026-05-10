@@ -440,7 +440,10 @@ namespace wz::app
         app.jobs.exec.bind(app.jobs.build_render_ir, &frame_data);
         app.jobs.exec.bind(app.jobs.build_render_frame, &frame_data);
 
+        app.jobs.profile.reset(fctx.frame.index);
+        app.jobs.scheduler.set_profile(&app.jobs.profile);
         app.jobs.scheduler.execute(app.jobs.graph, app.jobs.exec);
+        app.jobs.scheduler.set_profile(nullptr);
     }
 
     void render(
