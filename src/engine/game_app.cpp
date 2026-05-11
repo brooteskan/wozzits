@@ -195,7 +195,8 @@ namespace wz::app
             add(app.frame.compiled_scene.stable_stats);
             add(app.frame.compiled_scene.view_stats);
             add(app.frame.render_ir.stats);
-            add(app.frame.render_frame.stats);
+            add(app.frame.render_frame.stable_stats);
+            add(app.frame.render_frame.view_stats);
 
             return out;
         }
