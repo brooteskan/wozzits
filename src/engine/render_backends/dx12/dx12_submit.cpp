@@ -133,10 +133,8 @@ namespace wz::render::backend::dx12
             Mat4 view_proj;
         } data;
 
-        for (const DrawCommand& dc : frame.commands)
+        for (const DrawCommand& dc : frame.opaque)
         {
-            if (dc.stage != PipelineStage::OpaqueGeometry)
-                continue;
 
 
             if (dc.mesh >= ctx->mesh_table.size())

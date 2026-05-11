@@ -229,9 +229,9 @@ TEST(RenderPrepJobs, BuildsNonEmptyRenderFrameForTinyOpaqueScene)
 
     const auto& render_frame = frame.render_frame.frame;
 
-    ASSERT_EQ(render_frame.commands.size(), 1u);
+    ASSERT_EQ(render_frame.opaque.size(), 1u);
 
-    const wz::render::DrawCommand& cmd = render_frame.commands[0];
+    const wz::render::DrawCommand& cmd = render_frame.opaque[0];
 
     EXPECT_EQ(cmd.stage, wz::render::PipelineStage::OpaqueGeometry);
     EXPECT_EQ(cmd.mesh, 0u);

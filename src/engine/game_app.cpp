@@ -250,7 +250,10 @@ namespace wz::app
                 << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
                 << " jobs=" << profile.timings.size()
                 << " nodes=" << scene_nodes
-                << " cmds=" << app.frame.render_frame.frame.commands.size()
+                << " cmds=" << (app.frame.render_frame.frame.opaque.size()
+                               + app.frame.render_frame.frame.splats.size()
+                               + app.frame.render_frame.frame.transparent.size()
+                               + app.frame.render_frame.frame.particles.size())
                 << " allocs=" << allocs.reallocations_this_frame
                 << " alloc_bytes=" << allocs.bytes_allocated_this_frame
                 << " owned=" << allocs.bytes_owned;
