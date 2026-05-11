@@ -376,7 +376,7 @@ namespace wz::app
             }
             else
             {
-                wz::render::update_render_ir(data->app->frame.render_ir);
+                wz::render::update_render_ir(data->app->frame.render_ir, data->app->frame.compiled_scene.scene);
             }
         }
 
