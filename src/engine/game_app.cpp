@@ -180,6 +180,16 @@ namespace wz::app
             uint32_t reallocations_this_frame = 0;
         };
 
+        void reset_frame_allocation_counters(wz::app::GameApp& app)
+        {
+            app.frame.compiled_scene.stable_stats.reset_build_counters();
+            app.frame.compiled_scene.view_stats.reset_build_counters();
+            app.frame.compiled_scene.metadata_stats.reset_build_counters();
+            app.frame.render_ir.stats.reset_build_counters();
+            app.frame.render_frame.stable_stats.reset_build_counters();
+            app.frame.render_frame.view_stats.reset_build_counters();
+        }
+
         FrameAllocationSummary summarize_frame_allocations(
             const wz::app::GameApp& app)
         {
@@ -311,15 +321,41 @@ namespace wz::app
             {
                 wz::scene::propagate_all(data->app->debug_object.scene.polytree);
                 data->app->debug_object.transforms_dirty = false;
+                data->app->debug_object.compiled_scene_valid = false;
             }
 
-            wz::scene::compile(
-                data->app->frame.compiled_scene,
-                data->app->debug_object.scene.polytree,
-                data->app->debug_object.descriptors,
-                {},
-                data->app->frame.view
-            );
+            if (!data->app->debug_object.compiled_scene_valid)
+            {
+                wz::scene::compile(
+                    data->app->frame.compiled_scene,
+                    data->app->debug_object.scene.polytree,
+                    data->app->debug_object.descriptors,
+                    {},
+                    data->app->frame.view
+                );
+                data->app->debug_object.compiled_scene_valid = true;
+                data->app->frame.render_prep_path = RenderPrepPath::FullCompile;
+
+                static bool logged_once = false;
+                if (!logged_once) {
+                    data->app->ctx.logger.info("render prep path: FullCompile");
+                    logged_once = true;
+                }
+            }
+            else
+            {
+                wz::scene::update_view(
+                    data->app->frame.compiled_scene,
+                    data->app->frame.view
+                );
+                data->app->frame.render_prep_path = RenderPrepPath::ViewOnly;
+
+                static bool logged_once = false;
+                if (!logged_once) {
+                    data->app->ctx.logger.info("render prep path: ViewOnly");
+                    logged_once = true;
+                }
+            }
         }
 
         void job_build_render_ir(wz::jobs::JobContext& ctx)
@@ -331,10 +367,17 @@ namespace wz::app
             if (!data->app->debug_object.ready)
                 return;
 
-            wz::render::build_render_ir(
-                data->app->frame.render_ir,
-                data->app->frame.compiled_scene.scene
-            );
+            if (data->app->frame.render_prep_path == RenderPrepPath::FullCompile)
+            {
+                wz::render::build_render_ir(
+                    data->app->frame.render_ir,
+                    data->app->frame.compiled_scene.scene
+                );
+            }
+            else
+            {
+                wz::render::update_render_ir(data->app->frame.render_ir);
+            }
         }
 
         void job_build_render_frame(wz::jobs::JobContext& ctx)
@@ -346,11 +389,22 @@ namespace wz::app
             if (!data->app->debug_object.ready)
                 return;
 
-            wz::render::build_frame(
-                data->app->frame.render_frame,
-                data->app->frame.render_ir.ir,
-                data->app->frame.compiled_scene.scene
-            );
+            if (data->app->frame.render_prep_path == RenderPrepPath::FullCompile)
+            {
+                wz::render::build_frame(
+                    data->app->frame.render_frame,
+                    data->app->frame.render_ir.ir,
+                    data->app->frame.compiled_scene.scene
+                );
+            }
+            else
+            {
+                wz::render::update_frame_view(
+                    data->app->frame.render_frame,
+                    data->app->frame.render_ir.ir,
+                    data->app->frame.compiled_scene.scene
+                );
+            }
         }
 
         void job_platform_events(wz::jobs::JobContext& ctx)
@@ -408,13 +462,6 @@ namespace wz::app
             assert(data);
             assert(data->fctx);
             assert(data->app);
-
-            static bool logged_once = false;
-            if (!logged_once)
-            {
-                data->app->ctx.logger.info("camera_update job executed");
-                logged_once = true;
-            }
 
             wz::app::update_camera(
                 data->app->camera,
@@ -597,6 +644,8 @@ namespace wz::app
             .app = &app,
             .dt = static_cast<float>(fctx.frame.delta_seconds()),
         };
+
+        reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
 

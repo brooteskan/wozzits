@@ -19,6 +19,10 @@
 
 namespace wz::app
 {
+    // Chooses between a full scene rebuild and a camera-only view refresh.
+    // Set each frame by job_compile_scene; read by job_build_render_ir and
+    // job_build_render_frame to select the matching incremental call.
+    enum class RenderPrepPath { FullCompile, ViewOnly };
 
     struct DebugObjectRuntime
     {
@@ -27,6 +31,7 @@ namespace wz::app
 
         bool ready = false;
         bool transforms_dirty = false;
+        bool compiled_scene_valid = false; // false until first compile(); reset on structural change
     };
 
     struct ScalarFieldDebugRuntime
@@ -65,6 +70,8 @@ namespace wz::app
         wz::scene::CompiledSceneStorage compiled_scene;
         wz::render::RenderIRStorage     render_ir;
         wz::render::RenderFrameStorage  render_frame;
+
+        RenderPrepPath render_prep_path = RenderPrepPath::FullCompile;
     };
 
     struct GameApp
