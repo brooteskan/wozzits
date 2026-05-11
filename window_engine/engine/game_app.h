@@ -22,16 +22,27 @@ namespace wz::app
     // Chooses between a full scene rebuild and a camera-only view refresh.
     // Set each frame by job_compile_scene; read by job_build_render_ir and
     // job_build_render_frame to select the matching incremental call.
-    enum class RenderPrepPath { FullCompile, ViewOnly };
+    // new: transform can change on objects
+    enum class RenderPrepPath
+    {
+        FullCompile,
+        ViewOnly,
+        TransformOnly,
+        TransformAndView,
+    };
 
     struct DebugObjectRuntime
     {
         wz::scene::SceneStorage scene{};
         std::vector<wz::scene::RenderableDescriptor> descriptors{};
 
+        std::vector<wz::core::graph::NodeHandle> animated_nodes{};
+        std::vector<wz::math::Vec3> animated_base_positions{};
+        std::vector<wz::core::graph::NodeHandle> transform_affected_nodes{};
+
         bool ready = false;
         bool transforms_dirty = false;
-        bool compiled_scene_valid = false; // false until first compile(); reset on structural change
+        bool compiled_scene_valid = false;
     };
 
     struct ScalarFieldDebugRuntime

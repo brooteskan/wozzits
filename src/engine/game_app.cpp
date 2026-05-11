@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
-
+#include <cmath>
 #include <algorithm>
 #include <engine/game_app.h>
 #include <engine/runtime_camera.h>
@@ -31,6 +31,7 @@ namespace wz::app
     {
         static bool g_logged_job_update_once = false;
         constexpr uint32_t kDebugObjectCount = 1000;
+        constexpr uint32_t kAnimatedDebugObjectCount = 10;
 
         struct AppUpdateFrameData
         {
@@ -40,6 +41,60 @@ namespace wz::app
             float                     dt = 0.0f;
         };
 
+        void update_world_for_nodes(
+            wz::scene::SceneGraph& g,
+            std::span<const wz::core::graph::NodeHandle> nodes)
+        {
+            for (wz::core::graph::NodeHandle n : nodes)
+            {
+                auto& node = const_cast<wz::scene::TransformNode&>(
+                    wz::core::graph::node_data(g, n));
+
+                const wz::core::graph::NodeHandle p =
+                    wz::core::graph::parent(g, n);
+
+                node.world =
+                    (p == wz::core::graph::INVALID_NODE)
+                    ? node.local
+                    : wz::scene::compute_world(
+                        wz::core::graph::node_data(g, p).world,
+                        node.local);
+            }
+        }
+
+        void update_debug_object_animation(
+            wz::app::GameApp& app,
+            float t)
+        {
+            auto& dbg = app.debug_object;
+
+            if (!dbg.ready)
+                return;
+
+            dbg.transform_affected_nodes.clear();
+
+            const uint32_t count =
+                static_cast<uint32_t>(dbg.animated_nodes.size());
+
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const auto n = dbg.animated_nodes[i];
+                const auto base = dbg.animated_base_positions[i];
+
+                wz::math::Mat4 local = wz::math::mat4_identity();
+
+                local.m[12] = base.x;
+                local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
+                local.m[14] = base.z;
+
+                wz::scene::set_local(dbg.scene.polytree, n, local);
+
+                dbg.transform_affected_nodes.push_back(n);
+            }
+
+            dbg.transforms_dirty = !dbg.transform_affected_nodes.empty();
+        }
+
         bool build_debug_object_scene(
             wz::app::GameApp& app,
             uint32_t object_count)
@@ -47,6 +102,10 @@ namespace wz::app
             using namespace wz::scene;
             using namespace wz::core::graph;
             using namespace wz::math;
+
+            app.debug_object.animated_nodes.clear();
+            app.debug_object.animated_base_positions.clear();
+            app.debug_object.transform_affected_nodes.clear();
 
             SceneBuilder b;
 
@@ -82,6 +141,19 @@ namespace wz::app
 
                 NodeHandle object_h = add_node(b, object);
                 add_edge(b, root_h, object_h);
+
+                if (i < kAnimatedDebugObjectCount)
+                {
+                    app.debug_object.animated_nodes.push_back(object_h);
+
+                    app.debug_object.animated_base_positions.push_back(
+                        wz::math::Vec3{
+                            object.local.m[12],
+                            object.local.m[13],
+                            object.local.m[14],
+                        }
+                        );
+                }
 
                 object_nodes.push_back(object_h);
             }
@@ -211,6 +283,27 @@ namespace wz::app
             return out;
         }
 
+        const char* render_prep_path_name(wz::app::RenderPrepPath path)
+        {
+            switch (path)
+            {
+            case wz::app::RenderPrepPath::FullCompile:
+                return "FullCompile";
+
+            case wz::app::RenderPrepPath::ViewOnly:
+                return "ViewOnly";
+
+            case wz::app::RenderPrepPath::TransformOnly:
+                return "TransformOnly";
+
+            case wz::app::RenderPrepPath::TransformAndView:
+                return "TransformAndView";
+
+            default:
+                return "Unknown";
+            }
+        }
+
         void log_job_profile_if_due(
             wz::app::GameApp& app,
             const wz::jobs::FrameJobProfile& profile)
@@ -255,16 +348,21 @@ namespace wz::app
             std::ostringstream summary;
             summary << std::fixed << std::setprecision(3);
 
+            const auto cmd_count =
+                app.frame.render_frame.frame.opaque.size()
+                + app.frame.render_frame.frame.splats.size()
+                + app.frame.render_frame.frame.transparent.size()
+                + app.frame.render_frame.frame.particles.size();
+
             summary
                 << "jobs frame=" << profile.frame_index
+                << " path=" << render_prep_path_name(app.frame.render_prep_path)
+                << " dirty_nodes=" << app.debug_object.transform_affected_nodes.size()
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
                 << " jobs=" << profile.timings.size()
                 << " nodes=" << scene_nodes
-                << " cmds=" << (app.frame.render_frame.frame.opaque.size()
-                               + app.frame.render_frame.frame.splats.size()
-                               + app.frame.render_frame.frame.transparent.size()
-                               + app.frame.render_frame.frame.particles.size())
+                << " cmds=" << cmd_count
                 << " allocs=" << allocs.reallocations_this_frame
                 << " alloc_bytes=" << allocs.bytes_allocated_this_frame
                 << " owned=" << allocs.bytes_owned;
@@ -314,48 +412,60 @@ namespace wz::app
             assert(data);
             assert(data->app);
 
-            if (!data->app->debug_object.ready)
+            auto& app = *data->app;
+            auto& dbg = app.debug_object;
+
+            if (!dbg.ready)
                 return;
 
-            if (data->app->debug_object.transforms_dirty)
-            {
-                wz::scene::propagate_all(data->app->debug_object.scene.polytree);
-                data->app->debug_object.transforms_dirty = false;
-                data->app->debug_object.compiled_scene_valid = false;
-            }
-
-            if (!data->app->debug_object.compiled_scene_valid)
+            if (!dbg.compiled_scene_valid)
             {
                 wz::scene::compile(
-                    data->app->frame.compiled_scene,
-                    data->app->debug_object.scene.polytree,
-                    data->app->debug_object.descriptors,
+                    app.frame.compiled_scene,
+                    dbg.scene.polytree,
+                    dbg.descriptors,
                     {},
-                    data->app->frame.view
+                    app.frame.view
                 );
-                data->app->debug_object.compiled_scene_valid = true;
-                data->app->frame.render_prep_path = RenderPrepPath::FullCompile;
 
-                static bool logged_once = false;
-                if (!logged_once) {
-                    data->app->ctx.logger.info("render prep path: FullCompile");
-                    logged_once = true;
-                }
+                dbg.compiled_scene_valid = true;
+                dbg.transforms_dirty = false;
+
+                app.frame.render_prep_path = RenderPrepPath::FullCompile;
+                return;
             }
-            else
+
+            // Debug animation currently moves only leaf renderable nodes.
+            // If parent nodes become animated, replace this with dirty-root subtree
+            // propagation and include all affected descendant renderable nodes.
+            if (dbg.transforms_dirty)
             {
-                wz::scene::update_view(
-                    data->app->frame.compiled_scene,
-                    data->app->frame.view
+                update_world_for_nodes(
+                    dbg.scene.polytree,
+                    dbg.transform_affected_nodes
                 );
-                data->app->frame.render_prep_path = RenderPrepPath::ViewOnly;
 
-                static bool logged_once = false;
-                if (!logged_once) {
-                    data->app->ctx.logger.info("render prep path: ViewOnly");
-                    logged_once = true;
-                }
+                wz::scene::update_compiled_transforms(
+                    app.frame.compiled_scene,
+                    dbg.scene.polytree,
+                    dbg.descriptors,
+                    app.frame.view,
+                    dbg.transform_affected_nodes,
+                    true
+                );
+
+                dbg.transforms_dirty = false;
+
+                app.frame.render_prep_path = RenderPrepPath::TransformAndView;
+                return;
             }
+
+            wz::scene::update_view(
+                app.frame.compiled_scene,
+                app.frame.view
+            );
+
+            app.frame.render_prep_path = RenderPrepPath::ViewOnly;
         }
 
         void job_build_render_ir(wz::jobs::JobContext& ctx)
@@ -631,6 +741,11 @@ namespace wz::app
         GameApp& app)
     {
         assert(app.jobs.ready);
+
+        static float debug_anim_t = 0.0f;
+        debug_anim_t += static_cast<float>(fctx.frame.delta_seconds());
+
+        update_debug_object_animation(app, debug_anim_t);
 
         if (!g_logged_job_update_once)
         {
