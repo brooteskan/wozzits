@@ -30,7 +30,7 @@ namespace wz::app
     namespace
     {
         static bool g_logged_job_update_once = false;
-        constexpr uint32_t kDebugObjectCount = 1000;
+        constexpr uint32_t kDebugObjectCount = 100;
         constexpr uint32_t kAnimatedDebugObjectCount = 10;
 
         struct AppUpdateFrameData
@@ -684,7 +684,7 @@ namespace wz::app
         assert(app.jobs.ready);
 
         static float debug_anim_t = 0.0f;
-        debug_anim_t = fctx.frame.delta_seconds();
+        debug_anim_t += static_cast<float>(fctx.frame.delta_seconds());
 
         update_debug_object_animation(app, debug_anim_t);
 
