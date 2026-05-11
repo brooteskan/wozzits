@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
-
+#include <cmath>
 #include <algorithm>
 #include <engine/game_app.h>
 #include <engine/runtime_camera.h>
@@ -31,6 +31,7 @@ namespace wz::app
     {
         static bool g_logged_job_update_once = false;
         constexpr uint32_t kDebugObjectCount = 1000;
+        constexpr uint32_t kAnimatedDebugObjectCount = 10;
 
         struct AppUpdateFrameData
         {
@@ -40,6 +41,39 @@ namespace wz::app
             float                     dt = 0.0f;
         };
 
+        void update_debug_object_animation(
+            wz::app::GameApp& app,
+            float t)
+        {
+            auto& dbg = app.debug_object;
+
+            if (!dbg.ready)
+                return;
+
+            dbg.transform_affected_nodes.clear();
+
+            const uint32_t count =
+                static_cast<uint32_t>(dbg.animated_nodes.size());
+
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const auto n = dbg.animated_nodes[i];
+                const auto base = dbg.animated_base_positions[i];
+
+                wz::math::Mat4 local = wz::math::mat4_identity();
+
+                local.m[12] = base.x;
+                local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
+                local.m[14] = base.z;
+
+                wz::scene::set_local(dbg.scene.polytree, n, local);
+
+                dbg.transform_affected_nodes.push_back(n);
+            }
+
+            dbg.transforms_dirty = !dbg.transform_affected_nodes.empty();
+        }
+
         bool build_debug_object_scene(
             wz::app::GameApp& app,
             uint32_t object_count)
@@ -47,6 +81,10 @@ namespace wz::app
             using namespace wz::scene;
             using namespace wz::core::graph;
             using namespace wz::math;
+
+            app.debug_object.animated_nodes.clear();
+            app.debug_object.animated_base_positions.clear();
+            app.debug_object.transform_affected_nodes.clear();
 
             SceneBuilder b;
 
@@ -82,6 +120,19 @@ namespace wz::app
 
                 NodeHandle object_h = add_node(b, object);
                 add_edge(b, root_h, object_h);
+
+                if (i < kAnimatedDebugObjectCount)
+                {
+                    app.debug_object.animated_nodes.push_back(object_h);
+
+                    app.debug_object.animated_base_positions.push_back(
+                        wz::math::Vec3{
+                            object.local.m[12],
+                            object.local.m[13],
+                            object.local.m[14],
+                        }
+                        );
+                }
 
                 object_nodes.push_back(object_h);
             }
@@ -631,6 +682,11 @@ namespace wz::app
         GameApp& app)
     {
         assert(app.jobs.ready);
+
+        static float debug_anim_t = 0.0f;
+        debug_anim_t = fctx.frame.delta_seconds();
+
+        update_debug_object_animation(app, debug_anim_t);
 
         if (!g_logged_job_update_once)
         {
