@@ -192,7 +192,7 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000400ull
     };
     
-    inline constexpr wz::asset::SchemaID kProceduralQuadMeshSchem{
+    inline constexpr wz::asset::SchemaID kProceduralQuadMeshSchema{
         0xF11E'CA55'E7'000401ull
     };
 
