@@ -187,4 +187,16 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kTOMLDocumentSchema{
         0xF11E'CA55'E7'000013ull
     };
+
+    inline constexpr wz::asset::SchemaID kProceduralTriangleMeshSchema{
+        0xF11E'CA55'E7'000400ull
+    };
+    
+    inline constexpr wz::asset::SchemaID kProceduralQuadMeshSchem{
+        0xF11E'CA55'E7'000401ull
+    };
+
+    inline constexpr wz::asset::SchemaID kProceduralCubeMeshSchema{
+        0xF11E'CA55'E7'000402ull
+    };
 }
