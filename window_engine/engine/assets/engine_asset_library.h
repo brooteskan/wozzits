@@ -27,6 +27,9 @@
 #include <engine/assets/json/json.h>
 #include <engine/assets/json_asset_module.h>
 
+#include <engine/assets/mesh/mesh.h>
+#include <engine/assets/mesh_asset_module.h>
+
 #include <string>
 #include <vector>
 
@@ -92,6 +95,9 @@ namespace wz::engine::assets
         TOMLAssetModule&               toml()           { return toml_; }
         const TOMLAssetModule&         toml()     const { return toml_; }
 
+        MeshAssetModule& meshes() { return meshes_; }
+        const MeshAssetModule& meshes() const { return meshes_; }
+
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -116,6 +122,7 @@ namespace wz::engine::assets
         CSVTable               csv_table_;
         JSONTable              json_table_;
         TOMLTable              toml_table_;
+        MeshTable              mesh_table_;
         wz::asset::AssetSystem system_;
 
         FileCarrierAssetModule  files_;
@@ -124,6 +131,7 @@ namespace wz::engine::assets
         CSVAssetModule          csv_;
         JSONAssetModule         json_;
         TOMLAssetModule         toml_;
+        MeshAssetModule         meshes_;
     };
 
 } // namespace wz::engine::assets

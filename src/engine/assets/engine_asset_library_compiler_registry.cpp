@@ -6,7 +6,8 @@
 #include <engine/assets/csv/csv.h>
 #include <external/json/json_parser.h>
 #include <engine/assets/json/json.h>
-
+#include <engine/assets/mesh/mesh.h>
+#include <engine/assets/mesh/procedural_mesh.h>
 #include <gpu/shader.h>
 
 #include <charconv>
@@ -16,6 +17,37 @@
 
 namespace wz::engine::assets::internal
 {
+    namespace
+    {
+        wz::asset::AssetNode compile_procedural_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshData(*make_mesh)())
+        {
+            if (!dep_nodes.empty()) {
+                logger.error("procedural mesh node should not have dependencies");
+                return compile_failed_node(input);
+            }
+
+            MeshData data = make_mesh();
+
+            if (!data.valid()) {
+                logger.error("procedural mesh builder produced invalid mesh data");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(data));
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
+    }
+
 
     // ── make_engine_compiler_registry ─────────────────────────────────────────
 
@@ -25,7 +57,8 @@ namespace wz::engine::assets::internal
         ScalarFieldTable& scalar_field_table,
         CSVTable& csv_table,
         JSONTable& json_table,
-        TOMLTable& toml_table)
+        TOMLTable& toml_table,
+        MeshTable& mesh_table)
     {
         wz::asset::CompilerRegistry registry;
 
@@ -407,6 +440,64 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+
+            // ── Procedural mesh compilers ─────────────────────────────────────────
+    //
+    // Dispatch on procedural mesh schemas.
+    // These are CPU-side mesh assets: generated MeshData is stored in MeshTable,
+    // and the compiled AssetNode stores the returned ResourceHandle.
+
+            registry.register_compiler(wz::asset::AssetCompiler{
+                .input_schema = kProceduralTriangleMeshSchema,
+                .output_type = kAssetTypeMesh,
+                .compile = [&logger, &mesh_table](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+                {
+                    return compile_procedural_mesh_node(
+                        input,
+                        dep_nodes,
+                        logger,
+                        mesh_table,
+                        &make_triangle_mesh);
+                }
+                });
+
+            registry.register_compiler(wz::asset::AssetCompiler{
+                .input_schema = kProceduralQuadMeshSchema,
+                .output_type = kAssetTypeMesh,
+                .compile = [&logger, &mesh_table](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+                {
+                    return compile_procedural_mesh_node(
+                        input,
+                        dep_nodes,
+                        logger,
+                        mesh_table,
+                        &make_quad_mesh);
+                }
+                });
+
+            registry.register_compiler(wz::asset::AssetCompiler{
+                .input_schema = kProceduralCubeMeshSchema,
+                .output_type = kAssetTypeMesh,
+                .compile = [&logger, &mesh_table](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+                {
+                    return compile_procedural_mesh_node(
+                        input,
+                        dep_nodes,
+                        logger,
+                        mesh_table,
+                        &make_cube_mesh);
+                }
+                });
 
         // ── CSV table compiler ────────────────────────────────────────────────
         //
