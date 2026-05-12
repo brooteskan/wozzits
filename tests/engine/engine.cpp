@@ -194,6 +194,9 @@ TEST(InputStressTest, HighVolumeEventFlood)
 
     constexpr int EVENT_COUNT = 10000;
 
+    int pushed_mouse_moves = 0;
+    int pushed_key_downs = 0;
+
     // ---------------------------------------------------
     // Inject massive mixed input flood BEFORE frame runs
     // ---------------------------------------------------
@@ -203,7 +206,9 @@ TEST(InputStressTest, HighVolumeEventFlood)
         e.category = event::Event::Category::Input;
         e.source = event::Event::Source::Platform;
 
-        if (i % 2 == 0)
+        const bool is_mouse_move = (i % 2 == 0);
+
+        if (is_mouse_move)
         {
             e.type = event::Event::Type::MouseMove;
             e.mouse_move.dx = 1;
@@ -215,8 +220,17 @@ TEST(InputStressTest, HighVolumeEventFlood)
             e.key.vkey = 65; // 'A'
         }
 
-        event::event_queue.try_push(e);
+        if (event::event_queue.try_push(e))
+        {
+            if (is_mouse_move)
+                ++pushed_mouse_moves;
+            else
+                ++pushed_key_downs;
+        }
     }
+
+    ASSERT_GT(pushed_mouse_moves, 0);
+    ASSERT_GT(pushed_key_downs, 0);
 
     // ---------------------------------------------------
     // Run engine for exactly one frame
@@ -232,8 +246,10 @@ TEST(InputStressTest, HighVolumeEventFlood)
 
             EXPECT_EQ(down_count, 1); // only 'A' should be down
 
-            EXPECT_EQ(fctx.input.mouse.dx, 1);
-            EXPECT_EQ(fctx.input.mouse.dy, 1);
+            // Mouse deltas are accumulated over all mouse move events
+            // accepted by the bounded event queue.
+            EXPECT_EQ(fctx.input.mouse.dx, pushed_mouse_moves);
+            EXPECT_EQ(fctx.input.mouse.dy, pushed_mouse_moves);
 
             EXPECT_TRUE(fctx.input.keyboard.down[65]);
             EXPECT_TRUE(fctx.input.keyboard.pressed[65]);
