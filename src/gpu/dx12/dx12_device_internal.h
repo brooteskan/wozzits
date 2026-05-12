@@ -65,6 +65,7 @@ namespace wz::gpu::dx12
 
         wz::gpu::dx12::DX12ShaderTable shaders;
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
+        wz::gpu::dx12::internal::DX12MeshTable meshes;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
     };

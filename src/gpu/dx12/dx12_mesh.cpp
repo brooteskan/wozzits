@@ -4,12 +4,33 @@
 
 #include <engine/assets/mesh/mesh.h>
 
+#include "dx12_device_internal.h"
+
 namespace wz::gpu::dx12::internal
 {
     GPUHandle upload_mesh_dx12(
-        Device&,
-        const wz::engine::assets::MeshData&)
+        Device& device,
+        const wz::engine::assets::MeshData& mesh)
     {
-        return {};
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        assert(impl);
+
+        if (!mesh.valid())
+            return {};
+
+        return impl->meshes.add(DX12MeshResource{
+            .vertex_count = mesh.vertex_count(),
+            .index_count = mesh.index_count(),
+            });
+    }
+
+    const DX12MeshResource* get_mesh(
+        Device& device,
+        GPUHandle handle)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        assert(impl);
+
+        return impl->meshes.get(handle);
     }
 }

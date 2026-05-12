@@ -141,4 +141,9 @@ namespace wz::gpu::dx12::internal {
         Device& device,
         const wz::engine::assets::MeshData& mesh
     );
+
+    const DX12MeshResource* get_mesh(
+        Device& device,
+        GPUHandle handle
+    );
 }

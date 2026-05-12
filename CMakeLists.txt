@@ -258,5 +258,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_mesh procedural_mesh)
     rs_add_test_group(asset_mesh mesh_asset_module) 
 
+    rs_add_test_group(gpu gpu_mesh)
+
     rs_add_test_group(game_app game_app_main)
 endif()

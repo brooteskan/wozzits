@@ -419,7 +419,7 @@ namespace wz::gpu::dx12
 
         // 2. Destroy GPU resource tables.
         impl->shaders.destroy();
-
+        impl->meshes.destroy();
 
         if (impl->scalar_debug_ctx)
         {
