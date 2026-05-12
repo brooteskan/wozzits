@@ -90,3 +90,60 @@ namespace wz::gpu::dx12::internal {
     );
 }
 
+
+
+// ── Mesh buffers ──────────────────────────────────────────────────
+
+namespace wz::engine::assets {
+    struct ScalarFieldData;
+    struct MeshData;
+}
+
+namespace wz::gpu::dx12::internal {
+
+    struct DX12MeshResource
+    {
+        ID3D12Resource* vertex_buffer = nullptr;
+        ID3D12Resource* index_buffer = nullptr;
+
+        // Kept alive for V1 until we have explicit upload/fence lifetime handling.
+        ID3D12Resource* vertex_upload = nullptr;
+        ID3D12Resource* index_upload = nullptr;
+
+        D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+        D3D12_INDEX_BUFFER_VIEW  index_view{};
+
+        uint32_t vertex_count = 0;
+        uint32_t index_count = 0;
+    };
+
+    class DX12MeshTable
+    {
+    public:
+        DX12MeshTable();
+
+        GPUHandle add(DX12MeshResource mesh);
+        const DX12MeshResource* get(GPUHandle handle) const;
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            DX12MeshResource mesh{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    GPUHandle upload_mesh_dx12(
+        Device& device,
+        const wz::engine::assets::MeshData& mesh
+    );
+
+    const DX12MeshResource* get_mesh(
+        Device& device,
+        GPUHandle handle
+    );
+}

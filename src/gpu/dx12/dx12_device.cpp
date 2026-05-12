@@ -419,7 +419,7 @@ namespace wz::gpu::dx12
 
         // 2. Destroy GPU resource tables.
         impl->shaders.destroy();
-
+        impl->meshes.destroy();
 
         if (impl->scalar_debug_ctx)
         {
@@ -443,6 +443,24 @@ namespace wz::gpu::dx12
         if (impl->scalar_field_srv_heap) {
             impl->scalar_field_srv_heap->Release();
             impl->scalar_field_srv_heap = nullptr;
+        }
+
+        if (impl->mesh_wire_debug_ctx)
+        {
+            if (impl->mesh_wire_debug_ctx->pso)
+            {
+                impl->mesh_wire_debug_ctx->pso->Release();
+                impl->mesh_wire_debug_ctx->pso = nullptr;
+            }
+
+            if (impl->mesh_wire_debug_ctx->root_sig)
+            {
+                impl->mesh_wire_debug_ctx->root_sig->Release();
+                impl->mesh_wire_debug_ctx->root_sig = nullptr;
+            }
+
+            delete impl->mesh_wire_debug_ctx;
+            impl->mesh_wire_debug_ctx = nullptr;
         }
 
         // 3. Release swapchain/backbuffer resources.

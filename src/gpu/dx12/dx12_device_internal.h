@@ -28,6 +28,15 @@ namespace wz::gpu::dx12
         bool normalize_for_display = true;
     };
 
+    struct MeshWireframeDebugContext
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso = nullptr;
+
+        GPUHandle mesh{};
+    };
+
+
     struct DX12Device
     {
         //fences
@@ -62,9 +71,11 @@ namespace wz::gpu::dx12
         uint32_t scalar_field_srv_count = 0;
 
         ScalarFieldDebugContext* scalar_debug_ctx = nullptr;
+        MeshWireframeDebugContext* mesh_wire_debug_ctx = nullptr;
 
         wz::gpu::dx12::DX12ShaderTable shaders;
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
+        wz::gpu::dx12::internal::DX12MeshTable meshes;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
     };

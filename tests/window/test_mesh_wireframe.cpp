@@ -1,5 +1,3 @@
-// tests/window/test_mesh_wireframe.cpp
-
 #include <iostream>
 
 #include <window/window2.h>
@@ -8,17 +6,32 @@
 
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
-#include <gpu/scalar_field_texture.h>
+#include <gpu/mesh.h>
 #include <gpu/dx12/dx12.h>
 
 #include <engine/assets/engine_asset_library.h>
-#include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/mesh/mesh.h>
+#include <engine/assets/mesh_asset_module.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
 
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
+
+namespace
+{
+    void set_identity(float m[16])
+    {
+        for (int i = 0; i < 16; ++i)
+            m[i] = 0.0f;
+
+        m[0] = 1.0f;
+        m[5] = 1.0f;
+        m[10] = 1.0f;
+        m[15] = 1.0f;
+    }
+}
 
 int main()
 {
@@ -37,7 +50,7 @@ int main()
 
         // ── window ────────────────────────────────────────────────────────
         wz::window::WindowDesc desc;
-        desc.title = "Wozzits Scalar Field Debug";
+        desc.title = "Wozzits Mesh Wireframe Debug";
         desc.width = 800;
         desc.height = 600;
 
@@ -61,27 +74,20 @@ int main()
 
         using namespace wz::engine::assets;
 
-        // ── scalar field asset ────────────────────────────────────────────
-        ScalarFieldAsset field = assets.scalar_fields().create_procedural_scalar_field({
-            .name = "debug/gradient_x",
-            .width = 256,
-            .height = 256,
-            .depth = 1,
-            .generator = ScalarFieldGenerator::GradientX,
-            .frequency = 1.0f,
-            .amplitude = 1.0f,
-            .format = ScalarFieldFormat::Float32,
-            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        // ── procedural mesh asset ─────────────────────────────────────────
+        MeshAsset mesh_asset = assets.meshes().create_procedural_mesh({
+            .name = "debug/procedural_triangle",
+            .kind = ProceduralMeshKind::Triangle,
             });
 
-        if (!field.valid())
+        if (!mesh_asset.valid())
             return 1;
 
-        // ── scalar field debug shaders ────────────────────────────────────
+        // ── mesh wireframe debug shaders ──────────────────────────────────
         auto shaders = assets.shaders().create_shader_pair({
-            .name = "scalar_field_debug",
-            .vertex_path = "shaders/scalar_field/scalar_field_vs.hlsl",
-            .pixel_path = "shaders/scalar_field/scalar_field_ps.hlsl",
+            .name = "mesh_wireframe_debug",
+            .vertex_path = "shaders/mesh_wireframe/mesh_wireframe_vs.hlsl",
+            .pixel_path = "shaders/mesh_wireframe/mesh_wireframe_ps.hlsl",
             });
 
         if (!shaders.valid())
@@ -91,41 +97,40 @@ int main()
         if (!assets.commit())
             return 1;
 
-        assets.resolve_all();
+        const auto report = assets.resolve_all();
+        if (!report.ok())
+            return 1;
 
         auto shader_handles = assets.shaders().get_shader_pair(shaders);
         if (!shader_handles.valid())
             return 1;
 
-        ScalarFieldHandle scalar_handle = assets.scalar_fields().get_scalar_field(field);
-        if (!scalar_handle.valid())
+        MeshHandle mesh_handle = assets.meshes().get_mesh(mesh_asset);
+        if (!mesh_handle.valid())
             return 1;
 
-        const ScalarFieldData* scalar_data =
-            assets.scalar_fields().get_scalar_field_data(scalar_handle);
+        const MeshData* mesh_data =
+            assets.meshes().get_mesh_data(mesh_handle);
 
-        if (!scalar_data || !scalar_data->valid())
+        if (!mesh_data || !mesh_data->valid())
             return 1;
 
-        // ── upload scalar field to GPU texture ────────────────────────────
-        wz::gpu::GPUHandle texture =
-            wz::gpu::upload_scalar_field_texture(device, *scalar_data);
+        // ── upload mesh to GPU buffers ────────────────────────────────────
+        wz::gpu::GPUHandle gpu_mesh =
+            wz::gpu::upload_mesh(device, *mesh_data);
 
-        if (!texture.valid())
+        if (!gpu_mesh.valid())
             return 1;
 
-        if (texture.type != wz::gpu::GPUResourceType::Texture)
+        if (gpu_mesh.type != wz::gpu::GPUResourceType::Mesh)
             return 1;
 
-        // ── create scalar field debug draw context ────────────────────────
-        wz::gpu::dx12::create_scalar_field_debug_context(device, {
+        // ── create mesh wireframe debug draw context ──────────────────────
+        wz::gpu::dx12::create_mesh_wireframe_debug_context(device, {
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
-            .scalar_field_texture = texture,
-            .display_min = scalar_data->min_value,
-            .display_max = scalar_data->max_value,
-            .normalize_for_display = true,
-                    });
+            .mesh = gpu_mesh,
+            });
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))
@@ -153,8 +158,11 @@ int main()
             wz::gpu::begin_frame(device);
             wz::gpu::clear(device, 0.05f, 0.05f, 0.05f, 1.0f);
 
-            wz::gpu::dx12::ScalarFieldDebugView view{};
-            wz::gpu::dx12::submit_scalar_field_debug_frame(device, view);
+            wz::gpu::dx12::MeshWireframeDebugView view{};
+            set_identity(view.world);
+            set_identity(view.view_proj);
+
+            wz::gpu::dx12::submit_mesh_wireframe_debug_frame(device, view);
 
             wz::gpu::end_frame(device);
             wz::gpu::present(device);
