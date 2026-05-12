@@ -6,6 +6,7 @@
 #include <gpu/dx12/dx12_internal.h>
 
 #include <engine/assets/mesh/mesh.h>
+#include "../../src/gpu/dx12/dx12_device_internal.h"
 
 namespace
 {
@@ -209,4 +210,44 @@ TEST(DX12MeshTable, CanAddAfterDestroy)
     ASSERT_NE(resolved, nullptr);
     EXPECT_EQ(resolved->vertex_count, 4u);
     EXPECT_EQ(resolved->index_count, 6u);
+}
+
+TEST(GPUMeshUpload, UploadValidMeshReturnsMeshHandle)
+{
+    wz::gpu::dx12::DX12Device impl{};
+    wz::gpu::Device device{};
+    device.impl = &impl;
+
+    const auto mesh = make_test_triangle_mesh();
+
+    const wz::gpu::GPUHandle handle =
+        wz::gpu::upload_mesh(device, mesh);
+
+    ASSERT_TRUE(handle.valid());
+    EXPECT_EQ(handle.type, wz::gpu::GPUResourceType::Mesh);
+
+    const auto* stored =
+        wz::gpu::dx12::internal::get_mesh(device, handle);
+
+    ASSERT_NE(stored, nullptr);
+    EXPECT_EQ(stored->vertex_count, 3u);
+    EXPECT_EQ(stored->index_count, 3u);
+
+    impl.meshes.destroy();
+}
+
+TEST(GPUMeshUpload, UploadInvalidMeshReturnsInvalidHandle)
+{
+    wz::gpu::dx12::DX12Device impl{};
+    wz::gpu::Device device{};
+    device.impl = &impl;
+
+    wz::engine::assets::MeshData mesh{};
+
+    const wz::gpu::GPUHandle handle =
+        wz::gpu::upload_mesh(device, mesh);
+
+    EXPECT_FALSE(handle.valid());
+
+    impl.meshes.destroy();
 }
