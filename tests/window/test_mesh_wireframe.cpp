@@ -16,6 +16,9 @@
 #include <logging/logger.h>
 #include <file/filesystem.h>
 
+#include <math/mat4.h>
+#include <math/projection.h>
+
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 
@@ -30,6 +33,53 @@ namespace
         m[5] = 1.0f;
         m[10] = 1.0f;
         m[15] = 1.0f;
+    }
+
+    void copy_mat4(float out[16], const wz::math::Mat4& m)
+    {
+        for (int i = 0; i < 16; ++i)
+            out[i] = m.m[i];
+    }
+
+    wz::math::Mat4 make_world_translate(float x, float y, float z)
+    {
+        wz::math::Mat4 world = wz::math::mat4_identity();
+
+        world.m[12] = x;
+        world.m[13] = y;
+        world.m[14] = z;
+
+        return world;
+    }
+
+    wz::math::Mat4 make_debug_view_proj(int width, int height)
+    {
+        constexpr float Pi = 3.14159265358979323846f;
+
+        const float fov = 70.0f * Pi / 180.0f;
+
+        const float aspect =
+            (width > 0 && height > 0)
+            ? static_cast<float>(width) / static_cast<float>(height)
+            : 800.0f / 600.0f;
+
+        wz::math::Mat4 view = wz::math::mat4_identity();
+
+        // Keep this consistent with the existing game_app debug camera path:
+        // objects are placed at positive z, and the view matrix is identity.
+        view.m[12] = 0.0f;
+        view.m[13] = 0.0f;
+        view.m[14] = 0.0f;
+
+        const wz::math::Mat4 projection =
+            wz::math::projection_perspective_dx(
+                fov,
+                aspect,
+                0.1f,
+                100.0f
+            );
+
+        return wz::math::mul(projection, view);
     }
 }
 
@@ -76,8 +126,8 @@ int main()
 
         // ── procedural mesh asset ─────────────────────────────────────────
         MeshAsset mesh_asset = assets.meshes().create_procedural_mesh({
-            .name = "debug/procedural_triangle",
-            .kind = ProceduralMeshKind::Triangle,
+            .name = "debug/procedural_cube",
+            .kind = ProceduralMeshKind::Cube,
             });
 
         if (!mesh_asset.valid())
@@ -159,8 +209,17 @@ int main()
             wz::gpu::clear(device, 0.05f, 0.05f, 0.05f, 1.0f);
 
             wz::gpu::dx12::MeshWireframeDebugView view{};
-            set_identity(view.world);
-            set_identity(view.view_proj);
+
+            const wz::math::Mat4 world =
+                make_world_translate(0.0f, 0.0f, 5.0f);
+
+            const wz::math::Mat4 view_proj =
+                make_debug_view_proj(desc.width, desc.height);
+
+            copy_mat4(view.world, world);
+            copy_mat4(view.view_proj, view_proj);
+
+            wz::gpu::dx12::submit_mesh_wireframe_debug_frame(device, view);
 
             wz::gpu::dx12::submit_mesh_wireframe_debug_frame(device, view);
 
