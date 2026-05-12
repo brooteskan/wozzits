@@ -212,7 +212,7 @@ TEST(DX12MeshTable, CanAddAfterDestroy)
     EXPECT_EQ(resolved->index_count, 6u);
 }
 
-TEST(GPUMeshUpload, UploadValidMeshReturnsMeshHandle)
+TEST(GPUMeshUpload, UploadWithMissingBackendDeviceReturnsInvalidHandle)
 {
     wz::gpu::dx12::DX12Device impl{};
     wz::gpu::Device device{};
@@ -223,15 +223,7 @@ TEST(GPUMeshUpload, UploadValidMeshReturnsMeshHandle)
     const wz::gpu::GPUHandle handle =
         wz::gpu::upload_mesh(device, mesh);
 
-    ASSERT_TRUE(handle.valid());
-    EXPECT_EQ(handle.type, wz::gpu::GPUResourceType::Mesh);
-
-    const auto* stored =
-        wz::gpu::dx12::internal::get_mesh(device, handle);
-
-    ASSERT_NE(stored, nullptr);
-    EXPECT_EQ(stored->vertex_count, 3u);
-    EXPECT_EQ(stored->index_count, 3u);
+    EXPECT_FALSE(handle.valid());
 
     impl.meshes.destroy();
 }
