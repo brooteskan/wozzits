@@ -27,6 +27,7 @@ target_sources(window_engine PRIVATE
 
     assets/mesh/mesh.cpp 
     assets/mesh_asset_module.cpp
+    assets/mesh/procedural_mesh.cpp
 
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
