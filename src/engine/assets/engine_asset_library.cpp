@@ -100,13 +100,15 @@ namespace wz::engine::assets
             scalar_fields_table_,
             csv_table_,
             json_table_,
-            toml_table_))
+            toml_table_,
+            mesh_table_))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
         , csv_(system_, logger_, files_, csv_table_)
         , json_(system_, logger_, files_, json_table_)
         , toml_(system_, logger_, files_, toml_table_)
+        , meshes_(system_, mesh_table_)
     {
     }
 

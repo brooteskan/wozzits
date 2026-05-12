@@ -8,6 +8,7 @@
 #include <engine/assets/csv/csv.h>
 #include <engine/assets/json/json.h>
 #include <engine/assets/toml/toml.h>
+#include <engine/assets/mesh/mesh.h>
 
 #include <gpu/shader.h>
 
@@ -29,7 +30,8 @@ namespace wz::engine::assets::internal {
         ScalarFieldTable& scalar_field_table,
         CSVTable& csv_table,
         JSONTable& json_table,
-        TOMLTable& toml_table
+        TOMLTable& toml_table,
+        MeshTable& mesh_table
     );
 
     void register_file_carrier_compilers(
