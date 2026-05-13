@@ -4,7 +4,9 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 .claude
-
+build/
+CmakeUserPresets.json
+CMakeSettings.json
 # this must be from ninja?
 /out
 

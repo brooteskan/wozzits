@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ON)
 option(WNIDOW_ENGINE_DEV_BUILD "Use local algo_math" ON)
+option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
+
 
 include(FetchContent)
 
@@ -166,6 +168,13 @@ install(FILES
     DESTINATION lib/cmake/window_engine
 )
 
+
+if(WOZZITS_ENABLE_V8_SCRIPTING)
+    add_subdirectory(
+        "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-v8"
+        "${CMAKE_CURRENT_BINARY_DIR}/_deps/wozzits-v8")
+endif()
+
 # ----------------------------
 # Test helpers
 # ----------------------------
@@ -219,6 +228,26 @@ endfunction()
 # ----------------------------
 # Tests
 # ----------------------------
+
+if(WOZZITS_ENABLE_V8_SCRIPTING)
+    add_executable(v8_script_smoke
+        examples/v8_script_smoke/v8_script_smoke.cpp
+    )
+
+    target_link_libraries(v8_script_smoke
+        PRIVATE
+            wozzits_v8::wozzits_v8
+    )
+
+    target_compile_features(v8_script_smoke PRIVATE cxx_std_20)
+
+    if(MSVC)
+        target_compile_options(v8_script_smoke
+            PRIVATE
+                /Zc:__cplusplus
+        )
+    endif()
+endif()
 
 if(SCENE_RENDER_ENABLE_TESTS)
     target_compile_definitions(window_engine PUBLIC WZ_ENABLE_TESTING)
