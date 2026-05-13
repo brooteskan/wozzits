@@ -36,6 +36,7 @@ namespace
 namespace wz::gpu::dx12
 {
 
+
     Device create_device(void* native_window)
     {
         HWND hwnd = static_cast<HWND>(native_window);
@@ -573,6 +574,32 @@ namespace wz::gpu::dx12
 namespace wz::gpu::dx12::internal
 {   // file: src/gpu/dx12/dx12_device.cpp
 
+    D3D12_CPU_DESCRIPTOR_HANDLE get_current_rtv(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        assert(impl);
+
+        D3D12_CPU_DESCRIPTOR_HANDLE handle =
+            impl->rtv_heap->GetCPUDescriptorHandleForHeapStart();
+
+        handle.ptr += impl->frame_index * impl->rtv_stride;
+
+        return handle;
+    }
+
+    UINT get_width(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        assert(impl);
+        return impl->width;
+    }
+
+    UINT get_height(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        assert(impl);
+        return impl->height;
+    }
 
 
     GPUHandle store_shader(
@@ -758,5 +785,22 @@ namespace wz::gpu::dx12::internal
         }
 
         return pso;
+    }
+
+    ID3D12CommandQueue* get_command_queue(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        assert(impl);
+        return impl->queue;
+    }
+
+    DXGI_FORMAT get_backbuffer_format()
+    {
+        return DXGI_FORMAT_R8G8B8A8_UNORM;
+    }
+
+    UINT get_backbuffer_count()
+    {
+        return 2;
     }
 }

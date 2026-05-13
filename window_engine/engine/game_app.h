@@ -97,6 +97,7 @@ namespace wz::app
         FrameStorage            frame{};
     };
 
+
     bool init(GameApp& app);
 
     void update(
@@ -105,6 +106,10 @@ namespace wz::app
         GameApp& app);
 
     void render(
+        GameApp& app,
+        const wz::engine::FrameContext& fctx);
+
+    void render_contents(
         GameApp& app,
         const wz::engine::FrameContext& fctx);
 

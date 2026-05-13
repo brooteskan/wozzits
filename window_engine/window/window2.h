@@ -43,4 +43,10 @@ namespace wz::window
     {
         return window.native;
     }
+
+    // for imgui tooling
+    void set_native_message_hook(
+        WindowHandle window,
+        NativeMessageHook hook,
+        void* user);
 }

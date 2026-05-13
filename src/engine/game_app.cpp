@@ -680,6 +680,32 @@ namespace wz::app
 
     } // anonymous namespace
 
+    void render_contents(
+        GameApp& app,
+        const wz::engine::FrameContext& fctx)
+    {
+        if (app.debug_object.ready)
+        {
+            wz::gpu::dx12::submit_render_frame(
+                app.ctx.device,
+                app.frame.render_frame.frame
+            );
+        }
+
+        if (app.scalar_debug.ready)
+        {
+            wz::gpu::dx12::ScalarFieldDebugView view{};
+            view.offset_x = app.camera.x * 0.10f;
+            view.offset_y = app.camera.y * 0.10f;
+            view.zoom = 1.0f;
+
+            wz::gpu::dx12::submit_scalar_field_debug_frame(
+                app.ctx.device,
+                view
+            );
+        }
+    }
+
     bool init(GameApp& app)
     {
         if (!wz::engine::init(app.ctx, {
@@ -788,26 +814,7 @@ namespace wz::app
         wz::gpu::begin_frame(app.ctx.device);
         wz::gpu::clear(app.ctx.device, 0.0f, 0.15f, 0.35f, 1.0f);
 
-        if (app.debug_object.ready)
-        {
-            wz::gpu::dx12::submit_render_frame(
-                app.ctx.device,
-                app.frame.render_frame.frame
-            );
-        }
-
-        if (app.scalar_debug.ready)
-        {
-            wz::gpu::dx12::ScalarFieldDebugView view{};
-            view.offset_x = app.camera.x * 0.10f;
-            view.offset_y = app.camera.y * 0.10f;
-            view.zoom = 1.0f;
-
-            wz::gpu::dx12::submit_scalar_field_debug_frame(
-                app.ctx.device,
-                view
-            );
-        }
+        render_contents(app, fctx);
 
         wz::gpu::end_frame(app.ctx.device);
         wz::gpu::present(app.ctx.device);
