@@ -41,7 +41,7 @@ namespace wz::logging::internal
             return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
         }
 #endif
-    }
+    } // anonymous namespace
 
     void LoggerState::start(const wz::logging::LoggerDesc& desc)
     {
@@ -172,5 +172,41 @@ namespace wz::logging::internal
 
         if (memory_sink_)
             memory_sink_->write(msg);
+
+        wz::logging::LogSinkFn sink = nullptr;
+        void* user = nullptr;
+
+        {
+            std::lock_guard lock(tool_sink_mutex_);
+            sink = tool_sink_;
+            user = tool_sink_user_;
+        }
+
+        if (sink)
+        {
+            const std::size_t len =
+                std::strlen(msg.text);
+
+            wz::logging::LogRecordView record{
+                .level = msg.level,
+                .text = msg.text,
+                .text_size = len,
+                .sequence = msg.sequence,
+                .event_ticks = msg.event_ticks,
+            };
+
+            sink(record, user);
+        }
+
+    }
+
+    void LoggerState::set_sink(
+        wz::logging::LogSinkFn sink,
+        void* user)
+    {
+        std::lock_guard lock(tool_sink_mutex_);
+
+        tool_sink_ = sink;
+        tool_sink_user_ = user;
     }
 }

@@ -55,4 +55,15 @@ namespace wz::logging
         if (logger.state)
             logger.state->wait_until_idle();
     }
+
+    void set_log_sink(
+        wz::Logger& logger,
+        LogSinkFn sink,
+        void* user)
+    {
+        if (!logger.state)
+            return;
+
+        logger.state->set_sink(sink, user);
+    }
 }

@@ -38,3 +38,17 @@ namespace wz::logging
     bool log(wz::Logger& logger, LogLevel level, std::string_view text);
     void wait_until_idle(wz::Logger& logger);
 }
+
+namespace wz::logging
+{
+    bool init_logger(wz::Logger& logger, const LoggerDesc& desc);
+    void shutdown_logger(wz::Logger& logger);
+
+    bool log(wz::Logger& logger, LogLevel level, std::string_view text);
+    void wait_until_idle(wz::Logger& logger);
+
+    void set_log_sink(
+        wz::Logger& logger,
+        LogSinkFn sink,
+        void* user);
+}

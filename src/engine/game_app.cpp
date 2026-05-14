@@ -22,6 +22,8 @@
 #include <stats/scene_render_storage.h>
 #include <scene/compile/legacy_classification.h>
 
+#include <engine/game_app_benchmark.h>
+
 #define INIT_FAIL(msg) \
     do { OutputDebugStringA("GameApp init failed: " msg "\n"); return false; } while (0)
 
@@ -818,6 +820,108 @@ namespace wz::app
 
         wz::gpu::end_frame(app.ctx.device);
         wz::gpu::present(app.ctx.device);
+    }
+
+    GameAppBenchmarkSnapshot benchmark_snapshot(
+        const GameApp& app,
+        const wz::engine::FrameContext& fctx)
+    {
+        GameAppBenchmarkSnapshot out{};
+
+        out.frame_index = fctx.frame.index;
+        out.dt_seconds = fctx.frame.delta_seconds();
+
+        if (out.dt_seconds > 0.0)
+            out.fps = 1.0 / out.dt_seconds;
+
+        out.debug_object_ready = app.debug_object.ready;
+        out.compiled_scene_valid = app.debug_object.compiled_scene_valid;
+
+        out.dirty_nodes =
+            static_cast<uint64_t>(
+                app.debug_object.transform_affected_nodes.size());
+
+        out.scene_nodes =
+            app.debug_object.ready
+            ? static_cast<uint64_t>(
+                wz::core::graph::node_count(
+                    app.debug_object.scene.polytree))
+            : 0;
+
+        out.opaque_commands =
+            static_cast<uint64_t>(
+                app.frame.render_frame.frame.opaque.size());
+
+        out.splat_commands =
+            static_cast<uint64_t>(
+                app.frame.render_frame.frame.splats.size());
+
+        out.transparent_commands =
+            static_cast<uint64_t>(
+                app.frame.render_frame.frame.transparent.size());
+
+        out.particle_commands =
+            static_cast<uint64_t>(
+                app.frame.render_frame.frame.particles.size());
+
+        out.total_commands =
+            out.opaque_commands
+            + out.splat_commands
+            + out.transparent_commands
+            + out.particle_commands;
+
+        const auto allocs =
+            summarize_frame_allocations(app);
+
+        out.bytes_owned = allocs.bytes_owned;
+        out.bytes_allocated_this_frame =
+            allocs.bytes_allocated_this_frame;
+        out.reallocations_this_frame =
+            allocs.reallocations_this_frame;
+
+        out.render_prep_path =
+            render_prep_path_name(app.frame.render_prep_path);
+
+        out.job_count = 0;
+        out.total_job_ms = 0.0;
+        out.render_prep_job_ms = 0.0;
+        out.slowest_job_name = "";
+        out.slowest_job_ms = 0.0;
+
+        for (const auto& rec : app.jobs.profile.timings)
+        {
+            const double ms = ticks_to_ms(rec.duration_ticks());
+
+            out.total_job_ms += ms;
+
+            const char* name = rec.name ? rec.name : "<unnamed>";
+
+            if (
+                std::strcmp(name, "build_view") == 0 ||
+                std::strcmp(name, "compile_scene") == 0 ||
+                std::strcmp(name, "build_render_ir") == 0 ||
+                std::strcmp(name, "build_render_frame") == 0)
+            {
+                out.render_prep_job_ms += ms;
+            }
+
+            if (ms > out.slowest_job_ms)
+            {
+                out.slowest_job_ms = ms;
+                out.slowest_job_name = name;
+            }
+
+            if (out.job_count < kGameAppBenchmarkMaxJobs)
+            {
+                out.jobs[out.job_count++] = GameAppJobTimingSnapshot{
+                    .name = name,
+                    .ms = ms,
+                };
+            }
+        }
+
+
+        return out;
     }
 
     void shutdown(GameApp& app)
