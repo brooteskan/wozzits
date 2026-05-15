@@ -76,3 +76,7 @@ If you are not comfortable contributing under those terms, please do not submit 
 Pull requests may be accepted, revised, deferred, or closed at the maintainer’s discretion.
 
 A contribution being useful does not create an obligation to merge future work, assign paid tasks, or provide compensation.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt).

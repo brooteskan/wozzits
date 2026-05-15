@@ -28,3 +28,8 @@ cmake --preset windows-debug
 cmake --build --preset windows-debug
 ctest --preset windows-debug
 ```
+
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt).
