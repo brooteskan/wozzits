@@ -9,7 +9,7 @@ namespace wz::engine::assets
 {
     bool CSVExportData::valid() const noexcept
     {
-        return !output_path.empty();
+        return column_count > 0;
     }
 
     CSVExportTable::CSVExportTable()

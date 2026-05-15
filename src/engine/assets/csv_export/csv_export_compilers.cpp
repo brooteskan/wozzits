@@ -6,8 +6,6 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
-#include <file/filesystem.h>
-
 #include <any>
 #include <span>
 #include <string>
@@ -96,11 +94,6 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                if (desc->output_path.empty()) {
-                    logger.error("csv export has empty output path");
-                    return compile_failed_node(input);
-                }
-
                 if (dep_nodes.size() != 1 || dep_handles.size() != 1) {
                     logger.error(
                         "csv export requires exactly one source table dependency");
@@ -115,22 +108,10 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                const std::string csv_text =
-                    build_csv(*source, desc->separator, desc->include_header);
-
-                const wz::fs::FileError write_err =
-                    wz::fs::write_file_text(desc->output_path, csv_text);
-
-                if (write_err != wz::fs::FileError::None) {
-                    logger.error(
-                        "csv export failed to write file: " + desc->output_path);
-                    return compile_failed_node(input);
-                }
-
                 CSVExportData export_data{
-                    .output_path   = desc->output_path,
-                    .column_count  = source->column_count(),
-                    .row_count     = source->row_count(),
+                    .csv_text     = build_csv(*source, desc->separator, desc->include_header),
+                    .column_count = source->column_count(),
+                    .row_count    = source->row_count(),
                 };
 
                 wz::asset::ResourceHandle handle =

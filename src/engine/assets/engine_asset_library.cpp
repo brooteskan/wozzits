@@ -61,9 +61,9 @@ namespace wz::engine::assets
                 .toml_table                = toml_table_,
                 .mesh_table                = mesh_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
-                .data_table                = data_table_,
+                .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
-                .csv_export_table          = csv_export_table_,
+                .csv_export_table = csv_export_table_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)

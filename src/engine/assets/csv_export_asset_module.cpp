@@ -33,15 +33,9 @@ namespace wz::engine::assets
             return {};
         }
 
-        if (desc.output_path.empty()) {
-            logger_.error("csv export has empty output path: " + desc.name);
-            return {};
-        }
-
         const wz::asset::AssetKey key = make_csv_export_key(
             desc.name,
             desc.source.output,
-            desc.output_path,
             desc.separator,
             desc.include_header);
 
@@ -52,7 +46,6 @@ namespace wz::engine::assets
         node.stage  = wz::asset::AssetStage::Source;
         node.payload = std::vector<uint8_t>{};
         node.meta = CSVExportCompileDesc{
-            .output_path    = desc.output_path,
             .separator      = desc.separator,
             .include_header = desc.include_header,
         };
@@ -89,5 +82,20 @@ namespace wz::engine::assets
             return nullptr;
 
         return table_.get(handle.handle);
+    }
+
+    wz::fs::FileError CSVExportAssetModule::write_export_to_file(
+        CSVExportHandle handle,
+        const wz::fs::Path& path) const
+    {
+        if (!handle.valid())
+            return wz::fs::FileError::InvalidArgument;
+
+        const CSVExportData* data = table_.get(handle.handle);
+
+        if (!data)
+            return wz::fs::FileError::InvalidArgument;
+
+        return wz::fs::write_file_text(path, data->csv_text);
     }
 }

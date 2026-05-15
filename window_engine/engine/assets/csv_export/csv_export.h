@@ -13,7 +13,7 @@ namespace wz::engine::assets
 {
     struct CSVExportData
     {
-        std::string output_path;
+        std::string csv_text;
         uint32_t column_count = 0;
         uint32_t row_count = 0;
 
@@ -41,14 +41,12 @@ namespace wz::engine::assets
 
         DataTableAsset source{};
 
-        std::string output_path;
         char separator = ',';
         bool include_header = true;
     };
 
     struct CSVExportCompileDesc
     {
-        std::string output_path;
         char separator = ',';
         bool include_header = true;
     };

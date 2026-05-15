@@ -14,13 +14,11 @@ namespace wz::engine::assets
     [[nodiscard]] inline wz::asset::AssetKey make_csv_export_key(
         std::string_view name,
         const wz::asset::AssetKey& source_table_key,
-        std::string_view output_path,
         char separator,
         bool include_header) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
 
-        h = detail::mix64(h, detail::fnv1a_64(output_path));
         h = detail::mix64(h, static_cast<uint64_t>(static_cast<uint8_t>(separator)));
         h = detail::mix64(h, include_header ? 1ull : 0ull);
 

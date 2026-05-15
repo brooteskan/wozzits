@@ -4,6 +4,7 @@
 
 #include <asset/system.h>
 #include <engine/assets/csv_export/csv_export.h>
+#include <file/filesystem.h>
 #include <logging/logger.h>
 
 namespace wz::engine::assets
@@ -44,6 +45,10 @@ namespace wz::engine::assets
 
         const CSVExportData* get_export_data(
             CSVExportHandle handle) const;
+
+        wz::fs::FileError write_export_to_file(
+            CSVExportHandle handle,
+            const wz::fs::Path& path) const;
 
     private:
         wz::asset::AssetSystem& system_;
