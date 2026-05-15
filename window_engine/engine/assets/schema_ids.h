@@ -199,4 +199,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kProceduralCubeMeshSchema{
         0xF11E'CA55'E7'000402ull
     };
+
+    inline constexpr wz::asset::SchemaID kProceduralGaussianSplatCloudSchema{
+    0xF11E'CA55'E7'000500ull
+    };
+
+
 }

@@ -18,7 +18,8 @@ namespace wz::engine::assets::internal
         CSVTable& csv_table,
         JSONTable& json_table,
         TOMLTable& toml_table,
-        MeshTable& mesh_table)
+        MeshTable& mesh_table,
+        GaussianSplatCloudTable& gaussian_splat_cloud_table)
     {
         wz::asset::CompilerRegistry registry;
 
@@ -29,6 +30,7 @@ namespace wz::engine::assets::internal
         register_json_compilers(registry, logger, json_table);
         register_toml_compilers(registry, logger, toml_table);
         register_mesh_compilers(registry, logger, mesh_table);
+        register_gaussian_splat_compilers(registry, logger, gaussian_splat_cloud_table);
 
         return registry;
     }

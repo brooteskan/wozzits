@@ -111,7 +111,7 @@ target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/reader.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/scanner.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/writer.c"
-)
+ )
 
 target_include_directories(window_engine
     PUBLIC
@@ -238,7 +238,7 @@ endfunction()
 if(WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
         examples/v8_script_smoke/v8_script_smoke.cpp
-    )
+     )
 
     target_link_libraries(v8_script_smoke
         PRIVATE
@@ -294,6 +294,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_mesh procedural_mesh)
     rs_add_test_group(asset_mesh mesh_asset_module) 
 
+    rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(gpu gpu_mesh)
 
     rs_add_test_group(game_app game_app_main)

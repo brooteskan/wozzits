@@ -9,6 +9,8 @@
 #include <engine/assets/json/json.h>
 #include <engine/assets/toml/toml.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -31,7 +33,8 @@ namespace wz::engine::assets::internal {
         CSVTable& csv_table,
         JSONTable& json_table,
         TOMLTable& toml_table,
-        MeshTable& mesh_table
+        MeshTable& mesh_table,
+        GaussianSplatCloudTable& gaussian_splat_cloud_table
     );
 
     void register_file_carrier_compilers(

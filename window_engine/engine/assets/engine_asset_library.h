@@ -30,6 +30,9 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_asset_module.h>
 
+#include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat_asset_module.h>
+
 #include <string>
 #include <vector>
 
@@ -95,8 +98,11 @@ namespace wz::engine::assets
         TOMLAssetModule&               toml()           { return toml_; }
         const TOMLAssetModule&         toml()     const { return toml_; }
 
-        MeshAssetModule& meshes() { return meshes_; }
-        const MeshAssetModule& meshes() const { return meshes_; }
+        MeshAssetModule&               meshes()         { return meshes_; }
+        const MeshAssetModule&         meshes()   const { return meshes_; }
+
+        GaussianSplatAssetModule&       gaussian_splats()         { return gaussian_splats_; }
+        const GaussianSplatAssetModule& gaussian_splats()   const { return gaussian_splats_; }
 
         // ── Direct access ─────────────────────────────────────────────────────────
 
@@ -118,20 +124,23 @@ namespace wz::engine::assets
         wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
 
-        ScalarFieldTable       scalar_fields_table_;
-        CSVTable               csv_table_;
-        JSONTable              json_table_;
-        TOMLTable              toml_table_;
-        MeshTable              mesh_table_;
+        ScalarFieldTable            scalar_fields_table_;
+        CSVTable                    csv_table_;
+        JSONTable                   json_table_;
+        TOMLTable                   toml_table_;
+        MeshTable                   mesh_table_;
+        GaussianSplatCloudTable     gaussian_splat_cloud_table_;
+        
         wz::asset::AssetSystem system_;
 
-        FileCarrierAssetModule  files_;
-        ShaderAssetModule       shaders_;
-        ScalarFieldAssetModule  scalar_fields_;
-        CSVAssetModule          csv_;
-        JSONAssetModule         json_;
-        TOMLAssetModule         toml_;
-        MeshAssetModule         meshes_;
+        FileCarrierAssetModule      files_;
+        ShaderAssetModule           shaders_;
+        ScalarFieldAssetModule      scalar_fields_;
+        CSVAssetModule              csv_;
+        JSONAssetModule             json_;
+        TOMLAssetModule             toml_;
+        MeshAssetModule             meshes_;
+        GaussianSplatAssetModule    gaussian_splats_;
     };
 
 } // namespace wz::engine::assets

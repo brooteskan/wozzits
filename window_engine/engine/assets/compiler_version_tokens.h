@@ -38,4 +38,5 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kJSONDocumentCompilerVersion = 1;
     inline constexpr uint64_t kTOMLDocumentCompilerVersion = 1;
     inline constexpr uint64_t kMeshCompilerVersion = 1;
+    inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
 }

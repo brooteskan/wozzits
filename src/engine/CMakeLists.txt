@@ -33,6 +33,10 @@ target_sources(window_engine PRIVATE
     assets/mesh_asset_module.cpp
     assets/mesh/procedural_mesh.cpp
 
+    assets/gaussian_splat/gaussian_splat.cpp
+    assets/gaussian_splat/gaussian_splat_compilers.cpp
+    assets/gaussian_splat_asset_module.cpp
+
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
   )

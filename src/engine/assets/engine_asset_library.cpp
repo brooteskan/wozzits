@@ -47,6 +47,7 @@ namespace wz::engine::assets
         , resource_root_(std::move(resource_root))
         , scalar_fields_table_{}
         , csv_table_{}
+        , gaussian_splat_cloud_table_{}
         , system_(internal::make_engine_compiler_registry(
             device,
             logger,
@@ -54,7 +55,8 @@ namespace wz::engine::assets
             csv_table_,
             json_table_,
             toml_table_,
-            mesh_table_))
+            mesh_table_,
+            gaussian_splat_cloud_table_))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
@@ -62,6 +64,7 @@ namespace wz::engine::assets
         , json_(system_, logger_, files_, json_table_)
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
+        , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
     {
     }
 
