@@ -1,6 +1,8 @@
 #pragma once
 // engine/game_app.h
 
+#include <cstdint>
+
 #include <gpu/gpu_types.h>
 
 #include <engine/app_context.h>
@@ -31,11 +33,33 @@ namespace wz::app
         TransformAndView,
     };
 
+    enum class DebugSceneAnimation
+    {
+        Static,
+        Leaves,
+        ParentSubtree,
+    };
+
+    struct DebugSceneConfig
+    {
+        const char* name = "";
+        uint32_t object_count = 1000;
+        DebugSceneAnimation animation = DebugSceneAnimation::Leaves;
+        bool culling_disabled = false;
+        bool wide_layout = false;
+    };
+
     struct DebugObjectRuntime
     {
         wz::scene::SceneStorage scene{};
         std::vector<wz::scene::RenderableDescriptor> descriptors{};
 
+        const DebugSceneConfig* config = nullptr;
+        uint32_t mode_index = 0;
+        uint32_t renderable_count = 0;
+
+        std::vector<wz::core::graph::NodeHandle> animated_parent_nodes{};
+        std::vector<wz::math::Vec3> animated_parent_base_positions{};
         std::vector<wz::core::graph::NodeHandle> animated_nodes{};
         std::vector<wz::math::Vec3> animated_base_positions{};
         std::vector<wz::core::graph::NodeHandle> transform_affected_nodes{};

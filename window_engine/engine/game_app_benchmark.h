@@ -28,6 +28,7 @@ namespace wz::app
         double fps = 0.0;
 
         uint64_t scene_nodes = 0;
+        uint64_t debug_renderables = 0;
         uint64_t dirty_nodes = 0;
 
         uint64_t opaque_commands = 0;
@@ -41,6 +42,9 @@ namespace wz::app
         uint32_t reallocations_this_frame = 0;
 
         const char* render_prep_path = "Unknown";
+        const char* debug_scene_mode = "";
+        const char* debug_animation = "";
+        bool debug_culling_disabled = false;
 
         bool debug_object_ready = false;
         bool compiled_scene_valid = false;
