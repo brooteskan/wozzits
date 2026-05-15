@@ -54,12 +54,19 @@ int main()
 {
     std::printf("Wozzits V8 script smoke\n");
 
+    if (!wz::script::init_v8_platform())
+    {
+        std::printf("failed to initialize V8 platform\n");
+        return 1;
+    }
+
     wz::script::ScriptHost* scripts =
         wz::script::create_v8_script_host();
 
     if (scripts == nullptr)
     {
         std::printf("failed to create script host\n");
+        wz::script::shutdown_v8_platform();
         return 1;
     }
 
@@ -67,6 +74,7 @@ int main()
     {
         std::printf("failed to initialize script host\n");
         wz::script::destroy_v8_script_host(scripts);
+        wz::script::shutdown_v8_platform();
         return 1;
     }
 
@@ -103,6 +111,7 @@ int main()
     }
 
     wz::script::destroy_v8_script_host(scripts);
+    wz::script::shutdown_v8_platform();
 
     return 0;
 }
