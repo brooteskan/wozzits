@@ -22,19 +22,24 @@ namespace wz::engine::assets::internal {
         std::string  canonical_path;
     };
 
+    struct EngineAssetContext
+    {
+        wz::gpu::Device&         device;
+        wz::Logger&              logger;
+        ScalarFieldTable&        scalar_fields_table;
+        CSVTable&                csv_table;
+        JSONTable&               json_table;
+        TOMLTable&               toml_table;
+        MeshTable&               mesh_table;
+        GaussianSplatCloudTable& gaussian_splat_cloud_table;
+    };
+
     wz::asset::AssetNode compile_failed_node(
         const wz::asset::AssetNode& input
     );
 
     wz::asset::CompilerRegistry make_engine_compiler_registry(
-        wz::gpu::Device& device,
-        wz::Logger& logger,
-        ScalarFieldTable& scalar_field_table,
-        CSVTable& csv_table,
-        JSONTable& json_table,
-        TOMLTable& toml_table,
-        MeshTable& mesh_table,
-        GaussianSplatCloudTable& gaussian_splat_cloud_table
+        EngineAssetContext& ctx
     );
 
     void register_file_carrier_compilers(

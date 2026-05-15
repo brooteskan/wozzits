@@ -49,14 +49,16 @@ namespace wz::engine::assets
         , csv_table_{}
         , gaussian_splat_cloud_table_{}
         , system_(internal::make_engine_compiler_registry(
-            device,
-            logger,
-            scalar_fields_table_,
-            csv_table_,
-            json_table_,
-            toml_table_,
-            mesh_table_,
-            gaussian_splat_cloud_table_))
+            internal::EngineAssetContext{
+                .device                    = device,
+                .logger                    = logger,
+                .scalar_fields_table       = scalar_fields_table_,
+                .csv_table                 = csv_table_,
+                .json_table                = json_table_,
+                .toml_table                = toml_table_,
+                .mesh_table                = mesh_table_,
+                .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
+            }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)

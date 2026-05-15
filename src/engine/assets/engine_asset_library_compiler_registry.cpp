@@ -11,26 +11,18 @@
 
 namespace wz::engine::assets::internal
 {
-    wz::asset::CompilerRegistry make_engine_compiler_registry(
-        wz::gpu::Device& device,
-        wz::Logger& logger,
-        ScalarFieldTable& scalar_field_table,
-        CSVTable& csv_table,
-        JSONTable& json_table,
-        TOMLTable& toml_table,
-        MeshTable& mesh_table,
-        GaussianSplatCloudTable& gaussian_splat_cloud_table)
+    wz::asset::CompilerRegistry make_engine_compiler_registry(EngineAssetContext& ctx)
     {
         wz::asset::CompilerRegistry registry;
 
-        register_file_carrier_compilers(registry, logger);
-        register_shader_compilers(registry, logger, device);
-        register_scalar_field_compilers(registry, logger, scalar_field_table);
-        register_csv_compilers(registry, logger, csv_table);
-        register_json_compilers(registry, logger, json_table);
-        register_toml_compilers(registry, logger, toml_table);
-        register_mesh_compilers(registry, logger, mesh_table);
-        register_gaussian_splat_compilers(registry, logger, gaussian_splat_cloud_table);
+        register_file_carrier_compilers(registry, ctx.logger);
+        register_shader_compilers(registry, ctx.logger, ctx.device);
+        register_scalar_field_compilers(registry, ctx.logger, ctx.scalar_fields_table);
+        register_csv_compilers(registry, ctx.logger, ctx.csv_table);
+        register_json_compilers(registry, ctx.logger, ctx.json_table);
+        register_toml_compilers(registry, ctx.logger, ctx.toml_table);
+        register_mesh_compilers(registry, ctx.logger, ctx.mesh_table);
+        register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table);
 
         return registry;
     }

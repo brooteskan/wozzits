@@ -251,11 +251,21 @@ Then add a call in `engine_asset_library_compiler_registry.cpp`:
 ```cpp
 #include <engine/assets/mesh/mesh_compilers.h>
 // ...
-register_mesh_compilers(registry, logger, mesh_table);
+register_mesh_compilers(registry, ctx.logger, ctx.mesh_table);
 ```
 
-Also add `MeshTable& mesh_table` to the `make_engine_compiler_registry` signature and
-its declaration in `engine_asset_library_internal.h`.
+And add the table field to `EngineAssetContext` in `engine_asset_library_internal.h`:
+
+```cpp
+struct EngineAssetContext
+{
+    // ... existing fields ...
+    MeshTable& mesh_table;
+};
+```
+
+`make_engine_compiler_registry` takes a single `EngineAssetContext&` — its signature
+never changes when new asset types are added.
 
 ---
 
@@ -284,7 +294,15 @@ const MeshAssetModule& meshes() const { return meshes_; }
 , meshes_(system_, logger_, files_, mesh_table_)
 ```
 
-And pass `mesh_table_` to `make_engine_compiler_registry(device, logger, scalar_fields_table_, mesh_table_)`.
+And add `.mesh_table = mesh_table_` to the `EngineAssetContext` designated initializer in `engine_asset_library.cpp`:
+
+```cpp
+, system_(internal::make_engine_compiler_registry(
+    internal::EngineAssetContext{
+        // ...existing fields...
+        .mesh_table = mesh_table_,
+    }))
+```
 
 ---
 
@@ -306,8 +324,9 @@ assets/mesh/mesh_compilers.cpp
 - [ ] Runtime table (if CPU-resident) — `add()` / `get()` / `destroy()`
 - [ ] Module header + implementation
 - [ ] Per-asset compiler module: `{type}/type_compilers.h` + `{type}/type_compilers.cpp`
-- [ ] Call `register_{type}_compilers(...)` from `engine_asset_library_compiler_registry.cpp`
+- [ ] Call `register_{type}_compilers(...)` from `engine_asset_library_compiler_registry.cpp` (use `ctx.logger`, `ctx.new_table`)
+- [ ] `engine_asset_library_internal.h` — add `NewTable& new_table` field to `EngineAssetContext`
 - [ ] `engine_asset_library.h` — include, table member, module member, accessor
-- [ ] `engine_asset_library.cpp` — initialiser list, pass table to registry
+- [ ] `engine_asset_library.cpp` — initialiser list; add `.new_table = new_table_` to `EngineAssetContext` initializer
 - [ ] `CMakeLists.txt` — new `.cpp` source
 - [ ] Tests — registration, commit, resolve, data correctness, rejection cases
