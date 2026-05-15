@@ -39,7 +39,7 @@ namespace wz::engine::assets::internal {
     );
 
     wz::asset::CompilerRegistry make_engine_compiler_registry(
-        EngineAssetContext& ctx
+        const EngineAssetContext& ctx
     );
 
     void register_file_carrier_compilers(

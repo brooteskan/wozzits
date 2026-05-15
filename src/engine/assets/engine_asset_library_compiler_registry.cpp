@@ -11,7 +11,7 @@
 
 namespace wz::engine::assets::internal
 {
-    wz::asset::CompilerRegistry make_engine_compiler_registry(EngineAssetContext& ctx)
+    wz::asset::CompilerRegistry make_engine_compiler_registry(const EngineAssetContext& ctx)
     {
         wz::asset::CompilerRegistry registry;
 
