@@ -175,38 +175,83 @@ namespace wz::engine::assets {
 
 ---
 
-## 7. Register the compiler — `engine_asset_library_compiler_registry.cpp`
+## 7. Register the compiler — per-asset compiler module
 
-Add a `registry.register_compiler(...)` block inside `make_engine_compiler_registry`.
-The compiler receives the source node's `meta` (your compile desc) and the compiled
-payloads of its dependencies.
+Create two files:
+
+- `window_engine/engine/assets/mesh/mesh_compilers.h`
+- `src/engine/assets/mesh/mesh_compilers.cpp`
+
+**Header** declares the registration function:
 
 ```cpp
-registry.register_compiler(wz::asset::AssetCompiler{
-    .input_schema = kMeshFromObjSchema,
-    .output_type  = kAssetTypeMesh,
-    .compile = [&logger, &mesh_table](
-        const wz::asset::AssetNode& input,
-        std::span<const wz::asset::AssetNode> dep_nodes,
-        std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+// window_engine/engine/assets/mesh/mesh_compilers.h
+#pragma once
+#include <asset/compiler.h>
+#include <logging/logger.h>
+#include <engine/assets/mesh/mesh.h>
+
+namespace wz::engine::assets::internal {
+    void register_mesh_compilers(
+        wz::asset::CompilerRegistry& registry,
+        wz::Logger& logger,
+        MeshTable& mesh_table
+    );
+}
+```
+
+**Source** implements it. Call `compile_failed_node` (from `engine_asset_library_internal.h`)
+for error paths, and `registry.register_compiler(...)` for each schema variant:
+
+```cpp
+// src/engine/assets/mesh/mesh_compilers.cpp
+#include <engine/assets/mesh/mesh_compilers.h>
+#include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
+
+namespace wz::engine::assets::internal
+{
+    void register_mesh_compilers(
+        wz::asset::CompilerRegistry& registry,
+        wz::Logger& logger,
+        MeshTable& mesh_table)
     {
-        // 1. Read bytes from the file-carrier dependency.
-        const auto* bytes =
-            std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
-        if (!bytes) return compile_failed_node(input);
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshFromObjSchema,
+            .output_type  = kAssetTypeMesh,
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                // 1. Read bytes from the file-carrier dependency.
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                if (!bytes) return compile_failed_node(input);
 
-        // 2. Parse / validate.
-        MeshData data = parse_obj(*bytes);
-        if (!data.valid()) return compile_failed_node(input);
+                // 2. Parse / validate.
+                MeshData data = parse_obj(*bytes);
+                if (!data.valid()) return compile_failed_node(input);
 
-        // 3. Store in table; embed handle in the compiled node.
-        wz::asset::ResourceHandle handle = mesh_table.add(std::move(data));
-        wz::asset::AssetNode out = input;
-        out.stage   = wz::asset::AssetStage::Compiled;
-        out.payload = handle;
-        return out;
+                // 3. Store in table; embed handle in the compiled node.
+                wz::asset::ResourceHandle handle = mesh_table.add(std::move(data));
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+        });
     }
-});
+}
+```
+
+Then add a call in `engine_asset_library_compiler_registry.cpp`:
+
+```cpp
+#include <engine/assets/mesh/mesh_compilers.h>
+// ...
+register_mesh_compilers(registry, logger, mesh_table);
 ```
 
 Also add `MeshTable& mesh_table` to the `make_engine_compiler_registry` signature and
@@ -243,10 +288,11 @@ And pass `mesh_table_` to `make_engine_compiler_registry(device, logger, scalar_
 
 ---
 
-## 9. Add the new `.cpp` to the build — `src/engine/CMakeLists.txt`
+## 9. Add the new `.cpp` files to the build — `src/engine/CMakeLists.txt`
 
 ```cmake
 assets/mesh_asset_module.cpp
+assets/mesh/mesh_compilers.cpp
 ```
 
 ---
@@ -259,7 +305,8 @@ assets/mesh_asset_module.cpp
 - [ ] `key_factories/my_asset.h` — deterministic key function
 - [ ] Runtime table (if CPU-resident) — `add()` / `get()` / `destroy()`
 - [ ] Module header + implementation
-- [ ] Compiler lambda in `engine_asset_library_compiler_registry.cpp`
+- [ ] Per-asset compiler module: `{type}/type_compilers.h` + `{type}/type_compilers.cpp`
+- [ ] Call `register_{type}_compilers(...)` from `engine_asset_library_compiler_registry.cpp`
 - [ ] `engine_asset_library.h` — include, table member, module member, accessor
 - [ ] `engine_asset_library.cpp` — initialiser list, pass table to registry
 - [ ] `CMakeLists.txt` — new `.cpp` source

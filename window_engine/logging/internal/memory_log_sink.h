@@ -1,4 +1,5 @@
 #pragma once
+// logging/internal/memory_log_sink.h
 
 #include <mutex>
 #include <vector>

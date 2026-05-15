@@ -39,23 +39,4 @@ namespace wz::engine::assets::internal {
         wz::Logger& logger
     );
 
-    void register_json_compilers(
-        wz::asset::CompilerRegistry& registry,
-        wz::Logger& logger,
-        JSONTable& json_table
-    );
-
-    void register_toml_compilers(
-        wz::asset::CompilerRegistry& registry,
-        wz::Logger& logger,
-        TOMLTable& toml_table
-    );
-
-    bool compute_min_max(
-        const std::vector<float>& values,
-        float& min_value,
-        float& max_value,
-        wz::Logger& logger,
-        std::string_view          label);
-
 }

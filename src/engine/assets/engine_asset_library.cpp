@@ -33,53 +33,6 @@ namespace wz::engine::assets
             return input;
         }
 
-
-        // ── compute_min_max ───────────────────────────────────────────────────────
-        //
-        // Validates all values in the field (rejects NaN and infinity) and
-        // computes min_value / max_value. Returns false and logs on the first
-        // invalid value found. label is used in error messages.
-
-        bool compute_min_max(
-            const std::vector<float>& values,
-            float& min_value,
-            float& max_value,
-            wz::Logger& logger,
-            std::string_view          label)
-        {
-            if (values.empty()) {
-                logger.error(std::string(label) + " has no values");
-                return false;
-            }
-
-            min_value = std::numeric_limits<float>::max();
-            max_value = std::numeric_limits<float>::lowest();
-
-            for (uint32_t i = 0; i < static_cast<uint32_t>(values.size()); ++i) {
-                const float v = values[i];
-
-                if (std::isnan(v)) {
-                    logger.error(std::string(label)
-                        + " contains NaN at sample index " + std::to_string(i));
-                    return false;
-                }
-
-                if (std::isinf(v)) {
-                    logger.error(std::string(label)
-                        + " contains infinity at sample index " + std::to_string(i));
-                    return false;
-                }
-
-                if (v < min_value) min_value = v;
-                if (v > max_value) max_value = v;
-            }
-
-            return true;
-        }
-
-
- 
-
     } //  namespace internal
 
 
