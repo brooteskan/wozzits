@@ -1,9 +1,9 @@
-// src/engine/assets/engine_asset_library_json_compilers.cpp
+// src/engine/assets/json/json_compilers.cpp
 
+#include <engine/assets/json/json_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
-#include <engine/assets/json/json.h>
 
 #include <external/json/json_parser.h>
 

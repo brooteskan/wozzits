@@ -1,9 +1,9 @@
-// src/engine/assets/engine_asset_library_toml_compilers.cpp
+// src/engine/assets/toml/toml_compilers.cpp
 
+#include <engine/assets/toml/toml_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
-#include <engine/assets/toml/toml.h>
 
 #include <external/toml/toml_parser.h>
 
