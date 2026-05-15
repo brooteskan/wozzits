@@ -7,25 +7,29 @@ target_sources(window_engine PRIVATE
     assets/engine_asset_library.cpp
     assets/engine_asset_library_compiler_registry.cpp
     assets/engine_asset_library_file_carriers.cpp
-    
+
     assets/file_carrier_asset_module.cpp
     assets/shader_asset_module.cpp
+    assets/shader/shader_compilers.cpp
 
     assets/scalar_field_asset_module.cpp
     assets/scalar_field/scalar_field.cpp
+    assets/scalar_field/scalar_field_compilers.cpp
 
     assets/csv/csv.cpp
+    assets/csv/csv_compilers.cpp
     assets/csv_asset_module.cpp
 
     assets/json/json.cpp
-    assets/engine_asset_library_json_compilers.cpp
+    assets/json/json_compilers.cpp
     assets/json_asset_module.cpp
 
     assets/toml/toml.cpp
+    assets/toml/toml_compilers.cpp
     assets/toml_asset_module.cpp
-    assets/engine_asset_library_toml_compilers.cpp
 
-    assets/mesh/mesh.cpp 
+    assets/mesh/mesh.cpp
+    assets/mesh/mesh_compilers.cpp
     assets/mesh_asset_module.cpp
     assets/mesh/procedural_mesh.cpp
 
