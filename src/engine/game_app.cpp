@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <engine/game_app.h>
 #include <engine/runtime_camera.h>
 #include <math/projection.h>
@@ -32,8 +33,41 @@ namespace wz::app
     namespace
     {
         static bool g_logged_job_update_once = false;
-        constexpr uint32_t kDebugObjectCount = 1000;
         constexpr uint32_t kAnimatedDebugObjectCount = 10;
+        constexpr uint32_t kAnimatedSubtreeRootCount = 10;
+        constexpr uint32_t kAnimatedSubtreeLeafCount = 10;
+
+        constexpr std::array<DebugSceneConfig, 5> kDebugSceneModes{ {
+            DebugSceneConfig{
+                .name = "objects-100-static-cull-on",
+                .object_count = 100,
+                .animation = DebugSceneAnimation::Static,
+            },
+            DebugSceneConfig{
+                .name = "objects-1000-animated-leaves-cull-on",
+                .object_count = 1000,
+                .animation = DebugSceneAnimation::Leaves,
+            },
+            DebugSceneConfig{
+                .name = "objects-1000-animated-parent-subtree-cull-on",
+                .object_count = 1000,
+                .animation = DebugSceneAnimation::ParentSubtree,
+            },
+            DebugSceneConfig{
+                .name = "objects-1000-static-cull-off",
+                .object_count = 1000,
+                .animation = DebugSceneAnimation::Static,
+                .culling_disabled = true,
+            },
+            DebugSceneConfig{
+                .name = "objects-100000-static-benchmark-cull-on",
+                .object_count = 100000,
+                .animation = DebugSceneAnimation::Static,
+                .wide_layout = true,
+            },
+        } };
+
+        constexpr uint32_t kDefaultDebugSceneModeIndex = 1;
 
         struct AppUpdateFrameData
         {
@@ -75,36 +109,120 @@ namespace wz::app
 
             dbg.transform_affected_nodes.clear();
 
-            const uint32_t count =
-                static_cast<uint32_t>(dbg.animated_nodes.size());
+            const DebugSceneAnimation animation =
+                dbg.config ? dbg.config->animation : DebugSceneAnimation::Static;
 
-            for (uint32_t i = 0; i < count; ++i)
+            if (animation == DebugSceneAnimation::Leaves)
             {
-                const auto n = dbg.animated_nodes[i];
-                const auto base = dbg.animated_base_positions[i];
+                const uint32_t count =
+                    static_cast<uint32_t>(dbg.animated_nodes.size());
 
-                wz::math::Mat4 local = wz::math::mat4_identity();
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const auto n = dbg.animated_nodes[i];
+                    const auto base = dbg.animated_base_positions[i];
 
-                local.m[12] = base.x;
-                local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
-                local.m[14] = base.z;
+                    wz::math::Mat4 local = wz::math::mat4_identity();
 
-                wz::scene::set_local(dbg.scene.polytree, n, local);
+                    local.m[12] = base.x;
+                    local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
+                    local.m[14] = base.z;
 
-                dbg.transform_affected_nodes.push_back(n);
+                    wz::scene::set_local(dbg.scene.polytree, n, local);
+
+                    dbg.transform_affected_nodes.push_back(n);
+                }
+            }
+            else if (animation == DebugSceneAnimation::ParentSubtree)
+            {
+                const uint32_t count =
+                    static_cast<uint32_t>(dbg.animated_parent_nodes.size());
+
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const auto n = dbg.animated_parent_nodes[i];
+                    const auto base = dbg.animated_parent_base_positions[i];
+
+                    wz::math::Mat4 local = wz::math::mat4_identity();
+
+                    local.m[12] = base.x;
+                    local.m[13] = base.y + 0.75f * std::sin(t * 1.5f + static_cast<float>(i));
+                    local.m[14] = base.z;
+
+                    wz::scene::set_local(dbg.scene.polytree, n, local);
+
+                    dbg.transform_affected_nodes.push_back(n);
+                }
+
+                for (wz::core::graph::NodeHandle n : dbg.animated_nodes)
+                    dbg.transform_affected_nodes.push_back(n);
             }
 
             dbg.transforms_dirty = !dbg.transform_affected_nodes.empty();
         }
 
+        uint32_t debug_grid_columns(uint32_t object_count)
+        {
+            return std::max(
+                1u,
+                static_cast<uint32_t>(
+                    std::ceil(std::sqrt(static_cast<float>(object_count)))));
+        }
+
+        wz::math::Vec3 debug_grid_position(
+            uint32_t index,
+            uint32_t object_count,
+            bool wide_layout)
+        {
+            const uint32_t columns = debug_grid_columns(object_count);
+            const uint32_t rows = std::max(
+                1u,
+                (object_count + columns - 1u) / columns);
+
+            const uint32_t x = index % columns;
+            const uint32_t y = index / columns;
+
+            const float spacing = wide_layout ? 1.75f : 1.25f;
+
+            return wz::math::Vec3{
+                (static_cast<float>(x) - static_cast<float>(columns) * 0.5f) * spacing,
+                (static_cast<float>(y) - static_cast<float>(rows) * 0.5f) * spacing,
+                8.0f,
+            };
+        }
+
+        const char* debug_scene_animation_name(DebugSceneAnimation animation)
+        {
+            switch (animation)
+            {
+            case DebugSceneAnimation::Static:
+                return "Static";
+
+            case DebugSceneAnimation::Leaves:
+                return "Leaves";
+
+            case DebugSceneAnimation::ParentSubtree:
+                return "ParentSubtree";
+
+            default:
+                return "Unknown";
+            }
+        }
+
         bool build_debug_object_scene(
             wz::app::GameApp& app,
-            uint32_t object_count)
+            const DebugSceneConfig& config)
         {
             using namespace wz::scene;
             using namespace wz::core::graph;
             using namespace wz::math;
 
+            const uint32_t object_count = config.object_count;
+
+            app.debug_object.config = &config;
+            app.debug_object.renderable_count = object_count;
+            app.debug_object.animated_parent_nodes.clear();
+            app.debug_object.animated_parent_base_positions.clear();
             app.debug_object.animated_nodes.clear();
             app.debug_object.animated_base_positions.clear();
             app.debug_object.transform_affected_nodes.clear();
@@ -119,45 +237,104 @@ namespace wz::app
             std::vector<NodeHandle> object_nodes;
             object_nodes.reserve(object_count);
 
-            const uint32_t columns = 32;
-            const float spacing = 1.25f;
-
-            for (uint32_t i = 0; i < object_count; ++i)
+            auto add_renderable_object =
+                [&](NodeHandle parent_h, const Vec3& local_position) -> NodeHandle
             {
-                const uint32_t x = i % columns;
-                const uint32_t y = i / columns;
-
                 TransformNode object{};
                 object.local = mat4_identity();
 
-                object.local.m[12] =
-                    (static_cast<float>(x) - static_cast<float>(columns) * 0.5f) * spacing;
-
-                object.local.m[13] =
-                    (static_cast<float>(y) - static_cast<float>(object_count / columns) * 0.5f) * spacing;
-
-                object.local.m[14] = 8.0f;
+                object.local.m[12] = local_position.x;
+                object.local.m[13] = local_position.y;
+                object.local.m[14] = local_position.z;
 
                 object.flags = TransformNodeFlag::RenderDomain;
                 object.motion_type = TransformNode::MotionType::Static;
 
                 NodeHandle object_h = add_node(b, object);
-                add_edge(b, root_h, object_h);
-
-                if (i < kAnimatedDebugObjectCount)
-                {
-                    app.debug_object.animated_nodes.push_back(object_h);
-
-                    app.debug_object.animated_base_positions.push_back(
-                        wz::math::Vec3{
-                            object.local.m[12],
-                            object.local.m[13],
-                            object.local.m[14],
-                        }
-                        );
-                }
+                add_edge(b, parent_h, object_h);
 
                 object_nodes.push_back(object_h);
+                return object_h;
+            };
+
+            if (config.animation == DebugSceneAnimation::ParentSubtree)
+            {
+                const uint32_t parent_count = std::min(
+                    kAnimatedSubtreeRootCount,
+                    std::max(1u, object_count / kAnimatedSubtreeLeafCount));
+
+                uint32_t next_object = 0;
+
+                for (uint32_t p = 0; p < parent_count && next_object < object_count; ++p)
+                {
+                    const Vec3 parent_pos =
+                        debug_grid_position(
+                            p * kAnimatedSubtreeLeafCount,
+                            object_count,
+                            config.wide_layout);
+
+                    TransformNode parent{};
+                    parent.local = mat4_identity();
+                    parent.local.m[12] = parent_pos.x;
+                    parent.local.m[13] = parent_pos.y;
+                    parent.local.m[14] = parent_pos.z;
+
+                    NodeHandle parent_h = add_node(b, parent);
+                    add_edge(b, root_h, parent_h);
+
+                    app.debug_object.animated_parent_nodes.push_back(parent_h);
+                    app.debug_object.animated_parent_base_positions.push_back(parent_pos);
+
+                    const uint32_t children = std::min(
+                        kAnimatedSubtreeLeafCount,
+                        object_count - next_object);
+
+                    for (uint32_t c = 0; c < children; ++c)
+                    {
+                        const float local_x =
+                            (static_cast<float>(c % 5u) - 2.0f) * 0.35f;
+                        const float local_y =
+                            (static_cast<float>(c / 5u) - 0.5f) * 0.35f;
+
+                        const NodeHandle object_h =
+                            add_renderable_object(
+                                parent_h,
+                                Vec3{ local_x, local_y, 0.0f });
+
+                        app.debug_object.animated_nodes.push_back(object_h);
+                        ++next_object;
+                    }
+                }
+
+                while (next_object < object_count)
+                {
+                    add_renderable_object(
+                        root_h,
+                        debug_grid_position(
+                            next_object,
+                            object_count,
+                            config.wide_layout));
+                    ++next_object;
+                }
+            }
+            else
+            {
+                for (uint32_t i = 0; i < object_count; ++i)
+                {
+                    const Vec3 position =
+                        debug_grid_position(i, object_count, config.wide_layout);
+
+                    const NodeHandle object_h =
+                        add_renderable_object(root_h, position);
+
+                    if (
+                        config.animation == DebugSceneAnimation::Leaves &&
+                        i < kAnimatedDebugObjectCount)
+                    {
+                        app.debug_object.animated_nodes.push_back(object_h);
+                        app.debug_object.animated_base_positions.push_back(position);
+                    }
+                }
             }
 
             auto scene_result = build(std::move(b));
@@ -171,9 +348,23 @@ namespace wz::app
                 node_count(app.debug_object.scene.polytree)
             );
 
-            app.debug_object.descriptors[root_h] = RenderableDescriptor{
-                .node_class = classify_legacy_renderable(RenderPipeline::None),
-            };
+            for (auto& desc : app.debug_object.descriptors)
+            {
+                desc = RenderableDescriptor{
+                    .node_class = classify_legacy_renderable(RenderPipeline::None),
+                };
+            }
+
+            const AABB object_bounds =
+                config.culling_disabled
+                ? AABB{
+                    .min = Vec3{ -10000.0f, -10000.0f, -10000.0f },
+                    .max = Vec3{  10000.0f,  10000.0f,  10000.0f },
+                }
+                : AABB{
+                    .min = Vec3{ -0.5f, -0.5f, -0.5f },
+                    .max = Vec3{  0.5f,  0.5f,  0.5f },
+                };
 
             for (NodeHandle object_h : object_nodes)
             {
@@ -181,10 +372,7 @@ namespace wz::app
                     .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
                     .mesh = 0,
                     .material = 0,
-                    .local_bounds = {
-                        .min = Vec3{ -0.5f, -0.5f, -0.5f },
-                        .max = Vec3{  0.5f,  0.5f,  0.5f },
-                    },
+                    .local_bounds = object_bounds,
                     .splat_data = {},
                     .visible = true,
                 };
@@ -196,6 +384,68 @@ namespace wz::app
             app.debug_object.transforms_dirty = false;
 
             return true;
+        }
+
+        bool set_debug_scene_mode(
+            wz::app::GameApp& app,
+            uint32_t mode_index)
+        {
+            if (mode_index >= kDebugSceneModes.size())
+                return false;
+
+            if (
+                app.debug_object.ready &&
+                app.debug_object.mode_index == mode_index)
+            {
+                return true;
+            }
+
+            app.debug_object.ready = false;
+            app.debug_object.compiled_scene_valid = false;
+            app.debug_object.transforms_dirty = false;
+            app.frame.render_prep_path = RenderPrepPath::FullCompile;
+
+            const DebugSceneConfig& config = kDebugSceneModes[mode_index];
+
+            if (!build_debug_object_scene(app, config))
+                return false;
+
+            app.debug_object.mode_index = mode_index;
+
+            std::ostringstream msg;
+            msg
+                << "debug scene mode selected index=" << mode_index
+                << " name=" << config.name
+                << " objects=" << config.object_count
+                << " animation=" << debug_scene_animation_name(config.animation)
+                << " culling_disabled=" << (config.culling_disabled ? "true" : "false");
+
+            app.ctx.logger.info(msg.str());
+
+            return true;
+        }
+
+        void handle_debug_scene_mode_input(
+            wz::app::GameApp& app,
+            const wz::input::InputState& input)
+        {
+            const auto& keyboard = input.keyboard;
+
+            if (keyboard.pressed[VK_F1])
+                set_debug_scene_mode(app, 0);
+            else if (keyboard.pressed[VK_F2])
+                set_debug_scene_mode(app, 1);
+            else if (keyboard.pressed[VK_F3])
+                set_debug_scene_mode(app, 2);
+            else if (keyboard.pressed[VK_F4])
+                set_debug_scene_mode(app, 3);
+            else if (keyboard.pressed[VK_F5])
+                set_debug_scene_mode(app, 4);
+            else if (keyboard.pressed[VK_F6])
+                set_debug_scene_mode(
+                    app,
+                    (app.debug_object.mode_index + 1u) %
+                        static_cast<uint32_t>(kDebugSceneModes.size()));
         }
 
         wz::scene::ViewData build_view_data(
@@ -346,6 +596,8 @@ namespace wz::app
                 app.debug_object.ready
                 ? wz::core::graph::node_count(app.debug_object.scene.polytree)
                 : 0;
+            const auto& culling = app.frame.render_ir.ir.culling;
+            const DebugSceneConfig* config = app.debug_object.config;
 
             std::ostringstream summary;
             summary << std::fixed << std::setprecision(3);
@@ -358,13 +610,23 @@ namespace wz::app
 
             summary
                 << "jobs frame=" << profile.frame_index
+                << " mode=" << (config ? config->name : "<none>")
                 << " path=" << render_prep_path_name(app.frame.render_prep_path)
+                << " anim=" << (
+                    config
+                    ? debug_scene_animation_name(config->animation)
+                    : "Unknown")
+                << " renderables=" << app.debug_object.renderable_count
+                << " culling_disabled=" << (
+                    config && config->culling_disabled ? "true" : "false")
                 << " dirty_nodes=" << app.debug_object.transform_affected_nodes.size()
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(render_prep_ticks) << " ms"
                 << " jobs=" << profile.timings.size()
                 << " nodes=" << scene_nodes
                 << " cmds=" << cmd_count
+                << " visible_opaque=" << culling.visible_opaque
+                << " culled_opaque=" << culling.culled_opaque
                 << " allocs=" << allocs.reallocations_this_frame
                 << " alloc_bytes=" << allocs.bytes_allocated_this_frame
                 << " owned=" << allocs.bytes_owned;
@@ -747,8 +1009,8 @@ namespace wz::app
             .pixel_shader  = object_shader_handles.pixel,
             });
 
-        // ── Build a number of renderable scene object ──────────────────────────
-        if (!build_debug_object_scene(app, kDebugObjectCount))
+        // Build the default runtime debug scene preset.
+        if (!set_debug_scene_mode(app, kDefaultDebugSceneModeIndex))
             INIT_FAIL("build_debug_object_scene");
 
         // Scalar field debug is deliberately disabled for Session 7 object rendering.
@@ -773,6 +1035,7 @@ namespace wz::app
         static float debug_anim_t = 0.0f;
         debug_anim_t += static_cast<float>(fctx.frame.delta_seconds());
 
+        handle_debug_scene_mode_input(app, fctx.input);
         update_debug_object_animation(app, debug_anim_t);
 
         if (!g_logged_job_update_once)
@@ -836,6 +1099,15 @@ namespace wz::app
 
         out.debug_object_ready = app.debug_object.ready;
         out.compiled_scene_valid = app.debug_object.compiled_scene_valid;
+        out.debug_renderables = app.debug_object.renderable_count;
+        out.debug_scene_mode =
+            app.debug_object.config ? app.debug_object.config->name : "";
+        out.debug_animation =
+            app.debug_object.config
+            ? debug_scene_animation_name(app.debug_object.config->animation)
+            : "Unknown";
+        out.debug_culling_disabled =
+            app.debug_object.config && app.debug_object.config->culling_disabled;
 
         out.dirty_nodes =
             static_cast<uint64_t>(
