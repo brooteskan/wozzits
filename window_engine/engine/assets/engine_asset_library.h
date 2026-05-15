@@ -33,6 +33,8 @@
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 
+#include <engine/assets/diagnostic_table_asset_module.h>
+
 #include <string>
 #include <vector>
 
@@ -104,6 +106,8 @@ namespace wz::engine::assets
         GaussianSplatAssetModule&       gaussian_splats()         { return gaussian_splats_; }
         const GaussianSplatAssetModule& gaussian_splats()   const { return gaussian_splats_; }
 
+        DiagnosticTableAssetModule&       diagnostic_tables()       { return diagnostic_tables_; }
+        const DiagnosticTableAssetModule& diagnostic_tables() const { return diagnostic_tables_; }
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -130,7 +134,8 @@ namespace wz::engine::assets
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
-        
+        DiagnosticTable             diagnostic_table_;
+
         wz::asset::AssetSystem system_;
 
         FileCarrierAssetModule      files_;
@@ -141,6 +146,7 @@ namespace wz::engine::assets
         TOMLAssetModule             toml_;
         MeshAssetModule             meshes_;
         GaussianSplatAssetModule    gaussian_splats_;
+        DiagnosticTableAssetModule  diagnostic_tables_;
     };
 
 } // namespace wz::engine::assets

@@ -48,6 +48,7 @@ namespace wz::engine::assets
         , scalar_fields_table_{}
         , csv_table_{}
         , gaussian_splat_cloud_table_{}
+        , diagnostic_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
                 .device                    = device,
@@ -58,6 +59,7 @@ namespace wz::engine::assets
                 .toml_table                = toml_table_,
                 .mesh_table                = mesh_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
+                .diagnostic_table = diagnostic_table_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -67,6 +69,7 @@ namespace wz::engine::assets
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
+        , diagnostic_tables_(system_, logger_, diagnostic_table_)
     {
     }
 

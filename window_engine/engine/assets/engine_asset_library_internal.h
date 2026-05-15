@@ -11,6 +11,8 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
+#include <engine/assets/diagnostics/diagnostic_table.h>
+#include <engine/assets/diagnostics/diagnostic_table_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -24,14 +26,15 @@ namespace wz::engine::assets::internal {
 
     struct EngineAssetContext
     {
-        wz::gpu::Device&         device;
-        wz::Logger&              logger;
-        ScalarFieldTable&        scalar_fields_table;
-        CSVTable&                csv_table;
-        JSONTable&               json_table;
-        TOMLTable&               toml_table;
-        MeshTable&               mesh_table;
-        GaussianSplatCloudTable& gaussian_splat_cloud_table;
+        wz::gpu::Device&            device;
+        wz::Logger&                 logger;
+        ScalarFieldTable&           scalar_fields_table;
+        CSVTable&                   csv_table;
+        JSONTable&                  json_table;
+        TOMLTable&                  toml_table;
+        MeshTable&                  mesh_table;
+        GaussianSplatCloudTable&    gaussian_splat_cloud_table;
+        DiagnosticTable&            diagnostic_table;
     };
 
     wz::asset::AssetNode compile_failed_node(

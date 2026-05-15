@@ -1361,4 +1361,11 @@ namespace wz::engine::assets {
     // Represents editor-only icon metadata, usually referencing Texture data.
     inline constexpr wz::asset::AssetType kAssetTypeEditorIcon =
         static_cast<wz::asset::AssetType>(4109);
+
+    // for creating diagnostic output consumable by AI agents
+    // intended target is CSV files on disc
+    inline constexpr wz::asset::AssetType kAssetTypeDiagnosticTable =
+        static_cast<wz::asset::AssetType>(4110);
+
+
 } // namespace wz::engine::assets

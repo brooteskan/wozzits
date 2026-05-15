@@ -37,6 +37,10 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/gaussian_splat_compilers.cpp
     assets/gaussian_splat_asset_module.cpp
 
+    assets/diagnostics/diagnostic_table.cpp
+    assets/diagnostics/diagnostic_table_compilers.cpp
+    assets/diagnostic_table_asset_module.cpp
+
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
   )

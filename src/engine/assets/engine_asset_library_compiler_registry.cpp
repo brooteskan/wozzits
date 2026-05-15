@@ -23,7 +23,7 @@ namespace wz::engine::assets::internal
         register_toml_compilers(registry, ctx.logger, ctx.toml_table);
         register_mesh_compilers(registry, ctx.logger, ctx.mesh_table);
         register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table);
-
+        register_diagnostic_table_compilers(registry, ctx.logger, ctx.diagnostic_table);
         return registry;
     }
 
