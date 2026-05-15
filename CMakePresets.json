@@ -7,7 +7,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "WINDOW_ENGINE_ENABLE_TESTS": "ON",
-        "WNIDOW_ENGINE_DEV_BUILD": "ON",
+        "WINDOW_ENGINE_DEV_BUILD": "ON",
         "WOZZITS_ENABLE_V8_SCRIPTING": "OFF"
       }
     },
