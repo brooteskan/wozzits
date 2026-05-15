@@ -3,6 +3,7 @@
 // engine/assets/diagnostics/diagnostic_resampled_time_series.h
 
 #include <asset/types.h>
+#include <engine/assets/data_table/data_table.h>
 
 #include <cstdint>
 #include <string>
@@ -89,4 +90,14 @@ namespace wz::engine::assets
         double start = 0.0;
         double end = 0.0;
     };
+
+    // Returns a DataTableData view of the resampled series.
+    // One row per bucket. Columns: bucket_index, bucket_start, bucket_end,
+    // source_row_count, then for each metric: 14 stat columns
+    // (<metric>_sample_count, _min, _max, _mean, _first, _last,
+    //  _min_axis, _max_axis, _first_axis, _last_axis,
+    //  _min_source_row, _max_source_row, _first_source_row, _last_source_row).
+    // Caller is responsible for passing a valid series.
+    [[nodiscard]] DataTableData make_data_table(
+        const DiagnosticResampledTimeSeriesData& series);
 }
