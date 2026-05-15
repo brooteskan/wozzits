@@ -1367,5 +1367,6 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeDiagnosticTable =
         static_cast<wz::asset::AssetType>(4110);
 
-
+    inline constexpr wz::asset::AssetType kAssetTypeDiagnosticResampledTimeSeries =
+        static_cast<wz::asset::AssetType>(4111);
 } // namespace wz::engine::assets

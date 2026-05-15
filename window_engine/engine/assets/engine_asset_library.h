@@ -34,6 +34,7 @@
 #include <engine/assets/gaussian_splat_asset_module.h>
 
 #include <engine/assets/diagnostic_table_asset_module.h>
+#include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
 
 #include <string>
 #include <vector>
@@ -108,6 +109,9 @@ namespace wz::engine::assets
 
         DiagnosticTableAssetModule&       diagnostic_tables()       { return diagnostic_tables_; }
         const DiagnosticTableAssetModule& diagnostic_tables() const { return diagnostic_tables_; }
+
+        DiagnosticResampledTimeSeriesAssetModule&       diagnostic_resampled_time_series()       { return diagnostic_resampled_time_series_;  }
+        const DiagnosticResampledTimeSeriesAssetModule& diagnostic_resampled_time_series() const { return diagnostic_resampled_time_series_; }
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -135,6 +139,7 @@ namespace wz::engine::assets
         MeshTable                   mesh_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         DiagnosticTable             diagnostic_table_;
+        DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table_;
 
         wz::asset::AssetSystem system_;
 
@@ -147,6 +152,7 @@ namespace wz::engine::assets
         MeshAssetModule             meshes_;
         GaussianSplatAssetModule    gaussian_splats_;
         DiagnosticTableAssetModule  diagnostic_tables_;
+        DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
     };
 
 } // namespace wz::engine::assets

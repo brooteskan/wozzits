@@ -24,6 +24,8 @@ namespace wz::engine::assets::internal
         register_mesh_compilers(registry, ctx.logger, ctx.mesh_table);
         register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table);
         register_diagnostic_table_compilers(registry, ctx.logger, ctx.diagnostic_table);
+        register_diagnostic_resampled_time_series_compilers( registry, ctx.logger, ctx.diagnostic_table, ctx.diagnostic_resampled_time_series_table);
+
         return registry;
     }
 

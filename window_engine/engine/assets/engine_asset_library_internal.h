@@ -13,6 +13,8 @@
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_table.h>
 #include <engine/assets/diagnostics/diagnostic_table_compilers.h>
+#include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
+#include <engine/assets/diagnostics/diagnostic_resampled_time_series_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -35,6 +37,7 @@ namespace wz::engine::assets::internal {
         MeshTable&                  mesh_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
         DiagnosticTable&            diagnostic_table;
+        DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
     };
 
     wz::asset::AssetNode compile_failed_node(
