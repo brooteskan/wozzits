@@ -16,9 +16,13 @@ include(FetchContent)
 # MSVC runtime configuration
 # ----------------------------
 if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY
-        "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
+    if(WOZZITS_ENABLE_V8_SCRIPTING)
+        # V8 uses static CRT (/MT) — its allocator shim requires it.  Force /MT
+        # for all configs so every object in the link agrees.
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    else()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    endif()
 endif()
 
 # ----------------------------
@@ -170,6 +174,8 @@ install(FILES
 
 
 if(WOZZITS_ENABLE_V8_SCRIPTING)
+    set(WOZZITS_V8_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WOZZITS_V8_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     add_subdirectory(
         "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-v8"
         "${CMAKE_CURRENT_BINARY_DIR}/_deps/wozzits-v8")
