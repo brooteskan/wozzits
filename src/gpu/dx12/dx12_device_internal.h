@@ -36,6 +36,13 @@ namespace wz::gpu::dx12
         GPUHandle mesh{};
     };
 
+    struct GaussianSplatDebugContext
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso = nullptr;
+
+        GPUHandle splat_cloud{};
+    };
 
     struct DX12Device
     {
@@ -72,10 +79,12 @@ namespace wz::gpu::dx12
 
         ScalarFieldDebugContext* scalar_debug_ctx = nullptr;
         MeshWireframeDebugContext* mesh_wire_debug_ctx = nullptr;
+        GaussianSplatDebugContext* gaussian_splat_debug_ctx = nullptr;
 
         wz::gpu::dx12::DX12ShaderTable shaders;
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
         wz::gpu::dx12::internal::DX12MeshTable meshes;
+        wz::gpu::dx12::internal::DX12GaussianSplatCloudTable gaussian_splat_clouds;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
     };

@@ -6,12 +6,12 @@
 
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
-#include <gpu/mesh.h>
+#include <gpu/gaussian_splat.h>
 #include <gpu/dx12/dx12.h>
 
 #include <engine/assets/engine_asset_library.h>
-#include <engine/assets/mesh/mesh.h>
-#include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat_asset_module.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
@@ -24,17 +24,6 @@
 
 namespace
 {
-    void set_identity(float m[16])
-    {
-        for (int i = 0; i < 16; ++i)
-            m[i] = 0.0f;
-
-        m[0] = 1.0f;
-        m[5] = 1.0f;
-        m[10] = 1.0f;
-        m[15] = 1.0f;
-    }
-
     void copy_mat4(float out[16], const wz::math::Mat4& m)
     {
         for (int i = 0; i < 16; ++i)
@@ -65,7 +54,7 @@ namespace
 
         wz::math::Mat4 view = wz::math::mat4_identity();
 
-        // Keep this consistent with the existing game_app debug camera path:
+        // Keep this consistent with the existing debug camera path:
         // objects are placed at positive z, and the view matrix is identity.
         view.m[12] = 0.0f;
         view.m[13] = 0.0f;
@@ -100,7 +89,7 @@ int main()
 
         // ── window ────────────────────────────────────────────────────────
         wz::window::WindowDesc desc;
-        desc.title = "Wozzits Mesh Wireframe Debug";
+        desc.title = "Wozzits Gaussian Splat Debug";
         desc.width = 800;
         desc.height = 600;
 
@@ -124,20 +113,23 @@ int main()
 
         using namespace wz::engine::assets;
 
-        // ── procedural mesh asset ─────────────────────────────────────────
-        MeshAsset mesh_asset = assets.meshes().create_procedural_mesh({
-            .name = "debug/procedural_cube",
-            .kind = ProceduralMeshKind::Cube,
-            });
+        // ── procedural gaussian splat asset ───────────────────────────────
+        GaussianSplatCloudAsset splat_asset =
+            assets.gaussian_splats().create_procedural_cloud({
+                .name = "debug/procedural_splat_sphere",
+                .count = 4096,
+                .radius = 1.5f,
+                .splat_scale = 1.0f,
+                });
 
-        if (!mesh_asset.valid())
+        if (!splat_asset.valid())
             return 1;
 
-        // ── mesh wireframe debug shaders ──────────────────────────────────
+        // ── gaussian splat debug shaders ──────────────────────────────────
         auto shaders = assets.shaders().create_shader_pair({
-            .name = "mesh_wireframe_debug",
-            .vertex_path = "shaders/mesh_wireframe/mesh_wireframe_vs.hlsl",
-            .pixel_path = "shaders/mesh_wireframe/mesh_wireframe_ps.hlsl",
+            .name = "gaussian_splat_debug",
+            .vertex_path = "shaders/gaussian_splat/gaussian_splat_debug_vs.hlsl",
+            .pixel_path = "shaders/gaussian_splat/gaussian_splat_debug_ps.hlsl",
             });
 
         if (!shaders.valid())
@@ -155,32 +147,37 @@ int main()
         if (!shader_handles.valid())
             return 1;
 
-        MeshHandle mesh_handle = assets.meshes().get_mesh(mesh_asset);
-        if (!mesh_handle.valid())
+        GaussianSplatCloudHandle splat_handle =
+            assets.gaussian_splats().get_cloud(splat_asset);
+
+        if (!splat_handle.valid())
             return 1;
 
-        const MeshData* mesh_data =
-            assets.meshes().get_mesh_data(mesh_handle);
+        const GaussianSplatCloudData* splat_data =
+            assets.gaussian_splats().get_cloud_data(splat_handle);
 
-        if (!mesh_data || !mesh_data->valid())
+        if (!splat_data || !splat_data->valid())
             return 1;
 
-        // ── upload mesh to GPU buffers ────────────────────────────────────
-        wz::gpu::GPUHandle gpu_mesh =
-            wz::gpu::upload_mesh(device, *mesh_data);
+        // ── upload splat cloud to GPU buffer ──────────────────────────────
+        wz::gpu::GPUHandle gpu_splat_cloud =
+            wz::gpu::upload_gaussian_splat_cloud(device, *splat_data);
 
-        if (!gpu_mesh.valid())
+        if (!gpu_splat_cloud.valid())
             return 1;
 
-        if (gpu_mesh.type != wz::gpu::GPUResourceType::Mesh)
+        if (gpu_splat_cloud.type != wz::gpu::GPUResourceType::GaussianSplatCloud)
             return 1;
 
-        // ── create mesh wireframe debug draw context ──────────────────────
-        wz::gpu::dx12::create_mesh_wireframe_debug_context(device, {
+        // ── create gaussian splat debug draw context ──────────────────────
+        wz::gpu::dx12::create_gaussian_splat_debug_context(device, {
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
-            .mesh = gpu_mesh,
+            .splat_cloud = gpu_splat_cloud,
             });
+
+        int current_width = desc.width;
+        int current_height = desc.height;
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))
@@ -192,10 +189,13 @@ int main()
             {
                 if (event.type == PlatformEvent::Type::Resize)
                 {
+                    current_width = event.resize.width;
+                    current_height = event.resize.height;
+
                     wz::gpu::resize(
                         device,
-                        event.resize.width,
-                        event.resize.height
+                        current_width,
+                        current_height
                     );
                 }
 
@@ -208,18 +208,26 @@ int main()
             wz::gpu::begin_frame(device);
             wz::gpu::clear(device, 0.05f, 0.05f, 0.05f, 1.0f);
 
-            wz::gpu::dx12::MeshWireframeDebugView view{};
+            wz::gpu::dx12::GaussianSplatDebugView view{};
 
             const wz::math::Mat4 world =
                 make_world_translate(0.0f, 0.0f, 5.0f);
 
             const wz::math::Mat4 view_proj =
-                make_debug_view_proj(desc.width, desc.height);
+                make_debug_view_proj(current_width, current_height);
 
             copy_mat4(view.world, world);
             copy_mat4(view.view_proj, view_proj);
 
-            wz::gpu::dx12::submit_mesh_wireframe_debug_frame(device, view);
+            view.viewport_and_size[0] = static_cast<float>(current_width);
+            view.viewport_and_size[1] = static_cast<float>(current_height);
+
+            // Start large. Once visible, reduce this.
+            view.viewport_and_size[2] = 6.0f;
+
+            view.viewport_and_size[3] = 0.0f;
+
+            wz::gpu::dx12::submit_gaussian_splat_debug_frame(device, view);
 
             wz::gpu::end_frame(device);
             wz::gpu::present(device);

@@ -6,6 +6,7 @@
 #include <render/frame/render_frame.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
+#include <gpu/dx12/dx12_gaussian_splat_debug.h>
 
 namespace wz::gpu::dx12
 {

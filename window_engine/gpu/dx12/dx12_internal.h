@@ -101,7 +101,6 @@ namespace wz::gpu::dx12::internal {
 // ── Mesh buffers ──────────────────────────────────────────────────
 
 namespace wz::engine::assets {
-    struct ScalarFieldData;
     struct MeshData;
 }
 
@@ -152,4 +151,59 @@ namespace wz::gpu::dx12::internal {
         Device& device,
         GPUHandle handle
     );
+}
+
+
+// ── Gaussian splat buffers ────────────────────────────────────────
+
+namespace wz::engine::assets {
+    struct GaussianSplatCloudData;
+}
+
+namespace wz::gpu::dx12::internal {
+
+    struct DX12GaussianSplatVertex
+    {
+        float position[3] = {};
+        float scale = 1.0f;
+        float color[3] = { 1.0f, 1.0f, 1.0f };
+        float opacity = 1.0f;
+    };
+
+    struct DX12GaussianSplatCloudResource
+    {
+        ID3D12Resource* vertex_buffer = nullptr;
+
+        D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+
+        uint32_t splat_count = 0;
+    };
+
+    class DX12GaussianSplatCloudTable
+    {
+    public:
+        DX12GaussianSplatCloudTable();
+
+        GPUHandle add(DX12GaussianSplatCloudResource cloud);
+        const DX12GaussianSplatCloudResource* get(GPUHandle handle) const;
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            DX12GaussianSplatCloudResource cloud{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    GPUHandle upload_gaussian_splat_cloud_dx12(
+        Device& device,
+        const wz::engine::assets::GaussianSplatCloudData& cloud);
+
+    const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
+        Device& device,
+        GPUHandle handle);
 }

@@ -63,6 +63,7 @@ namespace wz::asset {
         Audio = 5,
         Font = 6,
         ShaderSource = 7,
+        GaussianSplatCloud = 8
     };
 
     // ─── SchemaID ─────────────────────────────────────────────────────────────────
