@@ -1,18 +1,18 @@
 #include <gtest/gtest.h>
 
-#include <engine/assets/diagnostics/diagnostic_table.h>
+#include <engine/assets/data_table/data_table.h>
 #include <engine/assets/type_extensions.h>
 
-TEST(DiagnosticTableData, RejectsEmptyColumns)
+TEST(DataTableData, RejectsEmptyColumns)
 {
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
 
     EXPECT_FALSE(table.valid());
 }
 
-TEST(DiagnosticTableData, AcceptsHeaderOnlyTable)
+TEST(DataTableData, AcceptsHeaderOnlyTable)
 {
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
     table.columns.push_back({ .name = "frame_ms_avg" });
 
@@ -21,9 +21,9 @@ TEST(DiagnosticTableData, AcceptsHeaderOnlyTable)
     EXPECT_EQ(table.row_count(), 0u);
 }
 
-TEST(DiagnosticTableData, RejectsRowWithWrongCellCount)
+TEST(DataTableData, RejectsRowWithWrongCellCount)
 {
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
     table.columns.push_back({ .name = "frame_ms_avg" });
 
@@ -34,9 +34,9 @@ TEST(DiagnosticTableData, RejectsRowWithWrongCellCount)
     EXPECT_FALSE(table.valid());
 }
 
-TEST(DiagnosticTableData, AcceptsSimpleRows)
+TEST(DataTableData, AcceptsSimpleRows)
 {
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
     table.columns.push_back({ .name = "frame_ms_avg" });
 
@@ -49,11 +49,11 @@ TEST(DiagnosticTableData, AcceptsSimpleRows)
     EXPECT_EQ(table.row_count(), 1u);
 }
 
-TEST(DiagnosticTable, StoresAndRetrievesTable)
+TEST(DataTable, StoresAndRetrievesTable)
 {
-    wz::engine::assets::DiagnosticTable table_store;
+    wz::engine::assets::DataTable table_store;
 
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
     table.columns.push_back({ .name = "frame_ms_avg" });
     table.rows.push_back({
@@ -63,7 +63,7 @@ TEST(DiagnosticTable, StoresAndRetrievesTable)
     const auto handle = table_store.add(std::move(table));
 
     ASSERT_TRUE(handle.valid());
-    EXPECT_EQ(handle.type, wz::engine::assets::kAssetTypeDiagnosticTable);
+    EXPECT_EQ(handle.type, wz::engine::assets::kAssetTypeDataTable);
 
     const auto* stored = table_store.get(handle);
 
@@ -72,11 +72,11 @@ TEST(DiagnosticTable, StoresAndRetrievesTable)
     EXPECT_EQ(stored->row_count(), 1u);
 }
 
-TEST(DiagnosticTable, RejectsWrongHandleType)
+TEST(DataTable, RejectsWrongHandleType)
 {
-    wz::engine::assets::DiagnosticTable table_store;
+    wz::engine::assets::DataTable table_store;
 
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
 
     const auto handle = table_store.add(std::move(table));

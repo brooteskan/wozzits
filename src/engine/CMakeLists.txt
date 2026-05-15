@@ -37,9 +37,9 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/gaussian_splat_compilers.cpp
     assets/gaussian_splat_asset_module.cpp
 
-    assets/diagnostics/diagnostic_table.cpp
-    assets/diagnostics/diagnostic_table_compilers.cpp
-    assets/diagnostic_table_asset_module.cpp
+    assets/data_table/data_table.cpp
+    assets/data_table/data_table_compilers.cpp
+    assets/data_table_asset_module.cpp
 
     assets/diagnostics/diagnostic_resampled_time_series.cpp
     assets/diagnostics/diagnostic_resampled_time_series_compilers.cpp

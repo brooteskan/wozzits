@@ -7,12 +7,12 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
-TEST(DiagnosticTableAssetModule, ResolvesInlineTable)
+TEST(DataTableAssetModule, ResolvesInlineTable)
 {
     const wz::fs::Path root =
         wz::fs::join(
             wz::fs::temp_directory_path(),
-            "wozzits_diagnostic_table_asset_tests");
+            "wozzits_data_table_asset_tests");
 
     ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
 
@@ -25,7 +25,7 @@ TEST(DiagnosticTableAssetModule, ResolvesInlineTable)
         root,
     };
 
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.columns.push_back({ .name = "run_id" });
     table.columns.push_back({ .name = "scene_mode" });
     table.columns.push_back({ .name = "frame_ms_avg" });
@@ -35,7 +35,7 @@ TEST(DiagnosticTableAssetModule, ResolvesInlineTable)
         });
 
     const auto asset =
-        assets.diagnostic_tables().create_inline_table({
+        assets.data_tables().create_inline_table({
             .name = "benchmark/run_001",
             .table = table,
             });
@@ -50,15 +50,15 @@ TEST(DiagnosticTableAssetModule, ResolvesInlineTable)
     EXPECT_EQ(report.resolved_count, 1u);
 
     const auto handle =
-        assets.diagnostic_tables().get_table(asset);
+        assets.data_tables().get_table(asset);
 
     ASSERT_TRUE(handle.valid());
     EXPECT_EQ(
         handle.handle.type,
-        wz::engine::assets::kAssetTypeDiagnosticTable);
+        wz::engine::assets::kAssetTypeDataTable);
 
     const auto* stored =
-        assets.diagnostic_tables().get_table_data(handle);
+        assets.data_tables().get_table_data(handle);
 
     ASSERT_NE(stored, nullptr);
     EXPECT_TRUE(stored->valid());
@@ -67,12 +67,12 @@ TEST(DiagnosticTableAssetModule, ResolvesInlineTable)
     EXPECT_EQ(stored->rows[0].cells[1], "max_triangles");
 }
 
-TEST(DiagnosticTableAssetModule, RejectsInvalidInlineTable)
+TEST(DataTableAssetModule, RejectsInvalidInlineTable)
 {
     const wz::fs::Path root =
         wz::fs::join(
             wz::fs::temp_directory_path(),
-            "wozzits_diagnostic_table_invalid_asset_tests");
+            "wozzits_data_table_invalid_asset_tests");
 
     ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
 
@@ -85,13 +85,13 @@ TEST(DiagnosticTableAssetModule, RejectsInvalidInlineTable)
         root,
     };
 
-    wz::engine::assets::DiagnosticTableData table;
+    wz::engine::assets::DataTableData table;
     table.rows.push_back({
         .cells = { "row_without_columns" },
         });
 
     const auto asset =
-        assets.diagnostic_tables().create_inline_table({
+        assets.data_tables().create_inline_table({
             .name = "benchmark/invalid",
             .table = table,
             });

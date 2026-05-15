@@ -299,8 +299,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(gpu gpu_mesh)
 
-    rs_add_test_group(asset_diagnostics diagnostic_table)
-    rs_add_test_group(asset_diagnostics diagnostic_table_asset_module)
+    rs_add_test_group(asset_data_table data_table)
+    rs_add_test_group(asset_data_table data_table_asset_module)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series_asset_module)
 

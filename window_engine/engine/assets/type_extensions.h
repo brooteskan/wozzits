@@ -1362,9 +1362,9 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeEditorIcon =
         static_cast<wz::asset::AssetType>(4109);
 
-    // for creating diagnostic output consumable by AI agents
-    // intended target is CSV files on disc
-    inline constexpr wz::asset::AssetType kAssetTypeDiagnosticTable =
+    // Implemented: generic rectangular string table.
+    // Used as input for CSV export, time-series resampling, and similar derived assets.
+    inline constexpr wz::asset::AssetType kAssetTypeDataTable =
         static_cast<wz::asset::AssetType>(4110);
 
     inline constexpr wz::asset::AssetType kAssetTypeDiagnosticResampledTimeSeries =

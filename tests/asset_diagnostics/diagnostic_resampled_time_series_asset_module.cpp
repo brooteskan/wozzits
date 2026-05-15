@@ -9,9 +9,9 @@
 
 namespace
 {
-    wz::engine::assets::DiagnosticTableData make_source_table()
+    wz::engine::assets::DataTableData make_source_table()
     {
-        wz::engine::assets::DiagnosticTableData table;
+        wz::engine::assets::DataTableData table;
         table.columns.push_back({ .name = "time_ms" });
         table.columns.push_back({ .name = "frame_ms" });
         table.columns.push_back({ .name = "draw_calls" });
@@ -45,7 +45,7 @@ TEST(DiagnosticResampledTimeSeriesAssetModule, ResolvesResampledSeries)
     };
 
     const auto table_asset =
-        assets.diagnostic_tables().create_inline_table({
+        assets.data_tables().create_inline_table({
             .name = "diagnostics/source",
             .table = make_source_table(),
             });
@@ -142,7 +142,7 @@ TEST(DiagnosticResampledTimeSeriesAssetModule, SupportsExplicitRange)
     };
 
     const auto table_asset =
-        assets.diagnostic_tables().create_inline_table({
+        assets.data_tables().create_inline_table({
             .name = "diagnostics/source",
             .table = make_source_table(),
             });
@@ -210,7 +210,7 @@ TEST(DiagnosticResampledTimeSeriesAssetModule, RejectsMissingMetricColumn)
     };
 
     const auto table_asset =
-        assets.diagnostic_tables().create_inline_table({
+        assets.data_tables().create_inline_table({
             .name = "diagnostics/source",
             .table = make_source_table(),
             });
