@@ -1369,4 +1369,9 @@ namespace wz::engine::assets {
 
     inline constexpr wz::asset::AssetType kAssetTypeDiagnosticResampledTimeSeries =
         static_cast<wz::asset::AssetType>(4111);
+
+    // Implemented: CSV file export derived from a DataTable.
+    // Compiling this asset writes a CSV file to the specified output path.
+    inline constexpr wz::asset::AssetType kAssetTypeCSVExport =
+        static_cast<wz::asset::AssetType>(4112);
 } // namespace wz::engine::assets

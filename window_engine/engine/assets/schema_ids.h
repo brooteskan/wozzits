@@ -211,4 +211,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kDiagnosticTableResampleTimeSeriesSchema{
     0xF11E'CA55'E7'001201ull
     };
+
+    // CSV export recipe — compiling this asset writes a CSV file to disk.
+    // Expects a single DataTable dependency.
+    inline constexpr wz::asset::SchemaID kCSVExportSchema{
+    0xF11E'CA55'E7'001202ull
+    };
 }
