@@ -11,8 +11,8 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
-#include <engine/assets/diagnostics/diagnostic_table.h>
-#include <engine/assets/diagnostics/diagnostic_table_compilers.h>
+#include <engine/assets/data_table/data_table.h>
+#include <engine/assets/data_table/data_table_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series_compilers.h>
 
@@ -36,7 +36,7 @@ namespace wz::engine::assets::internal {
         TOMLTable&                  toml_table;
         MeshTable&                  mesh_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
-        DiagnosticTable&            diagnostic_table;
+        DataTable&                  data_table;
         DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
     };
 

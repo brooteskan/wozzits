@@ -1,13 +1,13 @@
-// src/engine/assets/diagnostics/diagnostic_table.cpp
+// src/engine/assets/data_table/data_table.cpp
 
-#include <engine/assets/diagnostics/diagnostic_table.h>
+#include <engine/assets/data_table/data_table.h>
 #include <engine/assets/type_extensions.h>
 
 #include <utility>
 
 namespace wz::engine::assets
 {
-    bool DiagnosticTableData::valid() const noexcept
+    bool DataTableData::valid() const noexcept
     {
         if (schema_version == 0)
             return false;
@@ -15,14 +15,14 @@ namespace wz::engine::assets
         if (columns.empty())
             return false;
 
-        for (const DiagnosticColumn& column : columns) {
+        for (const DataTableColumn& column : columns) {
             if (column.name.empty())
                 return false;
         }
 
         const size_t expected = columns.size();
 
-        for (const DiagnosticRow& row : rows) {
+        for (const DataTableRow& row : rows) {
             if (row.cells.size() != expected)
                 return false;
         }
@@ -30,23 +30,23 @@ namespace wz::engine::assets
         return true;
     }
 
-    uint32_t DiagnosticTableData::column_count() const noexcept
+    uint32_t DataTableData::column_count() const noexcept
     {
         return static_cast<uint32_t>(columns.size());
     }
 
-    uint32_t DiagnosticTableData::row_count() const noexcept
+    uint32_t DataTableData::row_count() const noexcept
     {
         return static_cast<uint32_t>(rows.size());
     }
 
-    DiagnosticTable::DiagnosticTable()
+    DataTable::DataTable()
     {
         tables_.emplace_back();
         epochs_.push_back(0);
     }
 
-    wz::asset::ResourceHandle DiagnosticTable::add(DiagnosticTableData table)
+    wz::asset::ResourceHandle DataTable::add(DataTableData table)
     {
         if (!table.valid())
             return {};
@@ -59,17 +59,17 @@ namespace wz::engine::assets
         return wz::asset::ResourceHandle{
             .id = id,
             .epoch = epochs_[id],
-            .type = kAssetTypeDiagnosticTable,
+            .type = kAssetTypeDataTable,
         };
     }
 
-    const DiagnosticTableData* DiagnosticTable::get(
+    const DataTableData* DataTable::get(
         wz::asset::ResourceHandle handle) const
     {
         if (!handle.valid())
             return nullptr;
 
-        if (handle.type != kAssetTypeDiagnosticTable)
+        if (handle.type != kAssetTypeDataTable)
             return nullptr;
 
         if (handle.id >= tables_.size())
@@ -81,7 +81,7 @@ namespace wz::engine::assets
         return &tables_[handle.id];
     }
 
-    void DiagnosticTable::destroy()
+    void DataTable::destroy()
     {
         tables_.clear();
         epochs_.clear();

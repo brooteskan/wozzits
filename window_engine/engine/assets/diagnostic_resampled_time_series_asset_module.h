@@ -3,7 +3,7 @@
 // engine/assets/diagnostic_resampled_time_series_asset_module.h
 
 #include <asset/system.h>
-#include <engine/assets/diagnostic_table_asset_module.h>
+#include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
 #include <logging/logger.h>
 
@@ -16,7 +16,7 @@ namespace wz::engine::assets
     {
         std::string name;
 
-        DiagnosticTableAsset source{};
+        DataTableAsset source{};
 
         std::string axis_column;
         std::vector<std::string> metric_columns;

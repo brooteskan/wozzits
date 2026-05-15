@@ -204,7 +204,7 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000500ull
     };
 
-    inline constexpr wz::asset::SchemaID kInlineDiagnosticTableSchema{
+    inline constexpr wz::asset::SchemaID kInlineDataTableSchema{
     0xF11E'CA55'E7'001200ull
     };
 

@@ -1,6 +1,6 @@
-// src/engine/assets/diagnostics/diagnostic_table_compilers.cpp
+// src/engine/assets/data_table/data_table_compilers.cpp
 
-#include <engine/assets/diagnostics/diagnostic_table_compilers.h>
+#include <engine/assets/data_table/data_table_compilers.h>
 
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
@@ -11,34 +11,34 @@
 
 namespace wz::engine::assets::internal
 {
-    void register_diagnostic_table_compilers(
+    void register_data_table_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        DiagnosticTable& table)
+        DataTable& table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kInlineDiagnosticTableSchema,
-            .output_type = kAssetTypeDiagnosticTable,
+            .input_schema = kInlineDataTableSchema,
+            .output_type = kAssetTypeDataTable,
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 const auto* desc =
-                    std::any_cast<InlineDiagnosticTableCompileDesc>(&input.meta);
+                    std::any_cast<InlineDataTableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger.error("inline diagnostic table missing compile desc");
+                    logger.error("inline data table missing compile desc");
                     return compile_failed_node(input);
                 }
 
                 if (!dep_nodes.empty()) {
-                    logger.error("inline diagnostic table should not have dependencies");
+                    logger.error("inline data table should not have dependencies");
                     return compile_failed_node(input);
                 }
 
                 if (!desc->table.valid()) {
-                    logger.error("inline diagnostic table data is invalid");
+                    logger.error("inline data table data is invalid");
                     return compile_failed_node(input);
                 }
 
@@ -46,7 +46,7 @@ namespace wz::engine::assets::internal
                     table.add(desc->table);
 
                 if (!handle.valid()) {
-                    logger.error("failed to store diagnostic table");
+                    logger.error("failed to store data table");
                     return compile_failed_node(input);
                 }
 

@@ -46,7 +46,7 @@ namespace wz::engine::assets::internal
         }
 
         int find_column_index(
-            const DiagnosticTableData& table,
+            const DataTableData& table,
             const std::string& name)
         {
             for (uint32_t i = 0;
@@ -172,7 +172,7 @@ namespace wz::engine::assets::internal
         };
 
         DiagnosticResampledTimeSeriesData resample_table(
-            const DiagnosticTableData& table,
+            const DataTableData& table,
             const DiagnosticTimeSeriesResampleCompileDesc& desc,
             uint32_t& skipped_rows_out)
         {
@@ -213,7 +213,7 @@ namespace wz::engine::assets::internal
                 row_index < static_cast<uint32_t>(table.rows.size());
                 ++row_index)
             {
-                const DiagnosticRow& row = table.rows[row_index];
+                const DataTableRow& row = table.rows[row_index];
 
                 if (row.cells.size() != table.columns.size()) {
                     ++skipped_rows_out;
@@ -374,13 +374,13 @@ namespace wz::engine::assets::internal
     void register_diagnostic_resampled_time_series_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        DiagnosticTable& diagnostic_table,
+        DataTable& data_table,
         DiagnosticResampledTimeSeriesTable& resampled_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTableResampleTimeSeriesSchema,
             .output_type = kAssetTypeDiagnosticResampledTimeSeries,
-            .compile = [&logger, &diagnostic_table, &resampled_table](
+            .compile = [&logger, &data_table, &resampled_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -426,8 +426,8 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                const DiagnosticTableData* source =
-                    diagnostic_table.get(dep_handles[0]);
+                const DataTableData* source =
+                    data_table.get(dep_handles[0]);
 
                 if (!source || !source->valid()) {
                     logger.error(

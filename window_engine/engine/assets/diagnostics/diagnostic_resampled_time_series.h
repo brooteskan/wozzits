@@ -3,7 +3,6 @@
 // engine/assets/diagnostics/diagnostic_resampled_time_series.h
 
 #include <asset/types.h>
-#include <engine/assets/diagnostics/diagnostic_table.h>
 
 #include <cstdint>
 #include <string>
@@ -78,24 +77,6 @@ namespace wz::engine::assets
         std::vector<DiagnosticResampledTimeSeriesData> series_;
         std::vector<uint32_t> epochs_;
     };
-
-    //struct DiagnosticTimeSeriesResampleDesc
-    //{
-    //    std::string name;
-
-    //    DiagnosticTableAsset source{};
-
-    //    std::string axis_column;
-    //    std::vector<std::string> metric_columns;
-
-    //    double bucket_width = 0.0;
-
-    //    // If false, the compiler uses the min/max axis values found in the
-    //    // parsed source rows.
-    //    bool use_range = false;
-    //    double start = 0.0;
-    //    double end = 0.0;
-    //};
 
     struct DiagnosticTimeSeriesResampleCompileDesc
     {
