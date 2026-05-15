@@ -45,6 +45,10 @@ target_sources(window_engine PRIVATE
     assets/diagnostics/diagnostic_resampled_time_series_compilers.cpp
     assets/diagnostic_resampled_time_series_asset_module.cpp
 
+    assets/csv_export/csv_export.cpp
+    assets/csv_export/csv_export_compilers.cpp
+    assets/csv_export_asset_module.cpp
+
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
   )

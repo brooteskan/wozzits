@@ -304,5 +304,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series_asset_module)
 
+    rs_add_test_group(asset_csv_export csv_export)
+    rs_add_test_group(asset_csv_export csv_export_asset_module)
+
     rs_add_test_group(game_app game_app_main)
 endif()

@@ -35,6 +35,7 @@
 
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
+#include <engine/assets/csv_export_asset_module.h>
 
 #include <string>
 #include <vector>
@@ -112,6 +113,10 @@ namespace wz::engine::assets
 
         DiagnosticResampledTimeSeriesAssetModule&       diagnostic_resampled_time_series()       { return diagnostic_resampled_time_series_;  }
         const DiagnosticResampledTimeSeriesAssetModule& diagnostic_resampled_time_series() const { return diagnostic_resampled_time_series_; }
+
+        CSVExportAssetModule&       csv_export()       { return csv_export_; }
+        const CSVExportAssetModule& csv_export() const { return csv_export_; }
+
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -140,6 +145,7 @@ namespace wz::engine::assets
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         DataTable                   data_table_;
         DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table_;
+        CSVExportTable              csv_export_table_;
 
         wz::asset::AssetSystem system_;
 
@@ -153,6 +159,7 @@ namespace wz::engine::assets
         GaussianSplatAssetModule    gaussian_splats_;
         DataTableAssetModule        data_tables_;
         DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
+        CSVExportAssetModule        csv_export_;
     };
 
 } // namespace wz::engine::assets
