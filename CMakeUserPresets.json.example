@@ -1,0 +1,34 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "local-v8-debug",
+      "displayName": "Local V8 Debug (clang-cl)",
+      "description": "Debug build with V8 scripting enabled. Requires a local V8 build and wozzits-v8 sibling repo. Copy this file to CMakeUserPresets.json and update the paths below.",
+      "inherits": "windows-debug",
+      "cacheVariables": {
+        "WOZZITS_ENABLE_V8_SCRIPTING": "ON",
+        "CMAKE_C_COMPILER":   "C:/path/to/v8/third_party/llvm-build/Release+Asserts/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "C:/path/to/v8/third_party/llvm-build/Release+Asserts/bin/clang-cl.exe",
+        "V8_ROOT":        "C:/path/to/v8",
+        "V8_INCLUDE_DIR": "C:/path/to/v8/include",
+        "V8_LIB_DIR":     "C:/path/to/v8/out.gn/x64.debug.sample/obj"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "local-v8-debug",
+      "displayName": "Local V8 Debug",
+      "configurePreset": "local-v8-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "local-v8-debug",
+      "displayName": "Local V8 Debug",
+      "configurePreset": "local-v8-debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
