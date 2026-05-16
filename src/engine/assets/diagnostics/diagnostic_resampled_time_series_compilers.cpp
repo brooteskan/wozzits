@@ -378,6 +378,63 @@ namespace wz::engine::assets::internal
         DiagnosticResampledTimeSeriesTable& resampled_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kDiagnosticResampledTimeSeriesToDataTableSchema,
+            .output_type  = kAssetTypeDataTable,
+            .compile = [&logger, &data_table, &resampled_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                if (!std::any_cast<DiagnosticResampledTimeSeriesToDataTableCompileDesc>(
+                        &input.meta))
+                {
+                    logger.error(
+                        "resampled time series table view missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_nodes.size() != 1 || dep_handles.size() != 1) {
+                    logger.error(
+                        "resampled time series table view requires exactly one "
+                        "source dependency");
+                    return compile_failed_node(input);
+                }
+
+                const DiagnosticResampledTimeSeriesData* source =
+                    resampled_table.get(dep_handles[0]);
+
+                if (!source || !source->valid()) {
+                    logger.error(
+                        "resampled time series table view source is invalid");
+                    return compile_failed_node(input);
+                }
+
+                DataTableData table_data = make_data_table(*source);
+
+                if (!table_data.valid()) {
+                    logger.error(
+                        "resampled time series table view produced invalid table");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::ResourceHandle handle =
+                    data_table.add(std::move(table_data));
+
+                if (!handle.valid()) {
+                    logger.error(
+                        "failed to store resampled time series table view");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTableResampleTimeSeriesSchema,
             .output_type = kAssetTypeDiagnosticResampledTimeSeries,
             .compile = [&logger, &data_table, &resampled_table](

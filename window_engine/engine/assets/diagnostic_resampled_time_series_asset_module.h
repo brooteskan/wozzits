@@ -6,6 +6,7 @@
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
 #include <logging/logger.h>
+#include <string>
 
 #include <string>
 #include <vector>
@@ -58,6 +59,13 @@ namespace wz::engine::assets
 
         DiagnosticResampledTimeSeriesAsset create_resampled_time_series(
             const DiagnosticTimeSeriesResampleDesc& desc);
+
+        // Creates a DataTable asset that is a flat view of a compiled resampled
+        // time series. The returned DataTableAsset can be passed directly to
+        // CSVExportAssetModule::create_csv_export or any other DataTable consumer.
+        DataTableAsset create_data_table_view(
+            const std::string& name,
+            const DiagnosticResampledTimeSeriesAsset& source);
 
         DiagnosticResampledTimeSeriesHandle get_resampled_time_series(
             const DiagnosticResampledTimeSeriesAsset& asset) const;

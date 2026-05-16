@@ -79,6 +79,8 @@ namespace wz::engine::assets
         std::vector<uint32_t> epochs_;
     };
 
+    struct DiagnosticResampledTimeSeriesToDataTableCompileDesc {};
+
     struct DiagnosticTimeSeriesResampleCompileDesc
     {
         std::string axis_column;

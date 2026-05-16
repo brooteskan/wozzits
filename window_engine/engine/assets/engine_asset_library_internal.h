@@ -15,6 +15,8 @@
 #include <engine/assets/data_table/data_table_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series_compilers.h>
+#include <engine/assets/diagnostics/diagnostic_timeframe_summary.h>
+#include <engine/assets/diagnostics/diagnostic_timeframe_summary_compilers.h>
 #include <engine/assets/csv_export/csv_export.h>
 #include <engine/assets/csv_export/csv_export_compilers.h>
 #include <engine/assets/renderable/renderable.h>
@@ -40,10 +42,11 @@ namespace wz::engine::assets::internal {
         TOMLTable&                  toml_table;
         MeshTable&                  mesh_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
-        DataTable&                  data_table;
+        DataTable&                          data_table;
         DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
-        CSVExportTable&             csv_export_table;
-        RenderableAssetTable&       renderable_table;
+        DiagnosticTimeframeSummaryTable&    diagnostic_timeframe_summary_table;
+        CSVExportTable&                     csv_export_table;
+        RenderableAssetTable&               renderable_table;
     };
 
     wz::asset::AssetNode compile_failed_node(

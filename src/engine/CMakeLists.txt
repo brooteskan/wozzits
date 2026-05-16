@@ -45,6 +45,10 @@ target_sources(window_engine PRIVATE
     assets/diagnostics/diagnostic_resampled_time_series_compilers.cpp
     assets/diagnostic_resampled_time_series_asset_module.cpp
 
+    assets/diagnostics/diagnostic_timeframe_summary.cpp
+    assets/diagnostics/diagnostic_timeframe_summary_compilers.cpp
+    assets/diagnostic_timeframe_summary_asset_module.cpp
+
     assets/csv_export/csv_export.cpp
     assets/csv_export/csv_export_compilers.cpp
     assets/csv_export_asset_module.cpp

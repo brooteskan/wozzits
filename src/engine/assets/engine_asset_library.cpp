@@ -50,6 +50,7 @@ namespace wz::engine::assets
         , gaussian_splat_cloud_table_{}
         , data_table_{}
         , diagnostic_resampled_time_series_table_{}
+        , diagnostic_timeframe_summary_table_{}
         , csv_export_table_{}
         , renderable_table_{}
         , json_table_{}
@@ -67,6 +68,7 @@ namespace wz::engine::assets
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
                 .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
+                .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
                 .csv_export_table = csv_export_table_,
                 .renderable_table = renderable_table_,
             }))
@@ -80,6 +82,7 @@ namespace wz::engine::assets
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , data_tables_(system_, logger_, data_table_)
         , diagnostic_resampled_time_series_(system_, logger_, diagnostic_resampled_time_series_table_)
+        , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)
         , csv_export_(system_, logger_, csv_export_table_)
         , renderables_(system_, logger_, renderable_table_)
     {

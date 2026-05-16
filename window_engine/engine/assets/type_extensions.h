@@ -1376,4 +1376,10 @@ namespace wz::engine::assets {
     // Compiling this asset writes a CSV file to the specified output path.
     inline constexpr wz::asset::AssetType kAssetTypeCSVExport =
         static_cast<wz::asset::AssetType>(4112);
+
+    // Implemented: frame-indexed summary of a DataTable.
+    // Filters rows by a frame column, splits into fixed-size frame buckets,
+    // and computes per-metric min/max/mean/delta/first/last with summary_text.
+    inline constexpr wz::asset::AssetType kAssetTypeDiagnosticTimeframeSummary =
+        static_cast<wz::asset::AssetType>(4113);
 } // namespace wz::engine::assets
