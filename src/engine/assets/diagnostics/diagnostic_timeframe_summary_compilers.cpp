@@ -275,6 +275,53 @@ namespace wz::engine::assets::internal
         DataTable& data_table,
         DiagnosticTimeframeSummaryTable& summary_table)
     {
+        // ── Bridge: DiagnosticTimeframeSummary → DataTable ───────────────────────
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kDiagnosticTimeframeSummaryToDataTableSchema,
+            .output_type  = kAssetTypeDataTable,
+            .compile = [&logger, &summary_table, &data_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                if (dep_nodes.size() != 1 || dep_handles.size() != 1) {
+                    logger.error(
+                        "timeframe summary table view requires exactly one summary dependency");
+                    return compile_failed_node(input);
+                }
+
+                const DiagnosticTimeframeSummaryData* source =
+                    summary_table.get(dep_handles[0]);
+
+                if (!source || !source->valid()) {
+                    logger.error(
+                        "timeframe summary table view source summary is invalid");
+                    return compile_failed_node(input);
+                }
+
+                DataTableData table = wz::engine::assets::make_data_table(*source);
+
+                if (!table.valid()) {
+                    logger.error("timeframe summary table view produced invalid data");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::ResourceHandle handle = data_table.add(std::move(table));
+
+                if (!handle.valid()) {
+                    logger.error("failed to store timeframe summary table view");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+        });
+
+        // ── Primary: DataTable → DiagnosticTimeframeSummary ──────────────────────
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTimeframeSummarySchema,
             .output_type  = kAssetTypeDiagnosticTimeframeSummary,

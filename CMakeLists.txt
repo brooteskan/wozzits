@@ -308,6 +308,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series_csv_chain)
     rs_add_test_group(asset_diagnostics diagnostic_timeframe_summary)
     rs_add_test_group(asset_diagnostics diagnostic_timeframe_summary_asset_module)
+    rs_add_test_group(asset_diagnostics diagnostic_timeframe_summary_csv_chain)
 
     rs_add_test_group(asset_csv_export csv_export)
     rs_add_test_group(asset_csv_export csv_export_asset_module)

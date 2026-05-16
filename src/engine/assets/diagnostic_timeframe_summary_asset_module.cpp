@@ -3,6 +3,7 @@
 #include <engine/assets/diagnostic_timeframe_summary_asset_module.h>
 
 #include <engine/assets/key_factories/diagnostic_timeframe_summary.h>
+#include <engine/assets/key_factories/diagnostic_timeframe_summary_table_view.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -79,6 +80,41 @@ namespace wz::engine::assets
         }
 
         return DiagnosticTimeframeSummaryAsset{ .output = key };
+    }
+
+    DataTableAsset DiagnosticTimeframeSummaryAssetModule::create_data_table_view(
+        const std::string& name,
+        const DiagnosticTimeframeSummaryAsset& source)
+    {
+        if (name.empty()) {
+            logger_.error("timeframe summary table view has empty name");
+            return {};
+        }
+
+        if (!source.valid()) {
+            logger_.error(
+                "timeframe summary table view has invalid source: " + name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_diagnostic_timeframe_summary_table_view_key(name, source.output);
+
+        wz::asset::AssetNode node;
+        node.key     = key;
+        node.type    = kAssetTypeDataTable;
+        node.schema  = kDiagnosticTimeframeSummaryToDataTableSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = DiagnosticTimeframeSummaryToDataTableCompileDesc{};
+
+        if (!system_.register_asset(std::move(node), { source.output })) {
+            logger_.error(
+                "failed to register timeframe summary table view: " + name);
+            return {};
+        }
+
+        return DataTableAsset{ .output = key };
     }
 
     DiagnosticTimeframeSummaryHandle

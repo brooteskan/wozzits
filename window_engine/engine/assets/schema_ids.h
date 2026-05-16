@@ -233,6 +233,12 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'001204ull
     };
 
+    // Bridge recipe — promotes a compiled DiagnosticTimeframeSummary into a
+    // DataTable so it can feed into CSVExport or any other DataTable consumer.
+    inline constexpr wz::asset::SchemaID kDiagnosticTimeframeSummaryToDataTableSchema{
+    0xF11E'CA55'E7'001205ull
+    };
+
     inline constexpr wz::asset::SchemaID kMeshWireframeRenderableSchema{
     0xF11E'CA55'E7'000700ull
     };

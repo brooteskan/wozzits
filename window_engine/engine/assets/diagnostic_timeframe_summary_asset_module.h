@@ -57,6 +57,10 @@ namespace wz::engine::assets
         DiagnosticTimeframeSummaryAsset create_timeframe_summary(
             const DiagnosticTimeframeSummaryDesc& desc);
 
+        DataTableAsset create_data_table_view(
+            const std::string& name,
+            const DiagnosticTimeframeSummaryAsset& source);
+
         DiagnosticTimeframeSummaryHandle get_summary(
             const DiagnosticTimeframeSummaryAsset& asset) const;
 

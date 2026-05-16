@@ -3,6 +3,7 @@
 // engine/assets/diagnostics/diagnostic_timeframe_summary.h
 
 #include <asset/types.h>
+#include <engine/assets/data_table/data_table.h>
 
 #include <cstdint>
 #include <string>
@@ -78,4 +79,14 @@ namespace wz::engine::assets
         uint32_t frame_end         = 0;
         uint32_t frames_per_bucket = 0;
     };
+
+    // Tag: bridge compiler – promotes a DiagnosticTimeframeSummary into a DataTable.
+    struct DiagnosticTimeframeSummaryToDataTableCompileDesc {};
+
+    // Returns a DataTableData view of the timeframe summary.
+    // One row per bucket. Columns: bucket_index, frame_start, frame_end, row_count,
+    // then for each metric: <metric>_sample_count, _min, _max, _mean, _first, _last, _delta.
+    // Caller is responsible for passing a valid summary.
+    [[nodiscard]] DataTableData make_data_table(
+        const DiagnosticTimeframeSummaryData& summary);
 }
