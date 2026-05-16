@@ -36,6 +36,18 @@ namespace wz::engine::rendering
                 .pixel_target = "ps_5_0",
             };
             return true;
+
+        case BuiltinRenderProgram::ScalarFieldDebug:
+            out = ShaderPairDesc{
+                .name = "scalar_field_debug",
+                .vertex_path = "shaders/scalar_field/scalar_field_vs.hlsl",
+                .pixel_path = "shaders/scalar_field/scalar_field_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target = "ps_5_0",
+            };
+            return true;
         }
 
         out = {};

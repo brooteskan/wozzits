@@ -64,6 +64,27 @@ namespace wz::engine::rendering
 
             return true;
         }
+        case BuiltinRenderProgram::ScalarFieldDebug:
+        {
+            if (prepared.kind != RenderableKind::ScalarField)
+                return false;
+
+            if (prepared.gpu_resource.type !=
+                wz::gpu::GPUResourceType::Texture)
+            {
+                return false;
+            }
+
+            wz::gpu::dx12::create_scalar_field_debug_context(
+                device,
+                wz::gpu::dx12::ScalarFieldDebugContextDesc{
+                    .vertex_shader = shaders.vertex,
+                    .pixel_shader = shaders.pixel,
+                    .scalar_field_texture = prepared.gpu_resource,
+                });
+
+            return true;
+        }
         }
 
         return false;

@@ -4,9 +4,11 @@
 
 #include <gpu/mesh.h>
 #include <gpu/gaussian_splat.h>
+#include <gpu/scalar_field.h>
 
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/scalar_field_asset_module.h>
 
 namespace wz::engine::rendering
 {
@@ -102,6 +104,41 @@ namespace wz::engine::rendering
             add(renderable->source_asset, renderable->kind, gpu_mesh);
 
             out.gpu_resource = gpu_mesh;
+            return out;
+        }
+
+        case wz::engine::assets::RenderableKind::ScalarField:
+        {
+            const wz::engine::assets::ScalarFieldAsset scalar_field_asset{
+                .output = renderable->source_asset,
+            };
+
+            const wz::engine::assets::ScalarFieldHandle scalar_field_handle =
+                assets.scalar_fields().get_scalar_field(scalar_field_asset);
+
+            if (!scalar_field_handle.valid())
+                return {};
+
+            const wz::engine::assets::ScalarFieldData* scalar_field_data =
+                assets.scalar_fields().get_scalar_field_data(scalar_field_handle);
+
+            if (!scalar_field_data || !scalar_field_data->valid())
+                return {};
+
+            const wz::gpu::GPUHandle gpu_scalar_field_texture =
+                wz::gpu::upload_scalar_field_texture(
+                    device,
+                    *scalar_field_data);
+
+            if (!gpu_scalar_field_texture.valid())
+                return {};
+
+            add(
+                renderable->source_asset,
+                renderable->kind,
+                gpu_scalar_field_texture);
+
+            out.gpu_resource = gpu_scalar_field_texture;
             return out;
         }
 

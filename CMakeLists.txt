@@ -270,9 +270,10 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(jobs render_prep_job_tests)
     rs_add_test_group(jobs profiler_tests)
 
-    rs_add_test_group(window test_window)
+    rs_add_test_group(window test_scalar_field)
     rs_add_test_group(window test_mesh_wireframe)
     rs_add_test_group(window test_gaussian_splat)
+
     rs_add_test_group(asset new_asset_test_1)
     rs_add_test_group(asset engine_asset_library)
     rs_add_test_group(asset scalar_field_tests)
