@@ -162,28 +162,22 @@ int main()
         if (!report.ok())
             return 1;
 
-        auto shader_handles = assets.shaders().get_shader_pair(shaders);
-        if (!shader_handles.valid())
-            return 1;
-
-        RenderableHandle renderable_handle =
-            assets.renderables().get_renderable(renderable_asset);
-
-        if (!renderable_handle.valid())
-            return 1;
-
-        // ── realize renderable to GPU resource ────────────────────────────
         wz::engine::rendering::RenderableGpuCache renderable_cache;
+        wz::engine::rendering::DebugRenderableSetup debug_setup{};
 
-        const wz::engine::rendering::PreparedRenderable prepared =
-            renderable_cache.realize(
-                device,
-                assets,
-                renderable_handle
-            );
-
-        if (!prepared.valid())
+        if (!wz::engine::rendering::setup_debug_renderable_context(
+            device,
+            assets,
+            renderable_cache,
+            renderable_asset,
+            shaders,
+            debug_setup))
+        {
             return 1;
+        }
+
+        const wz::engine::rendering::PreparedRenderable& prepared =
+            debug_setup.prepared;
 
         if (prepared.kind != RenderableKind::Mesh)
             return 1;
@@ -193,15 +187,6 @@ int main()
 
         if (prepared.program != BuiltinRenderProgram::MeshWireframeDebug)
             return 1;
-
-        // ── create debug draw context ──────────────────────
-        if (!wz::engine::rendering::create_debug_context_for_prepared_renderable(
-            device,
-            prepared,
-            shader_handles))
-        {
-            return 1;
-        }
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))
