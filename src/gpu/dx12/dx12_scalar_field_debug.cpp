@@ -247,8 +247,8 @@ namespace wz::gpu::dx12
 
         DebugParams params{};
 
-        params.display_min = impl->scalar_debug_ctx->display_min;
-        params.display_max = impl->scalar_debug_ctx->display_max;
+        params.display_min = view.display_min;
+        params.display_max = view.display_max;
 
         const float range =
             params.display_max - params.display_min;
@@ -257,7 +257,7 @@ namespace wz::gpu::dx12
             range != 0.0f ? 1.0f / range : 0.0f;
 
         params.flags =
-            impl->scalar_debug_ctx->normalize_for_display ? 1u : 0u;
+            view.normalize_for_display ? 1u : 0u;
 
         params.offset_x = view.offset_x;
         params.offset_y = view.offset_y;

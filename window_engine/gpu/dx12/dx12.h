@@ -71,6 +71,10 @@ namespace wz::gpu::dx12
         float offset_y = 0.0f;
         float zoom = 1.0f;
         float pad0 = 0.0f;
+
+        float display_min = 0.0f;
+        float display_max = 1.0f;
+        bool normalize_for_display = true;
     };
 
     struct ScalarFieldDebugContextDesc
