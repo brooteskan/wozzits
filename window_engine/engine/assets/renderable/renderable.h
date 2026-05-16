@@ -13,6 +13,7 @@ namespace wz::engine::assets
     {
         Mesh,
         GaussianSplatCloud,
+        ScalarField,
     };
 
     enum class RenderDomain : uint8_t
@@ -27,6 +28,7 @@ namespace wz::engine::assets
     {
         MeshWireframeDebug,
         GaussianSplatDebug,
+        ScalarFieldDebug,
     };
 
     enum RenderPolicyFlags : uint32_t
@@ -76,5 +78,10 @@ namespace wz::engine::assets
     struct GaussianSplatDebugRenderableCompileDesc
     {
         wz::asset::AssetKey splat_cloud_asset{};
+    };
+
+    struct ScalarFieldDebugRenderableCompileDesc
+    {
+        wz::asset::AssetKey scalar_field_asset{};
     };
 }

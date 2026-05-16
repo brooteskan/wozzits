@@ -96,6 +96,44 @@ namespace wz::engine::assets
         };
     }
 
+    RenderableAsset RenderableAssetModule::create_scalar_field_debug(
+        const ScalarFieldDebugRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("scalar field debug renderable has empty name");
+            return {};
+        }
+
+        if (!desc.scalar_field.valid()) {
+            logger_.error("scalar field debug renderable has invalid scalar field: " + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_scalar_field_debug_renderable_key(
+                desc.name,
+                desc.scalar_field.output);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kScalarFieldDebugRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = ScalarFieldDebugRenderableCompileDesc{
+            .scalar_field_asset = desc.scalar_field.output,
+        };
+
+        if (!system_.register_asset(std::move(node), { desc.scalar_field.output })) {
+            logger_.error("failed to register scalar field debug renderable: " + desc.name);
+            return {};
+        }
+
+        return RenderableAsset{
+            .output = key,
+        };
+    }
+
     RenderableHandle RenderableAssetModule::get_renderable(
         const RenderableAsset& asset) const
     {

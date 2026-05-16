@@ -42,3 +42,27 @@ TEST(RenderableAssetTable, RejectsWrongHandleType)
 
     EXPECT_EQ(table.get(wrong), nullptr);
 }
+
+TEST(RenderableAssetTable, StoresScalarFieldRenderable)
+{
+    wz::engine::assets::RenderableAssetTable table;
+
+    wz::engine::assets::RenderableAssetData data;
+    data.kind = wz::engine::assets::RenderableKind::ScalarField;
+    data.source_asset.content_hash = { 1, 0 };
+    data.program = wz::engine::assets::BuiltinRenderProgram::ScalarFieldDebug;
+    data.domain = wz::engine::assets::RenderDomain::Debug;
+    data.policy_flags = wz::engine::assets::RenderPolicy_None;
+
+    const auto handle = table.add(data);
+
+    ASSERT_TRUE(handle.valid());
+    EXPECT_EQ(handle.type, wz::engine::assets::kAssetTypeRenderable);
+
+    const auto* stored = table.get(handle);
+
+    ASSERT_NE(stored, nullptr);
+    EXPECT_TRUE(stored->valid());
+    EXPECT_EQ(stored->kind, wz::engine::assets::RenderableKind::ScalarField);
+    EXPECT_EQ(stored->program, wz::engine::assets::BuiltinRenderProgram::ScalarFieldDebug);
+}

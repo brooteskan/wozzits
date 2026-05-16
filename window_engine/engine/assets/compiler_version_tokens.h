@@ -44,4 +44,5 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kCSVExportCompilerVersion = 1;
     inline constexpr uint64_t kMeshWireframeRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
 }

@@ -37,4 +37,18 @@ namespace wz::engine::assets
             .deps_hash = detail::key_to_dep_hash(splat_cloud_key),
         };
     }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_scalar_field_debug_renderable_key(
+        std::string_view name,
+        const wz::asset::AssetKey& scalar_field_key) noexcept
+    {
+        const uint64_t h = detail::fnv1a_64(name);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(kScalarFieldDebugRenderableSchema.value),
+            .compiler_hash = detail::hash_u64(kScalarFieldDebugRenderableCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(scalar_field_key),
+        };
+    }
 }

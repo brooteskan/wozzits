@@ -31,6 +31,7 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         MeshTable& mesh_table,
         GaussianSplatCloudTable& gaussian_splat_cloud_table,
+        ScalarFieldTable& scalar_field_table,
         RenderableAssetTable& renderable_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
@@ -92,7 +93,60 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kScalarFieldDebugRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .compile = [&logger, &scalar_field_table, &renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<ScalarFieldDebugRenderableCompileDesc>(&input.meta);
 
+                if (!desc) {
+                    logger.error("scalar field debug renderable missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 1) {
+                    logger.error("scalar field debug renderable requires one scalar field dependency");
+                    return compile_failed_node(input);
+                }
+
+                const ScalarFieldData* field =
+                    scalar_field_table.get(dep_handles[0]);
+
+                if (!field || !field->valid()) {
+                    logger.error("scalar field debug renderable source field is invalid");
+                    return compile_failed_node(input);
+                }
+
+                RenderableAssetData data{};
+                data.kind = RenderableKind::ScalarField;
+                data.source_asset = desc->scalar_field_asset;
+                data.program = BuiltinRenderProgram::ScalarFieldDebug;
+                data.domain = RenderDomain::Debug;
+                data.policy_flags = RenderPolicy_None;
+
+                // Scalar fields are screen/debug visualizations for now.
+                // Bounds are not meaningful yet, so leave zeroed.
+
+                wz::asset::ResourceHandle handle =
+                    renderable_table.add(std::move(data));
+
+                if (!handle.valid()) {
+                    logger.error("failed to store scalar field debug renderable");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
@@ -150,5 +204,7 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+
     }
 }

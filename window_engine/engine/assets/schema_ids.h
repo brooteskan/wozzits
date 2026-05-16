@@ -227,4 +227,8 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
         0xF11E'CA55'E7'000701ull
     };
+
+    inline constexpr wz::asset::SchemaID kScalarFieldDebugRenderableSchema{
+    0xF11E'CA55'E7'000702ull
+    };
 }

@@ -7,6 +7,7 @@
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/scalar_field_asset_module.h>
 
 #include <logging/logger.h>
 
@@ -24,6 +25,12 @@ namespace wz::engine::assets
     {
         std::string name;
         GaussianSplatCloudAsset splat_cloud{};
+    };
+
+    struct ScalarFieldDebugRenderableDesc
+    {
+        std::string name;
+        ScalarFieldAsset scalar_field{};
     };
 
     struct RenderableAsset
@@ -59,6 +66,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_gaussian_splat_debug(
             const GaussianSplatDebugRenderableDesc& desc);
+
+        RenderableAsset create_scalar_field_debug(
+            const ScalarFieldDebugRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;
