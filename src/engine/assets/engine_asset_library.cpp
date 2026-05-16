@@ -51,6 +51,7 @@ namespace wz::engine::assets
         , data_table_{}
         , diagnostic_resampled_time_series_table_{}
         , csv_export_table_{}
+        , renderable_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
                 .device                    = device,
@@ -64,6 +65,7 @@ namespace wz::engine::assets
                 .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
                 .csv_export_table = csv_export_table_,
+                .renderable_table = renderable_table_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -76,6 +78,7 @@ namespace wz::engine::assets
         , data_tables_(system_, logger_, data_table_)
         , diagnostic_resampled_time_series_(system_, logger_, diagnostic_resampled_time_series_table_)
         , csv_export_(system_, logger_, csv_export_table_)
+        , renderables_(system_, logger_, renderable_table_)
     {
     }
 

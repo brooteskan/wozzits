@@ -17,6 +17,8 @@
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series_compilers.h>
 #include <engine/assets/csv_export/csv_export.h>
 #include <engine/assets/csv_export/csv_export_compilers.h>
+#include <engine/assets/renderable/renderable.h>
+#include <engine/assets/renderable/renderable_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -41,6 +43,7 @@ namespace wz::engine::assets::internal {
         DataTable&                  data_table;
         DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
         CSVExportTable&             csv_export_table;
+        RenderableAssetTable&       renderable_table;
     };
 
     wz::asset::AssetNode compile_failed_node(

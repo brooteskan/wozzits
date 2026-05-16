@@ -26,6 +26,7 @@ namespace wz::engine::assets::internal
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
         register_csv_export_compilers(registry, ctx.logger, ctx.data_table, ctx.csv_export_table);
+        register_renderable_compilers(registry, ctx.logger, ctx.mesh_table, ctx.gaussian_splat_cloud_table, ctx.renderable_table);
 
         return registry;
     }

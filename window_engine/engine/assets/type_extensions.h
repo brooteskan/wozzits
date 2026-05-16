@@ -491,7 +491,9 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeBindingLayout =
         static_cast<wz::asset::AssetType>(1047);
 
-
+    // Renderable asset.
+    inline constexpr wz::asset::AssetType kAssetTypeRenderable =
+        static_cast<wz::asset::AssetType>(1048);
     // ─── Material asset types: 1060–1099 ─────────────────────────────────────────
     // CPU-side authored material definitions and instances.
     //

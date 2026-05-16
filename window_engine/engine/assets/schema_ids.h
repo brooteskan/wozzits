@@ -34,7 +34,9 @@ namespace wz::engine::assets {
     //
     //   0x000600 – 0x0006FF   Materials and binding descriptions
     //
-    //   0x000700 – 0x0007FF   Scenes, prefabs, worlds, and authored content
+    //   0x000700 – 0x0007FF   Scenes, prefabs, renderables, worlds, and authored content
+    //                          Scene/prefab recipes, renderable bindings,
+    //                          authored world content, data-to-scene interpretation recipes.
     //
     //   0x000800 – 0x0008FF   Animation
     //
@@ -216,5 +218,13 @@ namespace wz::engine::assets {
     // Expects a single DataTable dependency.
     inline constexpr wz::asset::SchemaID kCSVExportSchema{
     0xF11E'CA55'E7'001202ull
+    };
+
+    inline constexpr wz::asset::SchemaID kMeshWireframeRenderableSchema{
+    0xF11E'CA55'E7'000700ull
+    };
+
+    inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
+        0xF11E'CA55'E7'000701ull
     };
 }
