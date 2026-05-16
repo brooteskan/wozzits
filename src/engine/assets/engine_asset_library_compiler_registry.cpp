@@ -8,6 +8,7 @@
 #include <engine/assets/json/json_compilers.h>
 #include <engine/assets/toml/toml_compilers.h>
 #include <engine/assets/mesh/mesh_compilers.h>
+#include <engine/assets/diagnostics/diagnostic_timeframe_summary_compilers.h>
 
 namespace wz::engine::assets::internal
 {
@@ -25,6 +26,7 @@ namespace wz::engine::assets::internal
         register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table);
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
+        register_diagnostic_timeframe_summary_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_timeframe_summary_table);
         register_csv_export_compilers(registry, ctx.logger, ctx.data_table, ctx.csv_export_table);
         register_renderable_compilers(registry, ctx);
 

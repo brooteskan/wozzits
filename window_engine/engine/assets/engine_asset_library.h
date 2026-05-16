@@ -35,6 +35,7 @@
 
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
+#include <engine/assets/diagnostic_timeframe_summary_asset_module.h>
 #include <engine/assets/csv_export_asset_module.h>
 
 #include <engine/assets/renderable_asset_module.h>
@@ -116,6 +117,9 @@ namespace wz::engine::assets
         DiagnosticResampledTimeSeriesAssetModule&       diagnostic_resampled_time_series()       { return diagnostic_resampled_time_series_;  }
         const DiagnosticResampledTimeSeriesAssetModule& diagnostic_resampled_time_series() const { return diagnostic_resampled_time_series_; }
 
+        DiagnosticTimeframeSummaryAssetModule&       diagnostic_timeframe_summaries()       { return diagnostic_timeframe_summaries_; }
+        const DiagnosticTimeframeSummaryAssetModule& diagnostic_timeframe_summaries() const { return diagnostic_timeframe_summaries_; }
+
         CSVExportAssetModule&       csv_export()       { return csv_export_; }
         const CSVExportAssetModule& csv_export() const { return csv_export_; }
 
@@ -148,8 +152,9 @@ namespace wz::engine::assets
         MeshTable                   mesh_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         DataTable                   data_table_;
-        DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table_;
-        CSVExportTable              csv_export_table_;
+        DiagnosticResampledTimeSeriesTable  diagnostic_resampled_time_series_table_;
+        DiagnosticTimeframeSummaryTable     diagnostic_timeframe_summary_table_;
+        CSVExportTable                      csv_export_table_;
         RenderableAssetTable        renderable_table_;
 
         wz::asset::AssetSystem system_;
@@ -164,7 +169,8 @@ namespace wz::engine::assets
         GaussianSplatAssetModule    gaussian_splats_;
         DataTableAssetModule        data_tables_;
         DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
-        CSVExportAssetModule        csv_export_;
+        DiagnosticTimeframeSummaryAssetModule    diagnostic_timeframe_summaries_;
+        CSVExportAssetModule                     csv_export_;
         RenderableAssetModule       renderables_;
     };
 
