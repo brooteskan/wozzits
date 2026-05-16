@@ -30,40 +30,50 @@ namespace wz::engine::assets
 
     // ─── DiagnosticTimeframeSummaryTable ─────────────────────────────────────────
 
-    DiagnosticTimeframeSummaryTable::DiagnosticTimeframeSummaryTable() = default;
+    DiagnosticTimeframeSummaryTable::DiagnosticTimeframeSummaryTable()
+    {
+        summaries_.emplace_back();
+        epochs_.push_back(0);
+    }
 
     wz::asset::ResourceHandle DiagnosticTimeframeSummaryTable::add(
         DiagnosticTimeframeSummaryData data)
     {
-        const auto index = static_cast<uint32_t>(summaries_.size());
+        const uint32_t id = static_cast<uint32_t>(summaries_.size());
         summaries_.push_back(std::move(data));
         epochs_.push_back(1);
 
         return wz::asset::ResourceHandle{
+            .id    = id,
+            .epoch = epochs_[id],
             .type  = kAssetTypeDiagnosticTimeframeSummary,
-            .index = index,
-            .epoch = 1,
         };
     }
 
     const DiagnosticTimeframeSummaryData* DiagnosticTimeframeSummaryTable::get(
         wz::asset::ResourceHandle handle) const
     {
+        if (!handle.valid())
+            return nullptr;
+
         if (handle.type != kAssetTypeDiagnosticTimeframeSummary)
             return nullptr;
 
-        if (handle.index >= summaries_.size())
+        if (handle.id >= summaries_.size())
             return nullptr;
 
-        if (handle.epoch != epochs_[handle.index])
+        if (epochs_[handle.id] != handle.epoch)
             return nullptr;
 
-        return &summaries_[handle.index];
+        return &summaries_[handle.id];
     }
 
     void DiagnosticTimeframeSummaryTable::destroy()
     {
         summaries_.clear();
         epochs_.clear();
+
+        summaries_.emplace_back();
+        epochs_.push_back(0);
     }
 }
