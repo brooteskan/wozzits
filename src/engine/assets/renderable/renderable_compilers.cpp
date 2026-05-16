@@ -1,7 +1,6 @@
 // src/engine/assets/renderable/renderable_compilers.cpp
 
 #include <engine/assets/renderable/renderable_compilers.h>
-
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -28,16 +27,18 @@ namespace wz::engine::assets::internal
 
     void register_renderable_compilers(
         wz::asset::CompilerRegistry& registry,
-        wz::Logger& logger,
-        MeshTable& mesh_table,
-        GaussianSplatCloudTable& gaussian_splat_cloud_table,
-        ScalarFieldTable& scalar_field_table,
-        RenderableAssetTable& renderable_table)
+        const EngineAssetContext& ctx)
     {
+        auto* logger = &ctx.logger;
+        auto* mesh_table = &ctx.mesh_table;
+        auto* scalar_fields_table = &ctx.scalar_fields_table;
+        auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
+        auto* renderable_table = &ctx.renderable_table;
+
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWireframeRenderableSchema,
             .output_type = kAssetTypeRenderable,
-            .compile = [&logger, &mesh_table, &renderable_table](
+            .compile = [logger, mesh_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -47,19 +48,19 @@ namespace wz::engine::assets::internal
                     std::any_cast<MeshWireframeRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger.error("mesh wireframe renderable missing compile desc");
+                    logger->error("mesh wireframe renderable missing compile desc");
                     return compile_failed_node(input);
                 }
 
                 if (dep_handles.size() != 1) {
-                    logger.error("mesh wireframe renderable requires one mesh dependency");
+                    logger->error("mesh wireframe renderable requires one mesh dependency");
                     return compile_failed_node(input);
                 }
 
-                const MeshData* mesh = mesh_table.get(dep_handles[0]);
+                const MeshData* mesh = mesh_table->get(dep_handles[0]);
 
                 if (!mesh || !mesh->valid()) {
-                    logger.error("mesh wireframe renderable source mesh is invalid");
+                    logger->error("mesh wireframe renderable source mesh is invalid");
                     return compile_failed_node(input);
                 }
 
@@ -70,8 +71,6 @@ namespace wz::engine::assets::internal
                 data.domain = RenderDomain::Debug;
                 data.policy_flags = RenderPolicy_Wireframe;
 
-                // If MeshData already has bounds, use them here.
-                // Placeholder conservative bounds for v0 if mesh bounds are not yet stored.
                 data.bounds_min[0] = -1.0f;
                 data.bounds_min[1] = -1.0f;
                 data.bounds_min[2] = -1.0f;
@@ -80,10 +79,10 @@ namespace wz::engine::assets::internal
                 data.bounds_max[2] = 1.0f;
 
                 wz::asset::ResourceHandle handle =
-                    renderable_table.add(std::move(data));
+                    renderable_table->add(std::move(data));
 
                 if (!handle.valid()) {
-                    logger.error("failed to store mesh wireframe renderable");
+                    logger->error("failed to store mesh wireframe renderable");
                     return compile_failed_node(input);
                 }
 
@@ -93,10 +92,11 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
-            .compile = [&logger, &scalar_field_table, &renderable_table](
+            .compile = [logger, scalar_fields_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -106,20 +106,20 @@ namespace wz::engine::assets::internal
                     std::any_cast<ScalarFieldDebugRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger.error("scalar field debug renderable missing compile desc");
+                    logger->error("scalar field debug renderable missing compile desc");
                     return compile_failed_node(input);
                 }
 
                 if (dep_handles.size() != 1) {
-                    logger.error("scalar field debug renderable requires one scalar field dependency");
+                    logger->error("scalar field debug renderable requires one scalar field dependency");
                     return compile_failed_node(input);
                 }
 
                 const ScalarFieldData* field =
-                    scalar_field_table.get(dep_handles[0]);
+                    scalar_fields_table->get(dep_handles[0]);
 
                 if (!field || !field->valid()) {
-                    logger.error("scalar field debug renderable source field is invalid");
+                    logger->error("scalar field debug renderable source field is invalid");
                     return compile_failed_node(input);
                 }
 
@@ -130,14 +130,11 @@ namespace wz::engine::assets::internal
                 data.domain = RenderDomain::Debug;
                 data.policy_flags = RenderPolicy_None;
 
-                // Scalar fields are screen/debug visualizations for now.
-                // Bounds are not meaningful yet, so leave zeroed.
-
                 wz::asset::ResourceHandle handle =
-                    renderable_table.add(std::move(data));
+                    renderable_table->add(std::move(data));
 
                 if (!handle.valid()) {
-                    logger.error("failed to store scalar field debug renderable");
+                    logger->error("failed to store scalar field debug renderable");
                     return compile_failed_node(input);
                 }
 
@@ -147,10 +144,11 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
-            .compile = [&logger, &gaussian_splat_cloud_table, &renderable_table](
+            .compile = [logger, gaussian_splat_cloud_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -160,20 +158,20 @@ namespace wz::engine::assets::internal
                     std::any_cast<GaussianSplatDebugRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger.error("gaussian splat debug renderable missing compile desc");
+                    logger->error("gaussian splat debug renderable missing compile desc");
                     return compile_failed_node(input);
                 }
 
                 if (dep_handles.size() != 1) {
-                    logger.error("gaussian splat debug renderable requires one splat cloud dependency");
+                    logger->error("gaussian splat debug renderable requires one splat cloud dependency");
                     return compile_failed_node(input);
                 }
 
                 const GaussianSplatCloudData* cloud =
-                    gaussian_splat_cloud_table.get(dep_handles[0]);
+                    gaussian_splat_cloud_table->get(dep_handles[0]);
 
                 if (!cloud || !cloud->valid()) {
-                    logger.error("gaussian splat debug renderable source cloud is invalid");
+                    logger->error("gaussian splat debug renderable source cloud is invalid");
                     return compile_failed_node(input);
                 }
 
@@ -191,10 +189,10 @@ namespace wz::engine::assets::internal
                     cloud->bounds_max);
 
                 wz::asset::ResourceHandle handle =
-                    renderable_table.add(std::move(data));
+                    renderable_table->add(std::move(data));
 
                 if (!handle.valid()) {
-                    logger.error("failed to store gaussian splat debug renderable");
+                    logger->error("failed to store gaussian splat debug renderable");
                     return compile_failed_node(input);
                 }
 
@@ -204,7 +202,5 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
-
-
     }
 }
