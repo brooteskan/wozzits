@@ -57,4 +57,5 @@ target_sources(window_engine PRIVATE
     render/test/triangle_test_scene.cpp
 
     rendering/renderable_gpu_cache.cpp
-  )
+    rendering/renderable_debug_runtime.cpp
+)

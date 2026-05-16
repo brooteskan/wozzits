@@ -14,6 +14,7 @@
 #include <engine/assets/renderable_asset_module.h>
 
 #include <engine/rendering/renderable_gpu_cache.h>
+#include <engine/rendering/renderable_debug_runtime.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
@@ -187,12 +188,14 @@ int main()
         if (prepared.program != BuiltinRenderProgram::MeshWireframeDebug)
             return 1;
 
-        // ── create mesh wireframe debug draw context ──────────────────────
-        wz::gpu::dx12::create_mesh_wireframe_debug_context(device, {
-            .vertex_shader = shader_handles.vertex,
-            .pixel_shader = shader_handles.pixel,
-            .mesh = prepared.gpu_resource,
-            });
+        // ── create debug draw context ──────────────────────
+        if (!wz::engine::rendering::create_debug_context_for_prepared_renderable(
+            device,
+            prepared,
+            shader_handles))
+        {
+            return 1;
+        }
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))
