@@ -3,6 +3,7 @@
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
 
 #include <engine/assets/key_factories/diagnostic_resampled_time_series.h>
+#include <engine/assets/key_factories/diagnostic_resampled_time_series_table_view.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -110,6 +111,43 @@ namespace wz::engine::assets
         return DiagnosticResampledTimeSeriesAsset{
             .output = key,
         };
+    }
+
+    DataTableAsset DiagnosticResampledTimeSeriesAssetModule::create_data_table_view(
+        const std::string& name,
+        const DiagnosticResampledTimeSeriesAsset& source)
+    {
+        if (name.empty()) {
+            logger_.error("resampled time series table view has empty name");
+            return {};
+        }
+
+        if (!source.valid()) {
+            logger_.error(
+                "resampled time series table view has invalid source: " + name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_diagnostic_resampled_time_series_table_view_key(
+                name,
+                source.output);
+
+        wz::asset::AssetNode node;
+        node.key    = key;
+        node.type   = kAssetTypeDataTable;
+        node.schema = kDiagnosticResampledTimeSeriesToDataTableSchema;
+        node.stage  = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta   = DiagnosticResampledTimeSeriesToDataTableCompileDesc{};
+
+        if (!system_.register_asset(std::move(node), { source.output })) {
+            logger_.error(
+                "failed to register resampled time series table view: " + name);
+            return {};
+        }
+
+        return DataTableAsset{ .output = key };
     }
 
     DiagnosticResampledTimeSeriesHandle
