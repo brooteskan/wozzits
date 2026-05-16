@@ -6,12 +6,14 @@
 
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
-#include <gpu/gaussian_splat.h>
 #include <gpu/dx12/dx12.h>
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/renderable_asset_module.h>
+
+#include <engine/rendering/renderable_gpu_cache.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
@@ -93,6 +95,9 @@ int main()
         desc.width = 800;
         desc.height = 600;
 
+        int current_width = desc.width;
+        int current_height = desc.height;
+
         wz::window::WindowHandle window = wz::window::create_window(desc);
         if (!window.valid())
             return 1;
@@ -125,6 +130,16 @@ int main()
         if (!splat_asset.valid())
             return 1;
 
+        // ── renderable asset from gaussian splat asset ────────────────────
+        RenderableAsset renderable_asset =
+            assets.renderables().create_gaussian_splat_debug({
+                .name = "debug/procedural_splat_sphere_debug_renderable",
+                .splat_cloud = splat_asset,
+                });
+
+        if (!renderable_asset.valid())
+            return 1;
+
         // ── gaussian splat debug shaders ──────────────────────────────────
         auto shaders = assets.shaders().create_shader_pair({
             .name = "gaussian_splat_debug",
@@ -147,37 +162,40 @@ int main()
         if (!shader_handles.valid())
             return 1;
 
-        GaussianSplatCloudHandle splat_handle =
-            assets.gaussian_splats().get_cloud(splat_asset);
+        RenderableHandle renderable_handle =
+            assets.renderables().get_renderable(renderable_asset);
 
-        if (!splat_handle.valid())
+        if (!renderable_handle.valid())
             return 1;
 
-        const GaussianSplatCloudData* splat_data =
-            assets.gaussian_splats().get_cloud_data(splat_handle);
+        // ── realize renderable to GPU resource ────────────────────────────
+        wz::engine::rendering::RenderableGpuCache renderable_cache;
 
-        if (!splat_data || !splat_data->valid())
+        const wz::engine::rendering::PreparedRenderable prepared =
+            renderable_cache.realize(
+                device,
+                assets,
+                renderable_handle
+            );
+
+        if (!prepared.valid())
             return 1;
 
-        // ── upload splat cloud to GPU buffer ──────────────────────────────
-        wz::gpu::GPUHandle gpu_splat_cloud =
-            wz::gpu::upload_gaussian_splat_cloud(device, *splat_data);
-
-        if (!gpu_splat_cloud.valid())
+        if (prepared.kind != RenderableKind::GaussianSplatCloud)
             return 1;
 
-        if (gpu_splat_cloud.type != wz::gpu::GPUResourceType::GaussianSplatCloud)
+        if (prepared.gpu_resource.type != wz::gpu::GPUResourceType::GaussianSplatCloud)
+            return 1;
+
+        if (prepared.program != BuiltinRenderProgram::GaussianSplatDebug)
             return 1;
 
         // ── create gaussian splat debug draw context ──────────────────────
         wz::gpu::dx12::create_gaussian_splat_debug_context(device, {
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
-            .splat_cloud = gpu_splat_cloud,
+            .splat_cloud = prepared.gpu_resource,
             });
-
-        int current_width = desc.width;
-        int current_height = desc.height;
 
         // ── frame loop ────────────────────────────────────────────────────
         while (!wz::window::window_should_close(window))
@@ -221,10 +239,7 @@ int main()
 
             view.viewport_and_size[0] = static_cast<float>(current_width);
             view.viewport_and_size[1] = static_cast<float>(current_height);
-
-            // Start large. Once visible, reduce this.
             view.viewport_and_size[2] = 6.0f;
-
             view.viewport_and_size[3] = 0.0f;
 
             wz::gpu::dx12::submit_gaussian_splat_debug_frame(device, view);
@@ -235,6 +250,7 @@ int main()
 
         // ── shutdown ──────────────────────────────────────────────────────
         wz::input::shutdown_raw_input();
+        renderable_cache.clear();
         wz::gpu::destroy_device(device);
         wz::window::destroy_window(window);
     }

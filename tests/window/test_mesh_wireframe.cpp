@@ -6,12 +6,14 @@
 
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
-#include <gpu/mesh.h>
 #include <gpu/dx12/dx12.h>
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/renderable_asset_module.h>
+
+#include <engine/rendering/renderable_gpu_cache.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
@@ -24,17 +26,6 @@
 
 namespace
 {
-    void set_identity(float m[16])
-    {
-        for (int i = 0; i < 16; ++i)
-            m[i] = 0.0f;
-
-        m[0] = 1.0f;
-        m[5] = 1.0f;
-        m[10] = 1.0f;
-        m[15] = 1.0f;
-    }
-
     void copy_mat4(float out[16], const wz::math::Mat4& m)
     {
         for (int i = 0; i < 16; ++i)
@@ -104,6 +95,9 @@ int main()
         desc.width = 800;
         desc.height = 600;
 
+        int current_width = desc.width;
+        int current_height = desc.height;
+
         wz::window::WindowHandle window = wz::window::create_window(desc);
         if (!window.valid())
             return 1;
@@ -133,6 +127,16 @@ int main()
         if (!mesh_asset.valid())
             return 1;
 
+        // ── renderable asset from mesh asset ──────────────────────────────
+        RenderableAsset renderable_asset =
+            assets.renderables().create_mesh_wireframe({
+                .name = "debug/cube_wireframe",
+                .mesh = mesh_asset,
+                });
+
+        if (!renderable_asset.valid())
+            return 1;
+
         // ── mesh wireframe debug shaders ──────────────────────────────────
         auto shaders = assets.shaders().create_shader_pair({
             .name = "mesh_wireframe_debug",
@@ -155,31 +159,39 @@ int main()
         if (!shader_handles.valid())
             return 1;
 
-        MeshHandle mesh_handle = assets.meshes().get_mesh(mesh_asset);
-        if (!mesh_handle.valid())
+        RenderableHandle renderable_handle =
+            assets.renderables().get_renderable(renderable_asset);
+
+        if (!renderable_handle.valid())
             return 1;
 
-        const MeshData* mesh_data =
-            assets.meshes().get_mesh_data(mesh_handle);
+        // ── realize renderable to GPU resource ────────────────────────────
+        wz::engine::rendering::RenderableGpuCache renderable_cache;
 
-        if (!mesh_data || !mesh_data->valid())
+        const wz::engine::rendering::PreparedRenderable prepared =
+            renderable_cache.realize(
+                device,
+                assets,
+                renderable_handle
+            );
+
+        if (!prepared.valid())
             return 1;
 
-        // ── upload mesh to GPU buffers ────────────────────────────────────
-        wz::gpu::GPUHandle gpu_mesh =
-            wz::gpu::upload_mesh(device, *mesh_data);
-
-        if (!gpu_mesh.valid())
+        if (prepared.kind != RenderableKind::Mesh)
             return 1;
 
-        if (gpu_mesh.type != wz::gpu::GPUResourceType::Mesh)
+        if (prepared.gpu_resource.type != wz::gpu::GPUResourceType::Mesh)
+            return 1;
+
+        if (prepared.program != BuiltinRenderProgram::MeshWireframeDebug)
             return 1;
 
         // ── create mesh wireframe debug draw context ──────────────────────
         wz::gpu::dx12::create_mesh_wireframe_debug_context(device, {
             .vertex_shader = shader_handles.vertex,
             .pixel_shader = shader_handles.pixel,
-            .mesh = gpu_mesh,
+            .mesh = prepared.gpu_resource,
             });
 
         // ── frame loop ────────────────────────────────────────────────────
@@ -192,10 +204,13 @@ int main()
             {
                 if (event.type == PlatformEvent::Type::Resize)
                 {
+                    current_width = event.resize.width;
+                    current_height = event.resize.height;
+
                     wz::gpu::resize(
                         device,
-                        event.resize.width,
-                        event.resize.height
+                        current_width,
+                        current_height
                     );
                 }
 
@@ -214,7 +229,7 @@ int main()
                 make_world_translate(0.0f, 0.0f, 5.0f);
 
             const wz::math::Mat4 view_proj =
-                make_debug_view_proj(desc.width, desc.height);
+                make_debug_view_proj(current_width, current_height);
 
             copy_mat4(view.world, world);
             copy_mat4(view.view_proj, view_proj);
@@ -227,6 +242,7 @@ int main()
 
         // ── shutdown ──────────────────────────────────────────────────────
         wz::input::shutdown_raw_input();
+        renderable_cache.clear();
         wz::gpu::destroy_device(device);
         wz::window::destroy_window(window);
     }

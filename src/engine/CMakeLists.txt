@@ -55,4 +55,6 @@ target_sources(window_engine PRIVATE
 
     assets/test/triangle_shader_assets.cpp
     render/test/triangle_test_scene.cpp
+
+    rendering/renderable_gpu_cache.cpp
   )
