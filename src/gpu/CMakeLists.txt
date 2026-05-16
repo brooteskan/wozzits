@@ -1,6 +1,7 @@
 target_sources(window_engine PRIVATE
     gpu.cpp
     scalar_field_texture.cpp
+    scalar_field.cpp
     mesh.cpp
     gaussian_splat.cpp 
 
