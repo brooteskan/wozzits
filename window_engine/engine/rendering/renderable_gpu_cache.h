@@ -29,6 +29,10 @@ namespace wz::engine::rendering
         }
     };
 
+    // Runtime helper that realizes RenderableAssetData into backend GPU handles.
+    //
+    // This cache does not own the GPU resources it remembers. Backend/device
+    // resource tables own the resources. clear() only forgets cached mappings.
     class RenderableGpuCache
     {
     public:

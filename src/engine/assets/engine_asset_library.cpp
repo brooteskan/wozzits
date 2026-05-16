@@ -52,6 +52,9 @@ namespace wz::engine::assets
         , diagnostic_resampled_time_series_table_{}
         , csv_export_table_{}
         , renderable_table_{}
+        , json_table_{}
+        , toml_table_{}
+        , mesh_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
                 .device                    = device,
