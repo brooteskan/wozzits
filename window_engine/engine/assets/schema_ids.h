@@ -203,7 +203,7 @@ namespace wz::engine::assets {
     };
 
     inline constexpr wz::asset::SchemaID kProceduralGaussianSplatCloudSchema{
-    0xF11E'CA55'E7'000500ull
+    0xF11E'CA55'E7'000502ull
     };
 
     inline constexpr wz::asset::SchemaID kInlineDataTableSchema{
@@ -214,8 +214,8 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'001201ull
     };
 
-    // CSV export recipe — compiling this asset writes a CSV file to disk.
-    // Expects a single DataTable dependency.
+    // CSV export recipe — compiles a DataTable dependency to deterministic CSV text.
+    // File writing is an explicit module operation, not a compiler side effect.
     inline constexpr wz::asset::SchemaID kCSVExportSchema{
     0xF11E'CA55'E7'001202ull
     };
