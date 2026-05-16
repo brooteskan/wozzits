@@ -15,6 +15,7 @@
 
 #include <engine/rendering/renderable_gpu_cache.h>
 #include <engine/rendering/renderable_debug_runtime.h>
+#include <engine/rendering/builtin_render_programs.h>
 
 #include <logging/logger.h>
 #include <file/filesystem.h>
@@ -139,11 +140,16 @@ int main()
             return 1;
 
         // ── mesh wireframe debug shaders ──────────────────────────────────
-        auto shaders = assets.shaders().create_shader_pair({
-            .name = "mesh_wireframe_debug",
-            .vertex_path = "shaders/mesh_wireframe/mesh_wireframe_vs.hlsl",
-            .pixel_path = "shaders/mesh_wireframe/mesh_wireframe_ps.hlsl",
-            });
+        ShaderPairDesc shader_desc{};
+
+        if (!wz::engine::rendering::get_builtin_shader_pair_desc(
+            BuiltinRenderProgram::MeshWireframeDebug,
+            shader_desc))
+        {
+            return 1;
+        }
+
+        auto shaders = assets.shaders().create_shader_pair(shader_desc);
 
         if (!shaders.valid())
             return 1;
