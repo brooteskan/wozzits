@@ -228,3 +228,24 @@ namespace wz::gpu::dx12::internal {
 
     GaussianSplatDebugPipelineRef get_gaussian_splat_debug_pipeline(Device& d);
 }
+
+
+// ── Mesh wireframe debug pipeline ref ────────────────────────────
+//
+// Non-owning view of the PSO and root signature created by
+// create_mesh_wireframe_debug_context().  The resolver-based submit
+// path uses this to draw Mesh DrawCommands without reaching into
+// device internals.
+
+namespace wz::gpu::dx12::internal {
+
+    struct MeshWireframePipelineRef
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso      = nullptr;
+
+        bool valid() const noexcept { return root_sig && pso; }
+    };
+
+    MeshWireframePipelineRef get_mesh_wireframe_pipeline(Device& d);
+}

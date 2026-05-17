@@ -22,4 +22,23 @@ namespace wz::engine::rendering
             return {};
         return splat_entries_[handle];
     }
+
+    wz::scene::MeshHandle RenderResourceResolver::register_mesh(
+        wz::gpu::GPUHandle gpu_handle)
+    {
+        const auto index =
+            static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
+        mesh_entries_.push_back(gpu_handle);
+        return index;
+    }
+
+    wz::gpu::GPUHandle RenderResourceResolver::resolve_mesh(
+        wz::scene::MeshHandle handle) const noexcept
+    {
+        if (handle == wz::scene::INVALID_MESH)
+            return {};
+        if (static_cast<size_t>(handle) >= mesh_entries_.size())
+            return {};
+        return mesh_entries_[handle];
+    }
 }
