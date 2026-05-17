@@ -76,7 +76,7 @@ TEST(GLTFImporter, RejectsInvalidGLBBytes)
 
 TEST(GLTFImporter, ImportsCubeGLBAsMeshData)
 {
-    const auto path = fixture_path("gltf/cube.glb");
+    const auto path = fixture_path("gltf/low_poly_rock.glb");
     SCOPED_TRACE(path.string());
 
     const auto bytes = read_binary_file(path);
