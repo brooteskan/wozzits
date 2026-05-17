@@ -5,6 +5,7 @@
 
 #include <render/frame/render_frame.h>
 #include <engine/rendering/render_resource_resolver.h>
+#include <engine/rendering/renderable_pipeline_cache.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
 #include <gpu/dx12/dx12_gaussian_splat_debug.h>
