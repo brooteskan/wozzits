@@ -28,6 +28,12 @@ namespace wz::engine::assets
         }
     };
 
+    struct GaussianSplatFromPLYDesc
+    {
+        std::string name;
+        wz::asset::AssetKey source_file{};
+    };
+
     class GaussianSplatAssetModule
     {
     public:
@@ -38,6 +44,9 @@ namespace wz::engine::assets
 
         GaussianSplatCloudAsset create_procedural_cloud(
             const ProceduralGaussianSplatCloudDesc& desc);
+
+        GaussianSplatCloudAsset create_from_ply(
+            const GaussianSplatFromPLYDesc& desc);
 
         GaussianSplatCloudHandle get_cloud(
             const GaussianSplatCloudAsset& asset) const;

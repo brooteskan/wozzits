@@ -35,6 +35,7 @@ target_sources(window_engine PRIVATE
 
     assets/gaussian_splat/gaussian_splat.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp
+    assets/gaussian_splat/ply_importer.cpp
     assets/gaussian_splat_asset_module.cpp
 
     assets/data_table/data_table.cpp

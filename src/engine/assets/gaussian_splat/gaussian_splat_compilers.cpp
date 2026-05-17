@@ -1,7 +1,7 @@
 // src/engine/assets/gaussian_splat/gaussian_splat_compilers.cpp
 
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
-
+#include <engine/assets/gaussian_splat/ply_importer.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -70,7 +70,49 @@ namespace wz::engine::assets::internal
 
             return cloud;
         }
-    }
+
+        wz::asset::AssetNode compile_ply_gaussian_splat_cloud_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::Logger& logger,
+            GaussianSplatCloudTable& table)
+        {
+            if (dep_nodes.size() != 1) {
+                logger.error("PLY gaussian splat cloud should have exactly one file dependency");
+                return compile_failed_node(input);
+            }
+
+            const auto* bytes =
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+
+            if (!bytes || bytes->empty()) {
+                logger.error("PLY gaussian splat file dependency has no bytes");
+                return compile_failed_node(input);
+            }
+
+            GaussianSplatCloudData data{};
+            if (!import_ascii_ply_gaussian_splats(bytes->data(), bytes->size(), data)) {
+                logger.error("failed to import ASCII PLY gaussian splat cloud");
+                return compile_failed_node(input);
+            }
+
+            if (!data.valid()) {
+                logger.error("PLY gaussian splat importer produced invalid cloud");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle = table.add(std::move(data));
+            if (!handle.valid()) {
+                logger.error("failed to store PLY gaussian splat cloud");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
+    } // anaonymous namespace
 
     void register_gaussian_splat_compilers(
         wz::asset::CompilerRegistry& registry,
@@ -131,6 +173,19 @@ namespace wz::engine::assets::internal
                 out.stage = wz::asset::AssetStage::Compiled;
                 out.payload = handle;
                 return out;
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kGaussianSplatFromPLYSchema,
+            .output_type = kAssetTypeGaussianSplatCloud,
+            .compile = [&logger, &table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                return compile_ply_gaussian_splat_cloud_node(
+                    input, dep_nodes, logger, table);
             }
             });
     }

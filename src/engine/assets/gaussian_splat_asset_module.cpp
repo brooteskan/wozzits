@@ -3,6 +3,7 @@
 #include <engine/assets/gaussian_splat_asset_module.h>
 
 #include <engine/assets/key_factories/gaussian_splat.h>
+#include <engine/assets/key_factories/gaussian_splat_file.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -63,6 +64,35 @@ namespace wz::engine::assets
 
         if (!system_.register_asset(std::move(node), {})) {
             logger_.error("failed to register procedural gaussian splat cloud: " + desc.name);
+            return {};
+        }
+
+        out.output = key;
+        return out;
+    }
+
+    GaussianSplatCloudAsset GaussianSplatAssetModule::create_from_ply(
+        const GaussianSplatFromPLYDesc& desc)
+    {
+        GaussianSplatCloudAsset out{};
+
+        if (desc.source_file == wz::asset::AssetKey{}) {
+            logger_.error("PLY gaussian splat cloud has empty source file key: " + desc.name);
+            return out;
+        }
+
+        const wz::asset::AssetKey key =
+            make_gaussian_splat_from_ply_key(desc.source_file);
+
+        wz::asset::AssetNode node{};
+        node.key = key;
+        node.type = kAssetTypeGaussianSplatCloud;
+        node.schema = kGaussianSplatFromPLYSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+
+        if (!system_.register_asset(std::move(node), { desc.source_file })) {
+            logger_.error("failed to register PLY gaussian splat cloud: " + desc.name);
             return {};
         }
 

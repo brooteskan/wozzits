@@ -128,9 +128,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeMesh =
         static_cast<wz::asset::AssetType>(130);
 
-    // Reserved CPU data asset type. Not implemented yet:
-    // key/schema support may exist, but no full public API, compiler, or runtime
-    // table exists.
+    // Implemented: immutable CPU-side Gaussian splat cloud data.
+    // Runtime data is owned by GaussianSplatCloudTable.
+    // Multiple source schemas may produce this type, including PLY imports,
+    // procedural/debug splat clouds, and scalar-field-derived splat recipes.
     inline constexpr wz::asset::AssetType kAssetTypeGaussianSplatCloud =
         static_cast<wz::asset::AssetType>(131);
 
