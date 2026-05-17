@@ -16,6 +16,17 @@ namespace wz::gpu::dx12::internal {
         };
     }
 
+    MeshWireframePipelineRef get_mesh_wireframe_pipeline(Device& d)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(d.impl);
+        if (!impl || !impl->mesh_wire_debug_ctx)
+            return {};
+        return {
+            .root_sig = impl->mesh_wire_debug_ctx->root_sig,
+            .pso      = impl->mesh_wire_debug_ctx->pso,
+        };
+    }
+
 
 
 

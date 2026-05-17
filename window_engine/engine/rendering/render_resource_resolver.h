@@ -26,7 +26,16 @@ namespace wz::engine::rendering
         // Returns an invalid GPUHandle if the handle is out-of-range or INVALID_SPLAT.
         wz::gpu::GPUHandle resolve_splats(wz::scene::SplatHandle handle) const noexcept;
 
+        // Register a GPU-resident mesh.
+        // Returns the MeshHandle to store in DrawCommand::mesh.
+        wz::scene::MeshHandle register_mesh(wz::gpu::GPUHandle gpu_handle);
+
+        // Resolve a MeshHandle to its GPU resource handle.
+        // Returns an invalid GPUHandle if the handle is out-of-range or INVALID_MESH.
+        wz::gpu::GPUHandle resolve_mesh(wz::scene::MeshHandle handle) const noexcept;
+
     private:
         std::vector<wz::gpu::GPUHandle> splat_entries_;
+        std::vector<wz::gpu::GPUHandle> mesh_entries_;
     };
 }

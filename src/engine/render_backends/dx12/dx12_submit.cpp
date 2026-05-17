@@ -171,9 +171,49 @@ namespace wz::render::backend::dx12
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver)
     {
-        // Opaque DrawCommands are not handled by the resolver path yet.
-        // They will be wired once MeshHandle resolution is added to
-        // RenderResourceResolver.
+        auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
+
+        // ── Opaque mesh pass (resolver path) ──────────────────────────────────
+
+        if (!frame.opaque.empty())
+        {
+            const auto mesh_pipeline =
+                wz::gpu::dx12::internal::get_mesh_wireframe_pipeline(device);
+
+            if (mesh_pipeline.valid())
+            {
+                cmdList->SetGraphicsRootSignature(mesh_pipeline.root_sig);
+                cmdList->SetPipelineState(mesh_pipeline.pso);
+                cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+                struct { Mat4 world; Mat4 view_proj; } constants;
+
+                for (const DrawCommand& dc : frame.opaque)
+                {
+                    if (dc.kind != DrawCommandKind::Mesh)
+                        continue;
+                    if (dc.mesh == INVALID_MESH)
+                        continue;
+
+                    const wz::gpu::GPUHandle gpu = resolver.resolve_mesh(dc.mesh);
+                    if (!gpu.valid())
+                        continue;
+
+                    const auto* mesh =
+                        wz::gpu::dx12::internal::get_mesh(device, gpu);
+                    if (!mesh || !mesh->vertex_buffer)
+                        continue;
+
+                    constants.world     = dc.world;
+                    constants.view_proj = frame.view.view_projection;
+
+                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                    cmdList->IASetIndexBuffer(&mesh->index_view);
+                    cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                }
+            }
+        }
 
         // ── Splat pass (resolver path) ────────────────────────────────────────
 
@@ -185,9 +225,6 @@ namespace wz::render::backend::dx12
 
         if (!pipeline.valid())
             return;
-
-        auto* cmdList =
-            wz::gpu::dx12::internal::get_command_list(device);
 
         cmdList->SetGraphicsRootSignature(pipeline.root_sig);
         cmdList->SetPipelineState(pipeline.pso);
