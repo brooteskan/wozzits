@@ -195,12 +195,12 @@ namespace wz::render::backend::dx12
                     if (dc.mesh == INVALID_MESH)
                         continue;
 
-                    const wz::gpu::GPUHandle gpu = resolver.resolve_mesh(dc.mesh);
-                    if (!gpu.valid())
+                    const auto resolved = resolver.resolve_mesh(dc.mesh);
+                    if (!resolved)
                         continue;
 
                     const auto* mesh =
-                        wz::gpu::dx12::internal::get_mesh(device, gpu);
+                        wz::gpu::dx12::internal::get_mesh(device, resolved->gpu_resource);
                     if (!mesh || !mesh->vertex_buffer)
                         continue;
 
@@ -242,14 +242,13 @@ namespace wz::render::backend::dx12
             if (dc.splats_buffer == INVALID_SPLAT)
                 continue;
 
-            const wz::gpu::GPUHandle gpu =
-                resolver.resolve_splats(dc.splats_buffer);
-            if (!gpu.valid())
+            const auto resolved = resolver.resolve_splats(dc.splats_buffer);
+            if (!resolved)
                 continue;
 
             const auto* cloud =
                 wz::gpu::dx12::internal::get_gaussian_splat_cloud(
-                    device, gpu);
+                    device, resolved->gpu_resource);
             if (!cloud || !cloud->vertex_buffer)
                 continue;
 
@@ -264,6 +263,97 @@ namespace wz::render::backend::dx12
             constants[34] = 8.0f;  // base splat size in pixels
             constants[35] = 0.0f;
 
+            cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+            cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
+            cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+        }
+    }
+
+    void submit(wz::gpu::Device& device,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver,
+                const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
+    {
+        auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
+
+        // ── Opaque mesh pass ──────────────────────────────────────────────────
+
+        for (const DrawCommand& dc : frame.opaque)
+        {
+            if (dc.kind != DrawCommandKind::Mesh)
+                continue;
+            if (dc.mesh == INVALID_MESH)
+                continue;
+
+            const auto resolved = resolver.resolve_mesh(dc.mesh);
+            if (!resolved)
+                continue;
+
+            const auto pipeline_handle = pipeline_cache.get(resolved->program);
+            const auto* pl = wz::gpu::dx12::internal::get_graphics_pipeline(
+                device, pipeline_handle);
+            if (!pl || !pl->valid())
+                continue;
+
+            const auto* mesh = wz::gpu::dx12::internal::get_mesh(
+                device, resolved->gpu_resource);
+            if (!mesh || !mesh->vertex_buffer)
+                continue;
+
+            struct { Mat4 world; Mat4 view_proj; } constants;
+            constants.world     = dc.world;
+            constants.view_proj = frame.view.view_projection;
+
+            cmdList->SetGraphicsRootSignature(pl->root_sig);
+            cmdList->SetPipelineState(pl->pso);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+            cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+            cmdList->IASetIndexBuffer(&mesh->index_view);
+            cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+        }
+
+        // ── Splat pass ────────────────────────────────────────────────────────
+
+        const float vp_w = static_cast<float>(
+            wz::gpu::dx12::internal::get_width(device));
+        const float vp_h = static_cast<float>(
+            wz::gpu::dx12::internal::get_height(device));
+
+        for (const DrawCommand& dc : frame.splats)
+        {
+            if (dc.kind != DrawCommandKind::GaussianSplats)
+                continue;
+            if (dc.splats_buffer == INVALID_SPLAT)
+                continue;
+
+            const auto resolved = resolver.resolve_splats(dc.splats_buffer);
+            if (!resolved)
+                continue;
+
+            const auto pipeline_handle = pipeline_cache.get(resolved->program);
+            const auto* pl = wz::gpu::dx12::internal::get_graphics_pipeline(
+                device, pipeline_handle);
+            if (!pl || !pl->valid())
+                continue;
+
+            const auto* cloud = wz::gpu::dx12::internal::get_gaussian_splat_cloud(
+                device, resolved->gpu_resource);
+            if (!cloud || !cloud->vertex_buffer)
+                continue;
+
+            float constants[36] = {};
+            for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
+            for (int i = 0; i < 16; ++i) constants[16 + i] =
+                frame.view.view_projection.m[i];
+            constants[32] = vp_w;
+            constants[33] = vp_h;
+            constants[34] = 8.0f;
+            constants[35] = 0.0f;
+
+            cmdList->SetGraphicsRootSignature(pl->root_sig);
+            cmdList->SetPipelineState(pl->pso);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
             cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
             cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
             cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);

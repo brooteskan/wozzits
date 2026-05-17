@@ -85,6 +85,7 @@ namespace wz::gpu::dx12
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
         wz::gpu::dx12::internal::DX12MeshTable meshes;
         wz::gpu::dx12::internal::DX12GaussianSplatCloudTable gaussian_splat_clouds;
+        wz::gpu::dx12::internal::DX12GraphicsPipelineTable graphics_pipelines;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
     };
