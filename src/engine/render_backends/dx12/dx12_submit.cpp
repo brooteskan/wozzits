@@ -195,12 +195,12 @@ namespace wz::render::backend::dx12
                     if (dc.mesh == INVALID_MESH)
                         continue;
 
-                    const wz::gpu::GPUHandle gpu = resolver.resolve_mesh(dc.mesh);
-                    if (!gpu.valid())
+                    const auto resolved = resolver.resolve_mesh(dc.mesh);
+                    if (!resolved)
                         continue;
 
                     const auto* mesh =
-                        wz::gpu::dx12::internal::get_mesh(device, gpu);
+                        wz::gpu::dx12::internal::get_mesh(device, resolved->gpu_resource);
                     if (!mesh || !mesh->vertex_buffer)
                         continue;
 
@@ -242,14 +242,13 @@ namespace wz::render::backend::dx12
             if (dc.splats_buffer == INVALID_SPLAT)
                 continue;
 
-            const wz::gpu::GPUHandle gpu =
-                resolver.resolve_splats(dc.splats_buffer);
-            if (!gpu.valid())
+            const auto resolved = resolver.resolve_splats(dc.splats_buffer);
+            if (!resolved)
                 continue;
 
             const auto* cloud =
                 wz::gpu::dx12::internal::get_gaussian_splat_cloud(
-                    device, gpu);
+                    device, resolved->gpu_resource);
             if (!cloud || !cloud->vertex_buffer)
                 continue;
 
