@@ -436,6 +436,7 @@ namespace wz::gpu::dx12
         }
 
         // 2. Destroy GPU resource tables.
+        impl->graphics_pipelines.destroy();
         impl->shaders.destroy();
         impl->meshes.destroy();
         impl->gaussian_splat_clouds.destroy();

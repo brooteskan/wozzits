@@ -56,6 +56,11 @@ namespace wz::engine::rendering
             return static_cast<size_t>(program);
         }
 
+        static bool valid_program(wz::engine::assets::BuiltinRenderProgram program) noexcept
+        {
+            return index_of(program) < wz::engine::assets::kBuiltinRenderProgramCount;
+        }
+
         std::array<wz::gpu::GPUHandle,
                    wz::engine::assets::kBuiltinRenderProgramCount> entries_{};
     };

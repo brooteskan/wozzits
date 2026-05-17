@@ -11,6 +11,9 @@ namespace wz::engine::rendering
         wz::gpu::GPUHandle                       vertex_shader,
         wz::gpu::GPUHandle                       pixel_shader)
     {
+        if (!valid_program(program))
+            return false;
+
         if (!vertex_shader.valid() || !pixel_shader.valid())
             return false;
 
@@ -48,6 +51,8 @@ namespace wz::engine::rendering
     wz::gpu::GPUHandle RenderablePipelineCache::get(
         wz::engine::assets::BuiltinRenderProgram program) const noexcept
     {
+        if (!valid_program(program))
+            return wz::gpu::GPUHandle{};
         return entries_[index_of(program)];
     }
 
