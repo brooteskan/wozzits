@@ -71,6 +71,11 @@ if(NOT TARGET scene_render::scene_render)
 
 endif()
 
+# ----------------------
+# dependency: fastgltf
+# ----------------------
+add_subdirectory(external/gltf/fastgltf)
+
 
 # ----------------------------
 # Core library target
@@ -129,6 +134,7 @@ PUBLIC
     scene_render::scene_render
     algo_math::algo_math
 PRIVATE
+    fastgltf::fastgltf
     dwmapi
     d3d12
     dxgi
