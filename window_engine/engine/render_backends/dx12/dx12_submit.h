@@ -4,6 +4,7 @@
 #include <render/frame/render_frame.h>
 #include <gpu/gpu.h>
 #include <engine/rendering/render_resource_resolver.h>
+#include <engine/rendering/renderable_pipeline_cache.h>
 
 namespace wz::render::backend::dx12
 {
@@ -57,12 +58,16 @@ namespace wz::render::backend::dx12
     // THIS is the important function
     void submit(Context* ctx, const RenderFrameView& frame);
 
-    // Resolver overload: draws splat DrawCommands via RenderResourceResolver.
-    // Does not require an opaque Context — takes Device& directly so it can
-    // be used by pure-splat toolhosts that never call create_debug_opaque_context.
-    // Opaque DrawCommands in frame.opaque are silently skipped; mesh-resolver
-    // support will be added when MeshHandle is wired to the resolver.
+    // Transitional resolver overload: uses legacy device-singleton debug pipelines.
+    // Prefer the overload that takes RenderablePipelineCache.
     void submit(wz::gpu::Device& device,
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver);
+
+    // Production resolver overload: resolves both GPU resources and pipelines
+    // through the supplied caches.  Does not depend on any device-singleton.
+    void submit(wz::gpu::Device& device,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver,
+                const wz::engine::rendering::RenderablePipelineCache& pipeline_cache);
 }

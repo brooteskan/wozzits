@@ -64,12 +64,21 @@ namespace wz::gpu::dx12
         const wz::render::RenderFrameView& frame
     );
 
-    // Resolver overload: routes GaussianSplats DrawCommands through
-    // RenderResourceResolver instead of the legacy per-primitive path.
+    // Transitional resolver overload: uses legacy device-singleton debug pipelines.
+    // Prefer the overload that takes RenderablePipelineCache.
     void submit_render_frame(
         wz::gpu::Device& device,
         const wz::render::RenderFrameView& frame,
         const wz::engine::rendering::RenderResourceResolver& resolver
+    );
+
+    // Production resolver overload: resolves both resources and pipelines through
+    // the supplied caches.  Does not touch any device-singleton debug context.
+    void submit_render_frame(
+        wz::gpu::Device& device,
+        const wz::render::RenderFrameView& frame,
+        const wz::engine::rendering::RenderResourceResolver& resolver,
+        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache
     );
 
     // ── Scalar field debug path ──────────────────────────────────────────

@@ -249,3 +249,59 @@ namespace wz::gpu::dx12::internal {
 
     MeshWireframePipelineRef get_mesh_wireframe_pipeline(Device& d);
 }
+
+
+// ── Graphics pipeline table ───────────────────────────────────────
+//
+// Stores PSO + root signature pairs created by RenderablePipelineCache.
+// Keyed by GPUHandle of type kAssetTypeGPUGraphicsPipeline (532).
+// The debug context singletons are separate; this table is for the
+// production pipeline cache path.
+
+#include <engine/assets/renderable/renderable.h>
+#include <engine/assets/type_extensions.h>
+
+namespace wz::gpu::dx12::internal {
+
+    struct DX12GraphicsPipeline
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso      = nullptr;
+
+        bool valid() const noexcept { return root_sig && pso; }
+    };
+
+    class DX12GraphicsPipelineTable
+    {
+    public:
+        DX12GraphicsPipelineTable();
+
+        GPUHandle add(DX12GraphicsPipeline pipeline);
+        const DX12GraphicsPipeline* get(GPUHandle handle) const;
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch    = 0;
+            bool     occupied = false;
+            DX12GraphicsPipeline pipeline{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    // Create a graphics pipeline (root sig + PSO) for the given builtin program,
+    // store it in the device's pipeline table, and return its GPUHandle.
+    GPUHandle create_graphics_pipeline(
+        Device& device,
+        wz::engine::assets::BuiltinRenderProgram program,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader);
+
+    // Retrieve a previously created graphics pipeline.
+    // Returns nullptr if the handle is invalid or the slot is empty.
+    const DX12GraphicsPipeline* get_graphics_pipeline(
+        Device& device,
+        GPUHandle handle);
+}

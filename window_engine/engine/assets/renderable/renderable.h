@@ -29,7 +29,12 @@ namespace wz::engine::assets
         MeshWireframeDebug,
         GaussianSplatDebug,
         ScalarFieldDebug,
+
+        Count  // sentinel — keep last
     };
+
+    static constexpr size_t kBuiltinRenderProgramCount =
+        static_cast<size_t>(BuiltinRenderProgram::Count);
 
     enum RenderPolicyFlags : uint32_t
     {

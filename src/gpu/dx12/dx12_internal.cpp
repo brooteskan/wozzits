@@ -1,6 +1,7 @@
 // src/gpu/dx12/dx12_internal.cpp
 
 #include <gpu/dx12/dx12_internal.h>
+#include <gpu/dx12/dx12_pipeline_factory.h>
 #include "dx12_device_internal.h"
 
 namespace wz::gpu::dx12::internal {
@@ -166,5 +167,112 @@ namespace wz::gpu::dx12::internal {
             return nullptr;
 
         return &slot.mesh;
+    }
+
+
+    // ── DX12GraphicsPipelineTable ─────────────────────────────────────────────
+
+    DX12GraphicsPipelineTable::DX12GraphicsPipelineTable()
+    {
+        slots_.emplace_back(); // slot 0 reserved as sentinel
+    }
+
+    GPUHandle DX12GraphicsPipelineTable::add(DX12GraphicsPipeline pipeline)
+    {
+        Slot slot{};
+        slot.epoch    = 1;
+        slot.occupied = true;
+        slot.pipeline = pipeline;
+
+        slots_.push_back(slot);
+
+        return GPUHandle{
+            .id    = static_cast<uint32_t>(slots_.size() - 1),
+            .epoch = slot.epoch,
+            .type  = wz::engine::assets::kAssetTypeGPUGraphicsPipeline,
+        };
+    }
+
+    const DX12GraphicsPipeline* DX12GraphicsPipelineTable::get(GPUHandle handle) const
+    {
+        if (!handle.valid())
+            return nullptr;
+
+        if (handle.type != wz::engine::assets::kAssetTypeGPUGraphicsPipeline)
+            return nullptr;
+
+        if (handle.id == 0 || handle.id >= slots_.size())
+            return nullptr;
+
+        const Slot& slot = slots_[handle.id];
+
+        if (!slot.occupied || slot.epoch != handle.epoch)
+            return nullptr;
+
+        return &slot.pipeline;
+    }
+
+    void DX12GraphicsPipelineTable::destroy()
+    {
+        for (Slot& slot : slots_)
+        {
+            if (!slot.occupied)
+                continue;
+
+            if (slot.pipeline.pso)
+            {
+                slot.pipeline.pso->Release();
+                slot.pipeline.pso = nullptr;
+            }
+
+            if (slot.pipeline.root_sig)
+            {
+                slot.pipeline.root_sig->Release();
+                slot.pipeline.root_sig = nullptr;
+            }
+        }
+
+        slots_.clear();
+        slots_.emplace_back();
+    }
+
+
+    // ── create_graphics_pipeline / get_graphics_pipeline ─────────────────────
+
+    GPUHandle create_graphics_pipeline(
+        Device& device,
+        wz::engine::assets::BuiltinRenderProgram program,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return {};
+
+        ID3D12RootSignature* root_sig =
+            create_root_signature_for_program(impl->device, program);
+        if (!root_sig)
+            return {};
+
+        ID3D12PipelineState* pso =
+            create_pso_for_program(device, program, root_sig, vertex_shader, pixel_shader);
+        if (!pso)
+        {
+            root_sig->Release();
+            return {};
+        }
+
+        return impl->graphics_pipelines.add({ root_sig, pso });
+    }
+
+    const DX12GraphicsPipeline* get_graphics_pipeline(
+        Device& device,
+        GPUHandle handle)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return nullptr;
+
+        return impl->graphics_pipelines.get(handle);
     }
 }
