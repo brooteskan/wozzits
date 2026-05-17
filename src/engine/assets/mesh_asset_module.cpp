@@ -75,6 +75,29 @@ namespace wz::engine::assets
         };
     }
 
+    MeshAsset MeshAssetModule::create_glb_mesh(
+        const GLBMeshDesc& desc)
+    {
+        if (desc.source_file == wz::asset::AssetKey{})
+            return {};
+
+        const wz::asset::AssetKey mesh_key =
+            make_glb_mesh_key(desc.source_file, desc.mesh_index);
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kGLBMeshSchema;
+        node.stage = wz::asset::AssetStage::Source;
+
+        if (!system_.register_asset(std::move(node), { desc.source_file }))
+            return {};
+
+        return MeshAsset{
+            .output = mesh_key,
+        };
+    }
+
     MeshHandle MeshAssetModule::get_mesh(
         const MeshAsset& asset) const
     {

@@ -202,6 +202,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000402ull
     };
 
+    // GLB static mesh import recipe.
+    // Compiles a raw/binary GLB file dependency into CPU MeshData in MeshTable.
+    // Produces kAssetTypeMesh output.
+    inline constexpr wz::asset::SchemaID kGLBMeshSchema{
+    0xF11E'CA55'E7'000403ull
+    };
+
     inline constexpr wz::asset::SchemaID kProceduralGaussianSplatCloudSchema{
     0xF11E'CA55'E7'000502ull
     };

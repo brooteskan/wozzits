@@ -2,12 +2,24 @@
 
 #include <gtest/gtest.h>
 
+#include <engine/assets/engine_asset_library.h>
+
+#include <gpu/gpu.h>
+#include <logging/logger.h>
+
 #include <engine/assets/gltf/gltf_importer.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <vector>
+
+
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
+
+#include <asset/types.h>
+
 
 namespace
 {
@@ -126,4 +138,50 @@ TEST(GLTFImporter, ImportsLowPolyRockGLBAsMeshData)
 
     for (const auto index : mesh.indices)
         EXPECT_LT(index, mesh.vertex_count());
+}
+
+TEST(GLBMeshAsset, ImportsCubeThroughAssetGraph)
+{
+    wz::gpu::Device device{};
+    wz::Logger logger{};
+
+    wz::engine::assets::EngineAssetLibrary assets(
+        device,
+        logger,
+        WZ_TEST_FIXTURE_DIR);
+
+    const wz::asset::AssetKey file_key =
+        assets.files().register_file_node(
+            "gltf/cube.glb",
+            wz::engine::assets::kRawFileSchema,
+            wz::engine::assets::kAssetTypeRawFile);
+
+    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
+
+    auto mesh = assets.meshes().create_glb_mesh({
+        .name = "cube",
+        .source_file = file_key,
+        .mesh_index = 0,
+    });
+
+    ASSERT_TRUE(mesh.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto handle = assets.meshes().get_mesh(mesh);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.meshes().get_mesh_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_TRUE(data->valid());
+    EXPECT_GT(data->vertex_count(), 0u);
+    EXPECT_GT(data->index_count(), 0u);
+    EXPECT_EQ(data->index_count() % 3u, 0u);
+
+    for (const auto index : data->indices)
+        EXPECT_LT(index, data->vertex_count());
 }

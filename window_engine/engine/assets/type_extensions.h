@@ -121,8 +121,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeTexture =
         static_cast<wz::asset::AssetType>(129);
 
-    // Reserved CPU data asset type. Not implemented yet:
-    // intended runtime representation: MeshData owned by MeshTable.
+    // Implemented: immutable CPU-side mesh data.
+    // Runtime data is owned by MeshTable.
+    // Multiple mesh source schemas may produce this type, including procedural
+    // mesh recipes and imported file-backed mesh recipes.
     inline constexpr wz::asset::AssetType kAssetTypeMesh =
         static_cast<wz::asset::AssetType>(130);
 

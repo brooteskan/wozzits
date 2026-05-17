@@ -36,4 +36,20 @@ namespace wz::engine::assets
             .deps_hash = {},
         };
     }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_glb_mesh_key(
+        const wz::asset::AssetKey& source_file_key,
+        uint32_t mesh_index = 0) noexcept
+    {
+        const uint64_t content = detail::mix64(
+            kGLBMeshSchema.value,
+            static_cast<uint64_t>(mesh_index));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(content),
+            .schema_hash = detail::hash_u64(kGLBMeshSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(source_file_key),
+        };
+    }
 }

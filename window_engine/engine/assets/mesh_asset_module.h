@@ -41,6 +41,13 @@ namespace wz::engine::assets
         }
     };
 
+    struct GLBMeshDesc
+    {
+        std::string name;
+        wz::asset::AssetKey source_file;
+        uint32_t mesh_index = 0;
+    };
+
     class MeshAssetModule
     {
     public:
@@ -50,6 +57,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_procedural_mesh(
             const ProceduralMeshDesc& desc);
+
+        [[nodiscard]] MeshAsset create_glb_mesh(
+            const GLBMeshDesc& desc);
 
         [[nodiscard]] MeshHandle get_mesh(
             const MeshAsset& asset) const;
