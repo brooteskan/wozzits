@@ -9,7 +9,6 @@
 
 #include "dx12_device_internal.h"
 
-#include <d3dx12.h>
 #include <cassert>
 
 namespace wz::gpu::dx12::internal
