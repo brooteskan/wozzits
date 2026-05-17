@@ -167,41 +167,13 @@ namespace wz::render::backend::dx12
         }
     }
 
-    void submit(Context* ctx,
+    void submit(wz::gpu::Device& device,
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver)
     {
-        assert(ctx);
-        assert(ctx->device);
-
-        auto* cmdList =
-            wz::gpu::dx12::internal::get_command_list(*ctx->device);
-
-        // ── Opaque pass (mesh table, same as non-resolver path) ───────────────
-
-        cmdList->SetGraphicsRootSignature(ctx->root_sig);
-        cmdList->SetPipelineState(ctx->pso);
-        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-        struct { Mat4 world; Mat4 view_proj; } data;
-
-        for (const DrawCommand& dc : frame.opaque)
-        {
-            if (dc.mesh >= ctx->mesh_table.size())
-                continue;
-
-            const auto& mesh = ctx->mesh_table[dc.mesh];
-            cmdList->IASetVertexBuffers(0, 1, &mesh.vb_view);
-
-            data.world     = dc.world;
-            data.view_proj = frame.view.view_projection;
-            cmdList->SetGraphicsRoot32BitConstants(0, 32, &data, 0);
-
-            if (mesh.index_buffer)
-                cmdList->DrawIndexedInstanced(mesh.index_count, 1, 0, 0, 0);
-            else
-                cmdList->DrawInstanced(mesh.index_count, 1, 0, 0);
-        }
+        // Opaque DrawCommands are not handled by the resolver path yet.
+        // They will be wired once MeshHandle resolution is added to
+        // RenderResourceResolver.
 
         // ── Splat pass (resolver path) ────────────────────────────────────────
 
@@ -209,20 +181,22 @@ namespace wz::render::backend::dx12
             return;
 
         const auto pipeline =
-            wz::gpu::dx12::internal::get_gaussian_splat_debug_pipeline(
-                *ctx->device);
+            wz::gpu::dx12::internal::get_gaussian_splat_debug_pipeline(device);
 
         if (!pipeline.valid())
             return;
+
+        auto* cmdList =
+            wz::gpu::dx12::internal::get_command_list(device);
 
         cmdList->SetGraphicsRootSignature(pipeline.root_sig);
         cmdList->SetPipelineState(pipeline.pso);
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
         const float vp_w = static_cast<float>(
-            wz::gpu::dx12::internal::get_width(*ctx->device));
+            wz::gpu::dx12::internal::get_width(device));
         const float vp_h = static_cast<float>(
-            wz::gpu::dx12::internal::get_height(*ctx->device));
+            wz::gpu::dx12::internal::get_height(device));
 
         for (const DrawCommand& dc : frame.splats)
         {
@@ -238,7 +212,7 @@ namespace wz::render::backend::dx12
 
             const auto* cloud =
                 wz::gpu::dx12::internal::get_gaussian_splat_cloud(
-                    *ctx->device, gpu);
+                    device, gpu);
             if (!cloud || !cloud->vertex_buffer)
                 continue;
 

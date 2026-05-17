@@ -227,15 +227,7 @@ namespace wz::gpu::dx12
         const wz::render::RenderFrameView& frame,
         const wz::engine::rendering::RenderResourceResolver& resolver)
     {
-        auto* impl = static_cast<DX12Device*>(device.impl);
-        assert(impl);
-        assert(impl->ctx && "render context was not created");
-
-        wz::render::backend::dx12::submit(
-            impl->ctx,
-            frame,
-            resolver
-        );
+        wz::render::backend::dx12::submit(device, frame, resolver);
     }
 
     void create_debug_opaque_context(

@@ -57,10 +57,12 @@ namespace wz::render::backend::dx12
     // THIS is the important function
     void submit(Context* ctx, const RenderFrameView& frame);
 
-    // Resolver overload: opaque pass uses mesh_table as before; splat pass
-    // resolves SplatHandle → GPUHandle via the resolver and draws through the
-    // gaussian splat debug pipeline.
-    void submit(Context* ctx,
+    // Resolver overload: draws splat DrawCommands via RenderResourceResolver.
+    // Does not require an opaque Context — takes Device& directly so it can
+    // be used by pure-splat toolhosts that never call create_debug_opaque_context.
+    // Opaque DrawCommands in frame.opaque are silently skipped; mesh-resolver
+    // support will be added when MeshHandle is wired to the resolver.
+    void submit(wz::gpu::Device& device,
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver);
 }
