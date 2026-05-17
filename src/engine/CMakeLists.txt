@@ -53,6 +53,8 @@ target_sources(window_engine PRIVATE
     assets/csv_export/csv_export_compilers.cpp
     assets/csv_export_asset_module.cpp
 
+    assets/gltf/gltf_importer.cpp 
+
     assets/renderable/renderable.cpp
     assets/renderable/renderable_compilers.cpp
     assets/renderable_asset_module.cpp

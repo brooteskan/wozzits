@@ -127,6 +127,7 @@ target_include_directories(window_engine
         "${CMAKE_CURRENT_SOURCE_DIR}/external/xml/pugixml"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/tomlplusplus"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/gltf/fastgltf/include"
 )
 
 target_link_libraries(window_engine
@@ -322,5 +323,6 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_renderable renderable_table)
     rs_add_test_group(asset_renderable renderable_asset_module)
 
+    rs_add_test_group(asset_gltf gltf_smoke_test)
     rs_add_test_group(game_app game_app_main)
 endif()
