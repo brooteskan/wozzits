@@ -1,10 +1,9 @@
 #pragma once
 // file: engine/render_backends/dx12/dx12_submit.h
 
-
-
 #include <render/frame/render_frame.h>
 #include <gpu/gpu.h>
+#include <engine/rendering/render_resource_resolver.h>
 
 namespace wz::render::backend::dx12
 {
@@ -57,4 +56,11 @@ namespace wz::render::backend::dx12
 
     // THIS is the important function
     void submit(Context* ctx, const RenderFrameView& frame);
+
+    // Resolver overload: opaque pass uses mesh_table as before; splat pass
+    // resolves SplatHandle → GPUHandle via the resolver and draws through the
+    // gaussian splat debug pipeline.
+    void submit(Context* ctx,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver);
 }

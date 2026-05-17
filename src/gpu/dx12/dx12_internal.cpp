@@ -1,8 +1,22 @@
 // src/gpu/dx12/dx12_internal.cpp
 
 #include <gpu/dx12/dx12_internal.h>
+#include "dx12_device_internal.h"
 
 namespace wz::gpu::dx12::internal {
+
+    GaussianSplatDebugPipelineRef get_gaussian_splat_debug_pipeline(Device& d)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(d.impl);
+        if (!impl || !impl->gaussian_splat_debug_ctx)
+            return {};
+        return {
+            .root_sig = impl->gaussian_splat_debug_ctx->root_sig,
+            .pso      = impl->gaussian_splat_debug_ctx->pso,
+        };
+    }
+
+
 
 
 

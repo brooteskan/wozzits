@@ -4,6 +4,7 @@
 #include <gpu/gpu.h>
 
 #include <render/frame/render_frame.h>
+#include <engine/rendering/render_resource_resolver.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
 #include <gpu/dx12/dx12_gaussian_splat_debug.h>
@@ -61,6 +62,14 @@ namespace wz::gpu::dx12
     void submit_render_frame(
         wz::gpu::Device& device,
         const wz::render::RenderFrameView& frame
+    );
+
+    // Resolver overload: routes GaussianSplats DrawCommands through
+    // RenderResourceResolver instead of the legacy per-primitive path.
+    void submit_render_frame(
+        wz::gpu::Device& device,
+        const wz::render::RenderFrameView& frame,
+        const wz::engine::rendering::RenderResourceResolver& resolver
     );
 
     // ── Scalar field debug path ──────────────────────────────────────────
