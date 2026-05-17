@@ -207,3 +207,24 @@ namespace wz::gpu::dx12::internal {
         Device& device,
         GPUHandle handle);
 }
+
+
+// ── Gaussian splat debug pipeline ref ────────────────────────────
+//
+// Non-owning view of the PSO and root signature created by
+// create_gaussian_splat_debug_context().  The resolver-based submit
+// path uses this to bind the splat pipeline without reaching into
+// device internals.
+
+namespace wz::gpu::dx12::internal {
+
+    struct GaussianSplatDebugPipelineRef
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso      = nullptr;
+
+        bool valid() const noexcept { return root_sig && pso; }
+    };
+
+    GaussianSplatDebugPipelineRef get_gaussian_splat_debug_pipeline(Device& d);
+}

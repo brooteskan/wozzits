@@ -167,6 +167,72 @@ namespace wz::render::backend::dx12
         }
     }
 
+    void submit(wz::gpu::Device& device,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver)
+    {
+        // Opaque DrawCommands are not handled by the resolver path yet.
+        // They will be wired once MeshHandle resolution is added to
+        // RenderResourceResolver.
+
+        // ── Splat pass (resolver path) ────────────────────────────────────────
+
+        if (frame.splats.empty())
+            return;
+
+        const auto pipeline =
+            wz::gpu::dx12::internal::get_gaussian_splat_debug_pipeline(device);
+
+        if (!pipeline.valid())
+            return;
+
+        auto* cmdList =
+            wz::gpu::dx12::internal::get_command_list(device);
+
+        cmdList->SetGraphicsRootSignature(pipeline.root_sig);
+        cmdList->SetPipelineState(pipeline.pso);
+        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+        const float vp_w = static_cast<float>(
+            wz::gpu::dx12::internal::get_width(device));
+        const float vp_h = static_cast<float>(
+            wz::gpu::dx12::internal::get_height(device));
+
+        for (const DrawCommand& dc : frame.splats)
+        {
+            if (dc.kind != DrawCommandKind::GaussianSplats)
+                continue;
+            if (dc.splats_buffer == INVALID_SPLAT)
+                continue;
+
+            const wz::gpu::GPUHandle gpu =
+                resolver.resolve_splats(dc.splats_buffer);
+            if (!gpu.valid())
+                continue;
+
+            const auto* cloud =
+                wz::gpu::dx12::internal::get_gaussian_splat_cloud(
+                    device, gpu);
+            if (!cloud || !cloud->vertex_buffer)
+                continue;
+
+            // world[16], view_proj[16], viewport_and_size[4] — matches
+            // the gaussian splat debug root signature (36 x 32-bit constants).
+            float constants[36] = {};
+            for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
+            for (int i = 0; i < 16; ++i) constants[16 + i] =
+                frame.view.view_projection.m[i];
+            constants[32] = vp_w;
+            constants[33] = vp_h;
+            constants[34] = 8.0f;  // base splat size in pixels
+            constants[35] = 0.0f;
+
+            cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+            cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
+            cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+        }
+    }
+
     void destroy(Context* ctx)
     {
         if (!ctx) return;

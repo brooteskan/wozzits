@@ -1,10 +1,9 @@
 #pragma once
 // file: engine/render_backends/dx12/dx12_submit.h
 
-
-
 #include <render/frame/render_frame.h>
 #include <gpu/gpu.h>
+#include <engine/rendering/render_resource_resolver.h>
 
 namespace wz::render::backend::dx12
 {
@@ -57,4 +56,13 @@ namespace wz::render::backend::dx12
 
     // THIS is the important function
     void submit(Context* ctx, const RenderFrameView& frame);
+
+    // Resolver overload: draws splat DrawCommands via RenderResourceResolver.
+    // Does not require an opaque Context — takes Device& directly so it can
+    // be used by pure-splat toolhosts that never call create_debug_opaque_context.
+    // Opaque DrawCommands in frame.opaque are silently skipped; mesh-resolver
+    // support will be added when MeshHandle is wired to the resolver.
+    void submit(wz::gpu::Device& device,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver);
 }
