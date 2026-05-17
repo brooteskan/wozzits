@@ -94,3 +94,36 @@ TEST(GLTFImporter, ImportsCubeGLBAsMeshData)
     for (const auto index : mesh.indices)
         EXPECT_LT(index, mesh.vertex_count());
 }
+
+TEST(GLTFImporter, ImportsLowPolyRockGLBAsMeshData)
+{
+    const auto path = fixture_path("gltf/low_poly_rock.glb");
+    SCOPED_TRACE(path.string());
+
+    const auto bytes = read_binary_file(path);
+    ASSERT_FALSE(bytes.empty());
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    wz::engine::assets::GLTFImportOptions options;
+
+    ASSERT_TRUE(wz::engine::assets::import_glb_meshes(
+        bytes.data(),
+        bytes.size(),
+        options,
+        out));
+
+    ASSERT_FALSE(out.meshes.empty());
+
+    const auto& mesh = out.meshes[0].mesh;
+
+    EXPECT_TRUE(mesh.valid());
+    EXPECT_EQ(mesh.topology, wz::engine::assets::MeshPrimitiveTopology::TriangleList);
+    EXPECT_EQ(mesh.index_format, wz::engine::assets::MeshIndexFormat::UInt32);
+
+    EXPECT_GT(mesh.vertex_count(), 100u);
+    EXPECT_GT(mesh.index_count(), 300u);
+    EXPECT_EQ(mesh.index_count() % 3u, 0u);
+
+    for (const auto index : mesh.indices)
+        EXPECT_LT(index, mesh.vertex_count());
+}
