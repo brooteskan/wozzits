@@ -206,6 +206,7 @@ function(rs_add_test_group category name)
 
     target_compile_definitions(${target}
         PRIVATE SCENE_RENDER_TEST=1
+        WZ_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
     )
 
     target_link_libraries(${target}
@@ -232,6 +233,7 @@ function(rs_add_test_group category name)
             COMMENT "Copying resources for ${target}"
         )
     endif()
+
 
     add_test(NAME ${target} COMMAND ${target})
 
@@ -323,6 +325,6 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_renderable renderable_table)
     rs_add_test_group(asset_renderable renderable_asset_module)
 
-    rs_add_test_group(asset_gltf gltf_smoke_test)
+    rs_add_test_group(asset_gltf gltf_importer)
     rs_add_test_group(game_app game_app_main)
 endif()

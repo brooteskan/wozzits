@@ -1,5 +1,7 @@
 #pragma once
 
+// file: engine/assets/gltf/gltf_importer.h
+
 #include <engine/assets/mesh/mesh.h>
 
 #include <cstddef>
@@ -24,8 +26,12 @@ namespace wz::engine::assets
     {
         bool import_normals = true;
         bool import_uv0 = true;
-        bool generate_missing_indices = true;
+
+        // For now, import only triangle-list mesh primitives.
         bool reject_non_triangles = true;
+
+        // If true, ask fastgltf to synthesize indices for unindexed primitives.
+        bool generate_missing_indices = true;
     };
 
     bool import_glb_meshes(
