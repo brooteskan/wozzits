@@ -76,6 +76,11 @@ endif()
 # ----------------------
 add_subdirectory(external/gltf/fastgltf)
 
+# ----------------------
+# dependency: tinyply
+# ----------------------
+add_subdirectory(external/ply)
+
 
 # ----------------------------
 # Core library target
@@ -116,6 +121,8 @@ target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/reader.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/scanner.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/writer.c"
+
+    $<TARGET_OBJECTS:wz_external_ply>
  )
 
 target_include_directories(window_engine
@@ -128,6 +135,7 @@ target_include_directories(window_engine
         "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/tomlplusplus"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/gltf/fastgltf/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
 )
 
 target_link_libraries(window_engine
@@ -199,6 +207,11 @@ function(rs_add_test_group category name)
         tests/${category}/${name}.cpp
         "src/event/event.cpp"
      "src/engine/game_app.cpp")
+
+    target_include_directories(${target}
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
+    )
 
     set_target_properties(${target}
         PROPERTIES FOLDER "tests/${category}"
@@ -326,6 +339,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(asset_renderable renderable_table)
     rs_add_test_group(asset_renderable renderable_asset_module)
+
+    rs_add_test_group(asset_ply ply_reader)
 
     rs_add_test_group(asset_gltf gltf_importer)
     rs_add_test_group(game_app game_app_main)
