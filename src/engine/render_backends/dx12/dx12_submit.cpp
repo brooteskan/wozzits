@@ -348,7 +348,7 @@ namespace wz::render::backend::dx12
                 frame.view.view_projection.m[i];
             constants[32] = vp_w;
             constants[33] = vp_h;
-            constants[34] = 8.0f;
+            constants[34] = 800.0f;
             constants[35] = 0.0f;
 
             cmdList->SetGraphicsRootSignature(pl->root_sig);

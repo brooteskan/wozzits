@@ -87,22 +87,49 @@ namespace wz::gpu::dx12::internal
             out.position[1] = splat.position[1];
             out.position[2] = splat.position[2];
 
-            // Scale: stored as log, decode to world-space size.
-            // V1 debug path uses the largest axis so non-uniform splats remain visible.
-            out.scale = (std::max)({
-                std::exp(splat.scale[0]),
-                std::exp(splat.scale[1]),
-                std::exp(splat.scale[2]),
-            });
+            // Opacity: stored as logit, decode via sigmoid.
+            out.opacity = 1.0f / (1.0f + std::exp(-splat.opacity));
 
-            // Color: SH DC coefficient → linear display RGB.
+            // Scale: stored as log, decode each axis to world-space size.
+            out.scale[0] = std::exp(splat.scale[0]);
+            out.scale[1] = std::exp(splat.scale[1]);
+            out.scale[2] = std::exp(splat.scale[2]);
+
+            // Rotation: PLY importer stores rot_0=w, rot_1=x, rot_2=y, rot_3=z.
+            // Send to shader as x,y,z,w.
+            float qw = splat.rotation[0];
+            float qx = splat.rotation[1];
+            float qy = splat.rotation[2];
+            float qz = splat.rotation[3];
+
+            const float q_len_sq = qx * qx + qy * qy + qz * qz + qw * qw;
+
+            if (q_len_sq > 0.0f)
+            {
+                const float inv_len = 1.0f / std::sqrt(q_len_sq);
+                qx *= inv_len;
+                qy *= inv_len;
+                qz *= inv_len;
+                qw *= inv_len;
+            }
+            else
+            {
+                qx = 0.0f;
+                qy = 0.0f;
+                qz = 0.0f;
+                qw = 1.0f;
+            }
+
+            out.rotation[0] = qx;
+            out.rotation[1] = qy;
+            out.rotation[2] = qz;
+            out.rotation[3] = qw;
+
+            // Color: SH DC coefficient → linear display/debug RGB.
             // Clamp to [0, 1] to guard against out-of-range SH values.
             out.color[0] = std::clamp(0.5f + SH_C0 * splat.color_dc[0], 0.0f, 1.0f);
             out.color[1] = std::clamp(0.5f + SH_C0 * splat.color_dc[1], 0.0f, 1.0f);
             out.color[2] = std::clamp(0.5f + SH_C0 * splat.color_dc[2], 0.0f, 1.0f);
-
-            // Opacity: stored as logit, decode via sigmoid.
-            out.opacity = 1.0f / (1.0f + std::exp(-splat.opacity));
 
             return out;
         }

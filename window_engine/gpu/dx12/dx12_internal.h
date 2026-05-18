@@ -164,10 +164,24 @@ namespace wz::gpu::dx12::internal {
 
     struct DX12GaussianSplatVertex
     {
+        // POSITION.xyz + OPACITY
         float position[3] = {};
-        float scale = 1.0f;
-        float color[3] = { 1.0f, 1.0f, 1.0f };
         float opacity = 1.0f;
+
+        // SCALE.xyz + padding
+        // Decoded from log-space PLY scale into world-space scale.
+        float scale[3] = { 1.0f, 1.0f, 1.0f };
+        float pad0 = 0.0f;
+
+        // ROTATION.xyzw
+        // PLY convention: rot_0=w, rot_1=x, rot_2=y, rot_3=z.
+        // Stored here as x,y,z,w for shader convenience.
+        float rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+        // COLOR.rgb + padding
+        // Decoded from SH DC to display/debug RGB.
+        float color[3] = { 1.0f, 1.0f, 1.0f };
+        float pad1 = 0.0f;
     };
 
     struct DX12GaussianSplatCloudResource
