@@ -212,22 +212,61 @@ namespace wz::engine::assets
         schema.rot_2 = find_property_index(table, "rot_2");
         schema.rot_3 = find_property_index(table, "rot_3");
 
-        // Color: prefer SH DC coefficients (3DGS format); fall back to byte or float RGB.
-        schema.f_dc_0 = find_property_index(table, "f_dc_0");
-        schema.f_dc_1 = find_property_index(table, "f_dc_1");
-        schema.f_dc_2 = find_property_index(table, "f_dc_2");
+        // Color policy:
+        //
+        // 1. Prefer complete 3DGS SH DC color: f_dc_0, f_dc_1, f_dc_2.
+        // 2. If that complete triple is absent, try complete RGB: red, green, blue.
+        // 3. If color data is absent or partial, leave all color indices at -1.
+        //    The importer will then default the splat to white.
+        //
+        // This is intentionally permissive because many PLY files have position-only
+        // or partially populated color-like fields.
+        const int f_dc_0 = find_property_index(table, "f_dc_0");
+        const int f_dc_1 = find_property_index(table, "f_dc_1");
+        const int f_dc_2 = find_property_index(table, "f_dc_2");
 
-        if (schema.f_dc_0 < 0)
+        const bool has_all_f_dc =
+            f_dc_0 >= 0 &&
+            f_dc_1 >= 0 &&
+            f_dc_2 >= 0;
+
+        if (has_all_f_dc)
         {
-            schema.red   = find_property_index(table, "red");
-            schema.green = find_property_index(table, "green");
-            schema.blue  = find_property_index(table, "blue");
+            schema.f_dc_0 = f_dc_0;
+            schema.f_dc_1 = f_dc_1;
+            schema.f_dc_2 = f_dc_2;
+        }
+        else
+        {
+            const int red = find_property_index(table, "red");
+            const int green = find_property_index(table, "green");
+            const int blue = find_property_index(table, "blue");
 
-            if (schema.red >= 0)
+            const bool has_all_rgb =
+                red >= 0 &&
+                green >= 0 &&
+                blue >= 0;
+
+            if (has_all_rgb)
             {
+                schema.red = red;
+                schema.green = green;
+                schema.blue = blue;
+
+                const auto red_type =
+                    table.properties[static_cast<size_t>(schema.red)].type;
+                const auto green_type =
+                    table.properties[static_cast<size_t>(schema.green)].type;
+                const auto blue_type =
+                    table.properties[static_cast<size_t>(schema.blue)].type;
+
+                // Treat as byte RGB only when all three channels are UInt8.
+                // Mixed or float-ish RGB falls through as normalized/scalar RGB,
+                // which the importer reads as float values.
                 schema.color_is_byte_rgb =
-                    (table.properties[static_cast<size_t>(schema.red)].type
-                        == wz::external::ply::ScalarType::UInt8);
+                    red_type == wz::external::ply::ScalarType::UInt8 &&
+                    green_type == wz::external::ply::ScalarType::UInt8 &&
+                    blue_type == wz::external::ply::ScalarType::UInt8;
             }
         }
 
