@@ -322,6 +322,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(asset_gaussian_splat ply_gaussian_splat)
     rs_add_test_group(asset_gaussian_splat ply_reader)
+    rs_add_test_group(asset_gaussian_splat gaussian_splat_ply_importer)
 
     rs_add_test_group(gpu gpu_mesh)
 
