@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <istream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -102,20 +103,12 @@ namespace wz::external::ply
         };
     }
 
-    ReadResult read_ply_file(const std::filesystem::path& path)
+    ReadResult read_ply_stream(std::istream& stream)
     {
         ReadResult result;
 
         try
         {
-            std::ifstream stream(path, std::ios::binary);
-            if (!stream)
-            {
-                result.ok = false;
-                result.error.message = "Failed to open PLY file: " + path.string();
-                return result;
-            }
-
             tinyply::PlyFile file;
             file.parse_header(stream);
 
@@ -264,8 +257,34 @@ namespace wz::external::ply
         catch (...)
         {
             result.ok = false;
-            result.error.message = "Unknown error while reading PLY file";
+            result.error.message = "Unknown error while reading PLY stream";
             return result;
         }
+    }
+
+    ReadResult read_ply_file(const std::filesystem::path& path)
+    {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream)
+        {
+            ReadResult result;
+            result.ok = false;
+            result.error.message = "Failed to open PLY file: " + path.string();
+            return result;
+        }
+
+        return read_ply_stream(stream);
+    }
+
+    ReadResult read_ply_bytes(std::span<const std::uint8_t> bytes)
+    {
+        // Copy into a string so we can wrap it in an istringstream.
+        // The copy is acceptable here — this is a one-shot import path.
+        const std::string data(
+            reinterpret_cast<const char*>(bytes.data()),
+            bytes.size());
+
+        std::istringstream stream(data, std::ios::binary);
+        return read_ply_stream(stream);
     }
 }

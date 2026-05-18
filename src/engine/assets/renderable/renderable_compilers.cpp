@@ -185,8 +185,8 @@ namespace wz::engine::assets::internal
                 copy_bounds(
                     data.bounds_min,
                     data.bounds_max,
-                    cloud->bounds_min,
-                    cloud->bounds_max);
+                    cloud->bounds.min,
+                    cloud->bounds.max);
 
                 wz::asset::ResourceHandle handle =
                     renderable_table->add(std::move(data));

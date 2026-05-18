@@ -2,6 +2,8 @@
 
 // engine/assets/gaussian_splat/gaussian_splat.h
 
+#include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
+
 #include <asset/types.h>
 
 #include <cstdint>
@@ -10,37 +12,6 @@
 
 namespace wz::engine::assets
 {
-    enum class GaussianSplatColorMode : uint8_t
-    {
-        RGB,
-    };
-
-    struct GaussianSplat
-    {
-        float position[3] = {};
-
-        // V1 stores decomposed anisotropic shape. The renderer can initially
-        // ignore rotation/scale and draw these as debug points/quads.
-        float scale[3] = { 1.0f, 1.0f, 1.0f };
-        float rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f }; // x, y, z, w
-
-        float opacity = 1.0f;
-        float color[3] = { 1.0f, 1.0f, 1.0f };
-    };
-
-    struct GaussianSplatCloudData
-    {
-        GaussianSplatColorMode color_mode = GaussianSplatColorMode::RGB;
-
-        std::vector<GaussianSplat> splats;
-
-        float bounds_min[3] = {};
-        float bounds_max[3] = {};
-
-        bool valid() const noexcept;
-        uint32_t splat_count() const noexcept;
-    };
-
     class GaussianSplatCloudTable
     {
     public:

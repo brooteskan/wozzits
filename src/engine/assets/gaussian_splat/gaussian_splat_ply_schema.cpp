@@ -168,20 +168,8 @@ namespace wz::engine::assets
 
     bool GaussianSplatPLYSchema::has_required_fields() const noexcept
     {
-        return x >= 0
-            && y >= 0
-            && z >= 0
-            && opacity >= 0
-            && scale_0 >= 0
-            && scale_1 >= 0
-            && scale_2 >= 0
-            && rot_0 >= 0
-            && rot_1 >= 0
-            && rot_2 >= 0
-            && rot_3 >= 0
-            && f_dc_0 >= 0
-            && f_dc_1 >= 0
-            && f_dc_2 >= 0;
+        // Only x/y/z are required; all other fields fall back to safe defaults.
+        return x >= 0 && y >= 0 && z >= 0;
     }
 
     GaussianSplatPLYSchemaResult detect_gaussian_splat_ply_schema(
@@ -199,26 +187,10 @@ namespace wz::engine::assets
         GaussianSplatPLYSchema schema;
         std::vector<std::string> missing;
 
+        // Position is the only truly required set of fields.
         require_property(table, "x", schema.x, missing);
         require_property(table, "y", schema.y, missing);
         require_property(table, "z", schema.z, missing);
-
-        require_property(table, "opacity", schema.opacity, missing);
-
-        require_property(table, "scale_0", schema.scale_0, missing);
-        require_property(table, "scale_1", schema.scale_1, missing);
-        require_property(table, "scale_2", schema.scale_2, missing);
-
-        require_property(table, "rot_0", schema.rot_0, missing);
-        require_property(table, "rot_1", schema.rot_1, missing);
-        require_property(table, "rot_2", schema.rot_2, missing);
-        require_property(table, "rot_3", schema.rot_3, missing);
-
-        require_property(table, "f_dc_0", schema.f_dc_0, missing);
-        require_property(table, "f_dc_1", schema.f_dc_1, missing);
-        require_property(table, "f_dc_2", schema.f_dc_2, missing);
-
-        schema.f_rest = collect_f_rest_indices(table);
 
         if (!missing.empty())
         {
@@ -227,6 +199,39 @@ namespace wz::engine::assets
             result.error = make_missing_error(missing);
             return result;
         }
+
+        // Optional 3DGS fields — absent fields stay -1 and the importer supplies defaults.
+        schema.opacity = find_property_index(table, "opacity");
+
+        schema.scale_0 = find_property_index(table, "scale_0");
+        schema.scale_1 = find_property_index(table, "scale_1");
+        schema.scale_2 = find_property_index(table, "scale_2");
+
+        schema.rot_0 = find_property_index(table, "rot_0");
+        schema.rot_1 = find_property_index(table, "rot_1");
+        schema.rot_2 = find_property_index(table, "rot_2");
+        schema.rot_3 = find_property_index(table, "rot_3");
+
+        // Color: prefer SH DC coefficients (3DGS format); fall back to byte or float RGB.
+        schema.f_dc_0 = find_property_index(table, "f_dc_0");
+        schema.f_dc_1 = find_property_index(table, "f_dc_1");
+        schema.f_dc_2 = find_property_index(table, "f_dc_2");
+
+        if (schema.f_dc_0 < 0)
+        {
+            schema.red   = find_property_index(table, "red");
+            schema.green = find_property_index(table, "green");
+            schema.blue  = find_property_index(table, "blue");
+
+            if (schema.red >= 0)
+            {
+                schema.color_is_byte_rgb =
+                    (table.properties[static_cast<size_t>(schema.red)].type
+                        == wz::external::ply::ScalarType::UInt8);
+            }
+        }
+
+        schema.f_rest = collect_f_rest_indices(table);
 
         result.ok = true;
         result.schema = std::move(schema);

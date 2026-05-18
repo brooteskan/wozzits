@@ -25,15 +25,15 @@ namespace wz::engine::assets
     struct GaussianSplatBounds
     {
         float min[3] = {
-            std::numeric_limits<float>::max(),
-            std::numeric_limits<float>::max(),
-            std::numeric_limits<float>::max()
+            (std::numeric_limits<float>::max)(),
+            (std::numeric_limits<float>::max)(),
+            (std::numeric_limits<float>::max)()
         };
 
         float max[3] = {
-            std::numeric_limits<float>::lowest(),
-            std::numeric_limits<float>::lowest(),
-            std::numeric_limits<float>::lowest()
+            (std::numeric_limits<float>::lowest)(),
+            (std::numeric_limits<float>::lowest)(),
+            (std::numeric_limits<float>::lowest)()
         };
 
         bool valid = false;
@@ -51,6 +51,11 @@ namespace wz::engine::assets
         float scale_max = 0.0f;
 
         uint32_t f_rest_count = 0;
+
+        bool valid() const noexcept
+        {
+            return !splats.empty();
+        }
 
         bool empty() const noexcept
         {

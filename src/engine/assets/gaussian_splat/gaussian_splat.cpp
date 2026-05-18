@@ -8,16 +8,6 @@
 
 namespace wz::engine::assets
 {
-    bool GaussianSplatCloudData::valid() const noexcept
-    {
-        return !splats.empty();
-    }
-
-    uint32_t GaussianSplatCloudData::splat_count() const noexcept
-    {
-        return static_cast<uint32_t>(splats.size());
-    }
-
     GaussianSplatCloudTable::GaussianSplatCloudTable()
     {
         clouds_.emplace_back();
