@@ -246,3 +246,113 @@ TEST(ExternalPLYReader, ReportsMissingFile)
     EXPECT_FALSE(result.ok);
     EXPECT_FALSE(result.error.message.empty());
 }
+
+TEST(ExternalPLYReader, ReadsTinyplyBinaryIcosahedronFixture)
+{
+    const std::filesystem::path path =
+        std::filesystem::path(WZ_TEST_FIXTURE_DIR) /
+        "splats" /
+        "icosahedron.ply";
+
+    const wz::external::ply::ReadResult result =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(result.ok) << result.error.message;
+
+    ASSERT_EQ(result.document.header.elements.size(), 2u);
+
+    EXPECT_EQ(result.document.header.elements[0].name, "vertex");
+    EXPECT_EQ(result.document.header.elements[0].count, 12u);
+    ASSERT_EQ(result.document.header.elements[0].properties.size(), 6u);
+
+    EXPECT_EQ(result.document.header.elements[0].properties[0].name, "x");
+    EXPECT_EQ(result.document.header.elements[0].properties[1].name, "y");
+    EXPECT_EQ(result.document.header.elements[0].properties[2].name, "z");
+    EXPECT_EQ(result.document.header.elements[0].properties[3].name, "nx");
+    EXPECT_EQ(result.document.header.elements[0].properties[4].name, "ny");
+    EXPECT_EQ(result.document.header.elements[0].properties[5].name, "nz");
+
+    EXPECT_EQ(result.document.header.elements[1].name, "face");
+    EXPECT_EQ(result.document.header.elements[1].count, 20u);
+    ASSERT_EQ(result.document.header.elements[1].properties.size(), 1u);
+
+    EXPECT_EQ(result.document.header.elements[1].properties[0].name, "vertex_indices");
+    EXPECT_TRUE(result.document.header.elements[1].properties[0].is_list);
+
+    const wz::external::ply::ScalarTable* vertex_table =
+        find_table(result.document, "vertex");
+
+    ASSERT_NE(vertex_table, nullptr);
+    EXPECT_EQ(vertex_table->row_count, 12u);
+    ASSERT_EQ(vertex_table->properties.size(), 6u);
+    ASSERT_EQ(vertex_table->values.size(), 12u * 6u);
+
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 1), 0.0);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 2), -1.0);
+
+    EXPECT_NEAR(value_at(*vertex_table, 0, 3), 3.69549e-06, 1e-5);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 4), 0.0);
+    EXPECT_NEAR(value_at(*vertex_table, 0, 5), -4.16078, 1e-5);
+
+    // Face has only a list property, so the v1 scalar-table wrapper should skip it.
+    const wz::external::ply::ScalarTable* face_table =
+        find_table(result.document, "face");
+
+    EXPECT_EQ(face_table, nullptr);
+}
+
+TEST(ExternalPLYReader, ReadsTinyplyASCIIIcosahedronFixture)
+{
+    const std::filesystem::path path =
+        std::filesystem::path(WZ_TEST_FIXTURE_DIR) /
+        "splats" /
+        "icosahedron_ascii.ply";
+
+    const wz::external::ply::ReadResult result =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(result.ok) << result.error.message;
+
+    ASSERT_EQ(result.document.header.elements.size(), 2u);
+
+    EXPECT_EQ(result.document.header.elements[0].name, "vertex");
+    EXPECT_EQ(result.document.header.elements[0].count, 12u);
+    ASSERT_EQ(result.document.header.elements[0].properties.size(), 6u);
+
+    EXPECT_EQ(result.document.header.elements[0].properties[0].name, "x");
+    EXPECT_EQ(result.document.header.elements[0].properties[1].name, "y");
+    EXPECT_EQ(result.document.header.elements[0].properties[2].name, "z");
+    EXPECT_EQ(result.document.header.elements[0].properties[3].name, "nx");
+    EXPECT_EQ(result.document.header.elements[0].properties[4].name, "ny");
+    EXPECT_EQ(result.document.header.elements[0].properties[5].name, "nz");
+
+    EXPECT_EQ(result.document.header.elements[1].name, "face");
+    EXPECT_EQ(result.document.header.elements[1].count, 20u);
+    ASSERT_EQ(result.document.header.elements[1].properties.size(), 1u);
+
+    EXPECT_EQ(result.document.header.elements[1].properties[0].name, "vertex_indices");
+    EXPECT_TRUE(result.document.header.elements[1].properties[0].is_list);
+
+    const wz::external::ply::ScalarTable* vertex_table =
+        find_table(result.document, "vertex");
+
+    ASSERT_NE(vertex_table, nullptr);
+    EXPECT_EQ(vertex_table->row_count, 12u);
+    ASSERT_EQ(vertex_table->properties.size(), 6u);
+    ASSERT_EQ(vertex_table->values.size(), 12u * 6u);
+
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 1), 0.0);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 2), -1.0);
+
+    EXPECT_NEAR(value_at(*vertex_table, 0, 3), 3.69549e-06, 1e-10);
+    EXPECT_DOUBLE_EQ(value_at(*vertex_table, 0, 4), 0.0);
+    EXPECT_NEAR(value_at(*vertex_table, 0, 5), -4.16078, 1e-6);
+
+    // Face has only a list property, so the v1 scalar-table wrapper should skip it.
+    const wz::external::ply::ScalarTable* face_table =
+        find_table(result.document, "face");
+
+    EXPECT_EQ(face_table, nullptr);
+}
