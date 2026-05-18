@@ -33,6 +33,15 @@ namespace wz::engine::assets
         // Example: f_rest_0, f_rest_1, f_rest_2, ...
         std::vector<int> f_rest;
 
+        // Byte-RGB fallback: populated when f_dc_0/1/2 are absent but red/green/blue
+        // channels are present. color_is_byte_rgb is true when the channel type is
+        // uchar (values in [0, 255]) rather than float (values in [0, 1]).
+        int red = -1;
+        int green = -1;
+        int blue = -1;
+        bool color_is_byte_rgb = false;
+
+        // Only x/y/z are truly required. All other fields fall back to defaults.
         bool has_required_fields() const noexcept;
     };
 

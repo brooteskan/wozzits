@@ -126,6 +126,12 @@ namespace wz::engine::assets
 
             cloud.splats.reserve(static_cast<size_t>(table.row_count));
 
+            // Default values used when optional fields are absent.
+            // logit(0.9) gives a clearly visible splat; exp(-3) ≈ 0.05 world-unit radius.
+            constexpr float kDefaultLogitOpacity = 2.1972245773f;
+            constexpr float kDefaultLogScale     = -3.0f;
+            constexpr float kSH_C0               = 0.28209479177387814f;
+
             bool initialized_ranges = false;
 
             for (size_t row = 0; row < static_cast<size_t>(table.row_count); ++row)
@@ -136,20 +142,73 @@ namespace wz::engine::assets
                 splat.position[1] = table_value_as_float(table, row, schema.y);
                 splat.position[2] = table_value_as_float(table, row, schema.z);
 
-                splat.opacity = table_value_as_float(table, row, schema.opacity);
+                splat.opacity =
+                    schema.opacity >= 0
+                    ? table_value_as_float(table, row, schema.opacity)
+                    : kDefaultLogitOpacity;
 
-                splat.scale[0] = table_value_as_float(table, row, schema.scale_0);
-                splat.scale[1] = table_value_as_float(table, row, schema.scale_1);
-                splat.scale[2] = table_value_as_float(table, row, schema.scale_2);
+                splat.scale[0] =
+                    schema.scale_0 >= 0
+                    ? table_value_as_float(table, row, schema.scale_0)
+                    : kDefaultLogScale;
+                splat.scale[1] =
+                    schema.scale_1 >= 0
+                    ? table_value_as_float(table, row, schema.scale_1)
+                    : kDefaultLogScale;
+                splat.scale[2] =
+                    schema.scale_2 >= 0
+                    ? table_value_as_float(table, row, schema.scale_2)
+                    : kDefaultLogScale;
 
-                splat.rotation[0] = table_value_as_float(table, row, schema.rot_0);
-                splat.rotation[1] = table_value_as_float(table, row, schema.rot_1);
-                splat.rotation[2] = table_value_as_float(table, row, schema.rot_2);
-                splat.rotation[3] = table_value_as_float(table, row, schema.rot_3);
+                // Identity quaternion: rot_0 = w = 1, others = 0.
+                splat.rotation[0] =
+                    schema.rot_0 >= 0
+                    ? table_value_as_float(table, row, schema.rot_0)
+                    : 1.0f;
+                splat.rotation[1] =
+                    schema.rot_1 >= 0
+                    ? table_value_as_float(table, row, schema.rot_1)
+                    : 0.0f;
+                splat.rotation[2] =
+                    schema.rot_2 >= 0
+                    ? table_value_as_float(table, row, schema.rot_2)
+                    : 0.0f;
+                splat.rotation[3] =
+                    schema.rot_3 >= 0
+                    ? table_value_as_float(table, row, schema.rot_3)
+                    : 0.0f;
 
-                splat.color_dc[0] = table_value_as_float(table, row, schema.f_dc_0);
-                splat.color_dc[1] = table_value_as_float(table, row, schema.f_dc_1);
-                splat.color_dc[2] = table_value_as_float(table, row, schema.f_dc_2);
+                if (schema.f_dc_0 >= 0)
+                {
+                    // Full 3DGS format: SH DC coefficients stored directly.
+                    splat.color_dc[0] = table_value_as_float(table, row, schema.f_dc_0);
+                    splat.color_dc[1] = table_value_as_float(table, row, schema.f_dc_1);
+                    splat.color_dc[2] = table_value_as_float(table, row, schema.f_dc_2);
+                }
+                else if (schema.red >= 0)
+                {
+                    // RGB fallback: convert display-space color to SH DC coefficients.
+                    float r = table_value_as_float(table, row, schema.red);
+                    float g = table_value_as_float(table, row, schema.green);
+                    float b = table_value_as_float(table, row, schema.blue);
+
+                    if (schema.color_is_byte_rgb)
+                    {
+                        r /= 255.0f;
+                        g /= 255.0f;
+                        b /= 255.0f;
+                    }
+
+                    splat.color_dc[0] = (r - 0.5f) / kSH_C0;
+                    splat.color_dc[1] = (g - 0.5f) / kSH_C0;
+                    splat.color_dc[2] = (b - 0.5f) / kSH_C0;
+                }
+                else
+                {
+                    // No color data — default to white.
+                    splat.color_dc[0] = splat.color_dc[1] = splat.color_dc[2] =
+                        0.5f / kSH_C0;
+                }
 
                 splat.color_rest.reserve(schema.f_rest.size());
 
@@ -200,6 +259,34 @@ namespace wz::engine::assets
             result.cloud = std::move(cloud);
             return result;
         }
+
+        GaussianSplatImportResult import_from_document(
+            const wz::external::ply::Document& document)
+        {
+            const wz::external::ply::ScalarTable* vertex_table =
+                find_scalar_table(document, "vertex");
+
+            if (!vertex_table)
+            {
+                GaussianSplatImportResult result;
+                result.ok = false;
+                result.error = "Gaussian splat PLY does not contain a scalar vertex table";
+                return result;
+            }
+
+            const GaussianSplatPLYSchemaResult schema_result =
+                detect_gaussian_splat_ply_schema(*vertex_table);
+
+            if (!schema_result.ok)
+            {
+                GaussianSplatImportResult result;
+                result.ok = false;
+                result.error = schema_result.error;
+                return result;
+            }
+
+            return import_gaussian_splat_table(*vertex_table, schema_result.schema);
+        }
     }
 
     GaussianSplatImportResult import_gaussian_splat_ply_file(
@@ -216,28 +303,23 @@ namespace wz::engine::assets
             return result;
         }
 
-        const wz::external::ply::ScalarTable* vertex_table =
-            find_scalar_table(read.document, "vertex");
+        return import_from_document(read.document);
+    }
 
-        if (!vertex_table)
+    GaussianSplatImportResult import_gaussian_splat_ply_bytes(
+        std::span<const std::uint8_t> bytes)
+    {
+        const wz::external::ply::ReadResult read =
+            wz::external::ply::read_ply_bytes(bytes);
+
+        if (!read.ok)
         {
             GaussianSplatImportResult result;
             result.ok = false;
-            result.error = "Gaussian splat PLY does not contain a scalar vertex table";
+            result.error = "Failed to parse PLY bytes: " + read.error.message;
             return result;
         }
 
-        const GaussianSplatPLYSchemaResult schema_result =
-            detect_gaussian_splat_ply_schema(*vertex_table);
-
-        if (!schema_result.ok)
-        {
-            GaussianSplatImportResult result;
-            result.ok = false;
-            result.error = schema_result.error;
-            return result;
-        }
-
-        return import_gaussian_splat_table(*vertex_table, schema_result.schema);
+        return import_from_document(read.document);
     }
 }

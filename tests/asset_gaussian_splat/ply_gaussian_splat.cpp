@@ -57,7 +57,7 @@ TEST(GaussianSplatPLYAsset, ImportsAsciiPLYThroughAssetGraph)
     ASSERT_NE(data, nullptr);
 
     ASSERT_TRUE(data->valid());
-    EXPECT_EQ(data->splat_count(), 3u);
+    EXPECT_EQ(data->splat_count(), uint64_t{3});
 
     EXPECT_FLOAT_EQ(data->splats[0].position[0], 0.0f);
     EXPECT_FLOAT_EQ(data->splats[0].position[1], 0.0f);
@@ -71,15 +71,18 @@ TEST(GaussianSplatPLYAsset, ImportsAsciiPLYThroughAssetGraph)
     EXPECT_FLOAT_EQ(data->splats[2].position[1], 1.0f);
     EXPECT_FLOAT_EQ(data->splats[2].position[2], 0.0f);
 
-    EXPECT_FLOAT_EQ(data->splats[0].color[0], 1.0f);
-    EXPECT_FLOAT_EQ(data->splats[0].color[1], 0.0f);
-    EXPECT_FLOAT_EQ(data->splats[0].color[2], 0.0f);
+    // color_dc stores raw SH DC coefficients as written in the PLY file.
+    EXPECT_FLOAT_EQ(data->splats[0].color_dc[0], 1.0f);
+    EXPECT_FLOAT_EQ(data->splats[0].color_dc[1], 0.0f);
+    EXPECT_FLOAT_EQ(data->splats[0].color_dc[2], 0.0f);
 
-    EXPECT_LE(data->bounds_min[0], 0.0f);
-    EXPECT_LE(data->bounds_min[1], 0.0f);
-    EXPECT_LE(data->bounds_min[2], 0.0f);
+    ASSERT_TRUE(data->bounds.valid);
 
-    EXPECT_GE(data->bounds_max[0], 1.0f);
-    EXPECT_GE(data->bounds_max[1], 1.0f);
-    EXPECT_GE(data->bounds_max[2], 0.0f);
+    EXPECT_LE(data->bounds.min[0], 0.0f);
+    EXPECT_LE(data->bounds.min[1], 0.0f);
+    EXPECT_LE(data->bounds.min[2], 0.0f);
+
+    EXPECT_GE(data->bounds.max[0], 1.0f);
+    EXPECT_GE(data->bounds.max[1], 1.0f);
+    EXPECT_GE(data->bounds.max[2], 0.0f);
 }

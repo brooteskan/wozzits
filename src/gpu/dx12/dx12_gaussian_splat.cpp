@@ -4,9 +4,11 @@
 
 #include "dx12_device_internal.h"
 
-#include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -75,25 +77,32 @@ namespace wz::gpu::dx12::internal
         DX12GaussianSplatVertex make_gpu_splat_vertex(
             const wz::engine::assets::GaussianSplat& splat)
         {
+            // 3DGS decoding: PLY stores raw/encoded values that must be
+            // transformed before display.
+            constexpr float SH_C0 = 0.28209479177387814f;
+
             DX12GaussianSplatVertex out{};
 
             out.position[0] = splat.position[0];
             out.position[1] = splat.position[1];
             out.position[2] = splat.position[2];
 
-            // V1 debug path treats splat scale as a simple scalar.
-            // Use the largest axis so non-uniform splats remain visible.
-            out.scale = splat.scale[0];
-            if (splat.scale[1] > out.scale)
-                out.scale = splat.scale[1];
-            if (splat.scale[2] > out.scale)
-                out.scale = splat.scale[2];
+            // Scale: stored as log, decode to world-space size.
+            // V1 debug path uses the largest axis so non-uniform splats remain visible.
+            out.scale = (std::max)({
+                std::exp(splat.scale[0]),
+                std::exp(splat.scale[1]),
+                std::exp(splat.scale[2]),
+            });
 
-            out.color[0] = splat.color[0];
-            out.color[1] = splat.color[1];
-            out.color[2] = splat.color[2];
+            // Color: SH DC coefficient → linear display RGB.
+            // Clamp to [0, 1] to guard against out-of-range SH values.
+            out.color[0] = std::clamp(0.5f + SH_C0 * splat.color_dc[0], 0.0f, 1.0f);
+            out.color[1] = std::clamp(0.5f + SH_C0 * splat.color_dc[1], 0.0f, 1.0f);
+            out.color[2] = std::clamp(0.5f + SH_C0 * splat.color_dc[2], 0.0f, 1.0f);
 
-            out.opacity = splat.opacity;
+            // Opacity: stored as logit, decode via sigmoid.
+            out.opacity = 1.0f / (1.0f + std::exp(-splat.opacity));
 
             return out;
         }

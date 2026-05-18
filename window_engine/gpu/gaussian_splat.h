@@ -11,7 +11,7 @@
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
 
-#include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
 
 namespace wz::gpu
 {

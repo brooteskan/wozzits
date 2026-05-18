@@ -49,10 +49,11 @@ TEST(GaussianSplatAssetModule, ResolvesProceduralCloud)
 
     ASSERT_NE(data, nullptr);
     EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->splat_count(), 64u);
+    EXPECT_EQ(data->splat_count(), uint64_t{64});
 
-    EXPECT_LE(data->bounds_min[0], -2.0f);
-    EXPECT_GE(data->bounds_max[0], 2.0f);
+    ASSERT_TRUE(data->bounds.valid);
+    EXPECT_LE(data->bounds.min[0], -2.0f);
+    EXPECT_GE(data->bounds.max[0], 2.0f);
 }
 
 TEST(GaussianSplatCloudTable, RejectsWrongHandleType)

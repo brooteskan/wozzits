@@ -1,7 +1,7 @@
 // src/engine/assets/gaussian_splat/gaussian_splat_compilers.cpp
 
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
-#include <engine/assets/gaussian_splat/ply_importer.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_ply_importer.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -20,8 +20,15 @@ namespace wz::engine::assets::internal
             const ProceduralGaussianSplatCloudCompileDesc& desc)
         {
             GaussianSplatCloudData cloud{};
-            cloud.color_mode = GaussianSplatColorMode::RGB;
             cloud.splats.reserve(desc.count);
+
+            // 3DGS encoding constants.
+            // opacity stored as logit; logit(0.9) ≈ 2.197 gives a clearly visible splat.
+            constexpr float kLogitOpacity = 2.1972245773f;
+            // scale stored as log.
+            const float log_scale = std::log(desc.splat_scale);
+            // color stored as SH DC coefficients: f_dc = (display - 0.5) / SH_C0
+            constexpr float SH_C0 = 0.28209479177387814f;
 
             // Deterministic Fibonacci-ish sphere distribution. This is not random;
             // identical desc produces identical splat order and values.
@@ -46,27 +53,40 @@ namespace wz::engine::assets::internal
                 splat.position[1] = y * desc.radius;
                 splat.position[2] = z * desc.radius;
 
-                splat.scale[0] = desc.splat_scale;
-                splat.scale[1] = desc.splat_scale;
-                splat.scale[2] = desc.splat_scale;
+                splat.scale[0] = log_scale;
+                splat.scale[1] = log_scale;
+                splat.scale[2] = log_scale;
 
-                splat.opacity = 1.0f;
+                // Identity quaternion: rot_0=w=1, rot_1=x=0, rot_2=y=0, rot_3=z=0.
+                splat.rotation[0] = 1.0f;
 
-                // Simple diagnostic color from normalized position.
-                splat.color[0] = 0.5f + 0.5f * x;
-                splat.color[1] = 0.5f + 0.5f * y;
-                splat.color[2] = 0.5f + 0.5f * z;
+                splat.opacity = kLogitOpacity;
+
+                // Simple diagnostic color from normalized position, encoded as SH DC.
+                const float display_r = 0.5f + 0.5f * x;
+                const float display_g = 0.5f + 0.5f * y;
+                const float display_b = 0.5f + 0.5f * z;
+                splat.color_dc[0] = (display_r - 0.5f) / SH_C0;
+                splat.color_dc[1] = (display_g - 0.5f) / SH_C0;
+                splat.color_dc[2] = (display_b - 0.5f) / SH_C0;
 
                 cloud.splats.push_back(splat);
             }
 
             const float b = desc.radius + desc.splat_scale;
-            cloud.bounds_min[0] = -b;
-            cloud.bounds_min[1] = -b;
-            cloud.bounds_min[2] = -b;
-            cloud.bounds_max[0] = b;
-            cloud.bounds_max[1] = b;
-            cloud.bounds_max[2] = b;
+            cloud.bounds.min[0] = -b;
+            cloud.bounds.min[1] = -b;
+            cloud.bounds.min[2] = -b;
+            cloud.bounds.max[0] = b;
+            cloud.bounds.max[1] = b;
+            cloud.bounds.max[2] = b;
+            cloud.bounds.valid = true;
+
+            cloud.opacity_min = kLogitOpacity;
+            cloud.opacity_max = kLogitOpacity;
+            cloud.scale_min = log_scale;
+            cloud.scale_max = log_scale;
+            cloud.f_rest_count = 0;
 
             return cloud;
         }
@@ -90,11 +110,15 @@ namespace wz::engine::assets::internal
                 return compile_failed_node(input);
             }
 
-            GaussianSplatCloudData data{};
-            if (!import_ascii_ply_gaussian_splats(bytes->data(), bytes->size(), data)) {
-                logger.error("failed to import ASCII PLY gaussian splat cloud");
+            const GaussianSplatImportResult import_result =
+                import_gaussian_splat_ply_bytes({ bytes->data(), bytes->size() });
+
+            if (!import_result.ok) {
+                logger.error("failed to import PLY gaussian splat cloud: " + import_result.error);
                 return compile_failed_node(input);
             }
+
+            GaussianSplatCloudData data = import_result.cloud;
 
             if (!data.valid()) {
                 logger.error("PLY gaussian splat importer produced invalid cloud");
