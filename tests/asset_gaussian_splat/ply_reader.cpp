@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <ply/ply_reader.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_ply_schema.h>
 
 #include <filesystem>
 #include <fstream>
@@ -355,4 +356,272 @@ TEST(ExternalPLYReader, ReadsTinyplyASCIIIcosahedronFixture)
         find_table(result.document, "face");
 
     EXPECT_EQ(face_table, nullptr);
+}
+
+TEST(GaussianSplatPLYSchema, DetectsRequiredGaussianSplatFields)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property float f_dc_0\n"
+        "property float f_dc_1\n"
+        "property float f_dc_2\n"
+        "property float opacity\n"
+        "property float scale_0\n"
+        "property float scale_1\n"
+        "property float scale_2\n"
+        "property float rot_0\n"
+        "property float rot_1\n"
+        "property float rot_2\n"
+        "property float rot_3\n"
+        "end_header\n"
+        "1 2 3 0.1 0.2 0.3 -2.0 -1.0 -1.1 -1.2 1 0 0 0\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_valid_splat.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    ASSERT_TRUE(detected.ok) << detected.error;
+
+    EXPECT_TRUE(detected.schema.has_required_fields());
+
+    EXPECT_EQ(detected.schema.x, 0);
+    EXPECT_EQ(detected.schema.y, 1);
+    EXPECT_EQ(detected.schema.z, 2);
+
+    EXPECT_EQ(detected.schema.f_dc_0, 3);
+    EXPECT_EQ(detected.schema.f_dc_1, 4);
+    EXPECT_EQ(detected.schema.f_dc_2, 5);
+
+    EXPECT_EQ(detected.schema.opacity, 6);
+
+    EXPECT_EQ(detected.schema.scale_0, 7);
+    EXPECT_EQ(detected.schema.scale_1, 8);
+    EXPECT_EQ(detected.schema.scale_2, 9);
+
+    EXPECT_EQ(detected.schema.rot_0, 10);
+    EXPECT_EQ(detected.schema.rot_1, 11);
+    EXPECT_EQ(detected.schema.rot_2, 12);
+    EXPECT_EQ(detected.schema.rot_3, 13);
+
+    EXPECT_TRUE(detected.schema.f_rest.empty());
+
+    std::filesystem::remove(path);
+}
+
+TEST(GaussianSplatPLYSchema, RejectsOrdinaryMeshPLY)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property float nx\n"
+        "property float ny\n"
+        "property float nz\n"
+        "end_header\n"
+        "0 0 0 0 1 0\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_mesh_not_splat.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    EXPECT_FALSE(detected.ok);
+    EXPECT_FALSE(detected.error.empty());
+
+    EXPECT_NE(detected.error.find("opacity"), std::string::npos);
+    EXPECT_NE(detected.error.find("scale_0"), std::string::npos);
+    EXPECT_NE(detected.error.find("rot_0"), std::string::npos);
+    EXPECT_NE(detected.error.find("f_dc_0"), std::string::npos);
+
+    std::filesystem::remove(path);
+}
+
+TEST(GaussianSplatPLYSchema, ReportsMissingOpacity)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property float f_dc_0\n"
+        "property float f_dc_1\n"
+        "property float f_dc_2\n"
+        "property float scale_0\n"
+        "property float scale_1\n"
+        "property float scale_2\n"
+        "property float rot_0\n"
+        "property float rot_1\n"
+        "property float rot_2\n"
+        "property float rot_3\n"
+        "end_header\n"
+        "1 2 3 0.1 0.2 0.3 -1.0 -1.1 -1.2 1 0 0 0\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_missing_opacity.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    EXPECT_FALSE(detected.ok);
+    EXPECT_NE(detected.error.find("opacity"), std::string::npos);
+
+    std::filesystem::remove(path);
+}
+
+TEST(GaussianSplatPLYSchema, CollectsFRestPropertiesInNumericOrder)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property float f_dc_0\n"
+        "property float f_dc_1\n"
+        "property float f_dc_2\n"
+        "property float opacity\n"
+        "property float scale_0\n"
+        "property float scale_1\n"
+        "property float scale_2\n"
+        "property float rot_0\n"
+        "property float rot_1\n"
+        "property float rot_2\n"
+        "property float rot_3\n"
+        "property float f_rest_10\n"
+        "property float f_rest_2\n"
+        "property float f_rest_0\n"
+        "property float f_rest_1\n"
+        "end_header\n"
+        "1 2 3 0.1 0.2 0.3 -2.0 -1.0 -1.1 -1.2 1 0 0 0 10 2 0 1\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_f_rest_order.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    ASSERT_TRUE(detected.ok) << detected.error;
+
+    ASSERT_EQ(detected.schema.f_rest.size(), 4u);
+
+    // Property declaration order:
+    // index 14 = f_rest_10
+    // index 15 = f_rest_2
+    // index 16 = f_rest_0
+    // index 17 = f_rest_1
+    //
+    // Numeric order should be:
+    // f_rest_0, f_rest_1, f_rest_2, f_rest_10
+    EXPECT_EQ(detected.schema.f_rest[0], 16);
+    EXPECT_EQ(detected.schema.f_rest[1], 17);
+    EXPECT_EQ(detected.schema.f_rest[2], 15);
+    EXPECT_EQ(detected.schema.f_rest[3], 14);
+
+    std::filesystem::remove(path);
+}
+
+TEST(GaussianSplatPLYSchema, IgnoresUnknownExtraProperties)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property float weird_tool_specific_value\n"
+        "property float f_dc_0\n"
+        "property float f_dc_1\n"
+        "property float f_dc_2\n"
+        "property float opacity\n"
+        "property float scale_0\n"
+        "property float scale_1\n"
+        "property float scale_2\n"
+        "property float rot_0\n"
+        "property float rot_1\n"
+        "property float rot_2\n"
+        "property float rot_3\n"
+        "end_header\n"
+        "1 2 3 999 0.1 0.2 0.3 -2.0 -1.0 -1.1 -1.2 1 0 0 0\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_extra_properties.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    ASSERT_TRUE(detected.ok) << detected.error;
+
+    EXPECT_EQ(detected.schema.x, 0);
+    EXPECT_EQ(detected.schema.y, 1);
+    EXPECT_EQ(detected.schema.z, 2);
+
+    EXPECT_EQ(detected.schema.f_dc_0, 4);
+    EXPECT_EQ(detected.schema.opacity, 7);
+
+    std::filesystem::remove(path);
 }
