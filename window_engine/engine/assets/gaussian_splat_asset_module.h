@@ -40,8 +40,6 @@ namespace wz::engine::assets
         std::string name;
         wz::asset::AssetKey scalar_field_key{};  // from ScalarFieldAsset::output
 
-        uint32_t width = 0;           // must match scalar field's width
-        uint32_t depth = 0;           // must match scalar field's depth
         float height_scale = 1.0f;
         float step_x = 1.0f;
         float step_z = 1.0f;

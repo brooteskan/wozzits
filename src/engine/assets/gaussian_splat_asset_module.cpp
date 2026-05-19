@@ -111,19 +111,12 @@ namespace wz::engine::assets
             return out;
         }
 
-        if (desc.width == 0 || desc.depth == 0) {
-            logger_.error("gaussian splat from scalar field has zero width or depth: " + desc.name);
-            return out;
-        }
-
         if (desc.splat_scale <= 0.0f) {
             logger_.error("gaussian splat from scalar field has non-positive splat_scale: " + desc.name);
             return out;
         }
 
         const GaussianSplatFromScalarFieldCompileDesc compile_desc{
-            .width            = desc.width,
-            .depth            = desc.depth,
             .height_scale     = desc.height_scale,
             .step_x           = desc.step_x,
             .step_z           = desc.step_z,

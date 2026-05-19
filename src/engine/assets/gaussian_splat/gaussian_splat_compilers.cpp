@@ -9,9 +9,10 @@
 #include <algorithm>
 #include <any>
 #include <cmath>
+#include <limits>
 #include <span>
-#include <vector>
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -140,18 +141,10 @@ namespace wz::engine::assets::internal
         GaussianSplatCloudData make_splat_cloud_from_scalar_field(
             const GaussianSplatFromScalarFieldCompileDesc& desc,
             const ScalarFieldData& field,
-            wz::Logger& logger)
+            wz::Logger& /*logger*/)
         {
-            if (field.width != desc.width || field.depth != desc.depth) {
-                logger.error(
-                    "scalar field dimensions (" + std::to_string(field.width) +
-                    "x" + std::to_string(field.depth) +
-                    ") do not match compile desc (" + std::to_string(desc.width) +
-                    "x" + std::to_string(desc.depth) + ")");
-                return {};
-            }
-
             constexpr float SH_C0 = 0.28209479177387814f;
+            constexpr float kInf  = std::numeric_limits<float>::max();
 
             const float log_scale = std::log(std::max(desc.splat_scale, 1e-6f));
 
@@ -160,22 +153,24 @@ namespace wz::engine::assets::internal
                 return std::log(p / (1.0f - p));
             }();
 
-            const float value_range = field.max_value - field.min_value;
+            const float value_range  = field.max_value - field.min_value;
             const bool can_normalize = (value_range > 1e-12f);
 
-            // Center the grid around the origin.
-            const float half_x = 0.5f * static_cast<float>(desc.width  - 1) * desc.step_x;
-            const float half_z = 0.5f * static_cast<float>(desc.depth - 1) * desc.step_z;
+            // Center the heightfield grid on the origin.
+            // field.width columns along world X; field.height rows along world Z.
+            const float half_x = 0.5f * static_cast<float>(field.width  - 1) * desc.step_x;
+            const float half_z = 0.5f * static_cast<float>(field.height - 1) * desc.step_z;
 
             GaussianSplatCloudData cloud{};
-            cloud.splats.reserve(desc.width * desc.depth);
+            cloud.splats.reserve(field.width * field.height);
 
-            float world_min_y = std::numeric_limits<float>::max();
-            float world_max_y = std::numeric_limits<float>::lowest();
+            // Tight bounds accumulated only from emitted splats.
+            float bmin[3] = { kInf,  kInf,  kInf};
+            float bmax[3] = {-kInf, -kInf, -kInf};
 
-            for (uint32_t iz = 0; iz < desc.depth; ++iz) {
-                for (uint32_t ix = 0; ix < desc.width; ++ix) {
-                    const float raw = field.at(ix, 0, iz);
+            for (uint32_t iy = 0; iy < field.height; ++iy) {
+                for (uint32_t ix = 0; ix < field.width; ++ix) {
+                    const float raw = field.at(ix, iy);
 
                     const float normalized =
                         (desc.normalize_values && can_normalize)
@@ -185,14 +180,14 @@ namespace wz::engine::assets::internal
                     if (desc.use_threshold && normalized < desc.emit_threshold)
                         continue;
 
-                    const float world_x = static_cast<float>(ix) * desc.step_x - half_x;
-                    const float world_y = normalized * desc.height_scale;
-                    const float world_z = static_cast<float>(iz) * desc.step_z - half_z;
+                    const float wx = static_cast<float>(ix) * desc.step_x - half_x;
+                    const float wy = normalized * desc.height_scale;
+                    const float wz = static_cast<float>(iy) * desc.step_z - half_z;
 
                     GaussianSplat splat{};
-                    splat.position[0] = world_x;
-                    splat.position[1] = world_y;
-                    splat.position[2] = world_z;
+                    splat.position[0] = wx;
+                    splat.position[1] = wy;
+                    splat.position[2] = wz;
 
                     splat.scale[0] = log_scale;
                     splat.scale[1] = log_scale;
@@ -210,8 +205,12 @@ namespace wz::engine::assets::internal
                     splat.color_dc[1] = sh_dc;
                     splat.color_dc[2] = sh_dc;
 
-                    world_min_y = std::min(world_min_y, world_y);
-                    world_max_y = std::max(world_max_y, world_y);
+                    bmin[0] = std::min(bmin[0], wx);
+                    bmin[1] = std::min(bmin[1], wy);
+                    bmin[2] = std::min(bmin[2], wz);
+                    bmax[0] = std::max(bmax[0], wx);
+                    bmax[1] = std::max(bmax[1], wy);
+                    bmax[2] = std::max(bmax[2], wz);
 
                     cloud.splats.push_back(splat);
                 }
@@ -220,12 +219,13 @@ namespace wz::engine::assets::internal
             if (cloud.splats.empty())
                 return {};
 
-            cloud.bounds.min[0] = -half_x - desc.splat_scale;
-            cloud.bounds.min[1] = world_min_y - desc.splat_scale;
-            cloud.bounds.min[2] = -half_z - desc.splat_scale;
-            cloud.bounds.max[0] =  half_x + desc.splat_scale;
-            cloud.bounds.max[1] = world_max_y + desc.splat_scale;
-            cloud.bounds.max[2] =  half_z + desc.splat_scale;
+            const float r = desc.splat_scale;
+            cloud.bounds.min[0] = bmin[0] - r;
+            cloud.bounds.min[1] = bmin[1] - r;
+            cloud.bounds.min[2] = bmin[2] - r;
+            cloud.bounds.max[0] = bmax[0] + r;
+            cloud.bounds.max[1] = bmax[1] + r;
+            cloud.bounds.max[2] = bmax[2] + r;
             cloud.bounds.valid  = true;
 
             cloud.opacity_min = logit_opacity;
