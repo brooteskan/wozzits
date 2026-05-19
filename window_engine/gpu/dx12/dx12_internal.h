@@ -186,6 +186,17 @@ namespace wz::gpu::dx12::internal {
         float pad1 = 0.0f;
     };
 
+    // Layout guards: the HLSL StructuredBuffer<DX12GaussianSplatVertex> mirror
+    // must match these offsets exactly.  Update the pull shader if any change.
+    static_assert(sizeof(DX12GaussianSplatVertex)             == 64);
+    static_assert(offsetof(DX12GaussianSplatVertex, position) ==  0);
+    static_assert(offsetof(DX12GaussianSplatVertex, opacity)  == 12);
+    static_assert(offsetof(DX12GaussianSplatVertex, scale)    == 16);
+    static_assert(offsetof(DX12GaussianSplatVertex, pad0)     == 28);
+    static_assert(offsetof(DX12GaussianSplatVertex, rotation) == 32);
+    static_assert(offsetof(DX12GaussianSplatVertex, color)    == 48);
+    static_assert(offsetof(DX12GaussianSplatVertex, pad1)     == 60);
+
     struct DX12GaussianSplatCloudResource
     {
         ID3D12Resource* vertex_buffer = nullptr;
@@ -196,8 +207,21 @@ namespace wz::gpu::dx12::internal {
 
         // Pre-allocated SRV for the SplatPull path (t0 StructuredBuffer).
         // Valid only when the device's srv_cbv_uav_allocator had capacity at
-        // upload time.  Invalid for clouds uploaded before Phase 3.
+        // upload time.
         wz::gpu::dx12::DX12DescriptorTable srv_table{};
+
+        // Binding-model-specific validity checks.
+        // Use these instead of a generic `valid()` so submit paths cannot
+        // accidentally treat a partially-initialized resource as fully ready.
+        bool valid_for_vertex_instanced() const noexcept
+        {
+            return vertex_buffer != nullptr && splat_count > 0;
+        }
+
+        bool valid_for_splat_pull() const noexcept
+        {
+            return vertex_buffer != nullptr && splat_count > 0 && srv_table.valid();
+        }
     };
 
     class DX12GaussianSplatCloudTable

@@ -145,7 +145,7 @@ namespace wz::gpu::dx12::internal
     GPUHandle DX12GaussianSplatCloudTable::add(
         DX12GaussianSplatCloudResource cloud)
     {
-        if (!cloud.vertex_buffer || cloud.splat_count == 0)
+        if (!cloud.valid_for_vertex_instanced())
             return {};
 
         const uint32_t id = static_cast<uint32_t>(slots_.size());
