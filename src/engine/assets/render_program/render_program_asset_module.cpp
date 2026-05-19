@@ -3,8 +3,6 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
-#include <gpu/dx12/dx12_internal.h>
-
 #include <asset/system.h>
 
 namespace wz::engine::assets
@@ -80,31 +78,6 @@ namespace wz::engine::assets
         wz::asset::ResourceHandle handle) const
     {
         return table_ ? table_->get(handle) : nullptr;
-    }
-
-    bool RenderProgramAssetModule::realize_pipeline(
-        wz::gpu::Device&   device,
-        RenderProgramAsset asset)
-    {
-        if (!table_ || !asset.valid())
-            return false;
-
-        const wz::asset::ResourceHandle handle = get_render_program(asset);
-        if (!handle.valid())
-            return false;
-
-        RenderProgramData* data = table_->get(handle);
-        if (!data)
-            return false;
-
-        if (data->pipeline_handle.valid())
-            return true;  // already realized
-
-        data->pipeline_handle =
-            wz::gpu::dx12::internal::create_graphics_pipeline_from_data(
-                device, *data, data->vertex_shader, data->pixel_shader);
-
-        return data->pipeline_handle.valid();
     }
 
     RenderProgramTable& RenderProgramAssetModule::table()

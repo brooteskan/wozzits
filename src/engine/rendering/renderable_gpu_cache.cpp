@@ -64,11 +64,12 @@ namespace wz::engine::rendering
             return {};
 
         PreparedRenderable out{};
-        out.kind = renderable->kind;
-        out.source_asset = renderable->source_asset;
-        out.program = renderable->program;
-        out.domain = renderable->domain;
-        out.policy_flags = renderable->policy_flags;
+        out.kind           = renderable->kind;
+        out.source_asset   = renderable->source_asset;
+        out.program        = renderable->program;
+        out.render_program = renderable->render_program;
+        out.domain         = renderable->domain;
+        out.policy_flags   = renderable->policy_flags;
 
         if (const Entry* cached = find(renderable->source_asset, renderable->kind)) {
             out.gpu_resource = cached->gpu_resource;

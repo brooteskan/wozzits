@@ -23,6 +23,10 @@ namespace wz::engine::rendering
         wz::engine::assets::RenderDomain domain{};
         uint32_t policy_flags = wz::engine::assets::RenderPolicy_None;
 
+        // Mirrors RenderableAssetData::render_program.  Invalid unless
+        // explicitly set via RenderableAssetData before realize() is called.
+        wz::asset::ResourceHandle render_program{};
+
         bool valid() const noexcept
         {
             return gpu_resource.valid();

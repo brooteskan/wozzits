@@ -6,6 +6,7 @@
 #include <render/frame/render_frame.h>
 #include <engine/rendering/render_resource_resolver.h>
 #include <engine/rendering/renderable_pipeline_cache.h>
+#include <engine/rendering/render_program_pipeline_cache.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
 #include <gpu/dx12/dx12_gaussian_splat_debug.h>
@@ -80,6 +81,16 @@ namespace wz::gpu::dx12
         const wz::render::RenderFrameView& frame,
         const wz::engine::rendering::RenderResourceResolver& resolver,
         const wz::engine::rendering::RenderablePipelineCache& pipeline_cache
+    );
+
+    // Extended production overload: also consults RenderProgramPipelineCache.
+    // Prefer this overload when resources carry a valid render_program handle.
+    void submit_render_frame(
+        wz::gpu::Device& device,
+        const wz::render::RenderFrameView& frame,
+        const wz::engine::rendering::RenderResourceResolver& resolver,
+        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+        const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache
     );
 
     // ── Scalar field debug path ──────────────────────────────────────────

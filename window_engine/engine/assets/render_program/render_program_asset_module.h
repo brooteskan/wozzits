@@ -4,7 +4,6 @@
 
 #include <asset/types.h>
 #include <engine/assets/render_program/render_program.h>
-#include <gpu/gpu.h>
 
 namespace wz::asset
 {
@@ -37,13 +36,6 @@ namespace wz::engine::assets
 
         const RenderProgramData* get_render_program_data(
             wz::asset::ResourceHandle handle) const;
-
-        // Create and store the DX12 pipeline for an already-compiled program.
-        // No-op (returns true) if the pipeline was already realized.
-        // Returns false if the asset is unresolved or PSO creation fails.
-        bool realize_pipeline(
-            wz::gpu::Device&   device,
-            RenderProgramAsset asset);
 
         RenderProgramTable& table();
         const RenderProgramTable& table() const;

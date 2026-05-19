@@ -243,6 +243,17 @@ namespace wz::gpu::dx12
         wz::render::backend::dx12::submit(device, frame, resolver, pipeline_cache);
     }
 
+    void submit_render_frame(
+        wz::gpu::Device& device,
+        const wz::render::RenderFrameView& frame,
+        const wz::engine::rendering::RenderResourceResolver& resolver,
+        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+        const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
+    {
+        wz::render::backend::dx12::submit(
+            device, frame, resolver, pipeline_cache, render_program_cache);
+    }
+
     void create_debug_opaque_context(
         wz::gpu::Device& device,
         const DebugOpaqueContextDesc& desc)

@@ -6,11 +6,12 @@ namespace wz::engine::rendering
 {
     wz::scene::SplatHandle RenderResourceResolver::register_splat_cloud(
         wz::gpu::GPUHandle                       gpu_resource,
-        wz::engine::assets::BuiltinRenderProgram program)
+        wz::engine::assets::BuiltinRenderProgram program,
+        wz::asset::ResourceHandle                render_program)
     {
         const auto index =
             static_cast<wz::scene::SplatHandle>(splat_entries_.size());
-        splat_entries_.push_back({ gpu_resource, program });
+        splat_entries_.push_back({ gpu_resource, program, render_program });
         return index;
     }
 
@@ -23,16 +24,18 @@ namespace wz::engine::rendering
         if (static_cast<size_t>(handle) >= splat_entries_.size())
             return std::nullopt;
         const Entry& e = splat_entries_[handle];
-        return ResolvedRenderableResource{ e.gpu_resource, e.program };
+        return ResolvedRenderableResource{
+            e.gpu_resource, e.program, e.render_program };
     }
 
     wz::scene::MeshHandle RenderResourceResolver::register_mesh(
         wz::gpu::GPUHandle                       gpu_resource,
-        wz::engine::assets::BuiltinRenderProgram program)
+        wz::engine::assets::BuiltinRenderProgram program,
+        wz::asset::ResourceHandle                render_program)
     {
         const auto index =
             static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
-        mesh_entries_.push_back({ gpu_resource, program });
+        mesh_entries_.push_back({ gpu_resource, program, render_program });
         return index;
     }
 
@@ -45,6 +48,7 @@ namespace wz::engine::rendering
         if (static_cast<size_t>(handle) >= mesh_entries_.size())
             return std::nullopt;
         const Entry& e = mesh_entries_[handle];
-        return ResolvedRenderableResource{ e.gpu_resource, e.program };
+        return ResolvedRenderableResource{
+            e.gpu_resource, e.program, e.render_program };
     }
 }

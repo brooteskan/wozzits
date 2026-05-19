@@ -82,10 +82,6 @@ namespace wz::engine::assets
         wz::asset::ResourceHandle vertex_shader{};
         wz::asset::ResourceHandle pixel_shader{};
 
-        // Filled in by realize_pipeline() after DX12 PSO creation.
-        // Invalid until that call succeeds.
-        wz::asset::ResourceHandle pipeline_handle{};
-
         bool valid() const noexcept
         {
             return vertex_shader.valid() && pixel_shader.valid();
@@ -99,7 +95,6 @@ namespace wz::engine::assets
 
         wz::asset::ResourceHandle add(RenderProgramData data);
         const RenderProgramData* get(wz::asset::ResourceHandle handle) const;
-        RenderProgramData*       get(wz::asset::ResourceHandle handle);
 
         void destroy();
 

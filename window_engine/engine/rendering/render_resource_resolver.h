@@ -17,23 +17,28 @@
 
 namespace wz::engine::rendering
 {
-    // Resolved result: the GPU resource handle plus the pipeline program
-    // that was registered alongside it.  submit_render_frame uses the program
-    // to look up the correct PSO in RenderablePipelineCache.
+    // Resolved result: the GPU resource handle plus pipeline identification.
+    // submit_render_frame uses render_program (when valid) to look up the PSO
+    // in RenderProgramPipelineCache; falls back to the legacy BuiltinRenderProgram
+    // → RenderablePipelineCache path when render_program is invalid.
     struct ResolvedRenderableResource
     {
         wz::gpu::GPUHandle                       gpu_resource{};
         wz::engine::assets::BuiltinRenderProgram program{};
+        wz::asset::ResourceHandle                render_program{};  // preferred when valid
     };
 
     class RenderResourceResolver
     {
     public:
         // Register a GPU-resident splat cloud together with its render program.
+        // render_program is optional; when valid the submit path prefers it
+        // over the legacy BuiltinRenderProgram → RenderablePipelineCache path.
         // Returns the SplatHandle to store in DrawCommand::splats_buffer.
         wz::scene::SplatHandle register_splat_cloud(
             wz::gpu::GPUHandle                       gpu_resource,
-            wz::engine::assets::BuiltinRenderProgram program);
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle                render_program = {});
 
         // Resolve a SplatHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_SPLAT.
@@ -41,10 +46,12 @@ namespace wz::engine::rendering
         resolve_splats(wz::scene::SplatHandle handle) const noexcept;
 
         // Register a GPU-resident mesh together with its render program.
+        // render_program is optional; when valid the submit path prefers it.
         // Returns the MeshHandle to store in DrawCommand::mesh.
         wz::scene::MeshHandle register_mesh(
             wz::gpu::GPUHandle                       gpu_resource,
-            wz::engine::assets::BuiltinRenderProgram program);
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle                render_program = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
@@ -56,6 +63,7 @@ namespace wz::engine::rendering
         {
             wz::gpu::GPUHandle                       gpu_resource{};
             wz::engine::assets::BuiltinRenderProgram program{};
+            wz::asset::ResourceHandle                render_program{};
         };
 
         std::vector<Entry> splat_entries_;

@@ -5,6 +5,7 @@
 #include <gpu/gpu.h>
 #include <engine/rendering/render_resource_resolver.h>
 #include <engine/rendering/renderable_pipeline_cache.h>
+#include <engine/rendering/render_program_pipeline_cache.h>
 
 namespace wz::render::backend::dx12
 {
@@ -70,4 +71,13 @@ namespace wz::render::backend::dx12
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver,
                 const wz::engine::rendering::RenderablePipelineCache& pipeline_cache);
+
+    // Extended production overload: also accepts a RenderProgramPipelineCache.
+    // When a resolved resource carries a valid render_program handle, the PSO is
+    // looked up from render_program_cache; otherwise falls back to pipeline_cache.
+    void submit(wz::gpu::Device& device,
+                const RenderFrameView& frame,
+                const wz::engine::rendering::RenderResourceResolver& resolver,
+                const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+                const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache);
 }

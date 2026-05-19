@@ -54,6 +54,11 @@ namespace wz::engine::assets
         RenderDomain domain{};
         uint32_t policy_flags = RenderPolicy_None;
 
+        // Optional: handle into RenderProgramTable.  Invalid until set by
+        // call-site code that has resolved a RenderProgramAsset.
+        // When valid, the submit path prefers this over the BuiltinRenderProgram.
+        wz::asset::ResourceHandle render_program{};
+
         float bounds_min[3]{};
         float bounds_max[3]{};
 

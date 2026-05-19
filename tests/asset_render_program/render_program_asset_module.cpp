@@ -4,6 +4,7 @@
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/rendering/render_program_pipeline_cache.h>
 
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
@@ -210,10 +211,11 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatDebug)
     EXPECT_EQ(data->bindings[0].register_space,  0u);
     EXPECT_EQ(data->bindings[0].count,           36u);
 
-    EXPECT_FALSE(data->pipeline_handle.valid());  // not yet realized
-    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));
-    EXPECT_TRUE(data->pipeline_handle.valid());
-    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));  // idempotent
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_FALSE(pipeline_cache.get(handle).valid());  // not yet realized
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
 }
 
 TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
@@ -276,8 +278,9 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
     EXPECT_EQ(data->bindings[0].register_space,  0u);
     EXPECT_EQ(data->bindings[0].count,           32u);
 
-    EXPECT_FALSE(data->pipeline_handle.valid());  // not yet realized
-    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));
-    EXPECT_TRUE(data->pipeline_handle.valid());
-    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));  // idempotent
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_FALSE(pipeline_cache.get(handle).valid());  // not yet realized
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
 }
