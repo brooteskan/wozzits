@@ -497,6 +497,16 @@ namespace wz::engine::assets {
     // Renderable asset.
     inline constexpr wz::asset::AssetType kAssetTypeRenderable =
         static_cast<wz::asset::AssetType>(1048);
+
+    // Render program description asset.
+    // CPU-side declaration of shaders, binding model, stage/domain,
+    // and render-state expectations. Compiles/realizes later into backend
+    // pipeline objects such as kAssetTypeGPUGraphicsPipeline.
+    inline constexpr wz::asset::AssetType kAssetTypeRenderProgram =
+        static_cast<wz::asset::AssetType>(1049);
+
+
+
     // ─── Material asset types: 1060–1099 ─────────────────────────────────────────
     // CPU-side authored material definitions and instances.
     //

@@ -127,10 +127,12 @@ namespace wz::gpu::dx12::internal
 
             // Color: SH DC coefficient → linear display/debug RGB.
             // Clamp to [0, 1] to guard against out-of-range SH values.
-            out.color[0] = std::clamp(0.5f + SH_C0 * splat.color_dc[0], 0.0f, 1.0f);
-            out.color[1] = std::clamp(0.5f + SH_C0 * splat.color_dc[1], 0.0f, 1.0f);
-            out.color[2] = std::clamp(0.5f + SH_C0 * splat.color_dc[2], 0.0f, 1.0f);
-
+            //out.color[0] = std::clamp(0.5f + SH_C0 * splat.color_dc[0], 0.0f, 1.0f);
+            //out.color[1] = std::clamp(0.5f + SH_C0 * splat.color_dc[1], 0.0f, 1.0f);
+            //out.color[2] = std::clamp(0.5f + SH_C0 * splat.color_dc[2], 0.0f, 1.0f);
+            out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];
+            out.color[1] = 0.5f + SH_C0 * splat.color_dc[1];
+            out.color[2] = 0.5f + SH_C0 * splat.color_dc[2];
             return out;
         }
     }

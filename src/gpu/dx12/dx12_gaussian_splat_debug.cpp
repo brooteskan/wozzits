@@ -93,8 +93,7 @@ namespace wz::gpu::dx12
             D3D12_INPUT_ELEMENT_DESC layout[] =
             {
                 {
-                    "POSITION",
-                    0,
+                    "POSITION", 0,
                     DXGI_FORMAT_R32G32B32_FLOAT,
                     0,
                     0,
@@ -102,8 +101,7 @@ namespace wz::gpu::dx12
                     1
                 },
                 {
-                    "SCALE",
-                    0,
+                    "OPACITY", 0,
                     DXGI_FORMAT_R32_FLOAT,
                     0,
                     12,
@@ -111,8 +109,7 @@ namespace wz::gpu::dx12
                     1
                 },
                 {
-                    "COLOR",
-                    0,
+                    "SCALE", 0,
                     DXGI_FORMAT_R32G32B32_FLOAT,
                     0,
                     16,
@@ -120,15 +117,24 @@ namespace wz::gpu::dx12
                     1
                 },
                 {
-                    "OPACITY",
+                    "ROTATION", 0,
+                    DXGI_FORMAT_R32G32B32A32_FLOAT,
                     0,
-                    DXGI_FORMAT_R32_FLOAT,
+                    32,
+                    D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
+                    1
+                },
+                {
+                    "COLOR", 0,
+                    DXGI_FORMAT_R32G32B32_FLOAT,
                     0,
-                    28,
+                    48,
                     D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
                     1
                 },
             };
+
+
 
             D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
             desc.pRootSignature = root_sig;
