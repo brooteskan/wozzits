@@ -5,7 +5,7 @@ cbuffer Transform : register(b0)
 
     // x = viewport width
     // y = viewport height
-    // z = base splat size multiplier in pixels/world-debug units
+    // z = temporary debug scale multiplier
     // w = unused
     float4 viewport_and_size;
 };
@@ -30,18 +30,6 @@ struct VSOutput
     float2 uv : TEXCOORD0;
 };
 
-// Quaternion vector rotation.
-// q is expected as x,y,z,w.
-float3 rotate_by_quat(float3 v, float4 q)
-{
-    float3 qv = q.xyz;
-    float qw = q.w;
-
-    // v' = v + 2 * cross(q.xyz, cross(q.xyz, v) + q.w * v)
-    float3 t = 2.0f * cross(qv, v);
-    return v + qw * t + cross(qv, t);
-}
-
 float4 safe_normalize_quat(float4 q)
 {
     float len_sq = dot(q, q);
@@ -52,6 +40,23 @@ float4 safe_normalize_quat(float4 q)
     }
 
     return q * rsqrt(len_sq);
+}
+
+float3 rotate_by_quat(float3 v, float4 q)
+{
+    float3 qv = q.xyz;
+    float qw = q.w;
+
+    float3 t = 2.0f * cross(qv, v);
+    return v + qw * t + cross(qv, t);
+}
+
+float2 project_point_to_ndc(float3 p)
+{
+    float4 world_pos = mul(world, float4(p, 1.0f));
+    float4 clip_pos = mul(view_proj, world_pos);
+
+    return clip_pos.xy / clip_pos.w;
 }
 
 VSOutput main(VSInput input)
@@ -68,62 +73,96 @@ VSOutput main(VSInput input)
 
     float4 q = safe_normalize_quat(input.rotation);
 
-    // Local ellipse axes. This stage uses the splat's local X/Y scale as the
-    // billboard ellipse radii. Z scale is carried in the vertex format but is
-    // not yet used by this debug projection.
-    float sx = max(input.scale.x, 0.000001f);
-    float sy = max(input.scale.y, 0.000001f);
+    float3 s = max(input.scale, float3(0.000001f, 0.000001f, 0.000001f));
 
-    // The base multiplier keeps real PLY scales visible while we are still in
-    // debug-renderer territory. You can tune viewport_and_size.z from C++.
-    float base_size = viewport_and_size.z;
+    // Temporary visibility multiplier. This is still not final physical sizing.
+    float debug_scale = viewport_and_size.z;
 
-    float3 local_axis_x = float3(sx * base_size, 0.0f, 0.0f);
-    float3 local_axis_y = float3(0.0f, sy * base_size, 0.0f);
-
-    float3 rotated_axis_x = rotate_by_quat(local_axis_x, q);
-    float3 rotated_axis_y = rotate_by_quat(local_axis_y, q);
+    float3 axis_x = rotate_by_quat(float3(s.x * debug_scale, 0.0f, 0.0f), q);
+    float3 axis_y = rotate_by_quat(float3(0.0f, s.y * debug_scale, 0.0f), q);
+    float3 axis_z = rotate_by_quat(float3(0.0f, 0.0f, s.z * debug_scale), q);
 
     float4 world_center = mul(world, float4(input.position, 1.0f));
-
-    // Transform axis endpoints through world and view-projection so the ellipse
-    // reacts to camera perspective and object/world transform.
-    float4 world_x = mul(world, float4(input.position + rotated_axis_x, 1.0f));
-    float4 world_y = mul(world, float4(input.position + rotated_axis_y, 1.0f));
-
     float4 clip_center = mul(view_proj, world_center);
-    float4 clip_x = mul(view_proj, world_x);
-    float4 clip_y = mul(view_proj, world_y);
 
-    // Convert projected endpoints to NDC-space axes.
     float2 center_ndc = clip_center.xy / clip_center.w;
-    float2 x_ndc = clip_x.xy / clip_x.w;
-    float2 y_ndc = clip_y.xy / clip_y.w;
 
-    float2 axis_x_ndc = x_ndc - center_ndc;
-    float2 axis_y_ndc = y_ndc - center_ndc;
+    float2 x_ndc = project_point_to_ndc(input.position + axis_x) - center_ndc;
+    float2 y_ndc = project_point_to_ndc(input.position + axis_y) - center_ndc;
+    float2 z_ndc = project_point_to_ndc(input.position + axis_z) - center_ndc;
 
-    // Fallback: if the projected axes become degenerate, keep a visible
-    // screen-space billboard rather than disappearing.
-    float fallback_pixels = base_size * max(sx, max(sy, input.scale.z));
-    float2 viewport = viewport_and_size.xy;
+    // Screen-space 2x2 covariance approximation:
+    //
+    // C = xx^T + yy^T + zz^T
+    //
+    // This is the key change from "draw a rotated disk" to
+    // "draw the projected footprint of a 3D ellipsoid."
+    float c00 =
+        x_ndc.x * x_ndc.x +
+        y_ndc.x * y_ndc.x +
+        z_ndc.x * z_ndc.x;
 
-    float2 fallback_axis_x = float2((fallback_pixels * 2.0f) / viewport.x, 0.0f);
-    float2 fallback_axis_y = float2(0.0f, (fallback_pixels * 2.0f) / viewport.y);
+    float c01 =
+        x_ndc.x * x_ndc.y +
+        y_ndc.x * y_ndc.y +
+        z_ndc.x * z_ndc.y;
 
-    if (dot(axis_x_ndc, axis_x_ndc) < 0.0000000001f)
+    float c11 =
+        x_ndc.y * x_ndc.y +
+        y_ndc.y * y_ndc.y +
+        z_ndc.y * z_ndc.y;
+
+    // Eigen decomposition of symmetric 2x2 matrix:
+    //
+    // [ c00 c01 ]
+    // [ c01 c11 ]
+    float trace = c00 + c11;
+    float diff = c00 - c11;
+
+    float disc = sqrt(max(0.0f, 0.25f * diff * diff + c01 * c01));
+
+    float lambda_major = max(0.0f, 0.5f * trace + disc);
+    float lambda_minor = max(0.0f, 0.5f * trace - disc);
+
+    float2 major_dir;
+
+    if (abs(c01) > 0.00000001f)
     {
-        axis_x_ndc = fallback_axis_x;
+        major_dir = normalize(float2(lambda_major - c11, c01));
+    }
+    else
+    {
+        major_dir = (c00 >= c11)
+            ? float2(1.0f, 0.0f)
+            : float2(0.0f, 1.0f);
     }
 
-    if (dot(axis_y_ndc, axis_y_ndc) < 0.0000000001f)
-    {
-        axis_y_ndc = fallback_axis_y;
-    }
+    float2 minor_dir = float2(-major_dir.y, major_dir.x);
+
+    float major_len = sqrt(lambda_major);
+    float minor_len = sqrt(lambda_minor);
+
+    // Clamp minimum visible size so tiny/degenerate splats do not vanish.
+    // This is in NDC units, derived from pixels.
+    float2 viewport = max(viewport_and_size.xy, float2(1.0f, 1.0f));
+
+    float min_pixels = 1.0f;
+    float min_ndc_x = (min_pixels * 2.0f) / viewport.x;
+    float min_ndc_y = (min_pixels * 2.0f) / viewport.y;
+    float min_ndc = max(min_ndc_x, min_ndc_y);
+
+    major_len = max(major_len, min_ndc);
+    minor_len = max(minor_len, min_ndc);
+
+    float2 axis_major_ndc = major_dir * major_len;
+    float2 axis_minor_ndc = minor_dir * minor_len;
+// Draw a quad large enough to contain the visible Gaussian footprint.
+// At 3 sigma, exp(-0.5 * r^2) is about 1.1% at the edge.
+    float gaussian_radius = 3.0f;
 
     float2 ndc_offset =
-        corner.x * axis_x_ndc +
-        corner.y * axis_y_ndc;
+    corner.x * axis_major_ndc * gaussian_radius +
+    corner.y * axis_minor_ndc * gaussian_radius;
 
     float4 clip_pos = clip_center;
     clip_pos.xy += ndc_offset * clip_center.w;
@@ -132,7 +171,9 @@ VSOutput main(VSInput input)
     output.position = clip_pos;
     output.color = input.color;
     output.opacity = input.opacity;
-    output.uv = corner;
+
+// uv is now in Gaussian sigma-space, not unit-disk space.
+    output.uv = corner * gaussian_radius;
 
     return output;
 }
