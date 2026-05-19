@@ -309,18 +309,18 @@ namespace wz::gpu::dx12::internal
         const size_t total_params =
             data.root_constants.size() + data.descriptor_bindings.size();
 
-        // Build descriptor ranges before params so pointers stay stable.
-        std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
-        ranges.reserve(data.descriptor_bindings.size());
-        for (const auto& db : data.descriptor_bindings)
+        // Build all descriptor ranges up front into a fixed-size vector so that
+        // &ranges[i] pointers assigned to DescriptorTable params below are never
+        // invalidated by a reallocation.
+        std::vector<D3D12_DESCRIPTOR_RANGE> ranges(data.descriptor_bindings.size());
+        for (size_t di = 0; di < data.descriptor_bindings.size(); ++di)
         {
-            D3D12_DESCRIPTOR_RANGE r{};
-            r.RangeType                         = to_dx12_range_type(db.kind);
-            r.NumDescriptors                    = db.descriptor_count;
-            r.BaseShaderRegister                = db.shader_register;
-            r.RegisterSpace                     = db.register_space;
-            r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-            ranges.push_back(r);
+            const auto& db = data.descriptor_bindings[di];
+            ranges[di].RangeType                         = to_dx12_range_type(db.kind);
+            ranges[di].NumDescriptors                    = db.descriptor_count;
+            ranges[di].BaseShaderRegister                = db.shader_register;
+            ranges[di].RegisterSpace                     = db.register_space;
+            ranges[di].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
         }
 
         std::vector<D3D12_ROOT_PARAMETER> params(total_params);

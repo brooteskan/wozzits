@@ -225,6 +225,77 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatDebug)
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
 }
 
+TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatPullDebug)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    // Stub shaders — DX12 does not enforce that shaders consume every declared
+    // root parameter, so this exercises the descriptor-table root-sig path
+    // without needing a real pull shader.
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name        = "stub/splat_pull_debug",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path  = "shaders/stub/stub_ps.hlsl",
+        });
+
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_builtin({
+        .name          = "program/gaussian_splat_pull_debug",
+        .program       = BuiltinRenderProgram::GaussianSplatPullDebug,
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader  = shaders.pixel_shader,
+        });
+
+    ASSERT_TRUE(program.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto handle = assets.render_programs().get_render_program(program);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.render_programs().get_render_program_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->builtin_program, BuiltinRenderProgram::GaussianSplatPullDebug);
+    EXPECT_EQ(data->binding_model,   RenderBindingModel::SplatPull);
+    EXPECT_EQ(data->topology,        RenderPrimitiveTopology::TriangleStrip);
+    EXPECT_EQ(data->default_domain,  RenderDomain::Splat);
+
+    // Declarative pipeline state.
+    EXPECT_EQ(data->input_layout, InputLayoutKind::None);
+    EXPECT_EQ(data->blend_mode,   BlendMode::AlphaBlend);
+    EXPECT_EQ(data->depth_mode,   DepthMode::Disabled);
+    EXPECT_EQ(data->raster_mode,  RasterMode::SolidCullNone);
+
+    // Root constant at b0, VS-only, 36 values.
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility,      ShaderVisibility::Vertex);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space,  0u);
+    EXPECT_EQ(data->root_constants[0].value_count,     36u);
+
+    // Splat cloud SRV at t0.
+    ASSERT_EQ(data->descriptor_bindings.size(), 1u);
+    EXPECT_EQ(data->descriptor_bindings[0].kind,             DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(data->descriptor_bindings[0].visibility,       ShaderVisibility::Vertex);
+    EXPECT_EQ(data->descriptor_bindings[0].semantic,         DescriptorSemantic::SplatCloud);
+    EXPECT_EQ(data->descriptor_bindings[0].shader_register,  0u);
+    EXPECT_EQ(data->descriptor_bindings[0].register_space,   0u);
+    EXPECT_EQ(data->descriptor_bindings[0].descriptor_count, 1u);
+
+    // Verify that the descriptor-table root-sig path and PSO creation both succeed.
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_FALSE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
+}
+
 TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
 {
     using namespace wz::engine::assets;
@@ -272,8 +343,9 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
     EXPECT_EQ(data->default_domain, RenderDomain::Debug);
 
     EXPECT_NE(data->default_policy_flags & RenderPolicy_Wireframe, 0u);
-    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthTest, 0u);
-    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthWrite, 0u);
+    // depth_mode is the authoritative depth declaration; policy flags carry no depth bits.
+    EXPECT_EQ(data->default_policy_flags & RenderPolicy_DepthTest,  0u);
+    EXPECT_EQ(data->default_policy_flags & RenderPolicy_DepthWrite, 0u);
 
     EXPECT_TRUE(data->vertex_shader.valid());
     EXPECT_TRUE(data->pixel_shader.valid());

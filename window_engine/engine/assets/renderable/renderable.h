@@ -29,6 +29,7 @@ namespace wz::engine::assets
         MeshWireframeDebug,
         GaussianSplatDebug,
         ScalarFieldDebug,
+        GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
 
         Count  // sentinel — keep last
     };

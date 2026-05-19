@@ -24,10 +24,7 @@ namespace wz::engine::assets::internal
                 out.binding_model     = RenderBindingModel::MeshIA;
                 out.topology          = RenderPrimitiveTopology::TriangleList;
                 out.default_domain    = RenderDomain::Debug;
-                out.default_policy_flags =
-                    RenderPolicy_Wireframe |
-                    RenderPolicy_DepthTest |
-                    RenderPolicy_DepthWrite;
+                out.default_policy_flags = RenderPolicy_Wireframe;
                 // Declarative pipeline state.
                 out.input_layout = InputLayoutKind::MeshPositionOnly;
                 out.blend_mode   = BlendMode::Opaque;
@@ -63,15 +60,41 @@ namespace wz::engine::assets::internal
                 return true;
 
             case BuiltinRenderProgram::ScalarFieldDebug:
-                out.binding_model    = RenderBindingModel::ScalarFieldTexture;
-                out.topology         = RenderPrimitiveTopology::TriangleList;
-                out.default_domain   = RenderDomain::Debug;
+                out.binding_model        = RenderBindingModel::ScalarFieldTexture;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Debug;
                 out.default_policy_flags = RenderPolicy_None;
-                // Declarative pipeline state.
                 out.input_layout = InputLayoutKind::None;
                 out.blend_mode   = BlendMode::Opaque;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullBack;
+                return true;
+
+            case BuiltinRenderProgram::GaussianSplatPullDebug:
+                // Pull-based splat path: no IA vertex buffer; splat data arrives
+                // via a StructuredBuffer SRV bound at t0.
+                out.binding_model        = RenderBindingModel::SplatPull;
+                out.topology             = RenderPrimitiveTopology::TriangleStrip;
+                out.default_domain       = RenderDomain::Splat;
+                out.default_policy_flags = RenderPolicy_AlphaBlend;
+                out.input_layout = InputLayoutKind::None;
+                out.blend_mode   = BlendMode::AlphaBlend;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
+                }};
+                out.descriptor_bindings = {{
+                    .kind             = DescriptorKind::StructuredBufferSRV,
+                    .visibility       = ShaderVisibility::Vertex,
+                    .semantic         = DescriptorSemantic::SplatCloud,
+                    .shader_register  = 0,  // t0
+                    .register_space   = 0,
+                    .descriptor_count = 1,
+                }};
                 return true;
 
             case BuiltinRenderProgram::Count:
