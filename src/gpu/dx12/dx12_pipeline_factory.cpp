@@ -154,48 +154,26 @@ namespace wz::gpu::dx12::internal
         assert(vs && vs->blob);
         assert(ps && ps->blob);
 
+        // Use explicit offsetof to account for pad0/pad1 in DX12GaussianSplatVertex.
+        // D3D12_APPEND_ALIGNED_ELEMENT would compute wrong offsets for ROTATION and
+        // COLOR because it doesn't know about the 4-byte padding after scale.
         D3D12_INPUT_ELEMENT_DESC layout[] =
         {
-            {
-                "POSITION", 0,
-                DXGI_FORMAT_R32G32B32_FLOAT,
-                0,
-                D3D12_APPEND_ALIGNED_ELEMENT,
-                D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                1
-            },
-            {
-                "OPACITY", 0,
-                DXGI_FORMAT_R32_FLOAT,
-                0,
-                D3D12_APPEND_ALIGNED_ELEMENT,
-                D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                1
-            },
-            {
-                "SCALE", 0,
-                DXGI_FORMAT_R32G32B32_FLOAT,
-                0,
-                D3D12_APPEND_ALIGNED_ELEMENT,
-                D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                1
-            },
-            {
-                "ROTATION", 0,
-                DXGI_FORMAT_R32G32B32A32_FLOAT,
-                0,
-                D3D12_APPEND_ALIGNED_ELEMENT,
-                D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                1
-            },
-            {
-                "COLOR", 0,
-                DXGI_FORMAT_R32G32B32_FLOAT,
-                0,
-                D3D12_APPEND_ALIGNED_ELEMENT,
-                D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                1
-            },
+            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, position)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "OPACITY",  0, DXGI_FORMAT_R32_FLOAT,           0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, opacity)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "SCALE",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, scale)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "ROTATION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT,  0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, rotation)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, color)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
         };
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
@@ -303,12 +281,14 @@ namespace wz::gpu::dx12::internal
                     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
                 }};
             case M::SplatVertexInstanced:
+                // Use offsetof — APPEND_ALIGNED_ELEMENT would skip pad0 between
+                // scale and rotation, putting COLOR 4 bytes early (reading qw as red).
                 return {
-                    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-                    { "OPACITY",  0, DXGI_FORMAT_R32_FLOAT,           0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-                    { "SCALE",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-                    { "ROTATION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT,  0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-                    { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+                    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,   0, static_cast<UINT>(offsetof(DX12GaussianSplatVertex, position)), D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+                    { "OPACITY",  0, DXGI_FORMAT_R32_FLOAT,          0, static_cast<UINT>(offsetof(DX12GaussianSplatVertex, opacity)),  D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+                    { "SCALE",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, static_cast<UINT>(offsetof(DX12GaussianSplatVertex, scale)),    D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+                    { "ROTATION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, static_cast<UINT>(offsetof(DX12GaussianSplatVertex, rotation)), D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+                    { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, static_cast<UINT>(offsetof(DX12GaussianSplatVertex, color)),    D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
                 };
             default:
                 return {};
