@@ -48,4 +48,5 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kDiagnosticResampledTimeSeriesToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryToDataTableCompilerVersion = 1;
+    inline constexpr uint64_t kBuiltinRenderProgramCompilerVersion = 1;
 }

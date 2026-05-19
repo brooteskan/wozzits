@@ -21,6 +21,8 @@
 #include <engine/assets/csv_export/csv_export_compilers.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable/renderable_compilers.h>
+#include <engine/assets/render_program/render_program.h>
+#include <engine/assets/render_program/render_program_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -47,6 +49,7 @@ namespace wz::engine::assets::internal {
         DiagnosticTimeframeSummaryTable&    diagnostic_timeframe_summary_table;
         CSVExportTable&                     csv_export_table;
         RenderableAssetTable&               renderable_table;
+        RenderProgramTable&                 render_program_table;
     };
 
     wz::asset::AssetNode compile_failed_node(

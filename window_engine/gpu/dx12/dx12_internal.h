@@ -9,6 +9,7 @@
 #include <gpu/shader.h>
 #include <d3dcompiler.h>
 #include <d3d12.h>
+#include <engine/assets/render_program/render_program.h>
 
 struct ID3D12Device;
 struct ID3D12GraphicsCommandList;
@@ -310,6 +311,13 @@ namespace wz::gpu::dx12::internal {
     GPUHandle create_graphics_pipeline(
         Device& device,
         wz::engine::assets::BuiltinRenderProgram program,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader);
+
+    // Data-driven variant: build root sig + PSO from RenderProgramData.
+    GPUHandle create_graphics_pipeline_from_data(
+        Device& device,
+        const wz::engine::assets::RenderProgramData& data,
         GPUHandle vertex_shader,
         GPUHandle pixel_shader);
 

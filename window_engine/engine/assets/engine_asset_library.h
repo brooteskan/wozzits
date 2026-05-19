@@ -40,6 +40,8 @@
 
 #include <engine/assets/renderable_asset_module.h>
 
+#include <engine/assets/render_program/render_program_asset_module.h>
+
 #include <string>
 #include <vector>
 
@@ -125,6 +127,10 @@ namespace wz::engine::assets
 
         RenderableAssetModule&       renderables()        { return renderables_; }
         const RenderableAssetModule& renderables()  const { return renderables_; }
+
+        RenderProgramAssetModule&       render_programs()       { return render_programs_; }
+        const RenderProgramAssetModule& render_programs() const { return render_programs_; }
+
         // ── Direct access ─────────────────────────────────────────────────────────
 
         wz::asset::AssetSystem&       system()       { return system_; }
@@ -156,6 +162,7 @@ namespace wz::engine::assets
         DiagnosticTimeframeSummaryTable     diagnostic_timeframe_summary_table_;
         CSVExportTable                      csv_export_table_;
         RenderableAssetTable        renderable_table_;
+        RenderProgramTable          render_program_table_;
 
         wz::asset::AssetSystem system_;
 
@@ -172,6 +179,7 @@ namespace wz::engine::assets
         DiagnosticTimeframeSummaryAssetModule    diagnostic_timeframe_summaries_;
         CSVExportAssetModule                     csv_export_;
         RenderableAssetModule       renderables_;
+        RenderProgramAssetModule    render_programs_;
     };
 
 } // namespace wz::engine::assets

@@ -185,6 +185,10 @@ namespace wz::gpu::dx12
         impl->scalar_field_srv_capacity = 16;
         impl->scalar_field_srv_count = 0;
 
+        // ────── general SRV/CBV/UAV allocator ──────────────────────────────────────────
+        bool srv_alloc_ok = impl->srv_cbv_uav_allocator.init(device, 256);
+        assert(srv_alloc_ok);
+
         // ────── initialize fences ───────────────────────────────────────────────────────
         hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&impl->fence));
         assert(SUCCEEDED(hr));
@@ -440,6 +444,7 @@ namespace wz::gpu::dx12
         impl->shaders.destroy();
         impl->meshes.destroy();
         impl->gaussian_splat_clouds.destroy();
+        impl->srv_cbv_uav_allocator.destroy();
 
         if (impl->scalar_debug_ctx)
         {

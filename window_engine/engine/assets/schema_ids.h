@@ -82,6 +82,13 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000100ull
     };
 
+    // CPU-side declaration of how a BuiltinRenderProgram is drawn:
+    // binding model, topology, default render domain/policy, and shader pair.
+    // This is not a backend-owned PSO/root-signature object.
+    inline constexpr wz::asset::SchemaID kBuiltinRenderProgramSchema{
+    0xF11E'CA55'E7'000101ull
+    };
+
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types

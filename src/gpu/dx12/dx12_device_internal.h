@@ -11,6 +11,7 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <gpu/dx12/dx12_shader.h>
+#include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
 
@@ -86,6 +87,10 @@ namespace wz::gpu::dx12
         wz::gpu::dx12::internal::DX12MeshTable meshes;
         wz::gpu::dx12::internal::DX12GaussianSplatCloudTable gaussian_splat_clouds;
         wz::gpu::dx12::internal::DX12GraphicsPipelineTable graphics_pipelines;
+
+        // General-purpose shader-visible CBV/SRV/UAV heap.
+        // Used for SRV descriptor tables (e.g., SplatPull StructuredBuffer).
+        wz::gpu::dx12::DX12DescriptorAllocator srv_cbv_uav_allocator;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
     };

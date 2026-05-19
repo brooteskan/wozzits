@@ -265,6 +265,32 @@ namespace wz::gpu::dx12::internal {
         return impl->graphics_pipelines.add({ root_sig, pso });
     }
 
+    GPUHandle create_graphics_pipeline_from_data(
+        Device& device,
+        const wz::engine::assets::RenderProgramData& data,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return {};
+
+        ID3D12RootSignature* root_sig =
+            create_root_signature_from_data(impl->device, data);
+        if (!root_sig)
+            return {};
+
+        ID3D12PipelineState* pso =
+            create_pso_from_data(device, data, root_sig, vertex_shader, pixel_shader);
+        if (!pso)
+        {
+            root_sig->Release();
+            return {};
+        }
+
+        return impl->graphics_pipelines.add({ root_sig, pso });
+    }
+
     const DX12GraphicsPipeline* get_graphics_pipeline(
         Device& device,
         GPUHandle handle)

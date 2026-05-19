@@ -12,6 +12,7 @@
 
 #include <gpu/gpu.h>
 #include <engine/assets/renderable/renderable.h>
+#include <engine/assets/render_program/render_program.h>
 
 namespace wz::gpu::dx12::internal
 {
@@ -27,6 +28,20 @@ namespace wz::gpu::dx12::internal
     ID3D12PipelineState* create_pso_for_program(
         Device& device,
         wz::engine::assets::BuiltinRenderProgram program,
+        ID3D12RootSignature* root_sig,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader);
+
+    // Data-driven variants: build root signature and PSO from RenderProgramData.
+    // These replace the enum-dispatch functions for new render programs.
+    // Returns nullptr on failure.
+    ID3D12RootSignature* create_root_signature_from_data(
+        ID3D12Device* device,
+        const wz::engine::assets::RenderProgramData& data);
+
+    ID3D12PipelineState* create_pso_from_data(
+        Device& device,
+        const wz::engine::assets::RenderProgramData& data,
         ID3D12RootSignature* root_sig,
         GPUHandle vertex_shader,
         GPUHandle pixel_shader);

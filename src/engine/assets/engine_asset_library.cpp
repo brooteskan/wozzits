@@ -53,6 +53,7 @@ namespace wz::engine::assets
         , diagnostic_timeframe_summary_table_{}
         , csv_export_table_{}
         , renderable_table_{}
+        , render_program_table_{}
         , json_table_{}
         , toml_table_{}
         , mesh_table_{}
@@ -69,8 +70,9 @@ namespace wz::engine::assets
                 .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
                 .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
-                .csv_export_table = csv_export_table_,
-                .renderable_table = renderable_table_,
+                .csv_export_table    = csv_export_table_,
+                .renderable_table    = renderable_table_,
+                .render_program_table = render_program_table_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -85,6 +87,7 @@ namespace wz::engine::assets
         , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)
         , csv_export_(system_, logger_, csv_export_table_)
         , renderables_(system_, logger_, renderable_table_)
+        , render_programs_(system_, render_program_table_)
     {
     }
 
