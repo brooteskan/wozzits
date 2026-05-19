@@ -5,6 +5,7 @@
 #include <vector>
 #include <gpu/gpu.h>
 #include <gpu/dx12/external/d3dx12.h>
+#include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <gpu/gpu_types.h>
 #include <gpu/shader.h>
 #include <d3dcompiler.h>
@@ -192,6 +193,11 @@ namespace wz::gpu::dx12::internal {
         D3D12_VERTEX_BUFFER_VIEW vertex_view{};
 
         uint32_t splat_count = 0;
+
+        // Pre-allocated SRV for the SplatPull path (t0 StructuredBuffer).
+        // Valid only when the device's srv_cbv_uav_allocator had capacity at
+        // upload time.  Invalid for clouds uploaded before Phase 3.
+        wz::gpu::dx12::DX12DescriptorTable srv_table{};
     };
 
     class DX12GaussianSplatCloudTable

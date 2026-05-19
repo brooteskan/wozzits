@@ -21,6 +21,7 @@ namespace wz::gpu::dx12
         if (FAILED(hr))
             return false;
 
+        device_   = device;
         stride_   = device->GetDescriptorHandleIncrementSize(
                         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         capacity_ = capacity;
@@ -35,9 +36,33 @@ namespace wz::gpu::dx12
             heap_->Release();
             heap_ = nullptr;
         }
+        device_   = nullptr;
         stride_   = 0;
         capacity_ = 0;
         next_     = 0;
+    }
+
+    void DX12DescriptorAllocator::create_structured_buffer_srv(
+        const DX12DescriptorTable& table,
+        uint32_t                   offset,
+        ID3D12Resource*            resource,
+        uint32_t                   element_count,
+        uint32_t                   stride_bytes)
+    {
+        assert(device_);
+        assert(resource);
+        assert(offset < table.count);
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+        srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
+        srv_desc.Format                     = DXGI_FORMAT_UNKNOWN;
+        srv_desc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv_desc.Buffer.FirstElement        = 0;
+        srv_desc.Buffer.NumElements         = element_count;
+        srv_desc.Buffer.StructureByteStride = stride_bytes;
+        srv_desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
+
+        device_->CreateShaderResourceView(resource, &srv_desc, table.cpu_at(offset));
     }
 
     DX12DescriptorTable DX12DescriptorAllocator::allocate(uint32_t count)

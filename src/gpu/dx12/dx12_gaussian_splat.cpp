@@ -250,6 +250,17 @@ namespace wz::gpu::dx12::internal
         resource.vertex_view.StrideInBytes =
             static_cast<UINT>(sizeof(DX12GaussianSplatVertex));
 
+        // Pre-allocate a StructuredBuffer SRV for the SplatPull binding path (t0).
+        resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
+        if (resource.srv_table.valid())
+        {
+            impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                resource.srv_table, 0,
+                resource.vertex_buffer,
+                resource.splat_count,
+                sizeof(DX12GaussianSplatVertex));
+        }
+
         return impl->gaussian_splat_clouds.add(resource);
     }
 

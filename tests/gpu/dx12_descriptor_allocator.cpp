@@ -185,3 +185,55 @@ TEST_F(GpuDeviceFixture, HeapIsShaderVisible)
 
     alloc.destroy();
 }
+
+TEST_F(GpuDeviceFixture, DeviceAccessorMatchesInitDevice)
+{
+    wz::gpu::dx12::DX12DescriptorAllocator alloc{};
+    ASSERT_TRUE(alloc.init(d3d_device(), 4));
+    EXPECT_EQ(alloc.device(), d3d_device());
+    alloc.destroy();
+}
+
+TEST_F(GpuDeviceFixture, CreateStructuredBufferSrvWritesDescriptor)
+{
+    wz::gpu::dx12::DX12DescriptorAllocator alloc{};
+    ASSERT_TRUE(alloc.init(d3d_device(), 4));
+
+    const auto table = alloc.allocate(1);
+    ASSERT_TRUE(table.valid());
+
+    // Create a small upload-heap buffer to act as the structured buffer.
+    // StructuredBuffer element: float4 (16 bytes), 8 elements = 128 bytes.
+    constexpr uint32_t kElemCount  = 8;
+    constexpr uint32_t kStrideBytes = 16;
+    constexpr uint64_t kBufferBytes = kElemCount * kStrideBytes;
+
+    D3D12_HEAP_PROPERTIES heap_props{};
+    heap_props.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+    D3D12_RESOURCE_DESC res_desc{};
+    res_desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
+    res_desc.Width              = kBufferBytes;
+    res_desc.Height             = 1;
+    res_desc.DepthOrArraySize   = 1;
+    res_desc.MipLevels          = 1;
+    res_desc.Format             = DXGI_FORMAT_UNKNOWN;
+    res_desc.SampleDesc.Count   = 1;
+    res_desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+    ID3D12Resource* buffer = nullptr;
+    HRESULT hr = d3d_device()->CreateCommittedResource(
+        &heap_props,
+        D3D12_HEAP_FLAG_NONE,
+        &res_desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&buffer));
+    ASSERT_TRUE(SUCCEEDED(hr));
+
+    // Writing the SRV descriptor must not assert or crash.
+    alloc.create_structured_buffer_srv(table, 0, buffer, kElemCount, kStrideBytes);
+
+    buffer->Release();
+    alloc.destroy();
+}

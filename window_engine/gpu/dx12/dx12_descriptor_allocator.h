@@ -47,15 +47,27 @@ namespace wz::gpu::dx12
         // Returns an invalid table if capacity is exhausted.
         DX12DescriptorTable allocate(uint32_t count = 1);
 
+        // Write a StructuredBuffer SRV for `resource` into slot `offset` of `table`.
+        // Requires init() to have succeeded.  `element_count` is the number of
+        // structs in the buffer; `stride_bytes` is sizeof one struct.
+        void create_structured_buffer_srv(
+            const DX12DescriptorTable& table,
+            uint32_t                   offset,
+            ID3D12Resource*            resource,
+            uint32_t                   element_count,
+            uint32_t                   stride_bytes);
+
         // Reset the allocator — all previously returned tables become invalid.
         void reset() noexcept { next_ = 0; }
 
+        ID3D12Device*         device()   const noexcept { return device_; }
         ID3D12DescriptorHeap* heap()     const noexcept { return heap_; }
         uint32_t              stride()   const noexcept { return stride_; }
         uint32_t              capacity() const noexcept { return capacity_; }
         uint32_t              used()     const noexcept { return next_; }
 
     private:
+        ID3D12Device*         device_   = nullptr;
         ID3D12DescriptorHeap* heap_     = nullptr;
         uint32_t              stride_   = 0;
         uint32_t              capacity_ = 0;
