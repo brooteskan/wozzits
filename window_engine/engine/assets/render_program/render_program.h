@@ -11,12 +11,13 @@
 
 namespace wz::engine::assets
 {
-    enum class ShaderResourceKind : uint8_t
+    enum class ShaderBindingKind : uint8_t
     {
-        ConstantBuffer,
-        StructuredBuffer,
-        Texture2D,
-        Sampler,
+        RootConstants,       // SetGraphicsRoot32BitConstants — NOT a CBV descriptor
+        ConstantBufferView,  // Descriptor-table CBV (b-register)
+        StructuredBufferSRV, // Descriptor-table SRV for StructuredBuffer (t-register)
+        TextureSRV,          // Descriptor-table SRV for Texture2D (t-register)
+        Sampler,             // Descriptor-table Sampler (s-register)
     };
 
     enum class ShaderVisibility : uint8_t
@@ -26,16 +27,16 @@ namespace wz::engine::assets
         Pixel,
     };
 
-    struct ShaderResourceBinding
+    struct ShaderBinding
     {
-        ShaderResourceKind kind{};
-        ShaderVisibility visibility{};
+        ShaderBindingKind kind{};
+        ShaderVisibility  visibility{};
 
         uint32_t shader_register = 0;
-        uint32_t register_space = 0;
+        uint32_t register_space  = 0;
 
-        // ConstantBuffer: number of 32-bit values.
-        // StructuredBuffer / Texture2D / Sampler: descriptor range size (1 = single binding).
+        // RootConstants: number of 32-bit values.
+        // Descriptor bindings: descriptor range size (1 = single binding).
         uint32_t count = 0;
     };
 
@@ -76,10 +77,14 @@ namespace wz::engine::assets
 
         // Root parameters in declaration order.
         // Vector index == DX12 root parameter index.
-        std::vector<ShaderResourceBinding> bindings;
+        std::vector<ShaderBinding> bindings;
 
         wz::asset::ResourceHandle vertex_shader{};
         wz::asset::ResourceHandle pixel_shader{};
+
+        // Filled in by realize_pipeline() after DX12 PSO creation.
+        // Invalid until that call succeeds.
+        wz::asset::ResourceHandle pipeline_handle{};
 
         bool valid() const noexcept
         {
@@ -94,6 +99,7 @@ namespace wz::engine::assets
 
         wz::asset::ResourceHandle add(RenderProgramData data);
         const RenderProgramData* get(wz::asset::ResourceHandle handle) const;
+        RenderProgramData*       get(wz::asset::ResourceHandle handle);
 
         void destroy();
 

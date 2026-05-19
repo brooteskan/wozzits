@@ -29,7 +29,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest |
                     RenderPolicy_DepthWrite;
                 out.bindings = {{
-                    .kind            = ShaderResourceKind::ConstantBuffer,
+                    .kind            = ShaderBindingKind::RootConstants,
                     .visibility      = ShaderVisibility::All,
                     .shader_register = 0,
                     .register_space  = 0,
@@ -46,7 +46,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_AlphaBlend |
                     RenderPolicy_DepthTest;
                 out.bindings = {{
-                    .kind            = ShaderResourceKind::ConstantBuffer,
+                    .kind            = ShaderBindingKind::RootConstants,
                     .visibility      = ShaderVisibility::Vertex,
                     .shader_register = 0,
                     .register_space  = 0,

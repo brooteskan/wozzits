@@ -325,6 +325,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat gaussian_splat_ply_importer)
 
     rs_add_test_group(gpu gpu_mesh)
+    rs_add_test_group(gpu dx12_descriptor_allocator)
 
     rs_add_test_group(asset_data_table data_table)
     rs_add_test_group(asset_data_table data_table_asset_module)

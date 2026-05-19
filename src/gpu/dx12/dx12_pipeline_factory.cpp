@@ -320,7 +320,7 @@ namespace wz::gpu::dx12::internal
         ID3D12Device* device,
         const wz::engine::assets::RenderProgramData& data)
     {
-        using K = wz::engine::assets::ShaderResourceKind;
+        using K = wz::engine::assets::ShaderBindingKind;
 
         // Two-pass: build descriptor ranges first so their addresses stay stable
         // when we point D3D12_ROOT_PARAMETER::DescriptorTable at them.
@@ -331,11 +331,12 @@ namespace wz::gpu::dx12::internal
         for (size_t i = 0; i < data.bindings.size(); ++i)
         {
             const auto& b = data.bindings[i];
-            if (b.kind == K::StructuredBuffer || b.kind == K::Texture2D)
+            if (b.kind == K::StructuredBufferSRV || b.kind == K::TextureSRV ||
+                b.kind == K::ConstantBufferView)
             {
                 D3D12_DESCRIPTOR_RANGE r{};
-                r.RangeType                         = (b.kind == K::Texture2D)
-                    ? D3D12_DESCRIPTOR_RANGE_TYPE_SRV
+                r.RangeType = (b.kind == K::ConstantBufferView)
+                    ? D3D12_DESCRIPTOR_RANGE_TYPE_CBV
                     : D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
                 r.NumDescriptors                    = (b.count > 0) ? b.count : 1;
                 r.BaseShaderRegister                = b.shader_register;
@@ -362,7 +363,7 @@ namespace wz::gpu::dx12::internal
             D3D12_ROOT_PARAMETER& p = params[i];
             p.ShaderVisibility = to_dx12_visibility(b.visibility);
 
-            if (b.kind == K::ConstantBuffer)
+            if (b.kind == K::RootConstants)
             {
                 p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
                 p.Constants.Num32BitValues = b.count;

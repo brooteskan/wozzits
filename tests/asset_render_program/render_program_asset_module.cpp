@@ -204,11 +204,16 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatDebug)
     EXPECT_TRUE(data->pixel_shader.valid());
 
     ASSERT_EQ(data->bindings.size(), 1u);
-    EXPECT_EQ(data->bindings[0].kind,            ShaderResourceKind::ConstantBuffer);
+    EXPECT_EQ(data->bindings[0].kind,            ShaderBindingKind::RootConstants);
     EXPECT_EQ(data->bindings[0].visibility,      ShaderVisibility::Vertex);
     EXPECT_EQ(data->bindings[0].shader_register, 0u);
     EXPECT_EQ(data->bindings[0].register_space,  0u);
     EXPECT_EQ(data->bindings[0].count,           36u);
+
+    EXPECT_FALSE(data->pipeline_handle.valid());  // not yet realized
+    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));
+    EXPECT_TRUE(data->pipeline_handle.valid());
+    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));  // idempotent
 }
 
 TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
@@ -265,9 +270,14 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
     EXPECT_TRUE(data->pixel_shader.valid());
 
     ASSERT_EQ(data->bindings.size(), 1u);
-    EXPECT_EQ(data->bindings[0].kind,            ShaderResourceKind::ConstantBuffer);
+    EXPECT_EQ(data->bindings[0].kind,            ShaderBindingKind::RootConstants);
     EXPECT_EQ(data->bindings[0].visibility,      ShaderVisibility::All);
     EXPECT_EQ(data->bindings[0].shader_register, 0u);
     EXPECT_EQ(data->bindings[0].register_space,  0u);
     EXPECT_EQ(data->bindings[0].count,           32u);
+
+    EXPECT_FALSE(data->pipeline_handle.valid());  // not yet realized
+    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));
+    EXPECT_TRUE(data->pipeline_handle.valid());
+    EXPECT_TRUE(assets.render_programs().realize_pipeline(device, program));  // idempotent
 }

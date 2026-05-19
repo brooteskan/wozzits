@@ -44,6 +44,13 @@ namespace wz::engine::assets
         return &programs_[handle.id];
     }
 
+    RenderProgramData* RenderProgramTable::get(
+        wz::asset::ResourceHandle handle)
+    {
+        return const_cast<RenderProgramData*>(
+            static_cast<const RenderProgramTable*>(this)->get(handle));
+    }
+
     void RenderProgramTable::destroy()
     {
         programs_.clear();
