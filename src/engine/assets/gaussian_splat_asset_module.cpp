@@ -4,6 +4,7 @@
 
 #include <engine/assets/key_factories/gaussian_splat.h>
 #include <engine/assets/key_factories/gaussian_splat_file.h>
+#include <engine/assets/key_factories/gaussian_splat_from_scalar_field.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -93,6 +94,59 @@ namespace wz::engine::assets
 
         if (!system_.register_asset(std::move(node), { desc.source_file })) {
             logger_.error("failed to register PLY gaussian splat cloud: " + desc.name);
+            return {};
+        }
+
+        out.output = key;
+        return out;
+    }
+
+    GaussianSplatCloudAsset GaussianSplatAssetModule::create_from_scalar_field(
+        const GaussianSplatFromScalarFieldDesc& desc)
+    {
+        GaussianSplatCloudAsset out{};
+
+        if (desc.scalar_field_key == wz::asset::AssetKey{}) {
+            logger_.error("gaussian splat from scalar field has empty scalar field key: " + desc.name);
+            return out;
+        }
+
+        if (desc.width == 0 || desc.depth == 0) {
+            logger_.error("gaussian splat from scalar field has zero width or depth: " + desc.name);
+            return out;
+        }
+
+        if (desc.splat_scale <= 0.0f) {
+            logger_.error("gaussian splat from scalar field has non-positive splat_scale: " + desc.name);
+            return out;
+        }
+
+        const GaussianSplatFromScalarFieldCompileDesc compile_desc{
+            .width            = desc.width,
+            .depth            = desc.depth,
+            .height_scale     = desc.height_scale,
+            .step_x           = desc.step_x,
+            .step_z           = desc.step_z,
+            .splat_scale      = desc.splat_scale,
+            .opacity          = desc.opacity,
+            .normalize_values = desc.normalize_values,
+            .use_threshold    = desc.use_threshold,
+            .emit_threshold   = desc.emit_threshold,
+        };
+
+        const wz::asset::AssetKey key =
+            make_gaussian_splat_from_scalar_field_key(desc.scalar_field_key, compile_desc);
+
+        wz::asset::AssetNode node{};
+        node.key    = key;
+        node.type   = kAssetTypeGaussianSplatCloud;
+        node.schema = kGaussianSplatFromFieldSchema;
+        node.stage  = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta   = compile_desc;
+
+        if (!system_.register_asset(std::move(node), { desc.scalar_field_key })) {
+            logger_.error("failed to register gaussian splat from scalar field: " + desc.name);
             return {};
         }
 

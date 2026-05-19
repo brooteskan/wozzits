@@ -5,32 +5,47 @@
 #include <engine/assets/engine_asset_key_core.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/gaussian_splat/gaussian_splat.h>
+
+#include <cstring>
 
 namespace wz::engine::assets {
 
     // Key for a splat cloud generated from a scalar field.
-    // threshold, density, and radius are part of identity — different generation
-    // parameters produce a different cloud even from the same source field.
-    [[nodiscard]] inline wz::asset::AssetKey make_gaussian_splat_from_field_key(
+    // All generation parameters are part of identity — different parameters
+    // produce a different cloud even from the same source field.
+    [[nodiscard]] inline wz::asset::AssetKey make_gaussian_splat_from_scalar_field_key(
         const wz::asset::AssetKey& scalar_field_key,
-        float threshold, float density, float radius) noexcept
+        const GaussianSplatFromScalarFieldCompileDesc& desc) noexcept
     {
-        // Reinterpret floats as bits so we can mix them without precision concerns.
-        uint32_t t_bits, d_bits, r_bits;
         static_assert(sizeof(float) == sizeof(uint32_t));
-        std::memcpy(&t_bits, &threshold, sizeof(float));
-        std::memcpy(&d_bits, &density, sizeof(float));
-        std::memcpy(&r_bits, &radius, sizeof(float));
 
-        const uint64_t params = detail::mix64(
-            (static_cast<uint64_t>(t_bits) << 32) | d_bits,
-            r_bits);
+        uint32_t height_scale_bits, step_x_bits, step_z_bits, splat_scale_bits, opacity_bits, threshold_bits;
+        std::memcpy(&height_scale_bits, &desc.height_scale,    sizeof(float));
+        std::memcpy(&step_x_bits,       &desc.step_x,          sizeof(float));
+        std::memcpy(&step_z_bits,        &desc.step_z,          sizeof(float));
+        std::memcpy(&splat_scale_bits,  &desc.splat_scale,     sizeof(float));
+        std::memcpy(&opacity_bits,      &desc.opacity,         sizeof(float));
+        std::memcpy(&threshold_bits,    &desc.emit_threshold,  sizeof(float));
+
+        const uint64_t dims    = (static_cast<uint64_t>(desc.width) << 32) | desc.depth;
+        const uint64_t scales  = (static_cast<uint64_t>(height_scale_bits) << 32) | step_x_bits;
+        const uint64_t steps   = (static_cast<uint64_t>(step_z_bits) << 32) | splat_scale_bits;
+        const uint64_t misc    = (static_cast<uint64_t>(opacity_bits) << 32) | threshold_bits;
+        const uint64_t flags   =
+            (desc.normalize_values ? 1ull : 0ull) |
+            (desc.use_threshold    ? 2ull : 0ull);
+
+        const uint64_t p0 = detail::mix64(dims,  scales);
+        const uint64_t p1 = detail::mix64(steps, misc);
+        const uint64_t p2 = detail::mix64(p0, p1);
+        const uint64_t content = detail::mix64(p2, flags);
 
         return wz::asset::AssetKey{
-            .content_hash = { params, 0 },
-            .schema_hash = detail::hash_u64(kGaussianSplatFromFieldSchema.value),
-            .compiler_hash = detail::hash_u64(kGaussianSplatCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(scalar_field_key),
+            .content_hash  = { content, 0 },
+            .schema_hash   = detail::hash_u64(kGaussianSplatFromFieldSchema.value),
+            .compiler_hash = detail::hash_u64(kGaussianSplatFromScalarFieldCompilerVersion),
+            .deps_hash     = detail::key_to_dep_hash(scalar_field_key),
         };
     }
 }

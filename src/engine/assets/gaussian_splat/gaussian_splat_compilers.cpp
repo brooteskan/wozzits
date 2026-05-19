@@ -11,6 +11,7 @@
 #include <cmath>
 #include <span>
 #include <vector>
+#include <string>
 
 namespace wz::engine::assets::internal
 {
@@ -136,12 +137,113 @@ namespace wz::engine::assets::internal
             out.payload = handle;
             return out;
         }
-    } // anaonymous namespace
+        GaussianSplatCloudData make_splat_cloud_from_scalar_field(
+            const GaussianSplatFromScalarFieldCompileDesc& desc,
+            const ScalarFieldData& field,
+            wz::Logger& logger)
+        {
+            if (field.width != desc.width || field.depth != desc.depth) {
+                logger.error(
+                    "scalar field dimensions (" + std::to_string(field.width) +
+                    "x" + std::to_string(field.depth) +
+                    ") do not match compile desc (" + std::to_string(desc.width) +
+                    "x" + std::to_string(desc.depth) + ")");
+                return {};
+            }
+
+            constexpr float SH_C0 = 0.28209479177387814f;
+
+            const float log_scale = std::log(std::max(desc.splat_scale, 1e-6f));
+
+            const float logit_opacity = [&] {
+                const float p = std::max(0.0001f, std::min(0.9999f, desc.opacity));
+                return std::log(p / (1.0f - p));
+            }();
+
+            const float value_range = field.max_value - field.min_value;
+            const bool can_normalize = (value_range > 1e-12f);
+
+            // Center the grid around the origin.
+            const float half_x = 0.5f * static_cast<float>(desc.width  - 1) * desc.step_x;
+            const float half_z = 0.5f * static_cast<float>(desc.depth - 1) * desc.step_z;
+
+            GaussianSplatCloudData cloud{};
+            cloud.splats.reserve(desc.width * desc.depth);
+
+            float world_min_y = std::numeric_limits<float>::max();
+            float world_max_y = std::numeric_limits<float>::lowest();
+
+            for (uint32_t iz = 0; iz < desc.depth; ++iz) {
+                for (uint32_t ix = 0; ix < desc.width; ++ix) {
+                    const float raw = field.at(ix, 0, iz);
+
+                    const float normalized =
+                        (desc.normalize_values && can_normalize)
+                        ? (raw - field.min_value) / value_range
+                        : raw;
+
+                    if (desc.use_threshold && normalized < desc.emit_threshold)
+                        continue;
+
+                    const float world_x = static_cast<float>(ix) * desc.step_x - half_x;
+                    const float world_y = normalized * desc.height_scale;
+                    const float world_z = static_cast<float>(iz) * desc.step_z - half_z;
+
+                    GaussianSplat splat{};
+                    splat.position[0] = world_x;
+                    splat.position[1] = world_y;
+                    splat.position[2] = world_z;
+
+                    splat.scale[0] = log_scale;
+                    splat.scale[1] = log_scale;
+                    splat.scale[2] = log_scale;
+
+                    // Identity quaternion.
+                    splat.rotation[0] = 1.0f;
+
+                    splat.opacity = logit_opacity;
+
+                    // Grayscale color derived from normalized value.
+                    const float display = std::max(0.0f, std::min(1.0f, normalized));
+                    const float sh_dc = (display - 0.5f) / SH_C0;
+                    splat.color_dc[0] = sh_dc;
+                    splat.color_dc[1] = sh_dc;
+                    splat.color_dc[2] = sh_dc;
+
+                    world_min_y = std::min(world_min_y, world_y);
+                    world_max_y = std::max(world_max_y, world_y);
+
+                    cloud.splats.push_back(splat);
+                }
+            }
+
+            if (cloud.splats.empty())
+                return {};
+
+            cloud.bounds.min[0] = -half_x - desc.splat_scale;
+            cloud.bounds.min[1] = world_min_y - desc.splat_scale;
+            cloud.bounds.min[2] = -half_z - desc.splat_scale;
+            cloud.bounds.max[0] =  half_x + desc.splat_scale;
+            cloud.bounds.max[1] = world_max_y + desc.splat_scale;
+            cloud.bounds.max[2] =  half_z + desc.splat_scale;
+            cloud.bounds.valid  = true;
+
+            cloud.opacity_min = logit_opacity;
+            cloud.opacity_max = logit_opacity;
+            cloud.scale_min   = log_scale;
+            cloud.scale_max   = log_scale;
+            cloud.f_rest_count = 0;
+
+            return cloud;
+        }
+
+    } // anonymous namespace
 
     void register_gaussian_splat_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        GaussianSplatCloudTable& table)
+        GaussianSplatCloudTable& table,
+        ScalarFieldTable& scalar_field_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralGaussianSplatCloudSchema,
@@ -210,6 +312,54 @@ namespace wz::engine::assets::internal
             {
                 return compile_ply_gaussian_splat_cloud_node(
                     input, dep_nodes, logger, table);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kGaussianSplatFromFieldSchema,
+            .output_type = kAssetTypeGaussianSplatCloud,
+            .compile = [&logger, &table, &scalar_field_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> /*dep_nodes*/,
+                std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<GaussianSplatFromScalarFieldCompileDesc>(&input.meta);
+
+                if (!desc) {
+                    logger.error("gaussian splat from scalar field missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 1) {
+                    logger.error("gaussian splat from scalar field expects exactly one compiled dependency");
+                    return compile_failed_node(input);
+                }
+
+                const ScalarFieldData* field = scalar_field_table.get(dep_handles[0]);
+                if (!field) {
+                    logger.error("gaussian splat from scalar field: scalar field not found");
+                    return compile_failed_node(input);
+                }
+
+                GaussianSplatCloudData data =
+                    make_splat_cloud_from_scalar_field(*desc, *field, logger);
+
+                if (!data.valid()) {
+                    logger.error("gaussian splat from scalar field: produced empty or invalid cloud");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::ResourceHandle handle = table.add(std::move(data));
+                if (!handle.valid()) {
+                    logger.error("gaussian splat from scalar field: failed to store cloud");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
             }
             });
     }

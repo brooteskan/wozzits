@@ -42,4 +42,18 @@ namespace wz::engine::assets
         float radius = 1.0f;
         float splat_scale = 0.05f;
     };
+
+    struct GaussianSplatFromScalarFieldCompileDesc
+    {
+        uint32_t width = 0;           // grid columns (must match field width)
+        uint32_t depth = 0;           // grid rows   (must match field depth)
+        float height_scale = 1.0f;    // multiplier applied to field value → world Y
+        float step_x = 1.0f;         // world-space X distance between grid columns
+        float step_z = 1.0f;         // world-space Z distance between grid rows
+        float splat_scale = 0.05f;
+        float opacity = 0.9f;
+        bool normalize_values = true; // normalize value into [0,1] before use
+        bool use_threshold = false;   // skip splats whose normalized value < emit_threshold
+        float emit_threshold = 0.0f;
+    };
 }

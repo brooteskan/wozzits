@@ -23,7 +23,7 @@ namespace wz::engine::assets::internal
         register_json_compilers(registry, ctx.logger, ctx.json_table);
         register_toml_compilers(registry, ctx.logger, ctx.toml_table);
         register_mesh_compilers(registry, ctx.logger, ctx.mesh_table);
-        register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table);
+        register_gaussian_splat_compilers(registry, ctx.logger, ctx.gaussian_splat_cloud_table, ctx.scalar_fields_table);
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
         register_diagnostic_timeframe_summary_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_timeframe_summary_table);
