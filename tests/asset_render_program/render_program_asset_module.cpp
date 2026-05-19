@@ -204,12 +204,19 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatDebug)
     EXPECT_TRUE(data->vertex_shader.valid());
     EXPECT_TRUE(data->pixel_shader.valid());
 
-    ASSERT_EQ(data->bindings.size(), 1u);
-    EXPECT_EQ(data->bindings[0].kind,            ShaderBindingKind::RootConstants);
-    EXPECT_EQ(data->bindings[0].visibility,      ShaderVisibility::Vertex);
-    EXPECT_EQ(data->bindings[0].shader_register, 0u);
-    EXPECT_EQ(data->bindings[0].register_space,  0u);
-    EXPECT_EQ(data->bindings[0].count,           36u);
+    // Declarative pipeline state.
+    EXPECT_EQ(data->input_layout, InputLayoutKind::GaussianSplatVertex);
+    EXPECT_EQ(data->blend_mode,   BlendMode::AlphaBlend);
+    EXPECT_EQ(data->depth_mode,   DepthMode::Disabled);
+    EXPECT_EQ(data->raster_mode,  RasterMode::SolidCullNone);
+
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility,      ShaderVisibility::Vertex);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space,  0u);
+    EXPECT_EQ(data->root_constants[0].value_count,     36u);
+
+    EXPECT_TRUE(data->descriptor_bindings.empty());
 
     wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
     EXPECT_FALSE(pipeline_cache.get(handle).valid());  // not yet realized
@@ -271,12 +278,19 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
     EXPECT_TRUE(data->vertex_shader.valid());
     EXPECT_TRUE(data->pixel_shader.valid());
 
-    ASSERT_EQ(data->bindings.size(), 1u);
-    EXPECT_EQ(data->bindings[0].kind,            ShaderBindingKind::RootConstants);
-    EXPECT_EQ(data->bindings[0].visibility,      ShaderVisibility::All);
-    EXPECT_EQ(data->bindings[0].shader_register, 0u);
-    EXPECT_EQ(data->bindings[0].register_space,  0u);
-    EXPECT_EQ(data->bindings[0].count,           32u);
+    // Declarative pipeline state.
+    EXPECT_EQ(data->input_layout, InputLayoutKind::MeshPositionOnly);
+    EXPECT_EQ(data->blend_mode,   BlendMode::Opaque);
+    EXPECT_EQ(data->depth_mode,   DepthMode::Disabled);
+    EXPECT_EQ(data->raster_mode,  RasterMode::WireframeCullNone);
+
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility,      ShaderVisibility::All);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space,  0u);
+    EXPECT_EQ(data->root_constants[0].value_count,     32u);
+
+    EXPECT_TRUE(data->descriptor_bindings.empty());
 
     wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
     EXPECT_FALSE(pipeline_cache.get(handle).valid());  // not yet realized

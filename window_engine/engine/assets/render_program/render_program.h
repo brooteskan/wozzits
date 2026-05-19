@@ -11,33 +11,11 @@
 
 namespace wz::engine::assets
 {
-    enum class ShaderBindingKind : uint8_t
-    {
-        RootConstants,       // SetGraphicsRoot32BitConstants — NOT a CBV descriptor
-        ConstantBufferView,  // Descriptor-table CBV (b-register)
-        StructuredBufferSRV, // Descriptor-table SRV for StructuredBuffer (t-register)
-        TextureSRV,          // Descriptor-table SRV for Texture2D (t-register)
-        Sampler,             // Descriptor-table Sampler (s-register)
-    };
-
     enum class ShaderVisibility : uint8_t
     {
         All,
         Vertex,
         Pixel,
-    };
-
-    struct ShaderBinding
-    {
-        ShaderBindingKind kind{};
-        ShaderVisibility  visibility{};
-
-        uint32_t shader_register = 0;
-        uint32_t register_space  = 0;
-
-        // RootConstants: number of 32-bit values.
-        // Descriptor bindings: descriptor range size (1 = single binding).
-        uint32_t count = 0;
     };
 
     enum class RenderBindingModel : uint8_t
@@ -56,6 +34,73 @@ namespace wz::engine::assets
         TriangleStrip,
     };
 
+    // ── Declarative pipeline description enums ────────────────────────────────
+
+    enum class InputLayoutKind : uint8_t
+    {
+        None,               // pull-based or fullscreen — no IA vertex buffer
+        MeshPositionOnly,   // float3 POSITION, per-vertex
+        GaussianSplatVertex, // per-instance: position, opacity, scale, rotation, color
+    };
+
+    enum class BlendMode : uint8_t
+    {
+        Opaque,
+        AlphaBlend,
+    };
+
+    enum class DepthMode : uint8_t
+    {
+        Disabled,
+        TestNoWrite,
+        TestWrite,
+    };
+
+    enum class RasterMode : uint8_t
+    {
+        SolidCullBack,
+        SolidCullNone,
+        WireframeCullNone,
+    };
+
+    // ── Declarative binding structs ───────────────────────────────────────────
+
+    struct RootConstantBinding
+    {
+        ShaderVisibility visibility{};
+        uint32_t shader_register = 0;
+        uint32_t register_space  = 0;
+        uint32_t value_count     = 0;
+    };
+
+    enum class DescriptorKind : uint8_t
+    {
+        StructuredBufferSRV,
+        TextureSRV,
+        Sampler,
+        UAV,
+    };
+
+    // Semantic identifies the logical role of a bound resource so the submit
+    // path can locate the right GPU handle without hard-coding slot numbers.
+    enum class DescriptorSemantic : uint8_t
+    {
+        Unknown,
+        SplatCloud,
+        SortedSplatIndices,
+        ScalarFieldTexture,
+    };
+
+    struct DescriptorBinding
+    {
+        DescriptorKind     kind{};
+        ShaderVisibility   visibility{};
+        DescriptorSemantic semantic{};
+        uint32_t shader_register  = 0;
+        uint32_t register_space   = 0;
+        uint32_t descriptor_count = 1;
+    };
+
     // dep[0] = vertex_shader key, dep[1] = pixel_shader key.
     struct BuiltinRenderProgramDesc
     {
@@ -69,15 +114,23 @@ namespace wz::engine::assets
     {
         BuiltinRenderProgram builtin_program{};
 
-        RenderBindingModel binding_model{};
+        RenderBindingModel    binding_model{};
         RenderPrimitiveTopology topology{};
 
         RenderDomain default_domain{};
         uint32_t default_policy_flags = RenderPolicy_None;
 
-        // Root parameters in declaration order.
-        // Vector index == DX12 root parameter index.
-        std::vector<ShaderBinding> bindings;
+        // Declarative pipeline state — read by DX12 factory in Phase 2+.
+        InputLayoutKind input_layout{};
+        BlendMode       blend_mode{};
+        DepthMode       depth_mode{};
+        RasterMode      raster_mode{};
+
+        // Root signature layout in declaration order.
+        // root_constants[i] maps to DX12 root parameter i.
+        // descriptor_bindings follow at indices [root_constants.size(), ...).
+        std::vector<RootConstantBinding> root_constants;
+        std::vector<DescriptorBinding>   descriptor_bindings;
 
         wz::asset::ResourceHandle vertex_shader{};
         wz::asset::ResourceHandle pixel_shader{};

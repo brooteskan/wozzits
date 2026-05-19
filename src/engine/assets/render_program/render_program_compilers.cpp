@@ -21,44 +21,57 @@ namespace wz::engine::assets::internal
             switch (program)
             {
             case BuiltinRenderProgram::MeshWireframeDebug:
-                out.binding_model = RenderBindingModel::MeshIA;
-                out.topology = RenderPrimitiveTopology::TriangleList;
-                out.default_domain = RenderDomain::Debug;
+                out.binding_model     = RenderBindingModel::MeshIA;
+                out.topology          = RenderPrimitiveTopology::TriangleList;
+                out.default_domain    = RenderDomain::Debug;
                 out.default_policy_flags =
                     RenderPolicy_Wireframe |
                     RenderPolicy_DepthTest |
                     RenderPolicy_DepthWrite;
-                out.bindings = {{
-                    .kind            = ShaderBindingKind::RootConstants,
+                // Declarative pipeline state.
+                out.input_layout = InputLayoutKind::MeshPositionOnly;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::WireframeCullNone;
+                out.root_constants = {{
                     .visibility      = ShaderVisibility::All,
                     .shader_register = 0,
                     .register_space  = 0,
-                    .count           = 32,  // world[16] + view_proj[16]
+                    .value_count     = 32,  // world[16] + view_proj[16]
                 }};
                 return true;
 
             case BuiltinRenderProgram::GaussianSplatDebug:
-                // Current path, not future SplatPull yet.
-                out.binding_model = RenderBindingModel::SplatVertexInstanced;
-                out.topology = RenderPrimitiveTopology::TriangleStrip;
+                // Current path — vertex-instanced, not SplatPull.
+                out.binding_model  = RenderBindingModel::SplatVertexInstanced;
+                out.topology       = RenderPrimitiveTopology::TriangleStrip;
                 out.default_domain = RenderDomain::Splat;
                 out.default_policy_flags =
                     RenderPolicy_AlphaBlend |
                     RenderPolicy_DepthTest;
-                out.bindings = {{
-                    .kind            = ShaderBindingKind::RootConstants,
+                // Declarative pipeline state.
+                out.input_layout = InputLayoutKind::GaussianSplatVertex;
+                out.blend_mode   = BlendMode::AlphaBlend;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
                     .visibility      = ShaderVisibility::Vertex,
                     .shader_register = 0,
                     .register_space  = 0,
-                    .count           = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
+                    .value_count     = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
                 }};
                 return true;
 
             case BuiltinRenderProgram::ScalarFieldDebug:
-                out.binding_model = RenderBindingModel::ScalarFieldTexture;
-                out.topology = RenderPrimitiveTopology::TriangleList;
-                out.default_domain = RenderDomain::Debug;
+                out.binding_model    = RenderBindingModel::ScalarFieldTexture;
+                out.topology         = RenderPrimitiveTopology::TriangleList;
+                out.default_domain   = RenderDomain::Debug;
                 out.default_policy_flags = RenderPolicy_None;
+                // Declarative pipeline state.
+                out.input_layout = InputLayoutKind::None;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::SolidCullBack;
                 return true;
 
             case BuiltinRenderProgram::Count:

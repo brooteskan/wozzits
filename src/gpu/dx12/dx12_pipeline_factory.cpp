@@ -258,29 +258,34 @@ namespace wz::gpu::dx12::internal
             }
         }
 
-        static D3D12_ROOT_SIGNATURE_FLAGS ia_flag_for_binding_model(
-            wz::engine::assets::RenderBindingModel model)
+        static D3D12_DESCRIPTOR_RANGE_TYPE to_dx12_range_type(
+            wz::engine::assets::DescriptorKind kind)
         {
-            using M = wz::engine::assets::RenderBindingModel;
-            if (model == M::MeshIA || model == M::SplatVertexInstanced)
-                return D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-            return D3D12_ROOT_SIGNATURE_FLAG_NONE;
+            using K = wz::engine::assets::DescriptorKind;
+            switch (kind)
+            {
+            case K::TextureSRV:          return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            case K::StructuredBufferSRV: return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            case K::Sampler:             return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+            case K::UAV:                 return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+            }
+            return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         }
 
         static std::vector<D3D12_INPUT_ELEMENT_DESC> build_input_layout(
-            wz::engine::assets::RenderBindingModel model)
+            wz::engine::assets::InputLayoutKind kind)
         {
-            using M = wz::engine::assets::RenderBindingModel;
-            switch (model)
+            using K = wz::engine::assets::InputLayoutKind;
+            switch (kind)
             {
-            case M::MeshIA:
+            case K::MeshPositionOnly:
                 return {{
                     "POSITION", 0,
                     DXGI_FORMAT_R32G32B32_FLOAT,
                     0, 0,
                     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
                 }};
-            case M::SplatVertexInstanced:
+            case K::GaussianSplatVertex:
                 // Use offsetof — APPEND_ALIGNED_ELEMENT would skip pad0 between
                 // scale and rotation, putting COLOR 4 bytes early (reading qw as red).
                 return {
@@ -300,76 +305,56 @@ namespace wz::gpu::dx12::internal
         ID3D12Device* device,
         const wz::engine::assets::RenderProgramData& data)
     {
-        using K = wz::engine::assets::ShaderBindingKind;
+        // Root parameters: root_constants first, then one table per descriptor_binding.
+        const size_t total_params =
+            data.root_constants.size() + data.descriptor_bindings.size();
 
-        // Two-pass: build descriptor ranges first so their addresses stay stable
-        // when we point D3D12_ROOT_PARAMETER::DescriptorTable at them.
-        struct RangeEntry { D3D12_DESCRIPTOR_RANGE range; size_t param_index; };
-        std::vector<RangeEntry> range_storage;
-        range_storage.reserve(data.bindings.size());
-
-        for (size_t i = 0; i < data.bindings.size(); ++i)
+        // Build descriptor ranges before params so pointers stay stable.
+        std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
+        ranges.reserve(data.descriptor_bindings.size());
+        for (const auto& db : data.descriptor_bindings)
         {
-            const auto& b = data.bindings[i];
-            if (b.kind == K::StructuredBufferSRV || b.kind == K::TextureSRV ||
-                b.kind == K::ConstantBufferView)
-            {
-                D3D12_DESCRIPTOR_RANGE r{};
-                r.RangeType = (b.kind == K::ConstantBufferView)
-                    ? D3D12_DESCRIPTOR_RANGE_TYPE_CBV
-                    : D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-                r.NumDescriptors                    = (b.count > 0) ? b.count : 1;
-                r.BaseShaderRegister                = b.shader_register;
-                r.RegisterSpace                     = b.register_space;
-                r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-                range_storage.push_back({ r, i });
-            }
-            else if (b.kind == K::Sampler)
-            {
-                D3D12_DESCRIPTOR_RANGE r{};
-                r.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-                r.NumDescriptors                    = (b.count > 0) ? b.count : 1;
-                r.BaseShaderRegister                = b.shader_register;
-                r.RegisterSpace                     = b.register_space;
-                r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-                range_storage.push_back({ r, i });
-            }
+            D3D12_DESCRIPTOR_RANGE r{};
+            r.RangeType                         = to_dx12_range_type(db.kind);
+            r.NumDescriptors                    = db.descriptor_count;
+            r.BaseShaderRegister                = db.shader_register;
+            r.RegisterSpace                     = db.register_space;
+            r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+            ranges.push_back(r);
         }
 
-        std::vector<D3D12_ROOT_PARAMETER> params(data.bindings.size());
-        for (size_t i = 0; i < data.bindings.size(); ++i)
+        std::vector<D3D12_ROOT_PARAMETER> params(total_params);
+        size_t pi = 0;
+
+        for (const auto& rc : data.root_constants)
         {
-            const auto& b = data.bindings[i];
-            D3D12_ROOT_PARAMETER& p = params[i];
-            p.ShaderVisibility = to_dx12_visibility(b.visibility);
-
-            if (b.kind == K::RootConstants)
-            {
-                p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-                p.Constants.Num32BitValues = b.count;
-                p.Constants.ShaderRegister = b.shader_register;
-                p.Constants.RegisterSpace  = b.register_space;
-            }
-            else
-            {
-                // SRV / UAV / Sampler go in a one-range descriptor table.
-                const RangeEntry* entry = nullptr;
-                for (const auto& re : range_storage)
-                    if (re.param_index == i) { entry = &re; break; }
-
-                assert(entry);
-                p.ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-                p.DescriptorTable.NumDescriptorRanges = 1;
-                p.DescriptorTable.pDescriptorRanges   = &entry->range;
-            }
+            D3D12_ROOT_PARAMETER& p = params[pi++];
+            p.ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+            p.ShaderVisibility         = to_dx12_visibility(rc.visibility);
+            p.Constants.Num32BitValues = rc.value_count;
+            p.Constants.ShaderRegister = rc.shader_register;
+            p.Constants.RegisterSpace  = rc.register_space;
         }
+
+        for (size_t di = 0; di < data.descriptor_bindings.size(); ++di)
+        {
+            D3D12_ROOT_PARAMETER& p = params[pi++];
+            p.ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+            p.ShaderVisibility                    = to_dx12_visibility(data.descriptor_bindings[di].visibility);
+            p.DescriptorTable.NumDescriptorRanges = 1;
+            p.DescriptorTable.pDescriptorRanges   = &ranges[di];
+        }
+
+        const bool has_ia = (data.input_layout != wz::engine::assets::InputLayoutKind::None);
 
         D3D12_ROOT_SIGNATURE_DESC desc{};
-        desc.NumParameters   = static_cast<UINT>(params.size());
-        desc.pParameters     = params.empty() ? nullptr : params.data();
+        desc.NumParameters     = static_cast<UINT>(params.size());
+        desc.pParameters       = params.empty() ? nullptr : params.data();
         desc.NumStaticSamplers = 0;
-        desc.pStaticSamplers = nullptr;
-        desc.Flags           = ia_flag_for_binding_model(data.binding_model);
+        desc.pStaticSamplers   = nullptr;
+        desc.Flags             = has_ia
+            ? D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+            : D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
         ID3DBlob* sig_blob   = nullptr;
         ID3DBlob* error_blob = nullptr;
@@ -408,18 +393,17 @@ namespace wz::gpu::dx12::internal
         GPUHandle vertex_shader,
         GPUHandle pixel_shader)
     {
+        using BM = wz::engine::assets::BlendMode;
+        using DM = wz::engine::assets::DepthMode;
+        using RM = wz::engine::assets::RasterMode;
+
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
 
         assert(vs && vs->blob);
         assert(ps && ps->blob);
 
-        auto layout = build_input_layout(data.binding_model);
-
-        const bool wireframe =
-            (data.default_policy_flags & wz::engine::assets::RenderPolicy_Wireframe) != 0;
-        const bool alpha_blend =
-            (data.default_policy_flags & wz::engine::assets::RenderPolicy_AlphaBlend) != 0;
+        auto layout = build_input_layout(data.input_layout);
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
         desc.pRootSignature = root_sig;
@@ -431,14 +415,25 @@ namespace wz::gpu::dx12::internal
         };
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-        desc.RasterizerState          = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        desc.RasterizerState.FillMode = wireframe
-            ? D3D12_FILL_MODE_WIREFRAME
-            : D3D12_FILL_MODE_SOLID;
-        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        switch (data.raster_mode)
+        {
+        case RM::SolidCullBack:
+            desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+            desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+            break;
+        case RM::SolidCullNone:
+            desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+            desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+            break;
+        case RM::WireframeCullNone:
+            desc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+            desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+            break;
+        }
 
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        if (alpha_blend)
+        if (data.blend_mode == BM::AlphaBlend)
         {
             D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
             rt.BlendEnable           = TRUE;
@@ -452,12 +447,28 @@ namespace wz::gpu::dx12::internal
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
 
-        desc.DepthStencilState            = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        desc.DepthStencilState.DepthEnable = FALSE;
-        desc.DSVFormat                    = DXGI_FORMAT_UNKNOWN;
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        switch (data.depth_mode)
+        {
+        case DM::Disabled:
+            desc.DepthStencilState.DepthEnable    = FALSE;
+            desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            desc.DSVFormat                        = DXGI_FORMAT_UNKNOWN;
+            break;
+        case DM::TestNoWrite:
+            desc.DepthStencilState.DepthEnable    = TRUE;
+            desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            desc.DSVFormat                        = DXGI_FORMAT_D32_FLOAT;
+            break;
+        case DM::TestWrite:
+            desc.DepthStencilState.DepthEnable    = TRUE;
+            desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+            desc.DSVFormat                        = DXGI_FORMAT_D32_FLOAT;
+            break;
+        }
 
         desc.NumRenderTargets = 1;
-        desc.RTVFormats[0]    = alpha_blend
+        desc.RTVFormats[0]    = (data.blend_mode == BM::AlphaBlend)
             ? get_backbuffer_format()
             : DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleMask       = UINT_MAX;
