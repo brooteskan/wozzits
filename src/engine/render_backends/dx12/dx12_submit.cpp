@@ -471,6 +471,20 @@ namespace wz::render::backend::dx12
                     resolved->render_program);
                 if (!layout || !layout->valid()) continue;
 
+                // Upload externally-computed sorted indices if provided.
+                // Empty span = keep existing t1 buffer (identity or prior sort).
+                if (!dc.sorted_splat_indices.empty())
+                    wz::gpu::dx12::internal::update_sorted_indices(
+                        *cloud, dc.sorted_splat_indices);
+
+                // Use the visible instance count from the DrawCommand when
+                // available (back-to-front sorted subset); fall back to the
+                // full cloud count for identity/legacy draws.
+                const uint32_t instance_count =
+                    dc.splat_instance_count > 0
+                        ? dc.splat_instance_count
+                        : cloud->splat_count;
+
                 cmdList->SetDescriptorHeaps(1, &srv_heap);
                 cmdList->SetGraphicsRootSignature(pl->root_sig);
                 cmdList->SetPipelineState(pl->pso);
@@ -488,7 +502,7 @@ namespace wz::render::backend::dx12
                         dt.root_parameter_index,
                         cloud->srv_table.gpu_at(dt.heap_start_slot));
 
-                cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+                cmdList->DrawInstanced(4, instance_count, 0, 0);
             }
             else
             {

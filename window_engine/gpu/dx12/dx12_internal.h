@@ -2,6 +2,7 @@
 
 // file: gpu/dx12/dx12_internal.h
 
+#include <span>
 #include <vector>
 #include <gpu/gpu.h>
 #include <gpu/dx12/external/d3dx12.h>
@@ -262,6 +263,19 @@ namespace wz::gpu::dx12::internal {
     const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
         Device& device,
         GPUHandle handle);
+
+    // Write externally-computed sorted indices into a cloud's persistently-mapped
+    // t1 SortedIndices upload buffer.
+    //
+    // sorted_indices must have the same size as cloud.splat_count; mismatches are
+    // rejected with a log message and the existing identity buffer is preserved.
+    // No-op if sorted_indices is empty (caller signals "use identity t1 buffer").
+    //
+    // Thread safety: caller is responsible for ensuring the GPU is not reading
+    // sorted_index_buffer when this is called (i.e. call before DrawInstanced).
+    void update_sorted_indices(
+        const DX12GaussianSplatCloudResource& cloud,
+        std::span<const uint32_t>             sorted_indices);
 }
 
 

@@ -340,4 +340,39 @@ namespace wz::gpu::dx12::internal
 
         return impl->gaussian_splat_clouds.get(handle);
     }
+
+    void update_sorted_indices(
+        const DX12GaussianSplatCloudResource& cloud,
+        std::span<const uint32_t>             sorted_indices)
+    {
+        // Empty span = "use existing t1 buffer" (identity or previously sorted).
+        if (sorted_indices.empty())
+            return;
+
+        if (!cloud.sorted_index_map)
+        {
+            OutputDebugStringA(
+                "update_sorted_indices: sorted_index_map is null — cloud not fully initialized\n");
+            return;
+        }
+
+        if (sorted_indices.size() != cloud.splat_count)
+        {
+            // Size mismatch: caller's span doesn't match the cloud's splat count.
+            // Preserve the existing buffer rather than writing partial/garbage data.
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "update_sorted_indices: size mismatch — "
+                "sorted_indices.size()=%zu, cloud.splat_count=%u (skipped)\n",
+                sorted_indices.size(), cloud.splat_count);
+            OutputDebugStringA(buf);
+            return;
+        }
+
+        // Write indices into the persistently-mapped upload buffer.
+        // The GPU reads this buffer as t1 SortedIndices at DrawInstanced time.
+        std::memcpy(cloud.sorted_index_map,
+                    sorted_indices.data(),
+                    sorted_indices.size() * sizeof(uint32_t));
+    }
 }
