@@ -48,6 +48,18 @@ namespace wz::engine::rendering
                 .pixel_target = "ps_5_0",
             };
             return true;
+
+        case BuiltinRenderProgram::GaussianSplatPullDebug:
+            out = ShaderPairDesc{
+                .name = "gaussian_splat_pull_debug",
+                .vertex_path = "shaders/gaussian_splat/gaussian_splat_pull_debug_vs.hlsl",
+                .pixel_path  = "shaders/gaussian_splat/gaussian_splat_debug_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry  = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target  = "ps_5_0",
+            };
+            return true;
         }
 
         out = {};

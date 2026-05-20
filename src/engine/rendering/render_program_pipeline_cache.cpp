@@ -3,6 +3,8 @@
 #include <engine/rendering/render_program_pipeline_cache.h>
 #include <gpu/dx12/dx12_internal.h>
 
+#include <optional>
+
 namespace wz::engine::rendering
 {
     bool RenderProgramPipelineCache::realize(
@@ -48,7 +50,7 @@ namespace wz::engine::rendering
         return {};
     }
 
-    wz::engine::assets::RenderBindingModel
+    std::optional<wz::engine::assets::RenderBindingModel>
     RenderProgramPipelineCache::get_binding_model(
         wz::asset::ResourceHandle render_program) const noexcept
     {
@@ -61,7 +63,7 @@ namespace wz::engine::rendering
                 return e.binding_model;
             }
         }
-        return wz::engine::assets::RenderBindingModel::MeshIA;
+        return std::nullopt;
     }
 
     void RenderProgramPipelineCache::clear() noexcept

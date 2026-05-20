@@ -14,6 +14,7 @@
 #include <gpu/gpu.h>
 #include <engine/assets/render_program/render_program.h>
 
+#include <optional>
 #include <vector>
 
 namespace wz::engine::rendering
@@ -36,11 +37,11 @@ namespace wz::engine::rendering
         wz::gpu::GPUHandle get(
             wz::asset::ResourceHandle render_program) const noexcept;
 
-        // Returns the binding model recorded at realize() time.
-        // Returns RenderBindingModel::MeshIA (the zero default) if the handle
-        // has not been realized.  Callers on the splat path should check
-        // render_program.valid() before calling.
-        wz::engine::assets::RenderBindingModel get_binding_model(
+        // Returns the binding model recorded at realize() time, or nullopt
+        // if the handle has not been realized.  A valid handle that is absent
+        // from the cache means the pipeline was never realized — callers
+        // should skip/log rather than falling back to a default.
+        std::optional<wz::engine::assets::RenderBindingModel> get_binding_model(
             wz::asset::ResourceHandle render_program) const noexcept;
 
         // Forget all cached mappings.  Does not release GPU resources.

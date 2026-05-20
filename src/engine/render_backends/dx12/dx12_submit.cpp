@@ -443,9 +443,21 @@ namespace wz::render::backend::dx12
             constants[34] = 0.01f;
             constants[35] = 0.0f;
 
-            const auto binding_model = resolved->render_program.valid()
-                ? render_program_cache.get_binding_model(resolved->render_program)
-                : wz::engine::assets::RenderBindingModel::SplatVertexInstanced;
+            // Determine binding model.  Default to SplatVertexInstanced when no
+            // render-program handle is attached.  If a valid handle is present but
+            // absent from the cache, the pipeline was never realized — skip rather
+            // than silently misrouting to a wrong binding path.
+            wz::engine::assets::RenderBindingModel binding_model =
+                wz::engine::assets::RenderBindingModel::SplatVertexInstanced;
+
+            if (resolved->render_program.valid())
+            {
+                const auto maybe = render_program_cache.get_binding_model(
+                    resolved->render_program);
+                if (!maybe.has_value())
+                    continue;   // valid handle, but pipeline was never realized
+                binding_model = *maybe;
+            }
 
             if (binding_model == wz::engine::assets::RenderBindingModel::SplatPull)
             {
