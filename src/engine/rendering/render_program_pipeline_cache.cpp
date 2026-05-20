@@ -29,7 +29,7 @@ namespace wz::engine::rendering
         if (!pipeline.valid())
             return false;
 
-        entries_.push_back({ render_program, pipeline });
+        entries_.push_back({ render_program, pipeline, data->binding_model });
         return true;
     }
 
@@ -46,6 +46,22 @@ namespace wz::engine::rendering
             }
         }
         return {};
+    }
+
+    wz::engine::assets::RenderBindingModel
+    RenderProgramPipelineCache::get_binding_model(
+        wz::asset::ResourceHandle render_program) const noexcept
+    {
+        for (const Entry& e : entries_)
+        {
+            if (e.render_program.id    == render_program.id &&
+                e.render_program.epoch == render_program.epoch &&
+                e.render_program.type  == render_program.type)
+            {
+                return e.binding_model;
+            }
+        }
+        return wz::engine::assets::RenderBindingModel::MeshIA;
     }
 
     void RenderProgramPipelineCache::clear() noexcept

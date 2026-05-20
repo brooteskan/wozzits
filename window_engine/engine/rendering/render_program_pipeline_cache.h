@@ -36,14 +36,22 @@ namespace wz::engine::rendering
         wz::gpu::GPUHandle get(
             wz::asset::ResourceHandle render_program) const noexcept;
 
+        // Returns the binding model recorded at realize() time.
+        // Returns RenderBindingModel::MeshIA (the zero default) if the handle
+        // has not been realized.  Callers on the splat path should check
+        // render_program.valid() before calling.
+        wz::engine::assets::RenderBindingModel get_binding_model(
+            wz::asset::ResourceHandle render_program) const noexcept;
+
         // Forget all cached mappings.  Does not release GPU resources.
         void clear() noexcept;
 
     private:
         struct Entry
         {
-            wz::asset::ResourceHandle render_program{};
-            wz::gpu::GPUHandle        pipeline{};
+            wz::asset::ResourceHandle                    render_program{};
+            wz::gpu::GPUHandle                           pipeline{};
+            wz::engine::assets::RenderBindingModel       binding_model{};
         };
 
         std::vector<Entry> entries_;

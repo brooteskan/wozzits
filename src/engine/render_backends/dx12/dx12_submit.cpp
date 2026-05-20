@@ -432,7 +432,7 @@ namespace wz::render::backend::dx12
 
             const auto* cloud = wz::gpu::dx12::internal::get_gaussian_splat_cloud(
                 device, resolved->gpu_resource);
-            if (!cloud || !cloud->vertex_buffer) continue;
+            if (!cloud) continue;
 
             float constants[36] = {};
             for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
@@ -443,12 +443,37 @@ namespace wz::render::backend::dx12
             constants[34] = 0.01f;
             constants[35] = 0.0f;
 
-            cmdList->SetGraphicsRootSignature(pl->root_sig);
-            cmdList->SetPipelineState(pl->pso);
-            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-            cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
-            cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
-            cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+            const auto binding_model = resolved->render_program.valid()
+                ? render_program_cache.get_binding_model(resolved->render_program)
+                : wz::engine::assets::RenderBindingModel::SplatVertexInstanced;
+
+            if (binding_model == wz::engine::assets::RenderBindingModel::SplatPull)
+            {
+                if (!cloud->valid_for_splat_pull()) continue;
+
+                auto* srv_heap =
+                    wz::gpu::dx12::internal::get_srv_cbv_uav_heap(device);
+                if (!srv_heap) continue;
+
+                cmdList->SetDescriptorHeaps(1, &srv_heap);
+                cmdList->SetGraphicsRootSignature(pl->root_sig);
+                cmdList->SetPipelineState(pl->pso);
+                cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+                cmdList->SetGraphicsRootDescriptorTable(1, cloud->srv_table.gpu_start);
+                cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+            }
+            else
+            {
+                if (!cloud->valid_for_vertex_instanced()) continue;
+
+                cmdList->SetGraphicsRootSignature(pl->root_sig);
+                cmdList->SetPipelineState(pl->pso);
+                cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+                cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
+                cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
+            }
         }
     }
 

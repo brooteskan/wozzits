@@ -356,4 +356,10 @@ namespace wz::gpu::dx12::internal {
     const DX12GraphicsPipeline* get_graphics_pipeline(
         Device& device,
         GPUHandle handle);
+
+    // Returns the shader-visible CBV/SRV/UAV descriptor heap used by the
+    // device's static allocator.  Must be bound via SetDescriptorHeaps before
+    // any SetGraphicsRootDescriptorTable call that references it.
+    // Returns nullptr if the device is not initialized.
+    ID3D12DescriptorHeap* get_srv_cbv_uav_heap(Device& device);
 }

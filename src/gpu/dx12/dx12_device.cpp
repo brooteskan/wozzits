@@ -692,6 +692,13 @@ namespace wz::gpu::dx12::internal
         return impl->cmd;
     }
 
+    ID3D12DescriptorHeap* get_srv_cbv_uav_heap(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl) return nullptr;
+        return impl->srv_cbv_uav_allocator.heap();
+    }
+
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device)
     {
         D3D12_ROOT_PARAMETER param = {};
