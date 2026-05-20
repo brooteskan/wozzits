@@ -151,9 +151,16 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     float4 clip_pos  = clip_center;
     clip_pos.xy     += ndc_offset * clip_center.w;
 
+    // Debug tint: shift the natural color toward cyan so the Pull path is
+    // visually distinguishable from the IA path at a glance.
+    // Remove once the paths are confirmed equivalent and the tint is no
+    // longer needed for visual validation.
+    const float3 pull_tint = float3(0.2f, 0.7f, 1.0f);
+    const float  tint_str  = 0.5f;
+
     VSOutput output;
     output.position = clip_pos;
-    output.color    = s.color;
+    output.color    = lerp(s.color, pull_tint, tint_str);
     output.opacity  = s.opacity;
     output.uv       = corner * gaussian_radius;
     return output;
