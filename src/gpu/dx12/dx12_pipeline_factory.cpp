@@ -305,24 +305,56 @@ namespace wz::gpu::dx12::internal
         ID3D12Device* device,
         const wz::engine::assets::RenderProgramData& data)
     {
-        // Root parameters: root_constants first, then one table per descriptor_binding.
-        const size_t total_params =
-            data.root_constants.size() + data.descriptor_bindings.size();
+        // Group descriptor bindings by shader visibility: same-visibility bindings
+        // share one root parameter (descriptor table) with one range per binding.
+        // This lets a single SetGraphicsRootDescriptorTable call cover t0+t1 when
+        // both are Vertex-visible, which is the SplatPull contract.
+        //
+        // Groups are built in first-occurrence order so root parameter indices are
+        // stable and predictable from the declaration order in RenderProgramData.
 
-        // Build all descriptor ranges up front into a fixed-size vector so that
-        // &ranges[i] pointers assigned to DescriptorTable params below are never
-        // invalidated by a reallocation.
-        std::vector<D3D12_DESCRIPTOR_RANGE> ranges(data.descriptor_bindings.size());
-        for (size_t di = 0; di < data.descriptor_bindings.size(); ++di)
+        struct VisibilityGroup
         {
-            const auto& db = data.descriptor_bindings[di];
-            ranges[di].RangeType                         = to_dx12_range_type(db.kind);
-            ranges[di].NumDescriptors                    = db.descriptor_count;
-            ranges[di].BaseShaderRegister                = db.shader_register;
-            ranges[di].RegisterSpace                     = db.register_space;
-            ranges[di].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+            D3D12_SHADER_VISIBILITY visibility{};
+            std::vector<size_t>     binding_indices;  // indices into data.descriptor_bindings
+        };
+
+        std::vector<VisibilityGroup> groups;
+        for (size_t i = 0; i < data.descriptor_bindings.size(); ++i)
+        {
+            const auto vis = to_dx12_visibility(data.descriptor_bindings[i].visibility);
+            auto it = std::find_if(groups.begin(), groups.end(),
+                [vis](const VisibilityGroup& g) { return g.visibility == vis; });
+            if (it != groups.end())
+                it->binding_indices.push_back(i);
+            else
+                groups.push_back({ vis, { i } });
         }
 
+        // Build the ranges vector in group order so each group's ranges are
+        // contiguous — required because pDescriptorRanges must point to a
+        // contiguous array.
+        std::vector<D3D12_DESCRIPTOR_RANGE> ranges(data.descriptor_bindings.size());
+        {
+            size_t ri = 0;
+            for (const auto& group : groups)
+            {
+                for (size_t bi : group.binding_indices)
+                {
+                    const auto& db = data.descriptor_bindings[bi];
+                    ranges[ri].RangeType                         = to_dx12_range_type(db.kind);
+                    ranges[ri].NumDescriptors                    = db.descriptor_count;
+                    ranges[ri].BaseShaderRegister                = db.shader_register;
+                    ranges[ri].RegisterSpace                     = db.register_space;
+                    ranges[ri].OffsetInDescriptorsFromTableStart =
+                        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                    ++ri;
+                }
+            }
+        }
+
+        // Root parameters: root_constants first, then one table per visibility group.
+        const size_t total_params = data.root_constants.size() + groups.size();
         std::vector<D3D12_ROOT_PARAMETER> params(total_params);
         size_t pi = 0;
 
@@ -336,13 +368,16 @@ namespace wz::gpu::dx12::internal
             p.Constants.RegisterSpace  = rc.register_space;
         }
 
-        for (size_t di = 0; di < data.descriptor_bindings.size(); ++di)
+        size_t range_start = 0;
+        for (const auto& group : groups)
         {
             D3D12_ROOT_PARAMETER& p = params[pi++];
             p.ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-            p.ShaderVisibility                    = to_dx12_visibility(data.descriptor_bindings[di].visibility);
-            p.DescriptorTable.NumDescriptorRanges = 1;
-            p.DescriptorTable.pDescriptorRanges   = &ranges[di];
+            p.ShaderVisibility                    = group.visibility;
+            p.DescriptorTable.NumDescriptorRanges =
+                static_cast<UINT>(group.binding_indices.size());
+            p.DescriptorTable.pDescriptorRanges   = &ranges[range_start];
+            range_start += group.binding_indices.size();
         }
 
         const bool has_ia = (data.input_layout != wz::engine::assets::InputLayoutKind::None);

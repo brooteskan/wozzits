@@ -43,7 +43,8 @@ struct Splat
     float  pad1;     // offset 60
 };
 
-StructuredBuffer<Splat> g_splats : register(t0);
+StructuredBuffer<Splat> g_splats          : register(t0);
+StructuredBuffer<uint>  g_sorted_indices   : register(t1);
 
 struct VSOutput
 {
@@ -79,7 +80,10 @@ float2 project_point_to_ndc(float3 p)
 VSOutput main(uint vertex_id   : SV_VertexID,
               uint instance_id : SV_InstanceID)
 {
-    Splat s = g_splats[instance_id];
+    // Indirection through sorted index table.
+    // Identity indices [0..N-1] at launch; CPU sort writes new order before draw.
+    uint splat_index = g_sorted_indices[instance_id];
+    Splat s = g_splats[splat_index];
 
     float2 corners[4] =
     {

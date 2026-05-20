@@ -87,14 +87,24 @@ namespace wz::engine::assets::internal
                     .register_space  = 0,
                     .value_count     = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
                 }};
-                out.descriptor_bindings = {{
-                    .kind             = DescriptorKind::StructuredBufferSRV,
-                    .visibility       = ShaderVisibility::Vertex,
-                    .semantic         = DescriptorSemantic::SplatCloud,
-                    .shader_register  = 0,  // t0
-                    .register_space   = 0,
-                    .descriptor_count = 1,
-                }};
+                out.descriptor_bindings = {
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SplatCloud,
+                        .shader_register  = 0,  // t0
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SortedSplatIndices,
+                        .shader_register  = 1,  // t1
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                };
                 return true;
 
             case BuiltinRenderProgram::Count:

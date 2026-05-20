@@ -279,14 +279,22 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatPullDebug)
     EXPECT_EQ(data->root_constants[0].register_space,  0u);
     EXPECT_EQ(data->root_constants[0].value_count,     36u);
 
-    // Splat cloud SRV at t0.
-    ASSERT_EQ(data->descriptor_bindings.size(), 1u);
+    // Two SRV descriptor bindings: t0 = SplatCloud, t1 = SortedSplatIndices.
+    ASSERT_EQ(data->descriptor_bindings.size(), 2u);
+
     EXPECT_EQ(data->descriptor_bindings[0].kind,             DescriptorKind::StructuredBufferSRV);
     EXPECT_EQ(data->descriptor_bindings[0].visibility,       ShaderVisibility::Vertex);
     EXPECT_EQ(data->descriptor_bindings[0].semantic,         DescriptorSemantic::SplatCloud);
-    EXPECT_EQ(data->descriptor_bindings[0].shader_register,  0u);
+    EXPECT_EQ(data->descriptor_bindings[0].shader_register,  0u);  // t0
     EXPECT_EQ(data->descriptor_bindings[0].register_space,   0u);
     EXPECT_EQ(data->descriptor_bindings[0].descriptor_count, 1u);
+
+    EXPECT_EQ(data->descriptor_bindings[1].kind,             DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(data->descriptor_bindings[1].visibility,       ShaderVisibility::Vertex);
+    EXPECT_EQ(data->descriptor_bindings[1].semantic,         DescriptorSemantic::SortedSplatIndices);
+    EXPECT_EQ(data->descriptor_bindings[1].shader_register,  1u);  // t1
+    EXPECT_EQ(data->descriptor_bindings[1].register_space,   0u);
+    EXPECT_EQ(data->descriptor_bindings[1].descriptor_count, 1u);
 
     // Verify that the descriptor-table root-sig path and PSO creation both succeed.
     wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
@@ -294,6 +302,28 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinGaussianSplatPullDebug)
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
     EXPECT_TRUE(pipeline_cache.get(handle).valid());
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
+
+    // Verify the realized binding layout has the expected root parameter shape:
+    //   root_constants[0] → param 0, b0, 36 values
+    //   desc_tables[0]    → param 1, heap slot 0, 2 descriptors (t0+t1 same table)
+    const auto* layout = pipeline_cache.get_binding_layout(handle);
+    ASSERT_NE(layout, nullptr);
+    ASSERT_EQ(layout->root_constants.size(), 1u);
+    EXPECT_EQ(layout->root_constants[0].root_parameter_index, 0u);
+    EXPECT_EQ(layout->root_constants[0].value_count,          36u);
+
+    ASSERT_EQ(layout->desc_tables.size(), 1u);
+    EXPECT_EQ(layout->desc_tables[0].root_parameter_index, 1u);
+    EXPECT_EQ(layout->desc_tables[0].heap_start_slot,      0u);
+    EXPECT_EQ(layout->desc_tables[0].slot_count,           2u);
+
+    ASSERT_EQ(layout->descriptors.size(), 2u);
+    EXPECT_EQ(layout->descriptors[0].semantic,                DescriptorSemantic::SplatCloud);
+    EXPECT_EQ(layout->descriptors[0].root_parameter_index,    1u);
+    EXPECT_EQ(layout->descriptors[0].descriptor_table_offset, 0u);
+    EXPECT_EQ(layout->descriptors[1].semantic,                DescriptorSemantic::SortedSplatIndices);
+    EXPECT_EQ(layout->descriptors[1].root_parameter_index,    1u);
+    EXPECT_EQ(layout->descriptors[1].descriptor_table_offset, 1u);
 }
 
 TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)

@@ -199,15 +199,23 @@ namespace wz::gpu::dx12::internal {
 
     struct DX12GaussianSplatCloudResource
     {
-        ID3D12Resource* vertex_buffer = nullptr;
+        ID3D12Resource* vertex_buffer       = nullptr;  // StructuredBuffer<Splat> (t0)
+        ID3D12Resource* sorted_index_buffer = nullptr;  // StructuredBuffer<uint>  (t1)
+
+        // Persistently mapped write pointer for sorted_index_buffer.
+        // The sort follow-on writes new index orders here before DrawInstanced.
+        // Null until sorted_index_buffer is successfully created.
+        uint32_t* sorted_index_map = nullptr;
 
         D3D12_VERTEX_BUFFER_VIEW vertex_view{};
 
         uint32_t splat_count = 0;
 
-        // Pre-allocated SRV for the SplatPull path (t0 StructuredBuffer).
+        // Descriptor table covering both SRV slots:
+        //   slot 0 → StructuredBuffer<Splat>  (t0, SplatCloud)
+        //   slot 1 → StructuredBuffer<uint>   (t1, SortedSplatIndices)
         // Valid only when the device's srv_cbv_uav_allocator had capacity at
-        // upload time.
+        // upload time and both buffers were created successfully.
         wz::gpu::dx12::DX12DescriptorTable srv_table{};
 
         // Binding-model-specific validity checks.
@@ -220,7 +228,10 @@ namespace wz::gpu::dx12::internal {
 
         bool valid_for_splat_pull() const noexcept
         {
-            return vertex_buffer != nullptr && splat_count > 0 && srv_table.valid();
+            return vertex_buffer       != nullptr
+                && sorted_index_buffer != nullptr
+                && splat_count          > 0
+                && srv_table.valid();
         }
     };
 

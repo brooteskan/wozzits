@@ -194,6 +194,12 @@ namespace wz::gpu::dx12::internal
                 slot.cloud.vertex_buffer->Release();
                 slot.cloud.vertex_buffer = nullptr;
             }
+            if (slot.cloud.sorted_index_buffer) {
+                slot.cloud.sorted_index_buffer->Unmap(0, nullptr);
+                slot.cloud.sorted_index_buffer->Release();
+                slot.cloud.sorted_index_buffer = nullptr;
+                slot.cloud.sorted_index_map    = nullptr;
+            }
 
             slot.occupied = false;
             slot.epoch = 0;
@@ -250,15 +256,76 @@ namespace wz::gpu::dx12::internal
         resource.vertex_view.StrideInBytes =
             static_cast<UINT>(sizeof(DX12GaussianSplatVertex));
 
-        // Pre-allocate a StructuredBuffer SRV for the SplatPull binding path (t0).
-        resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
-        if (resource.srv_table.valid())
+        // ── Identity sorted-index buffer (t1) ────────────────────────────────
+        //
+        // Allocate a persistently-mapped upload-heap uint32_t[N] buffer and
+        // initialise it to the identity permutation [0, 1, 2, ..., N-1].
+        // The sort follow-on replaces the contents before each draw; for now
+        // the identity order matches the vertex-instanced path exactly.
         {
-            impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
-                resource.srv_table, 0,
-                resource.vertex_buffer,
-                resource.splat_count,
-                sizeof(DX12GaussianSplatVertex));
+            const uint64_t index_bytes =
+                static_cast<uint64_t>(resource.splat_count) * sizeof(uint32_t);
+
+            const D3D12_HEAP_PROPERTIES heap_props =
+                CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+            const D3D12_RESOURCE_DESC index_desc =
+                CD3DX12_RESOURCE_DESC::Buffer(index_bytes);
+
+            HRESULT hr = impl->device->CreateCommittedResource(
+                &heap_props,
+                D3D12_HEAP_FLAG_NONE,
+                &index_desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr,
+                IID_PPV_ARGS(&resource.sorted_index_buffer));
+
+            if (SUCCEEDED(hr) && resource.sorted_index_buffer)
+            {
+                const D3D12_RANGE read_range{ 0, 0 };
+                void* mapped = nullptr;
+                hr = resource.sorted_index_buffer->Map(0, &read_range, &mapped);
+
+                if (SUCCEEDED(hr) && mapped)
+                {
+                    resource.sorted_index_map =
+                        static_cast<uint32_t*>(mapped);
+
+                    for (uint32_t i = 0; i < resource.splat_count; ++i)
+                        resource.sorted_index_map[i] = i;
+                    // Leave persistently mapped — upload-heap resources
+                    // remain valid for CPU writes at any time.
+                }
+                else
+                {
+                    resource.sorted_index_buffer->Release();
+                    resource.sorted_index_buffer = nullptr;
+                }
+            }
+        }
+
+        // ── Two-slot SRV descriptor table (t0 = splats, t1 = indices) ────────
+        //
+        // Both SRVs share one root parameter; a single SetGraphicsRootDescriptorTable
+        // call covering slot 0 exposes both registers to the shader.
+        if (resource.sorted_index_buffer)
+        {
+            resource.srv_table = impl->srv_cbv_uav_allocator.allocate(2);
+            if (resource.srv_table.valid())
+            {
+                // slot 0 → StructuredBuffer<Splat>  t0
+                impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                    resource.srv_table, 0,
+                    resource.vertex_buffer,
+                    resource.splat_count,
+                    sizeof(DX12GaussianSplatVertex));
+
+                // slot 1 → StructuredBuffer<uint>  t1
+                impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                    resource.srv_table, 1,
+                    resource.sorted_index_buffer,
+                    resource.splat_count,
+                    sizeof(uint32_t));
+            }
         }
 
         return impl->gaussian_splat_clouds.add(resource);

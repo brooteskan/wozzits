@@ -467,12 +467,27 @@ namespace wz::render::backend::dx12
                     wz::gpu::dx12::internal::get_srv_cbv_uav_heap(device);
                 if (!srv_heap) continue;
 
+                const auto* layout = render_program_cache.get_binding_layout(
+                    resolved->render_program);
+                if (!layout || !layout->valid()) continue;
+
                 cmdList->SetDescriptorHeaps(1, &srv_heap);
                 cmdList->SetGraphicsRootSignature(pl->root_sig);
                 cmdList->SetPipelineState(pl->pso);
                 cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-                cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
-                cmdList->SetGraphicsRootDescriptorTable(1, cloud->srv_table.gpu_start);
+
+                // Root constants — iterate declared bindings; no hardcoded index.
+                for (const auto& rc : layout->root_constants)
+                    cmdList->SetGraphicsRoot32BitConstants(
+                        rc.root_parameter_index, rc.value_count, constants, 0);
+
+                // Descriptor tables — one SetGraphicsRootDescriptorTable per
+                // visibility group; heap_start_slot offsets into srv_table.
+                for (const auto& dt : layout->desc_tables)
+                    cmdList->SetGraphicsRootDescriptorTable(
+                        dt.root_parameter_index,
+                        cloud->srv_table.gpu_at(dt.heap_start_slot));
+
                 cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
             }
             else
