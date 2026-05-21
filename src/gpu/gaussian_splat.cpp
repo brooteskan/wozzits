@@ -1,8 +1,12 @@
 // src/gpu/gaussian_splat.cpp
 
 #include <gpu/gaussian_splat.h>
+#include <gpu/gaussian_splat_color_lod_settings.h>
 
 #include <gpu/dx12/dx12_internal.h>
+#include "dx12/dx12_device_internal.h"
+
+#include <cassert>
 
 namespace wz::gpu
 {
@@ -17,5 +21,16 @@ namespace wz::gpu
             device,
             *desc.cloud,
             desc.color_lod);
+    }
+
+    void set_splat_color_lod_settings(
+        Device& device,
+        const SplatColorLODSettings& settings)
+    {
+        if (!device.impl)
+            return;
+
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        impl->splat_color_lod_settings = settings;
     }
 }

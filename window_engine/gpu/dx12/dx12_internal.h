@@ -9,6 +9,7 @@
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <gpu/gpu_types.h>
 #include <gpu/shader.h>
+#include <gpu/gaussian_splat_color_lod_settings.h>
 #include <d3dcompiler.h>
 #include <d3d12.h>
 #include <engine/assets/render_program/render_program.h>
@@ -270,6 +271,10 @@ namespace wz::gpu::dx12::internal {
     const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
         Device& device,
         GPUHandle handle);
+
+    // Scene-wide splat color LOD settings, last pushed by
+    // wz::gpu::set_splat_color_lod_settings().  Default is Natural mode.
+    const wz::gpu::SplatColorLODSettings& get_lod_settings(Device& device);
 
     // Write externally-computed sorted indices into a cloud's persistently-mapped
     // t1 SortedIndices upload buffer.

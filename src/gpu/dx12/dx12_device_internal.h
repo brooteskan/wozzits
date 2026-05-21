@@ -14,6 +14,7 @@
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
+#include <gpu/gaussian_splat_color_lod_settings.h>
 
 
 namespace wz::gpu::dx12
@@ -93,6 +94,11 @@ namespace wz::gpu::dx12
         wz::gpu::dx12::DX12DescriptorAllocator srv_cbv_uav_allocator;
 
         wz::render::backend::dx12::Context* ctx = nullptr;
+
+        // Scene-wide splat color LOD settings.  Pushed per-frame by the
+        // toolhost via wz::gpu::set_splat_color_lod_settings(); consumed
+        // by the dx12 submit path when binding NeighborhoodColorBlend.
+        wz::gpu::SplatColorLODSettings splat_color_lod_settings{};
     };
 
 }

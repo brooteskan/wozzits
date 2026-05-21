@@ -45,6 +45,14 @@ namespace wz::engine::rendering
         std::optional<ResolvedRenderableResource>
         resolve_splats(wz::scene::SplatHandle handle) const noexcept;
 
+        // Update the render program bound to an existing splat handle.
+        // Returns false on out-of-range or invalid handle.  Useful for the
+        // toolhost to swap between PullDebug and NeighborhoodColorBlend
+        // without rebuilding the scene graph or the GPU resource.
+        bool set_splat_render_program(
+            wz::scene::SplatHandle    handle,
+            wz::asset::ResourceHandle render_program) noexcept;
+
         // Register a GPU-resident mesh together with its render program.
         // render_program is optional; when valid the submit path prefers it.
         // Returns the MeshHandle to store in DrawCommand::mesh.

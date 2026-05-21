@@ -107,6 +107,46 @@ namespace wz::engine::assets::internal
                 };
                 return true;
 
+            case BuiltinRenderProgram::GaussianSplatNeighborhoodColorBlend:
+                // Same binding model as PullDebug, but with extended root
+                // constants for the LOD blend params (mode, strength, near/far,
+                // stride ratio + max, use_confidence, pad).
+                out.binding_model        = RenderBindingModel::SplatPull;
+                out.topology             = RenderPrimitiveTopology::TriangleStrip;
+                out.default_domain       = RenderDomain::Splat;
+                out.default_policy_flags = RenderPolicy_AlphaBlend;
+                out.input_layout = InputLayoutKind::None;
+                out.blend_mode   = BlendMode::AlphaBlend;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    // world[16] + view_proj[16] + viewport_and_size[4]
+                    // + lod_params0[4] + lod_params1[4] + lod_pad[4] = 48
+                    .value_count     = 48,
+                }};
+                out.descriptor_bindings = {
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SplatCloud,
+                        .shader_register  = 0,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SortedSplatIndices,
+                        .shader_register  = 1,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                };
+                return true;
+
             case BuiltinRenderProgram::Count:
                 return false;
             }

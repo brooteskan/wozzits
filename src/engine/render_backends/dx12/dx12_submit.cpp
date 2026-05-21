@@ -434,7 +434,13 @@ namespace wz::render::backend::dx12
                 device, resolved->gpu_resource);
             if (!cloud) continue;
 
-            float constants[36] = {};
+            // Constants buffer sized to fit both the legacy 36-dword PullDebug
+            // layout and the extended 48-dword NeighborhoodColorBlend layout.
+            // The actual count pushed is driven by
+            // `layout->root_constants[i].value_count`, so the old program
+            // reads only [0..35] and never sees the LOD slots even though
+            // they are populated below.
+            float constants[48] = {};
             for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
             for (int i = 0; i < 16; ++i) constants[16 + i] =
                 frame.view.view_projection.m[i];
@@ -442,6 +448,31 @@ namespace wz::render::backend::dx12
             constants[33] = vp_h;
             constants[34] = 0.01f;
             constants[35] = 0.0f;
+
+            // LOD slots (consumed by NeighborhoodColorBlend; ignored by
+            // PullDebug). [36..39] = mode, strength, near, far.
+            // [40..43] = stride_ratio, max_stride, use_confidence, pad.
+            // [44..47] reserved/pad.
+            {
+                const auto& lod = wz::gpu::dx12::internal::get_lod_settings(device);
+                constants[36] = static_cast<float>(static_cast<uint32_t>(lod.mode));
+                constants[37] = lod.strength;
+                constants[38] = lod.near_distance;
+                constants[39] = lod.far_distance;
+
+                const uint32_t total = cloud->splat_count;
+                const uint32_t rendered =
+                    dc.splat_instance_count > 0
+                        ? dc.splat_instance_count
+                        : total;
+                const float stride_ratio = (total > 0)
+                    ? static_cast<float>(rendered) / static_cast<float>(total)
+                    : 1.0f;
+                constants[40] = stride_ratio;
+                constants[41] = lod.max_stride_for_blend;
+                constants[42] = lod.use_confidence ? 1.0f : 0.0f;
+                constants[43] = 0.0f;
+            }
 
             // Determine binding model.  Default to SplatVertexInstanced when no
             // render-program handle is attached.  If a valid handle is present but

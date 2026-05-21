@@ -54,8 +54,15 @@ namespace wz::engine::assets
             node.meta    = compile_desc;
 
             if (!system_.register_asset(std::move(node), { file })) {
-                logger_.error("failed to register HLSL shader node");
-                return {};
+                // register_asset only returns false when a node with this
+                // exact key is already pending.  For HLSL shaders the key
+                // is a pure function of (file, stage, entry, target), so a
+                // duplicate is by definition the same shader and the same
+                // compile output — treat as idempotent success.  This lets
+                // multiple render programs share a pixel shader (e.g. the
+                // splat debug PS used by both PullDebug and
+                // NeighborhoodColorBlend) without rejection.
+                return key;
             }
 
             return key;

@@ -28,6 +28,18 @@ namespace wz::engine::rendering
             e.gpu_resource, e.program, e.render_program };
     }
 
+    bool RenderResourceResolver::set_splat_render_program(
+        wz::scene::SplatHandle    handle,
+        wz::asset::ResourceHandle render_program) noexcept
+    {
+        if (handle == wz::scene::INVALID_SPLAT)
+            return false;
+        if (static_cast<size_t>(handle) >= splat_entries_.size())
+            return false;
+        splat_entries_[handle].render_program = render_program;
+        return true;
+    }
+
     wz::scene::MeshHandle RenderResourceResolver::register_mesh(
         wz::gpu::GPUHandle                       gpu_resource,
         wz::engine::assets::BuiltinRenderProgram program,

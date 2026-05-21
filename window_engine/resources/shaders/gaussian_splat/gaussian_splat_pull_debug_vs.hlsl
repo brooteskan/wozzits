@@ -175,8 +175,8 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     float4 clip_pos  = clip_center;
     clip_pos.xy     += ndc_offset * clip_center.w;
 
-    // Debug tint: shift the natural color toward cyan so the Pull path is
-    // visually distinguishable from the IA path at a glance.
+    // Debug tint: darken the natural color (50% blend toward black) so the
+    // Pull path is visually distinguishable from the IA path at a glance.
     // Remove once the paths are confirmed equivalent and the tint is no
     // longer needed for visual validation.
     const float3 pull_tint = float3(0.f, 0.f, 0.f);

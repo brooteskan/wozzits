@@ -60,6 +60,21 @@ namespace wz::engine::rendering
                 .pixel_target  = "ps_5_0",
             };
             return true;
+
+        case BuiltinRenderProgram::GaussianSplatNeighborhoodColorBlend:
+            out = ShaderPairDesc{
+                .name = "gaussian_splat_neighborhood_color_blend",
+                .vertex_path = "shaders/gaussian_splat/gaussian_splat_neighborhood_color_blend_vs.hlsl",
+                .pixel_path  = "shaders/gaussian_splat/gaussian_splat_debug_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry  = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target  = "ps_5_0",
+            };
+            return true;
+
+        case BuiltinRenderProgram::Count:
+            break;
         }
 
         out = {};
