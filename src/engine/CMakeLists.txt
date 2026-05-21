@@ -37,6 +37,7 @@ target_sources(window_engine PRIVATE
 
     assets/gaussian_splat/gaussian_splat.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp
+    assets/gaussian_splat/gaussian_splat_terrain_surface_compiler.cpp
     assets/gaussian_splat/gaussian_splat_ply_schema.cpp
     assets/gaussian_splat/gaussian_splat_ply_importer.cpp
     assets/gaussian_splat/gaussian_splat_color_lod.cpp

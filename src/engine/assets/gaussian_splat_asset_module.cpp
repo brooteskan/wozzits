@@ -5,6 +5,7 @@
 #include <engine/assets/key_factories/gaussian_splat.h>
 #include <engine/assets/key_factories/gaussian_splat_file.h>
 #include <engine/assets/key_factories/gaussian_splat_from_scalar_field.h>
+#include <engine/assets/key_factories/gaussian_splat_terrain_surface.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -140,6 +141,65 @@ namespace wz::engine::assets
 
         if (!system_.register_asset(std::move(node), { desc.scalar_field_key })) {
             logger_.error("failed to register gaussian splat from scalar field: " + desc.name);
+            return {};
+        }
+
+        out.output = key;
+        return out;
+    }
+
+    GaussianSplatCloudAsset
+        GaussianSplatAssetModule::create_terrain_surface_from_height_field(
+            const GaussianSplatTerrainSurfaceFromHeightFieldDesc& desc)
+    {
+        GaussianSplatCloudAsset out{};
+
+        if (desc.scalar_field_key == wz::asset::AssetKey{}) {
+            logger_.error(
+                "terrain-surface splat: empty scalar field key: " + desc.name);
+            return out;
+        }
+        if (desc.step_x <= 0.0f || desc.step_z <= 0.0f) {
+            logger_.error(
+                "terrain-surface splat: non-positive step_x or step_z: "
+                + desc.name);
+            return out;
+        }
+        if (desc.overlap_factor <= 0.0f) {
+            logger_.error(
+                "terrain-surface splat: non-positive overlap_factor: "
+                + desc.name);
+            return out;
+        }
+
+        const GaussianSplatTerrainSurfaceFromHeightFieldCompileDesc compile_desc{
+            .height_scale    = desc.height_scale,
+            .step_x          = desc.step_x,
+            .step_z          = desc.step_z,
+            .overlap_factor  = desc.overlap_factor,
+            .thickness       = desc.thickness,
+            .subsample_step  = desc.subsample_step,
+            .opacity         = desc.opacity,
+            .flat_luminance  = desc.flat_luminance,
+            .steep_luminance = desc.steep_luminance,
+        };
+
+        const wz::asset::AssetKey key =
+            make_gaussian_splat_terrain_surface_from_height_field_key(
+                desc.scalar_field_key, compile_desc);
+
+        wz::asset::AssetNode node{};
+        node.key     = key;
+        node.type    = kAssetTypeGaussianSplatCloud;
+        node.schema  = kGaussianSplatTerrainSurfaceFromHeightFieldSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = compile_desc;
+
+        if (!system_.register_asset(
+                std::move(node), { desc.scalar_field_key })) {
+            logger_.error(
+                "terrain-surface splat: failed to register: " + desc.name);
             return {};
         }
 

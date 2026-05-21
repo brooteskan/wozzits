@@ -125,6 +125,15 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000502ull
     };
 
+    // Gaussian splat cloud generated as a terrain surface from a 2D scalar
+    // height field.  Distinct from kGaussianSplatFromFieldSchema (the simple
+    // grayscale debug heightmap splatter) — this compiler produces anisotropic,
+    // surface-tangent-aligned splats and treats heightmap values as raw world
+    // elevations.  Source: one kAssetTypeScalarField dep.
+    inline constexpr wz::asset::SchemaID kGaussianSplatTerrainSurfaceFromHeightFieldSchema{
+    0xF11E'CA55'E7'000503ull
+    };
+
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.

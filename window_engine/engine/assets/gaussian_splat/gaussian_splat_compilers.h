@@ -14,4 +14,12 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         GaussianSplatCloudTable& table,
         ScalarFieldTable& scalar_field_table);
+
+    // Sibling registrar for the terrain-surface compiler.  Kept separate so
+    // the implementation can live in its own TU.
+    void register_gaussian_splat_terrain_surface_compiler(
+        wz::asset::CompilerRegistry& registry,
+        wz::Logger& logger,
+        GaussianSplatCloudTable& cloud_table,
+        ScalarFieldTable& scalar_field_table);
 }
