@@ -7,6 +7,19 @@
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <logging/logger.h>
 
+namespace wz::engine::assets
+{
+    // ─── Public terrain-surface compile core ────────────────────────────────
+    //
+    // Exposed so toolhosts can re-run the terrain compile outside the asset
+    // DAG (e.g. for live tuning panels where the user adjusts compile params
+    // and we re-upload the cloud to the GPU each time).  Deterministic;
+    // identical (desc, field) → identical output.
+    GaussianSplatCloudData make_terrain_surface_splat_cloud(
+        const GaussianSplatTerrainSurfaceFromHeightFieldCompileDesc& desc,
+        const ScalarFieldData& field);
+}
+
 namespace wz::engine::assets::internal
 {
     void register_gaussian_splat_compilers(

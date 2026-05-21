@@ -53,6 +53,16 @@ namespace wz::engine::rendering
             wz::scene::SplatHandle    handle,
             wz::asset::ResourceHandle render_program) noexcept;
 
+        // Update the GPU resource bound to an existing splat handle.
+        // Returns false on out-of-range or invalid handle.  Useful for the
+        // toolhost to swap in a re-compiled / re-uploaded cloud (e.g. live
+        // tuning of terrain compile parameters) without rebuilding the
+        // scene graph.  The previous resource is NOT released — its
+        // lifetime is owned by the GPU resource table.
+        bool set_splat_gpu_resource(
+            wz::scene::SplatHandle handle,
+            wz::gpu::GPUHandle     gpu_resource) noexcept;
+
         // Register a GPU-resident mesh together with its render program.
         // render_program is optional; when valid the submit path prefers it.
         // Returns the MeshHandle to store in DrawCommand::mesh.

@@ -26,7 +26,7 @@
 #include <span>
 #include <vector>
 
-namespace wz::engine::assets::internal
+namespace wz::engine::assets
 {
     namespace
     {
@@ -333,6 +333,11 @@ namespace wz::engine::assets::internal
     }
 
 
+}  // namespace wz::engine::assets
+
+
+namespace wz::engine::assets::internal
+{
     // ─── Compiler registration ──────────────────────────────────────────────
 
     void register_gaussian_splat_terrain_surface_compiler(

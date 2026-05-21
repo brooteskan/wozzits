@@ -27,22 +27,32 @@ namespace wz::bench
 
         const CameraBasis b = camera_basis(cam);
 
-        // Mouse look: incremental rotations around the camera's own axes.
-        // dx → rotate around local up (yaw), dy → rotate around local right (pitch).
+        // Mouse look: yaw around WORLD up, pitch around LOCAL right.
+        //
+        // Using local up for yaw produces unwanted roll accumulation when
+        // the camera has any non-zero pitch — circular mouse motion ends up
+        // rolling the view because the local up axis has a forward component
+        // and the successive yaw/pitch compositions don't commute.  Yawing
+        // around world up keeps roll an explicit user action (Z/C only).
         const float dx = static_cast<float>(input.mouse.dx) * cam.look_speed;
         const float dy = static_cast<float>(input.mouse.dy) * cam.look_speed;
 
+        const Vec3 world_up{ 0.0f, 1.0f, 0.0f };
+
         if (dx != 0.0f)
-            cam.orientation = mul(from_axis_angle(b.up, dx), cam.orientation);
+            cam.orientation = mul(from_axis_angle(world_up, dx), cam.orientation);
         if (dy != 0.0f)
             cam.orientation = mul(from_axis_angle(b.right, dy), cam.orientation);
 
-        // Z/C: roll around forward axis.
-        const float roll_speed = cam.move_speed * 0.5f * dt;
+        // Z/C: roll around forward axis at a fixed angular rate (rad/sec),
+        // independent of move_speed.  Recompute basis after the mouse-look
+        // step above so roll happens around the post-yaw/pitch forward.
+        const CameraBasis b_post = camera_basis(cam);
+        const float roll_step = cam.roll_speed * dt;
         if (input.keyboard.down['Z'])
-            cam.orientation = mul(from_axis_angle(b.forward, -roll_speed), cam.orientation);
+            cam.orientation = mul(from_axis_angle(b_post.forward, -roll_step), cam.orientation);
         if (input.keyboard.down['C'])
-            cam.orientation = mul(from_axis_angle(b.forward,  roll_speed), cam.orientation);
+            cam.orientation = mul(from_axis_angle(b_post.forward,  roll_step), cam.orientation);
 
         cam.orientation = normalize(cam.orientation);
 
