@@ -117,6 +117,14 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000501ull
     };
 
+    // Derived Gaussian splat color LOD product.
+    // Compiled from a kAssetTypeGaussianSplatCloud dependency; produces
+    // kAssetTypeGaussianSplatColorLOD output containing per-splat prefiltered
+    // neighborhood color + confidence. Compile parameters are part of identity.
+    inline constexpr wz::asset::SchemaID kGaussianSplatColorLODSchema{
+    0xF11E'CA55'E7'000502ull
+    };
+
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.

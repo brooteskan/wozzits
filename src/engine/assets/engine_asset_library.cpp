@@ -48,6 +48,7 @@ namespace wz::engine::assets
         , scalar_fields_table_{}
         , csv_table_{}
         , gaussian_splat_cloud_table_{}
+        , gaussian_splat_color_lod_table_{}
         , data_table_{}
         , diagnostic_resampled_time_series_table_{}
         , diagnostic_timeframe_summary_table_{}
@@ -67,6 +68,7 @@ namespace wz::engine::assets
                 .toml_table                = toml_table_,
                 .mesh_table                = mesh_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
+                .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table_,
                 .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
                 .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
@@ -82,6 +84,7 @@ namespace wz::engine::assets
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
+        , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)
         , data_tables_(system_, logger_, data_table_)
         , diagnostic_resampled_time_series_(system_, logger_, diagnostic_resampled_time_series_table_)
         , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)

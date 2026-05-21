@@ -1395,4 +1395,11 @@ namespace wz::engine::assets {
     // and computes per-metric min/max/mean/delta/first/last with summary_text.
     inline constexpr wz::asset::AssetType kAssetTypeDiagnosticTimeframeSummary =
         static_cast<wz::asset::AssetType>(4113);
+
+    // Implemented: per-splat prefiltered neighborhood color + confidence,
+    // derived from a kAssetTypeGaussianSplatCloud.  Used as an LOD/anti-pop
+    // companion at render time. Runtime data is owned by
+    // GaussianSplatColorLODTable.
+    inline constexpr wz::asset::AssetType kAssetTypeGaussianSplatColorLOD =
+        static_cast<wz::asset::AssetType>(4114);
 } // namespace wz::engine::assets

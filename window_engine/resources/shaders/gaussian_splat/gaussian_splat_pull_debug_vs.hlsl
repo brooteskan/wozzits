@@ -159,7 +159,7 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     // visually distinguishable from the IA path at a glance.
     // Remove once the paths are confirmed equivalent and the tint is no
     // longer needed for visual validation.
-    const float3 pull_tint = float3(0.2f, 0.7f, 1.0f);
+    const float3 pull_tint = float3(0.f, 0.f, 0.f);
     const float  tint_str  = 0.5f;
 
     VSOutput output;

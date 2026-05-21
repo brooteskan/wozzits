@@ -32,6 +32,8 @@
 
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
+#include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
@@ -113,6 +115,9 @@ namespace wz::engine::assets
         GaussianSplatAssetModule&       gaussian_splats()         { return gaussian_splats_; }
         const GaussianSplatAssetModule& gaussian_splats()   const { return gaussian_splats_; }
 
+        GaussianSplatColorLODAssetModule&       gaussian_splat_color_lods()       { return gaussian_splat_color_lods_; }
+        const GaussianSplatColorLODAssetModule& gaussian_splat_color_lods() const { return gaussian_splat_color_lods_; }
+
         DataTableAssetModule&       data_tables()       { return data_tables_; }
         const DataTableAssetModule& data_tables() const { return data_tables_; }
 
@@ -157,6 +162,7 @@ namespace wz::engine::assets
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
+        GaussianSplatColorLODTable  gaussian_splat_color_lod_table_;
         DataTable                   data_table_;
         DiagnosticResampledTimeSeriesTable  diagnostic_resampled_time_series_table_;
         DiagnosticTimeframeSummaryTable     diagnostic_timeframe_summary_table_;
@@ -174,6 +180,7 @@ namespace wz::engine::assets
         TOMLAssetModule             toml_;
         MeshAssetModule             meshes_;
         GaussianSplatAssetModule    gaussian_splats_;
+        GaussianSplatColorLODAssetModule gaussian_splat_color_lods_;
         DataTableAssetModule        data_tables_;
         DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
         DiagnosticTimeframeSummaryAssetModule    diagnostic_timeframe_summaries_;
