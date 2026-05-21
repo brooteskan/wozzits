@@ -6,6 +6,7 @@
 #include <engine/assets/key_factories/gaussian_splat_file.h>
 #include <engine/assets/key_factories/gaussian_splat_from_scalar_field.h>
 #include <engine/assets/key_factories/gaussian_splat_terrain_surface.h>
+#include <engine/assets/key_factories/terrain_splat_from_gaea_r32.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -200,6 +201,50 @@ namespace wz::engine::assets
                 std::move(node), { desc.scalar_field_key })) {
             logger_.error(
                 "terrain-surface splat: failed to register: " + desc.name);
+            return {};
+        }
+
+        out.output = key;
+        return out;
+    }
+
+    GaussianSplatCloudAsset
+        GaussianSplatAssetModule::create_terrain_splat_from_gaea_r32(
+            const TerrainSplatFromGaeaR32Desc& desc)
+    {
+        GaussianSplatCloudAsset out{};
+
+        if (desc.r32_file_key == wz::asset::AssetKey{}) {
+            logger_.error(
+                "terrain-splat recipe: empty .r32 file key: " + desc.name);
+            return out;
+        }
+        if (desc.sidecar_file_key == wz::asset::AssetKey{}) {
+            logger_.error(
+                "terrain-splat recipe: empty sidecar JSON file key: " + desc.name);
+            return out;
+        }
+
+        const wz::asset::AssetKey key =
+            make_terrain_splat_from_gaea_r32_key(
+                desc.r32_file_key, desc.sidecar_file_key);
+
+        wz::asset::AssetNode node{};
+        node.key     = key;
+        node.type    = kAssetTypeGaussianSplatCloud;
+        node.schema  = kTerrainSplatFromGaeaR32Schema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        // No compile-desc meta — all parameters live in the JSON file dep.
+
+        // Dep order is load-bearing: compiler reads dep[0] as .r32 bytes,
+        // dep[1] as JSON sidecar bytes.
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.r32_file_key, desc.sidecar_file_key }))
+        {
+            logger_.error(
+                "terrain-splat recipe: failed to register: " + desc.name);
             return {};
         }
 

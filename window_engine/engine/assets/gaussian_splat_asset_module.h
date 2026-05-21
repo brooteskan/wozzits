@@ -50,6 +50,32 @@ namespace wz::engine::assets
         float emit_threshold = 0.0f;
     };
 
+    // Terrain splat recipe bundling a Gaea .r32 file with a JSON sidecar.
+    // The asset system handles file I/O + JSON parsing inside the compiler;
+    // the toolhost just supplies the two paths (relative to resource_root).
+    //
+    // The sidecar JSON carries world-space interpretation:
+    //   { "height_scale": <float>,   // required
+    //     "step_x":       <float>,   // required
+    //     "step_z":       <float>,   // required
+    //     "overlap_factor": <float>, // optional, default 1.25
+    //     "thickness":      <float>, // optional, 0 = auto
+    //     "subsample_step": <uint>,  // optional, default 1
+    //     "opacity":        <float>, // optional, default 0.95
+    //     "flat_luminance": <float>, // optional, default 0.55
+    //     "steep_luminance":<float>, // optional, default 0.30
+    //     "width":          <uint>,  // optional override
+    //     "height":         <uint> } // optional override
+    //
+    // When width / height are absent the compiler infers square dimensions
+    // from the .r32 byte count.
+    struct TerrainSplatFromGaeaR32Desc
+    {
+        std::string         name;
+        wz::asset::AssetKey r32_file_key{};       // from files().register_file_node(...)
+        wz::asset::AssetKey sidecar_file_key{};   // from files().register_file_node(...)
+    };
+
     // Terrain-surface splat cloud from a 2D height field.
     //
     // Distinct from GaussianSplatFromScalarFieldDesc — see the compile-desc
@@ -89,6 +115,12 @@ namespace wz::engine::assets
 
         GaussianSplatCloudAsset create_terrain_surface_from_height_field(
             const GaussianSplatTerrainSurfaceFromHeightFieldDesc& desc);
+
+        // Register a Gaea .r32 + .json recipe.  Internally registers both
+        // files as raw-file assets and wires them as deps of the recipe.
+        // Returns a kAssetTypeGaussianSplatCloud asset.
+        GaussianSplatCloudAsset create_terrain_splat_from_gaea_r32(
+            const TerrainSplatFromGaeaR32Desc& desc);
 
         GaussianSplatCloudHandle get_cloud(
             const GaussianSplatCloudAsset& asset) const;

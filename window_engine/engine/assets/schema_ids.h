@@ -134,6 +134,18 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000503ull
     };
 
+    // Terrain splat recipe bundling a Gaea .r32 heightmap file with a JSON
+    // sidecar that carries world-space interpretation parameters
+    // (height_scale, step_x, step_z, overlap_factor, thickness,
+    // subsample_step) and optional dimension overrides.  Source: two file
+    // deps (raw .r32 bytes + raw .json bytes).  Produces a
+    // kAssetTypeGaussianSplatCloud directly — the intermediate ScalarField
+    // is built transiently inside the compiler and not exposed as a
+    // separate asset.
+    inline constexpr wz::asset::SchemaID kTerrainSplatFromGaeaR32Schema{
+    0xF11E'CA55'E7'000504ull
+    };
+
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.
