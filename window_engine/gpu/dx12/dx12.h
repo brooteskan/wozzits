@@ -137,4 +137,5 @@ namespace wz::gpu::dx12
 
     void end_frame(wz::gpu::Device& device);
     void present(wz::gpu::Device& device);
+    void present(wz::gpu::Device& device, uint32_t sync_interval);
 }

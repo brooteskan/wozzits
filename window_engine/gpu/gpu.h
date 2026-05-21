@@ -37,7 +37,8 @@ namespace wz::gpu
 	void begin_frame(Device& device); // acquire backbuffer
 	void clear(Device& device, float r, float g, float b, float a); // record commands
 	void end_frame(Device& device); // close + submit command list
-	void present(Device& device); // swapchain present
+	void present(Device& device); // swapchain present (vsync on, sync_interval=1)
+	void present(Device& device, uint32_t sync_interval); // explicit sync interval (0 = no vsync)
 	void resize(Device& device, int w, int h); // This MUST recreate swapchain safely.
 
 }

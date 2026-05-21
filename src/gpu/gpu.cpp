@@ -51,4 +51,9 @@ namespace wz::gpu
     {
         wz::gpu::dx12::present(d);
     }
+
+    void present(Device& d, uint32_t sync_interval)
+    {
+        wz::gpu::dx12::present(d, sync_interval);
+    }
 }

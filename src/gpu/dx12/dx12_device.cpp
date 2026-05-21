@@ -399,7 +399,14 @@ namespace wz::gpu::dx12
         auto* impl = (DX12Device*)d.impl;
         hr = impl->swapchain->Present(1, 0);
         assert(SUCCEEDED(hr));
+    }
 
+    void present(Device& d, uint32_t sync_interval)
+    {
+        HRESULT hr;
+        auto* impl = (DX12Device*)d.impl;
+        hr = impl->swapchain->Present(sync_interval, 0);
+        assert(SUCCEEDED(hr));
     }
 
     namespace
