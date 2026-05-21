@@ -43,7 +43,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kDiagnosticTableResampleTimeSeriesCompilerVersion = 1;
     inline constexpr uint64_t kCSVExportCompilerVersion = 1;
     inline constexpr uint64_t kMeshWireframeRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticResampledTimeSeriesToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;

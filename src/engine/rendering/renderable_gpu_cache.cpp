@@ -8,6 +8,7 @@
 
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 
 namespace wz::engine::rendering
@@ -161,8 +162,29 @@ namespace wz::engine::rendering
             if (!splat_data || !splat_data->valid())
                 return {};
 
-            const wz::gpu::GPUHandle gpu_splat_cloud =
-                wz::gpu::upload_gaussian_splat_cloud(device, *splat_data);
+            // Optional color LOD companion.  Missing or empty companion key
+            // means no LOD blending data — upload uses the safe fallback
+            // (lod_color = base_color, confidence = 0).
+            const wz::engine::assets::GaussianSplatColorLODData* lod_data = nullptr;
+
+            if (!(renderable->companion_asset == wz::asset::AssetKey{}))
+            {
+                const wz::engine::assets::GaussianSplatColorLODAsset lod_asset{
+                    .output = renderable->companion_asset,
+                };
+                const wz::engine::assets::GaussianSplatColorLODHandle lod_handle =
+                    assets.gaussian_splat_color_lods().get_lod(lod_asset);
+
+                if (lod_handle.valid())
+                {
+                    lod_data = assets.gaussian_splat_color_lods()
+                        .get_lod_data(lod_handle);
+                }
+            }
+
+            const wz::gpu::GPUHandle gpu_splat_cloud = lod_data
+                ? wz::gpu::upload_gaussian_splat_cloud(device, *splat_data, *lod_data)
+                : wz::gpu::upload_gaussian_splat_cloud(device, *splat_data);
 
             if (!gpu_splat_cloud.valid())
                 return {};

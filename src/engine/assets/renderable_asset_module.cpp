@@ -71,10 +71,14 @@ namespace wz::engine::assets
             return {};
         }
 
+        const wz::asset::AssetKey color_lod_key =
+            desc.color_lod.valid() ? desc.color_lod.output : wz::asset::AssetKey{};
+
         const wz::asset::AssetKey key =
             make_gaussian_splat_debug_renderable_key(
                 desc.name,
-                desc.splat_cloud.output);
+                desc.splat_cloud.output,
+                color_lod_key);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -84,9 +88,16 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta = GaussianSplatDebugRenderableCompileDesc{
             .splat_cloud_asset = desc.splat_cloud.output,
+            .color_lod_asset   = color_lod_key,
         };
 
-        if (!system_.register_asset(std::move(node), { desc.splat_cloud.output })) {
+        // Cloud is always a dep; LOD is appended when present so the resolve
+        // order guarantees the LOD is compiled before the renderable.
+        std::vector<wz::asset::AssetKey> deps{ desc.splat_cloud.output };
+        if (desc.color_lod.valid())
+            deps.push_back(desc.color_lod.output);
+
+        if (!system_.register_asset(std::move(node), deps)) {
             logger_.error("failed to register gaussian splat debug renderable: " + desc.name);
             return {};
         }

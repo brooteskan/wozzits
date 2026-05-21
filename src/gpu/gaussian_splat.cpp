@@ -15,6 +15,7 @@ namespace wz::gpu
 
         return dx12::internal::upload_gaussian_splat_cloud_dx12(
             device,
-            *desc.cloud);
+            *desc.cloud,
+            desc.color_lod);
     }
 }

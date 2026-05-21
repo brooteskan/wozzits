@@ -162,8 +162,13 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                if (dep_handles.size() != 1) {
-                    logger->error("gaussian splat debug renderable requires one splat cloud dependency");
+                // Accept 1 (cloud only) or 2 (cloud + optional LOD) deps.
+                // dep_handles[0] is always the cloud; dep_handles[1], if
+                // present, is the derived color-LOD asset.
+                if (dep_handles.size() < 1 || dep_handles.size() > 2) {
+                    logger->error(
+                        "gaussian splat debug renderable requires 1 or 2 dependencies "
+                        "(cloud, optionally + color LOD)");
                     return compile_failed_node(input);
                 }
 
@@ -178,6 +183,7 @@ namespace wz::engine::assets::internal
                 RenderableAssetData data{};
                 data.kind = RenderableKind::GaussianSplatCloud;
                 data.source_asset = desc->splat_cloud_asset;
+                data.companion_asset = desc->color_lod_asset;
                 data.program = BuiltinRenderProgram::GaussianSplatDebug;
                 data.domain = RenderDomain::Splat;
                 data.policy_flags = RenderPolicy_AlphaBlend;

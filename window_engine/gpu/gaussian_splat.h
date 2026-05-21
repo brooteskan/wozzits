@@ -12,12 +12,20 @@
 #include <gpu/gpu_types.h>
 
 #include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 
 namespace wz::gpu
 {
     struct GaussianSplatCloudUploadDesc
     {
         const wz::engine::assets::GaussianSplatCloudData* cloud = nullptr;
+
+        // Optional derived color LOD data.  When non-null, its per-splat
+        // neighborhood color + confidence is packed into the vertex's
+        // lod_color_confidence_rgba8 slot.  When null, that slot is filled
+        // from the base color with confidence = 0 so the shader sees a
+        // safe fallback.
+        const wz::engine::assets::GaussianSplatColorLODData* color_lod = nullptr;
 
         bool valid() const noexcept
         {
@@ -35,6 +43,17 @@ namespace wz::gpu
     {
         return upload_gaussian_splat_cloud(device, GaussianSplatCloudUploadDesc{
             .cloud = &cloud,
+            });
+    }
+
+    [[nodiscard]] inline GPUHandle upload_gaussian_splat_cloud(
+        Device& device,
+        const wz::engine::assets::GaussianSplatCloudData& cloud,
+        const wz::engine::assets::GaussianSplatColorLODData& color_lod)
+    {
+        return upload_gaussian_splat_cloud(device, GaussianSplatCloudUploadDesc{
+            .cloud     = &cloud,
+            .color_lod = &color_lod,
             });
     }
 }

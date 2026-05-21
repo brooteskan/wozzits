@@ -51,6 +51,11 @@ namespace wz::engine::assets
         RenderableKind kind{};
         wz::asset::AssetKey source_asset{};
 
+        // Optional companion asset key (e.g. GaussianSplatColorLOD).
+        // Empty when not used.  The GPU realize step consults this to find
+        // and pass through derived data to the upload pipeline.
+        wz::asset::AssetKey companion_asset{};
+
         BuiltinRenderProgram program{};
         RenderDomain domain{};
         uint32_t policy_flags = RenderPolicy_None;
@@ -89,6 +94,9 @@ namespace wz::engine::assets
     struct GaussianSplatDebugRenderableCompileDesc
     {
         wz::asset::AssetKey splat_cloud_asset{};
+
+        // Optional derived color-LOD asset key.  Empty if not used.
+        wz::asset::AssetKey color_lod_asset{};
     };
 
     struct ScalarFieldDebugRenderableCompileDesc

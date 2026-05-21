@@ -5,6 +5,7 @@
 #include "dx12_device_internal.h"
 
 #include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 
 #include <algorithm>
 #include <cassert>
@@ -74,8 +75,28 @@ namespace wz::gpu::dx12::internal
             return true;
         }
 
+        // Pack a linear-RGB triplet + a [0,1] confidence into a single
+        // RGBA8 word.  R is in the low byte, A is in the high byte, matching
+        // the HLSL unpack helper `unpack_rgba8`.
+        inline uint32_t pack_rgba8(
+            float r, float g, float b, float a) noexcept
+        {
+            auto byte = [](float v) -> uint32_t
+            {
+                if (v <= 0.0f) return 0u;
+                if (v >= 1.0f) return 255u;
+                return static_cast<uint32_t>(v * 255.0f + 0.5f);
+            };
+            return  byte(r)
+                | (byte(g) << 8)
+                | (byte(b) << 16)
+                | (byte(a) << 24);
+        }
+
         DX12GaussianSplatVertex make_gpu_splat_vertex(
-            const wz::engine::assets::GaussianSplat& splat)
+            const wz::engine::assets::GaussianSplat& splat,
+            const wz::engine::assets::GaussianSplatColorLODData* lod,
+            uint32_t splat_index)
         {
             // 3DGS decoding: PLY stores raw/encoded values that must be
             // transformed before display.
@@ -133,6 +154,27 @@ namespace wz::gpu::dx12::internal
             out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];
             out.color[1] = 0.5f + SH_C0 * splat.color_dc[1];
             out.color[2] = 0.5f + SH_C0 * splat.color_dc[2];
+
+            // LOD packed slot.
+            //   With LOD data: pack neighborhood RGB + confidence.
+            //   Without LOD:   pack base color + confidence = 0 so the
+            //                  shader sees a safe fallback (no LOD blend).
+            if (lod
+                && lod->valid()
+                && splat_index < lod->splat_count())
+            {
+                const float lr = lod->neighborhood_color[3 * splat_index + 0];
+                const float lg = lod->neighborhood_color[3 * splat_index + 1];
+                const float lb = lod->neighborhood_color[3 * splat_index + 2];
+                const float lc = lod->lod_confidence[splat_index];
+                out.lod_color_confidence_rgba8 = pack_rgba8(lr, lg, lb, lc);
+            }
+            else
+            {
+                out.lod_color_confidence_rgba8 = pack_rgba8(
+                    out.color[0], out.color[1], out.color[2], 0.0f);
+            }
+
             return out;
         }
     }
@@ -212,7 +254,8 @@ namespace wz::gpu::dx12::internal
 
     GPUHandle upload_gaussian_splat_cloud_dx12(
         Device& device,
-        const wz::engine::assets::GaussianSplatCloudData& cloud)
+        const wz::engine::assets::GaussianSplatCloudData& cloud,
+        const wz::engine::assets::GaussianSplatColorLODData* lod)
     {
         auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
         assert(impl);
@@ -226,11 +269,24 @@ namespace wz::gpu::dx12::internal
         if (cloud.splats.empty())
             return {};
 
+        // Validate optional LOD: it must be either absent, or sized to match
+        // the source cloud.  Mismatched LOD data is treated as absent so the
+        // upload still succeeds with the safe fallback packing.
+        const wz::engine::assets::GaussianSplatColorLODData* effective_lod = lod;
+        if (effective_lod
+            && effective_lod->splat_count() != cloud.splats.size())
+        {
+            effective_lod = nullptr;
+        }
+
         std::vector<DX12GaussianSplatVertex> vertices;
         vertices.reserve(cloud.splats.size());
 
-        for (const wz::engine::assets::GaussianSplat& splat : cloud.splats) {
-            vertices.push_back(make_gpu_splat_vertex(splat));
+        for (size_t i = 0; i < cloud.splats.size(); ++i) {
+            vertices.push_back(make_gpu_splat_vertex(
+                cloud.splats[i],
+                effective_lod,
+                static_cast<uint32_t>(i)));
         }
 
         const uint64_t vertex_bytes =

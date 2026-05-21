@@ -26,15 +26,29 @@ namespace wz::engine::assets
 
     [[nodiscard]] inline wz::asset::AssetKey make_gaussian_splat_debug_renderable_key(
         std::string_view name,
-        const wz::asset::AssetKey& splat_cloud_key) noexcept
+        const wz::asset::AssetKey& splat_cloud_key,
+        const wz::asset::AssetKey& color_lod_key = {}) noexcept
     {
         const uint64_t h = detail::fnv1a_64(name);
+
+        // deps_hash combines the source cloud and optional color-LOD keys
+        // so renderables with different LOD attachments produce distinct
+        // identities.  An empty color_lod_key collapses to zero and matches
+        // the pre-LOD behaviour bit-for-bit.
+        const wz::asset::Hash cloud_dep = detail::key_to_dep_hash(splat_cloud_key);
+        const wz::asset::Hash lod_dep =
+            (color_lod_key == wz::asset::AssetKey{})
+                ? wz::asset::Hash{}
+                : detail::key_to_dep_hash(color_lod_key);
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
             .schema_hash = detail::hash_u64(kGaussianSplatDebugRenderableSchema.value),
             .compiler_hash = detail::hash_u64(kGaussianSplatDebugRenderableCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(splat_cloud_key),
+            .deps_hash = wz::asset::Hash{
+                detail::mix64(cloud_dep.lo, lod_dep.lo),
+                detail::mix64(cloud_dep.hi, lod_dep.hi),
+            },
         };
     }
 

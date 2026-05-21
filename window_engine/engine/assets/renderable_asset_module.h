@@ -7,6 +7,7 @@
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
+#include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 
 #include <logging/logger.h>
@@ -25,6 +26,13 @@ namespace wz::engine::assets
     {
         std::string name;
         GaussianSplatCloudAsset splat_cloud{};
+
+        // Optional derived color-LOD product.  When set, the upload path
+        // packs per-splat neighborhood color + confidence into the GPU
+        // vertex.  When unset, the GPU vertex's LOD slot falls back to the
+        // base color with confidence = 0 — no behavioural change versus the
+        // pre-LOD renderer.
+        GaussianSplatColorLODAsset color_lod{};
     };
 
     struct ScalarFieldDebugRenderableDesc

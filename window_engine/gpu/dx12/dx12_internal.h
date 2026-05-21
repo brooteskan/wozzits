@@ -161,6 +161,7 @@ namespace wz::gpu::dx12::internal {
 
 namespace wz::engine::assets {
     struct GaussianSplatCloudData;
+    struct GaussianSplatColorLODData;
 }
 
 namespace wz::gpu::dx12::internal {
@@ -181,10 +182,15 @@ namespace wz::gpu::dx12::internal {
         // Stored here as x,y,z,w for shader convenience.
         float rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-        // COLOR.rgb + padding
-        // Decoded from SH DC to display/debug RGB.
+        // COLOR.rgb (base, decoded from SH DC)
         float color[3] = { 1.0f, 1.0f, 1.0f };
-        float pad1 = 0.0f;
+
+        // LOD color + confidence, packed RGBA8 (R,G,B = neighborhood color,
+        // A = confidence in [0,1]).  When no LOD asset is present, this is
+        // packed from `color` with confidence = 0 so the shader sees a
+        // safe fallback.  Replaces the old `pad1` slot — same offset/size,
+        // preserving the 64-byte structured-buffer stride.
+        uint32_t lod_color_confidence_rgba8 = 0;
     };
 
     // Layout guards: the HLSL StructuredBuffer<DX12GaussianSplatVertex> mirror
@@ -196,7 +202,7 @@ namespace wz::gpu::dx12::internal {
     static_assert(offsetof(DX12GaussianSplatVertex, pad0)     == 28);
     static_assert(offsetof(DX12GaussianSplatVertex, rotation) == 32);
     static_assert(offsetof(DX12GaussianSplatVertex, color)    == 48);
-    static_assert(offsetof(DX12GaussianSplatVertex, pad1)     == 60);
+    static_assert(offsetof(DX12GaussianSplatVertex, lod_color_confidence_rgba8) == 60);
 
     struct DX12GaussianSplatCloudResource
     {
@@ -258,7 +264,8 @@ namespace wz::gpu::dx12::internal {
 
     GPUHandle upload_gaussian_splat_cloud_dx12(
         Device& device,
-        const wz::engine::assets::GaussianSplatCloudData& cloud);
+        const wz::engine::assets::GaussianSplatCloudData& cloud,
+        const wz::engine::assets::GaussianSplatColorLODData* lod = nullptr);
 
     const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
         Device& device,

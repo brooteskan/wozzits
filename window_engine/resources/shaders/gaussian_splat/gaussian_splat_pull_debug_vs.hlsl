@@ -31,17 +31,37 @@ cbuffer Transform : register(b0)
     float4 viewport_and_size;
 };
 
-// Mirror of DX12GaussianSplatVertex (64 bytes, offsets pinned by static_assert).
+// Mirror of DX12GaussianSplatVertex (64 bytes, offsets pinned by static_assert
+// on the CPU side).  The HLSL packing here is load-bearing — any field
+// reorder or size change on the CPU MUST be reflected here to avoid silent
+// pull-shader garbage.
 struct Splat
 {
-    float3 position; // offset  0
-    float  opacity;  // offset 12
-    float3 scale;    // offset 16
-    float  pad0;     // offset 28
-    float4 rotation; // offset 32  x,y,z,w (normalised)
-    float3 color;    // offset 48
-    float  pad1;     // offset 60
+    float3 position;                    // offset  0
+    float  opacity;                     // offset 12
+    float3 scale;                       // offset 16
+    float  pad0;                        // offset 28
+    float4 rotation;                    // offset 32  x,y,z,w (normalised)
+    float3 color;                       // offset 48
+    uint   lod_color_confidence_rgba8;  // offset 60  packed: R|G<<8|B<<16|A<<24
 };
+
+// Unpack packed RGBA8 LOD slot into linear RGB + confidence in [0,1].
+//   RGB = neighborhood color
+//   A   = confidence
+// Confidence 0 + same-as-base RGB is the safe fallback the upload writes
+// when no derived color LOD is attached.
+void unpack_lod_color_confidence(
+    uint   packed,
+    out float3 lod_color,
+    out float  confidence)
+{
+    const float inv255 = 1.0 / 255.0;
+    lod_color.r = float( packed        & 0xFFu) * inv255;
+    lod_color.g = float((packed >>  8) & 0xFFu) * inv255;
+    lod_color.b = float((packed >> 16) & 0xFFu) * inv255;
+    confidence  = float((packed >> 24) & 0xFFu) * inv255;
+}
 
 StructuredBuffer<Splat> g_splats          : register(t0);
 StructuredBuffer<uint>  g_sorted_indices   : register(t1);
