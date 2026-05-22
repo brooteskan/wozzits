@@ -41,12 +41,40 @@ namespace wz::gpu
         OpaqueDisc = 3,
     };
 
+    // Kernel: maps normalized splat-local radius r ∈ [0, ~quad_extent] to a
+    // coverage value in [0, 1].  Mode selects the shape; mode parameters
+    // (inner_radius / outer_radius / gaussian_falloff) tune it.  The
+    // coverage value then feeds whichever SplatCoverageMode is active —
+    // CoverageDiscard cuts at `threshold`, DitheredCoverage compares to a
+    // stable hash, TransparentBlend uses it as alpha.
+    enum class TerrainCoverageKernelMode : uint32_t
+    {
+        // Gaussian falloff: coverage = exp(-0.5 * r² * gaussian_falloff).
+        // Reference behaviour matching the original 3DGS PS.
+        Gaussian = 0,
+
+        // Smoothstep disc: coverage = 1 - smoothstep(inner_radius, outer_radius, r).
+        // Full interior, controlled soft edge.  Best default for terrain —
+        // gives connected surface coverage between neighbouring splats
+        // instead of the "isolated dots" look the Gaussian produces close-up.
+        SmoothDisc = 1,
+
+        // Polynomial disc: coverage = saturate(1 - r_norm²)².
+        // Cheap, smooth, no sharp edge.  Similar to SmoothDisc with
+        // inner_radius=0 — full interior with quadratic falloff.
+        PolynomialDisc = 2,
+
+        // Hard unit disc: coverage = 1 if r_norm ≤ 1 else 0.
+        // Baseline / debug — confirms disc geometry without kernel tuning.
+        HardDisc = 3,
+    };
+
     struct SplatCoverageSettings
     {
         SplatCoverageMode mode = SplatCoverageMode::TransparentBlend;
 
-        // Coverage threshold in [0,1].  Pixels with Gaussian coverage below
-        // this value are discarded by CoverageDiscard; serves as the median
+        // Coverage threshold in [0,1].  Pixels whose kernel coverage is
+        // below this are discarded by CoverageDiscard; serves as the median
         // for DitheredCoverage.
         float threshold = 0.5f;
 
@@ -55,6 +83,35 @@ namespace wz::gpu
         // exposes it so terrain can dial it up without modifying the
         // existing pull-debug program.
         float opacity_scale = 0.25f;
+
+        // ── Footprint / kernel controls ──
+
+        // Which kernel evaluates per-pixel coverage from the splat-local
+        // normalized radius.
+        TerrainCoverageKernelMode kernel_mode =
+            TerrainCoverageKernelMode::SmoothDisc;
+
+        // Multiplier on the projected splat axes.  >1 grows the footprint
+        // (more overlap with neighbours); <1 shrinks it.  Use this to make
+        // terrain splats visually connect into a continuous surface instead
+        // of reading as isolated discs.
+        float radius_scale = 1.0f;
+
+        // SmoothDisc inner edge (full coverage inside) and outer edge
+        // (coverage = 0 outside).  Normalized [0, 1] with 1 at the quad
+        // support boundary.
+        float inner_radius = 0.65f;
+        float outer_radius = 1.0f;
+
+        // Gaussian kernel falloff parameter.  Larger = tighter centre,
+        // softer rim drops off faster.  Default 1.0 matches the original
+        // 3DGS PS (coverage = exp(-r²/2) over r ∈ [0, 3]).
+        float gaussian_falloff = 1.0f;
+
+        // Minimum projected splat radius in pixels.  >0 clamps the
+        // screen-space ellipse axes so distant splats don't collapse into
+        // sub-pixel discs.  0 disables (no clamping).
+        float min_screen_radius_px = 0.0f;
     };
 
     // Push scene-wide coverage settings onto the device.  Call once per

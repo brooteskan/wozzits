@@ -2,32 +2,33 @@
 //
 // Pixel shader for the GaussianSplatTerrainCoverageDebug program.
 //
-// Modes (driven by coverage_params.x):
+// Two orthogonal axes of behaviour:
 //
-//   0 — TransparentBlend
-//       Soft Gaussian alpha blend.  Equivalent to the default 3DGS PS.
-//       Suitable when the pipeline state uses AlphaBlend + Depth=Disabled.
+//   COVERAGE MODE  — what we do with the kernel's coverage value:
+//     0 TransparentBlend  — alpha-blend with coverage as alpha (reference)
+//     1 CoverageDiscard   — discard if coverage < threshold; opaque inside
+//     2 DitheredCoverage  — stable per-pixel hash vs coverage; opaque kept
+//     3 OpaqueDisc        — kept for backward compat; equivalent to
+//                           kernel_mode=HardDisc + CoverageDiscard@threshold=0.5
 //
-//   1 — CoverageDiscard
-//       Hard cutoff: discard if Gaussian coverage < threshold.  Output is
-//       fully opaque inside the kept region.  Suitable with Opaque blend +
-//       Depth=TestWrite to make the splat surface participate in the
-//       depth buffer.
+//   KERNEL MODE    — how coverage is computed from normalized radius r:
+//     0 Gaussian        — exp(-0.5 * r² * gaussian_falloff)
+//     1 SmoothDisc      — 1 - smoothstep(inner_radius, outer_radius, r_norm)
+//     2 PolynomialDisc  — saturate(1 - r_norm²)²
+//     3 HardDisc        — r_norm ≤ 1 ? 1 : 0
 //
-//   2 — DitheredCoverage
-//       Per-pixel stable hash compared against Gaussian coverage.  Keeps
-//       splats visually soft (dithered edges) while still writing depth.
-//       The hash is deterministic on SV_POSITION so the dither does not
-//       shimmer frame-to-frame for a static camera.
+// The kernel decides the *shape* of the footprint; the coverage mode
+// decides the *pass/fail rule*.  Most useful combos for terrain:
+//   kernel=SmoothDisc + coverage=CoverageDiscard  → full opaque interior,
+//     soft controlled rim, writes depth.  Makes terrain read as connected
+//     surface patches rather than isolated discs at close range.
+//   kernel=SmoothDisc + coverage=DitheredCoverage → soft visual edge while
+//     still depth-writing.
+//   kernel=Gaussian   + coverage=TransparentBlend → reference 3DGS look.
 //
-//   3 — OpaqueDisc
-//       Hard unit-disc baseline: discard outside r=1 in uv space.  Used to
-//       sanity-check the disc geometry independent of Gaussian tuning.
-//
-// The pipeline state for this program is Opaque blend + Depth::TestWrite,
-// which matches modes 1/2/3.  Mode 0 (TransparentBlend) still works under
-// that state but without alpha blending the soft edges show as a
-// sub-pixel halo — keep it for debug comparisons.
+// uv-space convention: VS scales the quad to ±quad_extent (3.0) along its
+// projected ellipse axes; the support boundary in uv-space is r = quad_extent.
+// We normalize r_norm = r / quad_extent so kernel parameters live in [0, 1].
 
 cbuffer Transform : register(b0)
 {
@@ -37,8 +38,9 @@ cbuffer Transform : register(b0)
     float4   reserved_36_to_39;
     float4   reserved_40_to_43;
     float4   reserved_44_to_47;
-    // x = mode (0..3, cast from uint), y = threshold, z = opacity_scale, w = pad
-    float4   coverage_params;
+    float4   coverage_params0;  // mode, threshold, opacity_scale, kernel_mode
+    float4   coverage_params1;  // radius_scale, inner_radius, outer_radius, gaussian_falloff
+    float4   coverage_params2;  // min_screen_radius_px, _, _, _
 };
 
 struct PSInput
@@ -49,54 +51,94 @@ struct PSInput
     float2 uv       : TEXCOORD0;
 };
 
-// Stable per-pixel hash in [0,1).  Stays constant for a fixed pixel so
-// the dither pattern doesn't shimmer frame-to-frame.
+// Quad extent in uv-space (matches the VS).  r_norm = sqrt(uv²) / quad_extent
+// maps r=0 at the centre, r=1 at the projected support edge along axes,
+// r=√2 at the quad's diagonal corners.
+static const float QUAD_EXTENT = 3.0f;
+
+// Stable per-pixel hash in [0,1).  Deterministic on SV_POSITION so the
+// dither pattern is fixed for a static camera (no shimmer).
 float hash_pixel(float2 pix)
 {
-    // Standard "wang-style" 2D hash.  Cheap and visually acceptable.
     float h = dot(pix, float2(127.1f, 311.7f));
     return frac(sin(h) * 43758.5453f);
 }
 
+float eval_kernel(
+    uint  kernel_mode,
+    float r2_uv,
+    float r_norm,
+    float gaussian_falloff,
+    float inner_radius,
+    float outer_radius)
+{
+    if (kernel_mode == 1u) // SmoothDisc
+    {
+        return 1.0f - smoothstep(inner_radius, outer_radius, r_norm);
+    }
+    else if (kernel_mode == 2u) // PolynomialDisc
+    {
+        float t = saturate(1.0f - r_norm * r_norm);
+        return t * t;
+    }
+    else if (kernel_mode == 3u) // HardDisc
+    {
+        return r_norm <= 1.0f ? 1.0f : 0.0f;
+    }
+    // Gaussian (default).  Falloff at gaussian_falloff=1.0 matches the
+    // legacy PS (coverage = exp(-r²/2) over r ∈ [0, 3]).
+    return exp(-0.5f * r2_uv * gaussian_falloff);
+}
+
 float4 main(PSInput input) : SV_TARGET
 {
-    float r2 = dot(input.uv, input.uv);
+    const float r2_uv = dot(input.uv, input.uv);
 
-    // gaussian_radius from the VS = 3.0; r2 > 9 means we're beyond ~3σ
-    // and contribution is < 1.1% in any mode.  Cheap early-out.
-    if (r2 > 9.0f)
+    // Cheap early-out: anything beyond the quad's circumscribed circle is
+    // outside all kernels' supports.  quad_extent² = 9 at corners ≈ 2 (well
+    // beyond 1.0 normalized), so anything past r2_uv > QUAD_EXTENT² is
+    // safe to discard outright.  (Corners go to r²≈18; we leave those for
+    // kernel-specific discards below.)
+
+    const uint  coverage_mode    = (uint)coverage_params0.x;
+    const float threshold        = coverage_params0.y;
+    const float opacity_scale    = coverage_params0.z;
+    const uint  kernel_mode      = (uint)coverage_params0.w;
+    const float inner_radius     = coverage_params1.y;
+    const float outer_radius     = max(coverage_params1.z, 1e-4f);
+    const float gaussian_falloff = max(coverage_params1.w, 1e-4f);
+
+    const float r_norm = sqrt(r2_uv) / QUAD_EXTENT;
+
+    const float coverage = eval_kernel(
+        kernel_mode, r2_uv, r_norm,
+        gaussian_falloff, inner_radius, outer_radius);
+
+    // Zero-coverage early-out — same as Gaussian's old `r2 > 9` discard
+    // but generalised to all kernels.
+    if (coverage <= 0.0f)
         discard;
 
-    // Gaussian coverage in [0, 1].
-    //   r2 = 0 -> 1.0
-    //   r2 = 1 -> 0.607
-    //   r2 = 4 -> 0.135
-    //   r2 = 9 -> 0.011
-    float gaussian = exp(-0.5f * r2);
-
-    const uint mode = (uint)coverage_params.x;
-    const float threshold     = coverage_params.y;
-    const float opacity_scale = coverage_params.z;
-
-    if (mode == 0u)
+    if (coverage_mode == 0u)
     {
-        // TransparentBlend — original behaviour.
-        float alpha = saturate(input.opacity * gaussian * opacity_scale);
+        // TransparentBlend — kernel-driven alpha.
+        float alpha = saturate(input.opacity * coverage * opacity_scale);
         return float4(input.color, alpha);
     }
-    else if (mode == 1u)
+    else if (coverage_mode == 1u)
     {
         // CoverageDiscard.
-        if (gaussian < threshold)
+        if (coverage < threshold)
             discard;
         return float4(input.color, 1.0f);
     }
-    else if (mode == 2u)
+    else if (coverage_mode == 2u)
     {
-        // DitheredCoverage.  Stable per-pixel hash compared against the
-        // Gaussian coverage scaled by opacity.  Discarded pixels leave
-        // the depth/color buffers untouched; kept pixels write opaque.
-        float keep_prob = saturate(input.opacity * gaussian);
+        // DitheredCoverage.  Compare a stable per-pixel hash to a kept
+        // probability driven by opacity × coverage.  Discarded pixels
+        // leave the depth/colour buffers untouched; kept pixels write
+        // opaque.
+        float keep_prob = saturate(input.opacity * coverage);
         float h = hash_pixel(input.position.xy);
         if (h > keep_prob)
             discard;
@@ -104,8 +146,11 @@ float4 main(PSInput input) : SV_TARGET
     }
     else
     {
-        // OpaqueDisc — hard unit-disc, no Gaussian.
-        if (r2 > 1.0f)
+        // OpaqueDisc (legacy): r ≤ 1 in uv-space corresponds to the
+        // projected ellipse interior.  Equivalent to kernel=HardDisc with
+        // coverage_mode=CoverageDiscard at threshold=0.5 — kept for the
+        // existing UI radio button.
+        if (r2_uv > 1.0f)
             discard;
         return float4(input.color, 1.0f);
     }

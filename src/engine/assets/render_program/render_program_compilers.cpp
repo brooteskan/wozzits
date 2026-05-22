@@ -169,8 +169,9 @@ namespace wz::engine::assets::internal
                     .register_space  = 0,
                     // world[16] + view_proj[16] + viewport_and_size[4]
                     // + reserved[12] (matches NeighborhoodColorBlend layout)
-                    // + coverage_params[4] = 52 dwords total
-                    .value_count     = 52,
+                    // + coverage_params0[4] + coverage_params1[4]
+                    // + coverage_params2[4] = 60 dwords total
+                    .value_count     = 60,
                 }};
                 out.descriptor_bindings = {
                     {

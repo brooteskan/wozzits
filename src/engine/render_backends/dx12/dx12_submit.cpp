@@ -437,15 +437,17 @@ namespace wz::render::backend::dx12
             // Constants buffer sized to fit all splat programs:
             //   PullDebug                       — reads [0..35]   (36 dwords)
             //   NeighborhoodColorBlend         — reads [0..47]   (48 dwords)
-            //   GaussianSplatTerrainCoverageDebug — reads [0..51] (52 dwords)
+            //   GaussianSplatTerrainCoverageDebug — reads [0..59] (60 dwords)
             // The actual count pushed is driven by `value_count`, so each
             // program sees only its declared range.  Slot meanings beyond
             // [0..35]:
             //   [36..39] NeighborhoodColorBlend.lod_params0
             //   [40..43] NeighborhoodColorBlend.lod_params1
             //   [44..47] NeighborhoodColorBlend.lod_pad
-            //   [48..51] coverage_params (mode, threshold, opacity_scale, _)
-            float constants[52] = {};
+            //   [48..51] coverage_params0 (mode, threshold, opacity_scale, kernel_mode)
+            //   [52..55] coverage_params1 (radius_scale, inner_r, outer_r, gaussian_falloff)
+            //   [56..59] coverage_params2 (min_screen_radius_px, _, _, _)
+            float constants[60] = {};
             for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
             for (int i = 0; i < 16; ++i) constants[16 + i] =
                 frame.view.view_projection.m[i];
@@ -479,14 +481,24 @@ namespace wz::render::backend::dx12
                 constants[43] = 0.0f;
             }
 
-            // Coverage slots [48..51] (consumed by
+            // Coverage slots [48..59] (consumed by
             // GaussianSplatTerrainCoverageDebug; ignored by others).
             {
                 const auto& cov = wz::gpu::dx12::internal::get_coverage_settings(device);
                 constants[48] = static_cast<float>(static_cast<uint32_t>(cov.mode));
                 constants[49] = cov.threshold;
                 constants[50] = cov.opacity_scale;
-                constants[51] = 0.0f;
+                constants[51] = static_cast<float>(static_cast<uint32_t>(cov.kernel_mode));
+
+                constants[52] = cov.radius_scale;
+                constants[53] = cov.inner_radius;
+                constants[54] = cov.outer_radius;
+                constants[55] = cov.gaussian_falloff;
+
+                constants[56] = cov.min_screen_radius_px;
+                constants[57] = 0.0f;
+                constants[58] = 0.0f;
+                constants[59] = 0.0f;
             }
 
             // Determine binding model.  Default to SplatVertexInstanced when no

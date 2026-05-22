@@ -25,14 +25,22 @@ cbuffer Transform : register(b0)
     float4 viewport_and_size;
 
     // Reserved slots so the cbuffer layout matches the submit-side
-    // constants array.  This VS doesn't read them; the PS reads
-    // coverage_params.
+    // constants array.  This VS doesn't read them; the PS does.
     float4 reserved_36_to_39;
     float4 reserved_40_to_43;
     float4 reserved_44_to_47;
 
-    // coverage_mode, coverage_threshold, coverage_opacity_scale, pad
-    float4 coverage_params;
+    // [48..51] coverage_params0 — VS reads kernel-related slots:
+    //   x = coverage_mode, y = threshold, z = opacity_scale,
+    //   w = kernel_mode
+    float4 coverage_params0;
+    // [52..55] coverage_params1:
+    //   x = radius_scale, y = inner_radius, z = outer_radius,
+    //   w = gaussian_falloff
+    float4 coverage_params1;
+    // [56..59] coverage_params2:
+    //   x = min_screen_radius_px, y/z/w = pad
+    float4 coverage_params2;
 };
 
 struct Splat
@@ -143,14 +151,42 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     major_len = max(major_len, min_ndc);
     minor_len = max(minor_len, min_ndc);
 
+    // ── Apply terrain coverage radius_scale ──
+    // Grows / shrinks the footprint uniformly so adjacent splats can be
+    // tuned to overlap into a continuous surface.
+    const float radius_scale = max(coverage_params1.x, 0.0001f);
+    major_len *= radius_scale;
+    minor_len *= radius_scale;
+
+    // ── Min screen radius clamp ──
+    // Prevents distant splats from collapsing into sub-pixel discs that
+    // produce a stippled "isolated dots" look.  Convert NDC axis lengths
+    // to half-axis pixels (NDC step of 2 = full viewport), compare to
+    // min_screen_radius_px, scale axes up if needed.
+    const float min_px = max(coverage_params2.x, 0.0f);
+    if (min_px > 0.0f)
+    {
+        float major_px = major_len * 0.5f * viewport.x;
+        float minor_px = minor_len * 0.5f * viewport.y;
+        if (major_px < min_px)
+            major_len *= (min_px / max(major_px, 1e-4f));
+        if (minor_px < min_px)
+            minor_len *= (min_px / max(minor_px, 1e-4f));
+    }
+
     float2 axis_major_ndc = major_dir * major_len;
     float2 axis_minor_ndc = minor_dir * minor_len;
 
-    float gaussian_radius = 3.0f;
+    // Quad extends to ±quad_extent in uv-space.  Kernel modes that have
+    // finite support (SmoothDisc, PolynomialDisc, HardDisc) treat uv-space
+    // r=1 as their support boundary; the Gaussian uses the full extent so
+    // ~99% of its mass is inside.  Keep this at 3.0 to match the legacy
+    // gaussian_radius and avoid changing visual scale across modes.
+    float quad_extent = 3.0f;
 
     float2 ndc_offset =
-        corner.x * axis_major_ndc * gaussian_radius +
-        corner.y * axis_minor_ndc * gaussian_radius;
+        corner.x * axis_major_ndc * quad_extent +
+        corner.y * axis_minor_ndc * quad_extent;
 
     float4 clip_pos = clip_center;
     clip_pos.xy    += ndc_offset * clip_center.w;
@@ -159,6 +195,6 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     output.position = clip_pos;
     output.color    = s.color;
     output.opacity  = s.opacity;
-    output.uv       = corner * gaussian_radius;
+    output.uv       = corner * quad_extent;
     return output;
 }
