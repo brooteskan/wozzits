@@ -82,6 +82,35 @@ add_subdirectory(external/gltf/fastgltf)
 add_subdirectory(external/ply)
 
 
+# ----------------------
+# dependency: rtaudio 6.0.1
+# ----------------------
+
+# ---- RtAudio ----
+# Wozzits embeds RtAudio as a private audio backend.
+# Keep third-party tests/examples/docs off.
+
+set(RTAUDIO_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(RTAUDIO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(RTAUDIO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(RTAUDIO_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(RTAUDIO_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# Prevent rtaudio from replacing /MD with /MT in its flag vars.
+# Its CMakeLists defaults RTAUDIO_STATIC_MSVCRT=ON for static builds, which
+# fights the CMAKE_MSVC_RUNTIME_LIBRARY setting above and causes a CRT mismatch.
+set(RTAUDIO_STATIC_MSVCRT OFF CACHE BOOL "" FORCE)
+# rtaudio's CMakeLists contains option(BUILD_SHARED_LIBS ON), which would set
+# the global flag and silently turn window_engine into a DLL on a clean configure.
+# Lock it off before the subdirectory is processed.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+# Windows first pass: WASAPI only. Avoid ASIO SDK friction.
+set(RTAUDIO_API_WASAPI ON CACHE BOOL "" FORCE)
+set(RTAUDIO_API_DS OFF CACHE BOOL "" FORCE)
+set(RTAUDIO_API_ASIO OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(external/audio/rtaudio)
+
 # ----------------------------
 # Core library target
 # ----------------------------
@@ -91,7 +120,7 @@ set (YAML_VERSION_MINOR 2)
 set (YAML_VERSION_PATCH 5)
 set (YAML_VERSION_STRING "${YAML_VERSION_MAJOR}.${YAML_VERSION_MINOR}.${YAML_VERSION_PATCH}")
 
-add_library(window_engine)
+add_library(window_engine STATIC)
 
 target_compile_definitions(window_engine PRIVATE
     
@@ -122,6 +151,7 @@ target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/scanner.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/writer.c"
 
+
     $<TARGET_OBJECTS:wz_external_ply>
  )
 
@@ -143,6 +173,7 @@ PUBLIC
     scene_render::scene_render
     algo_math::algo_math
 PRIVATE
+    rtaudio
     fastgltf::fastgltf
     dwmapi
     d3d12
@@ -257,6 +288,15 @@ endfunction()
 # ----------------------------
 # Tests
 # ----------------------------
+
+add_executable(wozzits_rtaudio_smoke
+    examples/rtaudio/main.cpp
+)
+
+target_link_libraries(wozzits_rtaudio_smoke
+    PRIVATE
+        window_engine
+)
 
 if(WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
