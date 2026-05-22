@@ -183,6 +183,9 @@ namespace wz::engine::assets
             .opacity         = desc.opacity,
             .flat_luminance  = desc.flat_luminance,
             .steep_luminance = desc.steep_luminance,
+            .normal_smoothing_enabled      = desc.normal_smoothing_enabled,
+            .normal_smoothing_radius_cells = desc.normal_smoothing_radius_cells,
+            .normal_smoothing_sigma_cells  = desc.normal_smoothing_sigma_cells,
         };
 
         const wz::asset::AssetKey key =

@@ -94,6 +94,12 @@ namespace wz::engine::assets
         float    opacity         = 0.95f;
         float    flat_luminance  = 0.55f;
         float    steep_luminance = 0.30f;
+
+        // Normal smoothing — see compile-desc comment in
+        // gaussian_splat/gaussian_splat.h for semantics.
+        bool     normal_smoothing_enabled      = false;
+        uint32_t normal_smoothing_radius_cells = 2;
+        float    normal_smoothing_sigma_cells  = 1.0f;
     };
 
     class GaussianSplatAssetModule

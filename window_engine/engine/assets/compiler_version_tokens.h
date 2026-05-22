@@ -51,6 +51,6 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kBuiltinRenderProgramCompilerVersion = 4;
     inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatColorLODCompilerVersion = 1;
-    inline constexpr uint64_t kGaussianSplatTerrainSurfaceFromHeightFieldCompilerVersion = 1;
-    inline constexpr uint64_t kTerrainSplatFromGaeaR32CompilerVersion = 1;
+    inline constexpr uint64_t kGaussianSplatTerrainSurfaceFromHeightFieldCompilerVersion = 2;
+    inline constexpr uint64_t kTerrainSplatFromGaeaR32CompilerVersion = 2;
 }

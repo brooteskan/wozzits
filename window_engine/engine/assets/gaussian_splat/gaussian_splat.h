@@ -100,5 +100,26 @@ namespace wz::engine::assets
         // display(slope=1)=steep_luminance.
         float flat_luminance  = 0.55f;
         float steep_luminance = 0.30f;
+
+        // ── Normal smoothing ──
+        //
+        // When enabled, the per-cell raw finite-difference normals are
+        // computed over the FULL source grid, then each emitted splat's
+        // normal is the Gaussian-weighted average of raw normals in a
+        // neighbourhood of `normal_smoothing_radius_cells` cells around
+        // the splat's source position.  The smoothed normal then drives
+        // the splat's tangent frame; position and tangent-extent scale are
+        // unchanged.
+        //
+        // Effect: smooths discontinuities in the normal field caused by
+        // local heightmap noise.  At grazing camera angles, adjacent
+        // patches read as a continuous tangent field instead of showing
+        // visible slits/steps between independent local tangent planes.
+        //
+        // This is NOT the same as inflating splat radius — patches stay
+        // the same physical size.  Only their orientation is smoothed.
+        bool     normal_smoothing_enabled       = false;
+        uint32_t normal_smoothing_radius_cells  = 2;
+        float    normal_smoothing_sigma_cells   = 1.0f;
     };
 }

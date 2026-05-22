@@ -38,9 +38,12 @@ namespace wz::engine::assets
             (static_cast<uint64_t>(bits(desc.thickness)) << 32) | desc.subsample_step,
             (static_cast<uint64_t>(bits(desc.opacity)) << 32) | bits(desc.flat_luminance));
 
+        const uint64_t smooth_flag = desc.normal_smoothing_enabled ? 1ull : 0ull;
         const uint64_t p2 = detail::mix64(
-            static_cast<uint64_t>(bits(desc.steep_luminance)),
-            0ull);
+            (static_cast<uint64_t>(bits(desc.steep_luminance)) << 32)
+                | (smooth_flag & 0xFFFFFFFFull),
+            (static_cast<uint64_t>(desc.normal_smoothing_radius_cells) << 32)
+                | bits(desc.normal_smoothing_sigma_cells));
 
         const uint64_t content = detail::mix64(detail::mix64(p0, p1), p2);
 

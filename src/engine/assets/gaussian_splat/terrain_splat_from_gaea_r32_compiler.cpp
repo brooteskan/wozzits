@@ -170,6 +170,14 @@ namespace wz::engine::assets::internal
                 read_number(json, "flat_luminance",  flat_lum);
                 read_number(json, "steep_luminance", steep_lum);
 
+                // Normal smoothing — optional sidecar fields.
+                uint32_t normal_smooth_flag   = 0u;
+                uint32_t normal_smooth_radius = 2u;
+                float    normal_smooth_sigma  = 1.0f;
+                read_uint  (json, "normal_smoothing_enabled",      normal_smooth_flag);
+                read_uint  (json, "normal_smoothing_radius_cells", normal_smooth_radius);
+                read_number(json, "normal_smoothing_sigma_cells",  normal_smooth_sigma);
+
                 // ── 5. Resolve dimensions: sidecar overrides, else square ──
                 uint32_t width  = 0;
                 uint32_t height = 0;
@@ -257,6 +265,9 @@ namespace wz::engine::assets::internal
                 desc.opacity         = opacity;
                 desc.flat_luminance  = flat_lum;
                 desc.steep_luminance = steep_lum;
+                desc.normal_smoothing_enabled      = (normal_smooth_flag != 0u);
+                desc.normal_smoothing_radius_cells = normal_smooth_radius;
+                desc.normal_smoothing_sigma_cells  = normal_smooth_sigma;
 
                 GaussianSplatCloudData cloud =
                     make_terrain_surface_splat_cloud(desc, field);

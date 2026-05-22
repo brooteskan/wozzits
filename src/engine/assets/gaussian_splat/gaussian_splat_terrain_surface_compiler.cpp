@@ -216,6 +216,38 @@ namespace wz::engine::assets
         const float overlap = desc.overlap_factor;
         const float N_f = static_cast<float>(N);
 
+        // ── Pre-compute raw per-cell normals when smoothing is enabled ──
+        // The smoothing pass needs neighbour normals from the FULL grid
+        // regardless of subsample_step, so we build a dense raw-normal map
+        // up front and Gaussian-average from it during the emit loop.
+        const bool smooth_normals =
+            desc.normal_smoothing_enabled
+         && desc.normal_smoothing_radius_cells > 0
+         && desc.normal_smoothing_sigma_cells  > 0.0f;
+        std::vector<Vec3f> raw_normals;
+        if (smooth_normals)
+        {
+            raw_normals.resize(static_cast<size_t>(W) * H);
+            for (uint32_t iz = 0; iz < H; ++iz) {
+                for (uint32_t ix = 0; ix < W; ++ix) {
+                    const float dh_u_r = dh_du(field, ix, iz) * height_scale;
+                    const float dh_v_r = dh_dv(field, ix, iz) * height_scale;
+                    const Vec3f Tu_r{ step_x, dh_u_r, 0.0f };
+                    const Vec3f Tv_r{ 0.0f,   dh_v_r, step_z };
+                    raw_normals[static_cast<size_t>(ix) + iz * W] =
+                        normalize3(cross3(Tv_r, Tu_r));
+                }
+            }
+        }
+
+        const int32_t smooth_radius =
+            smooth_normals
+                ? static_cast<int32_t>(desc.normal_smoothing_radius_cells)
+                : 0;
+        const float smooth_sigma = desc.normal_smoothing_sigma_cells;
+        const float smooth_two_sigma_sq =
+            2.0f * smooth_sigma * smooth_sigma;
+
         for (uint32_t iz = 0; iz < H; iz += N) {
             for (uint32_t ix = 0; ix < W; ix += N) {
 
@@ -238,13 +270,71 @@ namespace wz::engine::assets
                 const float Lu = length3(Tu);
                 const float Lv = length3(Tv);
 
-                // ── Orthonormal surface frame ──
-                // N points "up" — cross(Tv, Tu) yields +Y on flat ground.
-                const Vec3f N_raw  = cross3(Tv, Tu);
-                const Vec3f N_hat  = normalize3(N_raw);
-                const Vec3f Xs_hat = normalize3(Tu);
-                // Re-derive Z to be orthonormal completion.
-                const Vec3f Zs_hat = normalize3(cross3(N_hat, Xs_hat));
+                // ── Normal ──
+                // Raw: cross(Tv, Tu) gives +Y on flat ground.
+                // Smoothed: Gaussian-weighted average of raw normals in a
+                // neighbourhood, normalized.
+                Vec3f N_hat;
+                if (smooth_normals)
+                {
+                    Vec3f n_sum{ 0.0f, 0.0f, 0.0f };
+                    float w_sum = 0.0f;
+
+                    const int32_t ix_i = static_cast<int32_t>(ix);
+                    const int32_t iz_i = static_cast<int32_t>(iz);
+
+                    const int32_t W_i = static_cast<int32_t>(W);
+                    const int32_t H_i = static_cast<int32_t>(H);
+
+                    for (int32_t dz = -smooth_radius; dz <= smooth_radius; ++dz) {
+                        const int32_t sz = iz_i + dz;
+                        if (sz < 0 || sz >= H_i) continue;
+                        for (int32_t dx = -smooth_radius; dx <= smooth_radius; ++dx) {
+                            const int32_t sx = ix_i + dx;
+                            if (sx < 0 || sx >= W_i) continue;
+
+                            const float d2 = static_cast<float>(dx * dx + dz * dz);
+                            const float w  = std::exp(-d2 / smooth_two_sigma_sq);
+
+                            const Vec3f& nr = raw_normals[
+                                static_cast<size_t>(sx) + sz * W];
+                            n_sum.x += w * nr.x;
+                            n_sum.y += w * nr.y;
+                            n_sum.z += w * nr.z;
+                            w_sum   += w;
+                        }
+                    }
+
+                    if (w_sum > 1e-6f)
+                    {
+                        const float inv = 1.0f / w_sum;
+                        n_sum.x *= inv; n_sum.y *= inv; n_sum.z *= inv;
+                    }
+                    N_hat = normalize3(n_sum);
+                }
+                else
+                {
+                    const Vec3f N_raw = cross3(Tv, Tu);
+                    N_hat = normalize3(N_raw);
+                }
+
+                // ── Build orthonormal surface frame from N_hat ──
+                // Pick a stable reference axis and orthogonalise to N_hat.
+                // When N_hat is close to world X, fall back to world Z so
+                // the projection doesn't collapse.
+                const Vec3f world_x{ 1.0f, 0.0f, 0.0f };
+                const Vec3f world_z{ 0.0f, 0.0f, 1.0f };
+                const Vec3f ref = (std::abs(N_hat.x) < 0.9f) ? world_x : world_z;
+
+                const float ref_dot_n =
+                    ref.x * N_hat.x + ref.y * N_hat.y + ref.z * N_hat.z;
+                const Vec3f Xs_raw{
+                    ref.x - N_hat.x * ref_dot_n,
+                    ref.y - N_hat.y * ref_dot_n,
+                    ref.z - N_hat.z * ref_dot_n,
+                };
+                const Vec3f Xs_hat = normalize3(Xs_raw);
+                const Vec3f Zs_hat = cross3(N_hat, Xs_hat);
 
                 const Quat q = quat_from_frame(Xs_hat, N_hat, Zs_hat);
 
