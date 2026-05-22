@@ -73,9 +73,6 @@ target_sources(window_engine PRIVATE
     assets/render_program/render_program_asset_module.cpp
     assets/render_program/render_program_compilers.cpp
 
-    assets/test/triangle_shader_assets.cpp
-    render/test/triangle_test_scene.cpp
-
     rendering/renderable_gpu_cache.cpp
     rendering/renderable_debug_runtime.cpp
     rendering/renderable_pipeline_cache.cpp
