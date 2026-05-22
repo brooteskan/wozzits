@@ -2,33 +2,31 @@
 //
 // Pixel shader for the GaussianSplatTerrainCoverageDebug program.
 //
+// VS now emits oriented tangent-plane patches (gaussian_splat_terrain_
+// coverage_vs.hlsl).  uv is in [-1, +1] along each axis, with corner pixels
+// reaching r = √2.
+//
 // Two orthogonal axes of behaviour:
 //
 //   COVERAGE MODE  — what we do with the kernel's coverage value:
 //     0 TransparentBlend  — alpha-blend with coverage as alpha (reference)
 //     1 CoverageDiscard   — discard if coverage < threshold; opaque inside
 //     2 DitheredCoverage  — stable per-pixel hash vs coverage; opaque kept
-//     3 OpaqueDisc        — kept for backward compat; equivalent to
-//                           kernel_mode=HardDisc + CoverageDiscard@threshold=0.5
+//     3 OpaqueDisc        — legacy: equivalent to HardDisc + CoverageDiscard
 //
-//   KERNEL MODE    — how coverage is computed from normalized radius r:
-//     0 Gaussian        — exp(-0.5 * r² * gaussian_falloff)
+//   KERNEL MODE    — how coverage is computed from r_norm = length(uv):
+//     0 Gaussian        — exp(-r_norm² * gaussian_falloff)
 //     1 SmoothDisc      — 1 - smoothstep(inner_radius, outer_radius, r_norm)
 //     2 PolynomialDisc  — saturate(1 - r_norm²)²
 //     3 HardDisc        — r_norm ≤ 1 ? 1 : 0
 //
-// The kernel decides the *shape* of the footprint; the coverage mode
-// decides the *pass/fail rule*.  Most useful combos for terrain:
-//   kernel=SmoothDisc + coverage=CoverageDiscard  → full opaque interior,
-//     soft controlled rim, writes depth.  Makes terrain read as connected
-//     surface patches rather than isolated discs at close range.
-//   kernel=SmoothDisc + coverage=DitheredCoverage → soft visual edge while
-//     still depth-writing.
-//   kernel=Gaussian   + coverage=TransparentBlend → reference 3DGS look.
-//
-// uv-space convention: VS scales the quad to ±quad_extent (3.0) along its
-// projected ellipse axes; the support boundary in uv-space is r = quad_extent.
-// We normalize r_norm = r / quad_extent so kernel parameters live in [0, 1].
+// Debug views (debug_view field of coverage_params2.y) override the
+// normal colour output for verifying patch orientation:
+//   0 Off          — colour unchanged
+//   1 PatchUV      — (uv.x*0.5+0.5, uv.y*0.5+0.5, 0.5)
+//   2 Normal       — (n.xyz * 0.5 + 0.5)  (world-space)
+//   3 TangentSign  — sign(uv.x) / sign(uv.y) tint
+//   4 Coverage     — grayscale of the kernel coverage value
 
 cbuffer Transform : register(b0)
 {
@@ -40,21 +38,23 @@ cbuffer Transform : register(b0)
     float4   reserved_44_to_47;
     float4   coverage_params0;  // mode, threshold, opacity_scale, kernel_mode
     float4   coverage_params1;  // radius_scale, inner_radius, outer_radius, gaussian_falloff
-    float4   coverage_params2;  // min_screen_radius_px, _, _, _
+    float4   coverage_params2;  // min_screen_radius_px, debug_view, _, _
 };
 
 struct PSInput
 {
-    float4 position : SV_POSITION;
-    float3 color    : COLOR;
-    float  opacity  : OPACITY;
-    float2 uv       : TEXCOORD0;
+    float4 position     : SV_POSITION;
+    float3 color        : COLOR;
+    float  opacity      : OPACITY;
+    float2 uv           : TEXCOORD0;
+    float3 normal_world : NORMAL;
+    float2 sign_uv      : TEXCOORD1;
 };
 
-// Quad extent in uv-space (matches the VS).  r_norm = sqrt(uv²) / quad_extent
-// maps r=0 at the centre, r=1 at the projected support edge along axes,
-// r=√2 at the quad's diagonal corners.
-static const float QUAD_EXTENT = 3.0f;
+// Tangent-plane VS emits uv ∈ [-1, +1]; corner of the quad reaches r = √2.
+// The kernel's natural support edge is r_norm = 1.0 (or `outer_radius` for
+// SmoothDisc), so QUAD_EXTENT = 1.0 makes r_norm = length(uv).
+static const float QUAD_EXTENT = 1.0f;
 
 // Stable per-pixel hash in [0,1).  Deterministic on SV_POSITION so the
 // dither pattern is fixed for a static camera (no shimmer).
@@ -85,20 +85,16 @@ float eval_kernel(
     {
         return r_norm <= 1.0f ? 1.0f : 0.0f;
     }
-    // Gaussian (default).  Falloff at gaussian_falloff=1.0 matches the
-    // legacy PS (coverage = exp(-r²/2) over r ∈ [0, 3]).
-    return exp(-0.5f * r2_uv * gaussian_falloff);
+    // Gaussian.  coverage = exp(-r_norm² * gaussian_falloff).  At default
+    // gaussian_falloff = 4.0 this gives ~0.018 at r_norm = 1 and 1.0 at
+    // the centre, similar tail to the legacy 3σ Gaussian.
+    return exp(-r_norm * r_norm * gaussian_falloff);
 }
 
 float4 main(PSInput input) : SV_TARGET
 {
     const float r2_uv = dot(input.uv, input.uv);
-
-    // Cheap early-out: anything beyond the quad's circumscribed circle is
-    // outside all kernels' supports.  quad_extent² = 9 at corners ≈ 2 (well
-    // beyond 1.0 normalized), so anything past r2_uv > QUAD_EXTENT² is
-    // safe to discard outright.  (Corners go to r²≈18; we leave those for
-    // kernel-specific discards below.)
+    const float r_norm = sqrt(r2_uv) / QUAD_EXTENT;
 
     const uint  coverage_mode    = (uint)coverage_params0.x;
     const float threshold        = coverage_params0.y;
@@ -107,51 +103,79 @@ float4 main(PSInput input) : SV_TARGET
     const float inner_radius     = coverage_params1.y;
     const float outer_radius     = max(coverage_params1.z, 1e-4f);
     const float gaussian_falloff = max(coverage_params1.w, 1e-4f);
-
-    const float r_norm = sqrt(r2_uv) / QUAD_EXTENT;
+    const uint  debug_view       = (uint)coverage_params2.y;
 
     const float coverage = eval_kernel(
         kernel_mode, r2_uv, r_norm,
         gaussian_falloff, inner_radius, outer_radius);
 
-    // Zero-coverage early-out — same as Gaussian's old `r2 > 9` discard
-    // but generalised to all kernels.
+    // Zero-coverage early-out (works for all kernels uniformly).
     if (coverage <= 0.0f)
         discard;
 
+    // ── Coverage mode decides pass/fail and final alpha ──
+    bool   is_opaque = true;
+    float  out_alpha = 1.0f;
+
     if (coverage_mode == 0u)
     {
-        // TransparentBlend — kernel-driven alpha.
-        float alpha = saturate(input.opacity * coverage * opacity_scale);
-        return float4(input.color, alpha);
+        // TransparentBlend.
+        is_opaque = false;
+        out_alpha = saturate(input.opacity * coverage * opacity_scale);
     }
     else if (coverage_mode == 1u)
     {
-        // CoverageDiscard.
         if (coverage < threshold)
             discard;
-        return float4(input.color, 1.0f);
     }
     else if (coverage_mode == 2u)
     {
-        // DitheredCoverage.  Compare a stable per-pixel hash to a kept
-        // probability driven by opacity × coverage.  Discarded pixels
-        // leave the depth/colour buffers untouched; kept pixels write
-        // opaque.
         float keep_prob = saturate(input.opacity * coverage);
         float h = hash_pixel(input.position.xy);
         if (h > keep_prob)
             discard;
-        return float4(input.color, 1.0f);
     }
     else
     {
-        // OpaqueDisc (legacy): r ≤ 1 in uv-space corresponds to the
-        // projected ellipse interior.  Equivalent to kernel=HardDisc with
-        // coverage_mode=CoverageDiscard at threshold=0.5 — kept for the
-        // existing UI radio button.
+        // OpaqueDisc legacy.
         if (r2_uv > 1.0f)
             discard;
-        return float4(input.color, 1.0f);
     }
+
+    // ── Debug visualisation overrides ──
+    // When non-Off we replace the colour output with the chosen visualisation.
+    // The pass/fail decision above is preserved so geometry footprint is
+    // still legible.
+    float3 out_color = input.color;
+
+    if (debug_view == 1u)
+    {
+        // PatchUV: remap uv from [-1, 1] to [0, 1] for the R and G channels.
+        out_color = float3(
+            input.uv.x * 0.5f + 0.5f,
+            input.uv.y * 0.5f + 0.5f,
+            0.5f);
+    }
+    else if (debug_view == 2u)
+    {
+        // World-space normal as colour.
+        out_color = input.normal_world * 0.5f + 0.5f;
+    }
+    else if (debug_view == 3u)
+    {
+        // Tangent-sign quadrant tint — each of the four quad corners gets
+        // a distinct colour, which makes patch orientation obvious.
+        float su = input.sign_uv.x >= 0.0f ? 1.0f : 0.0f;
+        float sv = input.sign_uv.y >= 0.0f ? 1.0f : 0.0f;
+        out_color = float3(su, sv, 0.5f);
+    }
+    else if (debug_view == 4u)
+    {
+        out_color = float3(coverage, coverage, coverage);
+    }
+
+    if (is_opaque)
+        return float4(out_color, 1.0f);
+    else
+        return float4(out_color, out_alpha);
 }

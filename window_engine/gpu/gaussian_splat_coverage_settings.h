@@ -69,6 +69,18 @@ namespace wz::gpu
         HardDisc = 3,
     };
 
+    // Optional debug visualisation overrides for the coverage PS.  When
+    // non-Off, the PS replaces its colour output with the chosen
+    // visualisation so we can verify patch orientation and footprint.
+    enum class TerrainCoverageDebugView : uint32_t
+    {
+        Off          = 0,  // normal colour output
+        PatchUV      = 1,  // uv.x → R, uv.y → G, 0.5 → B
+        Normal       = 2,  // world-space patch normal → RGB
+        TangentSign  = 3,  // sign(tangent_u·worldX)/sign(tangent_v·worldZ) tint
+        Coverage     = 4,  // kernel coverage as grayscale
+    };
+
     struct SplatCoverageSettings
     {
         SplatCoverageMode mode = SplatCoverageMode::TransparentBlend;
@@ -103,15 +115,21 @@ namespace wz::gpu
         float inner_radius = 0.65f;
         float outer_radius = 1.0f;
 
-        // Gaussian kernel falloff parameter.  Larger = tighter centre,
-        // softer rim drops off faster.  Default 1.0 matches the original
-        // 3DGS PS (coverage = exp(-r²/2) over r ∈ [0, 3]).
-        float gaussian_falloff = 1.0f;
+        // Gaussian kernel falloff parameter.  Used by the PS as
+        //   coverage = exp(-r_norm² * gaussian_falloff)
+        // where r_norm ∈ [0, 1] at the tangent-patch axis edge.  Default 4.0
+        // gives coverage ≈ 0.018 at the edge — a reasonable Gaussian shape
+        // that still fades to nearly zero at the patch boundary.
+        float gaussian_falloff = 4.0f;
 
-        // Minimum projected splat radius in pixels.  >0 clamps the
-        // screen-space ellipse axes so distant splats don't collapse into
-        // sub-pixel discs.  0 disables (no clamping).
+        // Minimum projected splat radius in pixels.  Plumbed through the
+        // pipeline but currently unused by the tangent-plane VS (which
+        // expands the patch in world space, not in screen space).  Reserved
+        // for a future screen-space clamp step.
         float min_screen_radius_px = 0.0f;
+
+        // Optional debug visualisation override.
+        TerrainCoverageDebugView debug_view = TerrainCoverageDebugView::Off;
     };
 
     // Push scene-wide coverage settings onto the device.  Call once per

@@ -496,7 +496,8 @@ namespace wz::render::backend::dx12
                 constants[55] = cov.gaussian_falloff;
 
                 constants[56] = cov.min_screen_radius_px;
-                constants[57] = 0.0f;
+                constants[57] = static_cast<float>(
+                    static_cast<uint32_t>(cov.debug_view));
                 constants[58] = 0.0f;
                 constants[59] = 0.0f;
             }

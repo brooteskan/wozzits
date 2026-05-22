@@ -1,17 +1,28 @@
 // shaders/gaussian_splat/gaussian_splat_terrain_coverage_vs.hlsl
 //
-// Vertex shader for the GaussianSplatTerrainCoverageDebug program.
+// Tangent-plane patch expansion for terrain coverage splats.
 //
-// Geometry is identical to gaussian_splat_pull_debug_vs.hlsl — we still
-// project each splat's oriented ellipsoid into a screen-aligned quad.
-// The difference lives in the pixel shader, which reads `coverage_params`
-// from the same cbuffer and chooses between transparent blending, hard
-// coverage cutoff, dithered coverage, or a hard unit-disc baseline.
+// Replaces the camera-facing covariance projection inherited from
+// gaussian_splat_pull_debug_vs.hlsl.  For terrain we want each splat to
+// expand as an oriented patch lying in the surface tangent plane:
 //
-// Root signature reserves 52 dwords at b0 with ShaderVisibility::All so
-// VS and PS read the same cbuffer.  This VS ignores `coverage_params` and
-// `lod_params0/1` (those are for the sibling NeighborhoodColorBlend path —
-// they're allocated in the constants array but unread here).
+//   local axis X (rotated by splat quaternion) = world-space tangent U
+//   local axis Z (rotated by splat quaternion) = world-space tangent V
+//   local axis Y (rotated by splat quaternion) = world-space surface normal
+//                                                (debug-only; not used to
+//                                                 expand the patch)
+//
+// The splat's scale.x / scale.z give the half-extents of the patch along
+// U/V; scale.y is the normal-axis thickness and is intentionally ignored
+// here (we render a flat patch, not a thin ellipsoid).
+//
+// Output:
+//   uv  ∈ [-1, +1] along each axis (corners at ±√2)
+//   normal_world for the debug visualisation
+//   sign_uv     for the TangentSign debug view
+//
+// Pull-debug VS is intentionally unchanged — that one stays the right
+// model for general 3DGS / point-cloud rendering.
 
 cbuffer Transform : register(b0)
 {
@@ -25,21 +36,21 @@ cbuffer Transform : register(b0)
     float4 viewport_and_size;
 
     // Reserved slots so the cbuffer layout matches the submit-side
-    // constants array.  This VS doesn't read them; the PS does.
+    // constants array (NeighborhoodColorBlend lives in these slots; this
+    // VS doesn't read them).
     float4 reserved_36_to_39;
     float4 reserved_40_to_43;
     float4 reserved_44_to_47;
 
-    // [48..51] coverage_params0 — VS reads kernel-related slots:
-    //   x = coverage_mode, y = threshold, z = opacity_scale,
-    //   w = kernel_mode
+    // [48..51] coverage_params0:
+    //   x = coverage_mode, y = threshold, z = opacity_scale, w = kernel_mode
     float4 coverage_params0;
     // [52..55] coverage_params1:
-    //   x = radius_scale, y = inner_radius, z = outer_radius,
-    //   w = gaussian_falloff
+    //   x = radius_scale, y = inner_radius, z = outer_radius, w = gaussian_falloff
     float4 coverage_params1;
     // [56..59] coverage_params2:
-    //   x = min_screen_radius_px, y/z/w = pad
+    //   x = min_screen_radius_px (currently unused in this VS),
+    //   y = debug_view, z/w = pad
     float4 coverage_params2;
 };
 
@@ -47,9 +58,11 @@ struct Splat
 {
     float3 position;                    // offset  0
     float  opacity;                     // offset 12
-    float3 scale;                       // offset 16
+    float3 scale;                       // offset 16 — scale.x = tangent_u,
+                                        //              scale.y = normal,
+                                        //              scale.z = tangent_v
     float  pad0;                        // offset 28
-    float4 rotation;                    // offset 32
+    float4 rotation;                    // offset 32  x,y,z,w (normalised)
     float3 color;                       // offset 48
     uint   lod_color_confidence_rgba8;  // offset 60
 };
@@ -59,10 +72,12 @@ StructuredBuffer<uint>  g_sorted_indices  : register(t1);
 
 struct VSOutput
 {
-    float4 position : SV_POSITION;
-    float3 color    : COLOR;
-    float  opacity  : OPACITY;
-    float2 uv       : TEXCOORD0;
+    float4 position     : SV_POSITION;
+    float3 color        : COLOR;
+    float  opacity      : OPACITY;
+    float2 uv           : TEXCOORD0;
+    float3 normal_world : NORMAL;
+    float2 sign_uv      : TEXCOORD1;
 };
 
 float4 safe_normalize_quat(float4 q)
@@ -81,19 +96,13 @@ float3 rotate_by_quat(float3 v, float4 q)
     return v + qw * t + cross(qv, t);
 }
 
-float2 project_point_to_ndc(float3 p)
-{
-    float4 world_pos = mul(world, float4(p, 1.0f));
-    float4 clip_pos  = mul(view_proj, world_pos);
-    return clip_pos.xy / clip_pos.w;
-}
-
 VSOutput main(uint vertex_id   : SV_VertexID,
               uint instance_id : SV_InstanceID)
 {
     uint splat_index = g_sorted_indices[instance_id];
     Splat s = g_splats[splat_index];
 
+    // Quad corner in [-1, +1] along each axis.
     float2 corners[4] =
     {
         float2(-1.0f, -1.0f),
@@ -103,98 +112,45 @@ VSOutput main(uint vertex_id   : SV_VertexID,
     };
     float2 corner = corners[vertex_id & 3];
 
-    float4 q  = safe_normalize_quat(s.rotation);
-    float3 sc = max(s.scale, float3(0.000001f, 0.000001f, 0.000001f));
+    // ── Build the tangent frame from the splat quaternion ──
+    // The quaternion maps the splat's local frame (X, Y, Z) into the
+    // cloud's local space.  X = tangent U, Y = normal, Z = tangent V.
+    // (Set up this way by gaussian_splat_terrain_surface_compiler.cpp.)
+    const float4 q = safe_normalize_quat(s.rotation);
+    const float3 sc = max(s.scale, float3(0.000001f, 0.000001f, 0.000001f));
 
-    float debug_scale = viewport_and_size.z;
+    const float3 tangent_u_local = rotate_by_quat(float3(sc.x, 0.0f, 0.0f), q);
+    const float3 tangent_v_local = rotate_by_quat(float3(0.0f, 0.0f, sc.z), q);
+    const float3 normal_local    = rotate_by_quat(float3(0.0f, 1.0f, 0.0f), q);
 
-    float3 axis_x = rotate_by_quat(float3(sc.x * debug_scale, 0.0f, 0.0f), q);
-    float3 axis_y = rotate_by_quat(float3(0.0f, sc.y * debug_scale, 0.0f), q);
-    float3 axis_z = rotate_by_quat(float3(0.0f, 0.0f, sc.z * debug_scale), q);
-
-    float4 world_center = mul(world, float4(s.position, 1.0f));
-    float4 clip_center  = mul(view_proj, world_center);
-
-    float2 center_ndc = clip_center.xy / clip_center.w;
-
-    float2 x_ndc = project_point_to_ndc(s.position + axis_x) - center_ndc;
-    float2 y_ndc = project_point_to_ndc(s.position + axis_y) - center_ndc;
-    float2 z_ndc = project_point_to_ndc(s.position + axis_z) - center_ndc;
-
-    float c00 = x_ndc.x * x_ndc.x + y_ndc.x * y_ndc.x + z_ndc.x * z_ndc.x;
-    float c01 = x_ndc.x * x_ndc.y + y_ndc.x * y_ndc.y + z_ndc.x * z_ndc.y;
-    float c11 = x_ndc.y * x_ndc.y + y_ndc.y * y_ndc.y + z_ndc.y * z_ndc.y;
-
-    float trace = c00 + c11;
-    float diff  = c00 - c11;
-    float disc  = sqrt(max(0.0f, 0.25f * diff * diff + c01 * c01));
-
-    float lambda_major = max(0.0f, 0.5f * trace + disc);
-    float lambda_minor = max(0.0f, 0.5f * trace - disc);
-
-    float2 major_dir;
-    if (abs(c01) > 0.00000001f)
-        major_dir = normalize(float2(lambda_major - c11, c01));
-    else
-        major_dir = (c00 >= c11) ? float2(1.0f, 0.0f) : float2(0.0f, 1.0f);
-
-    float2 minor_dir = float2(-major_dir.y, major_dir.x);
-
-    float major_len = sqrt(lambda_major);
-    float minor_len = sqrt(lambda_minor);
-
-    float2 viewport  = max(viewport_and_size.xy, float2(1.0f, 1.0f));
-    float  min_ndc_x = 2.0f / viewport.x;
-    float  min_ndc_y = 2.0f / viewport.y;
-    float  min_ndc   = max(min_ndc_x, min_ndc_y);
-
-    major_len = max(major_len, min_ndc);
-    minor_len = max(minor_len, min_ndc);
-
-    // ── Apply terrain coverage radius_scale ──
-    // Grows / shrinks the footprint uniformly so adjacent splats can be
-    // tuned to overlap into a continuous surface.
+    // ── Expand patch in cloud-local space ──
+    // The world matrix takes care of the cloud's overall transform
+    // (rotation/scale/translation), so we add the corner offset to the
+    // splat's local position and let `world` carry both into world space.
     const float radius_scale = max(coverage_params1.x, 0.0001f);
-    major_len *= radius_scale;
-    minor_len *= radius_scale;
 
-    // ── Min screen radius clamp ──
-    // Prevents distant splats from collapsing into sub-pixel discs that
-    // produce a stippled "isolated dots" look.  Convert NDC axis lengths
-    // to half-axis pixels (NDC step of 2 = full viewport), compare to
-    // min_screen_radius_px, scale axes up if needed.
-    const float min_px = max(coverage_params2.x, 0.0f);
-    if (min_px > 0.0f)
-    {
-        float major_px = major_len * 0.5f * viewport.x;
-        float minor_px = minor_len * 0.5f * viewport.y;
-        if (major_px < min_px)
-            major_len *= (min_px / max(major_px, 1e-4f));
-        if (minor_px < min_px)
-            minor_len *= (min_px / max(minor_px, 1e-4f));
-    }
+    const float3 local_offset =
+        corner.x * tangent_u_local * radius_scale +
+        corner.y * tangent_v_local * radius_scale;
 
-    float2 axis_major_ndc = major_dir * major_len;
-    float2 axis_minor_ndc = minor_dir * minor_len;
+    const float3 local_pos  = s.position + local_offset;
+    const float4 world_pos  = mul(world, float4(local_pos, 1.0f));
+    const float4 clip_pos   = mul(view_proj, world_pos);
 
-    // Quad extends to ±quad_extent in uv-space.  Kernel modes that have
-    // finite support (SmoothDisc, PolynomialDisc, HardDisc) treat uv-space
-    // r=1 as their support boundary; the Gaussian uses the full extent so
-    // ~99% of its mass is inside.  Keep this at 3.0 to match the legacy
-    // gaussian_radius and avoid changing visual scale across modes.
-    float quad_extent = 3.0f;
-
-    float2 ndc_offset =
-        corner.x * axis_major_ndc * quad_extent +
-        corner.y * axis_minor_ndc * quad_extent;
-
-    float4 clip_pos = clip_center;
-    clip_pos.xy    += ndc_offset * clip_center.w;
+    // For debug viz only — transform the normal by `world` as a direction
+    // (w=0).  Cloud world matrices are translation+rotation in this
+    // pipeline so this is sufficient; if non-uniform scale ever enters we
+    // would need the inverse-transpose, but the existing terrain pipeline
+    // does not produce that.
+    const float3 normal_world =
+        normalize(mul(world, float4(normal_local, 0.0f)).xyz);
 
     VSOutput output;
-    output.position = clip_pos;
-    output.color    = s.color;
-    output.opacity  = s.opacity;
-    output.uv       = corner * quad_extent;
+    output.position     = clip_pos;
+    output.color        = s.color;
+    output.opacity      = s.opacity;
+    output.uv           = corner;          // ∈ [-1, +1]² at corners
+    output.normal_world = normal_world;
+    output.sign_uv      = corner;          // raw sign carrier for debug viz
     return output;
 }
