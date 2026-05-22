@@ -434,13 +434,18 @@ namespace wz::render::backend::dx12
                 device, resolved->gpu_resource);
             if (!cloud) continue;
 
-            // Constants buffer sized to fit both the legacy 36-dword PullDebug
-            // layout and the extended 48-dword NeighborhoodColorBlend layout.
-            // The actual count pushed is driven by
-            // `layout->root_constants[i].value_count`, so the old program
-            // reads only [0..35] and never sees the LOD slots even though
-            // they are populated below.
-            float constants[48] = {};
+            // Constants buffer sized to fit all splat programs:
+            //   PullDebug                       — reads [0..35]   (36 dwords)
+            //   NeighborhoodColorBlend         — reads [0..47]   (48 dwords)
+            //   GaussianSplatTerrainCoverageDebug — reads [0..51] (52 dwords)
+            // The actual count pushed is driven by `value_count`, so each
+            // program sees only its declared range.  Slot meanings beyond
+            // [0..35]:
+            //   [36..39] NeighborhoodColorBlend.lod_params0
+            //   [40..43] NeighborhoodColorBlend.lod_params1
+            //   [44..47] NeighborhoodColorBlend.lod_pad
+            //   [48..51] coverage_params (mode, threshold, opacity_scale, _)
+            float constants[52] = {};
             for (int i = 0; i < 16; ++i) constants[i]      = dc.world.m[i];
             for (int i = 0; i < 16; ++i) constants[16 + i] =
                 frame.view.view_projection.m[i];
@@ -472,6 +477,16 @@ namespace wz::render::backend::dx12
                 constants[41] = lod.max_stride_for_blend;
                 constants[42] = lod.use_confidence ? 1.0f : 0.0f;
                 constants[43] = 0.0f;
+            }
+
+            // Coverage slots [48..51] (consumed by
+            // GaussianSplatTerrainCoverageDebug; ignored by others).
+            {
+                const auto& cov = wz::gpu::dx12::internal::get_coverage_settings(device);
+                constants[48] = static_cast<float>(static_cast<uint32_t>(cov.mode));
+                constants[49] = cov.threshold;
+                constants[50] = cov.opacity_scale;
+                constants[51] = 0.0f;
             }
 
             // Determine binding model.  Default to SplatVertexInstanced when no

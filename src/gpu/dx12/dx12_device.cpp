@@ -20,6 +20,7 @@
 namespace
 {
     static constexpr DXGI_FORMAT BACKBUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
+    static constexpr DXGI_FORMAT DEPTH_FORMAT      = DXGI_FORMAT_D32_FLOAT;
 
     namespace
     {
@@ -31,6 +32,69 @@ namespace
     }
 
 
+    // Create the device-shared depth buffer + DSV.  Caller must release the
+    // previous resources before calling (this function only creates).
+    void create_depth_resources(
+        wz::gpu::dx12::DX12Device* impl,
+        UINT width,
+        UINT height)
+    {
+        HRESULT hr;
+
+        // DSV heap (one descriptor — single shared depth buffer).
+        if (!impl->dsv_heap)
+        {
+            D3D12_DESCRIPTOR_HEAP_DESC dsv_heap_desc = {};
+            dsv_heap_desc.NumDescriptors = 1;
+            dsv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+            dsv_heap_desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+            hr = impl->device->CreateDescriptorHeap(
+                &dsv_heap_desc, IID_PPV_ARGS(&impl->dsv_heap));
+            assert(SUCCEEDED(hr));
+        }
+
+        // Depth resource.
+        D3D12_HEAP_PROPERTIES heap_props = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        D3D12_RESOURCE_DESC   res_desc   = CD3DX12_RESOURCE_DESC::Tex2D(
+            DEPTH_FORMAT,
+            width,
+            height,
+            1, 1, 1, 0,
+            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+
+        D3D12_CLEAR_VALUE clear_value{};
+        clear_value.Format               = DEPTH_FORMAT;
+        clear_value.DepthStencil.Depth   = 1.0f;
+        clear_value.DepthStencil.Stencil = 0;
+
+        hr = impl->device->CreateCommittedResource(
+            &heap_props,
+            D3D12_HEAP_FLAG_NONE,
+            &res_desc,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE,
+            &clear_value,
+            IID_PPV_ARGS(&impl->depth_buffer));
+        assert(SUCCEEDED(hr));
+
+        // DSV.
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {};
+        dsv_desc.Format        = DEPTH_FORMAT;
+        dsv_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        dsv_desc.Flags         = D3D12_DSV_FLAG_NONE;
+        impl->device->CreateDepthStencilView(
+            impl->depth_buffer,
+            &dsv_desc,
+            impl->dsv_heap->GetCPUDescriptorHandleForHeapStart());
+    }
+
+    void release_depth_buffer(wz::gpu::dx12::DX12Device* impl)
+    {
+        if (impl->depth_buffer)
+        {
+            impl->depth_buffer->Release();
+            impl->depth_buffer = nullptr;
+        }
+    }
 }
 
 namespace wz::gpu::dx12
@@ -204,6 +268,9 @@ namespace wz::gpu::dx12
 
         impl->rtv_stride = rtv_stride;
 
+        // ────── create depth buffer + DSV ────────────────────────────────────
+        create_depth_resources(impl, impl->width, impl->height);
+
 
         // ────── return ───────────────────────────────────────────────────────
         Device out{};
@@ -313,17 +380,28 @@ namespace wz::gpu::dx12
 
         impl->cmd->ResourceBarrier(1, &barrier);
 
-        // ────── RTV BINDING ─────────────────────────────────────────────
+        // ────── RTV + DSV BINDING ───────────────────────────────────────
         auto rtv_handle =
             impl->rtv_heap->GetCPUDescriptorHandleForHeapStart();
 
         rtv_handle.ptr += impl->frame_index * impl->rtv_stride;
 
+        // DSV is always bound when a depth resource exists.  Render programs
+        // that don't want depth simply set DepthMode::Disabled in their
+        // pipeline state — the bound DSV is then ignored.
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle{};
+        D3D12_CPU_DESCRIPTOR_HANDLE* dsv_ptr = nullptr;
+        if (impl->dsv_heap)
+        {
+            dsv_handle = impl->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+            dsv_ptr    = &dsv_handle;
+        }
+
         impl->cmd->OMSetRenderTargets(
             1,
             &rtv_handle,
             FALSE,
-            nullptr
+            dsv_ptr
         );
 
 
@@ -356,6 +434,18 @@ namespace wz::gpu::dx12
         float color[4] = { r, g, b, a };
 
         impl->cmd->ClearRenderTargetView(handle, color, 0, nullptr);
+
+        // Also clear the shared depth target (always to 1.0 = far plane).
+        // Programs that opt out of depth via DepthMode::Disabled simply
+        // ignore this; programs that use TestNoWrite / TestWrite see a
+        // freshly-cleared depth each frame.
+        if (impl->dsv_heap)
+        {
+            impl->cmd->ClearDepthStencilView(
+                impl->dsv_heap->GetCPUDescriptorHandleForHeapStart(),
+                D3D12_CLEAR_FLAG_DEPTH,
+                1.0f, 0, 0, nullptr);
+        }
     }
 
     void end_frame(Device& d)
@@ -534,6 +624,8 @@ namespace wz::gpu::dx12
             }
         }
 
+        release_depth_buffer(impl);
+        if (impl->dsv_heap) { impl->dsv_heap->Release(); impl->dsv_heap = nullptr; }
         if (impl->rtv_heap) { impl->rtv_heap->Release();  impl->rtv_heap = nullptr; }
         if (impl->cmd) { impl->cmd->Release();       impl->cmd = nullptr; }
         if (impl->allocator) { impl->allocator->Release(); impl->allocator = nullptr; }
@@ -585,7 +677,7 @@ namespace wz::gpu::dx12
         // 1. ensure GPU is idle
         wait_for_gpu(impl);
 
-        // 2. release current backbuffers
+        // 2. release current backbuffers + depth buffer
         for (int i = 0; i < 2; ++i)
         {
             if (impl->backbuffers[i])
@@ -594,6 +686,7 @@ namespace wz::gpu::dx12
                 impl->backbuffers[i] = nullptr;
             }
         }
+        release_depth_buffer(impl);
 
         // 3. resize swapchain buffers
         HRESULT hr = impl->swapchain->ResizeBuffers(
@@ -626,6 +719,9 @@ namespace wz::gpu::dx12
             impl->device->GetDescriptorHandleIncrementSize(
                 D3D12_DESCRIPTOR_HEAP_TYPE_RTV
             );
+
+        // 5. recreate depth buffer at the new size
+        create_depth_resources(impl, static_cast<UINT>(w), static_cast<UINT>(h));
     }
 
 

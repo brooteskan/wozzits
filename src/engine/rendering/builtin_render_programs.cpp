@@ -73,6 +73,18 @@ namespace wz::engine::rendering
             };
             return true;
 
+        case BuiltinRenderProgram::GaussianSplatTerrainCoverageDebug:
+            out = ShaderPairDesc{
+                .name = "gaussian_splat_terrain_coverage_debug",
+                .vertex_path = "shaders/gaussian_splat/gaussian_splat_terrain_coverage_vs.hlsl",
+                .pixel_path  = "shaders/gaussian_splat/gaussian_splat_terrain_coverage_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry  = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target  = "ps_5_0",
+            };
+            return true;
+
         case BuiltinRenderProgram::Count:
             break;
         }

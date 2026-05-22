@@ -405,6 +405,14 @@ namespace wz::gpu::dx12::internal
         return impl->splat_color_lod_settings;
     }
 
+    const wz::gpu::SplatCoverageSettings& get_coverage_settings(Device& device)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        assert(impl);
+
+        return impl->splat_coverage_settings;
+    }
+
     void update_sorted_indices(
         const DX12GaussianSplatCloudResource& cloud,
         std::span<const uint32_t>             sorted_indices)

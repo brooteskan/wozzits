@@ -31,6 +31,7 @@ namespace wz::engine::assets
         ScalarFieldDebug,
         GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
         GaussianSplatNeighborhoodColorBlend,  // SplatPull + LOD color blend modes
+        GaussianSplatTerrainCoverageDebug,    // SplatPull + coverage modes (depth-writing)
 
         Count  // sentinel — keep last
     };

@@ -15,6 +15,7 @@
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
 #include <gpu/gaussian_splat_color_lod_settings.h>
+#include <gpu/gaussian_splat_coverage_settings.h>
 
 
 namespace wz::gpu::dx12
@@ -67,6 +68,12 @@ namespace wz::gpu::dx12
         ID3D12Resource* backbuffers[2] = {};
         UINT rtv_stride = 0;
 
+        // depth target (single shared D32_FLOAT for all programs that opt in
+        // via DepthMode::TestNoWrite / DepthMode::TestWrite).  Created at
+        // device init, recreated on resize, released at shutdown.
+        ID3D12DescriptorHeap* dsv_heap = nullptr;
+        ID3D12Resource*       depth_buffer = nullptr;
+
         UINT frame_index = 0;
 
         HWND hwnd = nullptr;
@@ -99,6 +106,11 @@ namespace wz::gpu::dx12
         // toolhost via wz::gpu::set_splat_color_lod_settings(); consumed
         // by the dx12 submit path when binding NeighborhoodColorBlend.
         wz::gpu::SplatColorLODSettings splat_color_lod_settings{};
+
+        // Scene-wide splat coverage settings.  Pushed per-frame by the
+        // toolhost via wz::gpu::set_splat_coverage_settings(); consumed
+        // by the dx12 submit path when binding GaussianSplatTerrainCoverageDebug.
+        wz::gpu::SplatCoverageSettings splat_coverage_settings{};
     };
 
 }

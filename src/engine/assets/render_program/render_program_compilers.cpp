@@ -147,6 +147,51 @@ namespace wz::engine::assets::internal
                 };
                 return true;
 
+            case BuiltinRenderProgram::GaussianSplatTerrainCoverageDebug:
+                // Same SplatPull binding as the other splat programs but
+                // Opaque blend + TestWrite depth so coverage modes 1/2/3
+                // can write a depth signal that participates in occlusion
+                // of subsequent draws.  Mode 0 (TransparentBlend) is still
+                // selectable but the lack of alpha blending under this
+                // state means it shows visible halos — kept for debug
+                // comparison only.
+                out.binding_model        = RenderBindingModel::SplatPull;
+                out.topology             = RenderPrimitiveTopology::TriangleStrip;
+                out.default_domain       = RenderDomain::Splat;
+                out.default_policy_flags = RenderPolicy_None;
+                out.input_layout = InputLayoutKind::None;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    // world[16] + view_proj[16] + viewport_and_size[4]
+                    // + reserved[12] (matches NeighborhoodColorBlend layout)
+                    // + coverage_params[4] = 52 dwords total
+                    .value_count     = 52,
+                }};
+                out.descriptor_bindings = {
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SplatCloud,
+                        .shader_register  = 0,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Vertex,
+                        .semantic         = DescriptorSemantic::SortedSplatIndices,
+                        .shader_register  = 1,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                };
+                return true;
+
             case BuiltinRenderProgram::Count:
                 return false;
             }
