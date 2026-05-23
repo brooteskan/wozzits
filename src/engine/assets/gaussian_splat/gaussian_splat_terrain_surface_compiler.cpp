@@ -334,7 +334,7 @@ namespace wz::engine::assets
                     ref.z - N_hat.z * ref_dot_n,
                 };
                 const Vec3f Xs_hat = normalize3(Xs_raw);
-                const Vec3f Zs_hat = cross3(N_hat, Xs_hat);
+                const Vec3f Zs_hat = cross3(Xs_hat, N_hat);
 
                 const Quat q = quat_from_frame(Xs_hat, N_hat, Zs_hat);
 
