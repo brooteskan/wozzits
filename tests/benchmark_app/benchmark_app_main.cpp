@@ -2,7 +2,7 @@
 //
 // Sample scene: a static grid of 1000 opaque objects, arranged at z=8.
 // Press ESC to toggle flying-camera navigation.
-// Press BKSPC to quit.
+// Press BKSPC to quit (only while nav is active).
 
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>

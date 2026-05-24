@@ -14,6 +14,7 @@
 // ix inner); central differences with one-sided fallbacks at boundaries.
 
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_terrain_math.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -28,134 +29,8 @@
 
 namespace wz::engine::assets
 {
-    namespace
-    {
-        constexpr float kSH_C0 = 0.28209479177387814f;
-
-        struct Vec3f
-        {
-            float x, y, z;
-        };
-
-        inline float dot3(Vec3f a, Vec3f b) noexcept
-        {
-            return a.x * b.x + a.y * b.y + a.z * b.z;
-        }
-
-        inline Vec3f cross3(Vec3f a, Vec3f b) noexcept
-        {
-            return Vec3f{
-                a.y * b.z - a.z * b.y,
-                a.z * b.x - a.x * b.z,
-                a.x * b.y - a.y * b.x,
-            };
-        }
-
-        inline float length3(Vec3f a) noexcept
-        {
-            return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-        }
-
-        inline Vec3f normalize3(Vec3f a) noexcept
-        {
-            const float len = length3(a);
-            if (len <= 1e-12f)
-                return Vec3f{ 0.0f, 1.0f, 0.0f };
-            const float inv = 1.0f / len;
-            return Vec3f{ a.x * inv, a.y * inv, a.z * inv };
-        }
-
-        // Central-difference derivative of h(ix, iz) along iz=v.
-        // Uses one-sided difference at boundaries (no wrap-around).
-        // Returns dh per unit cell of u (so the "/2" matches central).
-        inline float dh_du(
-            const ScalarFieldData& field, uint32_t ix, uint32_t iz) noexcept
-        {
-            const uint32_t W = field.width;
-            if (ix == 0)
-                return field.at(1, iz) - field.at(0, iz);
-            if (ix + 1 >= W)
-                return field.at(W - 1, iz) - field.at(W - 2, iz);
-            return 0.5f * (field.at(ix + 1, iz) - field.at(ix - 1, iz));
-        }
-
-        inline float dh_dv(
-            const ScalarFieldData& field, uint32_t ix, uint32_t iz) noexcept
-        {
-            const uint32_t H = field.height;
-            if (iz == 0)
-                return field.at(ix, 1) - field.at(ix, 0);
-            if (iz + 1 >= H)
-                return field.at(ix, H - 1) - field.at(ix, H - 2);
-            return 0.5f * (field.at(ix, iz + 1) - field.at(ix, iz - 1));
-        }
-
-        // Build a quaternion (w, x, y, z) that rotates the standard basis
-        // (Xhat, Yhat, Zhat) to the given orthonormal frame (Xs, Ys, Zs)
-        // expressed as world-space directions.  Standard "matrix → quaternion"
-        // conversion with sign-stable branch selection.
-        struct Quat
-        {
-            float w, x, y, z;
-        };
-
-        inline Quat quat_from_frame(Vec3f Xs, Vec3f Ys, Vec3f Zs) noexcept
-        {
-            // Rotation matrix columns are (Xs, Ys, Zs).
-            const float m00 = Xs.x, m01 = Ys.x, m02 = Zs.x;
-            const float m10 = Xs.y, m11 = Ys.y, m12 = Zs.y;
-            const float m20 = Xs.z, m21 = Ys.z, m22 = Zs.z;
-
-            const float tr = m00 + m11 + m22;
-            Quat q{};
-
-            if (tr > 0.0f)
-            {
-                const float S = std::sqrt(tr + 1.0f) * 2.0f;
-                q.w = 0.25f * S;
-                q.x = (m21 - m12) / S;
-                q.y = (m02 - m20) / S;
-                q.z = (m10 - m01) / S;
-            }
-            else if (m00 > m11 && m00 > m22)
-            {
-                const float S = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
-                q.w = (m21 - m12) / S;
-                q.x = 0.25f * S;
-                q.y = (m01 + m10) / S;
-                q.z = (m02 + m20) / S;
-            }
-            else if (m11 > m22)
-            {
-                const float S = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
-                q.w = (m02 - m20) / S;
-                q.x = (m01 + m10) / S;
-                q.y = 0.25f * S;
-                q.z = (m12 + m21) / S;
-            }
-            else
-            {
-                const float S = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
-                q.w = (m10 - m01) / S;
-                q.x = (m02 + m20) / S;
-                q.y = (m12 + m21) / S;
-                q.z = 0.25f * S;
-            }
-
-            // Normalize for safety.
-            const float len = std::sqrt(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
-            if (len > 1e-12f)
-            {
-                const float inv = 1.0f / len;
-                q.w *= inv; q.x *= inv; q.y *= inv; q.z *= inv;
-            }
-            else
-            {
-                q = Quat{ 1.0f, 0.0f, 0.0f, 0.0f };
-            }
-            return q;
-        }
-    }
+    // Import shared terrain math into this TU's namespace for brevity.
+    using namespace terrain_math;
 
 
     // ─── Compiler implementation ─────────────────────────────────────────────

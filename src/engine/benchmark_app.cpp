@@ -223,7 +223,11 @@ namespace wz::bench
         {
             auto* d = static_cast<FrameData*>(ctx.frame_user);
 
-            if (d->fctx->input.keyboard.pressed[VK_BACK])
+            // Only allow Backspace-to-quit while scene navigation is active.
+            // When navigation is off the user is interacting with ImGui panels
+            // and stray key presses should not kill the app.
+            if (d->app->navigation_active
+                && d->fctx->input.keyboard.pressed[VK_BACK])
                 d->ctx->running = false;
         }
 
