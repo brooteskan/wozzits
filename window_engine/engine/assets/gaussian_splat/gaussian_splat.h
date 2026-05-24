@@ -101,6 +101,27 @@ namespace wz::engine::assets
         float flat_luminance  = 0.55f;
         float steep_luminance = 0.30f;
 
+        // ── Slope-stretch clamp ──
+        //
+        // Per-splat tangent-plane scale comes from the heightfield tangent
+        // magnitude |Tu|, |Tv|.  On steep slopes |Tu| >> step_x because
+        // the height component dominates.  This is geometrically correct
+        // (the adjacent cell IS further away along the slope) but for
+        // terrain rendering it produces extremely elongated discs at
+        // borders, creases, and any feature with a steep local gradient.
+        //
+        // max_slope_stretch clamps |Tu| to step_x * max_slope_stretch
+        // (and likewise for |Tv| / step_z).  The rotation quaternion
+        // already aligns the disc to the surface, so clamped scales still
+        // produce a correctly-oriented disc — it just doesn't extend as
+        // far along extreme slopes.
+        //
+        //   1.0 = grid-only (all discs same size, no slope stretch)
+        //   2.0 = moderate; covers slopes up to ~63°
+        //   4.0 = generous; covers slopes up to ~76°
+        //  10.0 = nearly unlimited
+        float max_slope_stretch = 2.0f;
+
         // ── Normal smoothing ──
         //
         // When enabled, the per-cell raw finite-difference normals are
