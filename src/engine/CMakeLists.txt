@@ -37,6 +37,7 @@ target_sources(window_engine PRIVATE
     assets/mesh/procedural_mesh.cpp
 
     assets/gaussian_splat/gaussian_splat.cpp
+    assets/gaussian_splat/gaussian_splat_decode.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp
     assets/gaussian_splat/gaussian_splat_terrain_surface_compiler.cpp
     assets/gaussian_splat/terrain_splat_from_gaea_r32_compiler.cpp
@@ -45,6 +46,7 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/gaussian_splat_color_lod.cpp
     assets/gaussian_splat/gaussian_splat_color_lod_compiler.cpp
     assets/gaussian_splat/gaussian_splat_terrain_recipe_compiler.cpp
+    assets/gaussian_splat/terrain_reconstruction.cpp
 
     assets/gaussian_splat_asset_module.cpp
     assets/gaussian_splat_color_lod_asset_module.cpp
