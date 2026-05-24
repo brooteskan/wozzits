@@ -365,6 +365,7 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat gaussian_splat_color_lod_compiler)
     rs_add_test_group(asset_gaussian_splat terrain_splat_from_gaea_r32_compiler)
     rs_add_test_group(asset_gaussian_splat terrain_normal_smoothing)
+    rs_add_test_group(asset_gaussian_splat terrain_surface_frame_handedness)
 
     rs_add_test_group(gpu gpu_mesh)
     rs_add_test_group(gpu dx12_descriptor_allocator)

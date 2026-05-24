@@ -216,6 +216,11 @@ namespace wz::engine::assets
         const float overlap = desc.overlap_factor;
         const float N_f = static_cast<float>(N);
 
+        // Slope-stretch clamp: cap tangent magnitudes to prevent
+        // extreme disc elongation on steep slopes and at borders.
+        const float max_Lu = step_x * std::max(desc.max_slope_stretch, 1.0f);
+        const float max_Lv = step_z * std::max(desc.max_slope_stretch, 1.0f);
+
         // ── Pre-compute raw per-cell normals when smoothing is enabled ──
         // The smoothing pass needs neighbour normals from the FULL grid
         // regardless of subsample_step, so we build a dense raw-normal map
@@ -319,19 +324,21 @@ namespace wz::engine::assets
                 }
 
                 // ── Build orthonormal surface frame from N_hat ──
-                // Pick a stable reference axis and orthogonalise to N_hat.
-                // When N_hat is close to world X, fall back to world Z so
-                // the projection doesn't collapse.
-                const Vec3f world_x{ 1.0f, 0.0f, 0.0f };
-                const Vec3f world_z{ 0.0f, 0.0f, 1.0f };
-                const Vec3f ref = (std::abs(N_hat.x) < 0.9f) ? world_x : world_z;
-
-                const float ref_dot_n =
-                    ref.x * N_hat.x + ref.y * N_hat.y + ref.z * N_hat.z;
+                // Align the frame's X axis with the heightfield U tangent
+                // projected into the tangent plane defined by N_hat.  This
+                // ensures scale_u is applied along the actual slope
+                // direction rather than an arbitrary perpendicular to the
+                // normal.  With smoothed normals N_hat may not be exactly
+                // perpendicular to the raw Tu; the projection handles that.
+                //
+                // Right-handed completion: Z = cross(X, Y) so that
+                // quat_from_frame receives a proper rotation matrix with
+                // determinant +1.
+                const float tu_dot_n = dot3(Tu, N_hat);
                 const Vec3f Xs_raw{
-                    ref.x - N_hat.x * ref_dot_n,
-                    ref.y - N_hat.y * ref_dot_n,
-                    ref.z - N_hat.z * ref_dot_n,
+                    Tu.x - N_hat.x * tu_dot_n,
+                    Tu.y - N_hat.y * tu_dot_n,
+                    Tu.z - N_hat.z * tu_dot_n,
                 };
                 const Vec3f Xs_hat = normalize3(Xs_raw);
                 const Vec3f Zs_hat = cross3(Xs_hat, N_hat);
@@ -342,9 +349,13 @@ namespace wz::engine::assets
                 // Tangent extents grow with both |Tu|/|Tv| (carrying slope
                 // stretch automatically) and the subsample factor (so a
                 // subsampled grid still covers the surface).
-                const float s_u = std::max(Lu * overlap * N_f, 1e-6f);
-                const float s_v = std::max(Lv * overlap * N_f, 1e-6f);
-                const float s_n = std::max(thickness,           1e-6f);
+                // Clamp tangent magnitudes to prevent extreme elongation on
+                // steep slopes and at heightfield borders.
+                const float Lu_c = std::min(Lu, max_Lu);
+                const float Lv_c = std::min(Lv, max_Lv);
+                const float s_u = std::max(Lu_c * overlap * N_f, 1e-6f);
+                const float s_v = std::max(Lv_c * overlap * N_f, 1e-6f);
+                const float s_n = std::max(thickness,             1e-6f);
 
                 const float log_s_u = std::log(s_u);
                 const float log_s_v = std::log(s_v);
