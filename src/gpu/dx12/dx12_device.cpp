@@ -743,6 +743,13 @@ namespace wz::gpu::dx12::internal
         return handle;
     }
 
+    D3D12_CPU_DESCRIPTOR_HANDLE get_dsv(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        assert(impl && impl->dsv_heap);
+        return impl->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+    }
+
     UINT get_width(Device& d)
     {
         auto* impl = static_cast<DX12Device*>(d.impl);

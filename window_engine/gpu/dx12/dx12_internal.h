@@ -34,6 +34,7 @@ namespace wz::gpu::dx12::internal
     UINT get_backbuffer_count();
     ID3D12CommandQueue* get_command_queue(Device& d);
     D3D12_CPU_DESCRIPTOR_HANDLE get_current_rtv(Device& d);
+    D3D12_CPU_DESCRIPTOR_HANDLE get_dsv(Device& d);
     UINT get_width(Device& d);
     UINT get_height(Device& d);
 
