@@ -17,6 +17,7 @@ target_sources(window_engine PRIVATE
     assets/scalar_field_asset_module.cpp
     assets/scalar_field/scalar_field.cpp
     assets/scalar_field/scalar_field_compilers.cpp
+    assets/scalar_field/scalar_field_set.cpp
 
     assets/csv/csv.cpp
     assets/csv/csv_compilers.cpp
@@ -43,6 +44,7 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/gaussian_splat_ply_importer.cpp
     assets/gaussian_splat/gaussian_splat_color_lod.cpp
     assets/gaussian_splat/gaussian_splat_color_lod_compiler.cpp
+    assets/gaussian_splat/gaussian_splat_terrain_recipe_compiler.cpp
 
     assets/gaussian_splat_asset_module.cpp
     assets/gaussian_splat_color_lod_asset_module.cpp

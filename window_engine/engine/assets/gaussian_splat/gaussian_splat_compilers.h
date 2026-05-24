@@ -4,7 +4,9 @@
 
 #include <asset/compiler.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_terrain_recipe.h>
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/scalar_field/scalar_field_set.h>
 #include <logging/logger.h>
 
 namespace wz::engine::assets
@@ -18,6 +20,20 @@ namespace wz::engine::assets
     GaussianSplatCloudData make_terrain_surface_splat_cloud(
         const GaussianSplatTerrainSurfaceFromHeightFieldCompileDesc& desc,
         const ScalarFieldData& field);
+
+    // ─── Multi-field recipe compile ────────────────────────────────────────
+    //
+    // Wrapper: calls make_terrain_surface_splat_cloud for geometry using the
+    // recipe's height field, then patches splat colors according to the
+    // recipe's color mode and field mappings.
+    //
+    // Returns an invalid (empty) cloud on validation failure.  On success
+    // the validation result is ok=true; on failure ok=false with an error
+    // message describing what went wrong.
+    GaussianSplatCloudData make_terrain_splat_cloud_from_recipe(
+        const TerrainSplatFieldRecipe& recipe,
+        const ScalarFieldSet& fields,
+        TerrainSplatRecipeValidation* out_validation = nullptr);
 }
 
 namespace wz::engine::assets::internal
