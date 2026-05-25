@@ -12,11 +12,17 @@
 // thresholded coverage signal that participates in the depth buffer.
 
 #include <gpu/gpu.h>
+#include <engine/assets/gaussian_splat/terrain_coverage_kernel.h>
 
 #include <cstdint>
 
 namespace wz::gpu
 {
+    // Import the canonical kernel mode enum from the asset layer so that
+    // existing code referencing wz::gpu::TerrainCoverageKernelMode
+    // continues to compile without changes.
+    using wz::engine::assets::TerrainCoverageKernelMode;
+
     enum class SplatCoverageMode : uint32_t
     {
         // Reference / debug: current 3DGS-style soft Gaussian alpha blend.
@@ -39,34 +45,6 @@ namespace wz::gpu
         // inside.  Coarsest baseline — useful for visually verifying the
         // disc geometry before tuning Gaussian thresholds.
         OpaqueDisc = 3,
-    };
-
-    // Kernel: maps normalized splat-local radius r ∈ [0, ~quad_extent] to a
-    // coverage value in [0, 1].  Mode selects the shape; mode parameters
-    // (inner_radius / outer_radius / gaussian_falloff) tune it.  The
-    // coverage value then feeds whichever SplatCoverageMode is active —
-    // CoverageDiscard cuts at `threshold`, DitheredCoverage compares to a
-    // stable hash, TransparentBlend uses it as alpha.
-    enum class TerrainCoverageKernelMode : uint32_t
-    {
-        // Gaussian falloff: coverage = exp(-0.5 * r² * gaussian_falloff).
-        // Reference behaviour matching the original 3DGS PS.
-        Gaussian = 0,
-
-        // Smoothstep disc: coverage = 1 - smoothstep(inner_radius, outer_radius, r).
-        // Full interior, controlled soft edge.  Best default for terrain —
-        // gives connected surface coverage between neighbouring splats
-        // instead of the "isolated dots" look the Gaussian produces close-up.
-        SmoothDisc = 1,
-
-        // Polynomial disc: coverage = saturate(1 - r_norm²)².
-        // Cheap, smooth, no sharp edge.  Similar to SmoothDisc with
-        // inner_radius=0 — full interior with quadratic falloff.
-        PolynomialDisc = 2,
-
-        // Hard unit disc: coverage = 1 if r_norm ≤ 1 else 0.
-        // Baseline / debug — confirms disc geometry without kernel tuning.
-        HardDisc = 3,
     };
 
     // Optional debug visualisation overrides for the coverage PS.  When

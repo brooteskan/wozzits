@@ -1,5 +1,5 @@
 #include <engine/assets/gaussian_splat/terrain_reconstruction.h>
-#include <gpu/terrain_coverage_kernel.h>
+#include <engine/assets/gaussian_splat/terrain_coverage_kernel.h>
 
 #include <algorithm>
 #include <cmath>
@@ -59,7 +59,7 @@ namespace wz::engine::assets
 
         // Kernel cutoff radius in normalized space.
         const float cutoff_r =
-            (desc.kernel_mode == wz::gpu::TerrainCoverageKernelMode::Gaussian)
+            (desc.kernel_mode == TerrainCoverageKernelMode::Gaussian)
             ? std::sqrt(-std::log(0.01f)
                   / std::max(desc.gaussian_falloff, 0.01f))
             : std::max(desc.outer_radius, 1.0f);
@@ -96,7 +96,7 @@ namespace wz::engine::assets
                     const float r_norm =
                         std::sqrt(dx * dx + dz * dz) * desc.radius_scale;
 
-                    const float w = wz::gpu::evaluate_coverage_kernel(
+                    const float w = evaluate_coverage_kernel(
                         desc.kernel_mode, r_norm,
                         desc.inner_radius, desc.outer_radius,
                         desc.gaussian_falloff) * s.opacity;

@@ -12,7 +12,7 @@
 // This module is independent of the GPU backend and DX12 — it produces
 // plain vertex/index arrays that the caller uploads however it likes.
 
-#include <gpu/gaussian_splat_coverage_settings.h>  // TerrainCoverageKernelMode
+#include <engine/assets/gaussian_splat/terrain_coverage_kernel.h>
 
 #include <cstdint>
 #include <span>
@@ -57,8 +57,8 @@ namespace wz::engine::assets
         float domain_min_z = 0, domain_max_z = 0;
 
         // Coverage kernel parameters.
-        wz::gpu::TerrainCoverageKernelMode kernel_mode =
-            wz::gpu::TerrainCoverageKernelMode::SmoothDisc;
+        TerrainCoverageKernelMode kernel_mode =
+            TerrainCoverageKernelMode::SmoothDisc;
         float radius_scale     = 1.0f;
         float inner_radius     = 0.65f;
         float outer_radius     = 1.0f;

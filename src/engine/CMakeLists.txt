@@ -47,6 +47,7 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/gaussian_splat_color_lod_compiler.cpp
     assets/gaussian_splat/gaussian_splat_terrain_recipe_compiler.cpp
     assets/gaussian_splat/terrain_reconstruction.cpp
+    assets/gaussian_splat/terrain_splat_compile_service.cpp
 
     assets/gaussian_splat_asset_module.cpp
     assets/gaussian_splat_color_lod_asset_module.cpp

@@ -370,6 +370,8 @@ if(SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat terrain_surface_coverage)
     rs_add_test_group(asset_gaussian_splat terrain_splat_field_recipe)
     rs_add_test_group(asset_gaussian_splat terrain_splat_geometry_fields)
+    rs_add_test_group(asset_gaussian_splat gaussian_splat_decode)
+    rs_add_test_group(asset_gaussian_splat terrain_reconstruction)
 
     rs_add_test_group(gpu gpu_mesh)
     rs_add_test_group(gpu dx12_descriptor_allocator)
