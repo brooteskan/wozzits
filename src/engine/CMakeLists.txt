@@ -49,6 +49,8 @@ target_sources(window_engine PRIVATE
     assets/gaussian_splat/terrain_reconstruction.cpp
     assets/gaussian_splat/terrain_splat_compile_service.cpp
 
+    assets/landscape/landscape_document_json.cpp
+
     assets/gaussian_splat_asset_module.cpp
     assets/gaussian_splat_color_lod_asset_module.cpp
 
