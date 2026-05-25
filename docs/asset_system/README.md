@@ -92,15 +92,47 @@ selects which mesh primitive inside the GLB to compile (default 0).
 |---|---|---|---|---|
 | PLY file import | `kGaussianSplatFromPLYSchema` | `0x000500` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_from_ply()` |
 | Scalar-field-derived cloud | `kGaussianSplatFromFieldSchema` | `0x000501` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_from_scalar_field()` |
-| Procedural/debug cloud | `kProceduralGaussianSplatCloudSchema` | `0x000502` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_procedural_cloud()` |
+| Procedural/debug cloud | `kProceduralGaussianSplatCloudSchema` | `0x000505` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_procedural_cloud()` |
+| Terrain surface from height field | `kGaussianSplatTerrainSurfaceFromHeightFieldSchema` | `0x000503` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_terrain_surface_from_height_field()` |
+| Gaea R32 + JSON sidecar recipe | `kTerrainSplatFromGaeaR32Schema` | `0x000504` | `kAssetTypeGaussianSplatCloud` (131) | `GaussianSplatAssetModule::create_terrain_splat_from_gaea_r32()` |
 
-All three produce `GaussianSplatCloudData` in `GaussianSplatCloudTable`.
+All five produce `GaussianSplatCloudData` in `GaussianSplatCloudTable`.
 The PLY importer depends on a `kRawFileSchema` carrier.
 The scalar-field variant depends on a compiled `kAssetTypeScalarField`.
+The terrain-surface variant depends on a compiled `kAssetTypeScalarField` and
+produces anisotropic, surface-tangent-aligned splats treating heightmap values as
+raw world elevations (distinct from the simple scalar-field debug heightmap splatter).
+The Gaea R32 recipe depends on two `kRawFileSchema` carriers (.r32 bytes + .json
+sidecar); it builds a transient `ScalarFieldData` internally and does not expose an
+intermediate scalar field asset.
 
 `GaussianSplatCloudData::splats` is the ordered list that defines upload index order.
 The `cloud_local_index` field on `SplatDescriptor` / `SplatPrimitive` in
 wozzits-scene-render must match position in this vector (see scene-render docs).
+
+---
+
+## Gaussian Splat Color LOD
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Color LOD from cloud | `kGaussianSplatColorLODSchema` | `0x000502` | `kAssetTypeGaussianSplatColorLOD` (4114) | `GaussianSplatColorLODAssetModule::create_from_cloud()` |
+
+A derived, parallel-array companion to a `GaussianSplatCloudData`. The compiler
+runs a uniform-grid neighbor search over the source cloud and produces per-splat
+prefiltered neighborhood color (linear RGB) and confidence (0 = high local
+variance, keep detail; 1 = low variance, safe to blend toward neighborhood color).
+
+`GaussianSplatColorLODData` is stored in `GaussianSplatColorLODTable`.
+Index `i` of the LOD arrays corresponds to index `i` of the source cloud's splats
+vector. The compile descriptor (`GaussianSplatColorLODCompileDesc`) controls
+neighbor radius, Gaussian sigma, self-inclusion, opacity weighting, and the
+variance-to-confidence gain. All compile parameters are part of the asset key
+identity.
+
+The LOD data is a CPU-side derived asset; GPU packing happens later when the
+renderable upload path reads the optional `companion_asset` on `RenderableAssetData`
+and packs LOD color + confidence into the GPU vertex layout.
 
 ---
 
@@ -117,13 +149,23 @@ render program and domain, producing an entry in `RenderableAssetTable`.
 
 All three produce `RenderableAssetData` in `RenderableAssetTable`.
 `RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,
-policy flags, and spatial bounds.
+policy flags, spatial bounds, and an optional `companion_asset` key (used to attach
+a `GaussianSplatColorLOD` to a splat renderable).
+
+`GaussianSplatDebugRenderableDesc` accepts an optional `color_lod` field
+(`GaussianSplatColorLODAsset`). When set, the renderable's `companion_asset` is
+populated, and the GPU upload path packs per-splat neighborhood color + confidence
+into the structured buffer alongside the base splat data. When unset, the LOD
+slot falls back to base color with confidence = 0 (no behavioral change versus the
+pre-LOD renderer).
 
 `BuiltinRenderProgram` is an enum in `engine/assets/renderable/renderable.h`:
 - `MeshWireframeDebug` → `RenderDomain::Debug`
 - `GaussianSplatDebug` → `RenderDomain::Splat`
 - `ScalarFieldDebug` → `RenderDomain::Debug`
 - `GaussianSplatPullDebug` → pull-based splat path (no IA, t0 SRV)
+- `GaussianSplatNeighborhoodColorBlend` → pull-based + LOD color blend modes
+- `GaussianSplatTerrainCoverageDebug` → pull-based + coverage modes (depth-writing)
 
 ---
 
@@ -167,6 +209,91 @@ statistics with a deterministic `summary_text` per bucket.
 
 ---
 
+## Terrain Support Types
+
+These are not asset capabilities (they have no schema ID and are not registered
+with `AssetSystem`), but they are key types in the terrain splat pipeline that
+live in the asset layer.
+
+### ScalarFieldSet
+
+**Header:** `engine/assets/scalar_field/scalar_field_set.h`
+
+A named, co-registered collection of `ScalarFieldData` objects. All fields in a
+set share the same (width, height, depth) dimensions, validated at insertion time.
+Used by the multi-field terrain recipe compiler to resolve named field references
+(e.g. "height", "curvature", "normal_x") to their data.
+
+### TerrainSplatFieldRecipe
+
+**Header:** `engine/assets/gaussian_splat/gaussian_splat_terrain_recipe.h`
+
+A recipe struct describing how a `ScalarFieldSet` maps to a `GaussianSplatCloud`.
+Separates geometry (height field name + compile desc) from color (three modes:
+slope/height debug, RGB fields, or grayscale field, each using `FieldMap` routing),
+from optional imported normals (`NormalFieldConfig`), curvature
+(`CurvatureFieldConfig`), and peaks (`PeaksFieldConfig`). This is the primary
+configuration for multi-field terrain rendering.
+
+### TerrainCoverageKernel
+
+**Header:** `engine/assets/gaussian_splat/terrain_coverage_kernel.h`
+
+Four kernel modes (Gaussian, SmoothDisc, PolynomialDisc, HardDisc) that define
+how a normalized splat-local radius maps to a coverage weight in [0,1]. Used by
+CPU-side terrain reconstruction, GPU coverage shaders, and toolhost UI. The GPU
+shader code mirrors these formulas.
+
+### TerrainReconstruction
+
+**Header:** `engine/assets/gaussian_splat/terrain_reconstruction.h`
+
+CPU-side terrain surface reconstruction from Gaussian splats. Treats splats as
+radial basis functions over the (x, z) domain and evaluates weighted-average
+height, color, and normal on a regular grid. Produces `TerrainReconVertex` /
+index arrays for GPU upload as a triangle mesh. Independent of the GPU backend.
+
+### TerrainSplatCompileService
+
+**Header:** `engine/assets/gaussian_splat/terrain_splat_compile_service.h`
+
+Pure CPU compilation service wrapping the two compile paths (simple heightfield
+and multi-field recipe) plus optional color-LOD pass into a single
+`compile_terrain_splat_surface()` call. Value-type input/output, no GPU, no
+asset system, no side effects. Used by the toolhost for live tuning recompiles.
+
+### DecodedGaussianSplat
+
+**Header:** `engine/assets/gaussian_splat/gaussian_splat_decode.h`
+
+CPU-side decode of a `GaussianSplat` from its stored encoding (log-scale,
+logit-opacity, SH-DC color, PLY-convention quaternion) into world-space values.
+Centralizes the decode steps previously duplicated across the GPU upload path,
+terrain compiler, and toolhost.
+
+### TerrainSplatPresets
+
+**Header:** `engine/assets/gaussian_splat/gaussian_splat_terrain_preset.h`
+
+Named bundles of known-good parameter values for terrain surface compilation
+(`TerrainSplatSurfacePreset`) and coverage rendering
+(`TerrainSplatCoveragePreset`). The `kSmoothTerrainSurface` and
+`kSmoothTerrainCoverage` presets capture the baseline configuration for
+continuous terrain surface rendering.
+
+### LandscapeDocument
+
+**Header:** `engine/assets/landscape/landscape_document.h`
+
+A portable, versioned JSON sidecar (`.wzlandscape.json`) that captures the
+user-authored configuration for a terrain surface. This is a recipe document, not
+a baked asset: it stores source references (field file paths and formats),
+compile descriptors (`TerrainSplatFieldRecipe`), render settings (coverage,
+field accumulation, surface reconstruction, LOD, density), and toolhost
+preview state. Serialized via yyjson in `landscape_document_json.cpp`.
+
+---
+
 ## Summary Count
 
 | Category | Implemented capabilities |
@@ -175,11 +302,12 @@ statistics with a deterministic `summary_text` per bucket.
 | Shaders / render programs | 2 |
 | Scalar fields | 2 |
 | Meshes | 4 |
-| Gaussian splat clouds | 3 |
+| Gaussian splat clouds | 5 |
+| Gaussian splat color LOD | 1 |
 | Renderables | 3 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **28** |
+| **Total** | **31** |
 
 ---
 

@@ -245,8 +245,12 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000403ull
     };
 
+    // Procedural / debug Gaussian splat cloud.
+    // NOTE: was 0x000502 until that value was reassigned to
+    // kGaussianSplatColorLODSchema.  Moved to 0x000505 to resolve the
+    // collision.
     inline constexpr wz::asset::SchemaID kProceduralGaussianSplatCloudSchema{
-    0xF11E'CA55'E7'000502ull
+    0xF11E'CA55'E7'000505ull
     };
 
     inline constexpr wz::asset::SchemaID kInlineDataTableSchema{

@@ -30,7 +30,7 @@ captures:
 - A `ShaderPairAsset` reference (vertex + pixel shader keys)
 
 The `BuiltinRenderProgram` enum drives which PSO the backend ultimately creates.
-Four variants currently exist:
+Six variants currently exist:
 
 | Variant | Domain | Notes |
 |---------|--------|-------|
@@ -38,6 +38,8 @@ Four variants currently exist:
 | `GaussianSplatDebug` | `Splat` | Classic per-splat path |
 | `ScalarFieldDebug` | `Debug` | Field-to-geometry debug visualization |
 | `GaussianSplatPullDebug` | `Splat` | Pull-based path: no IA, reads t0 `StructuredBuffer<Splat>` at SRV slot 0 |
+| `GaussianSplatNeighborhoodColorBlend` | `Splat` | Pull-based + LOD color blend modes (distance/stride/confidence blending) |
+| `GaussianSplatTerrainCoverageDebug` | `Splat` | Pull-based + coverage kernel modes (depth-writing terrain surface) |
 
 ## Where this asset lives in the graph
 
@@ -72,6 +74,8 @@ enum class BuiltinRenderProgram : uint8_t {
     GaussianSplatDebug,
     ScalarFieldDebug,
     GaussianSplatPullDebug,
+    GaussianSplatNeighborhoodColorBlend,
+    GaussianSplatTerrainCoverageDebug,
     Count   // sentinel
 };
 
@@ -90,6 +94,7 @@ enum RenderPolicyFlags : uint32_t {
 struct RenderableAssetData {
     RenderableKind           kind{};
     wz::asset::AssetKey      source_asset{};
+    wz::asset::AssetKey      companion_asset{};  // optional (e.g. ColorLOD)
     BuiltinRenderProgram     program{};
     RenderDomain             domain{};
     uint32_t                 policy_flags = RenderPolicy_None;
@@ -158,10 +163,19 @@ window-engine.
 - `kBuiltinRenderProgramCount` = `static_cast<size_t>(BuiltinRenderProgram::Count)`.
   The submit path can index a fixed-size PSO table by `BuiltinRenderProgram` value.
 
-- The `GaussianSplatPullDebug` variant is reserved for the pull-based splat path
+- The `GaussianSplatPullDebug` variant is the base pull-based splat path
   (no input assembler, reads per-splat data from t0 `StructuredBuffer<Splat>` at
-  SRV slot 0). The sort index buffer is at t1. This is the intended production
-  path for the cloud splat pipeline.
+  SRV slot 0). The sort index buffer is at t1.
+
+- `GaussianSplatNeighborhoodColorBlend` extends the pull path with LOD color
+  blend modes. The shader reads packed neighborhood color + confidence from the
+  structured buffer and blends toward the neighborhood color based on
+  distance, stride, and per-splat confidence. Blend behavior is controlled by
+  `SplatColorLODSettings` pushed per-frame.
+
+- `GaussianSplatTerrainCoverageDebug` extends the pull path with terrain
+  coverage kernel evaluation (Gaussian, SmoothDisc, PolynomialDisc, HardDisc).
+  Writes depth, enabling use as a depth prepass for field accumulation rendering.
 
 - Backend PSO creation is intentionally decoupled: the asset records *what* is
   needed; a separate initialization step uses that record to create the actual
