@@ -95,19 +95,21 @@ namespace wz::engine::assets::test
                 library_->files().register_file_node(
                     r32_relative, kRawFileSchema, kAssetTypeRawFile);
 
-            const wz::asset::AssetKey sidecar_key =
-                library_->files().register_file_node(
-                    sidecar_relative, kRawFileSchema, kAssetTypeRawFile);
+            const auto sidecar_json =
+                library_->json().create_json({
+                    .name = "sidecar",
+                    .path = sidecar_relative,
+                });
 
             const auto recipe = library_->gaussian_splats()
                 .create_terrain_splat_from_gaea_r32({
-                    .name             = "test/terrain_recipe",
-                    .r32_file_key     = r32_key,
-                    .sidecar_file_key = sidecar_key,
+                    .name              = "test/terrain_recipe",
+                    .r32_file_key      = r32_key,
+                    .sidecar_json_key  = sidecar_json.output,
                 });
 
             EXPECT_TRUE(library_->commit());
-            library_->resolve_all();  // failures logged; not asserted here
+            library_->resolve_all();
 
             return recipe;
         }

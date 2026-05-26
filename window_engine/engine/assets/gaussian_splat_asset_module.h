@@ -51,8 +51,8 @@ namespace wz::engine::assets
     };
 
     // Terrain splat recipe bundling a Gaea .r32 file with a JSON sidecar.
-    // The asset system handles file I/O + JSON parsing inside the compiler;
-    // the toolhost just supplies the two paths (relative to resource_root).
+    // The .r32 dep is a raw file carrier; the sidecar must be a compiled
+    // JSONDocument (created via JSONAssetModule::create_json).
     //
     // The sidecar JSON carries world-space interpretation:
     //   { "height_scale": <float>,   // required
@@ -73,7 +73,7 @@ namespace wz::engine::assets
     {
         std::string         name;
         wz::asset::AssetKey r32_file_key{};       // from files().register_file_node(...)
-        wz::asset::AssetKey sidecar_file_key{};   // from files().register_file_node(...)
+        wz::asset::AssetKey sidecar_json_key{};   // from json().create_json(...).output
     };
 
     // Terrain-surface splat cloud from a 2D height field.

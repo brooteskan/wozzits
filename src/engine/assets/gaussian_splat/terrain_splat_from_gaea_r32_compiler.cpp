@@ -26,7 +26,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
-#include <external/json/json_parser.h>
+#include <engine/assets/json/json.h>
 #include <external/json/json_read_helpers.h>
 
 #include <algorithm>
@@ -52,33 +52,33 @@ namespace wz::engine::assets::internal
     void register_terrain_splat_from_gaea_r32_compiler(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        GaussianSplatCloudTable& cloud_table)
+        GaussianSplatCloudTable& cloud_table,
+        JSONTable& json_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainSplatFromGaeaR32Schema,
             .output_type  = kAssetTypeGaussianSplatCloud,
-            .compile = [&logger, &cloud_table](
+            .compile = [&logger, &cloud_table, &json_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+                std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
-                // ── 1. Validate dependency count + payloads ──
-                if (dep_nodes.size() != 2) {
+                // ── 1. Validate dependency count ──
+                // dep[0] = .r32 raw file bytes, dep[1] = compiled JSONDocument
+                if (dep_nodes.size() != 2 || dep_handles.size() != 2) {
                     logger.error(
-                        "terrain-splat recipe: expected 2 file deps "
-                        "(.r32 + .json), got "
+                        "terrain-splat recipe: expected 2 deps "
+                        "(.r32 + JSON document), got "
                         + std::to_string(dep_nodes.size()));
                     return compile_failed_node(input);
                 }
 
                 const auto* r32_bytes =
                     std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
-                const auto* json_bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[1].payload);
 
-                if (!r32_bytes || !json_bytes) {
+                if (!r32_bytes) {
                     logger.error(
-                        "terrain-splat recipe: deps missing byte payloads");
+                        "terrain-splat recipe: .r32 dep missing byte payload");
                     return compile_failed_node(input);
                 }
 
@@ -92,19 +92,19 @@ namespace wz::engine::assets::internal
                 }
                 const uint64_t sample_count = r32_bytes->size() / 4u;
 
-                // ── 3. Parse JSON sidecar ──
-                const auto parsed = wz::json::parse_json_bytes(*json_bytes);
-                if (!parsed.ok
-                    || !parsed.document.root
-                    || parsed.document.root->kind
+                // ── 3. Read pre-compiled JSON sidecar from JSONTable ──
+                const JSONData* json_data = json_table.get(dep_handles[1]);
+                if (!json_data
+                    || !json_data->document.root
+                    || json_data->document.root->kind
                         != wz::json::JSONValueKind::Object)
                 {
                     logger.error(
-                        "terrain-splat recipe: failed to parse JSON sidecar: "
-                        + parsed.error.message);
+                        "terrain-splat recipe: JSON sidecar dependency "
+                        "is invalid or not an object");
                     return compile_failed_node(input);
                 }
-                const wz::json::JSONValue& json = *parsed.document.root;
+                const wz::json::JSONValue& json = *json_data->document.root;
 
                 // ── 4. Required + optional world parameters ──
                 auto height_scale_v = read_number(json, "height_scale");

@@ -222,15 +222,15 @@ namespace wz::engine::assets
                 "terrain-splat recipe: empty .r32 file key: " + desc.name);
             return out;
         }
-        if (desc.sidecar_file_key == wz::asset::AssetKey{}) {
+        if (desc.sidecar_json_key == wz::asset::AssetKey{}) {
             logger_.error(
-                "terrain-splat recipe: empty sidecar JSON file key: " + desc.name);
+                "terrain-splat recipe: empty sidecar JSON document key: " + desc.name);
             return out;
         }
 
         const wz::asset::AssetKey key =
             make_terrain_splat_from_gaea_r32_key(
-                desc.r32_file_key, desc.sidecar_file_key);
+                desc.r32_file_key, desc.sidecar_json_key);
 
         wz::asset::AssetNode node{};
         node.key     = key;
@@ -238,13 +238,12 @@ namespace wz::engine::assets
         node.schema  = kTerrainSplatFromGaeaR32Schema;
         node.stage   = wz::asset::AssetStage::Source;
         node.payload = std::vector<uint8_t>{};
-        // No compile-desc meta — all parameters live in the JSON file dep.
 
         // Dep order is load-bearing: compiler reads dep[0] as .r32 bytes,
-        // dep[1] as JSON sidecar bytes.
+        // dep[1] as compiled JSONDocument from JSONTable.
         if (!system_.register_asset(
                 std::move(node),
-                { desc.r32_file_key, desc.sidecar_file_key }))
+                { desc.r32_file_key, desc.sidecar_json_key }))
         {
             logger_.error(
                 "terrain-splat recipe: failed to register: " + desc.name);
