@@ -1,0 +1,165 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "editor_handles_demo",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true
+    },
+    {
+      "id": "rock_front_left",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          -9.3000001907348633,
+          -8.6499996185302734,
+          8
+        ],
+        "rotation_quat": [
+          0,
+          -0.6087614893913269,
+          0,
+          0.79335331916809082
+        ],
+        "scale": [
+          1.6909999847412109,
+          0.87099999189376831,
+          0.58099997043609619
+        ]
+      },
+      "visible": true,
+      "debug_visual": {
+        "kind": "axes",
+        "scale": 1,
+        "visible": true
+      },
+      "editor_handle": {
+        "kind": "transform",
+        "enabled": true,
+        "visible": true,
+        "size": 1
+      }
+    },
+    {
+      "id": "rock_center",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "debug_visual": {
+        "kind": "axes",
+        "scale": 1.5,
+        "visible": true
+      },
+      "editor_handle": {
+        "kind": "translate",
+        "enabled": true,
+        "visible": true,
+        "size": 1.5
+      }
+    },
+    {
+      "id": "rock_back_right",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          3,
+          4,
+          2
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "debug_visual": {
+        "kind": "axes",
+        "scale": 0.75,
+        "visible": true
+      },
+      "editor_handle": {
+        "kind": "rotate",
+        "enabled": true,
+        "visible": true,
+        "size": 0.75
+      }
+    },
+    {
+      "id": "disabled_scale_marker",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          5,
+          6,
+          -3
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "debug_visual": {
+        "kind": "axes",
+        "scale": 0.5,
+        "visible": true
+      },
+      "editor_handle": {
+        "kind": "scale",
+        "enabled": false,
+        "visible": true,
+        "size": 0.5
+      }
+    }
+  ]
+}
