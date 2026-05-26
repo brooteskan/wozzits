@@ -54,6 +54,14 @@ namespace wz::engine::assets
         bool visible = true;
     };
 
+    struct EditorHandleComponent
+    {
+        SceneEditorHandleKind kind = SceneEditorHandleKind::Transform;
+        bool enabled = true;
+        bool visible = true;
+        float size = 1.0f;
+    };
+
     struct SceneInstance
     {
         wz::scene::SceneStorage storage{};
@@ -69,6 +77,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;
+        std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 
         std::vector<std::string> runtime_to_authored;
         std::unordered_map<std::string, wz::core::graph::NodeHandle> authored_to_runtime;

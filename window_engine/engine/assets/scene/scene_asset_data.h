@@ -63,6 +63,23 @@ namespace wz::engine::assets
         bool visible = true;
     };
 
+    enum class SceneEditorHandleKind : uint8_t
+    {
+        None = 0,
+        Translate,
+        Rotate,
+        Scale,
+        Transform,
+    };
+
+    struct SceneEditorHandleAsset
+    {
+        SceneEditorHandleKind kind = SceneEditorHandleKind::Transform;
+        bool enabled = true;
+        bool visible = true;
+        float size = 1.0f;
+    };
+
     // ─────────────────────────────────────────────────────────────────────
 
     struct SceneInputReceiverAsset
@@ -113,6 +130,7 @@ namespace wz::engine::assets
         std::optional<SceneEventListenerAsset> event_listener;
 
         std::optional<SceneDebugVisualAsset> debug_visual;
+        std::optional<SceneEditorHandleAsset> editor_handle;
     };
 
     struct SceneDefaults

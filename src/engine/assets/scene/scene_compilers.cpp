@@ -265,6 +265,55 @@ namespace wz::engine::assets::internal
                 node.debug_visual = dbg;
             }
 
+            const auto* eh = find_member(node_val, "editor_handle");
+            if (eh && eh->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*eh, "kind");
+                if (!kind_str) {
+                    logger.error("editor_handle on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                SceneEditorHandleAsset handle{};
+
+                if (*kind_str == "translate") {
+                    handle.kind = SceneEditorHandleKind::Translate;
+                }
+                else if (*kind_str == "rotate") {
+                    handle.kind = SceneEditorHandleKind::Rotate;
+                }
+                else if (*kind_str == "scale") {
+                    handle.kind = SceneEditorHandleKind::Scale;
+                }
+                else if (*kind_str == "transform") {
+                    handle.kind = SceneEditorHandleKind::Transform;
+                }
+                else {
+                    logger.error("editor_handle on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str) + "'");
+                    return std::nullopt;
+                }
+
+                auto enabled = read_bool(*eh, "enabled");
+                if (enabled) handle.enabled = *enabled;
+
+                auto visible = read_bool(*eh, "visible");
+                if (visible) handle.visible = *visible;
+
+                auto size = read_number(*eh, "size");
+                if (size) {
+                    float s = static_cast<float>(*size);
+                    if (s < 0.0f || !std::isfinite(s)) {
+                        logger.error("editor_handle on node '" + node.id
+                            + "' has invalid size");
+                        return std::nullopt;
+                    }
+                    handle.size = s;
+                }
+
+                node.editor_handle = handle;
+            }
+
             return node;
         }
 

@@ -317,6 +317,18 @@ namespace wz::engine::assets
                     },
                 });
             }
+
+            if (node.editor_handle) {
+                inst.editor_handles.push_back({
+                    .node = h,
+                    .component = EditorHandleComponent{
+                        .kind    = node.editor_handle->kind,
+                        .enabled = node.editor_handle->enabled,
+                        .visible = node.editor_handle->visible,
+                        .size    = node.editor_handle->size,
+                    },
+                });
+            }
         }
 
         // Build light records
