@@ -83,6 +83,7 @@ target_sources(window_engine PRIVATE
     assets/scene/scene.cpp
     assets/scene/scene_compilers.cpp
     assets/scene/scene_instance.cpp
+    assets/scene/scene_json_export.cpp
     assets/scene_asset_module.cpp
 
     rendering/renderable_gpu_cache.cpp

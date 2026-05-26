@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <external/json/json_parser.h>
+#include <external/json/json_writer.h>
 
+#include <memory>
 #include <string>
 
 TEST(JSONParser, ParsesNull)
@@ -114,4 +116,57 @@ TEST(JSONParser, RejectsDuplicateObjectKeys)
 
     EXPECT_FALSE(result.ok);
     EXPECT_NE(result.error.message, "");
+}
+
+TEST(JSONWriter, SerializesDocumentAndParsesRoundTrip)
+{
+    wz::json::JSONDocument document{};
+    auto root = std::make_unique<wz::json::JSONValue>();
+    root->kind = wz::json::JSONValueKind::Object;
+
+    auto name = std::make_unique<wz::json::JSONValue>();
+    name->kind = wz::json::JSONValueKind::String;
+    name->string_value = "brick";
+
+    auto roughness = std::make_unique<wz::json::JSONValue>();
+    roughness->kind = wz::json::JSONValueKind::Number;
+    roughness->number_value = 0.8;
+
+    root->object_members.push_back(wz::json::JSONMember{
+        .key = "name",
+        .value = std::move(name),
+    });
+    root->object_members.push_back(wz::json::JSONMember{
+        .key = "roughness",
+        .value = std::move(roughness),
+    });
+    document.root = std::move(root);
+
+    const std::string text = wz::json::serialize_json(document);
+    const auto parsed = wz::json::parse_json_string(text);
+
+    ASSERT_TRUE(parsed.ok) << parsed.error.message;
+    ASSERT_NE(parsed.document.root, nullptr);
+    ASSERT_EQ(parsed.document.root->kind, wz::json::JSONValueKind::Object);
+    ASSERT_EQ(parsed.document.root->object_members.size(), 2u);
+    EXPECT_EQ(parsed.document.root->object_members[0].key, "name");
+    EXPECT_EQ(parsed.document.root->object_members[1].key, "roughness");
+}
+
+TEST(JSONWriter, EscapesStrings)
+{
+    wz::json::JSONValue value{};
+    value.kind = wz::json::JSONValueKind::String;
+    value.string_value = "line\nquote\"slash\\";
+
+    const auto text = wz::json::serialize_json(value, {
+        .pretty = false,
+    });
+
+    EXPECT_EQ(text, R"("line\nquote\"slash\\")");
+
+    const auto parsed = wz::json::parse_json_string(text);
+    ASSERT_TRUE(parsed.ok) << parsed.error.message;
+    ASSERT_NE(parsed.document.root, nullptr);
+    EXPECT_EQ(parsed.document.root->string_value, value.string_value);
 }

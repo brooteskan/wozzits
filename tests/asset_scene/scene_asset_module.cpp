@@ -5,8 +5,11 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/scene/scene_instance.h>
+#include <engine/assets/scene/scene_json_export.h>
 #include <engine/rendering/scene_render_resource_resolver.h>
 #include <engine/rendering/render_resource_resolver.h>
+
+#include <external/json/json_writer.h>
 
 #include <scene/compile/scene_compiler.h>
 #include <render/ir/render_ir.h>
@@ -2237,6 +2240,101 @@ TEST(SceneAssetModule, PersistedChildTransformPreservesParentRelationship)
     EXPECT_FLOAT_EQ(reloaded_child.world.m[14], 4.0f);
     EXPECT_NEAR(reloaded_child.local.m[0], 0.0f, 1e-5f);
     EXPECT_NEAR(reloaded_child.local.m[2], -1.0f, 1e-5f);
+}
+
+TEST(SceneAssetModule, ExportedSceneJSONReloadsEditedTransforms)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "export_transform_edits";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    root.local.translation[0] = 10.0f;
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset child{};
+    child.id = "rock";
+    child.parent_id = "root";
+    child.editor_handle = SceneEditorHandleAsset{
+        .kind = SceneEditorHandleKind::Transform,
+    };
+    scene.nodes.push_back(std::move(child));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    auto& inst = result.instance;
+    auto rock_h = inst.authored_to_runtime["rock"];
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const wz::math::Quaternion q =
+        wz::math::from_axis_angle({ 0.0f, 1.0f, 0.0f }, kPi * 0.5f);
+
+    AuthoredTransform edited{};
+    edited.translation[0] = 2.0f;
+    edited.translation[1] = 3.0f;
+    edited.translation[2] = 4.0f;
+    edited.rotation_quat[0] = q.x;
+    edited.rotation_quat[1] = q.y;
+    edited.rotation_quat[2] = q.z;
+    edited.rotation_quat[3] = q.w;
+
+    ASSERT_TRUE(update_scene_asset_node_transform(scene, inst, rock_h, edited));
+
+    const std::string json_text =
+        wz::json::serialize_json(export_scene_to_json_document(scene));
+
+    const wz::fs::Path root_path =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_export_reload_test");
+    ASSERT_EQ(wz::fs::create_directories(root_path), wz::fs::FileError::None);
+
+    auto rel_path = write_scene_json(
+        root_path,
+        "exported_scene.json",
+        json_text);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root_path };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "exported_scene",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* reloaded_scene = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(reloaded_scene, nullptr);
+
+    auto reloaded = instantiate_scene(*reloaded_scene);
+    ASSERT_TRUE(reloaded.ok()) << "error: " << reloaded.error_detail;
+
+    auto reloaded_h = reloaded.instance.authored_to_runtime["rock"];
+    const auto& reloaded_node = wz::core::graph::node_data(
+        reloaded.instance.storage.polytree,
+        reloaded_h);
+
+    EXPECT_FLOAT_EQ(reloaded_node.world.m[12], 12.0f);
+    EXPECT_FLOAT_EQ(reloaded_node.world.m[13], 3.0f);
+    EXPECT_FLOAT_EQ(reloaded_node.world.m[14], 4.0f);
+    EXPECT_NEAR(reloaded_node.local.m[0], 0.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[2], -1.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[8], 1.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[10], 0.0f, 1e-5f);
+
+    ASSERT_EQ(reloaded_scene->nodes.size(), 2u);
+    ASSERT_TRUE(reloaded_scene->nodes[1].editor_handle.has_value());
+    EXPECT_EQ(reloaded_scene->nodes[1].editor_handle->kind,
+        SceneEditorHandleKind::Transform);
 }
 
 TEST(SceneAssetModule, MeshWireframeRenderableInScene)

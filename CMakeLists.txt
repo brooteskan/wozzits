@@ -143,6 +143,7 @@ target_sources(window_engine PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_polytree.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_writer.cpp"
 
     "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/toml_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/toml/toml_polytree.cpp"
