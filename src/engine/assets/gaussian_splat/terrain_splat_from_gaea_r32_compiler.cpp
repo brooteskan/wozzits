@@ -27,6 +27,7 @@
 #include <engine/assets/type_extensions.h>
 
 #include <external/json/json_parser.h>
+#include <external/json/json_read_helpers.h>
 
 #include <algorithm>
 #include <any>
@@ -42,40 +43,9 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
-        const wz::json::JSONValue* find_member(
-            const wz::json::JSONValue& obj,
-            std::string_view key) noexcept
-        {
-            if (obj.kind != wz::json::JSONValueKind::Object) return nullptr;
-            for (const auto& m : obj.object_members) {
-                if (m.key == key && m.value)
-                    return m.value.get();
-            }
-            return nullptr;
-        }
-
-        bool read_number(
-            const wz::json::JSONValue& obj,
-            std::string_view key,
-            float& out) noexcept
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Number) return false;
-            out = static_cast<float>(v->number_value);
-            return true;
-        }
-
-        bool read_uint(
-            const wz::json::JSONValue& obj,
-            std::string_view key,
-            uint32_t& out) noexcept
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Number) return false;
-            if (v->number_value < 0.0) return false;
-            out = static_cast<uint32_t>(v->number_value);
-            return true;
-        }
+        using wz::json::find_member;
+        using wz::json::read_number;
+        using wz::json::read_uint;
     }
 
 
@@ -137,24 +107,27 @@ namespace wz::engine::assets::internal
                 const wz::json::JSONValue& json = *parsed.document.root;
 
                 // ── 4. Required + optional world parameters ──
-                float height_scale = 1.0f;
-                float step_x = 1.0f;
-                float step_z = 1.0f;
-                if (!read_number(json, "height_scale", height_scale)) {
+                auto height_scale_v = read_number(json, "height_scale");
+                if (!height_scale_v) {
                     logger.error(
                         "terrain-splat recipe: sidecar missing 'height_scale'");
                     return compile_failed_node(input);
                 }
-                if (!read_number(json, "step_x", step_x)) {
+                auto step_x_v = read_number(json, "step_x");
+                if (!step_x_v) {
                     logger.error(
                         "terrain-splat recipe: sidecar missing 'step_x'");
                     return compile_failed_node(input);
                 }
-                if (!read_number(json, "step_z", step_z)) {
+                auto step_z_v = read_number(json, "step_z");
+                if (!step_z_v) {
                     logger.error(
                         "terrain-splat recipe: sidecar missing 'step_z'");
                     return compile_failed_node(input);
                 }
+                float height_scale = static_cast<float>(*height_scale_v);
+                float step_x       = static_cast<float>(*step_x_v);
+                float step_z       = static_cast<float>(*step_z_v);
 
                 float overlap_factor  = 1.25f;
                 float thickness       = 0.0f;
@@ -162,27 +135,25 @@ namespace wz::engine::assets::internal
                 float opacity         = 0.95f;
                 float flat_lum        = 0.55f;
                 float steep_lum       = 0.30f;
-                read_number(json, "overlap_factor",  overlap_factor);
-                read_number(json, "thickness",       thickness);
-                read_uint  (json, "subsample_step",  subsample);
+                if (auto v = read_number(json, "overlap_factor"))  overlap_factor = static_cast<float>(*v);
+                if (auto v = read_number(json, "thickness"))       thickness      = static_cast<float>(*v);
+                if (auto v = read_uint(json, "subsample_step"))    subsample      = *v;
                 if (subsample == 0u) subsample = 1u;
-                read_number(json, "opacity",         opacity);
-                read_number(json, "flat_luminance",  flat_lum);
-                read_number(json, "steep_luminance", steep_lum);
+                if (auto v = read_number(json, "opacity"))         opacity   = static_cast<float>(*v);
+                if (auto v = read_number(json, "flat_luminance"))   flat_lum  = static_cast<float>(*v);
+                if (auto v = read_number(json, "steep_luminance"))  steep_lum = static_cast<float>(*v);
 
                 // Normal smoothing — optional sidecar fields.
                 uint32_t normal_smooth_flag   = 0u;
                 uint32_t normal_smooth_radius = 2u;
                 float    normal_smooth_sigma  = 1.0f;
-                read_uint  (json, "normal_smoothing_enabled",      normal_smooth_flag);
-                read_uint  (json, "normal_smoothing_radius_cells", normal_smooth_radius);
-                read_number(json, "normal_smoothing_sigma_cells",  normal_smooth_sigma);
+                if (auto v = read_uint(json, "normal_smoothing_enabled"))       normal_smooth_flag   = *v;
+                if (auto v = read_uint(json, "normal_smoothing_radius_cells"))  normal_smooth_radius = *v;
+                if (auto v = read_number(json, "normal_smoothing_sigma_cells")) normal_smooth_sigma  = static_cast<float>(*v);
 
                 // ── 5. Resolve dimensions: sidecar overrides, else square ──
-                uint32_t width  = 0;
-                uint32_t height = 0;
-                read_uint(json, "width",  width);
-                read_uint(json, "height", height);
+                uint32_t width  = read_uint(json, "width").value_or(0u);
+                uint32_t height = read_uint(json, "height").value_or(0u);
 
                 if (width == 0 && height == 0) {
                     const double side_d = std::sqrt(

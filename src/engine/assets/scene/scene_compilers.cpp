@@ -10,6 +10,7 @@
 #include <scene/compile/compiled_scene.h>
 
 #include <external/json/json_document.h>
+#include <external/json/json_read_helpers.h>
 
 #include <optional>
 #include <string>
@@ -18,82 +19,12 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
-        const wz::json::JSONValue* find_member(
-            const wz::json::JSONValue& obj,
-            const std::string& key)
-        {
-            for (const auto& m : obj.object_members) {
-                if (m.key == key)
-                    return m.value.get();
-            }
-            return nullptr;
-        }
-
-        std::optional<std::string> read_string(
-            const wz::json::JSONValue& obj,
-            const std::string& key)
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::String)
-                return std::nullopt;
-            return v->string_value;
-        }
-
-        std::optional<double> read_number(
-            const wz::json::JSONValue& obj,
-            const std::string& key)
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Number)
-                return std::nullopt;
-            return v->number_value;
-        }
-
-        std::optional<bool> read_bool(
-            const wz::json::JSONValue& obj,
-            const std::string& key)
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Bool)
-                return std::nullopt;
-            return v->bool_value;
-        }
-
-        bool read_float3(
-            const wz::json::JSONValue& obj,
-            const std::string& key,
-            float out[3])
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Array)
-                return false;
-            if (v->array_values.size() != 3)
-                return false;
-            for (int i = 0; i < 3; ++i) {
-                if (v->array_values[i]->kind != wz::json::JSONValueKind::Number)
-                    return false;
-                out[i] = static_cast<float>(v->array_values[i]->number_value);
-            }
-            return true;
-        }
-
-        bool read_float4(
-            const wz::json::JSONValue& obj,
-            const std::string& key,
-            float out[4])
-        {
-            const auto* v = find_member(obj, key);
-            if (!v || v->kind != wz::json::JSONValueKind::Array)
-                return false;
-            if (v->array_values.size() != 4)
-                return false;
-            for (int i = 0; i < 4; ++i) {
-                if (v->array_values[i]->kind != wz::json::JSONValueKind::Number)
-                    return false;
-                out[i] = static_cast<float>(v->array_values[i]->number_value);
-            }
-            return true;
-        }
+        using wz::json::find_member;
+        using wz::json::read_string;
+        using wz::json::read_number;
+        using wz::json::read_bool;
+        using wz::json::read_float3;
+        using wz::json::read_float4;
 
         AuthoredTransform parse_transform(const wz::json::JSONValue& obj)
         {
@@ -105,7 +36,7 @@ namespace wz::engine::assets::internal
         }
 
         wz::scene::SceneNodeClass parse_node_class_for_pipeline(
-            const std::string& pipeline)
+            std::string_view pipeline)
         {
             namespace sc = wz::scene;
 
@@ -273,8 +204,8 @@ namespace wz::engine::assets::internal
 
             const auto* defaults = find_member(root, "defaults");
             if (defaults && defaults->kind == wz::json::JSONValueKind::Object) {
-                scene.defaults.active_camera_node =
-                    read_string(*defaults, "active_camera");
+                auto cam = read_string(*defaults, "active_camera");
+                if (cam) scene.defaults.active_camera_node = std::string(*cam);
             }
 
             return scene;
