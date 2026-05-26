@@ -4,7 +4,10 @@
 
 #include <gpu/dx12/dx12.h>
 #include <gpu/dx12/dx12_internal.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
 #include <gpu/dx12/external/d3dx12.h>
+#pragma clang diagnostic pop
 
 #include <cassert>
 

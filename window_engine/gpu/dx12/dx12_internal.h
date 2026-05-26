@@ -5,7 +5,10 @@
 #include <span>
 #include <vector>
 #include <gpu/gpu.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
 #include <gpu/dx12/external/d3dx12.h>
+#pragma clang diagnostic pop
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <gpu/gpu_types.h>
 #include <gpu/shader.h>

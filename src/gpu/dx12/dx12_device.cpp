@@ -3,7 +3,10 @@
 
 #include "dx12_device_internal.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
 #include <gpu/dx12/external/d3dx12.h>
+#pragma clang diagnostic pop
 #include <wrl/client.h>
 
 #include <gpu/gpu.h>
