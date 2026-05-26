@@ -122,7 +122,7 @@ namespace wz::app
                     const auto n = dbg.animated_nodes[i];
                     const auto base = dbg.animated_base_positions[i];
 
-                    wz::math::Mat4 local = wz::math::mat4_identity();
+                    wz::math::Mat4 local = wz::math::Mat4::identity();
 
                     local.m[12] = base.x;
                     local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
@@ -143,7 +143,7 @@ namespace wz::app
                     const auto n = dbg.animated_parent_nodes[i];
                     const auto base = dbg.animated_parent_base_positions[i];
 
-                    wz::math::Mat4 local = wz::math::mat4_identity();
+                    wz::math::Mat4 local = wz::math::Mat4::identity();
 
                     local.m[12] = base.x;
                     local.m[13] = base.y + 0.75f * std::sin(t * 1.5f + static_cast<float>(i));
@@ -230,7 +230,7 @@ namespace wz::app
             SceneBuilder b;
 
             TransformNode root{};
-            root.local = mat4_identity();
+            root.local = Mat4::identity();
 
             NodeHandle root_h = add_node(b, root);
 
@@ -241,7 +241,7 @@ namespace wz::app
                 [&](NodeHandle parent_h, const Vec3& local_position) -> NodeHandle
             {
                 TransformNode object{};
-                object.local = mat4_identity();
+                object.local = Mat4::identity();
 
                 object.local.m[12] = local_position.x;
                 object.local.m[13] = local_position.y;
@@ -274,7 +274,7 @@ namespace wz::app
                             config.wide_layout);
 
                     TransformNode parent{};
-                    parent.local = mat4_identity();
+                    parent.local = Mat4::identity();
                     parent.local.m[12] = parent_pos.x;
                     parent.local.m[13] = parent_pos.y;
                     parent.local.m[14] = parent_pos.z;
@@ -458,7 +458,7 @@ namespace wz::app
             ViewData view{};
             view.camera_position = Vec3{ camera.x, camera.y, 0.0f };
 
-            view.view = mat4_identity();
+            view.view = Mat4::identity();
             view.view.m[12] = -camera.x;
             view.view.m[13] = -camera.y;
             view.view.m[14] = 0.0f;

@@ -38,7 +38,7 @@ namespace
 
         view.camera_position = Vec3{ 0.0f, 0.0f, 0.0f };
 
-        view.view = mat4_identity();
+        view.view = Mat4::identity();
 
         constexpr float Pi = 3.14159265358979323846f;
         const float fov = 70.0f * Pi / 180.0f;
@@ -124,12 +124,12 @@ namespace
         SceneBuilder b;
 
         TransformNode root{};
-        root.local = mat4_identity();
+        root.local = Mat4::identity();
 
         NodeHandle root_h = add_node(b, root);
 
         TransformNode object{};
-        object.local = mat4_identity();
+        object.local = Mat4::identity();
         object.local.m[14] = 3.0f;
         object.flags = TransformNodeFlag::RenderDomain;
         object.motion_type = TransformNode::MotionType::Static;

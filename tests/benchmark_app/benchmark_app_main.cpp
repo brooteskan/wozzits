@@ -37,7 +37,7 @@ static bool build_grid_scene(
     SceneBuilder b;
 
     TransformNode root{};
-    root.local = mat4_identity();
+    root.local = Mat4::identity();
     NodeHandle root_h = add_node(b, root);
 
     std::vector<NodeHandle> object_nodes;
@@ -51,7 +51,7 @@ static bool build_grid_scene(
             (static_cast<float>(i / columns) - static_cast<float>(rows)    * 0.5f) * spacing;
 
         TransformNode node{};
-        node.local = mat4_identity();
+        node.local = Mat4::identity();
         node.local.m[12] = x;
         node.local.m[13] = y;
         node.local.m[14] = scene_z;
