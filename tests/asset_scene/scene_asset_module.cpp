@@ -123,6 +123,57 @@ namespace
   }
 })";
 
+    // Camera under a parent with both translation and 90° Y rotation.
+    // Parent at (10,0,0) rotated 90° around Y (quat: 0, 0.7071, 0, 0.7071).
+    // Camera child has local translation (0,0,5).
+    // Under 90° Y rotation, local +Z maps to world +X,
+    // so expected camera world position = (10+5, 0, 0) = (15, 0, 0).
+    // Object at (20,0,0) is 5 units ahead of camera along its forward (+X world).
+    const char* kCameraInheritanceSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "camera_inheritance_scene",
+  "nodes": [
+    {
+      "id": "rotated_parent",
+      "transform": {
+        "translation": [10, 0, 0],
+        "rotation_quat": [0, 0.70710678, 0, 0.70710678]
+      }
+    },
+    {
+      "id": "child_camera",
+      "parent": "rotated_parent",
+      "transform": {
+        "translation": [0, 0, 5]
+      },
+      "camera": {
+        "fov_y": 1.0472,
+        "near": 0.1,
+        "far": 200.0,
+        "aspect": 1.7778
+      }
+    },
+    {
+      "id": "target_object",
+      "transform": {
+        "translation": [20, 0, 0]
+      },
+      "debug_renderable": {
+        "pipeline": "OpaqueGeometry",
+        "mesh": 0,
+        "material": 0,
+        "bounds": {
+          "min": [-1, -1, -1],
+          "max": [1, 1, 1]
+        }
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "child_camera"
+  }
+})";
+
     const char* kNonRenderableNodeSceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "mixed_scene",
@@ -654,5 +705,98 @@ TEST(SceneAssetModule, CameraNodePopulatesDefaultView)
     if (!compiled.scene.opaque.empty()) {
         EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[12], 0.0f);
         EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[14], 5.0f);
+    }
+}
+
+TEST(SceneAssetModule, CameraInheritsParentTransformForDefaultView)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_asset_camera_inherit_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "camera_inherit.json", kCameraInheritanceSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "camera_inherit",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok());
+
+    auto& inst = result.instance;
+    const auto& dv = inst.default_view;
+
+    // Camera world position must reflect the propagated transform, not
+    // just the local (0,0,5).  Parent at (10,0,0) with 90° Y rotation
+    // maps child local +Z to world +X, so world pos = (10+5, 0, 0).
+    EXPECT_NEAR(dv.camera_position.x, 15.0f, 1e-4f);
+    EXPECT_NEAR(dv.camera_position.y, 0.0f, 1e-4f);
+    EXPECT_NEAR(dv.camera_position.z, 0.0f, 1e-4f);
+
+    // View matrix rotation should NOT be identity — the 90° Y rotation
+    // from the parent must be present.  After the rotation:
+    //   world column 0 (right)   = (0, 0, -1)
+    //   world column 1 (up)      = (0, 1,  0)
+    //   world column 2 (forward) = (1, 0,  0)
+    // Transposed into the view matrix rows:
+    EXPECT_NEAR(dv.view.m[0],  0.0f, 1e-4f);   // row0: right.x
+    EXPECT_NEAR(dv.view.m[4],  0.0f, 1e-4f);   // row0: right.y
+    EXPECT_NEAR(dv.view.m[8], -1.0f, 1e-4f);   // row0: right.z
+    EXPECT_NEAR(dv.view.m[5],  1.0f, 1e-4f);   // row1: up.y
+    EXPECT_NEAR(dv.view.m[2],  1.0f, 1e-4f);   // row2: forward.x
+    EXPECT_NEAR(dv.view.m[6],  0.0f, 1e-4f);   // row2: forward.y
+    EXPECT_NEAR(dv.view.m[10], 0.0f, 1e-4f);   // row2: forward.z
+
+    // Translation part: V.m[14] = -(fx*px + fy*py + fz*pz)
+    //                            = -(1*15 + 0*0 + 0*0) = -15
+    EXPECT_NEAR(dv.view.m[12],  0.0f, 1e-4f);
+    EXPECT_NEAR(dv.view.m[13],  0.0f, 1e-4f);
+    EXPECT_NEAR(dv.view.m[14], -15.0f, 1e-4f);
+
+    // Sanity: view_projection = projection * view.
+    wz::math::Mat4 expected_vp = wz::math::mul(dv.projection, dv.view);
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_NEAR(dv.view_projection.m[i], expected_vp.m[i], 1e-4f)
+            << "view_projection mismatch at index " << i;
+    }
+
+    // The target object at (20,0,0) is 5 units ahead of the camera
+    // along its forward direction (world +X).  It should be visible
+    // and produce a draw command when rendered with this view.
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        inst.storage.polytree,
+        inst.renderables,
+        inst.lights,
+        dv);
+
+    EXPECT_EQ(compiled.scene.opaque.size(), 1u);
+    if (!compiled.scene.opaque.empty()) {
+        EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[12], 20.0f);
     }
 }
