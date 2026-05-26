@@ -200,6 +200,17 @@ namespace wz::engine::assets
                     },
                 });
             }
+
+            if (node.debug_visual) {
+                inst.debug_visuals.push_back({
+                    .node = h,
+                    .component = DebugVisualComponent{
+                        .kind    = node.debug_visual->kind,
+                        .scale   = node.debug_visual->scale,
+                        .visible = node.debug_visual->visible,
+                    },
+                });
+            }
         }
 
         // Build light records

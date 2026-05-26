@@ -12,6 +12,7 @@
 #include <external/json/json_document.h>
 #include <external/json/json_read_helpers.h>
 
+#include <cmath>
 #include <optional>
 #include <string>
 
@@ -223,6 +224,45 @@ namespace wz::engine::assets::internal
                     }
                     node.event_listener = evt;
                 }
+            }
+
+            // ── Debug/editor visual descriptor ───────────────────────
+
+            const auto* dv = find_member(node_val, "debug_visual");
+            if (dv && dv->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*dv, "kind");
+                if (!kind_str) {
+                    logger.error("debug_visual on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                SceneDebugVisualAsset dbg{};
+
+                if (*kind_str == "axes") {
+                    dbg.kind = SceneDebugVisualKind::Axes;
+                }
+                else {
+                    logger.error("debug_visual on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str) + "'");
+                    return std::nullopt;
+                }
+
+                auto scale = read_number(*dv, "scale");
+                if (scale) {
+                    float s = static_cast<float>(*scale);
+                    if (s < 0.0f || !std::isfinite(s)) {
+                        logger.error("debug_visual on node '" + node.id
+                            + "' has invalid scale");
+                        return std::nullopt;
+                    }
+                    dbg.scale = s;
+                }
+
+                auto vis = read_bool(*dv, "visible");
+                if (vis) dbg.visible = *vis;
+
+                node.debug_visual = dbg;
             }
 
             return node;

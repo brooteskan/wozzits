@@ -5,6 +5,7 @@
 #include <scene/transform_node.h>
 #include <scene/compile/compiled_scene.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,6 +45,23 @@ namespace wz::engine::assets
     // ─── Non-render component descriptors ─────────────────────────────────
     // Data-only: parsed from scene JSON, instantiated into SceneInstance
     // component tables.  No runtime behavior is implemented here.
+
+    // ─── Debug/editor visual descriptors ─────────────────────────────────
+
+    enum class SceneDebugVisualKind : uint8_t
+    {
+        None = 0,
+        Axes,
+    };
+
+    struct SceneDebugVisualAsset
+    {
+        SceneDebugVisualKind kind = SceneDebugVisualKind::None;
+        float scale = 1.0f;
+        bool visible = true;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────
 
     struct SceneInputReceiverAsset
     {
@@ -90,6 +108,8 @@ namespace wz::engine::assets
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
+
+        std::optional<SceneDebugVisualAsset> debug_visual;
     };
 
     struct SceneDefaults
