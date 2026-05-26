@@ -156,6 +156,66 @@ namespace wz::engine::assets::internal
                 node.camera = camera;
             }
 
+            // ── Non-render component descriptors ──────────────────────
+
+            const auto* ir = find_member(node_val, "input_receiver");
+            if (ir && ir->kind == wz::json::JSONValueKind::Object) {
+                auto map_uri = read_string(*ir, "input_map");
+                if (!map_uri || map_uri->empty()) {
+                    logger.error("input_receiver on node '" + node.id
+                        + "' missing 'input_map'");
+                    return std::nullopt;
+                }
+                node.input_receiver = SceneInputReceiverAsset{
+                    .input_map = std::string(*map_uri),
+                };
+            }
+
+            const auto* fcc = find_member(node_val, "flying_camera_controller");
+            if (fcc && fcc->kind == wz::json::JSONValueKind::Object) {
+                SceneFlyingCameraControllerAsset ctrl{};
+                auto ms = read_number(*fcc, "move_speed");
+                if (ms) ctrl.move_speed = static_cast<float>(*ms);
+                auto ls = read_number(*fcc, "look_speed");
+                if (ls) ctrl.look_speed = static_cast<float>(*ls);
+                auto bm = read_number(*fcc, "boost_multiplier");
+                if (bm) ctrl.boost_multiplier = static_cast<float>(*bm);
+                auto rs = read_number(*fcc, "roll_speed");
+                if (rs) ctrl.roll_speed = static_cast<float>(*rs);
+                node.flying_camera_controller = ctrl;
+            }
+
+            const auto* al = find_member(node_val, "audio_listener");
+            if (al && al->kind == wz::json::JSONValueKind::Object) {
+                SceneAudioListenerAsset listener{};
+                auto active = read_bool(*al, "active");
+                if (active) listener.active = *active;
+                node.audio_listener = listener;
+            }
+
+            const auto* el = find_member(node_val, "event_listener");
+            if (el && el->kind == wz::json::JSONValueKind::Object) {
+                const auto* channels = find_member(*el, "channels");
+                if (channels
+                    && channels->kind == wz::json::JSONValueKind::Array)
+                {
+                    SceneEventListenerAsset evt{};
+                    for (const auto& ch : channels->array_values) {
+                        if (ch->kind == wz::json::JSONValueKind::String
+                            && !ch->string_value.empty())
+                        {
+                            evt.channels.push_back(ch->string_value);
+                        }
+                    }
+                    if (evt.channels.empty()) {
+                        logger.error("event_listener on node '" + node.id
+                            + "' has no valid channel names");
+                        return std::nullopt;
+                    }
+                    node.event_listener = evt;
+                }
+            }
+
             return node;
         }
 

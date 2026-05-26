@@ -174,6 +174,56 @@ namespace
   }
 })";
 
+    const char* kFlyCameraDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "fly_camera_descriptor_test",
+  "nodes": [
+    {
+      "id": "editor_fly_camera",
+      "transform": {
+        "translation": [0, 5, -20]
+      },
+      "camera": {
+        "fov_y": 1.0472,
+        "near": 0.1,
+        "far": 5000.0,
+        "aspect": 1.7778
+      },
+      "input_receiver": {
+        "input_map": "asset://input_maps/editor_fly_camera"
+      },
+      "flying_camera_controller": {
+        "move_speed": 20.0,
+        "look_speed": 0.0005,
+        "boost_multiplier": 3.0,
+        "roll_speed": 1.5
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "editor_fly_camera"
+  }
+})";
+
+    const char* kListenerOnlySceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "listener_descriptor_test",
+  "nodes": [
+    {
+      "id": "listener",
+      "transform": {
+        "translation": [0, 0, 0]
+      },
+      "audio_listener": {
+        "active": true
+      },
+      "event_listener": {
+        "channels": ["gameplay", "ui"]
+      }
+    }
+  ]
+})";
+
     const char* kNonRenderableNodeSceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "mixed_scene",
@@ -799,4 +849,202 @@ TEST(SceneAssetModule, CameraInheritsParentTransformForDefaultView)
     if (!compiled.scene.opaque.empty()) {
         EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[12], 20.0f);
     }
+}
+
+// ─── Issue #56: non-render component descriptors ────────────────────────
+
+TEST(SceneAssetModule, FlyCameraComponentDescriptors)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_fly_camera_desc_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "fly_camera_desc.json", kFlyCameraDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "fly_camera_desc",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    // Verify parsed asset data
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    const auto& node = scene_data->nodes[0];
+    EXPECT_EQ(node.id, "editor_fly_camera");
+    ASSERT_TRUE(node.camera.has_value());
+    ASSERT_TRUE(node.input_receiver.has_value());
+    ASSERT_TRUE(node.flying_camera_controller.has_value());
+    EXPECT_EQ(node.input_receiver->input_map,
+        "asset://input_maps/editor_fly_camera");
+    EXPECT_FLOAT_EQ(node.flying_camera_controller->move_speed, 20.0f);
+    EXPECT_FLOAT_EQ(node.flying_camera_controller->look_speed, 0.0005f);
+    EXPECT_FLOAT_EQ(node.flying_camera_controller->boost_multiplier, 3.0f);
+    EXPECT_FLOAT_EQ(node.flying_camera_controller->roll_speed, 1.5f);
+
+    // Node should NOT have audio/event listeners
+    EXPECT_FALSE(node.audio_listener.has_value());
+    EXPECT_FALSE(node.event_listener.has_value());
+
+    // Instantiate
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok());
+
+    auto& inst = result.instance;
+
+    // One node in the graph
+    EXPECT_EQ(wz::core::graph::node_count(inst.storage.polytree), 1u);
+    EXPECT_TRUE(inst.authored_to_runtime.contains("editor_fly_camera"));
+    auto cam_h = inst.authored_to_runtime["editor_fly_camera"];
+
+    // Active camera default view should still work
+    EXPECT_NEAR(inst.default_view.camera_position.y, 5.0f, 1e-4f);
+    EXPECT_NEAR(inst.default_view.camera_position.z, -20.0f, 1e-4f);
+    EXPECT_NE(inst.default_view.projection.m[0], 0.0f);
+
+    // Component records: one input receiver, one flying camera controller
+    ASSERT_EQ(inst.input_receivers.size(), 1u);
+    EXPECT_EQ(inst.input_receivers[0].node, cam_h);
+    EXPECT_EQ(inst.input_receivers[0].component.input_map,
+        "asset://input_maps/editor_fly_camera");
+
+    ASSERT_EQ(inst.flying_camera_controllers.size(), 1u);
+    EXPECT_EQ(inst.flying_camera_controllers[0].node, cam_h);
+    EXPECT_FLOAT_EQ(
+        inst.flying_camera_controllers[0].component.move_speed, 20.0f);
+    EXPECT_FLOAT_EQ(
+        inst.flying_camera_controllers[0].component.look_speed, 0.0005f);
+    EXPECT_FLOAT_EQ(
+        inst.flying_camera_controllers[0].component.boost_multiplier, 3.0f);
+    EXPECT_FLOAT_EQ(
+        inst.flying_camera_controllers[0].component.roll_speed, 1.5f);
+
+    // No audio/event component records
+    EXPECT_TRUE(inst.audio_listeners.empty());
+    EXPECT_TRUE(inst.event_listeners.empty());
+
+    // No renderable — node is camera+controller only
+    EXPECT_EQ(inst.renderables[cam_h].node_class.role,
+        wz::scene::SceneRole::None);
+}
+
+TEST(SceneAssetModule, ListenerOnlyNodeDescriptors)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_listener_desc_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "listener_desc.json", kListenerOnlySceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "listener_desc",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    // Verify parsed asset data
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    const auto& node = scene_data->nodes[0];
+    EXPECT_EQ(node.id, "listener");
+    EXPECT_FALSE(node.renderable.has_value());
+    EXPECT_FALSE(node.camera.has_value());
+    ASSERT_TRUE(node.audio_listener.has_value());
+    EXPECT_TRUE(node.audio_listener->active);
+    ASSERT_TRUE(node.event_listener.has_value());
+    ASSERT_EQ(node.event_listener->channels.size(), 2u);
+    EXPECT_EQ(node.event_listener->channels[0], "gameplay");
+    EXPECT_EQ(node.event_listener->channels[1], "ui");
+
+    // No input/controller
+    EXPECT_FALSE(node.input_receiver.has_value());
+    EXPECT_FALSE(node.flying_camera_controller.has_value());
+
+    // Instantiate
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok());
+
+    auto& inst = result.instance;
+
+    EXPECT_EQ(wz::core::graph::node_count(inst.storage.polytree), 1u);
+    EXPECT_TRUE(inst.authored_to_runtime.contains("listener"));
+    auto listen_h = inst.authored_to_runtime["listener"];
+
+    // No render output
+    EXPECT_EQ(inst.renderables[listen_h].node_class.role,
+        wz::scene::SceneRole::None);
+
+    // Audio listener record
+    ASSERT_EQ(inst.audio_listeners.size(), 1u);
+    EXPECT_EQ(inst.audio_listeners[0].node, listen_h);
+    EXPECT_TRUE(inst.audio_listeners[0].component.active);
+
+    // Event listener record
+    ASSERT_EQ(inst.event_listeners.size(), 1u);
+    EXPECT_EQ(inst.event_listeners[0].node, listen_h);
+    ASSERT_EQ(inst.event_listeners[0].component.channels.size(), 2u);
+    EXPECT_EQ(inst.event_listeners[0].component.channels[0], "gameplay");
+    EXPECT_EQ(inst.event_listeners[0].component.channels[1], "ui");
+
+    // No input/controller records
+    EXPECT_TRUE(inst.input_receivers.empty());
+    EXPECT_TRUE(inst.flying_camera_controllers.empty());
+
+    // Compile with identity view — should produce zero render output
+    wz::scene::ViewData view{};
+    view.view = wz::math::Mat4::identity();
+    view.projection = wz::math::Mat4::identity();
+    view.view_projection = wz::math::Mat4::identity();
+
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        inst.storage.polytree,
+        inst.renderables,
+        inst.lights,
+        view);
+
+    EXPECT_EQ(compiled.scene.opaque.size(), 0u);
 }

@@ -157,6 +157,51 @@ namespace wz::engine::assets
             }
         }
 
+        // Build non-render component tables
+        for (const auto& node : scene.nodes) {
+            NodeHandle h = id_to_handle[node.id];
+
+            if (node.input_receiver) {
+                inst.input_receivers.push_back({
+                    .node = h,
+                    .component = InputReceiverComponent{
+                        .input_map = node.input_receiver->input_map,
+                    },
+                });
+            }
+
+            if (node.flying_camera_controller) {
+                const auto& fc = *node.flying_camera_controller;
+                inst.flying_camera_controllers.push_back({
+                    .node = h,
+                    .component = FlyingCameraControllerComponent{
+                        .move_speed       = fc.move_speed,
+                        .look_speed       = fc.look_speed,
+                        .boost_multiplier = fc.boost_multiplier,
+                        .roll_speed       = fc.roll_speed,
+                    },
+                });
+            }
+
+            if (node.audio_listener) {
+                inst.audio_listeners.push_back({
+                    .node = h,
+                    .component = AudioListenerComponent{
+                        .active = node.audio_listener->active,
+                    },
+                });
+            }
+
+            if (node.event_listener) {
+                inst.event_listeners.push_back({
+                    .node = h,
+                    .component = EventListenerComponent{
+                        .channels = node.event_listener->channels,
+                    },
+                });
+            }
+        }
+
         // Build light records
         for (const auto& light : scene.lights) {
             inst.lights.push_back(light.light);

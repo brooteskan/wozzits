@@ -41,6 +41,35 @@ namespace wz::engine::assets
         float scale[3]{ 1.f, 1.f, 1.f };
     };
 
+    // ─── Non-render component descriptors ─────────────────────────────────
+    // Data-only: parsed from scene JSON, instantiated into SceneInstance
+    // component tables.  No runtime behavior is implemented here.
+
+    struct SceneInputReceiverAsset
+    {
+        std::string input_map;   // asset URI, e.g. "asset://input_maps/fly"
+    };
+
+    struct SceneFlyingCameraControllerAsset
+    {
+        float move_speed       = 5.0f;
+        float look_speed       = 0.0005f;
+        float boost_multiplier = 3.0f;
+        float roll_speed       = 1.5f;
+    };
+
+    struct SceneAudioListenerAsset
+    {
+        bool active = true;
+    };
+
+    struct SceneEventListenerAsset
+    {
+        std::vector<std::string> channels;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────
+
     struct SceneNodeAsset
     {
         std::string id;
@@ -56,6 +85,11 @@ namespace wz::engine::assets
 
         std::optional<SceneRenderableBinding> renderable;
         std::optional<SceneCameraAsset> camera;
+
+        std::optional<SceneInputReceiverAsset> input_receiver;
+        std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
+        std::optional<SceneAudioListenerAsset> audio_listener;
+        std::optional<SceneEventListenerAsset> event_listener;
     };
 
     struct SceneDefaults
