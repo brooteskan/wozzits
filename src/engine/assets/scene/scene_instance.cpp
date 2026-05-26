@@ -52,6 +52,9 @@ namespace wz::engine::assets
                 nc.spatial  = sc::SpatialKind::Box;
                 break;
             case RenderableKind::ScalarField:
+                // Provisional: scalar fields enter scene-render as mesh-like
+                // descriptors for debug visualization.  A dedicated producer
+                // kind may be needed when scalar fields get their own render path.
                 nc.producer = sc::ProducerKind::Mesh;
                 nc.spatial  = sc::SpatialKind::Box;
                 break;
@@ -76,6 +79,12 @@ namespace wz::engine::assets
                 break;
             }
 
+            // mesh/material: RenderableAssetData carries source_asset (AssetKey)
+            // but not scene-render MeshHandle/MaterialHandle.  Those are GPU-side
+            // indices resolved during the realize/upload path.  Use 0 as a valid
+            // placeholder (not INVALID_MESH) so the compile path routes the node
+            // into the correct draw bucket.  A later issue should extend the
+            // resolver or context to supply real GPU handles.
             return sc::RenderableDescriptor{
                 .node_class   = nc,
                 .mesh         = 0,
@@ -217,8 +226,27 @@ namespace wz::engine::assets
                     return result;
                 }
 
-                inst.renderables[h] = descriptor_from_renderable_asset(
+                auto desc = descriptor_from_renderable_asset(
                     *rdata, node.visible);
+
+                if (context.resource_resolver) {
+                    if (!context.resource_resolver->realize_renderable_descriptor(
+                            *rdata, desc))
+                    {
+                        result.error = SceneInstantiateError::RenderableRealizeFailed;
+                        result.error_detail = "node '" + node.id
+                            + "' renderable descriptor could not be realized";
+                        return result;
+                    }
+                }
+                else if (rdata->kind != RenderableKind::Mesh) {
+                    result.error = SceneInstantiateError::RenderableRealizeFailed;
+                    result.error_detail = "node '" + node.id
+                        + "' has non-mesh renderable kind but no resource resolver";
+                    return result;
+                }
+
+                inst.renderables[h] = desc;
             }
             else if (node.renderable) {
                 const auto& rb = *node.renderable;

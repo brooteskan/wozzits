@@ -82,9 +82,18 @@ namespace wz::engine::assets
         virtual ~SceneRenderableResolver() = default;
     };
 
+    struct SceneRenderResourceResolver
+    {
+        virtual bool realize_renderable_descriptor(
+            const RenderableAssetData& renderable,
+            wz::scene::RenderableDescriptor& descriptor) const = 0;
+        virtual ~SceneRenderResourceResolver() = default;
+    };
+
     struct SceneInstantiateContext
     {
         const SceneRenderableResolver* renderable_resolver = nullptr;
+        const SceneRenderResourceResolver* resource_resolver = nullptr;
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -97,6 +106,7 @@ namespace wz::engine::assets
         ParentCycle,
         PolytreeBuildFailed,
         RenderableResolveFailed,
+        RenderableRealizeFailed,
     };
 
     struct SceneInstantiateResult
