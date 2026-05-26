@@ -1648,3 +1648,289 @@ TEST(SceneDescriptorValidation, RejectsInfiniteDebugVisualScale)
 })";
     EXPECT_FALSE(scene_json_compiles("inf_dv_scale", json));
 }
+
+// ─── Issue #58: renderable asset reference tests ────────────────────────
+
+namespace
+{
+    class TestRenderableResolver final
+        : public wz::engine::assets::SceneRenderableResolver
+    {
+    public:
+        TestRenderableResolver(
+            wz::engine::assets::RenderableAssetModule& mod)
+            : module_(mod) {}
+
+        const wz::engine::assets::RenderableAssetData* get(
+            wz::asset::AssetKey key) const override
+        {
+            wz::engine::assets::RenderableAsset asset{ .output = key };
+            auto handle = module_.get_renderable(asset);
+            if (!handle.valid()) return nullptr;
+            return module_.get_renderable_data(handle);
+        }
+
+    private:
+        wz::engine::assets::RenderableAssetModule& module_;
+    };
+}
+
+TEST(SceneAssetModule, MeshWireframeRenderableInScene)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_renderable_asset_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    // Create a real renderable asset through the normal path
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "debug/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    // Verify the renderable resolved
+    const auto rhandle = assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(rhandle.valid());
+    const auto* rdata = assets.renderables().get_renderable_data(rhandle);
+    ASSERT_NE(rdata, nullptr);
+    EXPECT_EQ(rdata->kind, RenderableKind::Mesh);
+
+    // Build a SceneAssetData in memory that references the renderable
+    SceneAssetData scene{};
+    scene.name = "renderable_asset_scene";
+
+    SceneNodeAsset node{};
+    node.id = "cube_node";
+    node.local.translation[0] = 2.0f;
+    node.local.translation[1] = 0.0f;
+    node.local.translation[2] = 3.0f;
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    // Instantiate with resolver
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    auto& inst = result.instance;
+
+    // Validate scene structure
+    EXPECT_EQ(wz::core::graph::node_count(inst.storage.polytree), 1u);
+    EXPECT_TRUE(inst.authored_to_runtime.contains("cube_node"));
+    auto cube_h = inst.authored_to_runtime["cube_node"];
+
+    // Renderable descriptor should be filled from the resolved asset
+    const auto& desc = inst.renderables[cube_h];
+    EXPECT_EQ(desc.node_class.role, wz::scene::SceneRole::Renderable);
+    EXPECT_EQ(desc.node_class.producer, wz::scene::ProducerKind::Mesh);
+    EXPECT_EQ(desc.node_class.default_surface, wz::scene::SurfaceClass::Opaque);
+    EXPECT_TRUE(desc.visible);
+    EXPECT_NE(desc.mesh, wz::scene::INVALID_MESH);
+
+    // World transform should reflect the authored translation
+    const auto& world = wz::core::graph::node_data(
+        inst.storage.polytree, cube_h).world;
+    EXPECT_FLOAT_EQ(world.m[12], 2.0f);
+    EXPECT_FLOAT_EQ(world.m[14], 3.0f);
+
+    // Full render pipeline: compile → IR → frame
+    wz::scene::ViewData view{};
+    view.camera_position = { 0.f, 0.f, 0.f };
+    view.view = wz::math::Mat4::identity();
+
+    constexpr float Pi = 3.14159265358979323846f;
+    const float fov = 70.0f * Pi / 180.0f;
+    view.projection = wz::math::projection_perspective_dx(
+        fov, 16.f / 9.f, 0.1f, 100.f);
+    view.view_projection = wz::math::mul(view.projection, view.view);
+
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        inst.storage.polytree,
+        inst.renderables,
+        inst.lights,
+        view);
+
+    ASSERT_EQ(compiled.scene.opaque.size(), 1u);
+    EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[12], 2.0f);
+    EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[14], 3.0f);
+
+    wz::render::RenderIRStorage render_ir{};
+    wz::render::build_render_ir(render_ir, compiled.scene);
+
+    wz::render::RenderFrameStorage render_frame{};
+    wz::render::build_frame(render_frame, render_ir.ir, compiled.scene);
+
+    ASSERT_EQ(render_frame.frame.opaque.size(), 1u);
+
+    const auto& cmd = render_frame.frame.opaque[0];
+    EXPECT_FLOAT_EQ(cmd.world.m[12], 2.0f);
+    EXPECT_FLOAT_EQ(cmd.world.m[14], 3.0f);
+}
+
+TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_renderable_mixed_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "debug/cube_wireframe",
+        .mesh = mesh,
+    });
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    // Scene: one renderable node, one camera-only node with debug visual
+    SceneAssetData scene{};
+    scene.name = "mixed_scene";
+
+    SceneNodeAsset render_node{};
+    render_node.id = "cube";
+    render_node.local.translation[0] = 5.0f;
+    render_node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(render_node));
+
+    SceneNodeAsset camera_node{};
+    camera_node.id = "cam";
+    camera_node.camera = SceneCameraAsset{};
+    camera_node.debug_visual = SceneDebugVisualAsset{
+        .kind = SceneDebugVisualKind::Axes,
+        .scale = 1.0f,
+        .visible = true,
+    };
+    scene.nodes.push_back(std::move(camera_node));
+
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok());
+
+    auto& inst = result.instance;
+
+    EXPECT_EQ(wz::core::graph::node_count(inst.storage.polytree), 2u);
+
+    // Cube node has renderable
+    auto cube_h = inst.authored_to_runtime["cube"];
+    EXPECT_EQ(inst.renderables[cube_h].node_class.role,
+        wz::scene::SceneRole::Renderable);
+
+    // Camera node has no renderable but has debug visual
+    auto cam_h = inst.authored_to_runtime["cam"];
+    EXPECT_EQ(inst.renderables[cam_h].node_class.role,
+        wz::scene::SceneRole::None);
+    ASSERT_EQ(inst.debug_visuals.size(), 1u);
+    EXPECT_EQ(inst.debug_visuals[0].node, cam_h);
+
+    // Compile: only one draw command (from the cube)
+    wz::scene::ViewData view{};
+    view.view = wz::math::Mat4::identity();
+    view.projection = wz::math::Mat4::identity();
+    view.view_projection = wz::math::Mat4::identity();
+
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        inst.storage.polytree,
+        inst.renderables,
+        inst.lights,
+        view);
+
+    EXPECT_EQ(compiled.scene.opaque.size(), 1u);
+}
+
+TEST(SceneInstantiate, RejectsRenderableAssetWithoutResolver)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "no_resolver";
+
+    SceneNodeAsset node{};
+    node.id = "obj";
+    node.renderable_asset = wz::asset::AssetKey{};  // any key
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableResolveFailed);
+}
+
+TEST(SceneInstantiate, RejectsUnresolvableRenderableAsset)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_bad_renderable_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    ASSERT_TRUE(assets.commit());
+    assets.resolve_all();
+
+    SceneAssetData scene{};
+    scene.name = "bad_ref";
+
+    SceneNodeAsset node{};
+    node.id = "missing";
+    // Fabricate a key that doesn't exist in the renderable table
+    wz::asset::AssetKey fake_key{};
+    fake_key.content_hash = { 0xDEADBEEF, 0 };
+    node.renderable_asset = fake_key;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+
+    auto result = instantiate_scene(scene, context);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableResolveFailed);
+}

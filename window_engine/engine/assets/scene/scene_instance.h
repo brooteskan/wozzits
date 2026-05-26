@@ -3,6 +3,7 @@
 // engine/assets/scene/scene_instance.h
 
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/assets/renderable/renderable.h>
 
 #include <scene/scene_graph.h>
 #include <scene/compile/compiled_scene.h>
@@ -73,6 +74,21 @@ namespace wz::engine::assets
         std::unordered_map<std::string, wz::core::graph::NodeHandle> authored_to_runtime;
     };
 
+    // ─── Renderable asset resolution ────────────────────────────────────
+
+    struct SceneRenderableResolver
+    {
+        virtual const RenderableAssetData* get(wz::asset::AssetKey key) const = 0;
+        virtual ~SceneRenderableResolver() = default;
+    };
+
+    struct SceneInstantiateContext
+    {
+        const SceneRenderableResolver* renderable_resolver = nullptr;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────
+
     enum class SceneInstantiateError
     {
         None = 0,
@@ -80,6 +96,7 @@ namespace wz::engine::assets
         ParentNotFound,
         ParentCycle,
         PolytreeBuildFailed,
+        RenderableResolveFailed,
     };
 
     struct SceneInstantiateResult
@@ -91,6 +108,8 @@ namespace wz::engine::assets
         bool ok() const noexcept { return error == SceneInstantiateError::None; }
     };
 
-    SceneInstantiateResult instantiate_scene(const SceneAssetData& scene);
+    SceneInstantiateResult instantiate_scene(
+        const SceneAssetData& scene,
+        const SceneInstantiateContext& context = {});
 
 } // namespace wz::engine::assets

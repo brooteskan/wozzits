@@ -33,6 +33,61 @@ namespace wz::engine::assets
         // The view matrix is the inverse of the world matrix.  For a rigid-body
         // transform (rotation + translation, no non-uniform scale) this is:
         //   V = transpose(R) with translation = -transpose(R) * t
+        wz::scene::RenderableDescriptor descriptor_from_renderable_asset(
+            const RenderableAssetData& data, bool node_visible)
+        {
+            namespace sc = wz::scene;
+
+            sc::SceneNodeClass nc{};
+            nc.role    = sc::SceneRole::Renderable;
+            nc.compile = sc::CompileBehavior::Static;
+
+            switch (data.kind) {
+            case RenderableKind::Mesh:
+                nc.producer = sc::ProducerKind::Mesh;
+                nc.spatial  = sc::SpatialKind::MeshBounds;
+                break;
+            case RenderableKind::GaussianSplatCloud:
+                nc.producer = sc::ProducerKind::SplatCloud;
+                nc.spatial  = sc::SpatialKind::Box;
+                break;
+            case RenderableKind::ScalarField:
+                nc.producer = sc::ProducerKind::Mesh;
+                nc.spatial  = sc::SpatialKind::Box;
+                break;
+            }
+
+            switch (data.domain) {
+            case RenderDomain::Debug:
+                nc.default_surface = sc::SurfaceClass::Opaque;
+                nc.domains = sc::RenderDomain::Surface | sc::RenderDomain::Debug;
+                break;
+            case RenderDomain::Opaque:
+                nc.default_surface = sc::SurfaceClass::Opaque;
+                nc.domains = sc::RenderDomain::Surface | sc::RenderDomain::Shadow;
+                break;
+            case RenderDomain::Transparent:
+                nc.default_surface = sc::SurfaceClass::Transparent;
+                nc.domains = sc::RenderDomain::Surface | sc::RenderDomain::Transparent;
+                break;
+            case RenderDomain::Splat:
+                nc.default_surface = sc::SurfaceClass::Transparent;
+                nc.domains = sc::RenderDomain::Splat | sc::RenderDomain::Transparent;
+                break;
+            }
+
+            return sc::RenderableDescriptor{
+                .node_class   = nc,
+                .mesh         = 0,
+                .material     = 0,
+                .local_bounds = sc::AABB{
+                    .min = { data.bounds_min[0], data.bounds_min[1], data.bounds_min[2] },
+                    .max = { data.bounds_max[0], data.bounds_max[1], data.bounds_max[2] },
+                },
+                .visible      = node_visible,
+            };
+        }
+
         wz::math::Mat4 view_matrix_from_world(const wz::math::Mat4& w)
         {
             // Extract the 3x3 rotation columns from the column-major world matrix.
@@ -55,7 +110,9 @@ namespace wz::engine::assets
         }
     }
 
-    SceneInstantiateResult instantiate_scene(const SceneAssetData& scene)
+    SceneInstantiateResult instantiate_scene(
+        const SceneAssetData& scene,
+        const SceneInstantiateContext& context)
     {
         using namespace wz::scene;
         using namespace wz::core::graph;
@@ -92,7 +149,7 @@ namespace wz::engine::assets
             tn.local = authored_to_mat4(node.local);
             tn.motion_type = node.motion_type;
 
-            if (node.renderable) {
+            if (node.renderable || node.renderable_asset) {
                 tn.flags = TransformNodeFlag::RenderDomain;
             }
 
@@ -142,7 +199,28 @@ namespace wz::engine::assets
         for (const auto& node : scene.nodes) {
             NodeHandle h = id_to_handle[node.id];
 
-            if (node.renderable) {
+            if (node.renderable_asset) {
+                if (!context.renderable_resolver) {
+                    result.error = SceneInstantiateError::RenderableResolveFailed;
+                    result.error_detail = "node '" + node.id
+                        + "' has renderable_asset but no resolver provided";
+                    return result;
+                }
+
+                const auto* rdata = context.renderable_resolver->get(
+                    *node.renderable_asset);
+
+                if (!rdata) {
+                    result.error = SceneInstantiateError::RenderableResolveFailed;
+                    result.error_detail = "node '" + node.id
+                        + "' renderable asset could not be resolved";
+                    return result;
+                }
+
+                inst.renderables[h] = descriptor_from_renderable_asset(
+                    *rdata, node.visible);
+            }
+            else if (node.renderable) {
                 const auto& rb = *node.renderable;
                 inst.renderables[h] = RenderableDescriptor{
                     .node_class = rb.node_class,

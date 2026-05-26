@@ -2,6 +2,8 @@
 
 // engine/assets/scene/scene_asset_data.h
 
+#include <asset/types.h>
+
 #include <scene/transform_node.h>
 #include <scene/compile/compiled_scene.h>
 
@@ -102,6 +104,7 @@ namespace wz::engine::assets
             wz::scene::TransformNode::MotionType::Static;
 
         std::optional<SceneRenderableBinding> renderable;
+        std::optional<wz::asset::AssetKey> renderable_asset;
         std::optional<SceneCameraAsset> camera;
 
         std::optional<SceneInputReceiverAsset> input_receiver;
