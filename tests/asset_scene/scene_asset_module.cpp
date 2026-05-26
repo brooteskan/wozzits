@@ -410,3 +410,16 @@ TEST(SceneInstantiate, RejectsInvalidParentId)
     EXPECT_FALSE(result.ok());
     EXPECT_EQ(result.error, SceneInstantiateError::ParentNotFound);
 }
+
+TEST(SceneInstantiate, RejectsParentCycle)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "cycle";
+    scene.nodes.push_back({ .id = "a", .parent_id = "b" });
+    scene.nodes.push_back({ .id = "b", .parent_id = "a" });
+
+    auto result = instantiate_scene(scene);
+    EXPECT_FALSE(result.ok());
+}
