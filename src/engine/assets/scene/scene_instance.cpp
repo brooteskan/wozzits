@@ -17,18 +17,6 @@ namespace wz::engine::assets
 {
     namespace
     {
-        wz::math::Mat4 authored_to_mat4(const AuthoredTransform& t)
-        {
-            wz::math::Transform xform{};
-            xform.position = { t.translation[0], t.translation[1], t.translation[2] };
-            xform.rotation = {
-                t.rotation_quat[0], t.rotation_quat[1],
-                t.rotation_quat[2], t.rotation_quat[3]
-            };
-            xform.scale = { t.scale[0], t.scale[1], t.scale[2] };
-            return wz::math::transform(xform);
-        }
-
         // Build a view matrix from a camera node's world transform.
         // The view matrix is the inverse of the world matrix.  For a rigid-body
         // transform (rotation + translation, no non-uniform scale) this is:
@@ -119,6 +107,53 @@ namespace wz::engine::assets
         }
     }
 
+    wz::math::Mat4 compose_scene_transform(const AuthoredTransform& t)
+    {
+        wz::math::Transform xform{};
+        xform.position = { t.translation[0], t.translation[1], t.translation[2] };
+        xform.rotation = {
+            t.rotation_quat[0], t.rotation_quat[1],
+            t.rotation_quat[2], t.rotation_quat[3]
+        };
+        xform.scale = { t.scale[0], t.scale[1], t.scale[2] };
+        return wz::math::transform(xform);
+    }
+
+    bool update_scene_asset_node_transform(
+        SceneAssetData& asset,
+        const SceneInstance& instance,
+        wz::core::graph::NodeHandle node,
+        const AuthoredTransform& local)
+    {
+        if (node >= instance.runtime_to_authored.size())
+            return false;
+
+        return update_scene_asset_node_transform(
+            asset,
+            instance,
+            instance.runtime_to_authored[node],
+            local);
+    }
+
+    bool update_scene_asset_node_transform(
+        SceneAssetData& asset,
+        const SceneInstance& instance,
+        const std::string& authored_node_id,
+        const AuthoredTransform& local)
+    {
+        if (!instance.authored_to_runtime.contains(authored_node_id))
+            return false;
+
+        for (auto& node : asset.nodes) {
+            if (node.id == authored_node_id) {
+                node.local = local;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     SceneInstantiateResult instantiate_scene(
         const SceneAssetData& scene,
         const SceneInstantiateContext& context)
@@ -155,7 +190,7 @@ namespace wz::engine::assets
         std::unordered_map<std::string, NodeHandle> id_to_handle;
         for (const auto& node : scene.nodes) {
             TransformNode tn{};
-            tn.local = authored_to_mat4(node.local);
+            tn.local = compose_scene_transform(node.local);
             tn.motion_type = node.motion_type;
 
             if (node.renderable || node.renderable_asset) {

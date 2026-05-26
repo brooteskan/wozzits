@@ -14,6 +14,7 @@
 
 #include <math/mat4.h>
 #include <math/projection.h>
+#include <math/quaternion.h>
 
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
@@ -2025,6 +2026,217 @@ TEST(SceneAssetModule, RenderableNodeWithEditorHandle)
     EXPECT_FALSE(inst.editor_handles[0].component.enabled);
     EXPECT_TRUE(inst.editor_handles[0].component.visible);
     EXPECT_FLOAT_EQ(inst.editor_handles[0].component.size, 1.25f);
+}
+
+TEST(SceneAssetModule, PersistsEditorHandleTranslationEdit)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "persist_translation";
+
+    SceneNodeAsset node{};
+    node.id = "rock";
+    node.editor_handle = SceneEditorHandleAsset{
+        .kind = SceneEditorHandleKind::Transform,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    auto& inst = result.instance;
+    auto rock_h = inst.authored_to_runtime["rock"];
+
+    AuthoredTransform edited{};
+    edited.translation[0] = 3.0f;
+    edited.translation[1] = 4.0f;
+    edited.translation[2] = 5.0f;
+
+    wz::scene::set_local(
+        inst.storage.polytree,
+        rock_h,
+        compose_scene_transform(edited));
+    wz::scene::propagate_all(inst.storage.polytree);
+
+    ASSERT_TRUE(update_scene_asset_node_transform(
+        scene,
+        inst,
+        rock_h,
+        edited));
+
+    EXPECT_FLOAT_EQ(scene.nodes[0].local.translation[0], 3.0f);
+    EXPECT_FLOAT_EQ(scene.nodes[0].local.translation[1], 4.0f);
+    EXPECT_FLOAT_EQ(scene.nodes[0].local.translation[2], 5.0f);
+
+    const auto& runtime = wz::core::graph::node_data(
+        inst.storage.polytree,
+        rock_h);
+    EXPECT_FLOAT_EQ(runtime.local.m[12], 3.0f);
+    EXPECT_FLOAT_EQ(runtime.local.m[13], 4.0f);
+    EXPECT_FLOAT_EQ(runtime.local.m[14], 5.0f);
+
+    auto reloaded = instantiate_scene(scene);
+    ASSERT_TRUE(reloaded.ok()) << "error: " << reloaded.error_detail;
+
+    auto reloaded_h = reloaded.instance.authored_to_runtime["rock"];
+    const auto& reloaded_node = wz::core::graph::node_data(
+        reloaded.instance.storage.polytree,
+        reloaded_h);
+    EXPECT_FLOAT_EQ(reloaded_node.local.m[12], 3.0f);
+    EXPECT_FLOAT_EQ(reloaded_node.local.m[13], 4.0f);
+    EXPECT_FLOAT_EQ(reloaded_node.local.m[14], 5.0f);
+}
+
+TEST(SceneAssetModule, PersistsEditorHandleRotationEdit)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "persist_rotation";
+
+    SceneNodeAsset node{};
+    node.id = "rock";
+    node.editor_handle = SceneEditorHandleAsset{
+        .kind = SceneEditorHandleKind::Transform,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    auto& inst = result.instance;
+    auto rock_h = inst.authored_to_runtime["rock"];
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const wz::math::Quaternion q =
+        wz::math::from_axis_angle({ 0.0f, 1.0f, 0.0f }, kPi * 0.5f);
+
+    AuthoredTransform edited{};
+    edited.rotation_quat[0] = q.x;
+    edited.rotation_quat[1] = q.y;
+    edited.rotation_quat[2] = q.z;
+    edited.rotation_quat[3] = q.w;
+
+    wz::scene::set_local(
+        inst.storage.polytree,
+        rock_h,
+        compose_scene_transform(edited));
+    wz::scene::propagate_all(inst.storage.polytree);
+
+    ASSERT_TRUE(update_scene_asset_node_transform(
+        scene,
+        inst,
+        "rock",
+        edited));
+
+    EXPECT_NEAR(scene.nodes[0].local.rotation_quat[0], q.x, 1e-5f);
+    EXPECT_NEAR(scene.nodes[0].local.rotation_quat[1], q.y, 1e-5f);
+    EXPECT_NEAR(scene.nodes[0].local.rotation_quat[2], q.z, 1e-5f);
+    EXPECT_NEAR(scene.nodes[0].local.rotation_quat[3], q.w, 1e-5f);
+
+    const auto& runtime = wz::core::graph::node_data(
+        inst.storage.polytree,
+        rock_h);
+    EXPECT_NEAR(runtime.local.m[0], 0.0f, 1e-5f);
+    EXPECT_NEAR(runtime.local.m[2], -1.0f, 1e-5f);
+    EXPECT_NEAR(runtime.local.m[8], 1.0f, 1e-5f);
+    EXPECT_NEAR(runtime.local.m[10], 0.0f, 1e-5f);
+
+    auto reloaded = instantiate_scene(scene);
+    ASSERT_TRUE(reloaded.ok()) << "error: " << reloaded.error_detail;
+
+    auto reloaded_h = reloaded.instance.authored_to_runtime["rock"];
+    const auto& reloaded_node = wz::core::graph::node_data(
+        reloaded.instance.storage.polytree,
+        reloaded_h);
+    EXPECT_NEAR(reloaded_node.local.m[0], 0.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[2], -1.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[8], 1.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_node.local.m[10], 0.0f, 1e-5f);
+}
+
+TEST(SceneAssetModule, PersistedChildTransformPreservesParentRelationship)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "persist_child";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    root.local.translation[0] = 10.0f;
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.editor_handle = SceneEditorHandleAsset{
+        .kind = SceneEditorHandleKind::Transform,
+    };
+    scene.nodes.push_back(std::move(child));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    auto& inst = result.instance;
+    auto root_h = inst.authored_to_runtime["root"];
+    auto child_h = inst.authored_to_runtime["child"];
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const wz::math::Quaternion q =
+        wz::math::from_axis_angle({ 0.0f, 1.0f, 0.0f }, kPi * 0.5f);
+
+    AuthoredTransform edited{};
+    edited.translation[0] = 2.0f;
+    edited.translation[1] = 3.0f;
+    edited.translation[2] = 4.0f;
+    edited.rotation_quat[0] = q.x;
+    edited.rotation_quat[1] = q.y;
+    edited.rotation_quat[2] = q.z;
+    edited.rotation_quat[3] = q.w;
+
+    wz::scene::set_local(
+        inst.storage.polytree,
+        child_h,
+        compose_scene_transform(edited));
+    wz::scene::propagate_all(inst.storage.polytree);
+
+    ASSERT_TRUE(update_scene_asset_node_transform(
+        scene,
+        inst,
+        child_h,
+        edited));
+
+    EXPECT_FLOAT_EQ(scene.nodes[0].local.translation[0], 10.0f);
+    EXPECT_FLOAT_EQ(scene.nodes[1].local.translation[0], 2.0f);
+    EXPECT_FLOAT_EQ(scene.nodes[1].local.translation[1], 3.0f);
+    EXPECT_FLOAT_EQ(scene.nodes[1].local.translation[2], 4.0f);
+
+    const auto& root_world = wz::core::graph::node_data(
+        inst.storage.polytree,
+        root_h).world;
+    const auto& child_world = wz::core::graph::node_data(
+        inst.storage.polytree,
+        child_h).world;
+
+    EXPECT_FLOAT_EQ(root_world.m[12], 10.0f);
+    EXPECT_FLOAT_EQ(child_world.m[12], 12.0f);
+    EXPECT_FLOAT_EQ(child_world.m[13], 3.0f);
+    EXPECT_FLOAT_EQ(child_world.m[14], 4.0f);
+
+    auto reloaded = instantiate_scene(scene);
+    ASSERT_TRUE(reloaded.ok()) << "error: " << reloaded.error_detail;
+
+    auto reloaded_child_h = reloaded.instance.authored_to_runtime["child"];
+    const auto& reloaded_child = wz::core::graph::node_data(
+        reloaded.instance.storage.polytree,
+        reloaded_child_h);
+    EXPECT_FLOAT_EQ(reloaded_child.world.m[12], 12.0f);
+    EXPECT_FLOAT_EQ(reloaded_child.world.m[13], 3.0f);
+    EXPECT_FLOAT_EQ(reloaded_child.world.m[14], 4.0f);
+    EXPECT_NEAR(reloaded_child.local.m[0], 0.0f, 1e-5f);
+    EXPECT_NEAR(reloaded_child.local.m[2], -1.0f, 1e-5f);
 }
 
 TEST(SceneAssetModule, MeshWireframeRenderableInScene)

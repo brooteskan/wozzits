@@ -131,4 +131,18 @@ namespace wz::engine::assets
         const SceneAssetData& scene,
         const SceneInstantiateContext& context = {});
 
+    wz::math::Mat4 compose_scene_transform(const AuthoredTransform& transform);
+
+    bool update_scene_asset_node_transform(
+        SceneAssetData& asset,
+        const SceneInstance& instance,
+        wz::core::graph::NodeHandle node,
+        const AuthoredTransform& local);
+
+    bool update_scene_asset_node_transform(
+        SceneAssetData& asset,
+        const SceneInstance& instance,
+        const std::string& authored_node_id,
+        const AuthoredTransform& local);
+
 } // namespace wz::engine::assets
