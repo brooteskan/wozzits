@@ -182,6 +182,15 @@ namespace wz::engine::assets::internal
                 if (bm) ctrl.boost_multiplier = static_cast<float>(*bm);
                 auto rs = read_number(*fcc, "roll_speed");
                 if (rs) ctrl.roll_speed = static_cast<float>(*rs);
+
+                if (ctrl.move_speed < 0.0f || ctrl.look_speed < 0.0f
+                    || ctrl.boost_multiplier < 0.0f || ctrl.roll_speed < 0.0f)
+                {
+                    logger.error("flying_camera_controller on node '"
+                        + node.id + "' has negative speed value");
+                    return std::nullopt;
+                }
+
                 node.flying_camera_controller = ctrl;
             }
 
