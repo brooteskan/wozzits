@@ -80,6 +80,11 @@ target_sources(window_engine PRIVATE
     assets/render_program/render_program_asset_module.cpp
     assets/render_program/render_program_compilers.cpp
 
+    assets/scene/scene.cpp
+    assets/scene/scene_compilers.cpp
+    assets/scene/scene_instance.cpp
+    assets/scene_asset_module.cpp
+
     rendering/renderable_gpu_cache.cpp
     rendering/renderable_debug_runtime.cpp
     rendering/renderable_pipeline_cache.cpp

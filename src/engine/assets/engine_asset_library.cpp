@@ -55,6 +55,7 @@ namespace wz::engine::assets
         , csv_export_table_{}
         , renderable_table_{}
         , render_program_table_{}
+        , scene_table_{}
         , json_table_{}
         , toml_table_{}
         , mesh_table_{}
@@ -75,6 +76,7 @@ namespace wz::engine::assets
                 .csv_export_table    = csv_export_table_,
                 .renderable_table    = renderable_table_,
                 .render_program_table = render_program_table_,
+                .scene_table         = scene_table_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -91,6 +93,7 @@ namespace wz::engine::assets
         , csv_export_(system_, logger_, csv_export_table_)
         , renderables_(system_, logger_, renderable_table_)
         , render_programs_(system_, render_program_table_)
+        , scenes_(system_, logger_, files_, json_, scene_table_)
     {
     }
 

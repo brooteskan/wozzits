@@ -25,6 +25,8 @@
 #include <engine/assets/renderable/renderable_compilers.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_compilers.h>
+#include <engine/assets/scene/scene.h>
+#include <engine/assets/scene/scene_compilers.h>
 
 #include <gpu/shader.h>
 
@@ -53,6 +55,7 @@ namespace wz::engine::assets::internal {
         CSVExportTable&                     csv_export_table;
         RenderableAssetTable&               renderable_table;
         RenderProgramTable&                 render_program_table;
+        SceneAssetTable&                    scene_table;
     };
 
     wz::asset::AssetNode compile_failed_node(

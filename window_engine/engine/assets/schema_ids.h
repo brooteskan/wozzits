@@ -297,4 +297,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kScalarFieldDebugRenderableSchema{
     0xF11E'CA55'E7'000702ull
     };
+
+    // Scene asset compiled from a JSON document dependency.
+    // Produces kAssetTypeScene output containing SceneAssetData in SceneAssetTable.
+    inline constexpr wz::asset::SchemaID kSceneFromJSONSchema{
+    0xF11E'CA55'E7'000710ull
+    };
 }

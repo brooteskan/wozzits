@@ -33,6 +33,7 @@ namespace wz::engine::assets::internal
         register_csv_export_compilers(registry, ctx.logger, ctx.data_table, ctx.csv_export_table);
         register_renderable_compilers(registry, ctx);
         register_render_program_compilers(registry, ctx.logger, ctx.render_program_table);
+        register_scene_compilers(registry, ctx.logger, ctx.json_table, ctx.scene_table);
 
         return registry;
     }
