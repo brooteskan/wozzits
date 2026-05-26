@@ -1,8 +1,9 @@
 // window_engine/engine/rendering/gpu_scene_render_resource_resolver.h
 //
 // GPU-aware SceneRenderResourceResolver for runtime/toolhost use.
-// Realizes mesh renderables through RenderableGpuCache and registers
-// them with RenderResourceResolver to produce real scene-render handles.
+// Realizes mesh renderables by uploading via gpu::upload_mesh and
+// registering the result with RenderResourceResolver to produce real
+// scene-render handles.
 #pragma once
 
 #include <engine/assets/scene/scene_instance.h>
