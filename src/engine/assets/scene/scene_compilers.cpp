@@ -142,6 +142,20 @@ namespace wz::engine::assets::internal
 
             node.renderable = parse_debug_renderable(node_val);
 
+            const auto* cam = find_member(node_val, "camera");
+            if (cam && cam->kind == wz::json::JSONValueKind::Object) {
+                SceneCameraAsset camera{};
+                auto fov = read_number(*cam, "fov_y");
+                if (fov) camera.fov_y = static_cast<float>(*fov);
+                auto near_p = read_number(*cam, "near");
+                if (near_p) camera.near_plane = static_cast<float>(*near_p);
+                auto far_p = read_number(*cam, "far");
+                if (far_p) camera.far_plane = static_cast<float>(*far_p);
+                auto asp = read_number(*cam, "aspect");
+                if (asp) camera.aspect = static_cast<float>(*asp);
+                node.camera = camera;
+            }
+
             return node;
         }
 

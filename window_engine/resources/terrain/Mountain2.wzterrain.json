@@ -1,0 +1,150 @@
+{
+    "schema": "wozzits.landscape",
+    "version": 1,
+    "fields": [
+        {
+            "name": "height",
+            "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\002\\Snowfield_Out.r32",
+            "format": "r32",
+            "width": 4096,
+            "height": 4096
+        }
+    ],
+    "terrain_recipe": {
+        "height_field_name": "height",
+        "geometry": {
+            "height_scale": 93.8274917602539,
+            "step_x": 0.0244140625,
+            "step_z": 0.0244140625,
+            "overlap_factor": 1.25,
+            "thickness": 0.0,
+            "subsample_step": 8,
+            "opacity": 0.949999988079071,
+            "flat_luminance": 0.550000011920929,
+            "steep_luminance": 0.30000001192092896,
+            "max_slope_stretch": 2.0,
+            "normal_smoothing_enabled": true,
+            "normal_smoothing_radius_cells": 2,
+            "normal_smoothing_sigma_cells": 1.0
+        },
+        "color_mode": 0,
+        "color_r": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0
+        },
+        "color_g": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0
+        },
+        "color_b": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0
+        },
+        "color_gray": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0
+        },
+        "normal": {
+            "source": 0,
+            "field_x": "normal_x",
+            "field_y": "normal_y",
+            "field_z": "normal_z",
+            "encoded_range": 0,
+            "up_axis": 0,
+            "flip_x": false,
+            "flip_z": false,
+            "blend": 1.0
+        },
+        "curvature": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0,
+            "radius_influence": 0.0,
+            "min_radius_mul": 0.5,
+            "opacity_influence": 0.0,
+            "opacity_boost": 1.25
+        },
+        "peaks": {
+            "normalize": true,
+            "scale": 1.0,
+            "bias": 0.0,
+            "color_influence": 0.0,
+            "color_brightness_boost": 0.30000001192092896,
+            "opacity_influence": 0.0,
+            "opacity_boost": 1.149999976158142,
+            "radius_influence": 0.0,
+            "min_radius_mul": 0.800000011920929
+        },
+        "normal_debug": 0
+    },
+    "use_recipe_color": false,
+    "color_lod_enabled": false,
+    "color_lod": {
+        "neighbor_radius_world": 0.05000000074505806,
+        "gaussian_sigma_world": 0.02500000037252903,
+        "include_self": true,
+        "use_opacity_weight": true,
+        "color_variance_gain": 4.0
+    },
+    "preview": {
+        "active_program": 2,
+        "lod": {
+            "mode": 0,
+            "strength": 1.0,
+            "near_distance": 5.0,
+            "far_distance": 50.0,
+            "max_stride_for_blend": 128.0,
+            "use_confidence": true
+        },
+        "coverage": {
+            "mode": 1,
+            "threshold": 0.4000000059604645,
+            "opacity_scale": 0.25,
+            "kernel_mode": 1,
+            "radius_scale": 1.5,
+            "inner_radius": 0.550000011920929,
+            "outer_radius": 1.0,
+            "gaussian_falloff": 4.0,
+            "debug_view": 0
+        },
+        "force_stride": 1,
+        "target_spp": 2.0,
+        "field_accum_enabled": false,
+        "field_accum": {
+            "weight_scale": 1.0,
+            "ambient": 0.15000000596046448,
+            "diffuse_strength": 0.8500000238418579,
+            "light_dir": [
+                0.30000001192092896,
+                0.800000011920929,
+                0.4000000059604645
+            ],
+            "debug_mode": 0
+        },
+        "surface_recon_enabled": true,
+        "surface_recon": {
+            "grid_res": 1024,
+            "kernel_mode": 0,
+            "radius_scale": 0.8100000023841858,
+            "inner_radius": 0.6499999761581421,
+            "outer_radius": 1.0,
+            "gaussian_falloff": 7.239999771118164,
+            "use_gradient_normals": true
+        },
+        "surface_mesh": {
+            "wireframe": false,
+            "ambient": 0.15000000596046448,
+            "diffuse_strength": 0.8500000238418579,
+            "light_dir": [
+                0.30000001192092896,
+                0.800000011920929,
+                0.4000000059604645
+            ],
+            "debug_mode": 0
+        }
+    }
+}

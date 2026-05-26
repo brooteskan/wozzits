@@ -8,6 +8,7 @@
 
 #include <math/mat4.h>
 #include <math/math_types.h>
+#include <math/projection.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -26,6 +27,31 @@ namespace wz::engine::assets
             };
             xform.scale = { t.scale[0], t.scale[1], t.scale[2] };
             return wz::math::transform(xform);
+        }
+
+        // Build a view matrix from a camera node's world transform.
+        // The view matrix is the inverse of the world matrix.  For a rigid-body
+        // transform (rotation + translation, no non-uniform scale) this is:
+        //   V = transpose(R) with translation = -transpose(R) * t
+        wz::math::Mat4 view_matrix_from_world(const wz::math::Mat4& w)
+        {
+            // Extract the 3x3 rotation columns from the column-major world matrix.
+            const float rx = w.m[0], ry = w.m[1], rz = w.m[2];   // column 0 = right
+            const float ux = w.m[4], uy = w.m[5], uz = w.m[6];   // column 1 = up
+            const float fx = w.m[8], fy = w.m[9], fz = w.m[10];  // column 2 = forward
+            const float px = w.m[12], py = w.m[13], pz = w.m[14]; // translation
+
+            wz::math::Mat4 V{};
+            // Transposed rotation: each ROW of the result is one column of the
+            // original rotation so that V * world_pos projects into camera space.
+            V.m[0]  = rx;    V.m[1]  = ux;    V.m[2]  = fx;    V.m[3]  = 0.0f;
+            V.m[4]  = ry;    V.m[5]  = uy;    V.m[6]  = fy;    V.m[7]  = 0.0f;
+            V.m[8]  = rz;    V.m[9]  = uz;    V.m[10] = fz;    V.m[11] = 0.0f;
+            V.m[12] = -(rx * px + ry * py + rz * pz);
+            V.m[13] = -(ux * px + uy * py + uz * pz);
+            V.m[14] = -(fx * px + fy * py + fz * pz);
+            V.m[15] = 1.0f;
+            return V;
         }
     }
 
@@ -134,6 +160,42 @@ namespace wz::engine::assets
         // Build light records
         for (const auto& light : scene.lights) {
             inst.lights.push_back(light.light);
+        }
+
+        // Populate default_view from the active camera node, if specified.
+        if (scene.defaults.active_camera_node) {
+            const auto& cam_id = *scene.defaults.active_camera_node;
+            auto cam_it = id_to_handle.find(cam_id);
+            if (cam_it != id_to_handle.end()) {
+                // Find the camera intrinsics on this node.
+                const SceneCameraAsset* cam_asset = nullptr;
+                for (const auto& node : scene.nodes) {
+                    if (node.id == cam_id && node.camera) {
+                        cam_asset = &*node.camera;
+                        break;
+                    }
+                }
+
+                if (cam_asset) {
+                    const auto& cam_world = wz::core::graph::node_data(
+                        inst.storage.polytree, cam_it->second).world;
+
+                    inst.default_view.camera_position = {
+                        cam_world.m[12], cam_world.m[13], cam_world.m[14]
+                    };
+                    inst.default_view.view = view_matrix_from_world(cam_world);
+                    inst.default_view.projection =
+                        wz::math::projection_perspective_dx(
+                            cam_asset->fov_y,
+                            cam_asset->aspect,
+                            cam_asset->near_plane,
+                            cam_asset->far_plane);
+                    inst.default_view.view_projection =
+                        wz::math::mul(
+                            inst.default_view.projection,
+                            inst.default_view.view);
+                }
+            }
         }
 
         result.error = SceneInstantiateError::None;

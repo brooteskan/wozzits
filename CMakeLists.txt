@@ -4,7 +4,14 @@ project(window_engine LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ON)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS ON)
+else()
+    set(WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS OFF)
+endif()
+
+option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
+option(WINDOW_ENGINE_BUILD_EXAMPLES "Build standalone examples" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
 option(WNIDOW_ENGINE_DEV_BUILD "Use local algo_math" ON)
 option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 
@@ -289,16 +296,18 @@ endfunction()
 # Tests
 # ----------------------------
 
-add_executable(wozzits_rtaudio_smoke
-    examples/rtaudio/main.cpp
-)
+if(WINDOW_ENGINE_BUILD_EXAMPLES)
+    add_executable(wozzits_rtaudio_smoke
+        examples/rtaudio/main.cpp
+    )
 
-target_link_libraries(wozzits_rtaudio_smoke
-    PRIVATE
-        window_engine
-)
+    target_link_libraries(wozzits_rtaudio_smoke
+        PRIVATE
+            window_engine
+    )
+endif()
 
-if(WOZZITS_ENABLE_V8_SCRIPTING)
+if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
         examples/v8_script_smoke/v8_script_smoke.cpp
      )
@@ -318,7 +327,7 @@ if(WOZZITS_ENABLE_V8_SCRIPTING)
     endif()
 endif()
 
-if(SCENE_RENDER_ENABLE_TESTS)
+if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     target_compile_definitions(window_engine PUBLIC WZ_ENABLE_TESTING)
 
     rs_add_test_group(engine engine)

@@ -28,8 +28,10 @@ namespace wz::engine::assets
 
     struct SceneCameraAsset
     {
-        std::string node_id;
-        wz::scene::ViewData view{};
+        float fov_y = 1.0472f;   // ~60 degrees
+        float near_plane = 0.1f;
+        float far_plane = 1000.0f;
+        float aspect = 16.0f / 9.0f;
     };
 
     struct AuthoredTransform

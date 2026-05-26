@@ -78,6 +78,51 @@ namespace
   ]
 })";
 
+    const char* kCameraSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "camera_scene",
+  "nodes": [
+    {
+      "id": "world_root",
+      "transform": {
+        "translation": [0, 0, 0]
+      }
+    },
+    {
+      "id": "main_camera",
+      "parent": "world_root",
+      "transform": {
+        "translation": [0, 5, 10]
+      },
+      "camera": {
+        "fov_y": 1.0472,
+        "near": 0.1,
+        "far": 500.0,
+        "aspect": 1.7778
+      }
+    },
+    {
+      "id": "object",
+      "parent": "world_root",
+      "transform": {
+        "translation": [0, 0, 5]
+      },
+      "debug_renderable": {
+        "pipeline": "OpaqueGeometry",
+        "mesh": 0,
+        "material": 0,
+        "bounds": {
+          "min": [-1, -1, -1],
+          "max": [1, 1, 1]
+        }
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "main_camera"
+  }
+})";
+
     const char* kNonRenderableNodeSceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "mixed_scene",
@@ -508,4 +553,106 @@ TEST(SceneInstantiate, RejectsParentCycle)
     auto result = instantiate_scene(scene);
     EXPECT_FALSE(result.ok());
     EXPECT_EQ(result.error, SceneInstantiateError::PolytreeBuildFailed);
+}
+
+TEST(SceneAssetModule, CameraNodePopulatesDefaultView)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_asset_camera_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(root, "camera_scene.json", kCameraSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "camera_scene",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    // Verify the camera data was parsed
+    ASSERT_EQ(scene_data->defaults.active_camera_node, "main_camera");
+    bool found_camera_node = false;
+    for (const auto& node : scene_data->nodes) {
+        if (node.id == "main_camera") {
+            ASSERT_TRUE(node.camera.has_value());
+            EXPECT_NEAR(node.camera->fov_y, 1.0472f, 1e-4f);
+            EXPECT_NEAR(node.camera->near_plane, 0.1f, 1e-4f);
+            EXPECT_NEAR(node.camera->far_plane, 500.0f, 1e-2f);
+            EXPECT_NEAR(node.camera->aspect, 1.7778f, 1e-3f);
+            found_camera_node = true;
+        }
+    }
+    ASSERT_TRUE(found_camera_node);
+
+    // Instantiate and verify default_view is populated
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok());
+
+    auto& inst = result.instance;
+    const auto& dv = inst.default_view;
+
+    // Camera at world (0, 5, 10) — from parent (0,0,0) + local (0,5,10).
+    EXPECT_FLOAT_EQ(dv.camera_position.x, 0.0f);
+    EXPECT_FLOAT_EQ(dv.camera_position.y, 5.0f);
+    EXPECT_FLOAT_EQ(dv.camera_position.z, 10.0f);
+
+    // View matrix: identity rotation, so the view matrix should be a pure
+    // translation by the negated camera position.
+    // V = transpose(I) with t = -I * (0,5,10) = (0,-5,-10).
+    EXPECT_FLOAT_EQ(dv.view.m[12], 0.0f);
+    EXPECT_FLOAT_EQ(dv.view.m[13], -5.0f);
+    EXPECT_FLOAT_EQ(dv.view.m[14], -10.0f);
+
+    // Rotation part should be identity (no rotation on the camera node).
+    EXPECT_FLOAT_EQ(dv.view.m[0], 1.0f);
+    EXPECT_FLOAT_EQ(dv.view.m[5], 1.0f);
+    EXPECT_FLOAT_EQ(dv.view.m[10], 1.0f);
+
+    // Projection should be non-zero (a valid perspective matrix).
+    EXPECT_NE(dv.projection.m[0], 0.0f);
+    EXPECT_NE(dv.projection.m[5], 0.0f);
+
+    // view_projection should equal projection * view.
+    wz::math::Mat4 expected_vp = wz::math::mul(dv.projection, dv.view);
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_NEAR(dv.view_projection.m[i], expected_vp.m[i], 1e-5f)
+            << "view_projection mismatch at index " << i;
+    }
+
+    // Verify the scene can still render: the object at (0,0,5) should be
+    // visible from the camera at (0,5,10) looking down -Z.
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        inst.storage.polytree,
+        inst.renderables,
+        inst.lights,
+        dv);
+
+    EXPECT_EQ(compiled.scene.opaque.size(), 1u);
+    if (!compiled.scene.opaque.empty()) {
+        EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[12], 0.0f);
+        EXPECT_FLOAT_EQ(compiled.scene.opaque[0].world.m[14], 5.0f);
+    }
 }
