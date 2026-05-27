@@ -19,11 +19,7 @@ namespace wz::engine::assets
     // Runtime component record: associates a component with the runtime
     // node handle it was authored on.  Data-only — no behavior.
     template <typename T>
-    struct SceneComponentRecord
-    {
-        wz::core::graph::NodeHandle node{};
-        T component{};
-    };
+    using SceneComponentRecord = wz::scene::RuntimeComponentRecord<T>;
 
     // Runtime component types (instantiated from authored asset descriptors).
     struct InputReceiverComponent
@@ -66,6 +62,10 @@ namespace wz::engine::assets
 
     struct SceneInstance
     {
+        // Runtime projection of authored SceneAssetData. instantiate_scene(...)
+        // is the first compiler from authored scene language into this shape;
+        // scene-render then compiles the graph, renderables, and lights into
+        // render-oriented storage.
         wz::scene::SceneStorage storage{};
 
         std::vector<wz::scene::RenderableDescriptor> renderables;
@@ -81,8 +81,10 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 
-        std::vector<std::string> runtime_to_authored;
-        std::unordered_map<std::string, wz::core::graph::NodeHandle> authored_to_runtime;
+        std::vector<wz::scene::AuthoredEntityId> runtime_to_authored;
+        std::unordered_map<
+            wz::scene::AuthoredEntityId,
+            wz::scene::RuntimeEntityId> authored_to_runtime;
     };
 
     // ─── Renderable asset resolution ────────────────────────────────────
