@@ -3223,6 +3223,127 @@ TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)
     EXPECT_FALSE(resource_resolver.realize_renderable_descriptor(splat_data, desc));
 }
 
+TEST(SceneInstantiate, ConcreteMeshResolverRejectsSplatRenderableDuringInstantiation)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_concrete_splat_unsupported_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto cloud =
+        assets.gaussian_splats().create_procedural_cloud({
+            .name = "debug/splat_sphere",
+            .count = 64,
+            .radius = 2.0f,
+            .splat_scale = 1.0f,
+        });
+    ASSERT_TRUE(cloud.valid());
+
+    const auto renderable =
+        assets.renderables().create_gaussian_splat_debug({
+            .name = "debug/splat_sphere_debug",
+            .splat_cloud = cloud,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(), render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "splat_unsupported_scene";
+
+    SceneNodeAsset node{};
+    node.id = "splat_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableRealizeFailed);
+}
+
+TEST(SceneInstantiate, ConcreteMeshResolverRejectsScalarFieldRenderableDuringInstantiation)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_concrete_scalar_unsupported_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "debug/scalar_gradient",
+            .width = 16,
+            .height = 16,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        });
+    ASSERT_TRUE(field.valid());
+
+    const auto renderable =
+        assets.renderables().create_scalar_field_debug({
+            .name = "debug/scalar_gradient_debug",
+            .scalar_field = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(), render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "scalar_unsupported_scene";
+
+    SceneNodeAsset node{};
+    node.id = "scalar_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableRealizeFailed);
+}
+
 TEST(SceneECSBoundary, AuthoredIdsMapToRuntimeEntitiesAndBack)
 {
     using namespace wz::engine::assets;
