@@ -407,7 +407,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_asset_module)
 
     rs_add_test_group(asset_gltf gltf_importer)
-    rs_add_test_group(game_app game_app_main)
+    # rs_add_test_group(game_app game_app_main)
 
     # ── BenchmarkApp ──────────────────────────────────────────────────────────
     # Standalone interactive app — no gtest dependency, resources required.

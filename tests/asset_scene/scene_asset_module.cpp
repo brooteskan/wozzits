@@ -3423,6 +3423,37 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.editor_handles, 1u);
 }
 
+TEST(SceneECSBoundary, CountsLegacyAndAssetBackedRenderableComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "mixed_renderable_component_sources";
+
+    SceneNodeAsset legacy_node{};
+    legacy_node.id = "legacy_renderable";
+    legacy_node.renderable = SceneRenderableBinding{};
+    EXPECT_TRUE(has_authored_renderable_component(legacy_node));
+    scene.nodes.push_back(std::move(legacy_node));
+
+    SceneNodeAsset asset_node{};
+    asset_node.id = "asset_renderable";
+    wz::asset::AssetKey renderable_key{};
+    renderable_key.content_hash = { 0x58, 0x01 };
+    asset_node.renderable_asset = renderable_key;
+    EXPECT_TRUE(has_authored_renderable_component(asset_node));
+    scene.nodes.push_back(std::move(asset_node));
+
+    SceneNodeAsset empty_node{};
+    empty_node.id = "empty";
+    EXPECT_FALSE(has_authored_renderable_component(empty_node));
+    scene.nodes.push_back(std::move(empty_node));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 3u);
+    EXPECT_EQ(summary.renderables, 2u);
+}
+
 TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
 {
     using namespace wz::engine::assets;
