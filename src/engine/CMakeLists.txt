@@ -84,6 +84,7 @@ target_sources(window_engine PRIVATE
     assets/scene/scene_compilers.cpp
     assets/scene/scene_fingerprint.cpp
     assets/scene/scene_instance.cpp
+    assets/scene/scene_runtime_build.cpp
     assets/scene/scene_json_export.cpp
     assets/scene_asset_module.cpp
 
