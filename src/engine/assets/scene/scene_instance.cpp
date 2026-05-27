@@ -136,7 +136,7 @@ namespace wz::engine::assets
                 << summary.flying_camera_controllers
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
-                << " debug_visuals=" << summary.debug_visuals
+                << " auxiliary_visuals=" << summary.auxiliary_visuals
                 << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
@@ -183,7 +183,7 @@ namespace wz::engine::assets
                 << summary.flying_camera_controllers
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
-                << " debug_visuals=" << summary.debug_visuals
+                << " auxiliary_visuals=" << summary.auxiliary_visuals
                 << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
@@ -253,6 +253,8 @@ namespace wz::engine::assets
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
                 instance.event_listeners.size()),
+            .auxiliary_visuals = static_cast<uint32_t>(
+                instance.debug_visuals.size()),
             .debug_visuals = static_cast<uint32_t>(
                 instance.debug_visuals.size()),
             .editor_handles = static_cast<uint32_t>(
@@ -460,7 +462,7 @@ namespace wz::engine::assets
             if (node.debug_visual) {
                 inst.debug_visuals.push_back({
                     .node = h,
-                    .component = DebugVisualComponent{
+                    .component = AuxiliaryVisualComponent{
                         .kind    = node.debug_visual->kind,
                         .scale   = node.debug_visual->scale,
                         .visible = node.debug_visual->visible,

@@ -45,12 +45,14 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
-    struct DebugVisualComponent
+    struct AuxiliaryVisualComponent
     {
-        SceneDebugVisualKind kind = SceneDebugVisualKind::None;
+        SceneAuxiliaryVisualKind kind = SceneAuxiliaryVisualKind::None;
         float scale = 1.0f;
         bool visible = true;
     };
+
+    using DebugVisualComponent = AuxiliaryVisualComponent;
 
     struct EditorHandleComponent
     {

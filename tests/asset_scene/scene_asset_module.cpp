@@ -3134,6 +3134,7 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
     EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
@@ -3152,6 +3153,7 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
     EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
@@ -3177,6 +3179,7 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_FALSE(has_authored_renderable_component(child));
     EXPECT_FALSE(has_authored_camera_component(child));
     EXPECT_FALSE(has_authored_editor_only_components(child));
+    EXPECT_FALSE(has_authored_auxiliary_visual_component(child));
     EXPECT_FALSE(has_authored_debug_visual_component(child));
     EXPECT_FALSE(has_runtime_relevant_components(child));
     scene.nodes.push_back(std::move(child));
@@ -3193,6 +3196,7 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
     EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
@@ -3229,6 +3233,7 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
 
     EXPECT_TRUE(has_authored_camera_component(camera_node));
     EXPECT_TRUE(has_authored_editor_only_components(camera_node));
+    EXPECT_TRUE(has_authored_auxiliary_visual_component(camera_node));
     EXPECT_TRUE(has_authored_debug_visual_component(camera_node));
     EXPECT_TRUE(has_runtime_relevant_components(camera_node));
     scene.nodes.push_back(std::move(camera_node));
@@ -3248,6 +3253,7 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
+    EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
 }
@@ -3295,6 +3301,7 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
+    EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
 }

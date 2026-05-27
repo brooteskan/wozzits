@@ -55,18 +55,23 @@ namespace wz::engine::assets
 
     // ─── Debug/editor visual descriptors ─────────────────────────────────
 
-    enum class SceneDebugVisualKind : uint8_t
+    // Auxiliary visuals are exportable authored visual helpers. The legacy
+    // JSON field and compatibility aliases still use "debug_visual" for now.
+    enum class SceneAuxiliaryVisualKind : uint8_t
     {
         None = 0,
         Axes,
     };
 
-    struct SceneDebugVisualAsset
+    struct SceneAuxiliaryVisualAsset
     {
-        SceneDebugVisualKind kind = SceneDebugVisualKind::None;
+        SceneAuxiliaryVisualKind kind = SceneAuxiliaryVisualKind::None;
         float scale = 1.0f;
         bool visible = true;
     };
+
+    using SceneDebugVisualKind = SceneAuxiliaryVisualKind;
+    using SceneDebugVisualAsset = SceneAuxiliaryVisualAsset;
 
     enum class SceneEditorHandleKind : uint8_t
     {
@@ -134,7 +139,7 @@ namespace wz::engine::assets
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
-        std::optional<SceneDebugVisualAsset> debug_visual;
+        std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
     };
 
@@ -171,10 +176,16 @@ namespace wz::engine::assets
         return node.editor_handle.has_value();
     }
 
-    inline bool has_authored_debug_visual_component(
+    inline bool has_authored_auxiliary_visual_component(
         const SceneNodeAsset& node) noexcept
     {
         return node.debug_visual.has_value();
+    }
+
+    inline bool has_authored_debug_visual_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return has_authored_auxiliary_visual_component(node);
     }
 
     inline bool has_runtime_relevant_components(
@@ -222,6 +233,7 @@ namespace wz::engine::assets
                 ++out.event_listeners;
             }
             if (node.debug_visual) {
+                ++out.auxiliary_visuals;
                 ++out.debug_visuals;
             }
             if (node.editor_handle) {
