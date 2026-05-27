@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wz::engine::assets
@@ -163,6 +164,108 @@ namespace wz::engine::assets
 
         bool valid() const noexcept { return !nodes.empty(); }
     };
+
+    inline SceneNodeAsset make_scene_node(
+        wz::scene::AuthoredEntityId id,
+        std::string name = {})
+    {
+        SceneNodeAsset node{};
+        node.id = std::move(id);
+        node.name = name.empty() ? node.id : std::move(name);
+        return node;
+    }
+
+    inline SceneNodeAsset& add_scene_node(
+        SceneAssetData& scene,
+        SceneNodeAsset node)
+    {
+        scene.nodes.push_back(std::move(node));
+        return scene.nodes.back();
+    }
+
+    inline void set_parent(
+        SceneNodeAsset& node,
+        wz::scene::AuthoredEntityId parent_id)
+    {
+        node.parent_id = std::move(parent_id);
+    }
+
+    inline void set_transform(
+        SceneNodeAsset& node,
+        const AuthoredTransform& transform)
+    {
+        node.local = transform;
+    }
+
+    inline void attach_renderable_asset(
+        SceneNodeAsset& node,
+        wz::asset::AssetKey renderable_asset)
+    {
+        node.renderable_asset = renderable_asset;
+    }
+
+    inline void attach_camera(
+        SceneNodeAsset& node,
+        SceneCameraAsset camera = {})
+    {
+        node.camera = camera;
+    }
+
+    inline void attach_auxiliary_visual(
+        SceneNodeAsset& node,
+        SceneAuxiliaryVisualAsset visual)
+    {
+        node.debug_visual = visual;
+    }
+
+    inline void attach_editor_handle(
+        SceneNodeAsset& node,
+        SceneEditorHandleAsset handle = {})
+    {
+        node.editor_handle = handle;
+    }
+
+    inline std::vector<wz::scene::SceneAuthoredComponentKind>
+    authored_components_for_node(const SceneNodeAsset& node)
+    {
+        using Kind = wz::scene::SceneAuthoredComponentKind;
+
+        std::vector<Kind> out{
+            Kind::Transform,
+            Kind::Visibility,
+            Kind::MotionType,
+        };
+
+        if (node.parent_id) {
+            out.push_back(Kind::ParentLink);
+        }
+        if (node.renderable || node.renderable_asset) {
+            out.push_back(Kind::Renderable);
+        }
+        if (node.camera) {
+            out.push_back(Kind::Camera);
+        }
+        if (node.input_receiver) {
+            out.push_back(Kind::InputReceiver);
+        }
+        if (node.flying_camera_controller) {
+            out.push_back(Kind::FlyingCameraController);
+        }
+        if (node.audio_listener) {
+            out.push_back(Kind::AudioListener);
+        }
+        if (node.event_listener) {
+            out.push_back(Kind::EventListener);
+        }
+        if (node.debug_visual) {
+            out.push_back(Kind::AuxiliaryVisual);
+        }
+        if (node.editor_handle) {
+            out.push_back(Kind::EditorHandle);
+        }
+
+        return out;
+    }
 
     inline bool has_authored_renderable_component(
         const SceneNodeAsset& node) noexcept
