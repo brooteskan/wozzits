@@ -108,28 +108,6 @@ namespace wz::engine::assets
             return V;
         }
 
-        std::size_t authored_renderable_count(const SceneAssetData& scene)
-        {
-            std::size_t count = 0;
-            for (const auto& node : scene.nodes) {
-                if (node.renderable || node.renderable_asset) {
-                    ++count;
-                }
-            }
-            return count;
-        }
-
-        std::size_t authored_camera_count(const SceneAssetData& scene)
-        {
-            std::size_t count = 0;
-            for (const auto& node : scene.nodes) {
-                if (node.camera) {
-                    ++count;
-                }
-            }
-            return count;
-        }
-
         const char* log_owner(const SceneInstantiateContext& context)
         {
             return context.log_owner ? context.log_owner : "Scene";
@@ -143,15 +121,23 @@ namespace wz::engine::assets
                 return;
             }
 
+            const auto summary = summarize_authored_scene_components(scene);
             std::ostringstream msg;
             msg
                 << "[" << log_owner(context) << "] instantiate_scene begin"
                 << " scene=" << scene.name
                 << " scene_hash=" << scene_asset_fingerprint_string(scene)
-                << " authored_nodes=" << scene.nodes.size()
-                << " authored_renderables=" << authored_renderable_count(scene)
-                << " lights=" << scene.lights.size()
-                << " cameras=" << authored_camera_count(scene);
+                << " authored_nodes=" << summary.nodes
+                << " authored_renderables=" << summary.renderables
+                << " cameras=" << summary.cameras
+                << " lights=" << summary.lights
+                << " input_receivers=" << summary.input_receivers
+                << " flying_camera_controllers="
+                << summary.flying_camera_controllers
+                << " audio_listeners=" << summary.audio_listeners
+                << " event_listeners=" << summary.event_listeners
+                << " auxiliary_visuals=" << summary.auxiliary_visuals
+                << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
 
@@ -181,6 +167,7 @@ namespace wz::engine::assets
                 return;
             }
 
+            const auto summary = summarize_scene_instance_components(inst);
             std::ostringstream msg;
             msg
                 << "[" << log_owner(context) << "] instantiate_scene complete"
@@ -188,14 +175,16 @@ namespace wz::engine::assets
                 << " scene_hash=" << scene_asset_fingerprint_string(scene)
                 << " instance=" << static_cast<const void*>(&inst)
                 << " storage=" << static_cast<const void*>(&inst.storage)
-                << " runtime_nodes=" << wz::core::graph::node_count(inst.storage.polytree)
-                << " descriptor_slots=" << inst.renderables.size()
-                << " lights=" << inst.lights.size()
-                << " editor_handles=" << inst.editor_handles.size()
-                << " debug_visuals=" << inst.debug_visuals.size()
-                << " input_receivers=" << inst.input_receivers.size()
+                << " runtime_entities=" << summary.runtime_entities
+                << " descriptor_slots=" << summary.renderable_descriptor_slots
+                << " lights=" << summary.lights
+                << " input_receivers=" << summary.input_receivers
                 << " flying_camera_controllers="
-                << inst.flying_camera_controllers.size();
+                << summary.flying_camera_controllers
+                << " audio_listeners=" << summary.audio_listeners
+                << " event_listeners=" << summary.event_listeners
+                << " auxiliary_visuals=" << summary.auxiliary_visuals
+                << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
     }
@@ -245,6 +234,32 @@ namespace wz::engine::assets
         }
 
         return false;
+    }
+
+    wz::scene::SceneRuntimeComponentSummary summarize_scene_instance_components(
+        const SceneInstance& instance)
+    {
+        return wz::scene::SceneRuntimeComponentSummary{
+            .runtime_entities = static_cast<uint32_t>(
+                wz::core::graph::node_count(instance.storage.polytree)),
+            .renderable_descriptor_slots = static_cast<uint32_t>(
+                instance.renderables.size()),
+            .lights = static_cast<uint32_t>(instance.lights.size()),
+            .input_receivers = static_cast<uint32_t>(
+                instance.input_receivers.size()),
+            .flying_camera_controllers = static_cast<uint32_t>(
+                instance.flying_camera_controllers.size()),
+            .audio_listeners = static_cast<uint32_t>(
+                instance.audio_listeners.size()),
+            .event_listeners = static_cast<uint32_t>(
+                instance.event_listeners.size()),
+            .auxiliary_visuals = static_cast<uint32_t>(
+                instance.debug_visuals.size()),
+            .debug_visuals = static_cast<uint32_t>(
+                instance.debug_visuals.size()),
+            .editor_handles = static_cast<uint32_t>(
+                instance.editor_handles.size()),
+        };
     }
 
     SceneInstantiateResult instantiate_scene(
@@ -447,7 +462,7 @@ namespace wz::engine::assets
             if (node.debug_visual) {
                 inst.debug_visuals.push_back({
                     .node = h,
-                    .component = DebugVisualComponent{
+                    .component = AuxiliaryVisualComponent{
                         .kind    = node.debug_visual->kind,
                         .scale   = node.debug_visual->scale,
                         .visible = node.debug_visual->visible,

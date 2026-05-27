@@ -4,6 +4,7 @@
 
 #include <asset/types.h>
 
+#include <scene/scene_ecs.h>
 #include <scene/transform_node.h>
 #include <scene/compile/compiled_scene.h>
 
@@ -14,6 +15,10 @@
 
 namespace wz::engine::assets
 {
+    // SceneAssetData is authored scene source data: a small scene description
+    // language that compiles into SceneInstance and then into scene-render
+    // storage. AssetKey references remain resource-DAG references; entity and
+    // component composition lives here in the scene model.
     struct SceneRenderableBinding
     {
         wz::scene::SceneNodeClass node_class{};
@@ -25,7 +30,7 @@ namespace wz::engine::assets
 
     struct SceneLightAsset
     {
-        std::string node_id;
+        wz::scene::AuthoredEntityId node_id;
         wz::scene::LightRecord light{};
     };
 
@@ -50,18 +55,23 @@ namespace wz::engine::assets
 
     // ─── Debug/editor visual descriptors ─────────────────────────────────
 
-    enum class SceneDebugVisualKind : uint8_t
+    // Auxiliary visuals are exportable authored visual helpers. The legacy
+    // JSON field and compatibility aliases still use "debug_visual" for now.
+    enum class SceneAuxiliaryVisualKind : uint8_t
     {
         None = 0,
         Axes,
     };
 
-    struct SceneDebugVisualAsset
+    struct SceneAuxiliaryVisualAsset
     {
-        SceneDebugVisualKind kind = SceneDebugVisualKind::None;
+        SceneAuxiliaryVisualKind kind = SceneAuxiliaryVisualKind::None;
         float scale = 1.0f;
         bool visible = true;
     };
+
+    using SceneDebugVisualKind = SceneAuxiliaryVisualKind;
+    using SceneDebugVisualAsset = SceneAuxiliaryVisualAsset;
 
     enum class SceneEditorHandleKind : uint8_t
     {
@@ -109,8 +119,8 @@ namespace wz::engine::assets
 
     struct SceneNodeAsset
     {
-        std::string id;
-        std::optional<std::string> parent_id;
+        wz::scene::AuthoredEntityId id;
+        std::optional<wz::scene::AuthoredEntityId> parent_id;
         std::string name;
 
         AuthoredTransform local{};
@@ -129,13 +139,13 @@ namespace wz::engine::assets
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
-        std::optional<SceneDebugVisualAsset> debug_visual;
+        std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
     };
 
     struct SceneDefaults
     {
-        std::optional<std::string> active_camera_node;
+        std::optional<wz::scene::AuthoredEntityId> active_camera_node;
     };
 
     struct SceneAssetData
@@ -147,5 +157,91 @@ namespace wz::engine::assets
 
         bool valid() const noexcept { return !nodes.empty(); }
     };
+
+    inline bool has_authored_renderable_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.renderable.has_value() || node.renderable_asset.has_value();
+    }
+
+    inline bool has_authored_camera_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.camera.has_value();
+    }
+
+    inline bool has_authored_editor_only_components(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.editor_handle.has_value();
+    }
+
+    inline bool has_authored_auxiliary_visual_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.debug_visual.has_value();
+    }
+
+    inline bool has_authored_debug_visual_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return has_authored_auxiliary_visual_component(node);
+    }
+
+    inline bool has_runtime_relevant_components(
+        const SceneNodeAsset& node) noexcept
+    {
+        return has_authored_renderable_component(node)
+            || has_authored_camera_component(node)
+            || node.input_receiver.has_value()
+            || node.flying_camera_controller.has_value()
+            || node.audio_listener.has_value()
+            || node.event_listener.has_value()
+            || node.debug_visual.has_value();
+    }
+
+    inline wz::scene::SceneAuthoredComponentSummary summarize_authored_scene_components(
+        const SceneAssetData& scene)
+    {
+        wz::scene::SceneAuthoredComponentSummary out{};
+        out.nodes = static_cast<uint32_t>(scene.nodes.size());
+        out.transforms = out.nodes;
+        out.visibility = out.nodes;
+        out.motion_types = out.nodes;
+        out.lights = static_cast<uint32_t>(scene.lights.size());
+
+        for (const auto& node : scene.nodes) {
+            if (node.parent_id) {
+                ++out.parent_links;
+            }
+            if (has_authored_renderable_component(node)) {
+                ++out.renderables;
+            }
+            if (has_authored_camera_component(node)) {
+                ++out.cameras;
+            }
+            if (node.input_receiver) {
+                ++out.input_receivers;
+            }
+            if (node.flying_camera_controller) {
+                ++out.flying_camera_controllers;
+            }
+            if (node.audio_listener) {
+                ++out.audio_listeners;
+            }
+            if (node.event_listener) {
+                ++out.event_listeners;
+            }
+            if (node.debug_visual) {
+                ++out.auxiliary_visuals;
+                ++out.debug_visuals;
+            }
+            if (node.editor_handle) {
+                ++out.editor_handles;
+            }
+        }
+
+        return out;
+    }
 
 } // namespace wz::engine::assets

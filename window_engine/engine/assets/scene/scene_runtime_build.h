@@ -12,6 +12,11 @@ namespace wz::engine::assets
     // Lower-level construction result shared by editor preview and future
     // benchmark adapters. This is not an app owner; callers decide where the
     // snapshot, runtime instance, frame storage, input policy, and metrics live.
+    //
+    // This is the authored-to-runtime boundary for the current scene language:
+    // SceneAssetData is copied into a snapshot, instantiate_scene(...) compiles
+    // that authored source into SceneInstance, and scene-render later compiles
+    // the runtime scene data into render-oriented storage.
     struct SceneAssetRuntimeBuild
     {
         SceneAssetData snapshot{};

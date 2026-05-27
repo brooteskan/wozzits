@@ -4,6 +4,7 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/assets/scene/scene_fingerprint.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/rendering/scene_render_resource_resolver.h>
@@ -22,6 +23,8 @@
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <logging/logger.h>
+
+#include <type_traits>
 
 namespace
 {
@@ -323,6 +326,21 @@ namespace
       "debug_visual": {
         "kind": "axes",
         "scale": 1.0
+      }
+    }
+  ]
+})";
+
+    const char* kAuxiliaryVisualDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "auxiliary_visual_descriptor_test",
+  "nodes": [
+    {
+      "id": "anchor",
+      "auxiliary_visual": {
+        "kind": "axes",
+        "scale": 1.25,
+        "visible": false
       }
     }
   ]
@@ -1652,6 +1670,71 @@ TEST(SceneAssetModule, DebugVisualDefaultsVisibleTrue)
 }
 
 // ─── Issue #57: debug visual validation tests ───────────────────────────
+
+TEST(SceneAssetModule, AuxiliaryVisualJSONSpellingCompilesToVisualComponent)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_auxiliary_visual_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "auxiliary_visual.json", kAuxiliaryVisualDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "auxiliary_visual",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].debug_visual.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].debug_visual->kind,
+        SceneAuxiliaryVisualKind::Axes);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].debug_visual->scale, 1.25f);
+    EXPECT_FALSE(scene_data->nodes[0].debug_visual->visible);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(authored_summary.debug_visuals, 1u);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    ASSERT_EQ(result.instance.debug_visuals.size(), 1u);
+    EXPECT_EQ(
+        result.instance.debug_visuals[0].component.kind,
+        SceneAuxiliaryVisualKind::Axes);
+    EXPECT_FLOAT_EQ(result.instance.debug_visuals[0].component.scale, 1.25f);
+    EXPECT_FALSE(result.instance.debug_visuals[0].component.visible);
+
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(runtime_summary.debug_visuals, 1u);
+}
 
 TEST(SceneDescriptorValidation, RejectsMissingDebugVisualKind)
 {
@@ -3053,4 +3136,338 @@ TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)
 
     wz::scene::RenderableDescriptor desc{};
     EXPECT_FALSE(resource_resolver.realize_renderable_descriptor(splat_data, desc));
+}
+
+TEST(SceneECSBoundary, AuthoredIdsMapToRuntimeEntitiesAndBack)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "ecs_identity";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.camera = SceneCameraAsset{};
+    scene.nodes.push_back(std::move(child));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto& inst = result.instance;
+    ASSERT_TRUE(inst.authored_to_runtime.contains("root"));
+    ASSERT_TRUE(inst.authored_to_runtime.contains("child"));
+
+    const wz::scene::RuntimeEntityId root_entity =
+        inst.authored_to_runtime.at("root");
+    const wz::scene::RuntimeEntityId child_entity =
+        inst.authored_to_runtime.at("child");
+
+    EXPECT_NE(root_entity, wz::scene::INVALID_RUNTIME_ENTITY);
+    EXPECT_NE(child_entity, wz::scene::INVALID_RUNTIME_ENTITY);
+    ASSERT_LT(root_entity, inst.runtime_to_authored.size());
+    ASSERT_LT(child_entity, inst.runtime_to_authored.size());
+    EXPECT_EQ(inst.runtime_to_authored[root_entity], "root");
+    EXPECT_EQ(inst.runtime_to_authored[child_entity], "child");
+}
+
+TEST(SceneECSBoundary, SceneECSVocabularyIsSceneLayerOnly)
+{
+    static_assert(std::is_same_v<
+        wz::scene::AuthoredEntityId,
+        std::string>);
+    static_assert(std::is_same_v<
+        wz::scene::RuntimeEntityId,
+        wz::core::graph::NodeHandle>);
+    static_assert(std::is_same_v<
+        decltype(wz::scene::RuntimeComponentRecord<int>{}.node),
+        wz::scene::RuntimeEntityId>);
+
+    wz::scene::RuntimeComponentRecord<int> record{};
+    record.node = wz::scene::INVALID_RUNTIME_ENTITY;
+    record.component = 7;
+
+    EXPECT_EQ(record.node, wz::scene::INVALID_RUNTIME_ENTITY);
+    EXPECT_EQ(record.component, 7);
+}
+
+TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
+{
+    const wz::engine::assets::SceneAssetData scene{};
+
+    const auto summary =
+        wz::engine::assets::summarize_authored_scene_components(scene);
+
+    EXPECT_EQ(summary.nodes, 0u);
+    EXPECT_EQ(summary.transforms, 0u);
+    EXPECT_EQ(summary.visibility, 0u);
+    EXPECT_EQ(summary.motion_types, 0u);
+    EXPECT_EQ(summary.parent_links, 0u);
+    EXPECT_EQ(summary.renderables, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
+    EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
+TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
+{
+    const wz::engine::assets::SceneInstance instance{};
+
+    const auto summary =
+        wz::engine::assets::summarize_scene_instance_components(instance);
+
+    EXPECT_EQ(summary.runtime_entities, 0u);
+    EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
+    EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
+TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "core_only";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.local.translation[0] = 1.0f;
+    child.visible = false;
+    child.motion_type = wz::scene::TransformNode::MotionType::Animated;
+
+    EXPECT_FALSE(has_authored_renderable_component(child));
+    EXPECT_FALSE(has_authored_camera_component(child));
+    EXPECT_FALSE(has_authored_editor_only_components(child));
+    EXPECT_FALSE(has_authored_auxiliary_visual_component(child));
+    EXPECT_FALSE(has_authored_debug_visual_component(child));
+    EXPECT_FALSE(has_runtime_relevant_components(child));
+    scene.nodes.push_back(std::move(child));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 2u);
+    EXPECT_EQ(summary.transforms, 2u);
+    EXPECT_EQ(summary.visibility, 2u);
+    EXPECT_EQ(summary.motion_types, 2u);
+    EXPECT_EQ(summary.parent_links, 1u);
+    EXPECT_EQ(summary.renderables, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.auxiliary_visuals, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
+TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "component_inventory";
+
+    SceneNodeAsset render_node{};
+    render_node.id = "render_node";
+    render_node.renderable = SceneRenderableBinding{};
+    scene.nodes.push_back(std::move(render_node));
+
+    SceneNodeAsset camera_node{};
+    camera_node.id = "camera_node";
+    camera_node.parent_id = "render_node";
+    camera_node.camera = SceneCameraAsset{};
+    camera_node.input_receiver = SceneInputReceiverAsset{
+        .input_map = "asset://input_maps/editor",
+    };
+    camera_node.flying_camera_controller =
+        SceneFlyingCameraControllerAsset{};
+    camera_node.audio_listener = SceneAudioListenerAsset{};
+    camera_node.event_listener = SceneEventListenerAsset{
+        .channels = { "editor" },
+    };
+    camera_node.debug_visual = SceneDebugVisualAsset{
+        .kind = SceneDebugVisualKind::Axes,
+    };
+    camera_node.editor_handle = SceneEditorHandleAsset{};
+
+    EXPECT_TRUE(has_authored_camera_component(camera_node));
+    EXPECT_TRUE(has_authored_editor_only_components(camera_node));
+    EXPECT_TRUE(has_authored_auxiliary_visual_component(camera_node));
+    EXPECT_TRUE(has_authored_debug_visual_component(camera_node));
+    EXPECT_TRUE(has_runtime_relevant_components(camera_node));
+    scene.nodes.push_back(std::move(camera_node));
+
+    scene.lights.push_back(SceneLightAsset{ .node_id = "render_node" });
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 2u);
+    EXPECT_EQ(summary.transforms, 2u);
+    EXPECT_EQ(summary.visibility, 2u);
+    EXPECT_EQ(summary.motion_types, 2u);
+    EXPECT_EQ(summary.parent_links, 1u);
+    EXPECT_EQ(summary.renderables, 1u);
+    EXPECT_EQ(summary.cameras, 1u);
+    EXPECT_EQ(summary.lights, 1u);
+    EXPECT_EQ(summary.input_receivers, 1u);
+    EXPECT_EQ(summary.flying_camera_controllers, 1u);
+    EXPECT_EQ(summary.audio_listeners, 1u);
+    EXPECT_EQ(summary.event_listeners, 1u);
+    EXPECT_EQ(summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(summary.debug_visuals, 1u);
+    EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "runtime_inventory";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset camera{};
+    camera.id = "camera";
+    camera.parent_id = "root";
+    camera.camera = SceneCameraAsset{};
+    camera.input_receiver = SceneInputReceiverAsset{
+        .input_map = "asset://input_maps/editor",
+    };
+    camera.flying_camera_controller =
+        SceneFlyingCameraControllerAsset{};
+    camera.audio_listener = SceneAudioListenerAsset{};
+    camera.event_listener = SceneEventListenerAsset{
+        .channels = { "editor" },
+    };
+    camera.debug_visual = SceneDebugVisualAsset{
+        .kind = SceneDebugVisualKind::Axes,
+    };
+    camera.editor_handle = SceneEditorHandleAsset{};
+    scene.nodes.push_back(std::move(camera));
+
+    scene.lights.push_back(SceneLightAsset{ .node_id = "camera" });
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto summary = summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(summary.runtime_entities, 2u);
+    EXPECT_EQ(summary.renderable_descriptor_slots, 2u);
+    EXPECT_EQ(summary.lights, 1u);
+    EXPECT_EQ(summary.input_receivers, 1u);
+    EXPECT_EQ(summary.flying_camera_controllers, 1u);
+    EXPECT_EQ(summary.audio_listeners, 1u);
+    EXPECT_EQ(summary.event_listeners, 1u);
+    EXPECT_EQ(summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(summary.debug_visuals, 1u);
+    EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, SummaryCountsDeclaredLightsWithoutResolvingNodeIds)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "declared_lights";
+
+    SceneNodeAsset node{};
+    node.id = "real_node";
+    scene.nodes.push_back(std::move(node));
+
+    scene.lights.push_back(SceneLightAsset{ .node_id = "real_node" });
+    scene.lights.push_back(SceneLightAsset{ .node_id = "missing_node" });
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 1u);
+    EXPECT_EQ(summary.lights, 2u);
+}
+
+TEST(SceneECSBoundary, DuplicateAuthoredIdsAreRejected)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "duplicate_ids";
+
+    SceneNodeAsset first{};
+    first.id = "dup";
+    scene.nodes.push_back(std::move(first));
+
+    SceneNodeAsset second{};
+    second.id = "dup";
+    scene.nodes.push_back(std::move(second));
+
+    auto result = instantiate_scene(scene);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::DuplicateNodeId);
+    EXPECT_EQ(result.error_detail, "dup");
+}
+
+TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "fingerprint_scene";
+
+    SceneNodeAsset node{};
+    node.id = "camera";
+    node.camera = SceneCameraAsset{};
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t original = scene_asset_fingerprint(scene);
+
+    scene.nodes[0].camera->fov_y = 0.75f;
+    const uint64_t changed = scene_asset_fingerprint(scene);
+
+    EXPECT_NE(original, changed);
+}
+
+TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "runtime_identity_independent";
+
+    SceneNodeAsset node{};
+    node.id = "node";
+    node.debug_visual = SceneDebugVisualAsset{
+        .kind = SceneDebugVisualKind::Axes,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t before = scene_asset_fingerprint(scene);
+
+    auto first = instantiate_scene(scene);
+    auto second = instantiate_scene(scene);
+    ASSERT_TRUE(first.ok()) << first.error_detail;
+    ASSERT_TRUE(second.ok()) << second.error_detail;
+    EXPECT_NE(&first.instance.storage, &second.instance.storage);
+
+    const uint64_t after = scene_asset_fingerprint(scene);
+    EXPECT_EQ(before, after);
 }

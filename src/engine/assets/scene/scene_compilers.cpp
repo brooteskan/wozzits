@@ -228,23 +228,29 @@ namespace wz::engine::assets::internal
 
             // ── Debug/editor visual descriptor ───────────────────────
 
-            const auto* dv = find_member(node_val, "debug_visual");
+            const auto* dv = find_member(node_val, "auxiliary_visual");
+            const char* visual_field = "auxiliary_visual";
+            if (!dv) {
+                dv = find_member(node_val, "debug_visual");
+                visual_field = "debug_visual";
+            }
             if (dv && dv->kind == wz::json::JSONValueKind::Object) {
                 auto kind_str = read_string(*dv, "kind");
                 if (!kind_str) {
-                    logger.error("debug_visual on node '" + node.id
-                        + "' missing 'kind'");
+                    logger.error(std::string(visual_field) + " on node '"
+                        + node.id + "' missing 'kind'");
                     return std::nullopt;
                 }
 
-                SceneDebugVisualAsset dbg{};
+                SceneAuxiliaryVisualAsset dbg{};
 
                 if (*kind_str == "axes") {
-                    dbg.kind = SceneDebugVisualKind::Axes;
+                    dbg.kind = SceneAuxiliaryVisualKind::Axes;
                 }
                 else {
-                    logger.error("debug_visual on node '" + node.id
-                        + "' has unknown kind '" + std::string(*kind_str) + "'");
+                    logger.error(std::string(visual_field) + " on node '"
+                        + node.id + "' has unknown kind '"
+                        + std::string(*kind_str) + "'");
                     return std::nullopt;
                 }
 
@@ -252,8 +258,8 @@ namespace wz::engine::assets::internal
                 if (scale) {
                     float s = static_cast<float>(*scale);
                     if (s < 0.0f || !std::isfinite(s)) {
-                        logger.error("debug_visual on node '" + node.id
-                            + "' has invalid scale");
+                        logger.error(std::string(visual_field) + " on node '"
+                            + node.id + "' has invalid scale");
                         return std::nullopt;
                     }
                     dbg.scale = s;
