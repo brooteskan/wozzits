@@ -331,6 +331,21 @@ namespace
   ]
 })";
 
+    const char* kAuxiliaryVisualDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "auxiliary_visual_descriptor_test",
+  "nodes": [
+    {
+      "id": "anchor",
+      "auxiliary_visual": {
+        "kind": "axes",
+        "scale": 1.25,
+        "visible": false
+      }
+    }
+  ]
+})";
+
     const char* kEditorHandleAnchorSceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "editor_handle_anchor_test",
@@ -1655,6 +1670,71 @@ TEST(SceneAssetModule, DebugVisualDefaultsVisibleTrue)
 }
 
 // ─── Issue #57: debug visual validation tests ───────────────────────────
+
+TEST(SceneAssetModule, AuxiliaryVisualJSONSpellingCompilesToVisualComponent)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_auxiliary_visual_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "auxiliary_visual.json", kAuxiliaryVisualDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "auxiliary_visual",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].debug_visual.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].debug_visual->kind,
+        SceneAuxiliaryVisualKind::Axes);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].debug_visual->scale, 1.25f);
+    EXPECT_FALSE(scene_data->nodes[0].debug_visual->visible);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(authored_summary.debug_visuals, 1u);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    ASSERT_EQ(result.instance.debug_visuals.size(), 1u);
+    EXPECT_EQ(
+        result.instance.debug_visuals[0].component.kind,
+        SceneAuxiliaryVisualKind::Axes);
+    EXPECT_FLOAT_EQ(result.instance.debug_visuals[0].component.scale, 1.25f);
+    EXPECT_FALSE(result.instance.debug_visuals[0].component.visible);
+
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.auxiliary_visuals, 1u);
+    EXPECT_EQ(runtime_summary.debug_visuals, 1u);
+}
 
 TEST(SceneDescriptorValidation, RejectsMissingDebugVisualKind)
 {
