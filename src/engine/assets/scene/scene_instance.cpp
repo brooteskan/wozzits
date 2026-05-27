@@ -1,6 +1,7 @@
 // src/engine/assets/scene/scene_instance.cpp
 
 #include <engine/assets/scene/scene_instance.h>
+#include <engine/assets/scene/scene_fingerprint.h>
 
 #include <scene/scene_graph.h>
 #include <scene/compile/scene_node_class.h>
@@ -10,6 +11,7 @@
 #include <math/math_types.h>
 #include <math/projection.h>
 
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -105,6 +107,97 @@ namespace wz::engine::assets
             V.m[15] = 1.0f;
             return V;
         }
+
+        std::size_t authored_renderable_count(const SceneAssetData& scene)
+        {
+            std::size_t count = 0;
+            for (const auto& node : scene.nodes) {
+                if (node.renderable || node.renderable_asset) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        std::size_t authored_camera_count(const SceneAssetData& scene)
+        {
+            std::size_t count = 0;
+            for (const auto& node : scene.nodes) {
+                if (node.camera) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        const char* log_owner(const SceneInstantiateContext& context)
+        {
+            return context.log_owner ? context.log_owner : "Scene";
+        }
+
+        void log_instantiate_start(
+            const SceneAssetData& scene,
+            const SceneInstantiateContext& context)
+        {
+            if (!context.logger) {
+                return;
+            }
+
+            std::ostringstream msg;
+            msg
+                << "[" << log_owner(context) << "] instantiate_scene begin"
+                << " scene=" << scene.name
+                << " scene_hash=" << scene_asset_fingerprint_string(scene)
+                << " authored_nodes=" << scene.nodes.size()
+                << " authored_renderables=" << authored_renderable_count(scene)
+                << " lights=" << scene.lights.size()
+                << " cameras=" << authored_camera_count(scene);
+            context.logger->info(msg.str());
+        }
+
+        void log_instantiate_failure(
+            const SceneInstantiateResult& result,
+            const SceneInstantiateContext& context)
+        {
+            if (!context.logger) {
+                return;
+            }
+
+            std::ostringstream msg;
+            msg
+                << "[" << log_owner(context) << "] instantiate_scene failed"
+                << " owner=" << static_cast<const void*>(&context)
+                << " error=" << static_cast<int>(result.error)
+                << " detail=" << result.error_detail;
+            context.logger->error(msg.str());
+        }
+
+        void log_instantiate_success(
+            const SceneAssetData& scene,
+            const SceneInstance& inst,
+            const SceneInstantiateContext& context)
+        {
+            if (!context.logger) {
+                return;
+            }
+
+            std::ostringstream msg;
+            msg
+                << "[" << log_owner(context) << "] instantiate_scene complete"
+                << " scene=" << scene.name
+                << " scene_hash=" << scene_asset_fingerprint_string(scene)
+                << " instance=" << static_cast<const void*>(&inst)
+                << " storage=" << static_cast<const void*>(&inst.storage)
+                << " runtime_nodes=" << wz::core::graph::node_count(inst.storage.polytree)
+                << " descriptor_slots=" << inst.renderables.size()
+                << " lights=" << inst.lights.size()
+                << " editor_handles=" << inst.editor_handles.size()
+                << " debug_visuals=" << inst.debug_visuals.size()
+                << " input_receivers=" << inst.input_receivers.size()
+                << " flying_camera_controllers="
+                << inst.flying_camera_controllers.size();
+            context.logger->info(msg.str());
+        }
     }
 
     wz::math::Mat4 compose_scene_transform(const AuthoredTransform& t)
@@ -162,6 +255,7 @@ namespace wz::engine::assets
         using namespace wz::core::graph;
 
         SceneInstantiateResult result{};
+        log_instantiate_start(scene, context);
 
         // Validate unique node ids
         std::unordered_set<std::string> seen_ids;
@@ -169,6 +263,7 @@ namespace wz::engine::assets
             if (!seen_ids.insert(node.id).second) {
                 result.error = SceneInstantiateError::DuplicateNodeId;
                 result.error_detail = node.id;
+                log_instantiate_failure(result, context);
                 return result;
             }
         }
@@ -178,6 +273,7 @@ namespace wz::engine::assets
             if (node.parent_id && !seen_ids.contains(*node.parent_id)) {
                 result.error = SceneInstantiateError::ParentNotFound;
                 result.error_detail = *node.parent_id;
+                log_instantiate_failure(result, context);
                 return result;
             }
         }
@@ -211,6 +307,7 @@ namespace wz::engine::assets
             if (!add_edge(builder, parent_h, child)) {
                 result.error = SceneInstantiateError::ParentCycle;
                 result.error_detail = node.id;
+                log_instantiate_failure(result, context);
                 return result;
             }
         }
@@ -219,6 +316,7 @@ namespace wz::engine::assets
         auto storage_result = build(std::move(builder));
         if (!storage_result.has_value()) {
             result.error = SceneInstantiateError::PolytreeBuildFailed;
+            log_instantiate_failure(result, context);
             return result;
         }
 
@@ -248,6 +346,7 @@ namespace wz::engine::assets
                     result.error = SceneInstantiateError::RenderableResolveFailed;
                     result.error_detail = "node '" + node.id
                         + "' has renderable_asset but no resolver provided";
+                    log_instantiate_failure(result, context);
                     return result;
                 }
 
@@ -258,6 +357,7 @@ namespace wz::engine::assets
                     result.error = SceneInstantiateError::RenderableResolveFailed;
                     result.error_detail = "node '" + node.id
                         + "' renderable asset could not be resolved";
+                    log_instantiate_failure(result, context);
                     return result;
                 }
 
@@ -271,6 +371,7 @@ namespace wz::engine::assets
                         result.error = SceneInstantiateError::RenderableRealizeFailed;
                         result.error_detail = "node '" + node.id
                             + "' renderable descriptor could not be realized";
+                        log_instantiate_failure(result, context);
                         return result;
                     }
                 }
@@ -278,6 +379,7 @@ namespace wz::engine::assets
                     result.error = SceneInstantiateError::RenderableRealizeFailed;
                     result.error_detail = "node '" + node.id
                         + "' has non-mesh renderable kind but no resource resolver";
+                    log_instantiate_failure(result, context);
                     return result;
                 }
 
@@ -408,6 +510,7 @@ namespace wz::engine::assets
         }
 
         result.error = SceneInstantiateError::None;
+        log_instantiate_success(scene, inst, context);
         return result;
     }
 

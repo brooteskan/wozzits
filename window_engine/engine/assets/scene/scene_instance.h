@@ -5,6 +5,8 @@
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/renderable/renderable.h>
 
+#include <logging/logger.h>
+
 #include <scene/scene_graph.h>
 #include <scene/compile/compiled_scene.h>
 
@@ -103,6 +105,8 @@ namespace wz::engine::assets
     {
         const SceneRenderableResolver* renderable_resolver = nullptr;
         const SceneRenderResourceResolver* resource_resolver = nullptr;
+        wz::Logger* logger = nullptr;
+        const char* log_owner = nullptr;
     };
 
     // ─────────────────────────────────────────────────────────────────────

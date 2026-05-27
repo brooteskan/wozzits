@@ -42,6 +42,7 @@ namespace wz::bench
         bool ready               = false;
         bool compiled_scene_valid = false;
         bool transforms_dirty    = false;
+        bool first_compile_logged = false;
     };
 
     // Supplied by the caller to define what scene the app renders.

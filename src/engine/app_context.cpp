@@ -2,6 +2,11 @@
 #include <engine/app_context.h>
 #include <logging/logger.h>
 
+#include <gpu/dx12/dx12_internal.h>
+#include <window/window2.h>
+
+#include <sstream>
+
 namespace wz::engine
 {
     bool init(AppContext& ctx, const AppDesc& desc)
@@ -15,7 +20,12 @@ namespace wz::engine
             ctx.logger.error("failed to create window");
             return false;
         }
-        ctx.logger.info("window created");
+        {
+            std::ostringstream msg;
+            msg << "window created handle="
+                << wz::window::get_native_handle(ctx.window);
+            ctx.logger.info(msg.str());
+        }
 
         ctx.device = wz::gpu::create_device(ctx.window);
         if (!ctx.device.valid())
@@ -25,7 +35,15 @@ namespace wz::engine
             ctx.window = {};
             return false;
         }
-        ctx.logger.info("GPU device created");
+        {
+            std::ostringstream msg;
+            msg
+                << "GPU device created"
+                << " device_impl=" << ctx.device.impl
+                << " native_device="
+                << wz::gpu::dx12::internal::get_device(ctx.device);
+            ctx.logger.info(msg.str());
+        }
 
         ctx.assets = std::make_unique<wz::engine::assets::EngineAssetLibrary>(
             ctx.device,
@@ -33,13 +51,33 @@ namespace wz::engine
             desc.resource_root
         );
 
-        ctx.logger.info("engine ready");
+        {
+            std::ostringstream msg;
+            msg
+                << "engine ready"
+                << " ctx=" << static_cast<const void*>(&ctx)
+                << " device_impl=" << ctx.device.impl
+                << " window="
+                << wz::window::get_native_handle(ctx.window);
+            ctx.logger.info(msg.str());
+        }
         return true;
     }
 
     void shutdown(AppContext& ctx)
     {
-        ctx.logger.info("engine shutting down");
+        {
+            std::ostringstream msg;
+            msg
+                << "engine shutting down"
+                << " ctx=" << static_cast<const void*>(&ctx)
+                << " device_impl=" << ctx.device.impl
+                << " window="
+                << (ctx.window.valid()
+                    ? wz::window::get_native_handle(ctx.window)
+                    : nullptr);
+            ctx.logger.info(msg.str());
+        }
 
         ctx.assets.reset();
 

@@ -278,6 +278,27 @@ namespace wz::bench
                     {},
                     app.frame.view);
 
+                if (!sr.first_compile_logged)
+                {
+                    const auto& compiled = app.frame.compiled_scene.scene;
+                    std::ostringstream msg;
+                    msg
+                        << "[BenchmarkApp] scene compiler full compile"
+                        << " scene=" << app.scene_def.name
+                        << " runtime=" << static_cast<const void*>(&sr)
+                        << " scene_storage=" << static_cast<const void*>(&sr.scene)
+                        << " runtime_nodes="
+                        << wz::core::graph::node_count(sr.scene.polytree)
+                        << " descriptor_slots=" << sr.descriptors.size()
+                        << " opaque=" << compiled.opaque.size()
+                        << " transparent=" << compiled.transparent.size()
+                        << " splats=" << compiled.splats.size()
+                        << " particles=" << compiled.particles.size()
+                        << " lights=" << compiled.lights.size();
+                    app.ctx.logger.info(msg.str());
+                    sr.first_compile_logged = true;
+                }
+
                 sr.compiled_scene_valid = true;
                 sr.transforms_dirty     = false;
                 app.frame.render_prep_path = RenderPrepPath::FullCompile;
@@ -400,11 +421,20 @@ namespace wz::bench
         // Store the scene definition now so pre_commit can be invoked while
         // the asset registration phase is still open.
         app.scene_def = std::move(scene_def);
+        app.ctx.logger.info(
+            std::string("[BenchmarkApp] scene definition received: ")
+            + app.scene_def.name);
 
         if (app.scene_def.pre_commit)
         {
+            app.ctx.logger.info(
+                std::string("[BenchmarkApp] pre_commit begin: ")
+                + app.scene_def.name);
             if (!app.scene_def.pre_commit(*app.ctx.assets))
                 INIT_FAIL("SceneDefinition::pre_commit returned false");
+            app.ctx.logger.info(
+                std::string("[BenchmarkApp] pre_commit complete: ")
+                + app.scene_def.name);
         }
 
         if (!app.ctx.assets->commit())
@@ -426,8 +456,25 @@ namespace wz::bench
         if (!app.scene_def.build)
             INIT_FAIL("SceneDefinition has no build callback");
 
+        app.ctx.logger.info(
+            std::string("[BenchmarkApp] runtime scene build begin: ")
+            + app.scene_def.name);
         if (!app.scene_def.build(app.scene_runtime, app.ctx))
             INIT_FAIL("SceneDefinition::build returned false");
+        {
+            std::ostringstream msg;
+            msg
+                << "[BenchmarkApp] runtime scene build complete"
+                << " scene=" << app.scene_def.name
+                << " app=" << static_cast<const void*>(&app)
+                << " runtime=" << static_cast<const void*>(&app.scene_runtime)
+                << " scene_storage="
+                << static_cast<const void*>(&app.scene_runtime.scene)
+                << " runtime_nodes="
+                << wz::core::graph::node_count(app.scene_runtime.scene.polytree)
+                << " descriptor_slots=" << app.scene_runtime.descriptors.size();
+            app.ctx.logger.info(msg.str());
+        }
 
         app.scene_runtime.ready = true;
 
@@ -437,7 +484,7 @@ namespace wz::bench
             INIT_FAIL("build_jobs");
 
         app.ctx.logger.info(
-            std::string("BenchmarkApp ready: scene=") + app.scene_def.name +
+            std::string("[BenchmarkApp] ready: scene=") + app.scene_def.name +
             " press ESC to toggle navigation, BKSPC to quit");
 
         return true;
