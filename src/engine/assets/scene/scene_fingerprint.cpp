@@ -85,10 +85,80 @@ namespace wz::engine::assets
                 fp.mix_value(key.deps_hash.lo);
                 fp.mix_value(key.deps_hash.hi);
             }
+
+            if (node.renderable) {
+                const auto& renderable = *node.renderable;
+                fp.mix_value(renderable.node_class);
+                fp.mix_value(renderable.mesh);
+                fp.mix_value(renderable.material);
+                fp.mix_bytes(&renderable.local_bounds.min,
+                    sizeof(renderable.local_bounds.min));
+                fp.mix_bytes(&renderable.local_bounds.max,
+                    sizeof(renderable.local_bounds.max));
+                fp.mix_value(renderable.visible);
+            }
+
+            if (node.camera) {
+                const auto& camera = *node.camera;
+                fp.mix_value(camera.fov_y);
+                fp.mix_value(camera.near_plane);
+                fp.mix_value(camera.far_plane);
+                fp.mix_value(camera.aspect);
+            }
+
+            if (node.input_receiver) {
+                fp.mix_string(node.input_receiver->input_map);
+            }
+
+            if (node.flying_camera_controller) {
+                const auto& controller = *node.flying_camera_controller;
+                fp.mix_value(controller.move_speed);
+                fp.mix_value(controller.look_speed);
+                fp.mix_value(controller.boost_multiplier);
+                fp.mix_value(controller.roll_speed);
+            }
+
+            if (node.audio_listener) {
+                fp.mix_value(node.audio_listener->active);
+            }
+
+            if (node.event_listener) {
+                fp.mix_value(node.event_listener->channels.size());
+                for (const auto& channel : node.event_listener->channels) {
+                    fp.mix_string(channel);
+                }
+            }
+
+            if (node.debug_visual) {
+                const auto& visual = *node.debug_visual;
+                fp.mix_value(visual.kind);
+                fp.mix_value(visual.scale);
+                fp.mix_value(visual.visible);
+            }
+
+            if (node.editor_handle) {
+                const auto& handle = *node.editor_handle;
+                fp.mix_value(handle.kind);
+                fp.mix_value(handle.enabled);
+                fp.mix_value(handle.visible);
+                fp.mix_value(handle.size);
+            }
         }
 
         for (const auto& light : scene.lights) {
             fp.mix_string(light.node_id);
+            fp.mix_value(light.light.position.x);
+            fp.mix_value(light.light.position.y);
+            fp.mix_value(light.light.position.z);
+            fp.mix_value(light.light.direction.x);
+            fp.mix_value(light.light.direction.y);
+            fp.mix_value(light.light.direction.z);
+            fp.mix_value(light.light.color.x);
+            fp.mix_value(light.light.color.y);
+            fp.mix_value(light.light.color.z);
+            fp.mix_value(light.light.type);
+            fp.mix_value(light.light.intensity);
+            fp.mix_value(light.light.range);
         }
 
         const bool has_active_camera =

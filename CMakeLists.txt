@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
+
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+    set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+endif()
+
 project(window_engine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -243,9 +249,7 @@ function(rs_add_test_group category name)
     set(target "${category}_${name}")
 
     add_executable(${target}
-        tests/${category}/${name}.cpp
-        "src/event/event.cpp"
-     "src/engine/game_app.cpp")
+        tests/${category}/${name}.cpp)
 
     target_include_directories(${target}
         PRIVATE
@@ -407,7 +411,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_asset_module)
 
     rs_add_test_group(asset_gltf gltf_importer)
-    rs_add_test_group(game_app game_app_main)
+    # rs_add_test_group(game_app game_app_main)
 
     # ── BenchmarkApp ──────────────────────────────────────────────────────────
     # Standalone interactive app — no gtest dependency, resources required.

@@ -1,8 +1,10 @@
 // window_engine/engine/rendering/scene_render_resource_resolver.h
 //
-// Concrete SceneRenderResourceResolver for mesh renderables.
+// CPU-backed SceneRenderResourceResolver for mesh renderables.
 // Bridges the asset system (RenderableAssetData.source_asset) to
 // scene-render handles via RenderResourceResolver::register_mesh().
+// Toolhost/runtime code that needs real backend resources should use
+// GpuSceneRenderResourceResolver instead.
 #pragma once
 
 #include <engine/assets/scene/scene_instance.h>

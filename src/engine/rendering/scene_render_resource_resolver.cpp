@@ -29,11 +29,10 @@ namespace wz::engine::rendering
         if (!mesh_handle.valid())
             return false;
 
-        // Register the mesh with the render resource resolver.
-        // In the full runtime, gpu_resource would come from gpu::upload_mesh().
-        // Here we use the CPU-side ResourceHandle as the GPUHandle for
-        // registration — they are the same type (ResourceHandle).  The render
-        // resource resolver stores it and returns a scene-render MeshHandle.
+        // Register through RenderResourceResolver so scene-render handles stay
+        // distinct from asset-system handles. This CPU-backed resolver is for
+        // tests/non-GPU paths; runtime/toolhost code should use
+        // GpuSceneRenderResourceResolver to upload a real GPU mesh first.
         const wz::scene::MeshHandle scene_mesh =
             render_resolver_.register_mesh(
                 mesh_handle.handle,

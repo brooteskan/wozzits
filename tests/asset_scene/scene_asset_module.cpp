@@ -2114,6 +2114,91 @@ TEST(SceneAssetModule, RenderableNodeWithEditorHandle)
     EXPECT_FLOAT_EQ(inst.editor_handles[0].component.size, 1.25f);
 }
 
+TEST(SceneAssetModule, RenderableAssetReferenceRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_renderable_asset_reference_json_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "debug/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    SceneAssetData authored{};
+    authored.name = "renderable_asset_reference_scene";
+
+    SceneNodeAsset node{};
+    node.id = "cube";
+    node.renderable_asset = renderable.output;
+    authored.nodes.push_back(std::move(node));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"renderable\""), std::string::npos);
+    EXPECT_NE(exported.find("\"asset\""), std::string::npos);
+    EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+    EXPECT_EQ(exported.find("\"debug_renderable\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "renderable_asset_reference.scene.json",
+        exported);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "renderable_asset_reference",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& parsed_node = scene_data->nodes[0];
+    EXPECT_FALSE(parsed_node.renderable.has_value());
+    ASSERT_TRUE(parsed_node.renderable_asset.has_value());
+    EXPECT_EQ(*parsed_node.renderable_asset, renderable.output);
+
+    const auto summary = summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(summary.renderables, 1u);
+
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+
+    auto result = instantiate_scene(*scene_data, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("cube"));
+    const auto cube_h = result.instance.authored_to_runtime["cube"];
+    EXPECT_EQ(
+        result.instance.renderables[cube_h].node_class.role,
+        wz::scene::SceneRole::Renderable);
+}
+
 TEST(SceneAssetModule, PersistsEditorHandleTranslationEdit)
 {
     using namespace wz::engine::assets;
@@ -3138,6 +3223,127 @@ TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)
     EXPECT_FALSE(resource_resolver.realize_renderable_descriptor(splat_data, desc));
 }
 
+TEST(SceneInstantiate, ConcreteMeshResolverRejectsSplatRenderableDuringInstantiation)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_concrete_splat_unsupported_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto cloud =
+        assets.gaussian_splats().create_procedural_cloud({
+            .name = "debug/splat_sphere",
+            .count = 64,
+            .radius = 2.0f,
+            .splat_scale = 1.0f,
+        });
+    ASSERT_TRUE(cloud.valid());
+
+    const auto renderable =
+        assets.renderables().create_gaussian_splat_debug({
+            .name = "debug/splat_sphere_debug",
+            .splat_cloud = cloud,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(), render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "splat_unsupported_scene";
+
+    SceneNodeAsset node{};
+    node.id = "splat_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableRealizeFailed);
+}
+
+TEST(SceneInstantiate, ConcreteMeshResolverRejectsScalarFieldRenderableDuringInstantiation)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_concrete_scalar_unsupported_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "debug/scalar_gradient",
+            .width = 16,
+            .height = 16,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        });
+    ASSERT_TRUE(field.valid());
+
+    const auto renderable =
+        assets.renderables().create_scalar_field_debug({
+            .name = "debug/scalar_gradient_debug",
+            .scalar_field = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(), render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "scalar_unsupported_scene";
+
+    SceneNodeAsset node{};
+    node.id = "scalar_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::RenderableRealizeFailed);
+}
+
 TEST(SceneECSBoundary, AuthoredIdsMapToRuntimeEntitiesAndBack)
 {
     using namespace wz::engine::assets;
@@ -3336,6 +3542,37 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, CountsLegacyAndAssetBackedRenderableComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "mixed_renderable_component_sources";
+
+    SceneNodeAsset legacy_node{};
+    legacy_node.id = "legacy_renderable";
+    legacy_node.renderable = SceneRenderableBinding{};
+    EXPECT_TRUE(has_authored_renderable_component(legacy_node));
+    scene.nodes.push_back(std::move(legacy_node));
+
+    SceneNodeAsset asset_node{};
+    asset_node.id = "asset_renderable";
+    wz::asset::AssetKey renderable_key{};
+    renderable_key.content_hash = { 0x58, 0x01 };
+    asset_node.renderable_asset = renderable_key;
+    EXPECT_TRUE(has_authored_renderable_component(asset_node));
+    scene.nodes.push_back(std::move(asset_node));
+
+    SceneNodeAsset empty_node{};
+    empty_node.id = "empty";
+    EXPECT_FALSE(has_authored_renderable_component(empty_node));
+    scene.nodes.push_back(std::move(empty_node));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 3u);
+    EXPECT_EQ(summary.renderables, 2u);
 }
 
 TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
