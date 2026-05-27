@@ -108,28 +108,6 @@ namespace wz::engine::assets
             return V;
         }
 
-        std::size_t authored_renderable_count(const SceneAssetData& scene)
-        {
-            std::size_t count = 0;
-            for (const auto& node : scene.nodes) {
-                if (node.renderable || node.renderable_asset) {
-                    ++count;
-                }
-            }
-            return count;
-        }
-
-        std::size_t authored_camera_count(const SceneAssetData& scene)
-        {
-            std::size_t count = 0;
-            for (const auto& node : scene.nodes) {
-                if (node.camera) {
-                    ++count;
-                }
-            }
-            return count;
-        }
-
         const char* log_owner(const SceneInstantiateContext& context)
         {
             return context.log_owner ? context.log_owner : "Scene";
@@ -143,15 +121,23 @@ namespace wz::engine::assets
                 return;
             }
 
+            const auto summary = summarize_authored_scene_components(scene);
             std::ostringstream msg;
             msg
                 << "[" << log_owner(context) << "] instantiate_scene begin"
                 << " scene=" << scene.name
                 << " scene_hash=" << scene_asset_fingerprint_string(scene)
-                << " authored_nodes=" << scene.nodes.size()
-                << " authored_renderables=" << authored_renderable_count(scene)
-                << " lights=" << scene.lights.size()
-                << " cameras=" << authored_camera_count(scene);
+                << " authored_nodes=" << summary.nodes
+                << " authored_renderables=" << summary.renderables
+                << " cameras=" << summary.cameras
+                << " lights=" << summary.lights
+                << " input_receivers=" << summary.input_receivers
+                << " flying_camera_controllers="
+                << summary.flying_camera_controllers
+                << " audio_listeners=" << summary.audio_listeners
+                << " event_listeners=" << summary.event_listeners
+                << " debug_visuals=" << summary.debug_visuals
+                << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
 
