@@ -89,6 +89,9 @@ namespace wz::engine::assets
 
     // ─── Renderable asset resolution ────────────────────────────────────
 
+    wz::scene::SceneRuntimeComponentSummary summarize_scene_instance_components(
+        const SceneInstance& instance);
+
     struct SceneRenderableResolver
     {
         virtual const RenderableAssetData* get(wz::asset::AssetKey key) const = 0;

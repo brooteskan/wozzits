@@ -3138,6 +3138,24 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
+TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
+{
+    const wz::engine::assets::SceneInstance instance{};
+
+    const auto summary =
+        wz::engine::assets::summarize_scene_instance_components(instance);
+
+    EXPECT_EQ(summary.runtime_entities, 0u);
+    EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
+    EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
 TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
 {
     using namespace wz::engine::assets;
@@ -3225,6 +3243,53 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.parent_links, 1u);
     EXPECT_EQ(summary.renderables, 1u);
     EXPECT_EQ(summary.cameras, 1u);
+    EXPECT_EQ(summary.lights, 1u);
+    EXPECT_EQ(summary.input_receivers, 1u);
+    EXPECT_EQ(summary.flying_camera_controllers, 1u);
+    EXPECT_EQ(summary.audio_listeners, 1u);
+    EXPECT_EQ(summary.event_listeners, 1u);
+    EXPECT_EQ(summary.debug_visuals, 1u);
+    EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "runtime_inventory";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset camera{};
+    camera.id = "camera";
+    camera.parent_id = "root";
+    camera.camera = SceneCameraAsset{};
+    camera.input_receiver = SceneInputReceiverAsset{
+        .input_map = "asset://input_maps/editor",
+    };
+    camera.flying_camera_controller =
+        SceneFlyingCameraControllerAsset{};
+    camera.audio_listener = SceneAudioListenerAsset{};
+    camera.event_listener = SceneEventListenerAsset{
+        .channels = { "editor" },
+    };
+    camera.debug_visual = SceneDebugVisualAsset{
+        .kind = SceneDebugVisualKind::Axes,
+    };
+    camera.editor_handle = SceneEditorHandleAsset{};
+    scene.nodes.push_back(std::move(camera));
+
+    scene.lights.push_back(SceneLightAsset{ .node_id = "camera" });
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto summary = summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(summary.runtime_entities, 2u);
+    EXPECT_EQ(summary.renderable_descriptor_slots, 2u);
     EXPECT_EQ(summary.lights, 1u);
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);

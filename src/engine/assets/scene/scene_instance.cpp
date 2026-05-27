@@ -167,6 +167,7 @@ namespace wz::engine::assets
                 return;
             }
 
+            const auto summary = summarize_scene_instance_components(inst);
             std::ostringstream msg;
             msg
                 << "[" << log_owner(context) << "] instantiate_scene complete"
@@ -174,14 +175,16 @@ namespace wz::engine::assets
                 << " scene_hash=" << scene_asset_fingerprint_string(scene)
                 << " instance=" << static_cast<const void*>(&inst)
                 << " storage=" << static_cast<const void*>(&inst.storage)
-                << " runtime_nodes=" << wz::core::graph::node_count(inst.storage.polytree)
-                << " descriptor_slots=" << inst.renderables.size()
-                << " lights=" << inst.lights.size()
-                << " editor_handles=" << inst.editor_handles.size()
-                << " debug_visuals=" << inst.debug_visuals.size()
-                << " input_receivers=" << inst.input_receivers.size()
+                << " runtime_entities=" << summary.runtime_entities
+                << " descriptor_slots=" << summary.renderable_descriptor_slots
+                << " lights=" << summary.lights
+                << " input_receivers=" << summary.input_receivers
                 << " flying_camera_controllers="
-                << inst.flying_camera_controllers.size();
+                << summary.flying_camera_controllers
+                << " audio_listeners=" << summary.audio_listeners
+                << " event_listeners=" << summary.event_listeners
+                << " debug_visuals=" << summary.debug_visuals
+                << " editor_handles=" << summary.editor_handles;
             context.logger->info(msg.str());
         }
     }
@@ -231,6 +234,30 @@ namespace wz::engine::assets
         }
 
         return false;
+    }
+
+    wz::scene::SceneRuntimeComponentSummary summarize_scene_instance_components(
+        const SceneInstance& instance)
+    {
+        return wz::scene::SceneRuntimeComponentSummary{
+            .runtime_entities = static_cast<uint32_t>(
+                wz::core::graph::node_count(instance.storage.polytree)),
+            .renderable_descriptor_slots = static_cast<uint32_t>(
+                instance.renderables.size()),
+            .lights = static_cast<uint32_t>(instance.lights.size()),
+            .input_receivers = static_cast<uint32_t>(
+                instance.input_receivers.size()),
+            .flying_camera_controllers = static_cast<uint32_t>(
+                instance.flying_camera_controllers.size()),
+            .audio_listeners = static_cast<uint32_t>(
+                instance.audio_listeners.size()),
+            .event_listeners = static_cast<uint32_t>(
+                instance.event_listeners.size()),
+            .debug_visuals = static_cast<uint32_t>(
+                instance.debug_visuals.size()),
+            .editor_handles = static_cast<uint32_t>(
+                instance.editor_handles.size()),
+        };
     }
 
     SceneInstantiateResult instantiate_scene(
