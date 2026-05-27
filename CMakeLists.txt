@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
+
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+    set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+endif()
+
 project(window_engine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -243,9 +249,7 @@ function(rs_add_test_group category name)
     set(target "${category}_${name}")
 
     add_executable(${target}
-        tests/${category}/${name}.cpp
-        "src/event/event.cpp"
-     "src/engine/game_app.cpp")
+        tests/${category}/${name}.cpp)
 
     target_include_directories(${target}
         PRIVATE

@@ -82,6 +82,9 @@ namespace wz::engine::assets::internal
         std::optional<wz::asset::AssetKey> parse_asset_key_string(
             std::string_view text)
         {
+            // Transitional concrete AssetKey syntax for renderable.asset.
+            // Symbolic asset://renderables/... lookup belongs to a later
+            // registry/naming layer, not the scene JSON compiler.
             constexpr std::string_view kPrefix = "asset-key:";
             if (!text.starts_with(kPrefix)) {
                 return std::nullopt;

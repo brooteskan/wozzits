@@ -130,6 +130,9 @@ namespace wz::engine::assets
 
         std::string asset_key_string(const wz::asset::AssetKey& key)
         {
+            // Transitional concrete AssetKey syntax for renderable.asset.
+            // This preserves authored data without requiring symbolic asset
+            // URI/name resolution in the scene exporter.
             std::ostringstream out;
             out << "asset-key:"
                 << std::hex << std::setfill('0')

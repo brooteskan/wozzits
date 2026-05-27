@@ -130,7 +130,13 @@ namespace wz::engine::assets
         wz::scene::TransformNode::MotionType motion_type =
             wz::scene::TransformNode::MotionType::Static;
 
+        // Legacy embedded renderable authoring data, exported as
+        // debug_renderable. Prefer renderable_asset for new authored scenes.
         std::optional<SceneRenderableBinding> renderable;
+
+        // Preferred authored Renderable component. Scene JSON serializes this
+        // as renderable.asset with a concrete asset-key string until symbolic
+        // asset URI/name resolution exists.
         std::optional<wz::asset::AssetKey> renderable_asset;
         std::optional<SceneCameraAsset> camera;
 
