@@ -1,7 +1,9 @@
 #include <engine/assets/scene/scene_json_export.h>
 
 #include <cstddef>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 namespace wz::engine::assets
@@ -126,6 +128,22 @@ namespace wz::engine::assets
             return obj;
         }
 
+        std::string asset_key_string(const wz::asset::AssetKey& key)
+        {
+            std::ostringstream out;
+            out << "asset-key:"
+                << std::hex << std::setfill('0')
+                << std::setw(16) << key.content_hash.lo << ':'
+                << std::setw(16) << key.content_hash.hi << ':'
+                << std::setw(16) << key.schema_hash.lo << ':'
+                << std::setw(16) << key.schema_hash.hi << ':'
+                << std::setw(16) << key.compiler_hash.lo << ':'
+                << std::setw(16) << key.compiler_hash.hi << ':'
+                << std::setw(16) << key.deps_hash.lo << ':'
+                << std::setw(16) << key.deps_hash.hi;
+            return out.str();
+        }
+
         JSONValuePtr renderable_value(const SceneRenderableBinding& binding)
         {
             float bounds_min[3]{
@@ -150,6 +168,13 @@ namespace wz::engine::assets
             add_member(*obj, "bounds", std::move(bounds));
 
             add_member(*obj, "visible", bool_value(binding.visible));
+            return obj;
+        }
+
+        JSONValuePtr renderable_asset_value(const wz::asset::AssetKey& key)
+        {
+            auto obj = object_value();
+            add_member(*obj, "asset", string_value(asset_key_string(key)));
             return obj;
         }
 
@@ -234,6 +259,12 @@ namespace wz::engine::assets
             if (node.renderable) {
                 add_member(*obj, "debug_renderable",
                     renderable_value(*node.renderable));
+            }
+            if (node.renderable_asset
+                && !(*node.renderable_asset == wz::asset::AssetKey{}))
+            {
+                add_member(*obj, "renderable",
+                    renderable_asset_value(*node.renderable_asset));
             }
             if (node.camera) {
                 add_member(*obj, "camera", camera_value(*node.camera));

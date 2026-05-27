@@ -12,9 +12,12 @@
 #include <external/json/json_document.h>
 #include <external/json/json_read_helpers.h>
 
+#include <array>
+#include <charconv>
 #include <cmath>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace wz::engine::assets::internal
 {
@@ -64,6 +67,63 @@ namespace wz::engine::assets::internal
             return {};
         }
 
+        std::optional<uint64_t> parse_hex_u64(std::string_view text)
+        {
+            uint64_t value = 0;
+            const char* first = text.data();
+            const char* last = text.data() + text.size();
+            const auto result = std::from_chars(first, last, value, 16);
+            if (result.ec != std::errc{} || result.ptr != last) {
+                return std::nullopt;
+            }
+            return value;
+        }
+
+        std::optional<wz::asset::AssetKey> parse_asset_key_string(
+            std::string_view text)
+        {
+            constexpr std::string_view kPrefix = "asset-key:";
+            if (!text.starts_with(kPrefix)) {
+                return std::nullopt;
+            }
+
+            text.remove_prefix(kPrefix.size());
+
+            std::array<uint64_t, 8> parts{};
+            for (std::size_t i = 0; i < parts.size(); ++i) {
+                const std::size_t end = text.find(':');
+                const std::string_view part =
+                    end == std::string_view::npos
+                        ? text
+                        : text.substr(0, end);
+
+                auto value = parse_hex_u64(part);
+                if (!value) {
+                    return std::nullopt;
+                }
+                parts[i] = *value;
+
+                if (i + 1 == parts.size()) {
+                    if (end != std::string_view::npos) {
+                        return std::nullopt;
+                    }
+                }
+                else {
+                    if (end == std::string_view::npos) {
+                        return std::nullopt;
+                    }
+                    text.remove_prefix(end + 1);
+                }
+            }
+
+            return wz::asset::AssetKey{
+                .content_hash = { parts[0], parts[1] },
+                .schema_hash = { parts[2], parts[3] },
+                .compiler_hash = { parts[4], parts[5] },
+                .deps_hash = { parts[6], parts[7] },
+            };
+        }
+
         std::optional<SceneRenderableBinding> parse_debug_renderable(
             const wz::json::JSONValue& obj)
         {
@@ -106,6 +166,45 @@ namespace wz::engine::assets::internal
             return binding;
         }
 
+        bool parse_renderable_asset_reference(
+            const wz::json::JSONValue& obj,
+            const std::string& node_id,
+            wz::Logger& logger,
+            std::optional<wz::asset::AssetKey>& out)
+        {
+            const auto* renderable = find_member(obj, "renderable");
+            if (!renderable) {
+                return true;
+            }
+            if (renderable->kind != wz::json::JSONValueKind::Object) {
+                logger.error("renderable on node '" + node_id
+                    + "' is not an object");
+                return false;
+            }
+
+            auto asset = read_string(*renderable, "asset");
+            if (!asset || asset->empty()) {
+                logger.error("renderable on node '" + node_id
+                    + "' missing 'asset'");
+                return false;
+            }
+
+            auto key = parse_asset_key_string(*asset);
+            if (!key) {
+                logger.error("renderable.asset on node '" + node_id
+                    + "' is not a serialized AssetKey");
+                return false;
+            }
+            if (*key == wz::asset::AssetKey{}) {
+                logger.error("renderable.asset on node '" + node_id
+                    + "' is empty");
+                return false;
+            }
+
+            out = *key;
+            return true;
+        }
+
         std::optional<SceneNodeAsset> parse_node(
             const wz::json::JSONValue& node_val,
             wz::Logger& logger)
@@ -142,6 +241,14 @@ namespace wz::engine::assets::internal
             }
 
             node.renderable = parse_debug_renderable(node_val);
+            if (!parse_renderable_asset_reference(
+                    node_val,
+                    node.id,
+                    logger,
+                    node.renderable_asset))
+            {
+                return std::nullopt;
+            }
 
             const auto* cam = find_member(node_val, "camera");
             if (cam && cam->kind == wz::json::JSONValueKind::Object) {
