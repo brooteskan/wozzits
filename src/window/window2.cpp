@@ -22,6 +22,11 @@ namespace wz::window
         return wz::platform::win32::w32_window_should_close(window);
     }
 
+    void* get_native_handle(WindowHandle window)
+    {
+        return wz::platform::win32::w32_native_window_handle(window);
+    }
+
     bool poll_event(WindowHandle window, PlatformEvent &out_event)
     {
         return wz::platform::win32::w32_poll_event(window, out_event);

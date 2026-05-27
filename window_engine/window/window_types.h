@@ -14,7 +14,7 @@ namespace wz::window
 
     struct WindowHandle
     {
-        void *native = nullptr; // HWND on Windows
+        void *native = nullptr; // platform window object
         bool valid() const { return native != nullptr; }
     };
 

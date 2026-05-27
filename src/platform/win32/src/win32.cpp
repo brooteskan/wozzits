@@ -117,6 +117,12 @@ namespace wz::platform::win32
         return data->should_close;
     }
 
+    void* w32_native_window_handle(wz::window::WindowHandle window)
+    {
+        auto* data = unwrap(window);
+        return data ? static_cast<void*>(data->hwnd) : nullptr;
+    }
+
     void w32_pump_messages()
     {
         MSG msg;

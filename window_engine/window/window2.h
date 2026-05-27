@@ -39,10 +39,7 @@ namespace wz::window
      */
     void pump_messages();
 
-    static inline void* get_native_handle(const WindowHandle& window)
-    {
-        return window.native;
-    }
+    void* get_native_handle(WindowHandle window);
 
     // for imgui tooling
     void set_native_message_hook(
