@@ -24,6 +24,8 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <type_traits>
+
 namespace
 {
     const char* kSingleNodeSceneJSON = R"({
@@ -3093,6 +3095,90 @@ TEST(SceneECSBoundary, AuthoredIdsMapToRuntimeEntitiesAndBack)
     EXPECT_EQ(inst.runtime_to_authored[child_entity], "child");
 }
 
+TEST(SceneECSBoundary, SceneECSVocabularyIsSceneLayerOnly)
+{
+    static_assert(std::is_same_v<
+        wz::scene::AuthoredEntityId,
+        std::string>);
+    static_assert(std::is_same_v<
+        wz::scene::RuntimeEntityId,
+        wz::core::graph::NodeHandle>);
+    static_assert(std::is_same_v<
+        decltype(wz::scene::RuntimeComponentRecord<int>{}.node),
+        wz::scene::RuntimeEntityId>);
+
+    wz::scene::RuntimeComponentRecord<int> record{};
+    record.node = wz::scene::INVALID_RUNTIME_ENTITY;
+    record.component = 7;
+
+    EXPECT_EQ(record.node, wz::scene::INVALID_RUNTIME_ENTITY);
+    EXPECT_EQ(record.component, 7);
+}
+
+TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
+{
+    const wz::engine::assets::SceneAssetData scene{};
+
+    const auto summary =
+        wz::engine::assets::summarize_authored_scene_components(scene);
+
+    EXPECT_EQ(summary.nodes, 0u);
+    EXPECT_EQ(summary.transforms, 0u);
+    EXPECT_EQ(summary.visibility, 0u);
+    EXPECT_EQ(summary.motion_types, 0u);
+    EXPECT_EQ(summary.parent_links, 0u);
+    EXPECT_EQ(summary.renderables, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
+    EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
+TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "core_only";
+
+    SceneNodeAsset root{};
+    root.id = "root";
+    scene.nodes.push_back(std::move(root));
+
+    SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.local.translation[0] = 1.0f;
+    child.visible = false;
+    child.motion_type = wz::scene::TransformNode::MotionType::Animated;
+
+    EXPECT_FALSE(has_authored_renderable_component(child));
+    EXPECT_FALSE(has_authored_camera_component(child));
+    EXPECT_FALSE(has_authored_editor_only_components(child));
+    EXPECT_FALSE(has_authored_debug_visual_component(child));
+    EXPECT_FALSE(has_runtime_relevant_components(child));
+    scene.nodes.push_back(std::move(child));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 2u);
+    EXPECT_EQ(summary.transforms, 2u);
+    EXPECT_EQ(summary.visibility, 2u);
+    EXPECT_EQ(summary.motion_types, 2u);
+    EXPECT_EQ(summary.parent_links, 1u);
+    EXPECT_EQ(summary.renderables, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.audio_listeners, 0u);
+    EXPECT_EQ(summary.event_listeners, 0u);
+    EXPECT_EQ(summary.debug_visuals, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
+}
+
 TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
 {
     using namespace wz::engine::assets;
@@ -3146,6 +3232,46 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, SummaryCountsDeclaredLightsWithoutResolvingNodeIds)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "declared_lights";
+
+    SceneNodeAsset node{};
+    node.id = "real_node";
+    scene.nodes.push_back(std::move(node));
+
+    scene.lights.push_back(SceneLightAsset{ .node_id = "real_node" });
+    scene.lights.push_back(SceneLightAsset{ .node_id = "missing_node" });
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 1u);
+    EXPECT_EQ(summary.lights, 2u);
+}
+
+TEST(SceneECSBoundary, DuplicateAuthoredIdsAreRejected)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "duplicate_ids";
+
+    SceneNodeAsset first{};
+    first.id = "dup";
+    scene.nodes.push_back(std::move(first));
+
+    SceneNodeAsset second{};
+    second.id = "dup";
+    scene.nodes.push_back(std::move(second));
+
+    auto result = instantiate_scene(scene);
+    EXPECT_FALSE(result.ok());
+    EXPECT_EQ(result.error, SceneInstantiateError::DuplicateNodeId);
+    EXPECT_EQ(result.error_detail, "dup");
 }
 
 TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
