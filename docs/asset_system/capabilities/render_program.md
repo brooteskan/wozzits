@@ -11,7 +11,7 @@
 |-------|-------|
 | Schema ID | `kBuiltinRenderProgramSchema` = `0xF11ECA55E7_000101` |
 | Output AssetType | `kAssetTypeRenderProgram` = 1049 |
-| CPU storage | `RenderableAssetTable` (field `render_program` on `RenderableAssetData`) |
+| CPU storage | `RenderProgramTable` |
 | GPU realization | None at the asset level; the backend allocates a PSO separately |
 
 `kAssetTypeRenderProgram` lives in the shader/pipeline/render-state description
@@ -27,7 +27,7 @@ captures:
 - Which `BuiltinRenderProgram` variant this is (enum in `renderable/renderable.h`)
 - Which `RenderDomain` it targets (`Debug`, `Opaque`, `Transparent`, `Splat`)
 - Which `RenderPolicyFlags` apply (`Wireframe`, `AlphaBlend`, `DepthTest`, `DepthWrite`)
-- A `ShaderPairAsset` reference (vertex + pixel shader keys)
+- Vertex and pixel shader asset keys
 
 The `BuiltinRenderProgram` enum drives which PSO the backend ultimately creates.
 Six variants currently exist:
@@ -43,10 +43,14 @@ Six variants currently exist:
 
 ## Where this asset lives in the graph
 
-`RenderProgramAsset` is wired into the renderable system, not exposed as a
-standalone module today. Each `create_*_renderable()` call on `RenderableAssetModule`
-implicitly selects the appropriate `BuiltinRenderProgram` and stores it on the
-resulting `RenderableAssetData`.
+`RenderProgramAsset` is exposed through `RenderProgramAssetModule::create_builtin()`.
+The module registers a `kBuiltinRenderProgramSchema` node with explicit vertex
+and pixel shader dependencies and stores the compiled record in
+`RenderProgramTable`.
+
+Renderable assets also carry a `BuiltinRenderProgram` enum directly. Each
+`create_*_renderable()` call on `RenderableAssetModule` implicitly selects the
+appropriate enum value and stores it on the resulting `RenderableAssetData`.
 
 ```
 kGaussianSplatDebugRenderableSchema
@@ -60,8 +64,8 @@ kGaussianSplatDebugRenderableSchema
 ```
 
 The `render_program` field on `RenderableAssetData` is a `ResourceHandle` that
-is invalid by default. Call-site code that resolves a `RenderProgramAsset` and
-writes back the handle can override `BuiltinRenderProgram` with a fully resolved
+is invalid by default. Call-site code may resolve a `RenderProgramAsset` and
+write that handle back to override the enum-only path with a fully resolved
 program record at draw time.
 
 ## Key Types
@@ -106,9 +110,10 @@ struct RenderableAssetData {
 
 ## Dependencies
 
-`kBuiltinRenderProgramSchema` carries a `ShaderPairAsset` reference internally
-(vertex + pixel `AssetKey` values). Each `BuiltinRenderProgram` resolves to a
-specific HLSL shader pair at initialization time via `ShaderAssetModule`.
+`kBuiltinRenderProgramSchema` carries vertex and pixel shader `AssetKey`
+dependencies through `BuiltinRenderProgramDesc`. Callers typically create those
+shader assets via `ShaderAssetModule::create_shader_pair()` or equivalent shader
+registration code before creating the render program.
 
 | Dependency | How required |
 |------------|--------------|
@@ -117,8 +122,8 @@ specific HLSL shader pair at initialization time via `ShaderAssetModule`.
 
 ## Usage Example
 
-Calling code typically goes through `RenderableAssetModule`, which handles the
-render program selection implicitly:
+Renderable creation still works without an explicit `RenderProgramAsset`; the
+module stores the built-in enum value directly:
 
 ```cpp
 // Create a Gaussian splat debug renderable.
@@ -129,19 +134,28 @@ GaussianSplatDebugRenderableDesc desc{
 };
 RenderableAsset renderable = renderable_module.create_gaussian_splat_debug(desc);
 
-// After system.compile_pending():
+// After assets.resolve_all():
 RenderableHandle handle = renderable_module.get_renderable(renderable);
 const RenderableAssetData* data = renderable_module.get_renderable_data(handle);
 
 // data->program == BuiltinRenderProgram::GaussianSplatDebug
 // data->domain  == RenderDomain::Splat
-// data->render_program is invalid until the backend resolves it
+// data->render_program is invalid unless an explicit RenderProgramAsset is attached
 ```
 
 To override with an explicit resolved program (advanced use):
 
 ```cpp
-// After resolving a RenderProgramAsset externally:
+BuiltinRenderProgramDesc program_desc{
+    .name = "gaussian_splat_debug_program",
+    .program = BuiltinRenderProgram::GaussianSplatDebug,
+    .vertex_shader = shader_pair.vertex_shader,
+    .pixel_shader = shader_pair.pixel_shader,
+};
+RenderProgramAsset program = render_programs.create_builtin(program_desc);
+
+// After assets.resolve_all():
+auto resolved_program_handle = render_programs.get_render_program(program);
 data_mutable->render_program = resolved_program_handle;
 // The submit path will prefer render_program over program when valid.
 ```

@@ -315,7 +315,6 @@ Good current test areas:
 
 ```text
 tests/asset_scene/scene_asset_module.cpp
-tests/scene_compile/scene_ecs_boundary_test_1.cpp
 ```
 
 ## Non-Goals For Now

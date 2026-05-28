@@ -59,13 +59,13 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeRawFile =
         static_cast<wz::asset::AssetType>(64);
 
-    // Reserved foundation asset type. Not implemented yet:
-    // no public registration API, schema, compiler, or runtime table exists.
+    // Implemented: text file carrier.
+    // The carrier compiler preserves file bytes for dependent parsers.
     inline constexpr wz::asset::AssetType kAssetTypeTextFile =
         static_cast<wz::asset::AssetType>(65);
 
-    // Reserved foundation asset type. Not implemented yet:
-    // no public registration API, schema, compiler, or runtime table exists.
+    // Implemented: binary blob file carrier.
+    // Also used by the custom binary file carrier schema.
     inline constexpr wz::asset::AssetType kAssetTypeBinaryBlob =
         static_cast<wz::asset::AssetType>(66);
 
@@ -84,8 +84,8 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypePackage =
         static_cast<wz::asset::AssetType>(69);
 
-    // Reserved foundation asset type. Not implemented yet:
-    // no public registration API, schema, compiler, or runtime table exists.
+    // Implemented: imported source file carrier.
+    // The carrier compiler preserves file bytes for importer pipelines.
     inline constexpr wz::asset::AssetType kAssetTypeImportedSourceFile =
         static_cast<wz::asset::AssetType>(70);
 
@@ -212,7 +212,7 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeCSVTable =
         static_cast<wz::asset::AssetType>(150);
 
-    // Implemented soon: parsed JSON document.
+    // Implemented: parsed JSON document.
     // Runtime data is owned by JSONTable.
     inline constexpr wz::asset::AssetType kAssetTypeJSONDocument =
         static_cast<wz::asset::AssetType>(151);
@@ -1385,8 +1385,8 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeDiagnosticResampledTimeSeries =
         static_cast<wz::asset::AssetType>(4111);
 
-    // Implemented: CSV file export derived from a DataTable.
-    // Compiling this asset writes a CSV file to the specified output path.
+    // Implemented: CSV text export derived from a DataTable.
+    // File writing is explicit through CSVExportAssetModule::write_export_to_file().
     inline constexpr wz::asset::AssetType kAssetTypeCSVExport =
         static_cast<wz::asset::AssetType>(4112);
 

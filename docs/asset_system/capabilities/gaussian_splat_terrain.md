@@ -37,7 +37,7 @@ and procedural clouds.
 GaussianSplatCloudAsset create_terrain_surface_from_height_field(
     const GaussianSplatTerrainSurfaceFromHeightFieldDesc& desc);
 
-// Gaea R32 + JSON sidecar recipe (registers both files internally).
+// Gaea R32 + compiled JSON sidecar recipe.
 GaussianSplatCloudAsset create_terrain_splat_from_gaea_r32(
     const TerrainSplatFromGaeaR32Desc& desc);
 
@@ -66,12 +66,13 @@ subsample_step, opacity, luminance, normal smoothing) are hashed into the key.
 ```cpp
 wz::asset::AssetKey make_terrain_splat_from_gaea_r32_key(
     const wz::asset::AssetKey& r32_file_key,
-    const wz::asset::AssetKey& sidecar_json_file_key) noexcept;
+    const wz::asset::AssetKey& sidecar_json_key) noexcept;
 ```
 
-Identity is fully determined by the two source file keys + compiler version.
-Note: file keys are PATH-based, not byte-based, so editing the .json sidecar
-without changing its path does not automatically invalidate the cache.
+Identity is fully determined by the .r32 file key, the sidecar JSON document key,
+and the compiler version. The sidecar JSON document key is currently derived from
+its text-file carrier key, so editing the .json sidecar without changing its path
+does not automatically invalidate the cache.
 
 ## Dependencies
 
@@ -86,7 +87,7 @@ without changing its path does not automatically invalidate the cache.
 | Dependency | How required |
 |------------|--------------|
 | `kRawFileSchema` (.r32 bytes) | Heightmap data; always required |
-| `kRawFileSchema` (.json sidecar) | World-space interpretation parameters; always required |
+| `kAssetTypeJSONDocument` (.json sidecar) | World-space interpretation parameters; always required |
 
 ## Compile Descriptor
 

@@ -137,8 +137,8 @@ namespace wz::engine::assets {
     // Terrain splat recipe bundling a Gaea .r32 heightmap file with a JSON
     // sidecar that carries world-space interpretation parameters
     // (height_scale, step_x, step_z, overlap_factor, thickness,
-    // subsample_step) and optional dimension overrides.  Source: two file
-    // deps (raw .r32 bytes + raw .json bytes).  Produces a
+    // subsample_step) and optional dimension overrides.  Source deps are one
+    // raw .r32 file carrier and one compiled JSONDocument sidecar.  Produces a
     // kAssetTypeGaussianSplatCloud directly — the intermediate ScalarField
     // is built transiently inside the compiler and not exposed as a
     // separate asset.

@@ -45,9 +45,11 @@ into the system; other assets declare them as dependencies.
 |---|---|---|---|---|
 | Raw file | `kRawFileSchema` | `0x000001` | `kAssetTypeRawFile` (64) | `FileCarrierAssetModule` |
 | HLSL source file | `kHLSLFileSchema` | `0x000002` | `AssetType::ShaderSource` | Internal to `ShaderAssetModule` |
-| JSON file | `kJSONFileSchema` | `0x00000A` | — (carrier only) | `FileCarrierAssetModule` |
-| TOML file | `kTOMLFileSchema` | `0x00000C` | — (carrier only) | `FileCarrierAssetModule` |
-| CSV file | `kCSVFileSchema` | `0x00000E` | — (carrier only) | `FileCarrierAssetModule` |
+| Text file | `kTextFileSchema` | `0x000003` | `kAssetTypeTextFile` (65) | `FileCarrierAssetModule` |
+| Binary blob file | `kBinaryBlobSchema` | `0x000004` | `kAssetTypeBinaryBlob` (66) | `FileCarrierAssetModule` |
+| Imported source file | `kImportedSourceFileSchema` | `0x000008` | `kAssetTypeImportedSourceFile` (70) | `FileCarrierAssetModule` |
+| Custom binary file | `kCustomBinaryFileSchema` | `0x00000F` | `kAssetTypeBinaryBlob` (66) | `FileCarrierAssetModule` |
+| CSV file | `kCSVFileSchema` | `0x00000E` | `kAssetTypeRawFile` (64) | `FileCarrierAssetModule` |
 
 ---
 
@@ -56,7 +58,7 @@ into the system; other assets declare them as dependencies.
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
 | HLSL shader pair | `kHLSLShaderSchema` | `0x000100` | `AssetType::Shader` | `ShaderAssetModule::create_shader_pair()` |
-| Builtin render program | `kBuiltinRenderProgramSchema` | `0x000101` | `kAssetTypeRenderProgram` (1049) | Compiled as part of the renderable subsystem |
+| Builtin render program | `kBuiltinRenderProgramSchema` | `0x000101` | `kAssetTypeRenderProgram` (1049) | `RenderProgramAssetModule::create_builtin()` |
 
 `ShaderPairAsset` wraps two `AssetKey` values (vertex + pixel). Resolved to
 `ShaderPairHandles` (GPU handles) via `ShaderAssetModule::get_shader_pair()`.
@@ -112,9 +114,10 @@ The scalar-field variant depends on a compiled `kAssetTypeScalarField`.
 The terrain-surface variant depends on a compiled `kAssetTypeScalarField` and
 produces anisotropic, surface-tangent-aligned splats treating heightmap values as
 raw world elevations (distinct from the simple scalar-field debug heightmap splatter).
-The Gaea R32 recipe depends on two `kRawFileSchema` carriers (.r32 bytes + .json
-sidecar); it builds a transient `ScalarFieldData` internally and does not expose an
-intermediate scalar field asset.
+The Gaea R32 recipe depends on a `kRawFileSchema` carrier for the .r32 bytes and
+a compiled `kAssetTypeJSONDocument` sidecar; it builds a transient
+`ScalarFieldData` internally and does not expose an intermediate scalar field
+asset.
 
 `GaussianSplatCloudData::splats` is the ordered list that defines upload index order.
 The `cloud_local_index` field on `SplatDescriptor` / `SplatPrimitive` in
@@ -179,6 +182,21 @@ pre-LOD renderer).
 
 ---
 
+## Scenes
+
+Scene assets compile authored JSON scene documents into `SceneAssetData` stored
+in `SceneAssetTable`. Authored component descriptors inside the scene are
+covered separately in [`authored_scene_components.md`](authored_scene_components.md).
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Scene from JSON document | `kSceneFromJSONSchema` | `0x000710` | `kAssetTypeScene` (2049) | `SceneAssetModule::create_scene_from_json()` |
+
+`SceneAssetModule::create_scene_from_json()` creates a JSON document asset first,
+then registers a scene node depending on that parsed JSON document.
+
+---
+
 ## Parsed Data Documents
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
@@ -189,7 +207,9 @@ pre-LOD renderer).
 
 CSV depends on a `kCSVFileSchema` carrier (header mode is encoded in the key, so
 the same file compiled with different header modes yields distinct asset keys).
-JSON depends on `kJSONFileSchema`; TOML depends on `kTOMLFileSchema`.
+JSON and TOML documents currently depend on `kTextFileSchema` carriers.
+`kJSONFileSchema` and `kTOMLFileSchema` are reserved schema IDs, but the current
+module APIs do not register source carriers with those schemas.
 
 ---
 
@@ -210,8 +230,9 @@ exist primarily to support diagnostics pipelines and CSV report generation.
 `kAssetTypeDataTable` (4110) is a generic rectangular string table used as input
 for `kCSVExportSchema` and other DataTable consumers. Multiple schemas can produce it.
 
-The CSV export compiler writes to the output path as a side effect of compilation;
-file writing is explicit, not a hidden compiler side effect on the asset object itself.
+The CSV export compiler builds deterministic CSV text and stores it in
+`CSVExportTable`. File writing is an explicit follow-up call through
+`CSVExportAssetModule::write_export_to_file()`, not a compiler side effect.
 
 The timeframe summary filters a DataTable by a frame-index column, splits into
 fixed-size frame buckets, and computes per-metric min/max/mean/delta/first/last
@@ -308,16 +329,17 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 
 | Category | Implemented capabilities |
 |----------|--------------------------|
-| File carriers | 5 |
+| File carriers | 7 |
 | Shaders / render programs | 2 |
 | Scalar fields | 2 |
 | Meshes | 4 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
 | Renderables | 3 |
+| Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **31** |
+| **Total** | **34** |
 
 ---
 
@@ -329,7 +351,7 @@ schema, compiler, module API, or runtime table:
 - Textures (`kAssetTypeTexture`, all GPU texture variants)
 - All GPU-resident types (`kAssetTypeGPUShader`, `kAssetTypeGPUPipeline`, etc.)
 - Material definitions, instances, graphs
-- Scene / prefab / world / level
+- Prefab / world / level assets beyond the implemented JSON scene asset
 - Animation clips, skeletons, blend trees
 - Physics shapes and collision meshes
 - Audio clips, sound cues

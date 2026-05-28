@@ -122,8 +122,8 @@ namespace wz::engine::assets
         GaussianSplatCloudAsset create_terrain_surface_from_height_field(
             const GaussianSplatTerrainSurfaceFromHeightFieldDesc& desc);
 
-        // Register a Gaea .r32 + .json recipe.  Internally registers both
-        // files as raw-file assets and wires them as deps of the recipe.
+        // Register a Gaea .r32 + compiled JSON sidecar recipe.  The .r32 key
+        // must name a raw-file carrier; the sidecar key must name a JSONDocument.
         // Returns a kAssetTypeGaussianSplatCloud asset.
         GaussianSplatCloudAsset create_terrain_splat_from_gaea_r32(
             const TerrainSplatFromGaeaR32Desc& desc);
