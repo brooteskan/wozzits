@@ -277,8 +277,10 @@ namespace wz::engine::assets::internal
                         + "' missing 'input_map'");
                     return std::nullopt;
                 }
+                auto log_input = read_bool(*ir, "log_input");
                 node.input_receiver = SceneInputReceiverAsset{
                     .input_map = std::string(*map_uri),
+                    .log_input = log_input.value_or(false),
                 };
             }
 

@@ -25,6 +25,7 @@ namespace wz::engine::assets
     struct InputReceiverComponent
     {
         std::string input_map;
+        bool log_input = false;
     };
 
     struct FlyingCameraControllerComponent

@@ -424,6 +424,7 @@ namespace wz::engine::assets
                     .node = h,
                     .component = InputReceiverComponent{
                         .input_map = node.input_receiver->input_map,
+                        .log_input = node.input_receiver->log_input,
                     },
                 });
             }

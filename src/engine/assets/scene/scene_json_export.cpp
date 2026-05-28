@@ -276,6 +276,8 @@ namespace wz::engine::assets
                 auto input = object_value();
                 add_member(*input, "input_map",
                     string_value(node.input_receiver->input_map));
+                add_member(*input, "log_input",
+                    bool_value(node.input_receiver->log_input));
                 add_member(*obj, "input_receiver", std::move(input));
             }
             if (node.flying_camera_controller) {

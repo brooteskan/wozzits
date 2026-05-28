@@ -108,6 +108,7 @@ namespace wz::engine::assets
 
             if (node.input_receiver) {
                 fp.mix_string(node.input_receiver->input_map);
+                fp.mix_value(node.input_receiver->log_input);
             }
 
             if (node.flying_camera_controller) {

@@ -96,6 +96,7 @@ namespace wz::engine::assets
     struct SceneInputReceiverAsset
     {
         std::string input_map;   // asset URI, e.g. "asset://input_maps/fly"
+        bool log_input = false;
     };
 
     struct SceneFlyingCameraControllerAsset
