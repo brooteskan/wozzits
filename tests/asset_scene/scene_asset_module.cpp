@@ -237,6 +237,39 @@ namespace
   ]
 })";
 
+    const char* kGroundBoundaryDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "ground_boundary_descriptor_test",
+  "nodes": [
+    {
+      "id": "terrain_surface",
+      "transform": {
+        "translation": [0, 0, 0]
+      },
+      "ground_boundary": {
+        "min": [-10, 0, -8],
+        "max": [12, 0, 9],
+        "constrain_vertical": true,
+        "enabled": true
+      }
+    },
+    {
+      "id": "movable_actor",
+      "transform": {
+        "translation": [1, 0, 2]
+      },
+      "input_receiver": {
+        "input_map": "asset://input_maps/actor"
+      },
+      "actor_movement_controller": {
+        "move_speed": 4.0,
+        "boost_multiplier": 2.0,
+        "movement_space": "world"
+      }
+    }
+  ]
+})";
+
     const char* kListenerOnlySceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "listener_descriptor_test",
@@ -1339,6 +1372,89 @@ TEST(SceneAssetModule, ActorMovementComponentDescriptorsRoundTrip)
     EXPECT_NE(exported.find("\"local\""), std::string::npos);
 }
 
+TEST(SceneAssetModule, GroundBoundaryComponentDescriptorsRoundTrip)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_ground_boundary_desc_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "ground_boundary_desc.json",
+        kGroundBoundaryDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "ground_boundary_desc",
+            .path = rel_path,
+        });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
+
+    const auto& surface = scene_data->nodes[0];
+    ASSERT_TRUE(surface.ground_boundary.has_value());
+    EXPECT_FLOAT_EQ(surface.ground_boundary->min[0], -10.0f);
+    EXPECT_FLOAT_EQ(surface.ground_boundary->min[1], 0.0f);
+    EXPECT_FLOAT_EQ(surface.ground_boundary->min[2], -8.0f);
+    EXPECT_FLOAT_EQ(surface.ground_boundary->max[0], 12.0f);
+    EXPECT_FLOAT_EQ(surface.ground_boundary->max[1], 0.0f);
+    EXPECT_FLOAT_EQ(surface.ground_boundary->max[2], 9.0f);
+    EXPECT_TRUE(surface.ground_boundary->constrain_vertical);
+    EXPECT_TRUE(surface.ground_boundary->enabled);
+
+    const auto& actor = scene_data->nodes[1];
+    ASSERT_TRUE(actor.input_receiver.has_value());
+    ASSERT_TRUE(actor.actor_movement_controller.has_value());
+    EXPECT_FALSE(actor.ground_boundary.has_value());
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    auto& inst = result.instance;
+    ASSERT_TRUE(inst.authored_to_runtime.contains("terrain_surface"));
+    ASSERT_TRUE(inst.authored_to_runtime.contains("movable_actor"));
+    const auto surface_h = inst.authored_to_runtime["terrain_surface"];
+    const auto actor_h = inst.authored_to_runtime["movable_actor"];
+
+    ASSERT_EQ(inst.ground_boundaries.size(), 1u);
+    EXPECT_EQ(inst.ground_boundaries[0].node, surface_h);
+    EXPECT_FLOAT_EQ(inst.ground_boundaries[0].component.min[0], -10.0f);
+    EXPECT_FLOAT_EQ(inst.ground_boundaries[0].component.max[2], 9.0f);
+    EXPECT_TRUE(inst.ground_boundaries[0].component.constrain_vertical);
+    EXPECT_TRUE(inst.ground_boundaries[0].component.enabled);
+
+    ASSERT_EQ(inst.actor_movement_controllers.size(), 1u);
+    EXPECT_EQ(inst.actor_movement_controllers[0].node, actor_h);
+
+    const auto summary = summarize_scene_instance_components(inst);
+    EXPECT_EQ(summary.ground_boundaries, 1u);
+    EXPECT_EQ(summary.actor_movement_controllers, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"ground_boundary\""), std::string::npos);
+    EXPECT_NE(exported.find("\"constrain_vertical\""), std::string::npos);
+}
+
 // ─── Descriptor validation (negative) tests ─────────────────────────────
 
 namespace
@@ -1464,6 +1580,35 @@ TEST(SceneDescriptorValidation, RejectsEmptyEventChannels)
   }]
 })";
     EXPECT_FALSE(scene_json_compiles("empty_channels", json));
+}
+
+TEST(SceneDescriptorValidation, RejectsGroundBoundaryMissingBounds)
+{
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "ground_boundary_missing_bounds",
+  "nodes": [{
+    "id": "surface",
+    "ground_boundary": { "min": [-1, 0, -1] }
+  }]
+})";
+    EXPECT_FALSE(scene_json_compiles("ground_boundary_missing_bounds", json));
+}
+
+TEST(SceneDescriptorValidation, RejectsGroundBoundaryInvertedBounds)
+{
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "ground_boundary_inverted_bounds",
+  "nodes": [{
+    "id": "surface",
+    "ground_boundary": {
+      "min": [5, 0, -1],
+      "max": [-5, 0, 1]
+    }
+  }]
+})";
+    EXPECT_FALSE(scene_json_compiles("ground_boundary_inverted_bounds", json));
 }
 
 TEST(SceneDescriptorValidation, RejectsAllBlankEventChannels)
@@ -3857,6 +4002,8 @@ TEST(SceneECSBoundary, SceneECSVocabularyIsSceneLayerOnly)
 
     EXPECT_EQ(record.node, wz::scene::INVALID_RUNTIME_ENTITY);
     EXPECT_EQ(record.component, 7);
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::GroundBoundary));
 }
 
 TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
@@ -3877,6 +4024,7 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
+    EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3897,6 +4045,7 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
+    EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3941,6 +4090,7 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
+    EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3971,6 +4121,10 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
         SceneFlyingCameraControllerAsset{};
     camera_node.actor_movement_controller =
         SceneActorMovementControllerAsset{};
+    camera_node.ground_boundary = SceneGroundBoundaryAsset{
+        .min = { -5.0f, 0.0f, -5.0f },
+        .max = { 5.0f, 0.0f, 5.0f },
+    };
     camera_node.audio_listener = SceneAudioListenerAsset{};
     camera_node.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -4001,6 +4155,7 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
+    EXPECT_EQ(summary.ground_boundaries, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
@@ -4072,6 +4227,7 @@ TEST(SceneECSBoundary, AssetBackedRenderableDoesNotEmbedAssetDefinition)
     EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
+    EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
@@ -4097,6 +4253,10 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
         SceneFlyingCameraControllerAsset{};
     camera.actor_movement_controller =
         SceneActorMovementControllerAsset{};
+    camera.ground_boundary = SceneGroundBoundaryAsset{
+        .min = { -5.0f, 0.0f, -5.0f },
+        .max = { 5.0f, 0.0f, 5.0f },
+    };
     camera.audio_listener = SceneAudioListenerAsset{};
     camera.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -4119,6 +4279,7 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
+    EXPECT_EQ(summary.ground_boundaries, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);

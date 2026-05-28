@@ -136,6 +136,7 @@ namespace wz::engine::assets
                 << summary.flying_camera_controllers
                 << " actor_movement_controllers="
                 << summary.actor_movement_controllers
+                << " ground_boundaries=" << summary.ground_boundaries
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
                 << " auxiliary_visuals=" << summary.auxiliary_visuals
@@ -185,6 +186,7 @@ namespace wz::engine::assets
                 << summary.flying_camera_controllers
                 << " actor_movement_controllers="
                 << summary.actor_movement_controllers
+                << " ground_boundaries=" << summary.ground_boundaries
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
                 << " auxiliary_visuals=" << summary.auxiliary_visuals
@@ -255,6 +257,8 @@ namespace wz::engine::assets
                 instance.flying_camera_controllers.size()),
             .actor_movement_controllers = static_cast<uint32_t>(
                 instance.actor_movement_controllers.size()),
+            .ground_boundaries = static_cast<uint32_t>(
+                instance.ground_boundaries.size()),
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
@@ -457,6 +461,24 @@ namespace wz::engine::assets
                         .boost_multiplier = ac.boost_multiplier,
                         .movement_space = ac.movement_space,
                     },
+                });
+            }
+
+            if (node.ground_boundary) {
+                const auto& gb = *node.ground_boundary;
+                GroundBoundaryComponent component{};
+                component.min[0] = gb.min[0];
+                component.min[1] = gb.min[1];
+                component.min[2] = gb.min[2];
+                component.max[0] = gb.max[0];
+                component.max[1] = gb.max[1];
+                component.max[2] = gb.max[2];
+                component.constrain_vertical = gb.constrain_vertical;
+                component.enabled = gb.enabled;
+
+                inst.ground_boundaries.push_back({
+                    .node = h,
+                    .component = component,
                 });
             }
 

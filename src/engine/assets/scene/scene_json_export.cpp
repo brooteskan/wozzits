@@ -229,6 +229,18 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr ground_boundary_value(
+            const SceneGroundBoundaryAsset& boundary)
+        {
+            auto obj = object_value();
+            add_member(*obj, "min", float_array(boundary.min, 3));
+            add_member(*obj, "max", float_array(boundary.max, 3));
+            add_member(*obj, "constrain_vertical",
+                bool_value(boundary.constrain_vertical));
+            add_member(*obj, "enabled", bool_value(boundary.enabled));
+            return obj;
+        }
+
         JSONValuePtr event_listener_value(
             const SceneEventListenerAsset& listener)
         {
@@ -310,6 +322,10 @@ namespace wz::engine::assets
             if (node.actor_movement_controller) {
                 add_member(*obj, "actor_movement_controller",
                     actor_movement_value(*node.actor_movement_controller));
+            }
+            if (node.ground_boundary) {
+                add_member(*obj, "ground_boundary",
+                    ground_boundary_value(*node.ground_boundary));
             }
             if (node.audio_listener) {
                 auto audio = object_value();

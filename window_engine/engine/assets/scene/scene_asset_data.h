@@ -125,6 +125,14 @@ namespace wz::engine::assets
             SceneActorMovementSpace::World;
     };
 
+    struct SceneGroundBoundaryAsset
+    {
+        float min[3]{ 0.0f, 0.0f, 0.0f };
+        float max[3]{ 0.0f, 0.0f, 0.0f };
+        bool constrain_vertical = true;
+        bool enabled = true;
+    };
+
     struct SceneAudioListenerAsset
     {
         bool active = true;
@@ -163,6 +171,7 @@ namespace wz::engine::assets
         std::optional<SceneInputReceiverAsset> input_receiver;
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
         std::optional<SceneActorMovementControllerAsset> actor_movement_controller;
+        std::optional<SceneGroundBoundaryAsset> ground_boundary;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
@@ -263,6 +272,13 @@ namespace wz::engine::assets
         node.actor_movement_controller = controller;
     }
 
+    inline void attach_ground_boundary(
+        SceneNodeAsset& node,
+        SceneGroundBoundaryAsset boundary)
+    {
+        node.ground_boundary = boundary;
+    }
+
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
     authored_components_for_node(const SceneNodeAsset& node)
     {
@@ -291,6 +307,9 @@ namespace wz::engine::assets
         }
         if (node.actor_movement_controller) {
             out.push_back(Kind::ActorMovementController);
+        }
+        if (node.ground_boundary) {
+            out.push_back(Kind::GroundBoundary);
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
@@ -346,6 +365,7 @@ namespace wz::engine::assets
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
+            || node.ground_boundary.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();
@@ -379,6 +399,9 @@ namespace wz::engine::assets
             }
             if (node.actor_movement_controller) {
                 ++out.actor_movement_controllers;
+            }
+            if (node.ground_boundary) {
+                ++out.ground_boundaries;
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;

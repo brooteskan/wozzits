@@ -189,7 +189,7 @@ The current high-level categories are:
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
-| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `AudioListener`, `EventListener` |
+| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `AudioListener`, `EventListener` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -311,6 +311,29 @@ Fields:
 - `move_speed`
 - `boost_multiplier`
 - `movement_space`
+
+`ActorMovementController` should consume constraint data from other components,
+such as `GroundBoundary`, rather than embedding terrain or landscape data in the
+controller itself.
+
+### GroundBoundary
+
+Runtime-relevant authored constraint component for surfaces or terrain-like
+entities that can bound actor motion.
+
+Fields:
+
+- `min`
+- `max`
+- `constrain_vertical`
+- `enabled`
+
+`GroundBoundary` describes the local-space traversable bounds on the entity that
+owns the component. It is intentionally a simple descriptor: it does not own
+terrain source data, height fields, collision meshes, broadphase state, or a
+motion solver. Future reusable landscapes should be assets; this component can
+then reference or annotate those assets while runtime movement systems consume
+the projected boundary table.
 
 ### AudioListener
 

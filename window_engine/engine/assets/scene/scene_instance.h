@@ -44,6 +44,14 @@ namespace wz::engine::assets
             SceneActorMovementSpace::World;
     };
 
+    struct GroundBoundaryComponent
+    {
+        float min[3]{ 0.0f, 0.0f, 0.0f };
+        float max[3]{ 0.0f, 0.0f, 0.0f };
+        bool constrain_vertical = true;
+        bool enabled = true;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -88,6 +96,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<InputReceiverComponent>> input_receivers;
         std::vector<SceneComponentRecord<FlyingCameraControllerComponent>> flying_camera_controllers;
         std::vector<SceneComponentRecord<ActorMovementControllerComponent>> actor_movement_controllers;
+        std::vector<SceneComponentRecord<GroundBoundaryComponent>> ground_boundaries;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;

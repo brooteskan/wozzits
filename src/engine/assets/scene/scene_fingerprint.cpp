@@ -126,6 +126,14 @@ namespace wz::engine::assets
                 fp.mix_value(controller.movement_space);
             }
 
+            if (node.ground_boundary) {
+                const auto& boundary = *node.ground_boundary;
+                fp.mix_bytes(boundary.min, sizeof(boundary.min));
+                fp.mix_bytes(boundary.max, sizeof(boundary.max));
+                fp.mix_value(boundary.constrain_vertical);
+                fp.mix_value(boundary.enabled);
+            }
+
             if (node.audio_listener) {
                 fp.mix_value(node.audio_listener->active);
             }

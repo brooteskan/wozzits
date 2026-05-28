@@ -363,6 +363,39 @@ namespace wz::engine::assets::internal
                 node.actor_movement_controller = ctrl;
             }
 
+            const auto* gb = find_member(node_val, "ground_boundary");
+            if (gb && gb->kind == wz::json::JSONValueKind::Object) {
+                SceneGroundBoundaryAsset boundary{};
+                if (!read_float3(*gb, "min", boundary.min)
+                    || !read_float3(*gb, "max", boundary.max))
+                {
+                    logger.error("ground_boundary on node '" + node.id
+                        + "' must provide min and max float3 bounds");
+                    return std::nullopt;
+                }
+
+                if (boundary.min[0] > boundary.max[0]
+                    || boundary.min[1] > boundary.max[1]
+                    || boundary.min[2] > boundary.max[2])
+                {
+                    logger.error("ground_boundary on node '" + node.id
+                        + "' has min greater than max");
+                    return std::nullopt;
+                }
+
+                auto constrain_vertical =
+                    read_bool(*gb, "constrain_vertical");
+                if (constrain_vertical) {
+                    boundary.constrain_vertical = *constrain_vertical;
+                }
+                auto enabled = read_bool(*gb, "enabled");
+                if (enabled) {
+                    boundary.enabled = *enabled;
+                }
+
+                node.ground_boundary = boundary;
+            }
+
             const auto* al = find_member(node_val, "audio_listener");
             if (al && al->kind == wz::json::JSONValueKind::Object) {
                 SceneAudioListenerAsset listener{};
