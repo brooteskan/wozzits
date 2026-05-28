@@ -26,6 +26,16 @@ engine schemas.
 
 ---
 
+## Authored Scene Components
+
+Scene component descriptors live in `SceneAssetData` rather than as standalone
+asset-system capabilities. They form the authored ECS-style scene language that
+instantiates into `SceneInstance` runtime component tables.
+
+See [`authored_scene_components.md`](authored_scene_components.md).
+
+---
+
 ## File Carriers and Source Nodes
 
 These are leaf nodes in the asset graph. They carry raw bytes from the filesystem
