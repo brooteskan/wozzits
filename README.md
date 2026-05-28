@@ -17,16 +17,16 @@ Experimental. Not production-ready. Breaking changes happen without notice.
 
 See [BUILDING.md](BUILDING.md) for prerequisites, workspace layout, and step-by-step instructions.
 
-Quick start (VS 2022 x64 Developer Command Prompt required):
+Quick start (VS 2022 x64 Developer Command Prompt with clang-cl/lld-link on PATH required):
 
 ```powershell
 # Clone required sibling repo
 .\scripts\setup-workspace.ps1
 
 # Configure, build, test
-cmake --preset windows-debug
-cmake --build --preset windows-debug
-ctest --preset windows-debug
+cmake --preset clang-debug
+cmake --build --preset clang-debug
+ctest --preset clang-debug
 ```
 
 

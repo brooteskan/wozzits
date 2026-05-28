@@ -7,6 +7,13 @@ endif()
 
 project(window_engine LANGUAGES C CXX)
 
+if(WIN32 AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR
+        "wozzits-window-engine only supports Clang targets on Windows. "
+        "Configure with the clang-debug/clang-release presets or set "
+        "CMAKE_C_COMPILER=clang-cl and CMAKE_CXX_COMPILER=clang-cl.")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -18,7 +25,7 @@ endif()
 
 option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
 option(WINDOW_ENGINE_BUILD_EXAMPLES "Build standalone examples" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
-option(WNIDOW_ENGINE_DEV_BUILD "Use local algo_math" ON)
+option(WINDOW_ENGINE_DEV_BUILD "Use local algo_math" ON)
 option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 
 

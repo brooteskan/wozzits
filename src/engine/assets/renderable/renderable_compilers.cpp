@@ -5,6 +5,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <algorithm>
 #include <any>
 #include <span>
 
@@ -21,6 +22,26 @@ namespace wz::engine::assets::internal
             for (int i = 0; i < 3; ++i) {
                 dst_min[i] = src_min[i];
                 dst_max[i] = src_max[i];
+            }
+        }
+
+        void copy_mesh_bounds(
+            float dst_min[3],
+            float dst_max[3],
+            const MeshData& mesh)
+        {
+            for (int axis = 0; axis < 3; ++axis) {
+                dst_min[axis] = mesh.vertices[0].position[axis];
+                dst_max[axis] = mesh.vertices[0].position[axis];
+            }
+
+            for (const auto& vertex : mesh.vertices) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    dst_min[axis] =
+                        std::min(dst_min[axis], vertex.position[axis]);
+                    dst_max[axis] =
+                        std::max(dst_max[axis], vertex.position[axis]);
+                }
             }
         }
     }
@@ -71,12 +92,7 @@ namespace wz::engine::assets::internal
                 data.domain = desc->domain;
                 data.policy_flags = desc->policy_flags;
 
-                data.bounds_min[0] = -1.0f;
-                data.bounds_min[1] = -1.0f;
-                data.bounds_min[2] = -1.0f;
-                data.bounds_max[0] = 1.0f;
-                data.bounds_max[1] = 1.0f;
-                data.bounds_max[2] = 1.0f;
+                copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
 
                 wz::asset::ResourceHandle handle =
                     renderable_table->add(std::move(data));

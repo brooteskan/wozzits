@@ -38,7 +38,8 @@ namespace wz::engine::assets
                 desc.name,
                 desc.mesh.output,
                 desc.program,
-                desc.policy_flags);
+                desc.policy_flags,
+                desc.domain);
 
         wz::asset::AssetNode node;
         node.key = key;

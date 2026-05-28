@@ -15,11 +15,13 @@ namespace wz::engine::assets
         std::string_view name,
         const wz::asset::AssetKey& mesh_key,
         BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug,
-        uint32_t policy_flags = RenderPolicy_Wireframe) noexcept
+        uint32_t policy_flags = RenderPolicy_Wireframe,
+        RenderDomain domain = RenderDomain::Debug) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, static_cast<uint64_t>(program));
         h = detail::mix64(h, static_cast<uint64_t>(policy_flags));
+        h = detail::mix64(h, static_cast<uint64_t>(domain));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

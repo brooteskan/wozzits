@@ -115,6 +115,33 @@ namespace wz::engine::assets
             return "world";
         }
 
+        const char* mesh_source_kind_name(SceneMeshSourceKind kind)
+        {
+            switch (kind) {
+            case SceneMeshSourceKind::Placeholder:
+                return "placeholder";
+            case SceneMeshSourceKind::GLB:
+                return "glb";
+            case SceneMeshSourceKind::ProceduralCube:
+                return "procedural_cube";
+            case SceneMeshSourceKind::ProceduralQuad:
+                return "procedural_quad";
+            case SceneMeshSourceKind::ProceduralTriangle:
+                return "procedural_triangle";
+            }
+            return "placeholder";
+        }
+
+        const char* mesh_render_style_kind_name(
+            SceneMeshRenderStyleKind kind)
+        {
+            switch (kind) {
+            case SceneMeshRenderStyleKind::Wireframe:
+                return "wireframe";
+            }
+            return "wireframe";
+        }
+
         const char* pipeline_name(const SceneRenderableBinding& binding)
         {
             if (binding.node_class.default_surface
@@ -241,6 +268,27 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_source_value(const SceneMeshSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(mesh_source_kind_name(source.kind)));
+            add_member(*obj, "path", string_value(source.path));
+            add_member(*obj, "mesh_index", number_value(source.mesh_index));
+            return obj;
+        }
+
+        JSONValuePtr mesh_render_style_value(
+            const SceneMeshRenderStyleAsset& style)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(mesh_render_style_kind_name(style.kind)));
+            add_member(*obj, "depth_test", bool_value(style.depth_test));
+            add_member(*obj, "depth_write", bool_value(style.depth_write));
+            return obj;
+        }
+
         JSONValuePtr event_listener_value(
             const SceneEventListenerAsset& listener)
         {
@@ -326,6 +374,14 @@ namespace wz::engine::assets
             if (node.ground_boundary) {
                 add_member(*obj, "ground_boundary",
                     ground_boundary_value(*node.ground_boundary));
+            }
+            if (node.mesh_source) {
+                add_member(*obj, "mesh_source",
+                    mesh_source_value(*node.mesh_source));
+            }
+            if (node.mesh_render_style) {
+                add_member(*obj, "mesh_render_style",
+                    mesh_render_style_value(*node.mesh_render_style));
             }
             if (node.audio_listener) {
                 auto audio = object_value();

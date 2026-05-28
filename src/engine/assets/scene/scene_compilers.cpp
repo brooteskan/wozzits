@@ -182,6 +182,36 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshSourceKind> parse_mesh_source_kind(
+            std::string_view text)
+        {
+            if (text == "placeholder") {
+                return SceneMeshSourceKind::Placeholder;
+            }
+            if (text == "glb") {
+                return SceneMeshSourceKind::GLB;
+            }
+            if (text == "procedural_cube") {
+                return SceneMeshSourceKind::ProceduralCube;
+            }
+            if (text == "procedural_quad") {
+                return SceneMeshSourceKind::ProceduralQuad;
+            }
+            if (text == "procedural_triangle") {
+                return SceneMeshSourceKind::ProceduralTriangle;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneMeshRenderStyleKind> parse_mesh_render_style_kind(
+            std::string_view text)
+        {
+            if (text == "wireframe") {
+                return SceneMeshRenderStyleKind::Wireframe;
+            }
+            return std::nullopt;
+        }
+
         using SceneAssetReferenceMap =
             std::unordered_map<std::string, wz::asset::AssetKey>;
 
@@ -394,6 +424,81 @@ namespace wz::engine::assets::internal
                 }
 
                 node.ground_boundary = boundary;
+            }
+
+            const auto* ms = find_member(node_val, "mesh_source");
+            if (ms && ms->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*ms, "kind");
+                if (!kind_str) {
+                    logger.error("mesh_source on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                auto kind = parse_mesh_source_kind(*kind_str);
+                if (!kind) {
+                    logger.error("mesh_source on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str) + "'");
+                    return std::nullopt;
+                }
+
+                SceneMeshSourceAsset source{};
+                source.kind = *kind;
+
+                auto path = read_string(*ms, "path");
+                if (path) {
+                    source.path = std::string(*path);
+                }
+
+                auto mesh_index = read_number(*ms, "mesh_index");
+                if (mesh_index) {
+                    if (*mesh_index < 0.0 || !std::isfinite(*mesh_index)) {
+                        logger.error("mesh_source on node '" + node.id
+                            + "' has invalid mesh_index");
+                        return std::nullopt;
+                    }
+                    source.mesh_index = static_cast<uint32_t>(*mesh_index);
+                }
+
+                if (source.kind == SceneMeshSourceKind::GLB
+                    && source.path.empty())
+                {
+                    logger.error("mesh_source on node '" + node.id
+                        + "' with kind 'glb' missing 'path'");
+                    return std::nullopt;
+                }
+
+                node.mesh_source = std::move(source);
+            }
+
+            const auto* mrs = find_member(node_val, "mesh_render_style");
+            if (mrs && mrs->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*mrs, "kind");
+                if (!kind_str) {
+                    logger.error("mesh_render_style on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                auto kind = parse_mesh_render_style_kind(*kind_str);
+                if (!kind) {
+                    logger.error("mesh_render_style on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str) + "'");
+                    return std::nullopt;
+                }
+
+                SceneMeshRenderStyleAsset style{};
+                style.kind = *kind;
+                auto depth_test = read_bool(*mrs, "depth_test");
+                if (depth_test) {
+                    style.depth_test = *depth_test;
+                }
+                auto depth_write = read_bool(*mrs, "depth_write");
+                if (depth_write) {
+                    style.depth_write = *depth_write;
+                }
+
+                node.mesh_render_style = style;
             }
 
             const auto* al = find_member(node_val, "audio_listener");

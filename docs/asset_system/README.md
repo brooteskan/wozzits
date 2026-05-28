@@ -89,6 +89,7 @@ Both schemas produce the same `kAssetTypeScalarField` output stored in
 | Procedural quad mesh | `kProceduralQuadMeshSchema` | `0x000401` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_procedural_mesh()` with `ProceduralMeshKind::Quad` |
 | Procedural cube mesh | `kProceduralCubeMeshSchema` | `0x000402` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_procedural_mesh()` with `ProceduralMeshKind::Cube` |
 | GLB static mesh import | `kGLBMeshSchema` | `0x000403` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_glb_mesh()` |
+| Placeholder mesh | `kPlaceholderMeshSchema` | `0x000404` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_placeholder_mesh()` |
 
 All mesh schemas produce `kAssetTypeMesh` stored in `MeshTable`.
 `MeshAssetModule::get_mesh()` → `MeshHandle`; `get_mesh_data()` → `const MeshData*`.
@@ -332,14 +333,14 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | File carriers | 7 |
 | Shaders / render programs | 2 |
 | Scalar fields | 2 |
-| Meshes | 4 |
+| Meshes | 5 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
 | Renderables | 3 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **34** |
+| **Total** | **35** |
 
 ---
 

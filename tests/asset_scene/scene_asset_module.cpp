@@ -270,6 +270,29 @@ namespace
   ]
 })";
 
+    const char* kMeshDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_descriptor_test",
+  "nodes": [
+    {
+      "id": "rock",
+      "transform": {
+        "translation": [1, 2, 3]
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "gltf/low_poly_rock.glb",
+        "mesh_index": 1
+      },
+      "mesh_render_style": {
+        "kind": "wireframe",
+        "depth_test": true,
+        "depth_write": true
+      }
+    }
+  ]
+})";
+
     const char* kListenerOnlySceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "listener_descriptor_test",
@@ -1453,6 +1476,101 @@ TEST(SceneAssetModule, GroundBoundaryComponentDescriptorsRoundTrip)
         wz::json::serialize_json(export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"ground_boundary\""), std::string::npos);
     EXPECT_NE(exported.find("\"constrain_vertical\""), std::string::npos);
+}
+
+TEST(SceneAssetModule, MeshComponentDescriptorsRoundTrip)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_desc_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "mesh_desc.json", kMeshDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_desc",
+            .path = rel_path,
+        });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_source.has_value());
+    EXPECT_EQ(node.mesh_source->kind, SceneMeshSourceKind::GLB);
+    EXPECT_EQ(node.mesh_source->path, "gltf/low_poly_rock.glb");
+    EXPECT_EQ(node.mesh_source->mesh_index, 1u);
+
+    ASSERT_TRUE(node.mesh_render_style.has_value());
+    EXPECT_EQ(
+        node.mesh_render_style->kind,
+        SceneMeshRenderStyleKind::Wireframe);
+    EXPECT_TRUE(node.mesh_render_style->depth_test);
+    EXPECT_TRUE(node.mesh_render_style->depth_write);
+
+    const auto summary = summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(summary.mesh_sources, 1u);
+    EXPECT_EQ(summary.mesh_render_styles, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"mesh_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"mesh_render_style\""), std::string::npos);
+    EXPECT_NE(exported.find("\"gltf/low_poly_rock.glb\""), std::string::npos);
+    EXPECT_NE(exported.find("\"depth_test\""), std::string::npos);
+
+    const wz::fs::Path reparse_root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_desc_reparse_test");
+
+    ASSERT_EQ(
+        wz::fs::create_directories(reparse_root),
+        wz::fs::FileError::None);
+
+    wz::Logger reparse_logger;
+    wz::gpu::Device reparse_device{};
+    wz::engine::assets::EngineAssetLibrary reparse_assets{
+        reparse_device, reparse_logger, reparse_root };
+
+    auto exported_rel_path = write_scene_json(
+        reparse_root, "mesh_desc_exported.json", exported);
+    const auto exported_scene_asset =
+        reparse_assets.scenes().create_scene_from_json({
+            .name = "mesh_desc_exported",
+            .path = exported_rel_path,
+        });
+    ASSERT_TRUE(exported_scene_asset.valid());
+    ASSERT_TRUE(reparse_assets.commit());
+    ASSERT_TRUE(reparse_assets.resolve_all().ok());
+
+    const auto* reparsed_scene_data = reparse_assets.scenes().get_scene_data(
+        reparse_assets.scenes().get_scene(exported_scene_asset));
+    ASSERT_NE(reparsed_scene_data, nullptr);
+    ASSERT_EQ(reparsed_scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(reparsed_scene_data->nodes[0].mesh_source.has_value());
+    ASSERT_TRUE(
+        reparsed_scene_data->nodes[0].mesh_render_style.has_value());
 }
 
 // ─── Descriptor validation (negative) tests ─────────────────────────────
@@ -4345,6 +4463,38 @@ TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
     const uint64_t changed = scene_asset_fingerprint(scene);
 
     EXPECT_NE(original, changed);
+}
+
+TEST(SceneECSBoundary, FingerprintTracksMeshDescriptors)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "fingerprint_mesh_scene";
+
+    SceneNodeAsset node{};
+    node.id = "rock";
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::GLB,
+        .path = "gltf/low_poly_rock.glb",
+        .mesh_index = 0,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .kind = SceneMeshRenderStyleKind::Wireframe,
+        .depth_test = true,
+        .depth_write = false,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t original = scene_asset_fingerprint(scene);
+
+    scene.nodes[0].mesh_source->mesh_index = 1;
+    const uint64_t changed_source = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, changed_source);
+
+    scene.nodes[0].mesh_render_style->depth_write = true;
+    const uint64_t changed_style = scene_asset_fingerprint(scene);
+    EXPECT_NE(changed_source, changed_style);
 }
 
 TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)

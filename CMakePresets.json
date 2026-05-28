@@ -8,13 +8,14 @@
       "cacheVariables": {
         "WINDOW_ENGINE_ENABLE_TESTS": "ON",
         "WINDOW_ENGINE_DEV_BUILD": "ON",
+        "SCENE_RENDER_ENABLE_TESTS": "ON",
         "WOZZITS_ENABLE_V8_SCRIPTING": "OFF"
       }
     },
     {
-      "name": "windows-debug",
-      "displayName": "Windows x64 Debug",
-      "description": "Debug build using MSVC + Ninja. Run from a VS 2022 Developer Command Prompt.",
+      "name": "clang-debug",
+      "displayName": "Windows x64 Clang Debug",
+      "description": "Debug build using clang-cl + lld-link + Ninja. Run from a VS 2022 x64 Developer Command Prompt with LLVM tools on PATH.",
       "inherits": "base",
       "generator": "Ninja",
       "architecture": {
@@ -22,13 +23,16 @@
         "strategy": "external"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_LINKER": "lld-link"
       }
     },
     {
-      "name": "windows-release",
-      "displayName": "Windows x64 Release",
-      "description": "Release build using MSVC + Ninja.",
+      "name": "clang-release",
+      "displayName": "Windows x64 Clang Release",
+      "description": "Release build using clang-cl + lld-link + Ninja.",
       "inherits": "base",
       "generator": "Ninja",
       "architecture": {
@@ -36,33 +40,36 @@
         "strategy": "external"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_LINKER": "lld-link"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "windows-debug",
-      "displayName": "Windows x64 Debug",
-      "configurePreset": "windows-debug"
+      "name": "clang-debug",
+      "displayName": "Windows x64 Clang Debug",
+      "configurePreset": "clang-debug"
     },
     {
-      "name": "windows-release",
-      "displayName": "Windows x64 Release",
-      "configurePreset": "windows-release"
+      "name": "clang-release",
+      "displayName": "Windows x64 Clang Release",
+      "configurePreset": "clang-release"
     }
   ],
   "testPresets": [
     {
-      "name": "windows-debug",
-      "displayName": "Windows x64 Debug",
-      "configurePreset": "windows-debug",
+      "name": "clang-debug",
+      "displayName": "Windows x64 Clang Debug",
+      "configurePreset": "clang-debug",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "windows-release",
-      "displayName": "Windows x64 Release",
-      "configurePreset": "windows-release",
+      "name": "clang-release",
+      "displayName": "Windows x64 Clang Release",
+      "configurePreset": "clang-release",
       "output": { "outputOnFailure": true }
     }
   ]

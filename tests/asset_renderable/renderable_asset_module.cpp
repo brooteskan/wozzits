@@ -67,6 +67,12 @@ TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
     EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDebug);
     EXPECT_EQ(data->domain, RenderDomain::Debug);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
+    EXPECT_FLOAT_EQ(data->bounds_min[0], -1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_min[1], -1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_min[2], -1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[0], 1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[1], 1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[2], 1.0f);
 }
 
 TEST(RenderableAssetModule, ResolvesDepthTestedMeshWireframeRenderable)
@@ -134,6 +140,135 @@ TEST(RenderableAssetModule, ResolvesDepthTestedMeshWireframeRenderable)
     EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
+}
+
+TEST(RenderableAssetModule, MeshWireframeRenderableDomainParticipatesInIdentity)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mesh_domain_identity_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/shared_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+
+    ASSERT_TRUE(mesh.valid());
+
+    const auto debug_renderable =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/shared_quad_wireframe",
+            .mesh = mesh,
+            .domain = RenderDomain::Debug,
+        });
+
+    const auto opaque_renderable =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/shared_quad_wireframe",
+            .mesh = mesh,
+            .domain = RenderDomain::Opaque,
+        });
+
+    ASSERT_TRUE(debug_renderable.valid());
+    ASSERT_TRUE(opaque_renderable.valid());
+    EXPECT_FALSE(debug_renderable.output == opaque_renderable.output);
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 3u);
+
+    const auto debug_handle =
+        assets.renderables().get_renderable(debug_renderable);
+    const auto opaque_handle =
+        assets.renderables().get_renderable(opaque_renderable);
+
+    ASSERT_TRUE(debug_handle.valid());
+    ASSERT_TRUE(opaque_handle.valid());
+
+    const auto* debug_data =
+        assets.renderables().get_renderable_data(debug_handle);
+    const auto* opaque_data =
+        assets.renderables().get_renderable_data(opaque_handle);
+
+    ASSERT_NE(debug_data, nullptr);
+    ASSERT_NE(opaque_data, nullptr);
+    EXPECT_EQ(debug_data->domain, RenderDomain::Debug);
+    EXPECT_EQ(opaque_data->domain, RenderDomain::Opaque);
+}
+
+TEST(RenderableAssetModule, MeshWireframeRenderableBoundsComeFromMeshVertices)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mesh_bounds_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/quad_wireframe",
+            .mesh = mesh,
+        });
+
+    ASSERT_TRUE(renderable.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 2u);
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+
+    ASSERT_NE(data, nullptr);
+    EXPECT_FLOAT_EQ(data->bounds_min[0], -1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_min[1], -1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_min[2], 0.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[0], 1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[1], 1.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[2], 0.0f);
 }
 
 TEST(RenderableAssetModule, ResolvesGaussianSplatDebugRenderable)

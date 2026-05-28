@@ -5,7 +5,8 @@
 | Tool | Minimum version | Notes |
 |------|----------------|-------|
 | CMake | 3.14 | |
-| Visual Studio 2022 | 17.x | Desktop development with C++ workload |
+| Visual Studio 2022 | 17.x | Desktop development with C++ workload, for Windows SDK/link libraries |
+| LLVM / clang-cl | 17.x | Install the VS LLVM tools component or LLVM for Windows |
 | Ninja | any | Bundled with VS 2022; otherwise install via `winget install Ninja-build.Ninja` |
 | Git | any | |
 
@@ -32,34 +33,34 @@ git clone https://github.com/woguls/wozzits-window-engine.git
 
 ## Configure, build, and test
 
-All commands must be run from a **VS 2022 x64 Developer Command Prompt** (or Developer PowerShell),
-so that MSVC (`cl.exe`) and Ninja are on the path.
+All commands must be run from a **VS 2022 x64 Developer Command Prompt** (or Developer PowerShell)
+with `clang-cl`, `lld-link`, and Ninja on the path. MSVC compiler targets are not supported.
 
 ```powershell
 cd wozzits-window-engine
 
 # Configure
-cmake --preset windows-debug
+cmake --preset clang-debug
 
 # Build
-cmake --build --preset windows-debug
+cmake --build --preset clang-debug
 
 # Run tests
-ctest --preset windows-debug
+ctest --preset clang-debug
 ```
 
-Build output lands in `build/windows-debug/`. Substitute `windows-release` for an optimised build.
+Build output lands in `build/clang-debug/`. Substitute `clang-release` for an optimised build.
 
 ### Opening in Visual Studio
 
 VS 2022 supports CMake presets natively. Open the `wozzits-window-engine` folder in VS
-(`File > Open > Folder`) and select the **Windows x64 Debug** configuration from the
+(`File > Open > Folder`) and select the **Windows x64 Clang Debug** configuration from the
 toolbar. VS will configure and build automatically.
 
 ### Running a specific test
 
 ```powershell
-cd build/windows-debug
+cd build/clang-debug
 ctest -R asset_gaussian_splat --output-on-failure
 ```
 
