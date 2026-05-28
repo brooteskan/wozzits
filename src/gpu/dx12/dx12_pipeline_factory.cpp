@@ -83,6 +83,8 @@ namespace wz::gpu::dx12::internal
         switch (program)
         {
         case P::MeshWireframeDebug:
+        case P::MeshWireframeDepthDebug:
+        case P::MeshDepthPrepassDebug:
             return create_mesh_wireframe_root_sig(device);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_root_sig(device);
@@ -94,6 +96,68 @@ namespace wz::gpu::dx12::internal
     // ── PSOs ──────────────────────────────────────────────────────────────────
 
     static ID3D12PipelineState* create_mesh_wireframe_pso(
+        Device& device,
+        ID3D12RootSignature* root_sig,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader,
+        bool depth_enabled)
+    {
+        const DX12Shader* vs = get_shader(device, vertex_shader);
+        const DX12Shader* ps = get_shader(device, pixel_shader);
+
+        assert(vs && vs->blob);
+        assert(ps && ps->blob);
+
+        D3D12_INPUT_ELEMENT_DESC layout[] =
+        {{
+            "POSITION", 0,
+            DXGI_FORMAT_R32G32B32_FLOAT,
+            0, 0,
+            D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+        }};
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature   = root_sig;
+        desc.VS               = { vs->blob->GetBufferPointer(), vs->blob->GetBufferSize() };
+        desc.PS               = { ps->blob->GetBufferPointer(), ps->blob->GetBufferSize() };
+        desc.InputLayout      = { layout, static_cast<UINT>(std::size(layout)) };
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        desc.RasterizerState  = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        if (depth_enabled)
+        {
+            desc.RasterizerState.DepthBias = -64;
+            desc.RasterizerState.SlopeScaledDepthBias = -1.0f;
+            desc.RasterizerState.DepthBiasClamp = 0.0f;
+        }
+
+        desc.BlendState        = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState.DepthEnable =
+            depth_enabled ? TRUE : FALSE;
+        desc.DepthStencilState.DepthWriteMask =
+            D3D12_DEPTH_WRITE_MASK_ZERO;
+        if (depth_enabled)
+            desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+        desc.DSVFormat =
+            depth_enabled ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
+
+        desc.NumRenderTargets  = 1;
+        desc.RTVFormats[0]     = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleMask        = UINT_MAX;
+        desc.SampleDesc.Count  = 1;
+
+        ID3D12PipelineState* pso = nullptr;
+        HRESULT hr = get_device(device)->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pso));
+
+        if (FAILED(hr)) return nullptr;
+        return pso;
+    }
+
+    static ID3D12PipelineState* create_mesh_depth_prepass_pso(
         Device& device,
         ID3D12RootSignature* root_sig,
         GPUHandle vertex_shader,
@@ -121,13 +185,15 @@ namespace wz::gpu::dx12::internal
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
         desc.RasterizerState  = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        desc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+        desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
-        desc.BlendState        = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.BlendState.RenderTarget[0].RenderTargetWriteMask = 0;
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        desc.DepthStencilState.DepthEnable = FALSE;
-        desc.DSVFormat         = DXGI_FORMAT_UNKNOWN;
+        desc.DepthStencilState.DepthEnable = TRUE;
+        desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
         desc.NumRenderTargets  = 1;
         desc.RTVFormats[0]     = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -138,7 +204,8 @@ namespace wz::gpu::dx12::internal
         HRESULT hr = get_device(device)->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&pso));
 
-        if (FAILED(hr)) return nullptr;
+        if (FAILED(hr))
+            return nullptr;
         return pso;
     }
 
@@ -234,7 +301,25 @@ namespace wz::gpu::dx12::internal
         switch (program)
         {
         case P::MeshWireframeDebug:
-            return create_mesh_wireframe_pso(device, root_sig, vertex_shader, pixel_shader);
+            return create_mesh_wireframe_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                false);
+        case P::MeshWireframeDepthDebug:
+            return create_mesh_wireframe_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                true);
+        case P::MeshDepthPrepassDebug:
+            return create_mesh_depth_prepass_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_pso(device, root_sig, vertex_shader, pixel_shader);
         default:

@@ -2,6 +2,7 @@
 
 #include <engine/assets/mesh/mesh_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/mesh/procedural_mesh.h>
@@ -75,9 +76,16 @@ namespace wz::engine::assets::internal
                 return compile_failed_node(input);
             }
 
-            // V1 imports the first mesh only. The asset key already includes mesh_index,
-            // but the compiler does not yet read per-node mesh_index metadata.
-            MeshData data = std::move(imported.meshes[0].mesh);
+            uint32_t mesh_index = 0;
+            if (const auto* desc = std::any_cast<GLBMeshDesc>(&input.meta))
+                mesh_index = desc->mesh_index;
+
+            if (mesh_index >= imported.meshes.size()) {
+                logger.error("GLB mesh_index is out of range");
+                return compile_failed_node(input);
+            }
+
+            MeshData data = std::move(imported.meshes[mesh_index].mesh);
 
             if (!data.valid()) {
                 logger.error("GLB importer produced invalid mesh data");
@@ -135,6 +143,19 @@ namespace wz::engine::assets::internal
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralCubeMeshSchema,
+            .output_type = kAssetTypeMesh,
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                return compile_procedural_mesh_node(
+                    input, dep_nodes, logger, mesh_table, &make_cube_mesh);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kPlaceholderMeshSchema,
             .output_type = kAssetTypeMesh,
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,

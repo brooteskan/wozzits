@@ -69,6 +69,73 @@ TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
     EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
 }
 
+TEST(RenderableAssetModule, ResolvesDepthTestedMeshWireframeRenderable)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_depth_mesh_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/depth_cube",
+            .kind = ProceduralMeshKind::Cube,
+            });
+
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/depth_cube_wireframe",
+            .mesh = mesh,
+            .program = BuiltinRenderProgram::MeshWireframeDepthDebug,
+            .domain = RenderDomain::Debug,
+            .policy_flags =
+                RenderPolicy_Wireframe
+                | RenderPolicy_DepthTest
+                | RenderPolicy_DepthWrite,
+            });
+
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 2u);
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->kind, RenderableKind::Mesh);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
+    EXPECT_EQ(data->domain, RenderDomain::Debug);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
+}
+
 TEST(RenderableAssetModule, ResolvesGaussianSplatDebugRenderable)
 {
     const wz::fs::Path root =

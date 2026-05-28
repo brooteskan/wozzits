@@ -18,9 +18,10 @@ namespace wz::engine::assets
     // file-backed carrier nodes. It does not expose a public creation API —
     // it exists so that file-node logic is not duplicated across modules.
     //
-    // All paths passed to register_file_node() are relative to the resource
-    // root provided at construction. The module canonicalises paths and
-    // constructs keys before forwarding to the shared AssetSystem.
+    // Paths passed to register_file_node() may be relative to the resource
+    // root provided at construction, or absolute paths that already identify
+    // the source file. The module canonicalises paths and constructs keys
+    // before forwarding to the shared AssetSystem.
 
     class FileCarrierAssetModule
     {
@@ -32,10 +33,11 @@ namespace wz::engine::assets
         );
 
         // Register a file-backed source node in the shared AssetSystem.
-        // relative_path is canonicalised and joined with the resource root.
+        // path is canonicalised. Relative paths are joined with the resource
+        // root; absolute paths are used directly.
         // Returns the node key, or a zero key on failure.
         [[nodiscard]] wz::asset::AssetKey register_file_node(
-            const wz::fs::Path& relative_path,
+            const wz::fs::Path& path,
             wz::asset::SchemaID  schema,
             wz::asset::AssetType type
         );

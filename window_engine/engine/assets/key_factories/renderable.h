@@ -3,6 +3,7 @@
 // engine/assets/key_factories/renderable.h
 
 #include <engine/assets/engine_asset_key_core.h>
+#include <engine/assets/renderable/renderable.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/compiler_version_tokens.h>
 
@@ -12,9 +13,13 @@ namespace wz::engine::assets
 {
     [[nodiscard]] inline wz::asset::AssetKey make_mesh_wireframe_renderable_key(
         std::string_view name,
-        const wz::asset::AssetKey& mesh_key) noexcept
+        const wz::asset::AssetKey& mesh_key,
+        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug,
+        uint32_t policy_flags = RenderPolicy_Wireframe) noexcept
     {
-        const uint64_t h = detail::fnv1a_64(name);
+        uint64_t h = detail::fnv1a_64(name);
+        h = detail::mix64(h, static_cast<uint64_t>(program));
+        h = detail::mix64(h, static_cast<uint64_t>(policy_flags));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

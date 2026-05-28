@@ -4,6 +4,7 @@
 #include <asset/system.h>
 #include <engine/assets/mesh/mesh.h>
 
+#include <cstdint>
 #include <string>
 
 namespace wz::engine::assets
@@ -60,6 +61,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_glb_mesh(
             const GLBMeshDesc& desc);
+
+        [[nodiscard]] MeshAsset create_placeholder_mesh(
+            std::string name = {});
 
         [[nodiscard]] MeshHandle get_mesh(
             const MeshAsset& asset) const;

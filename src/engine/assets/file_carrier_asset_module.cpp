@@ -21,17 +21,17 @@ namespace wz::engine::assets
     }
 
     wz::asset::AssetKey FileCarrierAssetModule::register_file_node(
-        const wz::fs::Path& relative_path,
+        const wz::fs::Path& path,
         wz::asset::SchemaID  schema,
         wz::asset::AssetType type)
     {
         const std::string canonical =
-            detail::canonical_asset_path(relative_path);
+            detail::canonical_asset_path(path);
 
         const wz::asset::AssetKey key = make_file_key(canonical, schema);
 
         const wz::fs::Path full_path =
-            wz::fs::join(resource_root_, relative_path);
+            wz::fs::is_absolute(path) ? path : wz::fs::join(resource_root_, path);
 
         wz::asset::AssetNode node;
         node.key     = key;

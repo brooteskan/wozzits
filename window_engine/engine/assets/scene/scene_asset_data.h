@@ -133,6 +133,34 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    enum class SceneMeshSourceKind : uint8_t
+    {
+        Placeholder = 0,
+        GLB,
+        ProceduralCube,
+        ProceduralQuad,
+        ProceduralTriangle,
+    };
+
+    struct SceneMeshSourceAsset
+    {
+        SceneMeshSourceKind kind = SceneMeshSourceKind::Placeholder;
+        std::string path;
+        uint32_t mesh_index = 0;
+    };
+
+    enum class SceneMeshRenderStyleKind : uint8_t
+    {
+        Wireframe = 0,
+    };
+
+    struct SceneMeshRenderStyleAsset
+    {
+        SceneMeshRenderStyleKind kind = SceneMeshRenderStyleKind::Wireframe;
+        bool depth_test = false;
+        bool depth_write = false;
+    };
+
     struct SceneAudioListenerAsset
     {
         bool active = true;
@@ -172,6 +200,8 @@ namespace wz::engine::assets
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
         std::optional<SceneActorMovementControllerAsset> actor_movement_controller;
         std::optional<SceneGroundBoundaryAsset> ground_boundary;
+        std::optional<SceneMeshSourceAsset> mesh_source;
+        std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
@@ -279,6 +309,20 @@ namespace wz::engine::assets
         node.ground_boundary = boundary;
     }
 
+    inline void attach_mesh_source(
+        SceneNodeAsset& node,
+        SceneMeshSourceAsset source = {})
+    {
+        node.mesh_source = std::move(source);
+    }
+
+    inline void attach_mesh_render_style(
+        SceneNodeAsset& node,
+        SceneMeshRenderStyleAsset style = {})
+    {
+        node.mesh_render_style = style;
+    }
+
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
     authored_components_for_node(const SceneNodeAsset& node)
     {
@@ -310,6 +354,12 @@ namespace wz::engine::assets
         }
         if (node.ground_boundary) {
             out.push_back(Kind::GroundBoundary);
+        }
+        if (node.mesh_source) {
+            out.push_back(Kind::MeshSource);
+        }
+        if (node.mesh_render_style) {
+            out.push_back(Kind::MeshRenderStyle);
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
@@ -366,6 +416,8 @@ namespace wz::engine::assets
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
             || node.ground_boundary.has_value()
+            || node.mesh_source.has_value()
+            || node.mesh_render_style.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();
@@ -402,6 +454,12 @@ namespace wz::engine::assets
             }
             if (node.ground_boundary) {
                 ++out.ground_boundaries;
+            }
+            if (node.mesh_source) {
+                ++out.mesh_sources;
+            }
+            if (node.mesh_render_style) {
+                ++out.mesh_render_styles;
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;

@@ -129,6 +129,36 @@ TEST(MeshAssetModule, ResolvesProceduralCubeMesh)
     EXPECT_EQ(data->index_count(), 36u);
 }
 
+TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto mesh = assets.meshes().create_placeholder_mesh();
+
+    ASSERT_TRUE(mesh.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 1u);
+
+    const auto handle = assets.meshes().get_mesh(mesh);
+
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.meshes().get_mesh_data(handle);
+
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->vertex_count(), 8u);
+    EXPECT_EQ(data->index_count(), 36u);
+}
+
 TEST(MeshAssetModule, ResolvesAllProceduralMeshKinds)
 {
     wz::Logger logger;

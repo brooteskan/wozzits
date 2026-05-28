@@ -31,15 +31,28 @@ TEST(MeshKeyFactory, ProceduralCubeKeyIsDeterministic)
     EXPECT_NE(a, wz::asset::AssetKey{});
 }
 
+TEST(MeshKeyFactory, PlaceholderMeshKeyIsDeterministic)
+{
+    const auto a = wz::engine::assets::make_placeholder_mesh_key();
+    const auto b = wz::engine::assets::make_placeholder_mesh_key();
+
+    EXPECT_EQ(a, b);
+    EXPECT_NE(a, wz::asset::AssetKey{});
+}
+
 TEST(MeshKeyFactory, ProceduralMeshKindsHaveDistinctKeys)
 {
     const auto triangle = wz::engine::assets::make_procedural_triangle_mesh_key();
     const auto quad = wz::engine::assets::make_procedural_quad_mesh_key();
     const auto cube = wz::engine::assets::make_procedural_cube_mesh_key();
+    const auto placeholder = wz::engine::assets::make_placeholder_mesh_key();
 
     EXPECT_NE(triangle, quad);
     EXPECT_NE(triangle, cube);
+    EXPECT_NE(triangle, placeholder);
     EXPECT_NE(quad, cube);
+    EXPECT_NE(quad, placeholder);
+    EXPECT_NE(cube, placeholder);
 }
 
 TEST(MeshKeyFactory, ProceduralMeshKeysUseExpectedSchemas)
@@ -62,4 +75,15 @@ TEST(MeshKeyFactory, ProceduralMeshKeysUseExpectedSchemas)
         cube.schema_hash,
         wz::engine::assets::detail::hash_u64(
             wz::engine::assets::kProceduralCubeMeshSchema.value));
+}
+
+TEST(MeshKeyFactory, PlaceholderMeshKeyUsesExpectedSchema)
+{
+    const auto placeholder =
+        wz::engine::assets::make_placeholder_mesh_key();
+
+    EXPECT_EQ(
+        placeholder.schema_hash,
+        wz::engine::assets::detail::hash_u64(
+            wz::engine::assets::kPlaceholderMeshSchema.value));
 }

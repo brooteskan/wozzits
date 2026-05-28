@@ -27,6 +27,8 @@ namespace wz::engine::assets
     enum class BuiltinRenderProgram : uint8_t
     {
         MeshWireframeDebug,
+        MeshWireframeDepthDebug,
+        MeshDepthPrepassDebug,
         GaussianSplatDebug,
         ScalarFieldDebug,
         GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
@@ -91,6 +93,9 @@ namespace wz::engine::assets
     struct MeshWireframeRenderableCompileDesc
     {
         wz::asset::AssetKey mesh_asset{};
+        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
+        RenderDomain domain = RenderDomain::Debug;
+        uint32_t policy_flags = RenderPolicy_Wireframe;
     };
 
     struct GaussianSplatDebugRenderableCompileDesc

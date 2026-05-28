@@ -304,6 +304,27 @@ namespace wz::render::backend::dx12
             constants.world     = dc.world;
             constants.view_proj = frame.view.view_projection;
 
+            if (resolved->program
+                == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
+            {
+                const auto prepass_handle = pipeline_cache.get(
+                    wz::engine::assets::BuiltinRenderProgram::MeshDepthPrepassDebug);
+                const auto* prepass =
+                    wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        prepass_handle);
+
+                if (prepass && prepass->valid()) {
+                    cmdList->SetGraphicsRootSignature(prepass->root_sig);
+                    cmdList->SetPipelineState(prepass->pso);
+                    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                    cmdList->IASetIndexBuffer(&mesh->index_view);
+                    cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                }
+            }
+
             cmdList->SetGraphicsRootSignature(pl->root_sig);
             cmdList->SetPipelineState(pl->pso);
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -407,6 +428,27 @@ namespace wz::render::backend::dx12
             struct { Mat4 world; Mat4 view_proj; } constants;
             constants.world     = dc.world;
             constants.view_proj = frame.view.view_projection;
+
+            if (resolved->program
+                == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
+            {
+                const auto prepass_handle = pipeline_cache.get(
+                    wz::engine::assets::BuiltinRenderProgram::MeshDepthPrepassDebug);
+                const auto* prepass =
+                    wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        prepass_handle);
+
+                if (prepass && prepass->valid()) {
+                    cmdList->SetGraphicsRootSignature(prepass->root_sig);
+                    cmdList->SetPipelineState(prepass->pso);
+                    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                    cmdList->IASetIndexBuffer(&mesh->index_view);
+                    cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                }
+            }
 
             cmdList->SetGraphicsRootSignature(pl->root_sig);
             cmdList->SetPipelineState(pl->pso);

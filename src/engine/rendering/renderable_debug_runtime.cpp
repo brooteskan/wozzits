@@ -25,6 +25,7 @@ namespace wz::engine::rendering
         switch (prepared.program)
         {
         case BuiltinRenderProgram::MeshWireframeDebug:
+        case BuiltinRenderProgram::MeshWireframeDepthDebug:
         {
             if (prepared.kind != RenderableKind::Mesh)
                 return false;
@@ -42,6 +43,9 @@ namespace wz::engine::rendering
 
             return true;
         }
+
+        case BuiltinRenderProgram::MeshDepthPrepassDebug:
+            return false;
 
         case BuiltinRenderProgram::GaussianSplatDebug:
         {

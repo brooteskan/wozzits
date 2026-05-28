@@ -37,6 +37,16 @@ namespace wz::engine::assets
         };
     }
 
+    [[nodiscard]] inline wz::asset::AssetKey make_placeholder_mesh_key() noexcept
+    {
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(kPlaceholderMeshSchema.value),
+            .schema_hash = detail::hash_u64(kPlaceholderMeshSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
+            .deps_hash = {},
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_glb_mesh_key(
         const wz::asset::AssetKey& source_file_key,
         uint32_t mesh_index = 0) noexcept

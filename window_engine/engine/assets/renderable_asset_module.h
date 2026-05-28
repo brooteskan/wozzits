@@ -20,6 +20,9 @@ namespace wz::engine::assets
     {
         std::string name;
         MeshAsset mesh{};
+        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
+        RenderDomain domain = RenderDomain::Debug;
+        uint32_t policy_flags = RenderPolicy_Wireframe;
     };
 
     struct GaussianSplatDebugRenderableDesc

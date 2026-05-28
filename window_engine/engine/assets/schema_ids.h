@@ -245,6 +245,13 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000403ull
     };
 
+    // Placeholder mesh recipe used when a mesh node has no authored data source.
+    // Produces visible CPU MeshData so scene authoring and rendering paths can
+    // remain valid while a real source is selected later.
+    inline constexpr wz::asset::SchemaID kPlaceholderMeshSchema{
+        0xF11E'CA55'E7'000404ull
+    };
+
     // Procedural / debug Gaussian splat cloud.
     // NOTE: was 0x000502 until that value was reassigned to
     // kGaussianSplatColorLODSchema.  Moved to 0x000505 to resolve the

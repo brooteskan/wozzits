@@ -67,9 +67,9 @@ namespace wz::engine::assets::internal
                 RenderableAssetData data{};
                 data.kind = RenderableKind::Mesh;
                 data.source_asset = desc->mesh_asset;
-                data.program = BuiltinRenderProgram::MeshWireframeDebug;
-                data.domain = RenderDomain::Debug;
-                data.policy_flags = RenderPolicy_Wireframe;
+                data.program = desc->program;
+                data.domain = desc->domain;
+                data.policy_flags = desc->policy_flags;
 
                 data.bounds_min[0] = -1.0f;
                 data.bounds_min[1] = -1.0f;

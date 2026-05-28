@@ -60,6 +60,21 @@ TEST(MeshAssetModuleInterface, CreateProceduralMeshReturnsValidAsset)
     EXPECT_NE(asset.output, wz::asset::AssetKey{});
 }
 
+TEST(MeshAssetModuleInterface, CreatePlaceholderMeshReturnsPlaceholderAsset)
+{
+    wz::asset::CompilerRegistry registry{};
+    wz::asset::AssetSystem system{ std::move(registry) };
+    wz::engine::assets::MeshTable table{};
+    wz::engine::assets::MeshAssetModule module{ system, table };
+
+    const auto asset = module.create_placeholder_mesh("placeholder");
+
+    EXPECT_TRUE(asset.valid());
+    EXPECT_EQ(
+        asset.output,
+        wz::engine::assets::make_placeholder_mesh_key());
+}
+
 TEST(MeshAssetModuleInterface, InvalidAssetDoesNotResolveToMeshHandle)
 {
     wz::asset::CompilerRegistry registry{};

@@ -89,8 +89,28 @@ namespace wz::engine::assets
         node.type = kAssetTypeMesh;
         node.schema = kGLBMeshSchema;
         node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
 
         if (!system_.register_asset(std::move(node), { desc.source_file }))
+            return {};
+
+        return MeshAsset{
+            .output = mesh_key,
+        };
+    }
+
+    MeshAsset MeshAssetModule::create_placeholder_mesh(
+        std::string)
+    {
+        const wz::asset::AssetKey mesh_key = make_placeholder_mesh_key();
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kPlaceholderMeshSchema;
+        node.stage = wz::asset::AssetStage::Source;
+
+        if (!system_.register_asset(std::move(node), {}))
             return {};
 
         return MeshAsset{

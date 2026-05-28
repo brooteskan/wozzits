@@ -36,7 +36,9 @@ namespace wz::engine::assets
         const wz::asset::AssetKey key =
             make_mesh_wireframe_renderable_key(
                 desc.name,
-                desc.mesh.output);
+                desc.mesh.output,
+                desc.program,
+                desc.policy_flags);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -46,6 +48,9 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta = MeshWireframeRenderableCompileDesc{
             .mesh_asset = desc.mesh.output,
+            .program = desc.program,
+            .domain = desc.domain,
+            .policy_flags = desc.policy_flags,
         };
 
         if (!system_.register_asset(std::move(node), { desc.mesh.output })) {

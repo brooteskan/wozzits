@@ -38,6 +38,43 @@ namespace wz::engine::assets::internal
                 }};
                 return true;
 
+            case BuiltinRenderProgram::MeshWireframeDepthDebug:
+                out.binding_model     = RenderBindingModel::MeshIA;
+                out.topology          = RenderPrimitiveTopology::TriangleList;
+                out.default_domain    = RenderDomain::Debug;
+                out.default_policy_flags =
+                    RenderPolicy_Wireframe
+                    | RenderPolicy_DepthTest
+                    | RenderPolicy_DepthWrite;
+                out.input_layout = InputLayoutKind::MeshPositionOnly;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestNoWrite;
+                out.raster_mode  = RasterMode::WireframeCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 32,  // world[16] + view_proj[16]
+                }};
+                return true;
+
+            case BuiltinRenderProgram::MeshDepthPrepassDebug:
+                out.binding_model     = RenderBindingModel::MeshIA;
+                out.topology          = RenderPrimitiveTopology::TriangleList;
+                out.default_domain    = RenderDomain::Debug;
+                out.default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite;
+                out.input_layout = InputLayoutKind::MeshPositionOnly;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 32,  // world[16] + view_proj[16]
+                }};
+                return true;
+
             case BuiltinRenderProgram::GaussianSplatDebug:
                 // Current path — vertex-instanced, not SplatPull.
                 out.binding_model  = RenderBindingModel::SplatVertexInstanced;

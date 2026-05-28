@@ -14,8 +14,15 @@ namespace wz::engine::rendering
         switch (program)
         {
         case BuiltinRenderProgram::MeshWireframeDebug:
+        case BuiltinRenderProgram::MeshWireframeDepthDebug:
+        case BuiltinRenderProgram::MeshDepthPrepassDebug:
             out = ShaderPairDesc{
-                .name = "mesh_wireframe_debug",
+                .name =
+                    program == BuiltinRenderProgram::MeshDepthPrepassDebug
+                        ? "mesh_depth_prepass_debug"
+                        : program == BuiltinRenderProgram::MeshWireframeDepthDebug
+                            ? "mesh_wireframe_depth_debug"
+                            : "mesh_wireframe_debug",
                 .vertex_path = "shaders/mesh_wireframe/mesh_wireframe_vs.hlsl",
                 .pixel_path = "shaders/mesh_wireframe/mesh_wireframe_ps.hlsl",
                 .vertex_entry = "main",
