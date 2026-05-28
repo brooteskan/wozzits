@@ -119,6 +119,13 @@ namespace wz::engine::assets
                 fp.mix_value(controller.roll_speed);
             }
 
+            if (node.actor_movement_controller) {
+                const auto& controller = *node.actor_movement_controller;
+                fp.mix_value(controller.move_speed);
+                fp.mix_value(controller.boost_multiplier);
+                fp.mix_value(controller.movement_space);
+            }
+
             if (node.audio_listener) {
                 fp.mix_value(node.audio_listener->active);
             }

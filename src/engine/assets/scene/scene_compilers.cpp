@@ -169,6 +169,18 @@ namespace wz::engine::assets::internal
             return binding;
         }
 
+        std::optional<SceneActorMovementSpace> parse_actor_movement_space(
+            std::string_view text)
+        {
+            if (text == "world") {
+                return SceneActorMovementSpace::World;
+            }
+            if (text == "local") {
+                return SceneActorMovementSpace::Local;
+            }
+            return std::nullopt;
+        }
+
         bool parse_renderable_asset_reference(
             const wz::json::JSONValue& obj,
             const std::string& node_id,
@@ -305,6 +317,39 @@ namespace wz::engine::assets::internal
                 }
 
                 node.flying_camera_controller = ctrl;
+            }
+
+            const auto* amc = find_member(
+                node_val,
+                "actor_movement_controller");
+            if (amc && amc->kind == wz::json::JSONValueKind::Object) {
+                SceneActorMovementControllerAsset ctrl{};
+                auto ms = read_number(*amc, "move_speed");
+                if (ms) ctrl.move_speed = static_cast<float>(*ms);
+                auto bm = read_number(*amc, "boost_multiplier");
+                if (bm) ctrl.boost_multiplier = static_cast<float>(*bm);
+                auto movement_space = read_string(*amc, "movement_space");
+                if (movement_space) {
+                    auto parsed_space =
+                        parse_actor_movement_space(*movement_space);
+                    if (!parsed_space) {
+                        logger.error("actor_movement_controller on node '"
+                            + node.id + "' has unknown movement_space '"
+                            + std::string(*movement_space) + "'");
+                        return std::nullopt;
+                    }
+                    ctrl.movement_space = *parsed_space;
+                }
+
+                if (ctrl.move_speed < 0.0f
+                    || ctrl.boost_multiplier < 0.0f)
+                {
+                    logger.error("actor_movement_controller on node '"
+                        + node.id + "' has negative speed value");
+                    return std::nullopt;
+                }
+
+                node.actor_movement_controller = ctrl;
             }
 
             const auto* al = find_member(node_val, "audio_listener");

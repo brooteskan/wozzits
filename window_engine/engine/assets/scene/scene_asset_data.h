@@ -107,6 +107,20 @@ namespace wz::engine::assets
         float roll_speed       = 1.5f;
     };
 
+    enum class SceneActorMovementSpace : uint8_t
+    {
+        World = 0,
+        Local,
+    };
+
+    struct SceneActorMovementControllerAsset
+    {
+        float move_speed = 5.0f;
+        float boost_multiplier = 3.0f;
+        SceneActorMovementSpace movement_space =
+            SceneActorMovementSpace::World;
+    };
+
     struct SceneAudioListenerAsset
     {
         bool active = true;
@@ -144,6 +158,7 @@ namespace wz::engine::assets
 
         std::optional<SceneInputReceiverAsset> input_receiver;
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
+        std::optional<SceneActorMovementControllerAsset> actor_movement_controller;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
@@ -226,6 +241,13 @@ namespace wz::engine::assets
         node.editor_handle = handle;
     }
 
+    inline void attach_actor_movement_controller(
+        SceneNodeAsset& node,
+        SceneActorMovementControllerAsset controller = {})
+    {
+        node.actor_movement_controller = controller;
+    }
+
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
     authored_components_for_node(const SceneNodeAsset& node)
     {
@@ -251,6 +273,9 @@ namespace wz::engine::assets
         }
         if (node.flying_camera_controller) {
             out.push_back(Kind::FlyingCameraController);
+        }
+        if (node.actor_movement_controller) {
+            out.push_back(Kind::ActorMovementController);
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
@@ -305,6 +330,7 @@ namespace wz::engine::assets
             || has_authored_camera_component(node)
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
+            || node.actor_movement_controller.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();
@@ -335,6 +361,9 @@ namespace wz::engine::assets
             }
             if (node.flying_camera_controller) {
                 ++out.flying_camera_controllers;
+            }
+            if (node.actor_movement_controller) {
+                ++out.actor_movement_controllers;
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;

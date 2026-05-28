@@ -134,6 +134,8 @@ namespace wz::engine::assets
                 << " input_receivers=" << summary.input_receivers
                 << " flying_camera_controllers="
                 << summary.flying_camera_controllers
+                << " actor_movement_controllers="
+                << summary.actor_movement_controllers
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
                 << " auxiliary_visuals=" << summary.auxiliary_visuals
@@ -181,6 +183,8 @@ namespace wz::engine::assets
                 << " input_receivers=" << summary.input_receivers
                 << " flying_camera_controllers="
                 << summary.flying_camera_controllers
+                << " actor_movement_controllers="
+                << summary.actor_movement_controllers
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
                 << " auxiliary_visuals=" << summary.auxiliary_visuals
@@ -249,6 +253,8 @@ namespace wz::engine::assets
                 instance.input_receivers.size()),
             .flying_camera_controllers = static_cast<uint32_t>(
                 instance.flying_camera_controllers.size()),
+            .actor_movement_controllers = static_cast<uint32_t>(
+                instance.actor_movement_controllers.size()),
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
@@ -438,6 +444,18 @@ namespace wz::engine::assets
                         .look_speed       = fc.look_speed,
                         .boost_multiplier = fc.boost_multiplier,
                         .roll_speed       = fc.roll_speed,
+                    },
+                });
+            }
+
+            if (node.actor_movement_controller) {
+                const auto& ac = *node.actor_movement_controller;
+                inst.actor_movement_controllers.push_back({
+                    .node = h,
+                    .component = ActorMovementControllerComponent{
+                        .move_speed = ac.move_speed,
+                        .boost_multiplier = ac.boost_multiplier,
+                        .movement_space = ac.movement_space,
                     },
                 });
             }

@@ -215,6 +215,28 @@ namespace
   }
 })";
 
+    const char* kActorMovementDescriptorSceneJSON = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "actor_movement_descriptor_test",
+  "nodes": [
+    {
+      "id": "movable_actor",
+      "transform": {
+        "translation": [1, 0, 2]
+      },
+      "input_receiver": {
+        "input_map": "asset://input_maps/actor",
+        "log_input": true
+      },
+      "actor_movement_controller": {
+        "move_speed": 7.5,
+        "boost_multiplier": 2.0,
+        "movement_space": "local"
+      }
+    }
+  ]
+})";
+
     const char* kListenerOnlySceneJSON = R"({
   "schema": "wozzits.scene.v0",
   "name": "listener_descriptor_test",
@@ -1233,6 +1255,88 @@ TEST(SceneAssetModule, ListenerOnlyNodeDescriptors)
         view);
 
     EXPECT_EQ(compiled.scene.opaque.size(), 0u);
+}
+
+TEST(SceneAssetModule, ActorMovementComponentDescriptorsRoundTrip)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_actor_movement_desc_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    auto rel_path = write_scene_json(
+        root, "actor_movement_desc.json", kActorMovementDescriptorSceneJSON);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "actor_movement_desc",
+            .path = rel_path,
+            });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.input_receiver.has_value());
+    ASSERT_TRUE(node.actor_movement_controller.has_value());
+    EXPECT_EQ(node.input_receiver->input_map, "asset://input_maps/actor");
+    EXPECT_TRUE(node.input_receiver->log_input);
+    EXPECT_FLOAT_EQ(node.actor_movement_controller->move_speed, 7.5f);
+    EXPECT_FLOAT_EQ(node.actor_movement_controller->boost_multiplier, 2.0f);
+    EXPECT_EQ(
+        node.actor_movement_controller->movement_space,
+        SceneActorMovementSpace::Local);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    auto& inst = result.instance;
+    ASSERT_TRUE(inst.authored_to_runtime.contains("movable_actor"));
+    const auto actor_h = inst.authored_to_runtime["movable_actor"];
+    ASSERT_EQ(inst.input_receivers.size(), 1u);
+    EXPECT_EQ(inst.input_receivers[0].node, actor_h);
+    EXPECT_TRUE(inst.input_receivers[0].component.log_input);
+    ASSERT_EQ(inst.actor_movement_controllers.size(), 1u);
+    EXPECT_EQ(inst.actor_movement_controllers[0].node, actor_h);
+    EXPECT_FLOAT_EQ(
+        inst.actor_movement_controllers[0].component.move_speed,
+        7.5f);
+    EXPECT_FLOAT_EQ(
+        inst.actor_movement_controllers[0].component.boost_multiplier,
+        2.0f);
+    EXPECT_EQ(
+        inst.actor_movement_controllers[0].component.movement_space,
+        SceneActorMovementSpace::Local);
+
+    const auto summary = summarize_scene_instance_components(inst);
+    EXPECT_EQ(summary.input_receivers, 1u);
+    EXPECT_EQ(summary.actor_movement_controllers, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"actor_movement_controller\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"movement_space\""), std::string::npos);
+    EXPECT_NE(exported.find("\"local\""), std::string::npos);
 }
 
 // ─── Descriptor validation (negative) tests ─────────────────────────────
@@ -3638,6 +3742,7 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.lights, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3657,6 +3762,7 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.lights, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3700,6 +3806,7 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
+    EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -3728,6 +3835,8 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     };
     camera_node.flying_camera_controller =
         SceneFlyingCameraControllerAsset{};
+    camera_node.actor_movement_controller =
+        SceneActorMovementControllerAsset{};
     camera_node.audio_listener = SceneAudioListenerAsset{};
     camera_node.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -3757,6 +3866,7 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.lights, 1u);
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
+    EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
@@ -3815,6 +3925,8 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     };
     camera.flying_camera_controller =
         SceneFlyingCameraControllerAsset{};
+    camera.actor_movement_controller =
+        SceneActorMovementControllerAsset{};
     camera.audio_listener = SceneAudioListenerAsset{};
     camera.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -3836,6 +3948,7 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.lights, 1u);
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
+    EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);

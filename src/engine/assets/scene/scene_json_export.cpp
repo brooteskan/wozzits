@@ -106,6 +106,15 @@ namespace wz::engine::assets
             }
         }
 
+        const char* actor_movement_space_name(SceneActorMovementSpace space)
+        {
+            switch (space) {
+            case SceneActorMovementSpace::World: return "world";
+            case SceneActorMovementSpace::Local: return "local";
+            }
+            return "world";
+        }
+
         const char* pipeline_name(const SceneRenderableBinding& binding)
         {
             if (binding.node_class.default_surface
@@ -206,6 +215,20 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr actor_movement_value(
+            const SceneActorMovementControllerAsset& controller)
+        {
+            auto obj = object_value();
+            add_member(*obj, "move_speed",
+                number_value(controller.move_speed));
+            add_member(*obj, "boost_multiplier",
+                number_value(controller.boost_multiplier));
+            add_member(*obj, "movement_space",
+                string_value(
+                    actor_movement_space_name(controller.movement_space)));
+            return obj;
+        }
+
         JSONValuePtr event_listener_value(
             const SceneEventListenerAsset& listener)
         {
@@ -283,6 +306,10 @@ namespace wz::engine::assets
             if (node.flying_camera_controller) {
                 add_member(*obj, "flying_camera_controller",
                     flying_camera_value(*node.flying_camera_controller));
+            }
+            if (node.actor_movement_controller) {
+                add_member(*obj, "actor_movement_controller",
+                    actor_movement_value(*node.actor_movement_controller));
             }
             if (node.audio_listener) {
                 auto audio = object_value();

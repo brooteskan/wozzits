@@ -36,6 +36,14 @@ namespace wz::engine::assets
         float roll_speed       = 1.5f;
     };
 
+    struct ActorMovementControllerComponent
+    {
+        float move_speed = 5.0f;
+        float boost_multiplier = 3.0f;
+        SceneActorMovementSpace movement_space =
+            SceneActorMovementSpace::World;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -79,6 +87,7 @@ namespace wz::engine::assets
         // Non-render component tables.
         std::vector<SceneComponentRecord<InputReceiverComponent>> input_receivers;
         std::vector<SceneComponentRecord<FlyingCameraControllerComponent>> flying_camera_controllers;
+        std::vector<SceneComponentRecord<ActorMovementControllerComponent>> actor_movement_controllers;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;
