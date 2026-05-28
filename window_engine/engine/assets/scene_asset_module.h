@@ -14,6 +14,7 @@
 #include <engine/assets/scene/scene_asset_data.h>
 
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -21,6 +22,7 @@ namespace wz::engine::assets
     {
         std::string  name;
         wz::fs::Path path;
+        std::vector<SceneAssetReferenceBinding> renderable_asset_references;
     };
 
     struct SceneAsset

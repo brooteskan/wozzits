@@ -2304,6 +2304,140 @@ TEST(SceneAssetModule, RenderableAssetReferenceRoundTripsThroughSceneJSON)
         wz::scene::SceneRole::Renderable);
 }
 
+TEST(SceneAssetModule, SymbolicRenderableReferenceResolvesDuringSceneCompile)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_symbolic_renderable_ref_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "debug/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "symbolic_renderable_reference_scene",
+  "nodes": [{
+    "id": "cube",
+    "renderable": {
+      "asset": "asset://renderables/debug_cube_wireframe"
+    }
+  }]
+})";
+
+    auto rel_path = write_scene_json(
+        root,
+        "symbolic_renderable_reference.scene.json",
+        json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "symbolic_renderable_reference",
+            .path = rel_path,
+            .renderable_asset_references = {
+                SceneAssetReferenceBinding{
+                    .uri = "asset://renderables/debug_cube_wireframe",
+                    .key = renderable.output,
+                },
+            },
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok()) << "resolve failures: " << report.failures.size();
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& parsed_node = scene_data->nodes[0];
+    EXPECT_FALSE(parsed_node.renderable.has_value());
+    ASSERT_TRUE(parsed_node.renderable_asset.has_value());
+    EXPECT_EQ(*parsed_node.renderable_asset, renderable.output);
+
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+
+    auto result = instantiate_scene(*scene_data, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("cube"));
+
+    const auto cube_h = result.instance.authored_to_runtime["cube"];
+    EXPECT_EQ(
+        result.instance.renderables[cube_h].node_class.role,
+        wz::scene::SceneRole::Renderable);
+}
+
+TEST(SceneAssetModule, MissingSymbolicRenderableReferenceFailsSceneCompile)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_missing_symbolic_renderable_ref_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "missing_symbolic_renderable_reference_scene",
+  "nodes": [{
+    "id": "cube",
+    "renderable": {
+      "asset": "asset://renderables/missing"
+    }
+  }]
+})";
+
+    auto rel_path = write_scene_json(
+        root,
+        "missing_symbolic_renderable_reference.scene.json",
+        json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "missing_symbolic_renderable_reference",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_FALSE(report.ok());
+    EXPECT_FALSE(report.failures.empty());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    EXPECT_FALSE(handle.valid());
+}
+
 TEST(SceneAssetModule, PersistsEditorHandleTranslationEdit)
 {
     using namespace wz::engine::assets;
@@ -3903,6 +4037,42 @@ TEST(SceneECSBoundary, CountsLegacyAndAssetBackedRenderableComponents)
     const auto summary = summarize_authored_scene_components(scene);
     EXPECT_EQ(summary.nodes, 3u);
     EXPECT_EQ(summary.renderables, 2u);
+}
+
+TEST(SceneECSBoundary, AssetBackedRenderableDoesNotEmbedAssetDefinition)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_boundary";
+
+    wz::asset::AssetKey renderable_key{};
+    renderable_key.content_hash = { 0x7100, 0x01 };
+    renderable_key.schema_hash = { 0x7100, 0x02 };
+
+    SceneNodeAsset node{};
+    node.id = "landscape_or_actor_visual";
+    node.renderable_asset = renderable_key;
+    scene.nodes.push_back(node);
+
+    const auto components = authored_components_for_node(scene.nodes[0]);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::Renderable), 1);
+
+    EXPECT_TRUE(has_authored_renderable_component(scene.nodes[0]));
+    EXPECT_FALSE(scene.nodes[0].renderable.has_value());
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    EXPECT_EQ(*scene.nodes[0].renderable_asset, renderable_key);
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 1u);
+    EXPECT_EQ(summary.renderables, 1u);
+    EXPECT_EQ(summary.cameras, 0u);
+    EXPECT_EQ(summary.input_receivers, 0u);
+    EXPECT_EQ(summary.actor_movement_controllers, 0u);
+    EXPECT_EQ(summary.editor_handles, 0u);
 }
 
 TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)

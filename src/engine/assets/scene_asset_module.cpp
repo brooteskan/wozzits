@@ -6,10 +6,42 @@
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/key_factories/scene.h>
 
+#include <algorithm>
+#include <string>
 #include <vector>
 
 namespace wz::engine::assets
 {
+    namespace
+    {
+        wz::asset::Hash scene_reference_bindings_hash(
+            std::vector<SceneAssetReferenceBinding> refs)
+        {
+            if (refs.empty())
+                return {};
+
+            std::sort(refs.begin(), refs.end(),
+                [](const auto& a, const auto& b) {
+                    return a.uri < b.uri;
+                });
+
+            uint64_t lo = 0;
+            uint64_t hi = 0;
+
+            for (const auto& ref : refs) {
+                const auto uri_hash = detail::hash_str(ref.uri);
+                const auto key_hash = detail::key_to_dep_hash(ref.key);
+
+                lo = detail::mix64(lo, uri_hash.lo);
+                lo = detail::mix64(lo, key_hash.lo);
+                hi = detail::mix64(hi, uri_hash.hi);
+                hi = detail::mix64(hi, key_hash.hi);
+            }
+
+            return { lo, hi };
+        }
+    }
+
     SceneAssetModule::SceneAssetModule(
         wz::asset::AssetSystem& system,
         wz::Logger& logger,
@@ -38,7 +70,10 @@ namespace wz::engine::assets
         }
 
         const wz::asset::AssetKey scene_key =
-            make_scene_from_json_key(json_asset.output);
+            make_scene_from_json_key(
+                json_asset.output,
+                scene_reference_bindings_hash(
+                    desc.renderable_asset_references));
 
         wz::asset::AssetNode node;
         node.key = scene_key;
@@ -46,6 +81,10 @@ namespace wz::engine::assets
         node.schema = kSceneFromJSONSchema;
         node.stage = wz::asset::AssetStage::Source;
         node.payload = std::vector<uint8_t>{};
+        node.meta = SceneFromJSONCompileDesc{
+            .renderable_asset_references =
+                desc.renderable_asset_references,
+        };
 
         if (!system_.register_asset(std::move(node), { json_asset.output })) {
             logger_.error("failed to register scene node: " + desc.name);

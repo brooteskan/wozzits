@@ -30,6 +30,99 @@ For example, a `Renderable` component may reference a `RenderableAssetData`
 asset. The asset system owns the renderable resource. The scene component owns
 the fact that a particular authored entity has a renderable.
 
+## Asset Reference Rules
+
+Authored scene components may reference asset-system resources, but they should
+not duplicate asset definitions or compiler inputs.
+
+Use an asset reference when component data needs to point at reusable or
+compiled resource data:
+
+- renderable, material, mesh, texture, animation, input-map, script, or audio
+  resources that need identity, dependencies, validation, compilation, sharing,
+  caching, or hot reload
+
+Keep data in the component when it describes the authored entity relationship or
+runtime role:
+
+- transform, parent, visibility, active camera role, listener marker,
+  controller tuning, editor-handle settings, and similar per-entity state
+
+Rules of thumb:
+
+- Components may hold `AssetKey` references or future symbolic asset references.
+- Components should not own GPU handles, renderer table handles, or resource
+  compiler descriptors.
+- Components should not copy source paths, compiler settings, shader choices,
+  material definitions, or other data that belongs to an asset recipe.
+- If a component field becomes reusable across entities, needs validation, has
+  dependencies, or should participate in asset identity, promote it to an asset
+  and let the component reference it.
+- Legacy compatibility fields may violate these rules, but new component work
+  should not expand those paths.
+
+## Asset / Component Authoring Checklist
+
+Classify every new authored scene concept before adding fields or schemas.
+
+Ask whether it is an asset:
+
+```text
+Reusable across scenes or entities?
+Needs stable identity, dependencies, validation, compilation, caching, or hot reload?
+Represents source data, a recipe, or a built resource?
+```
+
+If yes, make or reuse an asset-system resource and let scene components refer to
+it.
+
+Ask whether it is a component:
+
+```text
+Describes what this authored entity has, does, or means in the scene?
+Per-entity relationship, role, marker, placement, or behavior tuning?
+Needs to instantiate into SceneInstance component/runtime tables?
+```
+
+If yes, keep it in the authored scene component model.
+
+Ask whether it is runtime-only:
+
+```text
+Derived from authored data during preview/runtime?
+Changes frame to frame?
+Represents live state such as contacts, trigger occupancy, playback cursors,
+movement integration, or diagnostics?
+```
+
+If yes, store it in runtime systems/tables, not in `SceneAssetData`.
+
+Short rule:
+
+```text
+Components describe what an entity has or does.
+Assets describe reusable resources and recipes.
+Runtime systems own derived/live state.
+```
+
+## Issue 71 Candidate Classification
+
+This table is a starting point for the basic scene asset/component library work.
+It should be updated as decisions become concrete.
+
+| Concept | Current classification | Notes |
+|---|---|---|
+| Ground / boundary | Component now; maybe asset later | Start as authored space/boundary descriptor. Promote reusable landscapes or terrain recipes to assets later. |
+| BoxCollider | Component descriptor + runtime collider record | Do not make collision contacts or broadphase state assets. |
+| TriggerVolume | Component descriptor + runtime event state | Authored shape/role lives on the entity; enter/exit occupancy is runtime-only. |
+| Pushable / MovableBody | Component descriptor + runtime motion state | Keep live velocity, push resolution, and contacts out of authored data. |
+| AutonomousMover | Component descriptor | If paths become reusable named data, promote path data to an asset later. |
+| AudioSource | Component referencing future `AudioClipAsset` | Component owns placement, looping/volume/play policy; audio clip data should be an asset. |
+| AudioListener | Component | Existing marker-style component; live listener/mixing state belongs to runtime audio. |
+| InputMap | Unresolved: label now or future asset | Keep as string only if it is a routing label. Promote to asset if it owns reusable bindings. |
+| RenderStyle / Material | Asset | Should be referenced by renderable/material components, not copied into scene nodes. |
+| Light | Component or documented scene-level bridge | Current code stores scene-level light records linked by node id; choose whether to migrate to node component. |
+
 ## Source To Runtime Flow
 
 ```text
@@ -143,6 +236,11 @@ Renderable component data can currently be expressed in two ways:
 - preferred `renderable_asset` reference to a `RenderableAssetData` asset
 
 The asset-backed path is the preferred shape for new authored scenes.
+`SceneRenderableBinding` exists for legacy/debug compatibility only. It embeds
+scene-render details such as handles, node classification, and bounds directly
+in the scene component, so it should not receive new features. New authoring
+paths should create or reference a `RenderableAssetData` asset and store that
+relationship through `renderable_asset`.
 
 ### Camera
 
@@ -278,6 +376,13 @@ Examples:
 
 The asset-system resource remains owned by the asset system. The component owns
 the authored relationship between an entity and that resource.
+
+The current raw `AssetKey` spelling in scene JSON is an implementation detail of
+the first asset-backed renderable path. Authored JSON may now use symbolic
+renderable references that resolve to `AssetKey` values during scene asset
+compilation/import. Runtime scene data still stores the resolved key, not the
+symbolic name. Export currently writes the concrete `asset-key:` form because
+`SceneAssetData` does not preserve the original symbolic reference.
 
 ## Current Inventory Helpers
 

@@ -12,6 +12,7 @@
 #include <external/json/json_document.h>
 #include <external/json/json_read_helpers.h>
 
+#include <any>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -83,8 +84,8 @@ namespace wz::engine::assets::internal
             std::string_view text)
         {
             // Transitional concrete AssetKey syntax for renderable.asset.
-            // Symbolic asset://renderables/... lookup belongs to a later
-            // registry/naming layer, not the scene JSON compiler.
+            // Symbolic asset://renderables/... refs are resolved separately
+            // through SceneFromJSONCompileDesc metadata.
             constexpr std::string_view kPrefix = "asset-key:";
             if (!text.starts_with(kPrefix)) {
                 return std::nullopt;
@@ -181,10 +182,14 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        using SceneAssetReferenceMap =
+            std::unordered_map<std::string, wz::asset::AssetKey>;
+
         bool parse_renderable_asset_reference(
             const wz::json::JSONValue& obj,
             const std::string& node_id,
             wz::Logger& logger,
+            const SceneAssetReferenceMap& asset_references,
             std::optional<wz::asset::AssetKey>& out)
         {
             const auto* renderable = find_member(obj, "renderable");
@@ -206,9 +211,13 @@ namespace wz::engine::assets::internal
 
             auto key = parse_asset_key_string(*asset);
             if (!key) {
-                logger.error("renderable.asset on node '" + node_id
-                    + "' is not a serialized AssetKey");
-                return false;
+                const auto it = asset_references.find(std::string(*asset));
+                if (it == asset_references.end()) {
+                    logger.error("renderable.asset on node '" + node_id
+                        + "' could not be resolved: " + std::string(*asset));
+                    return false;
+                }
+                key = it->second;
             }
             if (*key == wz::asset::AssetKey{}) {
                 logger.error("renderable.asset on node '" + node_id
@@ -222,7 +231,8 @@ namespace wz::engine::assets::internal
 
         std::optional<SceneNodeAsset> parse_node(
             const wz::json::JSONValue& node_val,
-            wz::Logger& logger)
+            wz::Logger& logger,
+            const SceneAssetReferenceMap& asset_references)
         {
             if (node_val.kind != wz::json::JSONValueKind::Object)
                 return std::nullopt;
@@ -260,6 +270,7 @@ namespace wz::engine::assets::internal
                     node_val,
                     node.id,
                     logger,
+                    asset_references,
                     node.renderable_asset))
             {
                 return std::nullopt;
@@ -482,7 +493,8 @@ namespace wz::engine::assets::internal
 
         std::optional<SceneAssetData> parse_scene_json(
             const wz::json::JSONDocument& doc,
-            wz::Logger& logger)
+            wz::Logger& logger,
+            const SceneAssetReferenceMap& asset_references)
         {
             if (!doc.root || doc.root->kind != wz::json::JSONValueKind::Object) {
                 logger.error("scene JSON root is not an object");
@@ -507,7 +519,7 @@ namespace wz::engine::assets::internal
             }
 
             for (const auto& nv : nodes->array_values) {
-                auto node = parse_node(*nv, logger);
+                auto node = parse_node(*nv, logger, asset_references);
                 if (!node) return std::nullopt;
                 scene.nodes.push_back(std::move(*node));
             }
@@ -574,7 +586,25 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                auto scene = parse_scene_json(json_data->document, logger);
+                SceneAssetReferenceMap asset_references;
+                if (const auto* desc =
+                        std::any_cast<SceneFromJSONCompileDesc>(&input.meta))
+                {
+                    for (const auto& ref :
+                        desc->renderable_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            asset_references[ref.uri] = ref.key;
+                        }
+                    }
+                }
+
+                auto scene = parse_scene_json(
+                    json_data->document,
+                    logger,
+                    asset_references);
                 if (!scene) {
                     return compile_failed_node(input);
                 }

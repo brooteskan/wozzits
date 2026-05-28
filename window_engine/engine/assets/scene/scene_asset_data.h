@@ -20,6 +20,10 @@ namespace wz::engine::assets
     // language that compiles into SceneInstance and then into scene-render
     // storage. AssetKey references remain resource-DAG references; entity and
     // component composition lives here in the scene model.
+    // Legacy/debug compatibility path for embedded scene-render descriptors.
+    // New authored scenes should prefer SceneNodeAsset::renderable_asset so
+    // resource identity, dependencies, and compilation stay in the asset system.
+    // Do not add new asset-definition features to this embedded binding.
     struct SceneRenderableBinding
     {
         wz::scene::SceneNodeClass node_class{};
@@ -147,12 +151,12 @@ namespace wz::engine::assets
             wz::scene::TransformNode::MotionType::Static;
 
         // Legacy embedded renderable authoring data, exported as
-        // debug_renderable. Prefer renderable_asset for new authored scenes.
+        // debug_renderable. Compatibility/debug path only; prefer
+        // renderable_asset for new authored scenes.
         std::optional<SceneRenderableBinding> renderable;
 
-        // Preferred authored Renderable component. Scene JSON serializes this
-        // as renderable.asset with a concrete asset-key string until symbolic
-        // asset URI/name resolution exists.
+        // Preferred authored Renderable component. Scene JSON may provide a
+        // symbolic renderable asset reference; compilation resolves it here.
         std::optional<wz::asset::AssetKey> renderable_asset;
         std::optional<SceneCameraAsset> camera;
 
@@ -179,6 +183,17 @@ namespace wz::engine::assets
         SceneDefaults defaults{};
 
         bool valid() const noexcept { return !nodes.empty(); }
+    };
+
+    struct SceneAssetReferenceBinding
+    {
+        std::string uri;
+        wz::asset::AssetKey key{};
+    };
+
+    struct SceneFromJSONCompileDesc
+    {
+        std::vector<SceneAssetReferenceBinding> renderable_asset_references;
     };
 
     inline SceneNodeAsset make_scene_node(
