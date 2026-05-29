@@ -35,6 +35,14 @@ namespace wz::engine::assets
         std::string name;
         MeshAsset mesh;
 
+        TerrainMeshSurfaceHeightPolicy height_policy =
+            TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
+        float min_surface_normal_y = 0.2f;
+        bool include_backfaces = false;
+        TerrainNormalSource preferred_normal_source =
+            TerrainNormalSource::MeshVertexNormal;
+        TerrainUVSource preferred_uv_source = TerrainUVSource::MeshUV0;
+
         TerrainRenderMode render_mode = TerrainRenderMode::DebugMesh;
         TerrainCollisionMode collision_mode =
             TerrainCollisionMode::MeshSurface;

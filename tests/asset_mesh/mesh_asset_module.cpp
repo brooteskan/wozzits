@@ -61,6 +61,8 @@ TEST(MeshAssetModule, ResolvesProceduralTriangleMesh)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->vertex_count(), 3u);
     EXPECT_EQ(data->index_count(), 3u);
+    EXPECT_TRUE(data->has_normals);
+    EXPECT_TRUE(data->has_uv0);
 }
 
 TEST(MeshAssetModule, ResolvesProceduralQuadMesh)
@@ -94,6 +96,8 @@ TEST(MeshAssetModule, ResolvesProceduralQuadMesh)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->vertex_count(), 4u);
     EXPECT_EQ(data->index_count(), 6u);
+    EXPECT_TRUE(data->has_normals);
+    EXPECT_TRUE(data->has_uv0);
 }
 
 TEST(MeshAssetModule, ResolvesProceduralCubeMesh)
@@ -157,6 +161,8 @@ TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->vertex_count(), 8u);
     EXPECT_EQ(data->index_count(), 36u);
+    EXPECT_TRUE(data->has_normals);
+    EXPECT_FALSE(data->has_uv0);
 }
 
 TEST(MeshAssetModule, ResolvesAllProceduralMeshKinds)

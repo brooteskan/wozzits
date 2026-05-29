@@ -36,6 +36,8 @@ namespace wz::engine::assets
 
         mesh.vertices = { a, b, c };
         mesh.indices = { 0u, 1u, 2u };
+        mesh.has_normals = true;
+        mesh.has_uv0 = true;
 
         return mesh;
     }
@@ -83,6 +85,8 @@ namespace wz::engine::assets
             0u, 1u, 2u,
             0u, 2u, 3u,
         };
+        mesh.has_normals = true;
+        mesh.has_uv0 = true;
 
         return mesh;
     }
@@ -143,6 +147,8 @@ namespace wz::engine::assets
             0u, 1u, 5u,
             0u, 5u, 4u,
         };
+        mesh.has_normals = true;
+        mesh.has_uv0 = false;
 
         return mesh;
     }

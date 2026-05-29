@@ -28,6 +28,26 @@ namespace wz::engine::assets
         MeshSurface,
     };
 
+    enum class TerrainMeshSurfaceHeightPolicy : uint8_t
+    {
+        HighestAcceptedSurface = 0,
+    };
+
+    enum class TerrainNormalSource : uint8_t
+    {
+        DerivedGeometry = 0,
+        MeshVertexNormal,
+        ImportedField,
+    };
+
+    enum class TerrainUVSource : uint8_t
+    {
+        None = 0,
+        MeshUV0,
+        PlanarXZ,
+        ImportedField,
+    };
+
     struct TerrainAssetData
     {
         TerrainRepresentationKind representation =
@@ -38,6 +58,18 @@ namespace wz::engine::assets
         wz::asset::AssetKey mesh{};
         wz::asset::AssetKey normal_field{};
         wz::asset::AssetKey material_mask_set{};
+
+        TerrainMeshSurfaceHeightPolicy mesh_height_policy =
+            TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
+        float min_surface_normal_y = 0.2f;
+        bool include_backfaces = false;
+
+        TerrainNormalSource normal_source = TerrainNormalSource::DerivedGeometry;
+        TerrainUVSource uv_source = TerrainUVSource::None;
+        bool mesh_has_source_normals = false;
+        bool mesh_has_source_uv0 = false;
+        uint32_t mesh_triangle_count = 0;
+        uint32_t mesh_accepted_surface_triangle_count = 0;
 
         float origin[2]{ 0.0f, 0.0f };
         float size[2]{ 1.0f, 1.0f };
@@ -82,6 +114,14 @@ namespace wz::engine::assets
     struct TerrainFromMeshCompileDesc
     {
         wz::asset::AssetKey mesh{};
+
+        TerrainMeshSurfaceHeightPolicy height_policy =
+            TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
+        float min_surface_normal_y = 0.2f;
+        bool include_backfaces = false;
+        TerrainNormalSource preferred_normal_source =
+            TerrainNormalSource::MeshVertexNormal;
+        TerrainUVSource preferred_uv_source = TerrainUVSource::MeshUV0;
 
         TerrainRenderMode render_mode = TerrainRenderMode::DebugMesh;
         TerrainCollisionMode collision_mode =

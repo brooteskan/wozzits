@@ -128,6 +128,9 @@ All mesh schemas produce `kAssetTypeMesh` stored in `MeshTable`.
 
 The GLB importer depends on a `kRawFileSchema` file carrier. `GLBMeshDesc::mesh_index`
 selects which mesh primitive inside the GLB to compile (default 0).
+When present, GLB `NORMAL` and `TEXCOORD_0` attributes are preserved on
+`MeshData` and exposed through `mesh.has_normals` / `mesh.has_uv0` so downstream
+asset compilers can choose terrain/material sources explicitly.
 
 ---
 
@@ -150,6 +153,16 @@ resolution/source metadata, basic render/collision policy, and query capability
 flags. Height-field terrain supports height-query semantics; mesh terrain records
 surface bounds/source metadata and leaves acceleration-backed ray/project queries
 for a later compiler/runtime layer.
+
+Mesh terrain also records source-attribute availability and selected terrain
+sources. If source mesh normals are present, `TerrainFromMesh` defaults to
+`TerrainNormalSource::MeshVertexNormal`; otherwise it falls back to
+`DerivedGeometry`. If UV0 is present, it defaults to `TerrainUVSource::MeshUV0`;
+otherwise it records no UV source unless the caller explicitly requests a
+generated source such as `PlanarXZ`. The mesh terrain compiler also records the
+source triangle count and the number of triangles accepted by
+`min_surface_normal_y` / `include_backfaces`, using geometric triangle normals
+for terrain policy rather than smoothed/imported vertex normals.
 
 Terrain visibility is expressed through a renderable asset, not editor preview
 state. `RenderableAssetModule::create_terrain_debug()` registers a renderable

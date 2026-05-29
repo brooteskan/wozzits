@@ -53,6 +53,8 @@ namespace wz::engine::assets
             out_mesh.indices.clear();
 
             out_mesh.vertices.resize(position_accessor.count);
+            out_mesh.has_normals = false;
+            out_mesh.has_uv0 = false;
 
             fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                 asset,
@@ -79,6 +81,7 @@ namespace wz::engine::assets
                         {
                             write_vec3(out_mesh.vertices[index].normal, normal);
                         });
+                    out_mesh.has_normals = true;
                 }
             }
 
@@ -99,6 +102,7 @@ namespace wz::engine::assets
                         {
                             write_vec2(out_mesh.vertices[index].uv, uv);
                         });
+                    out_mesh.has_uv0 = true;
                 }
             }
 

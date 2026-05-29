@@ -329,6 +329,16 @@ namespace wz::engine::assets
             return true;
         }
 
+        TerrainMeshSurfaceHeightPolicy terrain_height_policy_for_source(
+            SceneTerrainMeshHeightPolicy policy)
+        {
+            switch (policy) {
+            case SceneTerrainMeshHeightPolicy::HighestAcceptedSurface:
+                return TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
+            }
+            return TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
+        }
+
         bool ensure_mesh_for_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
@@ -673,6 +683,10 @@ namespace wz::engine::assets
                 terrain_asset = assets.terrains().create_from_mesh({
                     .name = "scene_editor/terrain/" + node.id,
                     .mesh = MeshAsset{ .output = source.mesh_asset },
+                    .height_policy =
+                        terrain_height_policy_for_source(source.height_policy),
+                    .min_surface_normal_y = source.min_surface_normal_y,
+                    .include_backfaces = source.include_backfaces,
                     .render_mode = TerrainRenderMode::DebugMesh,
                     .collision_mode = TerrainCollisionMode::MeshSurface,
                 });

@@ -92,6 +92,11 @@ namespace wz::engine::assets
 
         TerrainFromMeshCompileDesc compile_desc{};
         compile_desc.mesh = desc.mesh.output;
+        compile_desc.height_policy = desc.height_policy;
+        compile_desc.min_surface_normal_y = desc.min_surface_normal_y;
+        compile_desc.include_backfaces = desc.include_backfaces;
+        compile_desc.preferred_normal_source = desc.preferred_normal_source;
+        compile_desc.preferred_uv_source = desc.preferred_uv_source;
         compile_desc.render_mode = desc.render_mode;
         compile_desc.collision_mode = desc.collision_mode;
 
@@ -99,6 +104,11 @@ namespace wz::engine::assets
             make_terrain_from_mesh_key(
                 desc.name,
                 desc.mesh.output,
+                static_cast<uint8_t>(desc.height_policy),
+                desc.min_surface_normal_y,
+                desc.include_backfaces,
+                static_cast<uint8_t>(desc.preferred_normal_source),
+                static_cast<uint8_t>(desc.preferred_uv_source),
                 static_cast<uint8_t>(desc.render_mode),
                 static_cast<uint8_t>(desc.collision_mode));
 

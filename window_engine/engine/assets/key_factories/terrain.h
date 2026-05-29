@@ -50,10 +50,20 @@ namespace wz::engine::assets
     [[nodiscard]] inline wz::asset::AssetKey make_terrain_from_mesh_key(
         std::string_view name,
         const wz::asset::AssetKey& mesh_key,
+        uint8_t height_policy,
+        float min_surface_normal_y,
+        bool include_backfaces,
+        uint8_t preferred_normal_source,
+        uint8_t preferred_uv_source,
         uint8_t render_mode,
         uint8_t collision_mode) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
+        h = detail::mix64(h, static_cast<uint64_t>(height_policy));
+        h = detail::mix64(h, terrain_hash_float(min_surface_normal_y));
+        h = detail::mix64(h, include_backfaces ? 1ull : 0ull);
+        h = detail::mix64(h, static_cast<uint64_t>(preferred_normal_source));
+        h = detail::mix64(h, static_cast<uint64_t>(preferred_uv_source));
         h = detail::mix64(h, static_cast<uint64_t>(render_mode));
         h = detail::mix64(h, static_cast<uint64_t>(collision_mode));
 

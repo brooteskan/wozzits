@@ -35,6 +35,9 @@ namespace wz::engine::assets
         std::vector<MeshVertex> vertices;
         std::vector<uint32_t> indices;
 
+        bool has_normals = false;
+        bool has_uv0 = false;
+
         bool valid() const noexcept;
         uint32_t vertex_count() const noexcept;
         uint32_t index_count() const noexcept;

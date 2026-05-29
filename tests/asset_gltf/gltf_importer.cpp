@@ -103,6 +103,7 @@ TEST(GLTFImporter, ImportsCubeGLBAsMeshData)
     EXPECT_GT(mesh.vertex_count(), 0u);
     EXPECT_GT(mesh.index_count(), 0u);
     EXPECT_EQ(mesh.index_count() % 3u, 0u);
+    EXPECT_TRUE(mesh.has_normals);
 
     for (const auto index : mesh.indices)
         EXPECT_LT(index, mesh.vertex_count());
@@ -136,6 +137,7 @@ TEST(GLTFImporter, ImportsLowPolyRockGLBAsMeshData)
     EXPECT_GT(mesh.vertex_count(), 100u);
     EXPECT_GT(mesh.index_count(), 300u);
     EXPECT_EQ(mesh.index_count() % 3u, 0u);
+    EXPECT_TRUE(mesh.has_normals);
 
     for (const auto index : mesh.indices)
         EXPECT_LT(index, mesh.vertex_count());

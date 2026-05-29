@@ -480,6 +480,13 @@ the terrain build should choose the highest hit whose normal passes
 becoming arbitrary multi-layer terrain while still giving the editor a simple
 first mesh-to-terrain workflow.
 
+The scene draft owns only the source selection and policy. During
+materialization those fields are copied into the `TerrainFromMesh` asset recipe.
+The terrain compiler then inspects the compiled `MeshData`: imported GLB normals
+and UV0 are preserved when available, geometric triangle normals drive terrain
+surface policy, and the resulting `TerrainAssetData` records which normal and UV
+sources were selected for later query/render/material systems.
+
 Before preview/runtime instantiation, the editor must resolve this draft into a
 `TerrainAsset` and store that key on the `Terrain` component. `TerrainMeshSource`
 does not instantiate into `SceneInstance` runtime component tables.

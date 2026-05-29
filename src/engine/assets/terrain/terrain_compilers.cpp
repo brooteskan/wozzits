@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cmath>
 #include <span>
 
 namespace wz::engine::assets::internal
@@ -32,6 +33,91 @@ namespace wz::engine::assets::internal
                         std::max(dst_max[axis], vertex.position[axis]);
                 }
             }
+        }
+
+        TerrainNormalSource choose_terrain_normal_source(
+            TerrainNormalSource preferred,
+            const MeshData& mesh) noexcept
+        {
+            if (preferred == TerrainNormalSource::MeshVertexNormal
+                && mesh.has_normals)
+            {
+                return TerrainNormalSource::MeshVertexNormal;
+            }
+            if (preferred == TerrainNormalSource::ImportedField) {
+                return TerrainNormalSource::ImportedField;
+            }
+            return TerrainNormalSource::DerivedGeometry;
+        }
+
+        TerrainUVSource choose_terrain_uv_source(
+            TerrainUVSource preferred,
+            const MeshData& mesh) noexcept
+        {
+            if (preferred == TerrainUVSource::MeshUV0 && mesh.has_uv0) {
+                return TerrainUVSource::MeshUV0;
+            }
+            if (preferred == TerrainUVSource::ImportedField) {
+                return TerrainUVSource::ImportedField;
+            }
+            if (preferred == TerrainUVSource::PlanarXZ) {
+                return TerrainUVSource::PlanarXZ;
+            }
+            return TerrainUVSource::None;
+        }
+
+        float mesh_triangle_normal_y(
+            const MeshData& mesh,
+            uint32_t ia,
+            uint32_t ib,
+            uint32_t ic) noexcept
+        {
+            const auto& a = mesh.vertices[ia];
+            const auto& b = mesh.vertices[ib];
+            const auto& c = mesh.vertices[ic];
+
+            const float abx = b.position[0] - a.position[0];
+            const float aby = b.position[1] - a.position[1];
+            const float abz = b.position[2] - a.position[2];
+            const float acx = c.position[0] - a.position[0];
+            const float acy = c.position[1] - a.position[1];
+            const float acz = c.position[2] - a.position[2];
+
+            const float nx = aby * acz - abz * acy;
+            const float ny = abz * acx - abx * acz;
+            const float nz = abx * acy - aby * acx;
+            const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (len <= 0.0f) {
+                return 0.0f;
+            }
+            return ny / len;
+        }
+
+        uint32_t count_accepted_mesh_surface_triangles(
+            const MeshData& mesh,
+            float min_surface_normal_y,
+            bool include_backfaces) noexcept
+        {
+            uint32_t accepted = 0;
+            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                const uint32_t ia = mesh.indices[i + 0];
+                const uint32_t ib = mesh.indices[i + 1];
+                const uint32_t ic = mesh.indices[i + 2];
+                if (ia >= mesh.vertices.size()
+                    || ib >= mesh.vertices.size()
+                    || ic >= mesh.vertices.size())
+                {
+                    continue;
+                }
+
+                const float normal_y = mesh_triangle_normal_y(mesh, ia, ib, ic);
+                const float comparable_y =
+                    include_backfaces ? std::abs(normal_y) : normal_y;
+                if (comparable_y >= min_surface_normal_y) {
+                    ++accepted;
+                }
+            }
+            return accepted;
         }
     }
 
@@ -157,6 +243,24 @@ namespace wz::engine::assets::internal
                 data.representation = TerrainRepresentationKind::MeshSurface;
                 data.source_asset = desc->mesh;
                 data.mesh = desc->mesh;
+                data.mesh_height_policy = desc->height_policy;
+                data.min_surface_normal_y = desc->min_surface_normal_y;
+                data.include_backfaces = desc->include_backfaces;
+                data.mesh_has_source_normals = mesh->has_normals;
+                data.mesh_has_source_uv0 = mesh->has_uv0;
+                data.mesh_triangle_count =
+                    static_cast<uint32_t>(mesh->indices.size() / 3u);
+                data.mesh_accepted_surface_triangle_count =
+                    count_accepted_mesh_surface_triangles(
+                        *mesh,
+                        desc->min_surface_normal_y,
+                        desc->include_backfaces);
+                data.normal_source = choose_terrain_normal_source(
+                    desc->preferred_normal_source,
+                    *mesh);
+                data.uv_source = choose_terrain_uv_source(
+                    desc->preferred_uv_source,
+                    *mesh);
                 copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
                 data.origin[0] = data.bounds_min[0];
                 data.origin[1] = data.bounds_min[2];
