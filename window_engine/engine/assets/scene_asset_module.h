@@ -25,6 +25,7 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> renderable_asset_references;
         std::vector<SceneAssetReferenceBinding> terrain_asset_references;
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
+        std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
     };
 
     struct SceneAsset

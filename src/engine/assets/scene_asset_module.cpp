@@ -17,7 +17,8 @@ namespace wz::engine::assets
         wz::asset::Hash scene_reference_bindings_hash(
             std::vector<SceneAssetReferenceBinding> refs,
             std::vector<SceneAssetReferenceBinding> terrain_refs = {},
-            std::vector<SceneAssetReferenceBinding> mesh_refs = {})
+            std::vector<SceneAssetReferenceBinding> mesh_refs = {},
+            std::vector<SceneAssetReferenceBinding> scalar_field_refs = {})
         {
             refs.insert(
                 refs.end(),
@@ -27,6 +28,10 @@ namespace wz::engine::assets
                 refs.end(),
                 mesh_refs.begin(),
                 mesh_refs.end());
+            refs.insert(
+                refs.end(),
+                scalar_field_refs.begin(),
+                scalar_field_refs.end());
 
             if (refs.empty())
                 return {};
@@ -103,9 +108,10 @@ namespace wz::engine::assets
             make_scene_from_json_key(
                 json_asset.output,
                 scene_reference_bindings_hash(
-                desc.renderable_asset_references,
+                    desc.renderable_asset_references,
                     desc.terrain_asset_references,
-                    desc.mesh_asset_references));
+                    desc.mesh_asset_references,
+                    desc.scalar_field_asset_references));
 
         wz::asset::AssetNode node;
         node.key = scene_key;
@@ -118,6 +124,8 @@ namespace wz::engine::assets
                 desc.renderable_asset_references,
             .terrain_asset_references = desc.terrain_asset_references,
             .mesh_asset_references = desc.mesh_asset_references,
+            .scalar_field_asset_references =
+                desc.scalar_field_asset_references,
         };
 
         std::vector<wz::asset::AssetKey> deps;
@@ -131,6 +139,9 @@ namespace wz::engine::assets
         append_reference_dependencies(
             deps,
             desc.mesh_asset_references);
+        append_reference_dependencies(
+            deps,
+            desc.scalar_field_asset_references);
 
         if (!system_.register_asset(std::move(node), std::move(deps))) {
             logger_.error("failed to register scene node: " + desc.name);

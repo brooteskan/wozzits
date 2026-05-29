@@ -262,6 +262,7 @@ namespace wz::engine::assets
             .terrains = static_cast<uint32_t>(
                 instance.terrains.size()),
             .terrain_mesh_sources = 0,
+            .terrain_height_field_sources = 0,
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(

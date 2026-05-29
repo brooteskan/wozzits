@@ -142,6 +142,26 @@ namespace wz::engine::assets
             return "wireframe";
         }
 
+        const char* scalar_field_source_kind_name(
+            SceneScalarFieldSourceKind kind)
+        {
+            switch (kind) {
+            case SceneScalarFieldSourceKind::RawF32:
+                return "raw_f32";
+            case SceneScalarFieldSourceKind::ProceduralGradientX:
+                return "procedural_gradient_x";
+            case SceneScalarFieldSourceKind::ProceduralGradientY:
+                return "procedural_gradient_y";
+            case SceneScalarFieldSourceKind::ProceduralRadialGradient:
+                return "procedural_radial_gradient";
+            case SceneScalarFieldSourceKind::ProceduralCheckerboard:
+                return "procedural_checkerboard";
+            case SceneScalarFieldSourceKind::ProceduralSineWaves:
+                return "procedural_sine_waves";
+            }
+            return "procedural_gradient_x";
+        }
+
         const char* terrain_mesh_height_policy_name(
             SceneTerrainMeshHeightPolicy policy)
         {
@@ -162,6 +182,18 @@ namespace wz::engine::assets
                 return "scene_node";
             }
             return "mesh_asset";
+        }
+
+        const char* terrain_height_field_source_mode_name(
+            SceneTerrainHeightFieldSourceMode mode)
+        {
+            switch (mode) {
+            case SceneTerrainHeightFieldSourceMode::ScalarFieldAsset:
+                return "scalar_field_asset";
+            case SceneTerrainHeightFieldSourceMode::SceneNode:
+                return "scene_node";
+            }
+            return "scalar_field_asset";
         }
 
         const char* pipeline_name(const SceneRenderableBinding& binding)
@@ -311,6 +343,25 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr scalar_field_source_value(
+            const SceneScalarFieldSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(scalar_field_source_kind_name(source.kind)));
+            if (!(source.scalar_field_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(source.scalar_field_asset)));
+            }
+            add_member(*obj, "path", string_value(source.path));
+            add_member(*obj, "width", number_value(source.width));
+            add_member(*obj, "height", number_value(source.height));
+            add_member(*obj, "depth", number_value(source.depth));
+            add_member(*obj, "frequency", number_value(source.frequency));
+            add_member(*obj, "amplitude", number_value(source.amplitude));
+            return obj;
+        }
+
         JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
         {
             auto obj = object_value();
@@ -344,6 +395,29 @@ namespace wz::engine::assets
                 number_value(source.min_surface_normal_y));
             add_member(*obj, "include_backfaces",
                 bool_value(source.include_backfaces));
+            return obj;
+        }
+
+        JSONValuePtr terrain_height_field_source_value(
+            const SceneTerrainHeightFieldSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "mode",
+                string_value(terrain_height_field_source_mode_name(
+                    source.mode)));
+            if (source.mode == SceneTerrainHeightFieldSourceMode::SceneNode) {
+                add_member(*obj, "source_node",
+                    string_value(source.source_node));
+            }
+            if (!(source.scalar_field_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(source.scalar_field_asset)));
+            }
+            add_member(*obj, "origin", float_array(source.origin, 2));
+            add_member(*obj, "size", float_array(source.size, 2));
+            add_member(*obj, "vertical_scale",
+                number_value(source.vertical_scale));
+            add_member(*obj, "base_height", number_value(source.base_height));
             return obj;
         }
 
@@ -441,6 +515,10 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_render_style",
                     mesh_render_style_value(*node.mesh_render_style));
             }
+            if (node.scalar_field_source) {
+                add_member(*obj, "scalar_field_source",
+                    scalar_field_source_value(*node.scalar_field_source));
+            }
             if (node.terrain
                 && !(node.terrain->terrain_asset == wz::asset::AssetKey{}))
             {
@@ -449,6 +527,11 @@ namespace wz::engine::assets
             if (node.terrain_mesh_source) {
                 add_member(*obj, "terrain_mesh_source",
                     terrain_mesh_source_value(*node.terrain_mesh_source));
+            }
+            if (node.terrain_height_field_source) {
+                add_member(*obj, "terrain_height_field_source",
+                    terrain_height_field_source_value(
+                        *node.terrain_height_field_source));
             }
             if (node.audio_listener) {
                 auto audio = object_value();

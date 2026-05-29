@@ -212,6 +212,30 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneScalarFieldSourceKind>
+        parse_scalar_field_source_kind(std::string_view text)
+        {
+            if (text == "raw_f32") {
+                return SceneScalarFieldSourceKind::RawF32;
+            }
+            if (text == "procedural_gradient_x") {
+                return SceneScalarFieldSourceKind::ProceduralGradientX;
+            }
+            if (text == "procedural_gradient_y") {
+                return SceneScalarFieldSourceKind::ProceduralGradientY;
+            }
+            if (text == "procedural_radial_gradient") {
+                return SceneScalarFieldSourceKind::ProceduralRadialGradient;
+            }
+            if (text == "procedural_checkerboard") {
+                return SceneScalarFieldSourceKind::ProceduralCheckerboard;
+            }
+            if (text == "procedural_sine_waves") {
+                return SceneScalarFieldSourceKind::ProceduralSineWaves;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneTerrainMeshHeightPolicy>
         parse_terrain_mesh_height_policy(std::string_view text)
         {
@@ -231,6 +255,48 @@ namespace wz::engine::assets::internal
                 return SceneTerrainMeshSourceMode::SceneNode;
             }
             return std::nullopt;
+        }
+
+        std::optional<SceneTerrainHeightFieldSourceMode>
+        parse_terrain_height_field_source_mode(std::string_view text)
+        {
+            if (text == "scalar_field_asset") {
+                return SceneTerrainHeightFieldSourceMode::ScalarFieldAsset;
+            }
+            if (text == "scene_node") {
+                return SceneTerrainHeightFieldSourceMode::SceneNode;
+            }
+            return std::nullopt;
+        }
+
+        bool read_float2(
+            const wz::json::JSONValue& obj,
+            const char* field_name,
+            float out[2])
+        {
+            const auto* value = find_member(obj, field_name);
+            if (!value) {
+                return false;
+            }
+            if (value->kind != wz::json::JSONValueKind::Array
+                || value->array_values.size() < 2)
+            {
+                return false;
+            }
+            for (size_t i = 0; i < 2; ++i) {
+                const auto& element = value->array_values[i];
+                if (!element
+                    || element->kind != wz::json::JSONValueKind::Number)
+                {
+                    return false;
+                }
+                const float v = static_cast<float>(element->number_value);
+                if (!std::isfinite(v)) {
+                    return false;
+                }
+                out[i] = v;
+            }
+            return true;
         }
 
         using SceneAssetReferenceMap =
@@ -286,7 +352,8 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             const SceneAssetReferenceMap& renderable_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
-            const SceneAssetReferenceMap& mesh_asset_references)
+            const SceneAssetReferenceMap& mesh_asset_references,
+            const SceneAssetReferenceMap& scalar_field_asset_references)
         {
             if (node_val.kind != wz::json::JSONValueKind::Object)
                 return std::nullopt;
@@ -526,6 +593,102 @@ namespace wz::engine::assets::internal
                 node.mesh_render_style = style;
             }
 
+            const auto* sfs = find_member(node_val, "scalar_field_source");
+            if (sfs && sfs->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*sfs, "kind");
+                if (!kind_str) {
+                    logger.error("scalar_field_source on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                auto kind = parse_scalar_field_source_kind(*kind_str);
+                if (!kind) {
+                    logger.error("scalar_field_source on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str)
+                        + "'");
+                    return std::nullopt;
+                }
+
+                SceneScalarFieldSourceAsset source{};
+                source.kind = *kind;
+
+                auto asset = read_string(*sfs, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        const auto it = scalar_field_asset_references.find(
+                            std::string(*asset));
+                        if (it == scalar_field_asset_references.end()) {
+                            logger.error("scalar_field_source.asset on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*asset));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    source.scalar_field_asset = *key;
+                }
+
+                auto path = read_string(*sfs, "path");
+                if (path) {
+                    source.path = std::string(*path);
+                }
+                if (source.kind == SceneScalarFieldSourceKind::RawF32
+                    && source.path.empty()
+                    && source.scalar_field_asset == wz::asset::AssetKey{})
+                {
+                    logger.error("scalar_field_source on node '" + node.id
+                        + "' with kind 'raw_f32' missing 'path'");
+                    return std::nullopt;
+                }
+
+                auto read_dimension =
+                    [&](const char* field_name, uint32_t& out) -> bool
+                {
+                    auto value = read_number(*sfs, field_name);
+                    if (!value) {
+                        return true;
+                    }
+                    if (*value < 1.0 || !std::isfinite(*value)) {
+                        logger.error("scalar_field_source on node '" + node.id
+                            + "' has invalid " + field_name);
+                        return false;
+                    }
+                    out = static_cast<uint32_t>(*value);
+                    return true;
+                };
+                if (!read_dimension("width", source.width)
+                    || !read_dimension("height", source.height)
+                    || !read_dimension("depth", source.depth))
+                {
+                    return std::nullopt;
+                }
+
+                auto frequency = read_number(*sfs, "frequency");
+                if (frequency) {
+                    const float value = static_cast<float>(*frequency);
+                    if (!std::isfinite(value)) {
+                        logger.error("scalar_field_source on node '" + node.id
+                            + "' has invalid frequency");
+                        return std::nullopt;
+                    }
+                    source.frequency = value;
+                }
+                auto amplitude = read_number(*sfs, "amplitude");
+                if (amplitude) {
+                    const float value = static_cast<float>(*amplitude);
+                    if (!std::isfinite(value)) {
+                        logger.error("scalar_field_source on node '" + node.id
+                            + "' has invalid amplitude");
+                        return std::nullopt;
+                    }
+                    source.amplitude = value;
+                }
+
+                node.scalar_field_source = source;
+            }
+
             std::optional<wz::asset::AssetKey> terrain_asset;
             if (!parse_asset_reference_object(
                     node_val,
@@ -637,6 +800,102 @@ namespace wz::engine::assets::internal
                 }
 
                 node.terrain_mesh_source = component;
+            }
+
+            const auto* height_source = find_member(
+                node_val,
+                "terrain_height_field_source");
+            if (height_source
+                && height_source->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneTerrainHeightFieldSourceAsset component{};
+
+                auto mode = read_string(*height_source, "mode");
+                if (mode) {
+                    auto parsed_mode =
+                        parse_terrain_height_field_source_mode(*mode);
+                    if (!parsed_mode) {
+                        logger.error("terrain_height_field_source on node '"
+                            + node.id + "' has unknown mode '"
+                            + std::string(*mode) + "'");
+                        return std::nullopt;
+                    }
+                    component.mode = *parsed_mode;
+                }
+
+                auto source_node = read_string(*height_source, "source_node");
+                if (source_node) {
+                    component.source_node = std::string(*source_node);
+                    component.mode = SceneTerrainHeightFieldSourceMode::SceneNode;
+                }
+
+                auto asset = read_string(*height_source, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        const auto it = scalar_field_asset_references.find(
+                            std::string(*asset));
+                        if (it == scalar_field_asset_references.end()) {
+                            logger.error(
+                                "terrain_height_field_source.asset on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*asset));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    component.scalar_field_asset = *key;
+                    if (component.mode
+                        != SceneTerrainHeightFieldSourceMode::SceneNode)
+                    {
+                        component.mode =
+                            SceneTerrainHeightFieldSourceMode::ScalarFieldAsset;
+                    }
+                }
+
+                if (const auto* origin = find_member(*height_source, "origin")) {
+                    (void)origin;
+                    if (!read_float2(*height_source, "origin", component.origin)) {
+                        logger.error("terrain_height_field_source on node '"
+                            + node.id + "' has invalid origin");
+                        return std::nullopt;
+                    }
+                }
+                if (const auto* size = find_member(*height_source, "size")) {
+                    (void)size;
+                    if (!read_float2(*height_source, "size", component.size)
+                        || component.size[0] <= 0.0f
+                        || component.size[1] <= 0.0f)
+                    {
+                        logger.error("terrain_height_field_source on node '"
+                            + node.id + "' has invalid size");
+                        return std::nullopt;
+                    }
+                }
+
+                auto vertical_scale =
+                    read_number(*height_source, "vertical_scale");
+                if (vertical_scale) {
+                    const float value = static_cast<float>(*vertical_scale);
+                    if (!std::isfinite(value)) {
+                        logger.error("terrain_height_field_source on node '"
+                            + node.id + "' has invalid vertical_scale");
+                        return std::nullopt;
+                    }
+                    component.vertical_scale = value;
+                }
+                auto base_height = read_number(*height_source, "base_height");
+                if (base_height) {
+                    const float value = static_cast<float>(*base_height);
+                    if (!std::isfinite(value)) {
+                        logger.error("terrain_height_field_source on node '"
+                            + node.id + "' has invalid base_height");
+                        return std::nullopt;
+                    }
+                    component.base_height = value;
+                }
+
+                node.terrain_height_field_source = component;
             }
 
             const auto* al = find_member(node_val, "audio_listener");
@@ -772,7 +1031,8 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             const SceneAssetReferenceMap& renderable_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
-            const SceneAssetReferenceMap& mesh_asset_references)
+            const SceneAssetReferenceMap& mesh_asset_references,
+            const SceneAssetReferenceMap& scalar_field_asset_references)
         {
             if (!doc.root || doc.root->kind != wz::json::JSONValueKind::Object) {
                 logger.error("scene JSON root is not an object");
@@ -802,7 +1062,8 @@ namespace wz::engine::assets::internal
                     logger,
                     renderable_asset_references,
                     terrain_asset_references,
-                    mesh_asset_references);
+                    mesh_asset_references,
+                    scalar_field_asset_references);
                 if (!node) return std::nullopt;
                 scene.nodes.push_back(std::move(*node));
             }
@@ -872,6 +1133,7 @@ namespace wz::engine::assets::internal
                 SceneAssetReferenceMap renderable_asset_references;
                 SceneAssetReferenceMap terrain_asset_references;
                 SceneAssetReferenceMap mesh_asset_references;
+                SceneAssetReferenceMap scalar_field_asset_references;
                 if (const auto* desc =
                         std::any_cast<SceneFromJSONCompileDesc>(&input.meta))
                 {
@@ -902,6 +1164,15 @@ namespace wz::engine::assets::internal
                             mesh_asset_references[ref.uri] = ref.key;
                         }
                     }
+                    for (const auto& ref :
+                        desc->scalar_field_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            scalar_field_asset_references[ref.uri] = ref.key;
+                        }
+                    }
                 }
 
                 auto scene = parse_scene_json(
@@ -909,7 +1180,8 @@ namespace wz::engine::assets::internal
                     logger,
                     renderable_asset_references,
                     terrain_asset_references,
-                    mesh_asset_references);
+                    mesh_asset_references,
+                    scalar_field_asset_references);
                 if (!scene) {
                     return compile_failed_node(input);
                 }

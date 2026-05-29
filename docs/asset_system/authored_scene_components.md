@@ -190,7 +190,7 @@ The current high-level categories are:
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
-| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `TerrainMeshSource` |
+| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -364,6 +364,27 @@ The asset DAG owns source paths, mesh indices, render program choices, and rende
 policy flags. The scene keeps these records only so the editor can re-open and
 rebuild the asset graph.
 
+### ScalarFieldSource
+
+Editor/import authoring draft for building a scalar-field asset.
+
+Fields:
+
+- `kind`
+- `asset`
+- `path`
+- `width`
+- `height`
+- `depth`
+- `frequency`
+- `amplitude`
+
+`ScalarFieldSource` mirrors `MeshSource`: it lets the editor keep enough source
+recipe data to rebuild a scalar-field asset DAG node. It may describe a raw F32
+file or a procedural field. Before another editor recipe consumes it, the editor
+materializes it into a `ScalarFieldAsset` and stores that key on `asset`.
+`ScalarFieldSource` does not instantiate into runtime scene component tables.
+
 ### TerrainMeshSource
 
 Editor/import authoring draft for building a terrain asset from one mesh asset.
@@ -392,6 +413,31 @@ first mesh-to-terrain workflow.
 Before preview/runtime instantiation, the editor must resolve this draft into a
 `TerrainAsset` and store that key on the `Terrain` component. `TerrainMeshSource`
 does not instantiate into `SceneInstance` runtime component tables.
+
+### TerrainHeightFieldSource
+
+Editor/import authoring draft for building a terrain asset from one scalar
+field asset.
+
+Fields:
+
+- `asset`
+- `mode`
+- `source_node`
+- `origin`
+- `size`
+- `vertical_scale`
+- `base_height`
+
+`TerrainHeightFieldSource` is the height-field counterpart to
+`TerrainMeshSource`. It can reference a direct scalar field asset or a
+`source_node` selected in the editor. Scene-node selection is intentionally
+scoped to scalar-field-source nodes parented directly under the terrain node.
+
+Before preview/runtime instantiation, the editor must resolve this draft into a
+`TerrainAsset` through `TerrainAssetModule::create_from_height_field()` and
+store that key on the `Terrain` component. `TerrainHeightFieldSource` does not
+instantiate into `SceneInstance` runtime component tables.
 
 ### AudioListener
 

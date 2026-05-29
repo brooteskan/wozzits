@@ -4844,3 +4844,191 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
 }
+
+TEST(SceneAssetModule, ParsesExportsAndSummarizesScalarFieldSource)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_scalar_field_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "scalar_field_source_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "transform": {
+        "translation": [0, 0, 0]
+      },
+      "scalar_field_source": {
+        "kind": "procedural_checkerboard",
+        "width": 32,
+        "height": 16,
+        "depth": 1,
+        "frequency": 4.0,
+        "amplitude": 2.0
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "scalar_field_source.scene.json", scene_json);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "scalar_field_source",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.scalar_field_source.has_value());
+    EXPECT_EQ(
+        node.scalar_field_source->kind,
+        SceneScalarFieldSourceKind::ProceduralCheckerboard);
+    EXPECT_EQ(node.scalar_field_source->width, 32u);
+    EXPECT_EQ(node.scalar_field_source->height, 16u);
+    EXPECT_EQ(node.scalar_field_source->depth, 1u);
+    EXPECT_FLOAT_EQ(node.scalar_field_source->frequency, 4.0f);
+    EXPECT_FLOAT_EQ(node.scalar_field_source->amplitude, 2.0f);
+
+    const auto summary = summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(summary.scalar_field_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"scalar_field_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"procedural_checkerboard\""), std::string::npos);
+    EXPECT_NE(exported.find("\"frequency\""), std::string::npos);
+    EXPECT_NE(exported.find("\"amplitude\""), std::string::npos);
+}
+
+TEST(SceneAssetModule, TerrainHeightFieldSourceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_terrain_height_field_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "terrain/height_field",
+        .width = 8,
+        .height = 8,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientY,
+    });
+    ASSERT_TRUE(field.valid());
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "terrain_height_field_source_scene",
+  "nodes": [
+    {
+      "id": "height",
+      "scalar_field_source": {
+        "kind": "procedural_gradient_y",
+        "width": 8,
+        "height": 8,
+        "depth": 1
+      }
+    },
+    {
+      "id": "terrain",
+      "terrain_height_field_source": {
+        "mode": "scene_node",
+        "source_node": "height",
+        "asset": "asset://scalar_fields/height",
+        "origin": [-2.0, -3.0],
+        "size": [10.0, 12.0],
+        "vertical_scale": 4.0,
+        "base_height": -1.0
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "terrain_height_field_source.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "terrain_height_field_source",
+            .path = rel_path,
+            .scalar_field_asset_references = {
+                SceneAssetReferenceBinding{
+                    .uri = "asset://scalar_fields/height",
+                    .key = field.output,
+                },
+            },
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
+
+    const auto& node = scene_data->nodes[1];
+    ASSERT_TRUE(node.terrain_height_field_source.has_value());
+    EXPECT_EQ(
+        node.terrain_height_field_source->mode,
+        SceneTerrainHeightFieldSourceMode::SceneNode);
+    EXPECT_EQ(node.terrain_height_field_source->source_node, "height");
+    EXPECT_EQ(node.terrain_height_field_source->scalar_field_asset,
+        field.output);
+    EXPECT_FLOAT_EQ(node.terrain_height_field_source->origin[0], -2.0f);
+    EXPECT_FLOAT_EQ(node.terrain_height_field_source->origin[1], -3.0f);
+    EXPECT_FLOAT_EQ(node.terrain_height_field_source->size[0], 10.0f);
+    EXPECT_FLOAT_EQ(node.terrain_height_field_source->size[1], 12.0f);
+    EXPECT_FLOAT_EQ(
+        node.terrain_height_field_source->vertical_scale,
+        4.0f);
+    EXPECT_FLOAT_EQ(node.terrain_height_field_source->base_height, -1.0f);
+
+    const auto summary = summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(summary.scalar_field_sources, 1u);
+    EXPECT_EQ(summary.terrain_height_field_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"terrain_height_field_source\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"scene_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"vertical_scale\""), std::string::npos);
+    EXPECT_NE(exported.find("\"base_height\""), std::string::npos);
+    EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+}

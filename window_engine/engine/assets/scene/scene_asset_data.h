@@ -166,6 +166,32 @@ namespace wz::engine::assets
         bool depth_write = false;
     };
 
+    enum class SceneScalarFieldSourceKind : uint8_t
+    {
+        RawF32 = 0,
+        ProceduralGradientX,
+        ProceduralGradientY,
+        ProceduralRadialGradient,
+        ProceduralCheckerboard,
+        ProceduralSineWaves,
+    };
+
+    // Editor/import recipe for building a scalar-field asset node.
+    // The editor materialization pass should resolve this to scalar_field_asset
+    // before other editor-authored asset recipes consume it.
+    struct SceneScalarFieldSourceAsset
+    {
+        SceneScalarFieldSourceKind kind =
+            SceneScalarFieldSourceKind::ProceduralGradientX;
+        wz::asset::AssetKey scalar_field_asset{};
+        std::string path;
+        uint32_t width = 64;
+        uint32_t height = 64;
+        uint32_t depth = 1;
+        float frequency = 1.0f;
+        float amplitude = 1.0f;
+    };
+
     struct SceneTerrainAsset
     {
         wz::asset::AssetKey terrain_asset{};
@@ -197,6 +223,27 @@ namespace wz::engine::assets
             SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;
         float min_surface_normal_y = 0.2f;
         bool include_backfaces = false;
+    };
+
+    enum class SceneTerrainHeightFieldSourceMode : uint8_t
+    {
+        ScalarFieldAsset = 0,
+        SceneNode,
+    };
+
+    // Editor/import recipe for deriving a TerrainAsset from a scalar field.
+    // The editor materialization pass should resolve this to terrain.terrain_asset
+    // before preview/runtime instantiation.
+    struct SceneTerrainHeightFieldSourceAsset
+    {
+        SceneTerrainHeightFieldSourceMode mode =
+            SceneTerrainHeightFieldSourceMode::ScalarFieldAsset;
+        wz::scene::AuthoredEntityId source_node;
+        wz::asset::AssetKey scalar_field_asset{};
+        float origin[2]{ 0.0f, 0.0f };
+        float size[2]{ 1.0f, 1.0f };
+        float vertical_scale = 1.0f;
+        float base_height = 0.0f;
     };
 
     struct SceneAudioListenerAsset
@@ -240,8 +287,11 @@ namespace wz::engine::assets
         std::optional<SceneGroundBoundaryAsset> ground_boundary;
         std::optional<SceneMeshSourceAsset> mesh_source;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
+        std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneTerrainAsset> terrain;
         std::optional<SceneTerrainMeshSourceAsset> terrain_mesh_source;
+        std::optional<SceneTerrainHeightFieldSourceAsset>
+            terrain_height_field_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
@@ -275,6 +325,7 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> renderable_asset_references;
         std::vector<SceneAssetReferenceBinding> terrain_asset_references;
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
+        std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
     };
 
     inline SceneNodeAsset make_scene_node(
@@ -365,6 +416,13 @@ namespace wz::engine::assets
         node.mesh_render_style = style;
     }
 
+    inline void attach_scalar_field_source(
+        SceneNodeAsset& node,
+        SceneScalarFieldSourceAsset source = {})
+    {
+        node.scalar_field_source = std::move(source);
+    }
+
     inline void attach_terrain(
         SceneNodeAsset& node,
         SceneTerrainAsset terrain = {})
@@ -377,6 +435,13 @@ namespace wz::engine::assets
         SceneTerrainMeshSourceAsset source = {})
     {
         node.terrain_mesh_source = source;
+    }
+
+    inline void attach_terrain_height_field_source(
+        SceneNodeAsset& node,
+        SceneTerrainHeightFieldSourceAsset source = {})
+    {
+        node.terrain_height_field_source = source;
     }
 
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
@@ -417,11 +482,17 @@ namespace wz::engine::assets
         if (node.mesh_render_style) {
             out.push_back(Kind::MeshRenderStyle);
         }
+        if (node.scalar_field_source) {
+            out.push_back(Kind::ScalarFieldSource);
+        }
         if (node.terrain) {
             out.push_back(Kind::Terrain);
         }
         if (node.terrain_mesh_source) {
             out.push_back(Kind::TerrainMeshSource);
+        }
+        if (node.terrain_height_field_source) {
+            out.push_back(Kind::TerrainHeightFieldSource);
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
@@ -522,11 +593,17 @@ namespace wz::engine::assets
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;
             }
+            if (node.scalar_field_source) {
+                ++out.scalar_field_sources;
+            }
             if (node.terrain) {
                 ++out.terrains;
             }
             if (node.terrain_mesh_source) {
                 ++out.terrain_mesh_sources;
+            }
+            if (node.terrain_height_field_source) {
+                ++out.terrain_height_field_sources;
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;

@@ -62,10 +62,8 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta    = compile_desc;
 
-        if (!system_.register_asset(std::move(node), { file_key })) {
-            logger_.error("failed to register scalar field node: " + desc.name);
-            return out;
-        }
+        if (!system_.register_asset(std::move(node), { file_key }))
+            return ScalarFieldAsset{ .output = field_key };
 
         out.output = field_key;
         return out;
@@ -108,12 +106,8 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta    = compile_desc;
 
-        if (!system_.register_asset(std::move(node))) {
-            logger_.error(
-                "duplicate procedural scalar field key — "
-                "name and parameters must be unique: " + desc.name);
-            return {};
-        }
+        if (!system_.register_asset(std::move(node)))
+            return ScalarFieldAsset{ .output = key };
 
         out.output = key;
         return out;
