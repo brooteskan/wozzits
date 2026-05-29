@@ -166,7 +166,8 @@ It should be updated as decisions become concrete.
 | AudioListener | Component | Existing marker-style component; live listener/mixing state belongs to runtime audio. |
 | InputMap | Unresolved: label now or future asset | Keep as string only if it is a routing label. Promote to asset if it owns reusable bindings. |
 | RenderStyle / Material | Asset | Should be referenced by renderable/material components, not copied into scene nodes. |
-| Light | Component or documented scene-level bridge | Current code stores scene-level light records linked by node id; choose whether to migrate to node component. |
+| Light | Asset-backed component | `DirectLightSource` stores authored component placement/participation and materializes a `DirectLightAsset`; legacy scene-level `SceneLightAsset` records remain as the scene-render bridge. |
+| AmbientLighting | Asset-backed component | Stores ambient participation on a node and materializes an `AmbientLightingAsset`; field modulation can reference scalar/vector field assets. |
 
 ## Source To Runtime Flow
 
@@ -233,7 +234,7 @@ The current high-level categories are:
 | Category | Components |
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
-| Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
+| Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
 | Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
@@ -298,10 +299,53 @@ camera transform can be driven during preview.
 
 ### Light
 
-Lights are currently scene-level `SceneLightAsset` records linked by authored
-node id, rather than components stored directly on `SceneNodeAsset`.
+Direct lights are authored as node components and materialized into
+`DirectLightAsset` nodes in the asset DAG.
 
-This is a known transitional shape.
+Fields:
+
+- `asset`
+- `kind`
+- `color`
+- `intensity`
+- `range`
+- `inner_cone_radians`
+- `outer_cone_radians`
+
+`DirectLightAsset` owns the reusable light definition. The scene component owns
+the authored relationship between that light and a node transform. During
+materialization, the component's draft fields create/update the asset DAG node
+and the component stores the resolved asset key.
+
+For the current renderer bridge, materialization also projects direct light
+components into legacy scene-level `SceneLightAsset` records linked by authored
+node id. That bridge keeps `scene-render` consuming its existing `LightRecord`
+span while the authored source moves to asset-backed components. Directional
+light records take their world-space direction from the node transform's local
+`-Y` axis.
+
+### AmbientLighting
+
+Ambient lighting is authored as a node component and materialized into an
+`AmbientLightingAsset`.
+
+Fields:
+
+- `asset`
+- `mode`
+- `color`
+- `intensity`
+- `intensity_field`
+- `color_field`
+- `domain_mapping`
+
+V1 supports constant ambient lighting and an explicit `field_modulated` mode for
+the direction we discussed: terrain or world-space ambient properties can be
+driven by scalar/vector fields. The asset stores those field dependencies as
+normal asset references. Materialization also projects constant ambient
+lighting into a scene light record with type `Ambient`; the terrain surface
+renderer consumes that record as ambient RGB. Field-modulated ambient assets are
+preserved in the asset DAG, but shader-side field sampling is still future work.
 
 ### InputReceiver
 
@@ -526,6 +570,16 @@ adapts the height field to a bounded wireframe preview mesh in the GPU scene
 resolver until a generated surface mesh path is available. Explicit `none`
 leaves the terrain role/query data without attaching a renderable.
 
+`TerrainRenderStyle` can also name preferred light component nodes:
+
+- `directional_light_node`
+- `ambient_light_node`
+
+These are authored scene-node ids. Empty values mean automatic selection. In
+the current renderer bridge, materialization prioritizes the selected light
+records in the projected scene light list so the terrain surface renderer
+consumes those lights instead of whichever compatible record appears first.
+
 ### AudioListener
 
 Runtime-relevant authored audio listener marker.
@@ -586,6 +640,9 @@ Examples:
 
 - `renderable_asset` references `RenderableAssetData`
 - `terrain` references `TerrainAssetData`
+- `direct_light_source` references `DirectLightAsset`
+- `ambient_lighting` references `AmbientLightingAsset`, which may depend on
+  scalar/vector fields
 - `terrain_mesh_source` may either reference a `MeshAsset` directly or name a
   `source_node` with a mesh-producing scene component. The editor can then
   resolve that scene node to the produced mesh asset during rebuild while

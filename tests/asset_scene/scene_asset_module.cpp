@@ -1629,6 +1629,8 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         .path = SceneTerrainRenderPath::DebugWireframe,
         .depth_test = true,
         .depth_write = false,
+        .directional_light_node = "sun",
+        .ambient_light_node = "sky_ambient",
     };
     authored.nodes.push_back(std::move(node));
 
@@ -1637,6 +1639,8 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"terrain\""), std::string::npos);
     EXPECT_NE(exported.find("\"terrain_render_style\""), std::string::npos);
     EXPECT_NE(exported.find("\"debug_wireframe\""), std::string::npos);
+    EXPECT_NE(exported.find("\"directional_light_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"ambient_light_node\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
     EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
@@ -1670,6 +1674,12 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         SceneTerrainRenderPath::DebugWireframe);
     EXPECT_TRUE(scene_data->nodes[0].terrain_render_style->depth_test);
     EXPECT_FALSE(scene_data->nodes[0].terrain_render_style->depth_write);
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->directional_light_node,
+        "sun");
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->ambient_light_node,
+        "sky_ambient");
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -4252,7 +4262,8 @@ TEST(SceneECSConstruction, HelperCreatedDuplicateIdsAreStillRejected)
     auto result = instantiate_scene(scene);
     EXPECT_FALSE(result.ok());
     EXPECT_EQ(result.error, SceneInstantiateError::DuplicateNodeId);
-    EXPECT_EQ(result.error_detail, "dup");
+    EXPECT_NE(result.error_detail.find("id='dup'"), std::string::npos);
+    EXPECT_NE(result.error_detail.find("name='dup'"), std::string::npos);
 }
 
 TEST(SceneECSBoundary, AuthoredIdsMapToRuntimeEntitiesAndBack)
@@ -4717,7 +4728,8 @@ TEST(SceneECSBoundary, DuplicateAuthoredIdsAreRejected)
     auto result = instantiate_scene(scene);
     EXPECT_FALSE(result.ok());
     EXPECT_EQ(result.error, SceneInstantiateError::DuplicateNodeId);
-    EXPECT_EQ(result.error_detail, "dup");
+    EXPECT_NE(result.error_detail.find("id='dup'"), std::string::npos);
+    EXPECT_NE(result.error_detail.find("name=''"), std::string::npos);
 }
 
 TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
@@ -5356,4 +5368,87 @@ TEST(SceneAssetModule, TerrainHeightFieldSourceComponentRoundTripsThroughSceneJS
     EXPECT_NE(exported.find("\"vertical_scale\""), std::string::npos);
     EXPECT_NE(exported.find("\"base_height\""), std::string::npos);
     EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+}
+
+TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wozzits_scene_light_component_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData authored{};
+    authored.name = "light_component_scene";
+    SceneNodeAsset node{};
+    node.id = "sun";
+    node.direct_light_source = SceneDirectLightSourceAsset{
+        .kind = DirectLightKind::Spot,
+        .color = { 1.0f, 0.8f, 0.6f },
+        .intensity = 4.0f,
+        .range = 32.0f,
+        .inner_cone_radians = 0.25f,
+        .outer_cone_radians = 0.75f,
+    };
+    node.ambient_lighting = SceneAmbientLightingAsset{
+        .mode = AmbientLightingMode::FieldModulated,
+        .color = { 0.2f, 0.3f, 0.5f },
+        .intensity = 0.45f,
+        .domain_mapping = AmbientLightingDomainMapping::WorldXZ,
+    };
+    authored.nodes.push_back(std::move(node));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"direct_light_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"ambient_lighting\""), std::string::npos);
+    EXPECT_NE(exported.find("\"field_modulated\""), std::string::npos);
+    EXPECT_NE(exported.find("\"world_xz\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root, "light_component.scene.json", exported);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "light_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].direct_light_source.has_value());
+    ASSERT_TRUE(scene_data->nodes[0].ambient_lighting.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].direct_light_source->kind,
+        DirectLightKind::Spot);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].direct_light_source->outer_cone_radians,
+        0.75f);
+    EXPECT_EQ(
+        scene_data->nodes[0].ambient_lighting->mode,
+        AmbientLightingMode::FieldModulated);
+    EXPECT_EQ(
+        scene_data->nodes[0].ambient_lighting->domain_mapping,
+        AmbientLightingDomainMapping::WorldXZ);
+
+    const auto components = authored_components_for_node(scene_data->nodes[0]);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::Light), 1);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::AmbientLighting), 1);
 }

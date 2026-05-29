@@ -1110,7 +1110,7 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeSimulationCache =
         static_cast<wz::asset::AssetType>(2259);
 
-    // ─── Lighting / rendering environment asset types: 2270–2299 ────────────────
+    // ─── Lighting / rendering environment asset types: 2268–2299 ────────────────
     //
     // Lighting probes, environment descriptions, sky/fog/atmosphere settings,
     // baked lighting products, and post-process profiles.
@@ -1127,6 +1127,16 @@ namespace wz::engine::assets {
     //
     // EnvironmentMap, Skybox, BakedLightmap, and color-grading LUT data may
     // internally reference Texture assets. Do not duplicate raw image data here.
+
+    // Implemented lighting asset type.
+    // Represents an authored directional, point, or spot light definition.
+    inline constexpr wz::asset::AssetType kAssetTypeDirectLight =
+        static_cast<wz::asset::AssetType>(2268);
+
+    // Implemented lighting/environment asset type.
+    // Represents ambient light, optionally modulated by scalar/vector fields.
+    inline constexpr wz::asset::AssetType kAssetTypeAmbientLighting =
+        static_cast<wz::asset::AssetType>(2269);
 
     // Reserved lighting/environment asset type. Not implemented yet.
     // Represents a sampled light probe used for local lighting approximation.

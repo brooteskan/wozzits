@@ -49,6 +49,9 @@
 
 #include <engine/assets/render_program/render_program_asset_module.h>
 
+#include <engine/assets/light/light.h>
+#include <engine/assets/light_asset_module.h>
+
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene_asset_module.h>
 
@@ -149,6 +152,9 @@ namespace wz::engine::assets
         RenderProgramAssetModule&       render_programs()       { return render_programs_; }
         const RenderProgramAssetModule& render_programs() const { return render_programs_; }
 
+        LightAssetModule&       lights()       { return lights_; }
+        const LightAssetModule& lights() const { return lights_; }
+
         SceneAssetModule&       scenes()       { return scenes_; }
         const SceneAssetModule& scenes() const { return scenes_; }
 
@@ -187,6 +193,8 @@ namespace wz::engine::assets
         CSVExportTable                      csv_export_table_;
         RenderableAssetTable        renderable_table_;
         RenderProgramTable          render_program_table_;
+        DirectLightTable            direct_light_table_;
+        AmbientLightingTable        ambient_lighting_table_;
         SceneAssetTable             scene_table_;
 
         wz::asset::AssetSystem system_;
@@ -208,6 +216,7 @@ namespace wz::engine::assets
         CSVExportAssetModule                     csv_export_;
         RenderableAssetModule       renderables_;
         RenderProgramAssetModule    render_programs_;
+        LightAssetModule            lights_;
         SceneAssetModule            scenes_;
     };
 

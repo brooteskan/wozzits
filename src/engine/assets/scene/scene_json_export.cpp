@@ -157,6 +157,57 @@ namespace wz::engine::assets
             return "auto";
         }
 
+        const char* direct_light_kind_name(DirectLightKind kind)
+        {
+            switch (kind) {
+            case DirectLightKind::Directional:
+                return "directional";
+            case DirectLightKind::Point:
+                return "point";
+            case DirectLightKind::Spot:
+                return "spot";
+            }
+            return "directional";
+        }
+
+        const char* scene_light_type_name(wz::scene::LightType type)
+        {
+            switch (type) {
+            case wz::scene::LightType::Directional:
+                return "directional";
+            case wz::scene::LightType::Point:
+                return "point";
+            case wz::scene::LightType::Spot:
+                return "spot";
+            case wz::scene::LightType::Ambient:
+                return "ambient";
+            }
+            return "point";
+        }
+
+        const char* ambient_lighting_mode_name(AmbientLightingMode mode)
+        {
+            switch (mode) {
+            case AmbientLightingMode::Constant:
+                return "constant";
+            case AmbientLightingMode::FieldModulated:
+                return "field_modulated";
+            }
+            return "constant";
+        }
+
+        const char* ambient_lighting_domain_mapping_name(
+            AmbientLightingDomainMapping mapping)
+        {
+            switch (mapping) {
+            case AmbientLightingDomainMapping::TerrainUV:
+                return "terrain_uv";
+            case AmbientLightingDomainMapping::WorldXZ:
+                return "world_xz";
+            }
+            return "terrain_uv";
+        }
+
         const char* scalar_field_source_kind_name(
             SceneScalarFieldSourceKind kind)
         {
@@ -306,6 +357,52 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr direct_light_source_value(
+            const SceneDirectLightSourceAsset& light)
+        {
+            auto obj = object_value();
+            if (!(light.light_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(light.light_asset)));
+            }
+            add_member(*obj, "kind",
+                string_value(direct_light_kind_name(light.kind)));
+            add_member(*obj, "color", float_array(light.color, 3));
+            add_member(*obj, "intensity", number_value(light.intensity));
+            add_member(*obj, "range", number_value(light.range));
+            add_member(*obj, "inner_cone_radians",
+                number_value(light.inner_cone_radians));
+            add_member(*obj, "outer_cone_radians",
+                number_value(light.outer_cone_radians));
+            return obj;
+        }
+
+        JSONValuePtr ambient_lighting_value(
+            const SceneAmbientLightingAsset& lighting)
+        {
+            auto obj = object_value();
+            if (!(lighting.lighting_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(lighting.lighting_asset)));
+            }
+            add_member(*obj, "mode",
+                string_value(ambient_lighting_mode_name(lighting.mode)));
+            add_member(*obj, "color", float_array(lighting.color, 3));
+            add_member(*obj, "intensity", number_value(lighting.intensity));
+            if (!(lighting.intensity_field == wz::asset::AssetKey{})) {
+                add_member(*obj, "intensity_field",
+                    string_value(asset_key_string(lighting.intensity_field)));
+            }
+            if (!(lighting.color_field == wz::asset::AssetKey{})) {
+                add_member(*obj, "color_field",
+                    string_value(asset_key_string(lighting.color_field)));
+            }
+            add_member(*obj, "domain_mapping",
+                string_value(ambient_lighting_domain_mapping_name(
+                    lighting.domain_mapping)));
+            return obj;
+        }
+
         JSONValuePtr flying_camera_value(
             const SceneFlyingCameraControllerAsset& controller)
         {
@@ -432,6 +529,14 @@ namespace wz::engine::assets
                 string_value(terrain_render_path_name(style.path)));
             add_member(*obj, "depth_test", bool_value(style.depth_test));
             add_member(*obj, "depth_write", bool_value(style.depth_write));
+            if (!style.directional_light_node.empty()) {
+                add_member(*obj, "directional_light_node",
+                    string_value(style.directional_light_node));
+            }
+            if (!style.ambient_light_node.empty()) {
+                add_member(*obj, "ambient_light_node",
+                    string_value(style.ambient_light_node));
+            }
             return obj;
         }
 
@@ -548,6 +653,14 @@ namespace wz::engine::assets
             if (node.camera) {
                 add_member(*obj, "camera", camera_value(*node.camera));
             }
+            if (node.direct_light_source) {
+                add_member(*obj, "direct_light_source",
+                    direct_light_source_value(*node.direct_light_source));
+            }
+            if (node.ambient_lighting) {
+                add_member(*obj, "ambient_lighting",
+                    ambient_lighting_value(*node.ambient_lighting));
+            }
             if (node.input_receiver) {
                 auto input = object_value();
                 add_member(*input, "input_map",
@@ -652,6 +765,8 @@ namespace wz::engine::assets
             add_member(*record, "position", float_array(pos, 3));
             add_member(*record, "direction", float_array(dir, 3));
             add_member(*record, "color", float_array(color, 3));
+            add_member(*record, "type",
+                string_value(scene_light_type_name(light.light.type)));
             add_member(*record, "intensity",
                 number_value(light.light.intensity));
             add_member(*record, "range", number_value(light.light.range));

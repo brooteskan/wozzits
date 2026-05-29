@@ -4,6 +4,7 @@
 
 #include <asset/types.h>
 
+#include <engine/assets/light/light.h>
 #include <engine/assets/vector_field/vector_field.h>
 
 #include <scene/scene_ecs.h>
@@ -39,6 +40,29 @@ namespace wz::engine::assets
     {
         wz::scene::AuthoredEntityId node_id;
         wz::scene::LightRecord light{};
+    };
+
+    struct SceneDirectLightSourceAsset
+    {
+        wz::asset::AssetKey light_asset{};
+        DirectLightKind kind = DirectLightKind::Directional;
+        float color[3]{ 1.0f, 1.0f, 1.0f };
+        float intensity = 1.0f;
+        float range = 10.0f;
+        float inner_cone_radians = 0.4f;
+        float outer_cone_radians = 0.8f;
+    };
+
+    struct SceneAmbientLightingAsset
+    {
+        wz::asset::AssetKey lighting_asset{};
+        AmbientLightingMode mode = AmbientLightingMode::Constant;
+        float color[3]{ 1.0f, 1.0f, 1.0f };
+        float intensity = 0.2f;
+        wz::asset::AssetKey intensity_field{};
+        wz::asset::AssetKey color_field{};
+        AmbientLightingDomainMapping domain_mapping =
+            AmbientLightingDomainMapping::TerrainUV;
     };
 
     struct SceneCameraAsset
@@ -181,6 +205,8 @@ namespace wz::engine::assets
         SceneTerrainRenderPath path = SceneTerrainRenderPath::Auto;
         bool depth_test = true;
         bool depth_write = true;
+        std::string directional_light_node;
+        std::string ambient_light_node;
     };
 
     enum class SceneScalarFieldSourceKind : uint8_t
@@ -319,6 +345,8 @@ namespace wz::engine::assets
         // symbolic renderable asset reference; compilation resolves it here.
         std::optional<wz::asset::AssetKey> renderable_asset;
         std::optional<SceneCameraAsset> camera;
+        std::optional<SceneDirectLightSourceAsset> direct_light_source;
+        std::optional<SceneAmbientLightingAsset> ambient_lighting;
 
         std::optional<SceneInputReceiverAsset> input_receiver;
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
@@ -378,6 +406,8 @@ namespace wz::engine::assets
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
+        uint32_t direct_light_sources = 0;
+        uint32_t ambient_lighting = 0;
         uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
@@ -427,6 +457,20 @@ namespace wz::engine::assets
         SceneCameraAsset camera = {})
     {
         node.camera = camera;
+    }
+
+    inline void attach_direct_light_source(
+        SceneNodeAsset& node,
+        SceneDirectLightSourceAsset source = {})
+    {
+        node.direct_light_source = source;
+    }
+
+    inline void attach_ambient_lighting(
+        SceneNodeAsset& node,
+        SceneAmbientLightingAsset lighting = {})
+    {
+        node.ambient_lighting = lighting;
     }
 
     inline void attach_auxiliary_visual(
@@ -533,6 +577,12 @@ namespace wz::engine::assets
         if (node.camera) {
             out.push_back(Kind::Camera);
         }
+        if (node.direct_light_source) {
+            out.push_back(Kind::Light);
+        }
+        if (node.ambient_lighting) {
+            out.push_back(Kind::AmbientLighting);
+        }
         if (node.input_receiver) {
             out.push_back(Kind::InputReceiver);
         }
@@ -622,6 +672,8 @@ namespace wz::engine::assets
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
+            || node.direct_light_source.has_value()
+            || node.ambient_lighting.has_value()
             || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value();
@@ -632,6 +684,8 @@ namespace wz::engine::assets
     {
         return has_authored_renderable_component(node)
             || has_authored_camera_component(node)
+            || node.direct_light_source.has_value()
+            || node.ambient_lighting.has_value()
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
@@ -670,6 +724,14 @@ namespace wz::engine::assets
                 ++out.vector_field_sources;
                 ++out.total_recipes;
             }
+            if (node.direct_light_source) {
+                ++out.direct_light_sources;
+                ++out.total_recipes;
+            }
+            if (node.ambient_lighting) {
+                ++out.ambient_lighting;
+                ++out.total_recipes;
+            }
             if (node.terrain_render_style) {
                 ++out.terrain_render_styles;
                 ++out.total_recipes;
@@ -706,6 +768,12 @@ namespace wz::engine::assets
             }
             if (has_authored_camera_component(node)) {
                 ++out.cameras;
+            }
+            if (node.direct_light_source) {
+                ++out.lights;
+            }
+            if (node.ambient_lighting) {
+                ++out.ambient_lighting;
             }
             if (node.input_receiver) {
                 ++out.input_receivers;

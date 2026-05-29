@@ -77,6 +77,61 @@ namespace wz::gpu::dx12::internal
         return root_sig;
     }
 
+    static ID3D12RootSignature* create_terrain_mesh_surface_root_sig(
+        ID3D12Device* device)
+    {
+        // 48 x 32-bit constants:
+        //   world[16], view_proj[16], light_position[4],
+        //   light_direction[4], light_color_intensity[4], lighting_params[4].
+        D3D12_ROOT_PARAMETER param = {};
+        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        param.Constants.Num32BitValues = 48;
+        param.Constants.RegisterSpace  = 0;
+        param.Constants.ShaderRegister = 0;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC desc = {};
+        desc.NumParameters   = 1;
+        desc.pParameters     = &param;
+        desc.NumStaticSamplers = 0;
+        desc.pStaticSamplers = nullptr;
+        desc.Flags =
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        ID3DBlob* sig_blob   = nullptr;
+        ID3DBlob* error_blob = nullptr;
+
+        HRESULT hr = D3D12SerializeRootSignature(
+            &desc,
+            D3D_ROOT_SIGNATURE_VERSION_1,
+            &sig_blob,
+            &error_blob);
+
+        if (FAILED(hr))
+        {
+            if (error_blob)
+            {
+                OutputDebugStringA(
+                    static_cast<const char*>(error_blob->GetBufferPointer()));
+                error_blob->Release();
+            }
+            return nullptr;
+        }
+
+        ID3D12RootSignature* root_sig = nullptr;
+        hr = device->CreateRootSignature(
+            0,
+            sig_blob->GetBufferPointer(),
+            sig_blob->GetBufferSize(),
+            IID_PPV_ARGS(&root_sig));
+
+        sig_blob->Release();
+        if (error_blob) error_blob->Release();
+
+        assert(SUCCEEDED(hr));
+        return root_sig;
+    }
+
     ID3D12RootSignature* create_root_signature_for_program(
         ID3D12Device* device,
         wz::engine::assets::BuiltinRenderProgram program)
@@ -87,8 +142,9 @@ namespace wz::gpu::dx12::internal
         case P::MeshWireframeDebug:
         case P::MeshWireframeDepthDebug:
         case P::MeshDepthPrepassDebug:
-        case P::TerrainMeshSurface:
             return create_mesh_wireframe_root_sig(device);
+        case P::TerrainMeshSurface:
+            return create_terrain_mesh_surface_root_sig(device);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_root_sig(device);
         default:

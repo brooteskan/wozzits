@@ -230,6 +230,63 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<DirectLightKind> parse_direct_light_kind(
+            std::string_view text)
+        {
+            if (text == "directional") {
+                return DirectLightKind::Directional;
+            }
+            if (text == "point") {
+                return DirectLightKind::Point;
+            }
+            if (text == "spot") {
+                return DirectLightKind::Spot;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<wz::scene::LightType> parse_scene_light_type(
+            std::string_view text)
+        {
+            if (text == "directional") {
+                return wz::scene::LightType::Directional;
+            }
+            if (text == "point") {
+                return wz::scene::LightType::Point;
+            }
+            if (text == "spot") {
+                return wz::scene::LightType::Spot;
+            }
+            if (text == "ambient") {
+                return wz::scene::LightType::Ambient;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<AmbientLightingMode> parse_ambient_lighting_mode(
+            std::string_view text)
+        {
+            if (text == "constant") {
+                return AmbientLightingMode::Constant;
+            }
+            if (text == "field_modulated") {
+                return AmbientLightingMode::FieldModulated;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<AmbientLightingDomainMapping>
+        parse_ambient_lighting_domain_mapping(std::string_view text)
+        {
+            if (text == "terrain_uv") {
+                return AmbientLightingDomainMapping::TerrainUV;
+            }
+            if (text == "world_xz") {
+                return AmbientLightingDomainMapping::WorldXZ;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneScalarFieldSourceKind>
         parse_scalar_field_source_kind(std::string_view text)
         {
@@ -438,6 +495,131 @@ namespace wz::engine::assets::internal
                 auto asp = read_number(*cam, "aspect");
                 if (asp) camera.aspect = static_cast<float>(*asp);
                 node.camera = camera;
+            }
+
+            const auto* dls = find_member(node_val, "direct_light_source");
+            if (dls && dls->kind == wz::json::JSONValueKind::Object) {
+                SceneDirectLightSourceAsset light{};
+                auto asset = read_string(*dls, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("direct_light_source.asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*asset));
+                        return std::nullopt;
+                    }
+                    light.light_asset = *key;
+                }
+                auto kind = read_string(*dls, "kind");
+                if (kind) {
+                    auto parsed_kind = parse_direct_light_kind(*kind);
+                    if (!parsed_kind) {
+                        logger.error("direct_light_source on node '"
+                            + node.id + "' has unknown kind '"
+                            + std::string(*kind) + "'");
+                        return std::nullopt;
+                    }
+                    light.kind = *parsed_kind;
+                }
+                read_float3(*dls, "color", light.color);
+                auto intensity = read_number(*dls, "intensity");
+                if (intensity) {
+                    light.intensity = static_cast<float>(*intensity);
+                }
+                auto range = read_number(*dls, "range");
+                if (range) {
+                    light.range = static_cast<float>(*range);
+                }
+                auto inner = read_number(*dls, "inner_cone_radians");
+                if (inner) {
+                    light.inner_cone_radians = static_cast<float>(*inner);
+                }
+                auto outer = read_number(*dls, "outer_cone_radians");
+                if (outer) {
+                    light.outer_cone_radians = static_cast<float>(*outer);
+                }
+                node.direct_light_source = light;
+            }
+
+            const auto* ambient = find_member(node_val, "ambient_lighting");
+            if (ambient && ambient->kind == wz::json::JSONValueKind::Object) {
+                SceneAmbientLightingAsset lighting{};
+                auto asset = read_string(*ambient, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("ambient_lighting.asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*asset));
+                        return std::nullopt;
+                    }
+                    lighting.lighting_asset = *key;
+                }
+                auto mode = read_string(*ambient, "mode");
+                if (mode) {
+                    auto parsed_mode = parse_ambient_lighting_mode(*mode);
+                    if (!parsed_mode) {
+                        logger.error("ambient_lighting on node '"
+                            + node.id + "' has unknown mode '"
+                            + std::string(*mode) + "'");
+                        return std::nullopt;
+                    }
+                    lighting.mode = *parsed_mode;
+                }
+                read_float3(*ambient, "color", lighting.color);
+                auto intensity = read_number(*ambient, "intensity");
+                if (intensity) {
+                    lighting.intensity = static_cast<float>(*intensity);
+                }
+                auto intensity_field =
+                    read_string(*ambient, "intensity_field");
+                if (intensity_field && !intensity_field->empty()) {
+                    auto key = parse_asset_key_string(*intensity_field);
+                    if (!key) {
+                        const auto it = scalar_field_asset_references.find(
+                            std::string(*intensity_field));
+                        if (it == scalar_field_asset_references.end()) {
+                            logger.error(
+                                "ambient_lighting.intensity_field on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*intensity_field));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    lighting.intensity_field = *key;
+                }
+                auto color_field = read_string(*ambient, "color_field");
+                if (color_field && !color_field->empty()) {
+                    auto key = parse_asset_key_string(*color_field);
+                    if (!key) {
+                        const auto it = vector_field_asset_references.find(
+                            std::string(*color_field));
+                        if (it == vector_field_asset_references.end()) {
+                            logger.error(
+                                "ambient_lighting.color_field on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*color_field));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    lighting.color_field = *key;
+                }
+                auto mapping = read_string(*ambient, "domain_mapping");
+                if (mapping) {
+                    auto parsed_mapping =
+                        parse_ambient_lighting_domain_mapping(*mapping);
+                    if (!parsed_mapping) {
+                        logger.error("ambient_lighting on node '"
+                            + node.id + "' has unknown domain_mapping '"
+                            + std::string(*mapping) + "'");
+                        return std::nullopt;
+                    }
+                    lighting.domain_mapping = *parsed_mapping;
+                }
+                node.ambient_lighting = lighting;
             }
 
             // ── Non-render component descriptors ──────────────────────
@@ -892,6 +1074,20 @@ namespace wz::engine::assets::internal
                 if (depth_write) {
                     style.depth_write = *depth_write;
                 }
+                auto directional_light_node = read_string(
+                    *terrain_render_style,
+                    "directional_light_node");
+                if (directional_light_node) {
+                    style.directional_light_node =
+                        std::string(*directional_light_node);
+                }
+                auto ambient_light_node = read_string(
+                    *terrain_render_style,
+                    "ambient_light_node");
+                if (ambient_light_node) {
+                    style.ambient_light_node =
+                        std::string(*ambient_light_node);
+                }
 
                 node.terrain_render_style = style;
             }
@@ -1262,6 +1458,16 @@ namespace wz::engine::assets::internal
                         light.light.position = { pos[0], pos[1], pos[2] };
                         light.light.direction = { dir[0], dir[1], dir[2] };
                         light.light.color = { col[0], col[1], col[2] };
+                        auto type = read_string(*lr, "type");
+                        if (type) {
+                            auto parsed_type = parse_scene_light_type(*type);
+                            if (!parsed_type) {
+                                logger.error("scene light has unknown type '"
+                                    + std::string(*type) + "'");
+                                return std::nullopt;
+                            }
+                            light.light.type = *parsed_type;
+                        }
                         auto intens = read_number(*lr, "intensity");
                         if (intens) light.light.intensity = static_cast<float>(*intens);
                         auto range = read_number(*lr, "range");

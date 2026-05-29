@@ -113,6 +113,11 @@ namespace wz::engine::assets
             return context.log_owner ? context.log_owner : "Scene";
         }
 
+        std::string node_log_name(const SceneNodeAsset& node)
+        {
+            return "node id='" + node.id + "' name='" + node.name + "'";
+        }
+
         void log_instantiate_start(
             const SceneAssetData& scene,
             const SceneInstantiateContext& context)
@@ -291,7 +296,7 @@ namespace wz::engine::assets
         for (const auto& node : scene.nodes) {
             if (!seen_ids.insert(node.id).second) {
                 result.error = SceneInstantiateError::DuplicateNodeId;
-                result.error_detail = node.id;
+                result.error_detail = "duplicate " + node_log_name(node);
                 log_instantiate_failure(result, context);
                 return result;
             }
@@ -301,7 +306,9 @@ namespace wz::engine::assets
         for (const auto& node : scene.nodes) {
             if (node.parent_id && !seen_ids.contains(*node.parent_id)) {
                 result.error = SceneInstantiateError::ParentNotFound;
-                result.error_detail = *node.parent_id;
+                result.error_detail =
+                    node_log_name(node) + " has missing parent id='"
+                    + *node.parent_id + "'";
                 log_instantiate_failure(result, context);
                 return result;
             }
@@ -335,7 +342,7 @@ namespace wz::engine::assets
 
             if (!add_edge(builder, parent_h, child)) {
                 result.error = SceneInstantiateError::ParentCycle;
-                result.error_detail = node.id;
+                result.error_detail = "parent cycle at " + node_log_name(node);
                 log_instantiate_failure(result, context);
                 return result;
             }
@@ -373,8 +380,8 @@ namespace wz::engine::assets
             if (node.renderable_asset) {
                 if (!context.renderable_resolver) {
                     result.error = SceneInstantiateError::RenderableResolveFailed;
-                    result.error_detail = "node '" + node.id
-                        + "' has renderable_asset but no resolver provided";
+                    result.error_detail = node_log_name(node)
+                        + " has renderable_asset but no resolver provided";
                     log_instantiate_failure(result, context);
                     return result;
                 }
@@ -384,8 +391,8 @@ namespace wz::engine::assets
 
                 if (!rdata) {
                     result.error = SceneInstantiateError::RenderableResolveFailed;
-                    result.error_detail = "node '" + node.id
-                        + "' renderable asset could not be resolved";
+                    result.error_detail = node_log_name(node)
+                        + " renderable asset could not be resolved";
                     log_instantiate_failure(result, context);
                     return result;
                 }
@@ -398,16 +405,16 @@ namespace wz::engine::assets
                             *rdata, desc))
                     {
                         result.error = SceneInstantiateError::RenderableRealizeFailed;
-                        result.error_detail = "node '" + node.id
-                            + "' renderable descriptor could not be realized";
+                        result.error_detail = node_log_name(node)
+                            + " renderable descriptor could not be realized";
                         log_instantiate_failure(result, context);
                         return result;
                     }
                 }
                 else if (rdata->kind != RenderableKind::Mesh) {
                     result.error = SceneInstantiateError::RenderableRealizeFailed;
-                    result.error_detail = "node '" + node.id
-                        + "' has non-mesh renderable kind but no resource resolver";
+                    result.error_detail = node_log_name(node)
+                        + " has non-mesh renderable kind but no resource resolver";
                     log_instantiate_failure(result, context);
                     return result;
                 }

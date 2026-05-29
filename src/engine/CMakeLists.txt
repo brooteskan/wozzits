@@ -88,6 +88,10 @@ target_sources(window_engine PRIVATE
     assets/render_program/render_program_asset_module.cpp
     assets/render_program/render_program_compilers.cpp
 
+    assets/light/light.cpp
+    assets/light/light_compilers.cpp
+    assets/light_asset_module.cpp
+
     assets/scene/scene.cpp
     assets/scene/scene_compilers.cpp
     assets/scene/scene_authoring_materialize.cpp

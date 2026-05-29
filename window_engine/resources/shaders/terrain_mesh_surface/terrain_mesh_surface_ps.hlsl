@@ -1,6 +1,17 @@
+cbuffer Transform : register(b0)
+{
+    float4x4 world;
+    float4x4 view_proj;
+    float4 light_position_range;
+    float4 light_direction_type;
+    float4 light_color_intensity;
+    float4 ambient_color_type;
+};
+
 struct PSInput
 {
     float4 position : SV_POSITION;
+    float3 world_pos : WORLDPOS;
     float3 normal : NORMAL;
     float2 uv : TEXCOORD0;
 };
@@ -8,12 +19,32 @@ struct PSInput
 float4 main(PSInput input) : SV_TARGET
 {
     float3 n = normalize(input.normal);
-    float3 light_dir = normalize(float3(0.35f, 0.8f, 0.45f));
-    float diffuse = saturate(dot(n, light_dir)) * 0.75f + 0.25f;
+    float light_type = ambient_color_type.w;
+    float3 light_vec = normalize(-light_direction_type.xyz);
+    float attenuation = 1.0f;
+
+    if (light_type > 0.5f)
+    {
+        float3 to_light = light_position_range.xyz - input.world_pos;
+        float distance_to_light = length(to_light);
+        light_vec = distance_to_light > 1e-4f
+            ? to_light / distance_to_light
+            : float3(0.0f, 1.0f, 0.0f);
+        float range = max(light_position_range.w, 1e-4f);
+        attenuation = saturate(1.0f - distance_to_light / range);
+        attenuation *= attenuation;
+    }
+
+    float n_dot_l = saturate(dot(n, light_vec));
+    float3 direct =
+        light_color_intensity.rgb
+        * light_color_intensity.w
+        * n_dot_l
+        * attenuation;
 
     float3 low = float3(0.20f, 0.34f, 0.18f);
     float3 high = float3(0.54f, 0.50f, 0.36f);
     float3 base = lerp(low, high, saturate(input.uv.y));
 
-    return float4(base * diffuse, 1.0f);
+    return float4(base * (ambient_color_type.rgb + direct), 1.0f);
 }

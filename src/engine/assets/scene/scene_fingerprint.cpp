@@ -80,6 +80,10 @@ namespace wz::engine::assets
             const bool has_inline_renderable = node.renderable.has_value();
             const bool has_renderable_asset = node.renderable_asset.has_value();
             const bool has_camera = node.camera.has_value();
+            const bool has_direct_light_source =
+                node.direct_light_source.has_value();
+            const bool has_ambient_lighting =
+                node.ambient_lighting.has_value();
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
@@ -99,6 +103,8 @@ namespace wz::engine::assets
             fp.mix_value(has_inline_renderable);
             fp.mix_value(has_renderable_asset);
             fp.mix_value(has_camera);
+            fp.mix_value(has_direct_light_source);
+            fp.mix_value(has_ambient_lighting);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
@@ -132,6 +138,28 @@ namespace wz::engine::assets
                 fp.mix_value(camera.near_plane);
                 fp.mix_value(camera.far_plane);
                 fp.mix_value(camera.aspect);
+            }
+
+            if (node.direct_light_source) {
+                const auto& light = *node.direct_light_source;
+                mix_asset_key(fp, light.light_asset);
+                fp.mix_value(light.kind);
+                fp.mix_bytes(light.color, sizeof(light.color));
+                fp.mix_value(light.intensity);
+                fp.mix_value(light.range);
+                fp.mix_value(light.inner_cone_radians);
+                fp.mix_value(light.outer_cone_radians);
+            }
+
+            if (node.ambient_lighting) {
+                const auto& lighting = *node.ambient_lighting;
+                mix_asset_key(fp, lighting.lighting_asset);
+                fp.mix_value(lighting.mode);
+                fp.mix_bytes(lighting.color, sizeof(lighting.color));
+                fp.mix_value(lighting.intensity);
+                mix_asset_key(fp, lighting.intensity_field);
+                mix_asset_key(fp, lighting.color_field);
+                fp.mix_value(lighting.domain_mapping);
             }
 
             if (node.mesh_source) {
@@ -216,6 +244,8 @@ namespace wz::engine::assets
                 fp.mix_value(style.path);
                 fp.mix_value(style.depth_test);
                 fp.mix_value(style.depth_write);
+                fp.mix_string(style.directional_light_node);
+                fp.mix_string(style.ambient_light_node);
             }
 
             if (node.terrain_mesh_source) {

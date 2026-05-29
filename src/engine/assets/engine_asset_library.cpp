@@ -60,6 +60,8 @@ namespace wz::engine::assets
         , csv_export_table_{}
         , renderable_table_{}
         , render_program_table_{}
+        , direct_light_table_{}
+        , ambient_lighting_table_{}
         , scene_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
@@ -80,6 +82,8 @@ namespace wz::engine::assets
                 .csv_export_table    = csv_export_table_,
                 .renderable_table    = renderable_table_,
                 .render_program_table = render_program_table_,
+                .direct_light_table = direct_light_table_,
+                .ambient_lighting_table = ambient_lighting_table_,
                 .scene_table         = scene_table_,
             }))
         , files_(system_, logger_, resource_root_)
@@ -99,6 +103,11 @@ namespace wz::engine::assets
         , csv_export_(system_, logger_, csv_export_table_)
         , renderables_(system_, logger_, renderable_table_)
         , render_programs_(system_, render_program_table_)
+        , lights_(
+            system_,
+            logger_,
+            direct_light_table_,
+            ambient_lighting_table_)
         , scenes_(system_, logger_, files_, json_, scene_table_)
     {
     }

@@ -4,6 +4,8 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <unordered_map>
 
@@ -18,6 +20,10 @@ namespace wz::engine::assets
             std::unordered_map<std::string, ScalarFieldAsset>;
         using VectorFieldCache =
             std::unordered_map<std::string, VectorFieldAsset>;
+        using DirectLightCache =
+            std::unordered_map<std::string, DirectLightAsset>;
+        using AmbientLightingCache =
+            std::unordered_map<std::string, AmbientLightingAsset>;
 
         std::string mesh_source_cache_key(const SceneMeshSourceAsset& source)
         {
@@ -101,6 +107,152 @@ namespace wz::engine::assets
             out += style.depth_test ? ":depth_test" : ":no_depth_test";
             out += style.depth_write ? ":depth_write" : ":no_depth_write";
             return out;
+        }
+
+        std::string direct_light_source_cache_key(
+            const SceneDirectLightSourceAsset& source)
+        {
+            std::ostringstream out;
+            out << "direct_light:"
+                << static_cast<int>(source.kind) << ":"
+                << source.color[0] << ":"
+                << source.color[1] << ":"
+                << source.color[2] << ":"
+                << source.intensity << ":"
+                << source.range << ":"
+                << source.inner_cone_radians << ":"
+                << source.outer_cone_radians;
+            return out.str();
+        }
+
+        std::string ambient_lighting_cache_key(
+            const SceneAmbientLightingAsset& lighting)
+        {
+            std::ostringstream out;
+            out << "ambient_lighting:"
+                << static_cast<int>(lighting.mode) << ":"
+                << lighting.color[0] << ":"
+                << lighting.color[1] << ":"
+                << lighting.color[2] << ":"
+                << lighting.intensity << ":"
+                << static_cast<int>(lighting.domain_mapping) << ":"
+                << lighting.intensity_field.content_hash.lo << ":"
+                << lighting.intensity_field.content_hash.hi << ":"
+                << lighting.color_field.content_hash.lo << ":"
+                << lighting.color_field.content_hash.hi;
+            return out.str();
+        }
+
+        wz::scene::LightRecord scene_light_record_for_node(
+            const SceneNodeAsset& node,
+            const SceneDirectLightSourceAsset& source)
+        {
+            const float qx = node.local.rotation_quat[0];
+            const float qy = node.local.rotation_quat[1];
+            const float qz = node.local.rotation_quat[2];
+            const float qw = node.local.rotation_quat[3];
+
+            // Rotate local -Y into world space. Directional lights interpret
+            // this as the direction light travels, matching common light gizmos.
+            float dir[3]{
+                2.0f * (qx * qy + qw * qz),
+                -1.0f + 2.0f * (qx * qx + qz * qz),
+                2.0f * (qy * qz - qw * qx),
+            };
+            const float len =
+                std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+            if (len > 1e-6f) {
+                dir[0] /= len;
+                dir[1] /= len;
+                dir[2] /= len;
+            }
+            else {
+                dir[0] = 0.0f;
+                dir[1] = -1.0f;
+                dir[2] = 0.0f;
+            }
+
+            wz::scene::LightRecord out{};
+            out.position = {
+                node.local.translation[0],
+                node.local.translation[1],
+                node.local.translation[2],
+            };
+            out.direction = { dir[0], dir[1], dir[2] };
+            out.color = {
+                source.color[0],
+                source.color[1],
+                source.color[2],
+            };
+            out.intensity = source.intensity;
+            out.range = source.range;
+            out.type = direct_light_kind_to_scene_light_type(source.kind);
+            return out;
+        }
+
+        wz::scene::LightRecord scene_ambient_light_record_for_node(
+            const SceneAmbientLightingAsset& source)
+        {
+            wz::scene::LightRecord out{};
+            out.color = {
+                source.color[0],
+                source.color[1],
+                source.color[2],
+            };
+            out.intensity = source.intensity;
+            out.type = wz::scene::LightType::Ambient;
+            return out;
+        }
+
+        std::string node_log_name(const SceneNodeAsset& node)
+        {
+            return "node id='" + node.id + "' name='" + node.name + "'";
+        }
+
+        void prioritize_terrain_render_style_lights(SceneAssetData& scene)
+        {
+            std::string directional_light_node;
+            std::string ambient_light_node;
+
+            for (const auto& node : scene.nodes) {
+                if (!node.terrain_render_style) {
+                    continue;
+                }
+                const auto& style = *node.terrain_render_style;
+                if (directional_light_node.empty()) {
+                    directional_light_node = style.directional_light_node;
+                }
+                if (ambient_light_node.empty()) {
+                    ambient_light_node = style.ambient_light_node;
+                }
+                if (!directional_light_node.empty()
+                    && !ambient_light_node.empty())
+                {
+                    break;
+                }
+            }
+
+            if (directional_light_node.empty() && ambient_light_node.empty()) {
+                return;
+            }
+
+            auto selected = [&](const SceneLightAsset& light)
+            {
+                return (!directional_light_node.empty()
+                        && light.node_id == directional_light_node
+                        && light.light.type == wz::scene::LightType::Directional)
+                    || (!ambient_light_node.empty()
+                        && light.node_id == ambient_light_node
+                        && light.light.type == wz::scene::LightType::Ambient);
+            };
+
+            std::stable_sort(
+                scene.lights.begin(),
+                scene.lights.end(),
+                [&](const SceneLightAsset& a, const SceneLightAsset& b)
+                {
+                    return selected(a) && !selected(b);
+                });
         }
 
         std::string scalar_field_source_cache_key(
@@ -522,6 +674,8 @@ namespace wz::engine::assets
         MeshCache meshes;
         ScalarFieldCache scalar_fields;
         VectorFieldCache vector_fields;
+        DirectLightCache direct_lights;
+        AmbientLightingCache ambient_lighting;
         std::unordered_map<std::string, wz::asset::AssetKey> mesh_assets_by_node;
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
@@ -549,8 +703,8 @@ namespace wz::engine::assets
                 if (!scalar_field.valid()) {
                     if (report.error.empty()) {
                         report.error =
-                            "scalar field source unavailable for node: "
-                            + node.id;
+                            "scalar field source unavailable for "
+                            + node_log_name(node);
                     }
                     return report;
                 }
@@ -583,8 +737,8 @@ namespace wz::engine::assets
                 if (!vector_field.valid()) {
                     if (report.error.empty()) {
                         report.error =
-                            "vector field source unavailable for node: "
-                            + node.id;
+                            "vector field source unavailable for "
+                            + node_log_name(node);
                     }
                     return report;
                 }
@@ -593,6 +747,112 @@ namespace wz::engine::assets
 
             source.vector_field_asset = vector_field.output;
         }
+
+        for (auto& node : scene.nodes) {
+            if (!node.direct_light_source) {
+                continue;
+            }
+
+            auto& source = *node.direct_light_source;
+            const std::string key = direct_light_source_cache_key(source);
+            DirectLightAsset light{};
+            if (const auto found = direct_lights.find(key);
+                found != direct_lights.end())
+            {
+                light = found->second;
+            }
+            else {
+                light = assets.lights().create_direct_light({
+                    .name = "scene_editor/lights/" + node.id,
+                    .kind = source.kind,
+                    .color = {
+                        source.color[0],
+                        source.color[1],
+                        source.color[2],
+                    },
+                    .intensity = source.intensity,
+                    .range = source.range,
+                    .inner_cone_radians = source.inner_cone_radians,
+                    .outer_cone_radians = source.outer_cone_radians,
+                });
+                if (!light.valid()) {
+                    report.error =
+                        "direct light asset unavailable for "
+                        + node_log_name(node);
+                    return report;
+                }
+                direct_lights.emplace(key, light);
+            }
+
+            source.light_asset = light.output;
+            scene.lights.erase(
+                std::remove_if(
+                    scene.lights.begin(),
+                    scene.lights.end(),
+                    [&](const SceneLightAsset& light_record)
+                    {
+                        return light_record.node_id == node.id;
+                    }),
+                scene.lights.end());
+            scene.lights.push_back(SceneLightAsset{
+                .node_id = node.id,
+                .light = scene_light_record_for_node(node, source),
+            });
+        }
+
+        for (auto& node : scene.nodes) {
+            if (!node.ambient_lighting) {
+                continue;
+            }
+
+            auto& lighting_source = *node.ambient_lighting;
+            const std::string key = ambient_lighting_cache_key(lighting_source);
+            AmbientLightingAsset lighting{};
+            if (const auto found = ambient_lighting.find(key);
+                found != ambient_lighting.end())
+            {
+                lighting = found->second;
+            }
+            else {
+                lighting = assets.lights().create_ambient_lighting({
+                    .name = "scene_editor/ambient_lighting/" + node.id,
+                    .mode = lighting_source.mode,
+                    .color = {
+                        lighting_source.color[0],
+                        lighting_source.color[1],
+                        lighting_source.color[2],
+                    },
+                    .intensity = lighting_source.intensity,
+                    .intensity_field = lighting_source.intensity_field,
+                    .color_field = lighting_source.color_field,
+                    .domain_mapping = lighting_source.domain_mapping,
+                });
+                if (!lighting.valid()) {
+                    report.error =
+                        "ambient lighting asset unavailable for "
+                        + node_log_name(node);
+                    return report;
+                }
+                ambient_lighting.emplace(key, lighting);
+            }
+
+            lighting_source.lighting_asset = lighting.output;
+            scene.lights.erase(
+                std::remove_if(
+                    scene.lights.begin(),
+                    scene.lights.end(),
+                    [&](const SceneLightAsset& light_record)
+                    {
+                        return light_record.node_id == node.id;
+                    }),
+                scene.lights.end());
+            scene.lights.push_back(SceneLightAsset{
+                .node_id = node.id,
+                .light = scene_ambient_light_record_for_node(lighting_source),
+            });
+        }
+
+        prioritize_terrain_render_style_lights(scene);
 
         for (auto& node : scene.nodes) {
             if (!node.mesh_source) {
@@ -617,7 +877,8 @@ namespace wz::engine::assets
                 {
                     if (report.error.empty()) {
                         report.error =
-                            "mesh source unavailable for node: " + node.id;
+                            "mesh source unavailable for "
+                            + node_log_name(node);
                     }
                     return report;
                 }
@@ -635,7 +896,8 @@ namespace wz::engine::assets
             {
                 if (report.error.empty()) {
                     report.error =
-                        "mesh source unavailable for node: " + node.id;
+                        "mesh source unavailable for "
+                        + node_log_name(node);
                 }
                 return report;
             }
@@ -745,8 +1007,8 @@ namespace wz::engine::assets
                 });
                 if (!terrain_asset.valid()) {
                     report.error =
-                        "heightfield terrain asset unavailable for node: "
-                        + node.id;
+                        "heightfield terrain asset unavailable for "
+                        + node_log_name(node);
                     return report;
                 }
             }
@@ -771,7 +1033,8 @@ namespace wz::engine::assets
                 });
                 if (!terrain_asset.valid()) {
                     report.error =
-                        "terrain asset unavailable for node: " + node.id;
+                        "terrain asset unavailable for "
+                        + node_log_name(node);
                     return report;
                 }
             }
@@ -805,8 +1068,8 @@ namespace wz::engine::assets
             case SceneTerrainRenderPath::Surface:
                 if (!is_mesh_terrain) {
                     report.error =
-                        "terrain surface render path requires mesh terrain: "
-                        + node.id;
+                        "terrain surface render path requires mesh terrain for "
+                        + node_log_name(node);
                     return report;
                 }
                 use_surface = options.create_terrain_surface_renderables;
@@ -849,7 +1112,8 @@ namespace wz::engine::assets
             if (!renderable_ok)
             {
                 report.error =
-                    "terrain renderable unavailable for node: " + node.id;
+                    "terrain renderable unavailable for "
+                    + node_log_name(node);
                 return report;
             }
 

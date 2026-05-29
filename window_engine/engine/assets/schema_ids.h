@@ -337,4 +337,12 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kSceneFromJSONSchema{
     0xF11E'CA55'E7'000710ull
     };
+
+    inline constexpr wz::asset::SchemaID kDirectLightSchema{
+        0xF11E'CA55'E7'001000ull
+    };
+
+    inline constexpr wz::asset::SchemaID kAmbientLightingSchema{
+        0xF11E'CA55'E7'001001ull
+    };
 }

@@ -5,10 +5,104 @@
 #include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 namespace wz::render::backend::dx12
 {
+    namespace
+    {
+        struct TerrainLightingConstants
+        {
+            float light_position[4]{ 0.0f, 8.0f, 0.0f, 0.0f };
+            float light_direction[4]{ 0.35f, 0.8f, 0.45f, 0.0f };
+            float light_color_intensity[4]{ 1.0f, 1.0f, 1.0f, 0.75f };
+            // ambient_rgb, light_type
+            float lighting_params[4]{ 0.25f, 0.25f, 0.25f, 0.0f };
+        };
+
+        void normalize3(float v[4])
+        {
+            const float len = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (len > 1e-6f) {
+                v[0] /= len;
+                v[1] /= len;
+                v[2] /= len;
+            }
+        }
+
+        TerrainLightingConstants terrain_lighting_from_scene(
+            std::span<const wz::scene::LightRecord> lights)
+        {
+            TerrainLightingConstants out{};
+            const wz::scene::LightRecord* direct = nullptr;
+            const wz::scene::LightRecord* ambient = nullptr;
+
+            for (const auto& light : lights) {
+                if (!ambient && light.type == wz::scene::LightType::Ambient) {
+                    ambient = &light;
+                }
+                if (!direct && light.type == wz::scene::LightType::Directional) {
+                    direct = &light;
+                }
+            }
+            if (!direct) {
+                for (const auto& light : lights) {
+                    if (light.type == wz::scene::LightType::Point
+                        || light.type == wz::scene::LightType::Spot)
+                    {
+                        direct = &light;
+                        break;
+                    }
+                }
+            }
+
+            if (ambient) {
+                out.lighting_params[0] =
+                    (std::max)(0.0f, ambient->color.x * ambient->intensity);
+                out.lighting_params[1] =
+                    (std::max)(0.0f, ambient->color.y * ambient->intensity);
+                out.lighting_params[2] =
+                    (std::max)(0.0f, ambient->color.z * ambient->intensity);
+            }
+
+            if (direct) {
+                out.light_position[0] = direct->position.x;
+                out.light_position[1] = direct->position.y;
+                out.light_position[2] = direct->position.z;
+                out.light_position[3] = (std::max)(0.0f, direct->range);
+
+                out.light_direction[0] = direct->direction.x;
+                out.light_direction[1] = direct->direction.y;
+                out.light_direction[2] = direct->direction.z;
+                normalize3(out.light_direction);
+
+                out.light_color_intensity[0] = direct->color.x;
+                out.light_color_intensity[1] = direct->color.y;
+                out.light_color_intensity[2] = direct->color.z;
+                out.light_color_intensity[3] =
+                    (std::max)(0.0f, direct->intensity);
+
+                switch (direct->type) {
+                case wz::scene::LightType::Directional:
+                    out.lighting_params[3] = 0.0f;
+                    break;
+                case wz::scene::LightType::Point:
+                    out.lighting_params[3] = 1.0f;
+                    break;
+                case wz::scene::LightType::Spot:
+                    out.lighting_params[3] = 2.0f;
+                    break;
+                case wz::scene::LightType::Ambient:
+                    out.lighting_params[3] = 0.0f;
+                    break;
+                }
+            }
+
+            return out;
+        }
+    }
 
     Context* create(
     wz::gpu::Device& device,
@@ -300,9 +394,25 @@ namespace wz::render::backend::dx12
             if (!mesh || !mesh->vertex_buffer)
                 continue;
 
-            struct { Mat4 world; Mat4 view_proj; } constants;
-            constants.world     = dc.world;
-            constants.view_proj = frame.view.view_projection;
+            float constants[48] = {};
+            for (int i = 0; i < 16; ++i) constants[i] = dc.world.m[i];
+            for (int i = 0; i < 16; ++i) {
+                constants[16 + i] = frame.view.view_projection.m[i];
+            }
+
+            const bool terrain_surface =
+                resolved->program
+                == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
+            if (terrain_surface) {
+                const TerrainLightingConstants lighting =
+                    terrain_lighting_from_scene(frame.lights);
+                for (int i = 0; i < 4; ++i) {
+                    constants[32 + i] = lighting.light_position[i];
+                    constants[36 + i] = lighting.light_direction[i];
+                    constants[40 + i] = lighting.light_color_intensity[i];
+                    constants[44 + i] = lighting.lighting_params[i];
+                }
+            }
 
             if (resolved->program
                 == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
@@ -318,7 +428,7 @@ namespace wz::render::backend::dx12
                     cmdList->SetGraphicsRootSignature(prepass->root_sig);
                     cmdList->SetPipelineState(prepass->pso);
                     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 32, constants, 0);
                     cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                     cmdList->IASetIndexBuffer(&mesh->index_view);
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -328,7 +438,11 @@ namespace wz::render::backend::dx12
             cmdList->SetGraphicsRootSignature(pl->root_sig);
             cmdList->SetPipelineState(pl->pso);
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+            cmdList->SetGraphicsRoot32BitConstants(
+                0,
+                terrain_surface ? 48 : 32,
+                constants,
+                0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -425,9 +539,25 @@ namespace wz::render::backend::dx12
                 device, resolved->gpu_resource);
             if (!mesh || !mesh->vertex_buffer) continue;
 
-            struct { Mat4 world; Mat4 view_proj; } constants;
-            constants.world     = dc.world;
-            constants.view_proj = frame.view.view_projection;
+            float constants[48] = {};
+            for (int i = 0; i < 16; ++i) constants[i] = dc.world.m[i];
+            for (int i = 0; i < 16; ++i) {
+                constants[16 + i] = frame.view.view_projection.m[i];
+            }
+
+            const bool terrain_surface =
+                resolved->program
+                == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
+            if (terrain_surface) {
+                const TerrainLightingConstants lighting =
+                    terrain_lighting_from_scene(frame.lights);
+                for (int i = 0; i < 4; ++i) {
+                    constants[32 + i] = lighting.light_position[i];
+                    constants[36 + i] = lighting.light_direction[i];
+                    constants[40 + i] = lighting.light_color_intensity[i];
+                    constants[44 + i] = lighting.lighting_params[i];
+                }
+            }
 
             if (resolved->program
                 == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
@@ -443,7 +573,7 @@ namespace wz::render::backend::dx12
                     cmdList->SetGraphicsRootSignature(prepass->root_sig);
                     cmdList->SetPipelineState(prepass->pso);
                     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 32, constants, 0);
                     cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                     cmdList->IASetIndexBuffer(&mesh->index_view);
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -453,7 +583,11 @@ namespace wz::render::backend::dx12
             cmdList->SetGraphicsRootSignature(pl->root_sig);
             cmdList->SetPipelineState(pl->pso);
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+            cmdList->SetGraphicsRoot32BitConstants(
+                0,
+                terrain_surface ? 48 : 32,
+                constants,
+                0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);

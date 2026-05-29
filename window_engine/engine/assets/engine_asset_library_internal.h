@@ -29,6 +29,8 @@
 #include <engine/assets/renderable/renderable_compilers.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_compilers.h>
+#include <engine/assets/light/light.h>
+#include <engine/assets/light/light_compilers.h>
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene/scene_compilers.h>
 
@@ -61,6 +63,8 @@ namespace wz::engine::assets::internal {
         CSVExportTable&                     csv_export_table;
         RenderableAssetTable&               renderable_table;
         RenderProgramTable&                 render_program_table;
+        DirectLightTable&                   direct_light_table;
+        AmbientLightingTable&               ambient_lighting_table;
         SceneAssetTable&                    scene_table;
     };
 

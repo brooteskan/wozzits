@@ -1,0 +1,101 @@
+#pragma once
+
+// engine/assets/key_factories/light.h
+
+#include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/engine_asset_key_core.h>
+#include <engine/assets/light/light.h>
+#include <engine/assets/schema_ids.h>
+
+#include <cstring>
+#include <string_view>
+
+namespace wz::engine::assets
+{
+    namespace detail
+    {
+        [[nodiscard]] inline uint64_t float_bits(float value) noexcept
+        {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &value, sizeof(bits));
+            return static_cast<uint64_t>(bits);
+        }
+
+        [[nodiscard]] inline uint64_t mix_float3(
+            float x,
+            float y,
+            float z) noexcept
+        {
+            return mix64(mix64(float_bits(x), float_bits(y)), float_bits(z));
+        }
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_direct_light_key(
+        std::string_view name,
+        const DirectLightCompileDesc& desc) noexcept
+    {
+        const wz::asset::Hash name_hash = detail::hash_str(name);
+        const uint64_t color_hash = detail::mix_float3(
+            desc.color[0],
+            desc.color[1],
+            desc.color[2]);
+        const uint64_t params = detail::mix64(
+            detail::mix64(
+                static_cast<uint64_t>(desc.kind),
+                detail::float_bits(desc.intensity)),
+            detail::mix64(
+                detail::float_bits(desc.range),
+                detail::mix64(
+                    detail::float_bits(desc.inner_cone_radians),
+                    detail::float_bits(desc.outer_cone_radians))));
+
+        return wz::asset::AssetKey{
+            .content_hash = {
+                detail::mix64(name_hash.lo, color_hash),
+                detail::mix64(name_hash.hi, params),
+            },
+            .schema_hash = detail::hash_u64(kDirectLightSchema.value),
+            .compiler_hash = detail::hash_u64(kDirectLightCompilerVersion),
+            .deps_hash = {},
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_ambient_lighting_key(
+        std::string_view name,
+        const AmbientLightingCompileDesc& desc) noexcept
+    {
+        const wz::asset::Hash name_hash = detail::hash_str(name);
+        const uint64_t color_hash = detail::mix_float3(
+            desc.color[0],
+            desc.color[1],
+            desc.color[2]);
+        const uint64_t mode_params = detail::mix64(
+            static_cast<uint64_t>(desc.mode),
+            detail::mix64(
+                detail::float_bits(desc.intensity),
+                static_cast<uint64_t>(desc.domain_mapping)));
+
+        wz::asset::Hash deps{};
+        if (!(desc.intensity_field == wz::asset::AssetKey{})) {
+            deps = detail::combine_dep_hashes(
+                deps,
+                detail::key_to_dep_hash(desc.intensity_field));
+        }
+        if (!(desc.color_field == wz::asset::AssetKey{})) {
+            deps = detail::combine_dep_hashes(
+                deps,
+                detail::key_to_dep_hash(desc.color_field));
+        }
+
+        return wz::asset::AssetKey{
+            .content_hash = {
+                detail::mix64(name_hash.lo, color_hash),
+                detail::mix64(name_hash.hi, mode_params),
+            },
+            .schema_hash = detail::hash_u64(kAmbientLightingSchema.value),
+            .compiler_hash = detail::hash_u64(kAmbientLightingCompilerVersion),
+            .deps_hash = deps,
+        };
+    }
+
+} // namespace wz::engine::assets
