@@ -185,7 +185,7 @@ TEST(GaussianSplatPLYImporter, ImportsFRestValuesInSchemaOrder)
     std::filesystem::remove(path);
 }
 
-TEST(GaussianSplatPLYImporter, RejectsOrdinaryMeshPLYFromDisk)
+TEST(GaussianSplatPLYImporter, ImportsOrdinaryMeshPLYWithDefaults)
 {
     const std::string text =
         "ply\n"
@@ -206,9 +206,34 @@ TEST(GaussianSplatPLYImporter, RejectsOrdinaryMeshPLYFromDisk)
     const wz::engine::assets::GaussianSplatImportResult imported =
         wz::engine::assets::import_gaussian_splat_ply_file(path);
 
-    EXPECT_FALSE(imported.ok);
-    EXPECT_FALSE(imported.error.empty());
-    EXPECT_NE(imported.error.find("opacity"), std::string::npos);
+    ASSERT_TRUE(imported.ok) << imported.error;
+
+    ASSERT_EQ(imported.cloud.splats.size(), 1u);
+    EXPECT_TRUE(imported.cloud.bounds.valid);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.min[0], 0.0f);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.min[1], 0.0f);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.min[2], 0.0f);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.max[0], 0.0f);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.max[1], 0.0f);
+    EXPECT_FLOAT_EQ(imported.cloud.bounds.max[2], 0.0f);
+
+    const wz::engine::assets::GaussianSplat& splat =
+        imported.cloud.splats[0];
+
+    EXPECT_FLOAT_EQ(splat.position[0], 0.0f);
+    EXPECT_FLOAT_EQ(splat.position[1], 0.0f);
+    EXPECT_FLOAT_EQ(splat.position[2], 0.0f);
+    EXPECT_NEAR(splat.opacity, 2.1972246f, 1e-5f);
+    EXPECT_FLOAT_EQ(splat.scale[0], -3.0f);
+    EXPECT_FLOAT_EQ(splat.scale[1], -3.0f);
+    EXPECT_FLOAT_EQ(splat.scale[2], -3.0f);
+    EXPECT_FLOAT_EQ(splat.rotation[0], 1.0f);
+    EXPECT_FLOAT_EQ(splat.rotation[1], 0.0f);
+    EXPECT_FLOAT_EQ(splat.rotation[2], 0.0f);
+    EXPECT_FLOAT_EQ(splat.rotation[3], 0.0f);
+    EXPECT_FLOAT_EQ(splat.color_dc[0], splat.color_dc[1]);
+    EXPECT_FLOAT_EQ(splat.color_dc[1], splat.color_dc[2]);
+    EXPECT_GT(splat.color_dc[0], 1.0f);
 
     std::filesystem::remove(path);
 }

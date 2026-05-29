@@ -425,7 +425,7 @@ TEST(GaussianSplatPLYSchema, DetectsRequiredGaussianSplatFields)
     std::filesystem::remove(path);
 }
 
-TEST(GaussianSplatPLYSchema, RejectsOrdinaryMeshPLY)
+TEST(GaussianSplatPLYSchema, AcceptsOrdinaryMeshPLYWithPositionDefaults)
 {
     const std::string text =
         "ply\n"
@@ -456,18 +456,20 @@ TEST(GaussianSplatPLYSchema, RejectsOrdinaryMeshPLY)
     const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
         wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
 
-    EXPECT_FALSE(detected.ok);
-    EXPECT_FALSE(detected.error.empty());
-
-    EXPECT_NE(detected.error.find("opacity"), std::string::npos);
-    EXPECT_NE(detected.error.find("scale_0"), std::string::npos);
-    EXPECT_NE(detected.error.find("rot_0"), std::string::npos);
-    EXPECT_NE(detected.error.find("f_dc_0"), std::string::npos);
+    ASSERT_TRUE(detected.ok) << detected.error;
+    EXPECT_TRUE(detected.schema.has_required_fields());
+    EXPECT_EQ(detected.schema.x, 0);
+    EXPECT_EQ(detected.schema.y, 1);
+    EXPECT_EQ(detected.schema.z, 2);
+    EXPECT_EQ(detected.schema.opacity, -1);
+    EXPECT_EQ(detected.schema.scale_0, -1);
+    EXPECT_EQ(detected.schema.rot_0, -1);
+    EXPECT_EQ(detected.schema.f_dc_0, -1);
 
     std::filesystem::remove(path);
 }
 
-TEST(GaussianSplatPLYSchema, ReportsMissingOpacity)
+TEST(GaussianSplatPLYSchema, MissingOpacityUsesImportDefault)
 {
     const std::string text =
         "ply\n"
@@ -505,8 +507,49 @@ TEST(GaussianSplatPLYSchema, ReportsMissingOpacity)
     const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
         wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
 
-    EXPECT_FALSE(detected.ok);
-    EXPECT_NE(detected.error.find("opacity"), std::string::npos);
+    ASSERT_TRUE(detected.ok) << detected.error;
+    EXPECT_TRUE(detected.schema.has_required_fields());
+    EXPECT_EQ(detected.schema.opacity, -1);
+    EXPECT_EQ(detected.schema.scale_0, 6);
+    EXPECT_EQ(detected.schema.rot_0, 9);
+    EXPECT_EQ(detected.schema.f_dc_0, 3);
+
+    std::filesystem::remove(path);
+}
+
+TEST(GaussianSplatPLYSchema, AcceptsPositionOnlyPLY)
+{
+    const std::string text =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "end_header\n"
+        "0 1 2\n";
+
+    const std::filesystem::path path =
+        write_temp_ply("wozzits_schema_position_only_permissive.ply", text);
+
+    const wz::external::ply::ReadResult read =
+        wz::external::ply::read_ply_file(path);
+
+    ASSERT_TRUE(read.ok) << read.error.message;
+
+    const wz::external::ply::ScalarTable* table =
+        find_table(read.document, "vertex");
+
+    ASSERT_NE(table, nullptr);
+
+    const wz::engine::assets::GaussianSplatPLYSchemaResult detected =
+        wz::engine::assets::detect_gaussian_splat_ply_schema(*table);
+
+    EXPECT_TRUE(detected.ok) << detected.error;
+    EXPECT_EQ(detected.schema.x, 0);
+    EXPECT_EQ(detected.schema.y, 1);
+    EXPECT_EQ(detected.schema.z, 2);
+    EXPECT_TRUE(detected.schema.has_required_fields());
 
     std::filesystem::remove(path);
 }

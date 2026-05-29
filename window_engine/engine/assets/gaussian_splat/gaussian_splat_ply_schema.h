@@ -41,7 +41,7 @@ namespace wz::engine::assets
         int blue = -1;
         bool color_is_byte_rgb = false;
 
-        // Only x/y/z are truly required. All other fields fall back to defaults.
+        // x/y/z are required. Other fields fall back to import defaults.
         bool has_required_fields() const noexcept;
     };
 

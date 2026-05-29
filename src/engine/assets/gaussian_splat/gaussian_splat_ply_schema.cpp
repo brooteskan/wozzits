@@ -168,7 +168,6 @@ namespace wz::engine::assets
 
     bool GaussianSplatPLYSchema::has_required_fields() const noexcept
     {
-        // Only x/y/z are required; all other fields fall back to safe defaults.
         return x >= 0 && y >= 0 && z >= 0;
     }
 
@@ -180,14 +179,14 @@ namespace wz::engine::assets
         if (table.element_name != "vertex")
         {
             result.ok = false;
-            result.error = "Gaussian splat PLY schema detection expected a vertex table";
+            result.error =
+                "Gaussian splat PLY schema detection expected a vertex table";
             return result;
         }
 
         GaussianSplatPLYSchema schema;
         std::vector<std::string> missing;
 
-        // Position is the only truly required set of fields.
         require_property(table, "x", schema.x, missing);
         require_property(table, "y", schema.y, missing);
         require_property(table, "z", schema.z, missing);
@@ -200,7 +199,6 @@ namespace wz::engine::assets
             return result;
         }
 
-        // Optional 3DGS fields — absent fields stay -1 and the importer supplies defaults.
         schema.opacity = find_property_index(table, "opacity");
 
         schema.scale_0 = find_property_index(table, "scale_0");
@@ -212,15 +210,6 @@ namespace wz::engine::assets
         schema.rot_2 = find_property_index(table, "rot_2");
         schema.rot_3 = find_property_index(table, "rot_3");
 
-        // Color policy:
-        //
-        // 1. Prefer complete 3DGS SH DC color: f_dc_0, f_dc_1, f_dc_2.
-        // 2. If that complete triple is absent, try complete RGB: red, green, blue.
-        // 3. If color data is absent or partial, leave all color indices at -1.
-        //    The importer will then default the splat to white.
-        //
-        // This is intentionally permissive because many PLY files have position-only
-        // or partially populated color-like fields.
         const int f_dc_0 = find_property_index(table, "f_dc_0");
         const int f_dc_1 = find_property_index(table, "f_dc_1");
         const int f_dc_2 = find_property_index(table, "f_dc_2");
@@ -260,9 +249,6 @@ namespace wz::engine::assets
                 const auto blue_type =
                     table.properties[static_cast<size_t>(schema.blue)].type;
 
-                // Treat as byte RGB only when all three channels are UInt8.
-                // Mixed or float-ish RGB falls through as normalized/scalar RGB,
-                // which the importer reads as float values.
                 schema.color_is_byte_rgb =
                     red_type == wz::external::ply::ScalarType::UInt8 &&
                     green_type == wz::external::ply::ScalarType::UInt8 &&

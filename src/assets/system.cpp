@@ -45,9 +45,6 @@ namespace wz::asset
         // in a graph that hasn't been built yet.
         if (!committed_) return ResolveError::NodeNotFound;
 
-        // Fast path: already compiled and cached.
-        if (auto h = cache_.lookup(key)) return *h;
-
         // Locate node in committed DAG.
         const AssetGraph& g = storage_->dag();
         const NodeHandle  nh = find_asset_node(index_, key);
@@ -55,9 +52,37 @@ namespace wz::asset
 
         const AssetNode& node = wz::core::graph::node_data(g, nh);
 
+        // Fast path: already compiled and cached. The cache is public mutable
+        // state, so only trust a cache entry when it has matching compiled-node
+        // state for this committed DAG key.
+        if (auto h = cache_.lookup(key)) {
+            auto it = compiled_nodes_.find(key);
+            if (it != compiled_nodes_.end()) {
+                if (const auto* compiled_handle =
+                    std::get_if<ResourceHandle>(&it->second.payload))
+                {
+                    if (*compiled_handle == *h)
+                        return *h;
+                }
+                else if (std::holds_alternative<std::vector<uint8_t>>(
+                    it->second.payload))
+                {
+                    if (!h->valid())
+                        return *h;
+                }
+            }
+
+            cache_.evict(key);
+            compiled_nodes_.erase(key);
+        }
+
         // Find the compiler for this (schema, type) pair.
         const AssetCompiler* compiler = registry_.find(node.schema, node.type);
         if (!compiler) return ResolveError::CompilerNotFound;
+
+        // This resolve attempt is rebuilding the node. If it fails, stale query
+        // results from a previous successful compile must not remain visible.
+        compiled_nodes_.erase(key);
 
         // Recursively resolve all prerequisites.
         // Because we call resolve() on each, they are memoized in the cache
@@ -92,13 +117,24 @@ namespace wz::asset
         if (compiled.stage != AssetStage::Compiled)
             return ResolveError::CompileFailed;
 
+        if (!(compiled.key == key)
+            || compiled.type != node.type
+            || !(compiled.schema == node.schema))
+            return ResolveError::CompileFailed;
+
         ResourceHandle handle{};
-        if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload))
+        if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload)) {
+            if (!h->valid())
+                return ResolveError::CompileFailed;
             handle = *h;
+        }
+        else if (!std::holds_alternative<std::vector<uint8_t>>(compiled.payload)) {
+            return ResolveError::CompileFailed;
+        }
         // Carrier nodes (bytes payload) legitimately have no handle — that is fine.
 
         // Store the compiled node so dependents can read its payload.
-        compiled_nodes_.emplace(key, compiled);
+        compiled_nodes_.insert_or_assign(key, std::move(compiled));
 
         cache_.store(key, handle);
         return handle;
@@ -112,8 +148,6 @@ namespace wz::asset
         uint32_t ok = 0;
         for (NodeHandle nh : compilation_order(storage_->dag())) {
             const AssetKey& key = wz::core::graph::node_data(storage_->dag(), nh).key;
-
-            if (cache_.contains(key)) { ++ok; continue; }
 
             auto r = resolve(key);
             if (std::holds_alternative<ResourceHandle>(r)) {

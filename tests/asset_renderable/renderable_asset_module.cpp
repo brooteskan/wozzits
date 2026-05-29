@@ -7,6 +7,8 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <algorithm>
+
 
 
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
@@ -530,6 +532,156 @@ TEST(RenderableAssetModule, ResolvesHeightFieldTerrainDebugRenderable)
     EXPECT_FLOAT_EQ(data->bounds_max[0], 4.0f);
     EXPECT_FLOAT_EQ(data->bounds_min[2], -8.0f);
     EXPECT_FLOAT_EQ(data->bounds_max[2], 8.0f);
+}
+
+TEST(RenderableAssetModule, TerrainDebugEditorDepthFailureRequiresLibraryResetForCleanRecovery)
+{
+    using namespace wz::engine::assets;
+
+    const auto make_root = [](const char* suffix) {
+        return wz::fs::join(wz::fs::temp_directory_path(), suffix);
+    };
+
+    const auto count_failure =
+        [](const ResolveReport& report,
+           wz::asset::AssetKey key,
+           wz::asset::ResolveError error) {
+            return std::count_if(
+                report.failures.begin(),
+                report.failures.end(),
+                [&](const ResolveFailure& failure) {
+                    return failure.key == key && failure.error == error;
+                });
+        };
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    const wz::fs::Path bad_root =
+        make_root("wozzits_renderable_terrain_editor_bad_depth_tests");
+    ASSERT_EQ(wz::fs::create_directories(bad_root), wz::fs::FileError::None);
+
+    {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            bad_root,
+        };
+
+        const auto field =
+            assets.scalar_fields().create_procedural_scalar_field({
+                .name = "editor/heightfield",
+                .width = 16,
+                .height = 16,
+                .depth = 8,
+                .generator = ScalarFieldGenerator::GradientX,
+                .frequency = 1.0f,
+                .amplitude = 1.0f,
+                .format = ScalarFieldFormat::Float32,
+                .domain_kind = ScalarFieldDomainKind::Spatial2D,
+            });
+
+        ASSERT_TRUE(field.valid());
+
+        const auto terrain =
+            assets.terrains().create_from_height_field({
+                .name = "editor/terrain",
+                .height_field = field,
+                .origin = { 0.0f, 0.0f },
+                .size = { 16.0f, 16.0f },
+                .vertical_scale = 2.0f,
+                .base_height = 0.0f,
+            });
+
+        ASSERT_TRUE(terrain.valid());
+
+        const auto renderable =
+            assets.renderables().create_terrain_debug({
+                .name = "editor/terrain_debug",
+                .terrain = terrain,
+            });
+
+        ASSERT_TRUE(renderable.valid());
+        ASSERT_TRUE(assets.commit());
+
+        const auto report = assets.resolve_all();
+        EXPECT_FALSE(report.ok());
+        EXPECT_EQ(report.resolved_count, 0u);
+        EXPECT_EQ(count_failure(
+            report,
+            field.output,
+            wz::asset::ResolveError::CompileFailed), 1);
+        EXPECT_EQ(count_failure(
+            report,
+            terrain.output,
+            wz::asset::ResolveError::DependencyFailed), 1);
+        EXPECT_EQ(count_failure(
+            report,
+            renderable.output,
+            wz::asset::ResolveError::DependencyFailed), 1);
+
+        EXPECT_FALSE(assets.scalar_fields().get_scalar_field(field).valid());
+        EXPECT_FALSE(assets.terrains().get_terrain(terrain).valid());
+        EXPECT_FALSE(assets.renderables().get_renderable(renderable).valid());
+        EXPECT_EQ(assets.system().find_compiled(field.output), nullptr);
+        EXPECT_EQ(assets.system().find_compiled(terrain.output), nullptr);
+        EXPECT_EQ(assets.system().find_compiled(renderable.output), nullptr);
+    }
+
+    const wz::fs::Path good_root =
+        make_root("wozzits_renderable_terrain_editor_recovered_depth_tests");
+    ASSERT_EQ(wz::fs::create_directories(good_root), wz::fs::FileError::None);
+
+    {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            good_root,
+        };
+
+        const auto field =
+            assets.scalar_fields().create_procedural_scalar_field({
+                .name = "editor/heightfield",
+                .width = 16,
+                .height = 16,
+                .depth = 1,
+                .generator = ScalarFieldGenerator::GradientX,
+                .frequency = 1.0f,
+                .amplitude = 1.0f,
+                .format = ScalarFieldFormat::Float32,
+                .domain_kind = ScalarFieldDomainKind::Spatial2D,
+            });
+
+        ASSERT_TRUE(field.valid());
+
+        const auto terrain =
+            assets.terrains().create_from_height_field({
+                .name = "editor/terrain",
+                .height_field = field,
+                .origin = { 0.0f, 0.0f },
+                .size = { 16.0f, 16.0f },
+                .vertical_scale = 2.0f,
+                .base_height = 0.0f,
+            });
+
+        ASSERT_TRUE(terrain.valid());
+
+        const auto renderable =
+            assets.renderables().create_terrain_debug({
+                .name = "editor/terrain_debug",
+                .terrain = terrain,
+            });
+
+        ASSERT_TRUE(renderable.valid());
+        ASSERT_TRUE(assets.commit());
+
+        const auto report = assets.resolve_all();
+        EXPECT_TRUE(report.ok());
+        EXPECT_EQ(report.resolved_count, 3u);
+        EXPECT_TRUE(assets.scalar_fields().get_scalar_field(field).valid());
+        EXPECT_TRUE(assets.terrains().get_terrain(terrain).valid());
+        EXPECT_TRUE(assets.renderables().get_renderable(renderable).valid());
+    }
 }
 
 TEST(RenderableAssetModule, ResolvesMeshTerrainDebugRenderable)
