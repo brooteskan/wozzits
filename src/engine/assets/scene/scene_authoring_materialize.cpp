@@ -66,6 +66,43 @@ namespace wz::engine::assets
                     : ":no_depth_occlusion");
         }
 
+        uint32_t policy_flags_for_terrain_render_style(
+            const SceneTerrainRenderStyleAsset& style,
+            bool wireframe)
+        {
+            uint32_t flags = wireframe ? RenderPolicy_Wireframe : RenderPolicy_None;
+            if (style.depth_test) {
+                flags |= RenderPolicy_DepthTest;
+            }
+            if (style.depth_write) {
+                flags |= RenderPolicy_DepthWrite;
+            }
+            return flags;
+        }
+
+        std::string terrain_render_style_cache_key(
+            const SceneTerrainRenderStyleAsset& style)
+        {
+            std::string out = "terrain_render:";
+            switch (style.path) {
+            case SceneTerrainRenderPath::Auto:
+                out += "auto";
+                break;
+            case SceneTerrainRenderPath::Surface:
+                out += "surface";
+                break;
+            case SceneTerrainRenderPath::DebugWireframe:
+                out += "debug_wireframe";
+                break;
+            case SceneTerrainRenderPath::None:
+                out += "none";
+                break;
+            }
+            out += style.depth_test ? ":depth_test" : ":no_depth_test";
+            out += style.depth_write ? ":depth_write" : ":no_depth_write";
+            return out;
+        }
+
         std::string scalar_field_source_cache_key(
             const SceneScalarFieldSourceAsset& source)
         {
@@ -304,6 +341,7 @@ namespace wz::engine::assets
             const std::string& key,
             const std::string& name,
             TerrainAsset terrain,
+            const SceneTerrainRenderStyleAsset& style,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -318,6 +356,12 @@ namespace wz::engine::assets
                 assets.renderables().create_terrain_debug({
                     .name = name,
                     .terrain = terrain,
+                    .mesh_program =
+                        (style.depth_test || style.depth_write)
+                            ? BuiltinRenderProgram::MeshWireframeDepthDebug
+                            : BuiltinRenderProgram::MeshWireframeDebug,
+                    .mesh_policy_flags =
+                        policy_flags_for_terrain_render_style(style, true),
                 });
 
             if (!renderable.valid()) {
@@ -334,6 +378,7 @@ namespace wz::engine::assets
             const std::string& key,
             const std::string& name,
             TerrainAsset terrain,
+            const SceneTerrainRenderStyleAsset& style,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -348,6 +393,8 @@ namespace wz::engine::assets
                 assets.renderables().create_terrain_surface({
                     .name = name,
                     .terrain = terrain,
+                    .mesh_policy_flags =
+                        policy_flags_for_terrain_render_style(style, false),
                 });
 
             if (!renderable.valid()) {
@@ -739,11 +786,37 @@ namespace wz::engine::assets
                 continue;
             }
 
+            const SceneTerrainRenderStyleAsset render_style =
+                node.terrain_render_style.value_or(
+                    SceneTerrainRenderStyleAsset{});
+
             RenderableAsset renderable{};
-            const bool use_surface =
-                is_mesh_terrain && options.create_terrain_surface_renderables;
-            const bool use_debug =
-                !use_surface && options.create_terrain_debug_renderables;
+            bool use_surface = false;
+            bool use_debug = false;
+
+            switch (render_style.path) {
+            case SceneTerrainRenderPath::Auto:
+                use_surface =
+                    is_mesh_terrain
+                    && options.create_terrain_surface_renderables;
+                use_debug =
+                    !use_surface && options.create_terrain_debug_renderables;
+                break;
+            case SceneTerrainRenderPath::Surface:
+                if (!is_mesh_terrain) {
+                    report.error =
+                        "terrain surface render path requires mesh terrain: "
+                        + node.id;
+                    return report;
+                }
+                use_surface = options.create_terrain_surface_renderables;
+                break;
+            case SceneTerrainRenderPath::DebugWireframe:
+                use_debug = options.create_terrain_debug_renderables;
+                break;
+            case SceneTerrainRenderPath::None:
+                break;
+            }
 
             if (!use_surface && !use_debug) {
                 node.renderable_asset.reset();
@@ -751,7 +824,8 @@ namespace wz::engine::assets
             }
 
             const std::string key = "terrain:" + node.id
-                + (use_surface ? ":surface" : ":debug");
+                + (use_surface ? ":surface:" : ":debug:")
+                + terrain_render_style_cache_key(render_style);
             const std::string name = "scene_editor/terrain/" + node.id
                 + (use_surface ? "_surface" : "_debug");
             const bool renderable_ok = use_surface
@@ -760,6 +834,7 @@ namespace wz::engine::assets
                     key,
                     name,
                     terrain_asset,
+                    render_style,
                     renderables,
                     renderable)
                 : ensure_debug_renderable_for_terrain_asset(
@@ -767,6 +842,7 @@ namespace wz::engine::assets
                     key,
                     name,
                     terrain_asset,
+                    render_style,
                     renderables,
                     renderable);
 

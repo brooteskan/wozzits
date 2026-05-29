@@ -168,6 +168,21 @@ namespace wz::engine::assets
         bool depth_write = false;
     };
 
+    enum class SceneTerrainRenderPath : uint8_t
+    {
+        Auto = 0,
+        Surface,
+        DebugWireframe,
+        None,
+    };
+
+    struct SceneTerrainRenderStyleAsset
+    {
+        SceneTerrainRenderPath path = SceneTerrainRenderPath::Auto;
+        bool depth_test = true;
+        bool depth_write = true;
+    };
+
     enum class SceneScalarFieldSourceKind : uint8_t
     {
         RawF32 = 0,
@@ -314,6 +329,7 @@ namespace wz::engine::assets
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
         std::optional<SceneTerrainAsset> terrain;
+        std::optional<SceneTerrainRenderStyleAsset> terrain_render_style;
         std::optional<SceneTerrainMeshSourceAsset> terrain_mesh_source;
         std::optional<SceneTerrainHeightFieldSourceAsset>
             terrain_height_field_source;
@@ -362,6 +378,7 @@ namespace wz::engine::assets
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
+        uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
     };
@@ -489,6 +506,13 @@ namespace wz::engine::assets
         node.terrain_height_field_source = source;
     }
 
+    inline void attach_terrain_render_style(
+        SceneNodeAsset& node,
+        SceneTerrainRenderStyleAsset style = {})
+    {
+        node.terrain_render_style = style;
+    }
+
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
     authored_components_for_node(const SceneNodeAsset& node)
     {
@@ -535,6 +559,9 @@ namespace wz::engine::assets
         }
         if (node.terrain) {
             out.push_back(Kind::Terrain);
+        }
+        if (node.terrain_render_style) {
+            out.push_back(Kind::TerrainRenderStyle);
         }
         if (node.terrain_mesh_source) {
             out.push_back(Kind::TerrainMeshSource);
@@ -595,6 +622,7 @@ namespace wz::engine::assets
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
+            || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value();
     }
@@ -640,6 +668,10 @@ namespace wz::engine::assets
             }
             if (node.vector_field_source) {
                 ++out.vector_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.terrain_render_style) {
+                ++out.terrain_render_styles;
                 ++out.total_recipes;
             }
             if (node.terrain_mesh_source) {
@@ -701,6 +733,9 @@ namespace wz::engine::assets
             }
             if (node.terrain) {
                 ++out.terrains;
+            }
+            if (node.terrain_render_style) {
+                ++out.terrain_render_styles;
             }
             if (node.terrain_mesh_source) {
                 ++out.terrain_mesh_sources;

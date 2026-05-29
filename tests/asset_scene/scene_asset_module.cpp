@@ -1625,11 +1625,18 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         .queryable = true,
         .constrain_movement = false,
     };
+    node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::DebugWireframe,
+        .depth_test = true,
+        .depth_write = false,
+    };
     authored.nodes.push_back(std::move(node));
 
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(authored));
     EXPECT_NE(exported.find("\"terrain\""), std::string::npos);
+    EXPECT_NE(exported.find("\"terrain_render_style\""), std::string::npos);
+    EXPECT_NE(exported.find("\"debug_wireframe\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
     EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
@@ -1653,10 +1660,16 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     ASSERT_NE(scene_data, nullptr);
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     ASSERT_TRUE(scene_data->nodes[0].terrain.has_value());
+    ASSERT_TRUE(scene_data->nodes[0].terrain_render_style.has_value());
     EXPECT_EQ(scene_data->nodes[0].terrain->terrain_asset, terrain.output);
     EXPECT_TRUE(scene_data->nodes[0].terrain->visible);
     EXPECT_TRUE(scene_data->nodes[0].terrain->queryable);
     EXPECT_FALSE(scene_data->nodes[0].terrain->constrain_movement);
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->path,
+        SceneTerrainRenderPath::DebugWireframe);
+    EXPECT_TRUE(scene_data->nodes[0].terrain_render_style->depth_test);
+    EXPECT_FALSE(scene_data->nodes[0].terrain_render_style->depth_write);
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -4770,6 +4783,11 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
         .components_per_channel = 3,
         .channels = { VectorFieldChannelDesc{ .name = "normal" } },
     };
+    node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::Surface,
+        .depth_test = true,
+        .depth_write = true,
+    };
     node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
         .mode = SceneTerrainMeshSourceMode::MeshAsset,
         .mesh_asset = mesh_key,
@@ -4803,6 +4821,12 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
     scene.nodes[0].vector_field_source->components_per_channel = 2;
     EXPECT_NE(original, scene_asset_fingerprint(scene));
     scene.nodes[0].vector_field_source->components_per_channel = 3;
+
+    scene.nodes[0].terrain_render_style->path =
+        SceneTerrainRenderPath::DebugWireframe;
+    EXPECT_NE(original, scene_asset_fingerprint(scene));
+    scene.nodes[0].terrain_render_style->path =
+        SceneTerrainRenderPath::Surface;
 
     scene.nodes[0].terrain_mesh_source->include_backfaces = false;
     EXPECT_NE(original, scene_asset_fingerprint(scene));
@@ -4843,6 +4867,9 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
         .vector_field_asset = vector_key,
         .path = "fields/normal.raw",
     };
+    node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::DebugWireframe,
+    };
     node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
         .mode = SceneTerrainMeshSourceMode::MeshAsset,
         .mesh_asset = mesh_key,
@@ -4859,11 +4886,12 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     const auto recipe_summary =
         summarize_scene_asset_authoring_recipes(scene);
     EXPECT_EQ(recipe_summary.nodes_with_recipes, 1u);
-    EXPECT_EQ(recipe_summary.total_recipes, 6u);
+    EXPECT_EQ(recipe_summary.total_recipes, 7u);
     EXPECT_EQ(recipe_summary.mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_render_styles, 1u);
     EXPECT_EQ(recipe_summary.scalar_field_sources, 1u);
     EXPECT_EQ(recipe_summary.vector_field_sources, 1u);
+    EXPECT_EQ(recipe_summary.terrain_render_styles, 1u);
     EXPECT_EQ(recipe_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.terrain_height_field_sources, 1u);
 
@@ -4872,6 +4900,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(authored_summary.mesh_render_styles, 1u);
     EXPECT_EQ(authored_summary.scalar_field_sources, 1u);
     EXPECT_EQ(authored_summary.vector_field_sources, 1u);
+    EXPECT_EQ(authored_summary.terrain_render_styles, 1u);
     EXPECT_EQ(authored_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(authored_summary.terrain_height_field_sources, 1u);
 

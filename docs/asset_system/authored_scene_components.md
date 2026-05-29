@@ -64,7 +64,7 @@ Rules of thumb:
 ## Scene Editor Asset Authoring Layer
 
 The current `mesh_source`, `mesh_render_style`, `scalar_field_source`,
-`vector_field_source`, `terrain_mesh_source`, and
+`vector_field_source`, `terrain_render_style`, `terrain_mesh_source`, and
 `terrain_height_field_source` fields are compatibility fields for the scene
 editor's first asset-authoring workflow. They let an editor document reopen and
 rebuild asset-system nodes, but they should not be treated as the long-term home
@@ -517,13 +517,14 @@ store that key on the `Terrain` component. `TerrainHeightFieldSource` does not
 instantiate into `SceneInstance` runtime component tables.
 
 When a terrain node is visible, the editor should also register a terrain
-renderable and attach the resulting `RenderableAsset` to the node. Mesh-backed
-terrain uses `RenderableAssetModule::create_terrain_surface()` by default,
-which compiles to an opaque mesh renderable using the terrain mesh as
-`source_asset` and the terrain asset as `companion_asset`. Height-field terrain
-continues to use `RenderableAssetModule::create_terrain_debug()` and adapts the
-height field to a bounded wireframe preview mesh in the GPU scene resolver until
-a generated surface mesh path is available.
+renderable and attach the resulting `RenderableAsset` to the node.
+`TerrainRenderStyle` controls that materialization choice per node:
+`auto`, `surface`, `debug_wireframe`, or `none`. Mesh-backed terrain uses
+`RenderableAssetModule::create_terrain_surface()` under `auto`; height-field
+terrain uses `RenderableAssetModule::create_terrain_debug()` under `auto` and
+adapts the height field to a bounded wireframe preview mesh in the GPU scene
+resolver until a generated surface mesh path is available. Explicit `none`
+leaves the terrain role/query data without attaching a renderable.
 
 ### AudioListener
 

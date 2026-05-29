@@ -270,6 +270,73 @@ TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAsset
         scene.nodes[0].terrain->terrain_asset);
 }
 
+TEST(SceneAuthoringMaterialize, TerrainRenderStyleSelectsRenderablePath)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_render_style_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const MeshAsset mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/render_style_mesh",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_render_styles";
+
+    SceneNodeAsset debug_node = make_scene_node("debug_terrain");
+    debug_node.terrain = SceneTerrainAsset{};
+    debug_node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = mesh.output,
+    };
+    debug_node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::DebugWireframe,
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(debug_node));
+
+    SceneNodeAsset none_node = make_scene_node("hidden_render_terrain");
+    none_node.terrain = SceneTerrainAsset{};
+    none_node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = mesh.output,
+    };
+    none_node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::None,
+    };
+    scene.nodes.push_back(std::move(none_node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    EXPECT_FALSE(scene.nodes[1].renderable_asset.has_value());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* data = assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
+    EXPECT_EQ(data->domain, RenderDomain::Debug);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
+}
+
 TEST(SceneAuthoringMaterialize, TerrainHeightFieldSourceSupportsDirectAndChildFields)
 {
     using namespace wz::engine::assets;

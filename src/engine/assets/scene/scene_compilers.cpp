@@ -212,6 +212,24 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneTerrainRenderPath> parse_terrain_render_path(
+            std::string_view text)
+        {
+            if (text == "auto") {
+                return SceneTerrainRenderPath::Auto;
+            }
+            if (text == "surface") {
+                return SceneTerrainRenderPath::Surface;
+            }
+            if (text == "debug_wireframe") {
+                return SceneTerrainRenderPath::DebugWireframe;
+            }
+            if (text == "none") {
+                return SceneTerrainRenderPath::None;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneScalarFieldSourceKind>
         parse_scalar_field_source_kind(std::string_view text)
         {
@@ -847,6 +865,35 @@ namespace wz::engine::assets::internal
                     component.constrain_movement = *constrain_movement;
                 }
                 node.terrain = component;
+            }
+
+            const auto* terrain_render_style =
+                find_member(node_val, "terrain_render_style");
+            if (terrain_render_style
+                && terrain_render_style->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneTerrainRenderStyleAsset style{};
+                auto path = read_string(*terrain_render_style, "path");
+                if (path) {
+                    auto parsed_path = parse_terrain_render_path(*path);
+                    if (!parsed_path) {
+                        logger.error("terrain_render_style on node '"
+                            + node.id + "' has unknown path '"
+                            + std::string(*path) + "'");
+                        return std::nullopt;
+                    }
+                    style.path = *parsed_path;
+                }
+                auto depth_test = read_bool(*terrain_render_style, "depth_test");
+                if (depth_test) {
+                    style.depth_test = *depth_test;
+                }
+                auto depth_write = read_bool(*terrain_render_style, "depth_write");
+                if (depth_write) {
+                    style.depth_write = *depth_write;
+                }
+
+                node.terrain_render_style = style;
             }
 
             const auto* source = find_member(node_val, "terrain_mesh_source");

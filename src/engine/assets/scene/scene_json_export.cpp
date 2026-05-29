@@ -142,6 +142,21 @@ namespace wz::engine::assets
             return "wireframe";
         }
 
+        const char* terrain_render_path_name(SceneTerrainRenderPath path)
+        {
+            switch (path) {
+            case SceneTerrainRenderPath::Auto:
+                return "auto";
+            case SceneTerrainRenderPath::Surface:
+                return "surface";
+            case SceneTerrainRenderPath::DebugWireframe:
+                return "debug_wireframe";
+            case SceneTerrainRenderPath::None:
+                return "none";
+            }
+            return "auto";
+        }
+
         const char* scalar_field_source_kind_name(
             SceneScalarFieldSourceKind kind)
         {
@@ -409,6 +424,17 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr terrain_render_style_value(
+            const SceneTerrainRenderStyleAsset& style)
+        {
+            auto obj = object_value();
+            add_member(*obj, "path",
+                string_value(terrain_render_path_name(style.path)));
+            add_member(*obj, "depth_test", bool_value(style.depth_test));
+            add_member(*obj, "depth_write", bool_value(style.depth_write));
+            return obj;
+        }
+
         JSONValuePtr terrain_mesh_source_value(
             const SceneTerrainMeshSourceAsset& source)
         {
@@ -562,6 +588,10 @@ namespace wz::engine::assets
                 && !(node.terrain->terrain_asset == wz::asset::AssetKey{}))
             {
                 add_member(*obj, "terrain", terrain_value(*node.terrain));
+            }
+            if (node.terrain_render_style) {
+                add_member(*obj, "terrain_render_style",
+                    terrain_render_style_value(*node.terrain_render_style));
             }
             if (node.terrain_mesh_source) {
                 add_member(*obj, "terrain_mesh_source",

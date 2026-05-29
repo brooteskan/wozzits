@@ -88,6 +88,8 @@ namespace wz::engine::assets
             const bool has_vector_field_source =
                 node.vector_field_source.has_value();
             const bool has_terrain = node.terrain.has_value();
+            const bool has_terrain_render_style =
+                node.terrain_render_style.has_value();
             const bool has_terrain_mesh_source =
                 node.terrain_mesh_source.has_value();
             const bool has_terrain_height_field_source =
@@ -102,6 +104,7 @@ namespace wz::engine::assets
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
             fp.mix_value(has_terrain);
+            fp.mix_value(has_terrain_render_style);
             fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_terrain_height_field_source);
             fp.mix_value(has_debug_visual);
@@ -206,6 +209,13 @@ namespace wz::engine::assets
                 fp.mix_value(terrain.visible);
                 fp.mix_value(terrain.queryable);
                 fp.mix_value(terrain.constrain_movement);
+            }
+
+            if (node.terrain_render_style) {
+                const auto& style = *node.terrain_render_style;
+                fp.mix_value(style.path);
+                fp.mix_value(style.depth_test);
+                fp.mix_value(style.depth_write);
             }
 
             if (node.terrain_mesh_source) {
