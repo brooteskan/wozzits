@@ -157,6 +157,22 @@ namespace wz::engine::assets
             return "auto";
         }
 
+        const char* terrain_lighting_source_name(
+            SceneTerrainLightingSource source)
+        {
+            switch (source) {
+            case SceneTerrainLightingSource::ExplicitNodes:
+                return "explicit_nodes";
+            case SceneTerrainLightingSource::SceneDefault:
+                return "scene_default";
+            case SceneTerrainLightingSource::EnvironmentNode:
+                return "environment_node";
+            case SceneTerrainLightingSource::Hybrid:
+                return "hybrid";
+            }
+            return "explicit_nodes";
+        }
+
         const char* direct_light_kind_name(DirectLightKind kind)
         {
             switch (kind) {
@@ -206,6 +222,20 @@ namespace wz::engine::assets
                 return "world_xz";
             }
             return "terrain_uv";
+        }
+
+        const char* hdri_environment_format_name(
+            HDRIEnvironmentFormat format)
+        {
+            switch (format) {
+            case HDRIEnvironmentFormat::Auto:
+                return "auto";
+            case HDRIEnvironmentFormat::RadianceHDR:
+                return "radiance_hdr";
+            case HDRIEnvironmentFormat::OpenEXR:
+                return "openexr";
+            }
+            return "auto";
         }
 
         const char* scalar_field_source_kind_name(
@@ -403,6 +433,39 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr hdri_environment_value(
+            const SceneHDRIEnvironmentAsset& environment)
+        {
+            auto obj = object_value();
+            if (!(environment.environment_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(
+                        environment.environment_asset)));
+            }
+            add_member(*obj, "path", string_value(environment.path));
+            add_member(*obj, "format",
+                string_value(hdri_environment_format_name(
+                    environment.format)));
+            add_member(*obj, "exposure", number_value(environment.exposure));
+            add_member(*obj, "rotation_y_radians",
+                number_value(environment.rotation_y_radians));
+            add_member(*obj, "lighting_intensity",
+                number_value(environment.lighting_intensity));
+            add_member(*obj, "reflection_intensity",
+                number_value(environment.reflection_intensity));
+            add_member(*obj, "background_intensity",
+                number_value(environment.background_intensity));
+            add_member(*obj, "dominant_light_direction",
+                float_array(environment.dominant_light_direction, 3));
+            add_member(*obj, "dominant_light_color",
+                float_array(environment.dominant_light_color, 3));
+            add_member(*obj, "dominant_light_intensity",
+                number_value(environment.dominant_light_intensity));
+            add_member(*obj, "dominant_light_confidence",
+                number_value(environment.dominant_light_confidence));
+            return obj;
+        }
+
         JSONValuePtr flying_camera_value(
             const SceneFlyingCameraControllerAsset& controller)
         {
@@ -529,6 +592,9 @@ namespace wz::engine::assets
                 string_value(terrain_render_path_name(style.path)));
             add_member(*obj, "depth_test", bool_value(style.depth_test));
             add_member(*obj, "depth_write", bool_value(style.depth_write));
+            add_member(*obj, "lighting_source",
+                string_value(terrain_lighting_source_name(
+                    style.lighting_source)));
             if (!style.directional_light_node.empty()) {
                 add_member(*obj, "directional_light_node",
                     string_value(style.directional_light_node));
@@ -537,6 +603,18 @@ namespace wz::engine::assets
                 add_member(*obj, "ambient_light_node",
                     string_value(style.ambient_light_node));
             }
+            if (!style.environment_node.empty()) {
+                add_member(*obj, "environment_node",
+                    string_value(style.environment_node));
+            }
+            add_member(*obj, "ambient_strength",
+                number_value(style.ambient_strength));
+            add_member(*obj, "sky_visibility_strength",
+                number_value(style.sky_visibility_strength));
+            add_member(*obj, "normal_lighting_strength",
+                number_value(style.normal_lighting_strength));
+            add_member(*obj, "terrain_bounce_strength",
+                number_value(style.terrain_bounce_strength));
             return obj;
         }
 
@@ -660,6 +738,10 @@ namespace wz::engine::assets
             if (node.ambient_lighting) {
                 add_member(*obj, "ambient_lighting",
                     ambient_lighting_value(*node.ambient_lighting));
+            }
+            if (node.hdri_environment) {
+                add_member(*obj, "hdri_environment",
+                    hdri_environment_value(*node.hdri_environment));
             }
             if (node.input_receiver) {
                 auto input = object_value();

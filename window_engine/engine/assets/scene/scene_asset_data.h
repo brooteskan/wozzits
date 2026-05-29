@@ -67,6 +67,22 @@ namespace wz::engine::assets
             AmbientLightingDomainMapping::TerrainUV;
     };
 
+    struct SceneHDRIEnvironmentAsset
+    {
+        wz::asset::AssetKey environment_asset{};
+        std::string path;
+        HDRIEnvironmentFormat format = HDRIEnvironmentFormat::Auto;
+        float exposure = 0.0f;
+        float rotation_y_radians = 0.0f;
+        float lighting_intensity = 1.0f;
+        float reflection_intensity = 1.0f;
+        float background_intensity = 1.0f;
+        float dominant_light_direction[3]{ 0.0f, -1.0f, 0.0f };
+        float dominant_light_color[3]{ 1.0f, 1.0f, 1.0f };
+        float dominant_light_intensity = 0.0f;
+        float dominant_light_confidence = 0.0f;
+    };
+
     struct SceneCameraAsset
     {
         float fov_y = 1.0472f;   // ~60 degrees
@@ -202,13 +218,34 @@ namespace wz::engine::assets
         None,
     };
 
+    enum class SceneTerrainLightingSource : uint8_t
+    {
+        ExplicitNodes = 0,
+        SceneDefault,
+        EnvironmentNode,
+        Hybrid,
+    };
+
     struct SceneTerrainRenderStyleAsset
     {
         SceneTerrainRenderPath path = SceneTerrainRenderPath::Auto;
         bool depth_test = true;
         bool depth_write = true;
+
+        // Terrain declares how it consumes resolved scene lighting; it should
+        // not become the environment system. A future SceneLightingContext can
+        // resolve SceneDefault/EnvironmentNode/Hybrid into concrete constants
+        // and GPU resources before render-frame construction.
+        SceneTerrainLightingSource lighting_source =
+            SceneTerrainLightingSource::ExplicitNodes;
         std::string directional_light_node;
         std::string ambient_light_node;
+        std::string environment_node;
+
+        float ambient_strength = 1.0f;
+        float sky_visibility_strength = 1.0f;
+        float normal_lighting_strength = 1.0f;
+        float terrain_bounce_strength = 0.0f;
     };
 
     enum class SceneScalarFieldSourceKind : uint8_t
@@ -349,6 +386,7 @@ namespace wz::engine::assets
         std::optional<SceneCameraAsset> camera;
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
         std::optional<SceneAmbientLightingAsset> ambient_lighting;
+        std::optional<SceneHDRIEnvironmentAsset> hdri_environment;
 
         std::optional<SceneInputReceiverAsset> input_receiver;
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
@@ -410,6 +448,7 @@ namespace wz::engine::assets
         uint32_t vector_field_sources = 0;
         uint32_t direct_light_sources = 0;
         uint32_t ambient_lighting = 0;
+        uint32_t hdri_environments = 0;
         uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
@@ -560,6 +599,13 @@ namespace wz::engine::assets
         node.ambient_lighting = lighting;
     }
 
+    inline void attach_hdri_environment(
+        SceneNodeAsset& node,
+        SceneHDRIEnvironmentAsset environment = {})
+    {
+        node.hdri_environment = std::move(environment);
+    }
+
     inline void attach_auxiliary_visual(
         SceneNodeAsset& node,
         SceneAuxiliaryVisualAsset visual)
@@ -685,6 +731,9 @@ namespace wz::engine::assets
         }
         if (node.ambient_lighting) {
             out.push_back(Kind::AmbientLighting);
+        }
+        if (node.hdri_environment) {
+            out.push_back(Kind::HDRIEnvironment);
         }
         if (node.input_receiver) {
             out.push_back(Kind::InputReceiver);
@@ -911,6 +960,7 @@ namespace wz::engine::assets
             || node.vector_field_source.has_value()
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
+            || node.hdri_environment.has_value()
             || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value();
@@ -923,6 +973,7 @@ namespace wz::engine::assets
             || has_authored_camera_component(node)
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
+            || node.hdri_environment.has_value()
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
@@ -969,6 +1020,10 @@ namespace wz::engine::assets
                 ++out.ambient_lighting;
                 ++out.total_recipes;
             }
+            if (node.hdri_environment) {
+                ++out.hdri_environments;
+                ++out.total_recipes;
+            }
             if (node.terrain_render_style) {
                 ++out.terrain_render_styles;
                 ++out.total_recipes;
@@ -1011,6 +1066,9 @@ namespace wz::engine::assets
             }
             if (node.ambient_lighting) {
                 ++out.ambient_lighting;
+            }
+            if (node.hdri_environment) {
+                ++out.hdri_environments;
             }
             if (node.input_receiver) {
                 ++out.input_receivers;

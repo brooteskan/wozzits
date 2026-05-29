@@ -65,6 +65,7 @@ namespace wz::engine::assets::internal {
         RenderProgramTable&                 render_program_table;
         DirectLightTable&                   direct_light_table;
         AmbientLightingTable&               ambient_lighting_table;
+        HDRIEnvironmentTable&               hdri_environment_table;
         SceneAssetTable&                    scene_table;
     };
 

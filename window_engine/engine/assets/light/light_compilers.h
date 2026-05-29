@@ -11,5 +11,6 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         DirectLightTable& direct_light_table,
-        AmbientLightingTable& ambient_lighting_table);
+        AmbientLightingTable& ambient_lighting_table,
+        HDRIEnvironmentTable& hdri_environment_table);
 }

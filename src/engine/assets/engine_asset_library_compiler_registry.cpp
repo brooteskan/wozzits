@@ -39,7 +39,8 @@ namespace wz::engine::assets::internal
             registry,
             ctx.logger,
             ctx.direct_light_table,
-            ctx.ambient_lighting_table);
+            ctx.ambient_lighting_table,
+            ctx.hdri_environment_table);
         register_scene_compilers(registry, ctx.logger, ctx.json_table, ctx.scene_table);
 
         return registry;

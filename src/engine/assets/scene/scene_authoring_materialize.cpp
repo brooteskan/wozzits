@@ -23,6 +23,8 @@ namespace wz::engine::assets
             std::unordered_map<std::string, DirectLightAsset>;
         using AmbientLightingCache =
             std::unordered_map<std::string, AmbientLightingAsset>;
+        using HDRIEnvironmentCache =
+            std::unordered_map<std::string, HDRIEnvironmentAsset>;
 
         std::string mesh_source_cache_key(const SceneMeshSourceAsset& source)
         {
@@ -139,6 +141,29 @@ namespace wz::engine::assets
                 << lighting.intensity_field.content_hash.hi << ":"
                 << lighting.color_field.content_hash.lo << ":"
                 << lighting.color_field.content_hash.hi;
+            return out.str();
+        }
+
+        std::string hdri_environment_cache_key(
+            const SceneHDRIEnvironmentAsset& environment)
+        {
+            std::ostringstream out;
+            out << "hdri_environment:"
+                << environment.path << ":"
+                << static_cast<int>(environment.format) << ":"
+                << environment.exposure << ":"
+                << environment.rotation_y_radians << ":"
+                << environment.lighting_intensity << ":"
+                << environment.reflection_intensity << ":"
+                << environment.background_intensity << ":"
+                << environment.dominant_light_direction[0] << ":"
+                << environment.dominant_light_direction[1] << ":"
+                << environment.dominant_light_direction[2] << ":"
+                << environment.dominant_light_color[0] << ":"
+                << environment.dominant_light_color[1] << ":"
+                << environment.dominant_light_color[2] << ":"
+                << environment.dominant_light_intensity << ":"
+                << environment.dominant_light_confidence;
             return out.str();
         }
 
@@ -641,6 +666,7 @@ namespace wz::engine::assets
         VectorFieldCache vector_fields;
         DirectLightCache direct_lights;
         AmbientLightingCache ambient_lighting;
+        HDRIEnvironmentCache hdri_environments;
         std::unordered_map<std::string, wz::asset::AssetKey> mesh_assets_by_node;
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
@@ -815,6 +841,66 @@ namespace wz::engine::assets
                 .node_id = node.id,
                 .light = scene_ambient_light_record_for_node(lighting_source),
             });
+        }
+
+        for (auto& node : scene.nodes) {
+            if (!node.hdri_environment) {
+                continue;
+            }
+
+            auto& environment_source = *node.hdri_environment;
+            if (environment_source.path.empty()) {
+                environment_source.environment_asset = {};
+                continue;
+            }
+
+            const std::string key =
+                hdri_environment_cache_key(environment_source);
+            HDRIEnvironmentAsset environment{};
+            if (const auto found = hdri_environments.find(key);
+                found != hdri_environments.end())
+            {
+                environment = found->second;
+            }
+            else {
+                environment = assets.lights().create_hdri_environment({
+                    .name = "scene_editor/hdri_environment/" + node.id,
+                    .path = environment_source.path,
+                    .format = environment_source.format,
+                    .exposure = environment_source.exposure,
+                    .rotation_y_radians =
+                        environment_source.rotation_y_radians,
+                    .lighting_intensity =
+                        environment_source.lighting_intensity,
+                    .reflection_intensity =
+                        environment_source.reflection_intensity,
+                    .background_intensity =
+                        environment_source.background_intensity,
+                    .dominant_light_direction = {
+                        environment_source.dominant_light_direction[0],
+                        environment_source.dominant_light_direction[1],
+                        environment_source.dominant_light_direction[2],
+                    },
+                    .dominant_light_color = {
+                        environment_source.dominant_light_color[0],
+                        environment_source.dominant_light_color[1],
+                        environment_source.dominant_light_color[2],
+                    },
+                    .dominant_light_intensity =
+                        environment_source.dominant_light_intensity,
+                    .dominant_light_confidence =
+                        environment_source.dominant_light_confidence,
+                });
+                if (!environment.valid()) {
+                    report.error =
+                        "HDRI environment asset unavailable for "
+                        + node_log_name(node);
+                    return report;
+                }
+                hdri_environments.emplace(key, environment);
+            }
+
+            environment_source.environment_asset = environment.output;
         }
 
         prioritize_terrain_render_style_lights(scene);

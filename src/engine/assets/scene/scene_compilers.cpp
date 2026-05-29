@@ -230,6 +230,24 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneTerrainLightingSource>
+        parse_terrain_lighting_source(std::string_view text)
+        {
+            if (text == "explicit_nodes") {
+                return SceneTerrainLightingSource::ExplicitNodes;
+            }
+            if (text == "scene_default") {
+                return SceneTerrainLightingSource::SceneDefault;
+            }
+            if (text == "environment_node") {
+                return SceneTerrainLightingSource::EnvironmentNode;
+            }
+            if (text == "hybrid") {
+                return SceneTerrainLightingSource::Hybrid;
+            }
+            return std::nullopt;
+        }
+
         std::optional<DirectLightKind> parse_direct_light_kind(
             std::string_view text)
         {
@@ -283,6 +301,21 @@ namespace wz::engine::assets::internal
             }
             if (text == "world_xz") {
                 return AmbientLightingDomainMapping::WorldXZ;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<HDRIEnvironmentFormat> parse_hdri_environment_format(
+            std::string_view text)
+        {
+            if (text == "auto") {
+                return HDRIEnvironmentFormat::Auto;
+            }
+            if (text == "radiance_hdr" || text == "hdr") {
+                return HDRIEnvironmentFormat::RadianceHDR;
+            }
+            if (text == "openexr" || text == "exr") {
+                return HDRIEnvironmentFormat::OpenEXR;
             }
             return std::nullopt;
         }
@@ -620,6 +653,87 @@ namespace wz::engine::assets::internal
                     lighting.domain_mapping = *parsed_mapping;
                 }
                 node.ambient_lighting = lighting;
+            }
+
+            const auto* hdri =
+                find_member(node_val, "hdri_environment");
+            if (hdri && hdri->kind == wz::json::JSONValueKind::Object) {
+                SceneHDRIEnvironmentAsset environment{};
+                auto asset = read_string(*hdri, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("hdri_environment.asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*asset));
+                        return std::nullopt;
+                    }
+                    environment.environment_asset = *key;
+                }
+                auto path = read_string(*hdri, "path");
+                if (path) {
+                    environment.path = std::string(*path);
+                }
+                auto format = read_string(*hdri, "format");
+                if (format) {
+                    auto parsed_format =
+                        parse_hdri_environment_format(*format);
+                    if (!parsed_format) {
+                        logger.error("hdri_environment on node '"
+                            + node.id + "' has unknown format '"
+                            + std::string(*format) + "'");
+                        return std::nullopt;
+                    }
+                    environment.format = *parsed_format;
+                }
+                auto exposure = read_number(*hdri, "exposure");
+                if (exposure) {
+                    environment.exposure = static_cast<float>(*exposure);
+                }
+                auto rotation = read_number(*hdri, "rotation_y_radians");
+                if (rotation) {
+                    environment.rotation_y_radians =
+                        static_cast<float>(*rotation);
+                }
+                auto lighting_intensity =
+                    read_number(*hdri, "lighting_intensity");
+                if (lighting_intensity) {
+                    environment.lighting_intensity =
+                        static_cast<float>(*lighting_intensity);
+                }
+                auto reflection_intensity =
+                    read_number(*hdri, "reflection_intensity");
+                if (reflection_intensity) {
+                    environment.reflection_intensity =
+                        static_cast<float>(*reflection_intensity);
+                }
+                auto background_intensity =
+                    read_number(*hdri, "background_intensity");
+                if (background_intensity) {
+                    environment.background_intensity =
+                        static_cast<float>(*background_intensity);
+                }
+                read_float3(
+                    *hdri,
+                    "dominant_light_direction",
+                    environment.dominant_light_direction);
+                read_float3(
+                    *hdri,
+                    "dominant_light_color",
+                    environment.dominant_light_color);
+                auto dominant_light_intensity =
+                    read_number(*hdri, "dominant_light_intensity");
+                if (dominant_light_intensity) {
+                    environment.dominant_light_intensity =
+                        static_cast<float>(*dominant_light_intensity);
+                }
+                auto dominant_light_confidence =
+                    read_number(*hdri, "dominant_light_confidence");
+                if (dominant_light_confidence) {
+                    environment.dominant_light_confidence =
+                        static_cast<float>(*dominant_light_confidence);
+                }
+                node.hdri_environment = environment;
             }
 
             // ── Non-render component descriptors ──────────────────────
@@ -1074,6 +1188,20 @@ namespace wz::engine::assets::internal
                 if (depth_write) {
                     style.depth_write = *depth_write;
                 }
+                auto lighting_source = read_string(
+                    *terrain_render_style,
+                    "lighting_source");
+                if (lighting_source) {
+                    auto parsed_lighting_source =
+                        parse_terrain_lighting_source(*lighting_source);
+                    if (!parsed_lighting_source) {
+                        logger.error("terrain_render_style on node '"
+                            + node.id + "' has unknown lighting_source '"
+                            + std::string(*lighting_source) + "'");
+                        return std::nullopt;
+                    }
+                    style.lighting_source = *parsed_lighting_source;
+                }
                 auto directional_light_node = read_string(
                     *terrain_render_style,
                     "directional_light_node");
@@ -1087,6 +1215,41 @@ namespace wz::engine::assets::internal
                 if (ambient_light_node) {
                     style.ambient_light_node =
                         std::string(*ambient_light_node);
+                }
+                auto environment_node = read_string(
+                    *terrain_render_style,
+                    "environment_node");
+                if (environment_node) {
+                    style.environment_node =
+                        std::string(*environment_node);
+                }
+                auto ambient_strength = read_number(
+                    *terrain_render_style,
+                    "ambient_strength");
+                if (ambient_strength) {
+                    style.ambient_strength =
+                        static_cast<float>(*ambient_strength);
+                }
+                auto sky_visibility_strength = read_number(
+                    *terrain_render_style,
+                    "sky_visibility_strength");
+                if (sky_visibility_strength) {
+                    style.sky_visibility_strength =
+                        static_cast<float>(*sky_visibility_strength);
+                }
+                auto normal_lighting_strength = read_number(
+                    *terrain_render_style,
+                    "normal_lighting_strength");
+                if (normal_lighting_strength) {
+                    style.normal_lighting_strength =
+                        static_cast<float>(*normal_lighting_strength);
+                }
+                auto terrain_bounce_strength = read_number(
+                    *terrain_render_style,
+                    "terrain_bounce_strength");
+                if (terrain_bounce_strength) {
+                    style.terrain_bounce_strength =
+                        static_cast<float>(*terrain_bounce_strength);
                 }
 
                 node.terrain_render_style = style;

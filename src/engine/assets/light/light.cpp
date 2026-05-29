@@ -89,6 +89,42 @@ namespace wz::engine::assets
         slots_.push_back(Slot{});
     }
 
+    HDRIEnvironmentTable::HDRIEnvironmentTable()
+    {
+        slots_.push_back(Slot{});
+    }
+
+    wz::asset::ResourceHandle HDRIEnvironmentTable::add(
+        HDRIEnvironmentData environment)
+    {
+        Slot slot{};
+        slot.epoch = 1;
+        slot.occupied = true;
+        slot.environment = environment;
+        slots_.push_back(slot);
+
+        return wz::asset::ResourceHandle{
+            .id = static_cast<uint32_t>(slots_.size() - 1),
+            .epoch = slots_.back().epoch,
+            .type = kAssetTypeEnvironmentMap,
+        };
+    }
+
+    const HDRIEnvironmentData* HDRIEnvironmentTable::get(
+        wz::asset::ResourceHandle handle) const
+    {
+        if (!valid_slot(slots_, handle)) {
+            return nullptr;
+        }
+        return &slots_[handle.id].environment;
+    }
+
+    void HDRIEnvironmentTable::destroy()
+    {
+        slots_.clear();
+        slots_.push_back(Slot{});
+    }
+
     wz::scene::LightType direct_light_kind_to_scene_light_type(
         DirectLightKind kind) noexcept
     {

@@ -84,6 +84,8 @@ namespace wz::engine::assets
                 node.direct_light_source.has_value();
             const bool has_ambient_lighting =
                 node.ambient_lighting.has_value();
+            const bool has_hdri_environment =
+                node.hdri_environment.has_value();
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
@@ -105,6 +107,7 @@ namespace wz::engine::assets
             fp.mix_value(has_camera);
             fp.mix_value(has_direct_light_source);
             fp.mix_value(has_ambient_lighting);
+            fp.mix_value(has_hdri_environment);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
@@ -160,6 +163,26 @@ namespace wz::engine::assets
                 mix_asset_key(fp, lighting.intensity_field);
                 mix_asset_key(fp, lighting.color_field);
                 fp.mix_value(lighting.domain_mapping);
+            }
+
+            if (node.hdri_environment) {
+                const auto& environment = *node.hdri_environment;
+                mix_asset_key(fp, environment.environment_asset);
+                fp.mix_string(environment.path);
+                fp.mix_value(environment.format);
+                fp.mix_value(environment.exposure);
+                fp.mix_value(environment.rotation_y_radians);
+                fp.mix_value(environment.lighting_intensity);
+                fp.mix_value(environment.reflection_intensity);
+                fp.mix_value(environment.background_intensity);
+                fp.mix_bytes(
+                    environment.dominant_light_direction,
+                    sizeof(environment.dominant_light_direction));
+                fp.mix_bytes(
+                    environment.dominant_light_color,
+                    sizeof(environment.dominant_light_color));
+                fp.mix_value(environment.dominant_light_intensity);
+                fp.mix_value(environment.dominant_light_confidence);
             }
 
             if (node.mesh_source) {
@@ -244,8 +267,14 @@ namespace wz::engine::assets
                 fp.mix_value(style.path);
                 fp.mix_value(style.depth_test);
                 fp.mix_value(style.depth_write);
+                fp.mix_value(style.lighting_source);
                 fp.mix_string(style.directional_light_node);
                 fp.mix_string(style.ambient_light_node);
+                fp.mix_string(style.environment_node);
+                fp.mix_value(style.ambient_strength);
+                fp.mix_value(style.sky_visibility_strength);
+                fp.mix_value(style.normal_lighting_strength);
+                fp.mix_value(style.terrain_bounce_strength);
             }
 
             if (node.terrain_mesh_source) {

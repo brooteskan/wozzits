@@ -10,7 +10,8 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         DirectLightTable& direct_light_table,
-        AmbientLightingTable& ambient_lighting_table)
+        AmbientLightingTable& ambient_lighting_table,
+        HDRIEnvironmentTable& hdri_environment_table)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDirectLightSchema,
@@ -63,6 +64,51 @@ namespace wz::engine::assets::internal
                 wz::asset::AssetNode out = input;
                 out.stage = wz::asset::AssetStage::Compiled;
                 out.payload = ambient_lighting_table.add(*desc);
+                return out;
+            },
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kHDRIEnvironmentSchema,
+            .output_type = kAssetTypeEnvironmentMap,
+            .compile = [&logger, &hdri_environment_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<HDRIEnvironmentCompileDesc>(&input.meta);
+                if (!desc) {
+                    logger.error(
+                        "HDRI environment node missing HDRIEnvironmentCompileDesc");
+                    return compile_failed_node(input);
+                }
+                if (!desc->valid()) {
+                    logger.error("HDRI environment compile desc is invalid");
+                    return compile_failed_node(input);
+                }
+                if (dep_nodes.size() != 1) {
+                    logger.error(
+                        "HDRI environment node must have one source file dependency");
+                    return compile_failed_node(input);
+                }
+                if (!(dep_nodes[0].key == desc->source_file)) {
+                    logger.error(
+                        "HDRI environment source file dependency key mismatch");
+                    return compile_failed_node(input);
+                }
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                if (!bytes || bytes->empty()) {
+                    logger.error(
+                        "HDRI environment source file has no byte payload");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = hdri_environment_table.add(*desc);
                 return out;
             },
         });

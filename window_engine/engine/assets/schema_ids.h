@@ -345,4 +345,8 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kAmbientLightingSchema{
         0xF11E'CA55'E7'001001ull
     };
+
+    inline constexpr wz::asset::SchemaID kHDRIEnvironmentSchema{
+        0xF11E'CA55'E7'001002ull
+    };
 }

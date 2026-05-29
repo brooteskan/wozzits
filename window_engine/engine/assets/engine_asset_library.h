@@ -195,6 +195,7 @@ namespace wz::engine::assets
         RenderProgramTable          render_program_table_;
         DirectLightTable            direct_light_table_;
         AmbientLightingTable        ambient_lighting_table_;
+        HDRIEnvironmentTable        hdri_environment_table_;
         SceneAssetTable             scene_table_;
 
         wz::asset::AssetSystem system_;

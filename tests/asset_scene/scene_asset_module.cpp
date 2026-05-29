@@ -1629,8 +1629,14 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         .path = SceneTerrainRenderPath::DebugWireframe,
         .depth_test = true,
         .depth_write = false,
+        .lighting_source = SceneTerrainLightingSource::Hybrid,
         .directional_light_node = "sun",
         .ambient_light_node = "sky_ambient",
+        .environment_node = "sky_hdri",
+        .ambient_strength = 0.75f,
+        .sky_visibility_strength = 0.5f,
+        .normal_lighting_strength = 0.9f,
+        .terrain_bounce_strength = 0.2f,
     };
     authored.nodes.push_back(std::move(node));
 
@@ -1641,6 +1647,10 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"debug_wireframe\""), std::string::npos);
     EXPECT_NE(exported.find("\"directional_light_node\""), std::string::npos);
     EXPECT_NE(exported.find("\"ambient_light_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"lighting_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"hybrid\""), std::string::npos);
+    EXPECT_NE(exported.find("\"environment_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"terrain_bounce_strength\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
     EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
@@ -1675,11 +1685,29 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_TRUE(scene_data->nodes[0].terrain_render_style->depth_test);
     EXPECT_FALSE(scene_data->nodes[0].terrain_render_style->depth_write);
     EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->lighting_source,
+        SceneTerrainLightingSource::Hybrid);
+    EXPECT_EQ(
         scene_data->nodes[0].terrain_render_style->directional_light_node,
         "sun");
     EXPECT_EQ(
         scene_data->nodes[0].terrain_render_style->ambient_light_node,
         "sky_ambient");
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->environment_node,
+        "sky_hdri");
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->ambient_strength,
+        0.75f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->sky_visibility_strength,
+        0.5f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->normal_lighting_strength,
+        0.9f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->terrain_bounce_strength,
+        0.2f);
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -5526,14 +5554,29 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         .intensity = 0.45f,
         .domain_mapping = AmbientLightingDomainMapping::WorldXZ,
     };
+    node.hdri_environment = SceneHDRIEnvironmentAsset{
+        .path = "studio.hdr",
+        .format = HDRIEnvironmentFormat::RadianceHDR,
+        .exposure = 0.5f,
+        .rotation_y_radians = 1.25f,
+        .lighting_intensity = 0.75f,
+        .reflection_intensity = 0.6f,
+        .background_intensity = 0.0f,
+        .dominant_light_direction = { 0.0f, -0.5f, 0.8660254f },
+        .dominant_light_color = { 1.0f, 0.92f, 0.82f },
+        .dominant_light_intensity = 3.0f,
+        .dominant_light_confidence = 0.8f,
+    };
     authored.nodes.push_back(std::move(node));
 
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(authored));
     EXPECT_NE(exported.find("\"direct_light_source\""), std::string::npos);
     EXPECT_NE(exported.find("\"ambient_lighting\""), std::string::npos);
+    EXPECT_NE(exported.find("\"hdri_environment\""), std::string::npos);
     EXPECT_NE(exported.find("\"field_modulated\""), std::string::npos);
     EXPECT_NE(exported.find("\"world_xz\""), std::string::npos);
+    EXPECT_NE(exported.find("\"radiance_hdr\""), std::string::npos);
 
     auto rel_path = write_scene_json(
         root, "light_component.scene.json", exported);
@@ -5554,6 +5597,7 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     ASSERT_TRUE(scene_data->nodes[0].direct_light_source.has_value());
     ASSERT_TRUE(scene_data->nodes[0].ambient_lighting.has_value());
+    ASSERT_TRUE(scene_data->nodes[0].hdri_environment.has_value());
     EXPECT_EQ(
         scene_data->nodes[0].direct_light_source->kind,
         DirectLightKind::Spot);
@@ -5566,6 +5610,15 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     EXPECT_EQ(
         scene_data->nodes[0].ambient_lighting->domain_mapping,
         AmbientLightingDomainMapping::WorldXZ);
+    EXPECT_EQ(
+        scene_data->nodes[0].hdri_environment->format,
+        HDRIEnvironmentFormat::RadianceHDR);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].hdri_environment->rotation_y_radians,
+        1.25f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].hdri_environment->dominant_light_confidence,
+        0.8f);
 
     const auto components = authored_components_for_node(scene_data->nodes[0]);
     EXPECT_EQ(std::count(
@@ -5576,4 +5629,11 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         components.begin(),
         components.end(),
         wz::scene::SceneAuthoredComponentKind::AmbientLighting), 1);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::HDRIEnvironment), 1);
+
+    const auto summary = summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(summary.hdri_environments, 1u);
 }

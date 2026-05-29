@@ -11,12 +11,16 @@ namespace wz::engine::assets
     LightAssetModule::LightAssetModule(
         wz::asset::AssetSystem& system,
         wz::Logger& logger,
+        FileCarrierAssetModule& files,
         DirectLightTable& direct_light_table,
-        AmbientLightingTable& ambient_lighting_table)
+        AmbientLightingTable& ambient_lighting_table,
+        HDRIEnvironmentTable& hdri_environment_table)
         : system_(system)
         , logger_(logger)
+        , files_(files)
         , direct_light_table_(direct_light_table)
         , ambient_lighting_table_(ambient_lighting_table)
+        , hdri_environment_table_(hdri_environment_table)
     {
     }
 
@@ -101,6 +105,66 @@ namespace wz::engine::assets
         return AmbientLightingAsset{ .output = key };
     }
 
+    HDRIEnvironmentAsset LightAssetModule::create_hdri_environment(
+        const HDRIEnvironmentDesc& desc)
+    {
+        const wz::asset::AssetKey file_key = files_.register_file_node(
+            desc.path,
+            kImportedSourceFileSchema,
+            kAssetTypeImportedSourceFile);
+
+        if (file_key == wz::asset::AssetKey{}) {
+            logger_.error("failed to register HDRI environment source file: "
+                + desc.path);
+            return {};
+        }
+
+        HDRIEnvironmentCompileDesc compile_desc{};
+        compile_desc.source_file = file_key;
+        compile_desc.format = desc.format;
+        compile_desc.exposure = desc.exposure;
+        compile_desc.rotation_y_radians = desc.rotation_y_radians;
+        compile_desc.lighting_intensity = desc.lighting_intensity;
+        compile_desc.reflection_intensity = desc.reflection_intensity;
+        compile_desc.background_intensity = desc.background_intensity;
+        compile_desc.dominant_light_direction[0] =
+            desc.dominant_light_direction[0];
+        compile_desc.dominant_light_direction[1] =
+            desc.dominant_light_direction[1];
+        compile_desc.dominant_light_direction[2] =
+            desc.dominant_light_direction[2];
+        compile_desc.dominant_light_color[0] = desc.dominant_light_color[0];
+        compile_desc.dominant_light_color[1] = desc.dominant_light_color[1];
+        compile_desc.dominant_light_color[2] = desc.dominant_light_color[2];
+        compile_desc.dominant_light_intensity =
+            desc.dominant_light_intensity;
+        compile_desc.dominant_light_confidence =
+            desc.dominant_light_confidence;
+
+        if (!compile_desc.valid()) {
+            logger_.error("HDRI environment asset desc is invalid: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_hdri_environment_key(desc.name, compile_desc);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeEnvironmentMap;
+        node.schema = kHDRIEnvironmentSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = compile_desc;
+
+        if (!system_.register_asset(std::move(node), { file_key })) {
+            return HDRIEnvironmentAsset{ .output = key };
+        }
+
+        return HDRIEnvironmentAsset{ .output = key };
+    }
+
     DirectLightHandle LightAssetModule::get_direct_light(
         const DirectLightAsset& asset) const
     {
@@ -133,6 +197,22 @@ namespace wz::engine::assets
         return out;
     }
 
+    HDRIEnvironmentHandle LightAssetModule::get_hdri_environment(
+        const HDRIEnvironmentAsset& asset) const
+    {
+        HDRIEnvironmentHandle out{};
+        if (!asset.valid()) {
+            return out;
+        }
+        if (const auto* compiled = system_.find_compiled(asset.output)) {
+            out.handle = compiled->handle;
+        }
+        if (!out.valid()) {
+            logger_.error("HDRI environment handle not found");
+        }
+        return out;
+    }
+
     const DirectLightData* LightAssetModule::get_direct_light_data(
         DirectLightHandle handle) const
     {
@@ -149,6 +229,15 @@ namespace wz::engine::assets
             return nullptr;
         }
         return ambient_lighting_table_.get(handle.handle);
+    }
+
+    const HDRIEnvironmentData* LightAssetModule::get_hdri_environment_data(
+        HDRIEnvironmentHandle handle) const
+    {
+        if (!handle.valid()) {
+            return nullptr;
+        }
+        return hdri_environment_table_.get(handle.handle);
     }
 
 } // namespace wz::engine::assets

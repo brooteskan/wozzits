@@ -62,6 +62,7 @@ namespace wz::engine::assets
         , render_program_table_{}
         , direct_light_table_{}
         , ambient_lighting_table_{}
+        , hdri_environment_table_{}
         , scene_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
@@ -84,6 +85,7 @@ namespace wz::engine::assets
                 .render_program_table = render_program_table_,
                 .direct_light_table = direct_light_table_,
                 .ambient_lighting_table = ambient_lighting_table_,
+                .hdri_environment_table = hdri_environment_table_,
                 .scene_table         = scene_table_,
             }))
         , files_(system_, logger_, resource_root_)
@@ -106,8 +108,10 @@ namespace wz::engine::assets
         , lights_(
             system_,
             logger_,
+            files_,
             direct_light_table_,
-            ambient_lighting_table_)
+            ambient_lighting_table_,
+            hdri_environment_table_)
         , scenes_(system_, logger_, files_, json_, scene_table_)
     {
     }

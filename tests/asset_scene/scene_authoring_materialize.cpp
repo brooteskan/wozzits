@@ -198,6 +198,14 @@ TEST(SceneAuthoringMaterialize, LightComponentsCreateLightingAssets)
     wz::gpu::Device device{};
     EngineAssetLibrary assets{ device, logger, root };
 
+    const wz::fs::Path hdri_path = wz::fs::join(root, "studio.hdr");
+    const std::vector<uint8_t> hdri_bytes{
+        '#', '?', 'R', 'A', 'D', 'I', 'A', 'N', 'C', 'E', '\n'
+    };
+    ASSERT_EQ(
+        wz::fs::write_file(hdri_path, hdri_bytes, true),
+        wz::fs::FileError::None);
+
     SceneAssetData scene{};
     scene.name = "light_sources";
 
@@ -226,6 +234,15 @@ TEST(SceneAuthoringMaterialize, LightComponentsCreateLightingAssets)
         .color = { 0.25f, 0.35f, 0.5f },
         .intensity = 0.4f,
     };
+    ambient.hdri_environment = SceneHDRIEnvironmentAsset{
+        .path = "studio.hdr",
+        .format = HDRIEnvironmentFormat::RadianceHDR,
+        .exposure = 0.25f,
+        .lighting_intensity = 0.7f,
+        .reflection_intensity = 0.5f,
+        .background_intensity = 0.0f,
+        .dominant_light_confidence = 0.6f,
+    };
     scene.nodes.push_back(std::move(ambient));
 
     SceneNodeAsset terrain = make_scene_node("terrain");
@@ -244,11 +261,15 @@ TEST(SceneAuthoringMaterialize, LightComponentsCreateLightingAssets)
     ASSERT_TRUE(scene.nodes[0].direct_light_source.has_value());
     ASSERT_TRUE(scene.nodes[1].direct_light_source.has_value());
     ASSERT_TRUE(scene.nodes[2].ambient_lighting.has_value());
+    ASSERT_TRUE(scene.nodes[2].hdri_environment.has_value());
     EXPECT_NE(
         scene.nodes[1].direct_light_source->light_asset,
         wz::asset::AssetKey{});
     EXPECT_NE(
         scene.nodes[2].ambient_lighting->lighting_asset,
+        wz::asset::AssetKey{});
+    EXPECT_NE(
+        scene.nodes[2].hdri_environment->environment_asset,
         wz::asset::AssetKey{});
     ASSERT_EQ(scene.lights.size(), 3u);
     EXPECT_EQ(scene.lights[0].node_id, "sun");
@@ -281,6 +302,18 @@ TEST(SceneAuthoringMaterialize, LightComponentsCreateLightingAssets)
         assets.lights().get_ambient_lighting_data(ambient_handle);
     ASSERT_NE(ambient_data, nullptr);
     EXPECT_FLOAT_EQ(ambient_data->intensity, 0.4f);
+
+    const HDRIEnvironmentHandle hdri_handle =
+        assets.lights().get_hdri_environment(HDRIEnvironmentAsset{
+            .output = scene.nodes[2].hdri_environment->environment_asset,
+        });
+    ASSERT_TRUE(hdri_handle.valid());
+    const HDRIEnvironmentData* hdri_data =
+        assets.lights().get_hdri_environment_data(hdri_handle);
+    ASSERT_NE(hdri_data, nullptr);
+    EXPECT_EQ(hdri_data->format, HDRIEnvironmentFormat::RadianceHDR);
+    EXPECT_FLOAT_EQ(hdri_data->lighting_intensity, 0.7f);
+    EXPECT_FLOAT_EQ(hdri_data->dominant_light_confidence, 0.6f);
 }
 
 TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAssets)

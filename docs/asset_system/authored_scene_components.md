@@ -168,6 +168,7 @@ It should be updated as decisions become concrete.
 | RenderStyle / Material | Asset | Should be referenced by renderable/material components, not copied into scene nodes. |
 | Light | Asset-backed component | `DirectLightSource` stores authored component placement/participation and materializes a `DirectLightAsset`; legacy scene-level `SceneLightAsset` records remain as the scene-render bridge. |
 | AmbientLighting | Asset-backed component | Stores ambient participation on a node and materializes an `AmbientLightingAsset`; field modulation can reference scalar/vector field assets. |
+| HDRIEnvironment | Asset-backed component | Stores authored environment-map participation and materializes an `HDRIEnvironmentAsset`; future sky sphere/environment controllers can consume it for background, ambient, reflection, and directional-light metadata. |
 
 ## Source To Runtime Flow
 
@@ -234,7 +235,7 @@ The current high-level categories are:
 | Category | Components |
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
-| Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `AuxiliaryVisual` |
+| Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `HDRIEnvironment`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
 | Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
@@ -346,6 +347,32 @@ normal asset references. Materialization also projects constant ambient
 lighting into a scene light record with type `Ambient`; the terrain surface
 renderer consumes that record as ambient RGB. Field-modulated ambient assets are
 preserved in the asset DAG, but shader-side field sampling is still future work.
+
+### HDRIEnvironment
+
+HDRI environments are authored as node components and materialized into
+`HDRIEnvironmentAsset` nodes in the asset DAG.
+
+Fields:
+
+- `asset`
+- `path`
+- `format`
+- `exposure`
+- `rotation_y_radians`
+- `lighting_intensity`
+- `reflection_intensity`
+- `background_intensity`
+- `dominant_light_direction`
+- `dominant_light_color`
+- `dominant_light_intensity`
+- `dominant_light_confidence`
+
+The component is intentionally data-only for now: it gives the scene a stable
+reference to an HDRI-backed environment asset without deciding whether that HDRI
+is rendered as a background. Later sky sphere/environment behavior can consume
+the same component to feed ambient lighting, reflection probes, or editor-driven
+directional-light alignment.
 
 ### InputReceiver
 
@@ -570,15 +597,27 @@ adapts the height field to a bounded wireframe preview mesh in the GPU scene
 resolver until a generated surface mesh path is available. Explicit `none`
 leaves the terrain role/query data without attaching a renderable.
 
-`TerrainRenderStyle` can also name preferred light component nodes:
+`TerrainRenderStyle` can also declare a lighting consumption policy. The style
+does not own HDRI/environment work; it points at scene lighting inputs that a
+materialization/render-resource resolver can translate into concrete terrain
+lighting constants and, later, GPU environment resources.
 
+- `lighting_source` (`explicit_nodes`, `scene_default`, `environment_node`, `hybrid`)
 - `directional_light_node`
 - `ambient_light_node`
+- `environment_node`
+- `ambient_strength`
+- `sky_visibility_strength`
+- `normal_lighting_strength`
+- `terrain_bounce_strength`
 
-These are authored scene-node ids. Empty values mean automatic selection. In
-the current renderer bridge, materialization prioritizes the selected light
-records in the projected scene light list so the terrain surface renderer
-consumes those lights instead of whichever compatible record appears first.
+The node fields are authored scene-node ids. Empty values mean automatic
+selection. In the current renderer bridge, materialization prioritizes selected
+explicit light records in the projected scene light list so the terrain surface
+renderer consumes those lights instead of whichever compatible record appears
+first. `environment_node`, `scene_default`, and `hybrid` are authored policy
+hooks for the future `SceneLightingContext`/`ResolvedTerrainLighting` boundary;
+they round-trip today but do not introduce a new terrain shader path.
 
 ### AudioListener
 

@@ -6,6 +6,8 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <vector>
+
 TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
 {
     using namespace wz::engine::assets;
@@ -39,6 +41,31 @@ TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
         });
     ASSERT_TRUE(ambient.valid());
 
+    const wz::fs::Path hdri_path = wz::fs::join(root, "studio.hdr");
+    const std::vector<uint8_t> hdri_bytes{
+        '#', '?', 'R', 'A', 'D', 'I', 'A', 'N', 'C', 'E', '\n'
+    };
+    ASSERT_EQ(
+        wz::fs::write_file(hdri_path, hdri_bytes, true),
+        wz::fs::FileError::None);
+
+    const HDRIEnvironmentAsset hdri =
+        assets.lights().create_hdri_environment({
+            .name = "test/studio_hdri",
+            .path = hdri_path,
+            .format = HDRIEnvironmentFormat::RadianceHDR,
+            .exposure = 0.5f,
+            .rotation_y_radians = 1.25f,
+            .lighting_intensity = 0.75f,
+            .reflection_intensity = 0.6f,
+            .background_intensity = 0.0f,
+            .dominant_light_direction = { 0.0f, -0.5f, 0.8660254f },
+            .dominant_light_color = { 1.0f, 0.92f, 0.82f },
+            .dominant_light_intensity = 3.0f,
+            .dominant_light_confidence = 0.8f,
+        });
+    ASSERT_TRUE(hdri.valid());
+
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
 
@@ -61,4 +88,22 @@ TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
     EXPECT_EQ(ambient_data->mode, AmbientLightingMode::Constant);
     EXPECT_FLOAT_EQ(ambient_data->color[2], 0.4f);
     EXPECT_FLOAT_EQ(ambient_data->intensity, 0.35f);
+
+    const HDRIEnvironmentHandle hdri_handle =
+        assets.lights().get_hdri_environment(hdri);
+    ASSERT_TRUE(hdri_handle.valid());
+    const HDRIEnvironmentData* hdri_data =
+        assets.lights().get_hdri_environment_data(hdri_handle);
+    ASSERT_NE(hdri_data, nullptr);
+    EXPECT_EQ(hdri_data->format, HDRIEnvironmentFormat::RadianceHDR);
+    EXPECT_FLOAT_EQ(hdri_data->exposure, 0.5f);
+    EXPECT_FLOAT_EQ(hdri_data->rotation_y_radians, 1.25f);
+    EXPECT_FLOAT_EQ(hdri_data->lighting_intensity, 0.75f);
+    EXPECT_FLOAT_EQ(hdri_data->reflection_intensity, 0.6f);
+    EXPECT_FLOAT_EQ(hdri_data->background_intensity, 0.0f);
+    EXPECT_FLOAT_EQ(hdri_data->dominant_light_direction[2], 0.8660254f);
+    EXPECT_FLOAT_EQ(hdri_data->dominant_light_color[1], 0.92f);
+    EXPECT_FLOAT_EQ(hdri_data->dominant_light_intensity, 3.0f);
+    EXPECT_FLOAT_EQ(hdri_data->dominant_light_confidence, 0.8f);
+    EXPECT_FALSE(hdri_data->source_file == wz::asset::AssetKey{});
 }

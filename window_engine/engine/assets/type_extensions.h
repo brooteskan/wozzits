@@ -1153,7 +1153,7 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeIrradianceVolume =
         static_cast<wz::asset::AssetType>(2272);
 
-    // Reserved lighting/environment asset type. Not implemented yet.
+    // Implemented lighting/environment asset type.
     // Represents environment lighting data, usually referencing HDR/cubemap textures.
     inline constexpr wz::asset::AssetType kAssetTypeEnvironmentMap =
         static_cast<wz::asset::AssetType>(2273);

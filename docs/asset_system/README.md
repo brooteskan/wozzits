@@ -273,6 +273,23 @@ pre-LOD renderer).
 
 ---
 
+## Lighting And Environment
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Direct light | `kDirectLightSchema` | `0x001000` | `kAssetTypeDirectLight` (2268) | `LightAssetModule::create_direct_light()` |
+| Ambient lighting | `kAmbientLightingSchema` | `0x001001` | `kAssetTypeAmbientLighting` (2269) | `LightAssetModule::create_ambient_lighting()` |
+| HDRI environment | `kHDRIEnvironmentSchema` | `0x001002` | `kAssetTypeEnvironmentMap` (2273) | `LightAssetModule::create_hdri_environment()` |
+
+`HDRIEnvironmentAsset` depends on an imported source file carrier and stores
+environment-level controls: exposure, Y rotation, lighting/reflection/background
+intensity, and optional dominant-light metadata. Scene components such as a sky
+sphere can reference this asset later while deciding independently whether to
+render the HDRI as a background, feed ambient lighting, or align/link authored
+directional lights.
+
+---
+
 ## Scenes
 
 Scene assets compile authored JSON scene documents into `SceneAssetData` stored

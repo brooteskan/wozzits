@@ -9,6 +9,7 @@
 
 #include <scene/compile/compiled_scene.h>
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -71,6 +72,69 @@ namespace wz::engine::assets
 
     using AmbientLightingCompileDesc = AmbientLightingData;
 
+    enum class HDRIEnvironmentFormat : uint8_t
+    {
+        Auto,
+        RadianceHDR,
+        OpenEXR,
+    };
+
+    struct HDRIEnvironmentData
+    {
+        wz::asset::AssetKey source_file{};
+        HDRIEnvironmentFormat format = HDRIEnvironmentFormat::Auto;
+
+        // Scene environment controls. A sky sphere/environment component can
+        // decide which of these channels it consumes.
+        float exposure = 0.0f;
+        float rotation_y_radians = 0.0f;
+        float lighting_intensity = 1.0f;
+        float reflection_intensity = 1.0f;
+        float background_intensity = 1.0f;
+
+        // Optional dominant-light metadata for editor actions such as
+        // "align directional light to HDRI sun". Confidence 0 means absent.
+        float dominant_light_direction[3]{ 0.0f, -1.0f, 0.0f };
+        float dominant_light_color[3]{ 1.0f, 1.0f, 1.0f };
+        float dominant_light_intensity = 0.0f;
+        float dominant_light_confidence = 0.0f;
+
+        bool valid() const noexcept
+        {
+            const bool has_source =
+                !(source_file == wz::asset::AssetKey{});
+            const bool finite_controls =
+                std::isfinite(exposure)
+                && std::isfinite(rotation_y_radians)
+                && std::isfinite(lighting_intensity)
+                && std::isfinite(reflection_intensity)
+                && std::isfinite(background_intensity);
+            const bool nonnegative_controls =
+                lighting_intensity >= 0.0f
+                && reflection_intensity >= 0.0f
+                && background_intensity >= 0.0f;
+            const bool finite_dominant =
+                std::isfinite(dominant_light_direction[0])
+                && std::isfinite(dominant_light_direction[1])
+                && std::isfinite(dominant_light_direction[2])
+                && std::isfinite(dominant_light_color[0])
+                && std::isfinite(dominant_light_color[1])
+                && std::isfinite(dominant_light_color[2])
+                && std::isfinite(dominant_light_intensity)
+                && std::isfinite(dominant_light_confidence);
+
+            return has_source
+                && finite_controls
+                && nonnegative_controls
+                && finite_dominant
+                && dominant_light_intensity >= 0.0f
+                && dominant_light_confidence >= 0.0f
+                && dominant_light_confidence <= 1.0f;
+        }
+    };
+
+    using HDRIEnvironmentCompileDesc = HDRIEnvironmentData;
+
     class DirectLightTable
     {
     public:
@@ -106,6 +170,27 @@ namespace wz::engine::assets
             uint32_t epoch = 0;
             bool occupied = false;
             AmbientLightingData lighting;
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    class HDRIEnvironmentTable
+    {
+    public:
+        HDRIEnvironmentTable();
+
+        wz::asset::ResourceHandle add(HDRIEnvironmentData environment);
+        const HDRIEnvironmentData* get(
+            wz::asset::ResourceHandle handle) const;
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            HDRIEnvironmentData environment;
         };
 
         std::vector<Slot> slots_;
