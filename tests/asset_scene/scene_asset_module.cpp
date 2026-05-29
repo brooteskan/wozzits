@@ -4526,6 +4526,91 @@ TEST(SceneECSBoundary, AssetBackedRenderableDoesNotEmbedAssetDefinition)
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
+TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_runtime_ready_refs_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    EngineAssetLibrary assets{ device, logger, root };
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "runtime_ready/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "runtime_ready/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    SceneAssetData scene{};
+    scene.name = "runtime_ready_asset_refs";
+
+    wz::asset::AssetKey terrain_key{};
+    terrain_key.content_hash = { 0x7300, 0x01 };
+    terrain_key.schema_hash = { 0x7300, 0x02 };
+
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(visual));
+
+    SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    terrain.terrain = SceneTerrainAsset{
+        .terrain_asset = terrain_key,
+        .visible = true,
+        .queryable = true,
+        .constrain_movement = true,
+    };
+    scene.nodes.push_back(std::move(terrain));
+
+    EXPECT_FALSE(has_asset_authoring_recipes(scene.nodes[0]));
+    EXPECT_FALSE(has_asset_authoring_recipes(scene.nodes[1]));
+
+    const auto recipe_summary = summarize_scene_asset_authoring_recipes(scene);
+    EXPECT_EQ(recipe_summary.nodes_with_recipes, 0u);
+    EXPECT_EQ(recipe_summary.total_recipes, 0u);
+
+    const auto authored_summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(authored_summary.renderables, 1u);
+    EXPECT_EQ(authored_summary.terrains, 1u);
+    EXPECT_EQ(authored_summary.mesh_sources, 0u);
+    EXPECT_EQ(authored_summary.scalar_field_sources, 0u);
+    EXPECT_EQ(authored_summary.vector_field_sources, 0u);
+    EXPECT_EQ(authored_summary.terrain_mesh_sources, 0u);
+    EXPECT_EQ(authored_summary.terrain_height_field_sources, 0u);
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+    };
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.runtime_entities, 2u);
+    EXPECT_EQ(runtime_summary.terrains, 1u);
+    EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
+    EXPECT_EQ(runtime_summary.terrain_height_field_sources, 0u);
+    EXPECT_TRUE(result.instance.terrains[0].component.terrain_asset
+        == terrain_key);
+}
+
 TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
 {
     using namespace wz::engine::assets;

@@ -61,6 +61,51 @@ Rules of thumb:
 - Legacy compatibility fields may violate these rules, but new component work
   should not expand those paths.
 
+## Scene Editor Asset Authoring Layer
+
+The current `mesh_source`, `mesh_render_style`, `scalar_field_source`,
+`vector_field_source`, `terrain_mesh_source`, and
+`terrain_height_field_source` fields are compatibility fields for the scene
+editor's first asset-authoring workflow. They let an editor document reopen and
+rebuild asset-system nodes, but they should not be treated as the long-term home
+for reusable resource recipes.
+
+The intended long-term split is:
+
+| Layer | Owns | Does not own |
+|---|---|---|
+| `SceneAssetData` | authored entities, hierarchy, transforms, component composition, per-entity asset references | source paths, compiler settings, reusable resource recipes, materialization policy |
+| asset-authoring documents | mesh/scalar/vector/terrain/renderable recipes, source files, generator settings, compiler options, dependency identity | entity hierarchy, runtime component tables |
+| scene-editor document layer | bindings between scene entities/components and authored asset recipes, editor selections, rebuild state | runtime app state, compiled resource tables |
+| `SceneInstance` | runtime projection of scene components | editor/import recipes, asset compiler inputs |
+
+A new editor workflow should create asset-authoring recipe records outside
+`SceneAssetData`, materialize those records into normal asset-DAG nodes, then
+write only explicit component references such as `renderable_asset`,
+`terrain.asset`, or future material/input/script asset references into the
+runtime-ready scene data.
+
+The compatibility source fields may continue to parse, export, fingerprint, and
+materialize so existing editor scenes can reopen. New source-like fields should
+not be added to `SceneNodeAsset` unless they are deliberately compatibility
+bridges with a migration path. Prefer one of these shapes instead:
+
+- an authored asset document that owns the reusable recipe and dependencies
+- a scene-editor document section that binds an entity/component slot to an
+  authored asset recipe
+- a scene component that stores only the resolved asset reference and
+  per-entity participation flags
+
+Migration should be additive:
+
+1. Keep existing source fields readable and exportable.
+2. Add external recipe documents and symbolic editor bindings for new workflows.
+3. Materialize editor bindings into asset-DAG nodes before runtime preview.
+4. Save runtime-ready scene assets with explicit asset references and no
+   dependency on editor/import recipe fields.
+5. Eventually treat source fields as import compatibility rather than primary
+   authoring state.
+
 ## Asset / Component Authoring Checklist
 
 Classify every new authored scene concept before adding fields or schemas.
