@@ -172,8 +172,14 @@
         "path": "surface",
         "depth_test": true,
         "depth_write": true,
+        "lighting_source": "environment_node",
         "directional_light_node": "directional_light_2",
-        "ambient_light_node": "ambient_lighting_1"
+        "ambient_light_node": "ambient_lighting_1",
+        "environment_node": "hdri_environment_1",
+        "ambient_strength": 1,
+        "sky_visibility_strength": 1,
+        "normal_lighting_strength": 1,
+        "terrain_bounce_strength": 0
       },
       "terrain_mesh_source": {
         "mode": "scene_node",
@@ -340,6 +346,58 @@
         "kind": "rotate",
         "enabled": true,
         "visible": false,
+        "size": 1
+      }
+    },
+    {
+      "id": "hdri_environment_1",
+      "parent": "root",
+      "name": "HDRI Environment",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "hdri_environment": {
+        "asset": "asset-key:ca7b76c6f330af7d:03450ac2804e3dda:f11eca55e7001002:0000000000000000:0000000000000001:0000000000000000:f175c91f3859d74b:346c2c4442e03753",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\hdri\\HdrOutdoorFieldBaseballDayClear001_HDR_8K.exr",
+        "format": "openexr",
+        "exposure": 0,
+        "rotation_y_radians": 0,
+        "lighting_intensity": 1,
+        "reflection_intensity": 1,
+        "background_intensity": 0,
+        "dominant_light_direction": [
+          0,
+          -1,
+          0
+        ],
+        "dominant_light_color": [
+          1,
+          1,
+          1
+        ],
+        "dominant_light_intensity": 0,
+        "dominant_light_confidence": 0
+      },
+      "editor_handle": {
+        "kind": "rotate",
+        "enabled": true,
+        "visible": true,
         "size": 1
       }
     }
