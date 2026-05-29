@@ -75,6 +75,49 @@ TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
     EXPECT_FLOAT_EQ(data->bounds_max[2], 1.0f);
 }
 
+TEST(RenderableAssetModule, DuplicateMeshWireframeRegistrationReturnsSameAsset)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_duplicate_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/cube",
+            .kind = ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto first =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/cube_wireframe",
+            .mesh = mesh,
+        });
+    const auto second =
+        assets.renderables().create_mesh_wireframe({
+            .name = "debug/cube_wireframe",
+            .mesh = mesh,
+        });
+
+    ASSERT_TRUE(first.valid());
+    ASSERT_TRUE(second.valid());
+    EXPECT_EQ(second.output, first.output);
+}
+
 TEST(RenderableAssetModule, ResolvesDepthTestedMeshWireframeRenderable)
 {
     const wz::fs::Path root =

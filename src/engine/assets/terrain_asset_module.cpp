@@ -73,11 +73,7 @@ namespace wz::engine::assets
         if (!system_.register_asset(
                 std::move(node),
                 { desc.height_field.output }))
-        {
-            logger_.error("failed to register heightfield terrain: "
-                + desc.name);
-            return {};
-        }
+            return TerrainAsset{ .output = key };
 
         return TerrainAsset{ .output = key };
     }
@@ -114,10 +110,8 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta = compile_desc;
 
-        if (!system_.register_asset(std::move(node), { desc.mesh.output })) {
-            logger_.error("failed to register mesh terrain: " + desc.name);
-            return {};
-        }
+        if (!system_.register_asset(std::move(node), { desc.mesh.output }))
+            return TerrainAsset{ .output = key };
 
         return TerrainAsset{ .output = key };
     }

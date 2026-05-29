@@ -51,6 +51,25 @@ namespace wz::engine::assets
 
             return { lo, hi };
         }
+
+        void append_unique_dependency(
+            std::vector<wz::asset::AssetKey>& deps,
+            wz::asset::AssetKey key)
+        {
+            if (key == wz::asset::AssetKey{})
+                return;
+
+            if (std::find(deps.begin(), deps.end(), key) == deps.end())
+                deps.push_back(key);
+        }
+
+        void append_reference_dependencies(
+            std::vector<wz::asset::AssetKey>& deps,
+            const std::vector<SceneAssetReferenceBinding>& refs)
+        {
+            for (const auto& ref : refs)
+                append_unique_dependency(deps, ref.key);
+        }
     }
 
     SceneAssetModule::SceneAssetModule(
@@ -101,7 +120,19 @@ namespace wz::engine::assets
             .mesh_asset_references = desc.mesh_asset_references,
         };
 
-        if (!system_.register_asset(std::move(node), { json_asset.output })) {
+        std::vector<wz::asset::AssetKey> deps;
+        append_unique_dependency(deps, json_asset.output);
+        append_reference_dependencies(
+            deps,
+            desc.renderable_asset_references);
+        append_reference_dependencies(
+            deps,
+            desc.terrain_asset_references);
+        append_reference_dependencies(
+            deps,
+            desc.mesh_asset_references);
+
+        if (!system_.register_asset(std::move(node), std::move(deps))) {
             logger_.error("failed to register scene node: " + desc.name);
             return {};
         }

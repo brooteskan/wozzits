@@ -68,7 +68,7 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
 
         if (!system_.register_asset(std::move(node), {}))
-            return {};
+            return MeshAsset{ .output = recipe.key };
 
         return MeshAsset{
             .output = recipe.key,
@@ -92,7 +92,7 @@ namespace wz::engine::assets
         node.meta = desc;
 
         if (!system_.register_asset(std::move(node), { desc.source_file }))
-            return {};
+            return MeshAsset{ .output = mesh_key };
 
         return MeshAsset{
             .output = mesh_key,
@@ -111,7 +111,7 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
 
         if (!system_.register_asset(std::move(node), {}))
-            return {};
+            return MeshAsset{ .output = mesh_key };
 
         return MeshAsset{
             .output = mesh_key,

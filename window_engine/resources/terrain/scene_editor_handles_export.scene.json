@@ -57,10 +57,11 @@
     {
       "id": "mesh_1",
       "parent": "root",
+      "name": "rock mesh",
       "transform": {
         "translation": [
           -4.9499998092651367,
-          136.5,
+          164.64999389648438,
           3.5499999523162842
         ],
         "rotation_quat": [
@@ -104,6 +105,7 @@
     {
       "id": "empty_1",
       "parent": "empty_2",
+      "name": "terrain mesh source",
       "transform": {
         "translation": [
           0,
@@ -140,6 +142,7 @@
     {
       "id": "empty_2",
       "parent": "root",
+      "name": "terrain",
       "transform": {
         "translation": [
           0,
@@ -175,6 +178,76 @@
         "height_policy": "highest_accepted_surface",
         "min_surface_normal_y": 0.20000000298023224,
         "include_backfaces": true
+      }
+    },
+    {
+      "id": "empty_3",
+      "parent": "root",
+      "name": "another rock",
+      "transform": {
+        "translation": [
+          0,
+          162.39999389648438,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:f62f17b451fc1c5b:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:eada519cd432e7ad:6fec39f84e4ce07a"
+      },
+      "mesh_source": {
+        "kind": "placeholder",
+        "path": "",
+        "mesh_index": 0
+      },
+      "editor_handle": {
+        "kind": "transform",
+        "enabled": true,
+        "visible": true,
+        "size": 1
+      }
+    },
+    {
+      "id": "empty_4",
+      "parent": "root",
+      "name": "yet another rock",
+      "transform": {
+        "translation": [
+          0,
+          168.80000305175781,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:0b8375fc6de0f6f1:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:eada519cd432bac4:6fec39f84e4ce07a"
+      },
+      "mesh_source": {
+        "kind": "procedural_cube",
+        "path": "",
+        "mesh_index": 0
       }
     }
   ],

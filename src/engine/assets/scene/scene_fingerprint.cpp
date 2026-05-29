@@ -66,21 +66,13 @@ namespace wz::engine::assets
             const bool has_inline_renderable = node.renderable.has_value();
             const bool has_renderable_asset = node.renderable_asset.has_value();
             const bool has_camera = node.camera.has_value();
-            const bool has_mesh_source = node.mesh_source.has_value();
-            const bool has_mesh_render_style =
-                node.mesh_render_style.has_value();
             const bool has_terrain = node.terrain.has_value();
-            const bool has_terrain_mesh_source =
-                node.terrain_mesh_source.has_value();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
             fp.mix_value(has_renderable_asset);
             fp.mix_value(has_camera);
-            fp.mix_value(has_mesh_source);
-            fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_terrain);
-            fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -144,20 +136,6 @@ namespace wz::engine::assets
                 fp.mix_value(boundary.enabled);
             }
 
-            if (node.mesh_source) {
-                const auto& source = *node.mesh_source;
-                fp.mix_value(source.kind);
-                fp.mix_string(source.path);
-                fp.mix_value(source.mesh_index);
-            }
-
-            if (node.mesh_render_style) {
-                const auto& style = *node.mesh_render_style;
-                fp.mix_value(style.kind);
-                fp.mix_value(style.depth_test);
-                fp.mix_value(style.depth_write);
-            }
-
             if (node.terrain) {
                 const auto& terrain = *node.terrain;
                 const auto& key = terrain.terrain_asset;
@@ -172,24 +150,6 @@ namespace wz::engine::assets
                 fp.mix_value(terrain.visible);
                 fp.mix_value(terrain.queryable);
                 fp.mix_value(terrain.constrain_movement);
-            }
-
-            if (node.terrain_mesh_source) {
-                const auto& source = *node.terrain_mesh_source;
-                const auto& key = source.mesh_asset;
-                fp.mix_value(source.mode);
-                fp.mix_string(source.source_node);
-                fp.mix_value(key.content_hash.lo);
-                fp.mix_value(key.content_hash.hi);
-                fp.mix_value(key.schema_hash.lo);
-                fp.mix_value(key.schema_hash.hi);
-                fp.mix_value(key.compiler_hash.lo);
-                fp.mix_value(key.compiler_hash.hi);
-                fp.mix_value(key.deps_hash.lo);
-                fp.mix_value(key.deps_hash.hi);
-                fp.mix_value(source.height_policy);
-                fp.mix_value(source.min_surface_normal_y);
-                fp.mix_value(source.include_backfaces);
             }
 
             if (node.audio_listener) {

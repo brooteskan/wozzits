@@ -60,17 +60,6 @@ namespace wz::engine::assets
         bool constrain_movement = true;
     };
 
-    struct TerrainMeshSourceComponent
-    {
-        SceneTerrainMeshSourceMode mode = SceneTerrainMeshSourceMode::MeshAsset;
-        wz::scene::AuthoredEntityId source_node;
-        wz::asset::AssetKey mesh_asset{};
-        SceneTerrainMeshHeightPolicy height_policy =
-            SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;
-        float min_surface_normal_y = 0.2f;
-        bool include_backfaces = false;
-    };
-
     struct AudioListenerComponent
     {
         bool active = true;
@@ -117,7 +106,6 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<ActorMovementControllerComponent>> actor_movement_controllers;
         std::vector<SceneComponentRecord<GroundBoundaryComponent>> ground_boundaries;
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
-        std::vector<SceneComponentRecord<TerrainMeshSourceComponent>> terrain_mesh_sources;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;

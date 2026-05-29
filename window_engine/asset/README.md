@@ -31,7 +31,8 @@ Changing any component produces a different key. Two assets with the same key ar
 
 ## Lifecycle
 
-The system has three sequential phases.
+The system has three phases. Registration and commit may repeat between runtime
+resolve batches when tools need to add newly materialized assets.
 
 ```
 Registration  →  Commit  →  Runtime
@@ -43,7 +44,7 @@ Registration and Commit are single-threaded. Runtime (resolve) is currently sing
 
 ## Phase 1 — Registration
 
-Declare every asset node and its direct prerequisites. Order does not matter; the graph builder resolves ordering at commit time.
+Declare asset nodes and their direct prerequisites. Order does not matter; the graph builder resolves ordering at commit time. New nodes may also be registered after a successful commit; they become visible only after a later `commit()` rebuild succeeds.
 
 ```cpp
 #include <asset/system.h>
@@ -97,21 +98,25 @@ sys.register_asset(mat_node, { tex_key, mesh_key });
 
 ## Phase 2 — Commit
 
-Freeze the graph. This validates all dependency references, runs cycle detection (via Kahn's algorithm on the underlying DAG), and builds the immutable CSR-backed graph structure.
+Build or rebuild the immutable graph view. This validates all dependency references, runs cycle detection (via Kahn's algorithm on the underlying DAG), and builds the immutable CSR-backed graph structure from all registered source nodes.
 
 ```cpp
 if (!sys.commit()) {
     // Either a dep key was never registered, or a dependency cycle exists.
-    // The system remains in the registration phase — inspect and correct.
+    // If a previous commit succeeded, that prior graph remains active.
     report_error("Asset graph is invalid");
     return;
 }
 ```
 
 After a successful commit:
-- The graph is immutable.
-- `register_asset` must not be called again.
-- `resolve` and `resolve_all` become available.
+- `resolve` and `resolve_all` see the newly committed graph.
+- Existing compiled cache entries remain valid by `AssetKey`.
+- Additional `register_asset` calls are staged for the next `commit()`.
+
+This lets an editor import or materialize more assets after an initial graph has
+already been resolved. Recommitting rebuilds the DAG/index, but unchanged cached
+assets do not recompile.
 
 ---
 

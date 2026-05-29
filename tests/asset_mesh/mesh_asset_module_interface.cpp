@@ -185,7 +185,7 @@ TEST(MeshAssetModuleInterface, ProceduralMeshKindsHaveDistinctAssets)
     EXPECT_NE(quad.output, cube.output);
 }
 
-TEST(MeshAssetModuleInterface, DuplicateProceduralMeshRegistrationReturnsInvalid)
+TEST(MeshAssetModuleInterface, DuplicateProceduralMeshRegistrationReturnsSameAsset)
 {
     wz::asset::CompilerRegistry registry{};
     wz::asset::AssetSystem system{ std::move(registry) };
@@ -203,7 +203,8 @@ TEST(MeshAssetModuleInterface, DuplicateProceduralMeshRegistrationReturnsInvalid
         });
 
     EXPECT_TRUE(first.valid());
-    EXPECT_FALSE(second.valid());
+    EXPECT_TRUE(second.valid());
+    EXPECT_EQ(second.output, first.output);
 }
 
 TEST(MeshAssetModuleInterface, CommitSucceedsAfterRegisteringProceduralMeshes)

@@ -133,6 +133,11 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    // Editor/import authoring drafts. These records may be stored in scene
+    // source JSON so tools can rebuild asset-system nodes, but they are not
+    // app/runtime components and do not instantiate into SceneInstance tables.
+    // A runtime-ready scene must carry resolved asset references such as
+    // renderable_asset and terrain.terrain_asset.
     enum class SceneMeshSourceKind : uint8_t
     {
         Placeholder = 0,
@@ -180,6 +185,9 @@ namespace wz::engine::assets
         SceneNode,
     };
 
+    // Editor/import recipe for deriving a TerrainAsset from a mesh source.
+    // The editor materialization pass should resolve this to terrain.terrain_asset
+    // before preview/runtime instantiation.
     struct SceneTerrainMeshSourceAsset
     {
         SceneTerrainMeshSourceMode mode = SceneTerrainMeshSourceMode::MeshAsset;
@@ -470,10 +478,7 @@ namespace wz::engine::assets
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
             || node.ground_boundary.has_value()
-            || node.mesh_source.has_value()
-            || node.mesh_render_style.has_value()
             || node.terrain.has_value()
-            || node.terrain_mesh_source.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();

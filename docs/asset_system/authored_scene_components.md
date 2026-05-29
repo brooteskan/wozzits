@@ -189,7 +189,8 @@ The current high-level categories are:
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
-| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `TerrainMeshSource`, `AudioListener`, `EventListener` |
+| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
+| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `TerrainMeshSource` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -352,10 +353,20 @@ scene-level systems. Authored scene JSON should reference terrain assets rather
 than embedding heightmap paths, mesh import settings, material graphs, or LOD
 recipes directly.
 
+### MeshSource / MeshRenderStyle
+
+Editor/import authoring drafts for building asset-system nodes from scene-editor
+controls. They may exist in saved editor scene JSON, but they are not runtime app
+components. Before preview/runtime instantiation, the editor must materialize
+them into asset-DAG nodes and attach the resulting `renderable_asset`.
+
+The asset DAG owns source paths, mesh indices, render program choices, and render
+policy flags. The scene keeps these records only so the editor can re-open and
+rebuild the asset graph.
+
 ### TerrainMeshSource
 
-Runtime/editor-relevant authored source component for building a terrain asset
-from one mesh asset.
+Editor/import authoring draft for building a terrain asset from one mesh asset.
 
 Fields:
 
@@ -366,17 +377,21 @@ Fields:
 - `min_surface_normal_y`
 - `include_backfaces`
 
-`TerrainMeshSource` is an explicit authoring recipe attached to a terrain node.
-It can reference a direct mesh asset or a `source_node` selected in the editor.
-Scene-node selection is intentionally scoped to mesh-source nodes parented
-directly under the terrain node. This keeps source meshes authored in terrain
-space and makes the terrain node transform the shared placement/scale for both
-source data and derived terrain. The default height policy is
+`TerrainMeshSource` is an explicit editor authoring recipe attached to a terrain
+node. It can reference a direct mesh asset or a `source_node` selected in the
+editor. Scene-node selection is intentionally scoped to mesh-source nodes
+parented directly under the terrain node. This keeps source meshes authored in
+terrain space and makes the terrain node transform the shared placement/scale
+for both source data and derived terrain. The default height policy is
 `highest_accepted_surface`: when several mesh hits exist at the same `(x, z)`,
 the terrain build should choose the highest hit whose normal passes
 `min_surface_normal_y`. This keeps rock-like or closed meshes from silently
 becoming arbitrary multi-layer terrain while still giving the editor a simple
 first mesh-to-terrain workflow.
+
+Before preview/runtime instantiation, the editor must resolve this draft into a
+`TerrainAsset` and store that key on the `Terrain` component. `TerrainMeshSource`
+does not instantiate into `SceneInstance` runtime component tables.
 
 ### AudioListener
 
@@ -447,6 +462,11 @@ Examples:
 
 The asset-system resource remains owned by the asset system. The component owns
 the authored relationship between an entity and that resource.
+
+Scene asset registration must also encode those references as asset-DAG
+dependencies. A runtime-ready scene asset should be resolvable from the DAG
+alone: resolving the scene must compile the referenced renderable, terrain, mesh,
+and other resource assets without requiring editor-only component state.
 
 The current raw `AssetKey` spelling in scene JSON is an implementation detail of
 the first asset-backed renderable path. Authored JSON may now use symbolic

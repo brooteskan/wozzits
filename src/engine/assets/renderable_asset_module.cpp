@@ -54,10 +54,8 @@ namespace wz::engine::assets
             .policy_flags = desc.policy_flags,
         };
 
-        if (!system_.register_asset(std::move(node), { desc.mesh.output })) {
-            logger_.error("failed to register mesh wireframe renderable: " + desc.name);
-            return {};
-        }
+        if (!system_.register_asset(std::move(node), { desc.mesh.output }))
+            return RenderableAsset{ .output = key };
 
         return RenderableAsset{
             .output = key,
@@ -103,10 +101,8 @@ namespace wz::engine::assets
         if (desc.color_lod.valid())
             deps.push_back(desc.color_lod.output);
 
-        if (!system_.register_asset(std::move(node), deps)) {
-            logger_.error("failed to register gaussian splat debug renderable: " + desc.name);
-            return {};
-        }
+        if (!system_.register_asset(std::move(node), deps))
+            return RenderableAsset{ .output = key };
 
         return RenderableAsset{
             .output = key,
@@ -141,10 +137,8 @@ namespace wz::engine::assets
             .scalar_field_asset = desc.scalar_field.output,
         };
 
-        if (!system_.register_asset(std::move(node), { desc.scalar_field.output })) {
-            logger_.error("failed to register scalar field debug renderable: " + desc.name);
-            return {};
-        }
+        if (!system_.register_asset(std::move(node), { desc.scalar_field.output }))
+            return RenderableAsset{ .output = key };
 
         return RenderableAsset{
             .output = key,

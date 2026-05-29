@@ -140,7 +140,105 @@ TEST_F(AssetSystemTest, Commit_IdempotentOnSuccess)
 {
     EXPECT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
     EXPECT_TRUE(sys->commit());
+    EXPECT_TRUE(sys->commit());
     EXPECT_TRUE(sys->committed());
+}
+
+TEST_F(AssetSystemTest, RegisterAfterCommit_RecommitMakesNodeResolvable)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    auto before_recommit = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(before_recommit));
+    EXPECT_EQ(std::get<ResolveError>(before_recommit), ResolveError::NodeNotFound);
+
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyB, AssetType::Texture, kTexSchema)));
+
+    before_recommit = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(before_recommit));
+    EXPECT_EQ(std::get<ResolveError>(before_recommit), ResolveError::NodeNotFound);
+
+    ASSERT_TRUE(sys->commit());
+
+    auto after_recommit = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(after_recommit));
+    EXPECT_TRUE(std::get<ResourceHandle>(after_recommit).valid());
+}
+
+TEST_F(AssetSystemTest, RecommitPreservesCachedCompiledAssets)
+{
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&](const AssetNode& input,
+                       std::span<const AssetNode>,
+                       std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            ResourceHandle h;
+            h.id = static_cast<uint32_t>(
+                input.key.content_hash.lo & 0xFFFF'FFFFu);
+            if (h.id == 0) h.id = 0xDEAD;
+            h.epoch = 1;
+            h.type = input.type;
+            out.payload = h;
+            return out;
+        }
+    });
+    reg2.register_compiler(make_stub_compiler(kTexSchema, AssetType::Texture));
+
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    auto first = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(first));
+    EXPECT_EQ(compile_count, 1u);
+
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyB, AssetType::Texture, kTexSchema),
+        { kKeyA }));
+    ASSERT_TRUE(sys2.commit());
+
+    auto second = sys2.resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(second));
+    EXPECT_EQ(compile_count, 1u);
+    EXPECT_EQ(sys2.cache().lookup(kKeyA), std::get<ResourceHandle>(first));
+}
+
+TEST_F(AssetSystemTest, FailedRecommitLeavesPreviousGraphActive)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    auto original = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(original));
+
+    ASSERT_TRUE(sys->register_asset(
+        make_node(kKeyB, AssetType::Texture, kTexSchema),
+        { kKeyD }));
+    EXPECT_FALSE(sys->commit());
+
+    auto still_resolves = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(still_resolves));
+    EXPECT_EQ(std::get<ResourceHandle>(still_resolves),
+        std::get<ResourceHandle>(original));
+
+    auto missing_delta = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(missing_delta));
+    EXPECT_EQ(std::get<ResolveError>(missing_delta), ResolveError::NodeNotFound);
+
+    ASSERT_TRUE(sys->register_asset(
+        make_node(kKeyD, AssetType::Material, kMatSchema)));
+    ASSERT_TRUE(sys->commit());
+    auto resolved_delta = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(resolved_delta));
 }
 
 

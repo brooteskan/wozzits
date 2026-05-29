@@ -4,22 +4,20 @@ namespace wz::asset
 
 
     bool AssetSystem::commit() {
-        assert(!committed_ && "commit() already called");
-
         AssetBuilder builder;
 
         // Pass 1: add every node (registration order = provisional handle).
-        for (auto& e : pending_)
-            wz::core::graph::add_node(builder, std::move(e.node));
+        for (const auto& e : registered_)
+            wz::core::graph::add_node(builder, e.node);
 
         // Pass 2: wire prerequisite → dependent edges.
         // Edge direction: prerequisite(A) → dependent(B)
         //   → parents(g, B) == prerequisites of B   (resolved first)
         //   → children(g, A) == dependents of A     (compiled after A)
-        for (uint32_t i = 0; i < static_cast<uint32_t>(pending_.size()); ++i) {
-            for (const AssetKey& dep_key : pending_[i].dep_keys) {
-                auto it = pending_index_.find(dep_key);
-                if (it == pending_index_.end()) return false;  // missing dep
+        for (uint32_t i = 0; i < static_cast<uint32_t>(registered_.size()); ++i) {
+            for (const AssetKey& dep_key : registered_[i].dep_keys) {
+                auto it = registered_index_.find(dep_key);
+                if (it == registered_index_.end()) return false;  // missing dep
 
                 // add_edge(from=prerequisite, to=dependent)
                 wz::core::graph::add_edge(
@@ -38,9 +36,6 @@ namespace wz::asset
         storage_ = std::move(*result);
         index_ = build_asset_index(storage_->dag());
         committed_ = true;
-
-        pending_.clear();
-        pending_index_.clear();
         return true;
     }
 

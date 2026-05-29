@@ -132,3 +132,46 @@ TEST(TerrainAssetModule, ResolvesMeshTerrain)
     EXPECT_FALSE(data->supports_height_query);
     EXPECT_FALSE(data->supports_ray_query);
 }
+
+TEST(TerrainAssetModule, DuplicateMeshTerrainRegistrationReturnsSameAsset)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_terrain_duplicate_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/mesh_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto first =
+        assets.terrains().create_from_mesh({
+            .name = "terrain/mesh_surface",
+            .mesh = mesh,
+        });
+    const auto second =
+        assets.terrains().create_from_mesh({
+            .name = "terrain/mesh_surface",
+            .mesh = mesh,
+        });
+
+    ASSERT_TRUE(first.valid());
+    ASSERT_TRUE(second.valid());
+    EXPECT_EQ(second.output, first.output);
+}

@@ -7,11 +7,15 @@
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 //
 //   1. Registration  — call register_asset() to declare nodes and their deps.
-//   2. Commit        — call commit() to build the immutable DAG.
+//   2. Commit        — call commit() to build/rebuild the immutable DAG view.
 //                      Returns false on cycle detection or missing dep keys.
 //   3. Runtime       — call resolve() for demand-driven, cached compilation.
 //                      call resolve_all() to eagerly compile every node in
 //                      topological order (useful for offline / load-time bake).
+//
+// Additional nodes may be registered after commit(). A later commit() rebuilds
+// the DAG/index from all registered source nodes while preserving compiled cache
+// entries by AssetKey.
 //
 // ── Thread safety ─────────────────────────────────────────────────────────────
 //
@@ -52,8 +56,10 @@ namespace wz::asset {
         }
 
         // ── Registration phase ────────────────────────────────────────────────────
-        // Must be called before commit(). Order of registration does not matter;
-        // the DAG builder resolves ordering during commit().
+        // Order of registration does not matter; the DAG builder resolves
+        // ordering during commit(). If called after commit(), the new node is
+        // staged for the next commit() rebuild and is not visible to resolve()
+        // until that rebuild succeeds.
         //
         // dep_keys: AssetKeys of all direct prerequisites for this node.
         //           Every listed key must itself be registered before commit().
@@ -61,25 +67,23 @@ namespace wz::asset {
         // Returns false (and does nothing) if the node's key is already registered.
 
         inline bool register_asset(AssetNode node, std::vector<AssetKey> dep_keys = {}) {
-            assert(!committed_ && "register_asset() called after commit()");
+            if (registered_index_.count(node.key)) return false;
 
-            if (pending_index_.count(node.key)) return false;
-
-            const uint32_t slot = static_cast<uint32_t>(pending_.size());
-            pending_index_.emplace(node.key, slot);
-            pending_.push_back({ std::move(node), std::move(dep_keys) });
+            const uint32_t slot = static_cast<uint32_t>(registered_.size());
+            registered_index_.emplace(node.key, slot);
+            registered_.push_back({ std::move(node), std::move(dep_keys) });
             return true;
         }
 
         // ── Commit phase ──────────────────────────────────────────────────────────
-        // Freezes the DAG. May only be called once.
+        // Builds or rebuilds the immutable DAG from all registered source nodes.
         //
         // Returns false if:
         //   • A declared dep_key was never registered (missing node).
         //   • The dependency graph contains a cycle (impossible to resolve).
         //
-        // On false, the system remains in the registration phase so the caller can
-        // inspect / correct the problem and retry.
+        // On false, the previous committed DAG (if any) remains active so the
+        // caller can inspect / correct the problem and retry.
 
         bool commit();
 
@@ -199,15 +203,15 @@ namespace wz::asset {
         const CompilerRegistry& registry() const { return registry_; }
 
     private:
-        // ── Registration phase state (cleared after commit) ───────────────────────
+        // ── Registered source graph state ─────────────────────────────────────────
 
         struct RegistrationEntry {
             AssetNode            node;
             std::vector<AssetKey> dep_keys;
         };
 
-        std::vector<RegistrationEntry>                        pending_;
-        std::unordered_map<AssetKey, uint32_t, AssetKeyHash>  pending_index_;
+        std::vector<RegistrationEntry>                        registered_;
+        std::unordered_map<AssetKey, uint32_t, AssetKeyHash>  registered_index_;
 
         // ── Post-commit state ─────────────────────────────────────────────────────
 

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <variant>
 
 namespace
 {
@@ -2719,8 +2720,13 @@ TEST(SceneAssetModule, SymbolicRenderableReferenceResolvesDuringSceneCompile)
     ASSERT_TRUE(scene_asset.valid());
 
     ASSERT_TRUE(assets.commit());
-    const auto report = assets.resolve_all();
-    ASSERT_TRUE(report.ok()) << "resolve failures: " << report.failures.size();
+    const auto resolved_scene = assets.system().resolve(scene_asset.output);
+    ASSERT_TRUE(std::holds_alternative<wz::asset::ResourceHandle>(
+        resolved_scene));
+
+    // Resolving the scene must also resolve the referenced renderable through
+    // the asset DAG, not through editor-side component materialization state.
+    EXPECT_TRUE(assets.renderables().get_renderable(renderable).valid());
 
     const auto* scene_data = assets.scenes().get_scene_data(
         assets.scenes().get_scene(scene_asset));
@@ -2743,6 +2749,84 @@ TEST(SceneAssetModule, SymbolicRenderableReferenceResolvesDuringSceneCompile)
     EXPECT_EQ(
         result.instance.renderables[cube_h].node_class.role,
         wz::scene::SceneRole::Renderable);
+}
+
+TEST(SceneAssetModule, SceneCanReferenceRenderableRegisteredAfterInitialCommit)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_incremental_renderable_ref_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/incremental_cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "debug/incremental_cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "incremental_symbolic_renderable_reference_scene",
+  "nodes": [{
+    "id": "cube",
+    "renderable": {
+      "asset": "asset://renderables/incremental_cube_wireframe"
+    }
+  }]
+})";
+
+    auto rel_path = write_scene_json(
+        root,
+        "incremental_symbolic_renderable_reference.scene.json",
+        json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "incremental_symbolic_renderable_reference",
+            .path = rel_path,
+            .renderable_asset_references = {
+                SceneAssetReferenceBinding{
+                    .uri = "asset://renderables/incremental_cube_wireframe",
+                    .key = renderable.output,
+                },
+            },
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto resolved_scene = assets.system().resolve(scene_asset.output);
+    ASSERT_TRUE(std::holds_alternative<wz::asset::ResourceHandle>(
+        resolved_scene));
+    EXPECT_TRUE(assets.renderables().get_renderable(renderable).valid());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+
+    TestRenderableResolver resolver(assets.renderables());
+    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    auto result = instantiate_scene(*scene_data, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("cube"));
 }
 
 TEST(SceneAssetModule, MissingSymbolicRenderableReferenceFailsSceneCompile)
@@ -4558,7 +4642,7 @@ TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
     EXPECT_NE(original, changed);
 }
 
-TEST(SceneECSBoundary, FingerprintTracksMeshDescriptors)
+TEST(SceneECSBoundary, FingerprintIgnoresEditorMeshAuthoringDrafts)
 {
     using namespace wz::engine::assets;
 
@@ -4582,12 +4666,15 @@ TEST(SceneECSBoundary, FingerprintTracksMeshDescriptors)
     const uint64_t original = scene_asset_fingerprint(scene);
 
     scene.nodes[0].mesh_source->mesh_index = 1;
-    const uint64_t changed_source = scene_asset_fingerprint(scene);
-    EXPECT_NE(original, changed_source);
+    EXPECT_EQ(original, scene_asset_fingerprint(scene));
 
     scene.nodes[0].mesh_render_style->depth_write = true;
-    const uint64_t changed_style = scene_asset_fingerprint(scene);
-    EXPECT_NE(changed_source, changed_style);
+    EXPECT_EQ(original, scene_asset_fingerprint(scene));
+
+    wz::asset::AssetKey materialized_renderable{};
+    materialized_renderable.content_hash = { 0x1234, 0x5678 };
+    scene.nodes[0].renderable_asset = materialized_renderable;
+    EXPECT_NE(original, scene_asset_fingerprint(scene));
 }
 
 TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
@@ -4753,18 +4840,7 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
-    ASSERT_EQ(result.instance.terrain_mesh_sources.size(), 1u);
-    EXPECT_EQ(
-        result.instance.terrain_mesh_sources[0].component.mesh_asset,
-        mesh.output);
-    EXPECT_EQ(
-        result.instance.terrain_mesh_sources[0].component.source_node,
-        "source_mesh");
-    EXPECT_FLOAT_EQ(
-        result.instance.terrain_mesh_sources[0]
-            .component.min_surface_normal_y,
-        0.35f);
-    EXPECT_TRUE(
-        result.instance.terrain_mesh_sources[0]
-            .component.include_backfaces);
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
 }
