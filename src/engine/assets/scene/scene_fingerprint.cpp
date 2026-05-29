@@ -69,6 +69,9 @@ namespace wz::engine::assets
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
+            const bool has_terrain = node.terrain.has_value();
+            const bool has_terrain_mesh_source =
+                node.terrain_mesh_source.has_value();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
@@ -76,6 +79,8 @@ namespace wz::engine::assets
             fp.mix_value(has_camera);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
+            fp.mix_value(has_terrain);
+            fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -151,6 +156,38 @@ namespace wz::engine::assets
                 fp.mix_value(style.kind);
                 fp.mix_value(style.depth_test);
                 fp.mix_value(style.depth_write);
+            }
+
+            if (node.terrain) {
+                const auto& terrain = *node.terrain;
+                const auto& key = terrain.terrain_asset;
+                fp.mix_value(key.content_hash.lo);
+                fp.mix_value(key.content_hash.hi);
+                fp.mix_value(key.schema_hash.lo);
+                fp.mix_value(key.schema_hash.hi);
+                fp.mix_value(key.compiler_hash.lo);
+                fp.mix_value(key.compiler_hash.hi);
+                fp.mix_value(key.deps_hash.lo);
+                fp.mix_value(key.deps_hash.hi);
+                fp.mix_value(terrain.visible);
+                fp.mix_value(terrain.queryable);
+                fp.mix_value(terrain.constrain_movement);
+            }
+
+            if (node.terrain_mesh_source) {
+                const auto& source = *node.terrain_mesh_source;
+                const auto& key = source.mesh_asset;
+                fp.mix_value(key.content_hash.lo);
+                fp.mix_value(key.content_hash.hi);
+                fp.mix_value(key.schema_hash.lo);
+                fp.mix_value(key.schema_hash.hi);
+                fp.mix_value(key.compiler_hash.lo);
+                fp.mix_value(key.compiler_hash.hi);
+                fp.mix_value(key.deps_hash.lo);
+                fp.mix_value(key.deps_hash.hi);
+                fp.mix_value(source.height_policy);
+                fp.mix_value(source.min_surface_normal_y);
+                fp.mix_value(source.include_backfaces);
             }
 
             if (node.audio_listener) {

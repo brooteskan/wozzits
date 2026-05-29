@@ -47,6 +47,10 @@ namespace wz::engine::assets
         , resource_root_(std::move(resource_root))
         , scalar_fields_table_{}
         , csv_table_{}
+        , json_table_{}
+        , toml_table_{}
+        , mesh_table_{}
+        , terrain_table_{}
         , gaussian_splat_cloud_table_{}
         , gaussian_splat_color_lod_table_{}
         , data_table_{}
@@ -56,9 +60,6 @@ namespace wz::engine::assets
         , renderable_table_{}
         , render_program_table_{}
         , scene_table_{}
-        , json_table_{}
-        , toml_table_{}
-        , mesh_table_{}
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
                 .device                    = device,
@@ -68,6 +69,7 @@ namespace wz::engine::assets
                 .json_table                = json_table_,
                 .toml_table                = toml_table_,
                 .mesh_table                = mesh_table_,
+                .terrain_table             = terrain_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
                 .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table_,
                 .data_table = data_table_,
@@ -85,6 +87,7 @@ namespace wz::engine::assets
         , json_(system_, logger_, files_, json_table_)
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
+        , terrains_(system_, logger_, terrain_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)
         , data_tables_(system_, logger_, data_table_)

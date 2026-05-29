@@ -15,8 +15,19 @@ namespace wz::engine::assets
     namespace
     {
         wz::asset::Hash scene_reference_bindings_hash(
-            std::vector<SceneAssetReferenceBinding> refs)
+            std::vector<SceneAssetReferenceBinding> refs,
+            std::vector<SceneAssetReferenceBinding> terrain_refs = {},
+            std::vector<SceneAssetReferenceBinding> mesh_refs = {})
         {
+            refs.insert(
+                refs.end(),
+                terrain_refs.begin(),
+                terrain_refs.end());
+            refs.insert(
+                refs.end(),
+                mesh_refs.begin(),
+                mesh_refs.end());
+
             if (refs.empty())
                 return {};
 
@@ -73,7 +84,9 @@ namespace wz::engine::assets
             make_scene_from_json_key(
                 json_asset.output,
                 scene_reference_bindings_hash(
-                    desc.renderable_asset_references));
+                desc.renderable_asset_references,
+                    desc.terrain_asset_references,
+                    desc.mesh_asset_references));
 
         wz::asset::AssetNode node;
         node.key = scene_key;
@@ -84,6 +97,8 @@ namespace wz::engine::assets
         node.meta = SceneFromJSONCompileDesc{
             .renderable_asset_references =
                 desc.renderable_asset_references,
+            .terrain_asset_references = desc.terrain_asset_references,
+            .mesh_asset_references = desc.mesh_asset_references,
         };
 
         if (!system_.register_asset(std::move(node), { json_asset.output })) {

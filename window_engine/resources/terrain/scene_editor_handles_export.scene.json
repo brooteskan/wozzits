@@ -1,6 +1,6 @@
 {
   "schema": "wozzits.scene.v0",
-  "name": "editor_handles_demo",
+  "name": "scene_editor_scene",
   "nodes": [
     {
       "id": "root",
@@ -26,27 +26,69 @@
       "visible": true
     },
     {
-      "id": "rock_front_left",
+      "id": "camera_01",
       "parent": "root",
       "transform": {
         "translation": [
-          -9.3000001907348633,
-          -8.6499996185302734,
-          8
+          0,
+          2,
+          -8
         ],
         "rotation_quat": [
           0,
-          -0.6087614893913269,
           0,
-          0.79335331916809082
+          0,
+          1
         ],
         "scale": [
-          1.6909999847412109,
-          0.87099999189376831,
-          0.58099997043609619
+          1,
+          1,
+          1
         ]
       },
       "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "mesh_1",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          -5,
+          -0.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:2d54f0a29b592fa3:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:67032548a8e5d22f:7da0798d4ae900c1"
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\low_poly_rock.glb",
+        "mesh_index": 0
+      },
+      "mesh_render_style": {
+        "kind": "wireframe",
+        "depth_test": false,
+        "depth_write": false
+      },
       "debug_visual": {
         "kind": "axes",
         "scale": 1,
@@ -55,12 +97,12 @@
       "editor_handle": {
         "kind": "transform",
         "enabled": true,
-        "visible": true,
+        "visible": false,
         "size": 1
       }
     },
     {
-      "id": "rock_center",
+      "id": "empty_1",
       "parent": "root",
       "transform": {
         "translation": [
@@ -80,86 +122,10 @@
           1
         ]
       },
-      "visible": true,
-      "debug_visual": {
-        "kind": "axes",
-        "scale": 1.5,
-        "visible": true
-      },
-      "editor_handle": {
-        "kind": "translate",
-        "enabled": true,
-        "visible": true,
-        "size": 1.5
-      }
-    },
-    {
-      "id": "rock_back_right",
-      "parent": "root",
-      "transform": {
-        "translation": [
-          3,
-          4,
-          2
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "debug_visual": {
-        "kind": "axes",
-        "scale": 0.75,
-        "visible": true
-      },
-      "editor_handle": {
-        "kind": "rotate",
-        "enabled": true,
-        "visible": true,
-        "size": 0.75
-      }
-    },
-    {
-      "id": "disabled_scale_marker",
-      "parent": "root",
-      "transform": {
-        "translation": [
-          5,
-          6,
-          -3
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "debug_visual": {
-        "kind": "axes",
-        "scale": 0.5,
-        "visible": true
-      },
-      "editor_handle": {
-        "kind": "scale",
-        "enabled": false,
-        "visible": true,
-        "size": 0.5
-      }
+      "visible": true
     }
-  ]
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
 }

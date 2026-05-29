@@ -52,6 +52,23 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    struct TerrainComponent
+    {
+        wz::asset::AssetKey terrain_asset{};
+        bool visible = true;
+        bool queryable = true;
+        bool constrain_movement = true;
+    };
+
+    struct TerrainMeshSourceComponent
+    {
+        wz::asset::AssetKey mesh_asset{};
+        SceneTerrainMeshHeightPolicy height_policy =
+            SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;
+        float min_surface_normal_y = 0.2f;
+        bool include_backfaces = false;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -97,6 +114,8 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<FlyingCameraControllerComponent>> flying_camera_controllers;
         std::vector<SceneComponentRecord<ActorMovementControllerComponent>> actor_movement_controllers;
         std::vector<SceneComponentRecord<GroundBoundaryComponent>> ground_boundaries;
+        std::vector<SceneComponentRecord<TerrainComponent>> terrains;
+        std::vector<SceneComponentRecord<TerrainMeshSourceComponent>> terrain_mesh_sources;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;

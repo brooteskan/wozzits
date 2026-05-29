@@ -1573,6 +1573,99 @@ TEST(SceneAssetModule, MeshComponentDescriptorsRoundTrip)
         reparsed_scene_data->nodes[0].mesh_render_style.has_value());
 }
 
+TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_terrain_component_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "terrain/scene_height",
+            .width = 4,
+            .height = 4,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        });
+    ASSERT_TRUE(field.valid());
+
+    TerrainFromHeightFieldDesc terrain_desc{};
+    terrain_desc.name = "terrain/scene_terrain";
+    terrain_desc.height_field = field;
+    terrain_desc.size[0] = 16.0f;
+    terrain_desc.size[1] = 16.0f;
+
+    const auto terrain =
+        assets.terrains().create_from_height_field(terrain_desc);
+    ASSERT_TRUE(terrain.valid());
+
+    SceneAssetData authored{};
+    authored.name = "terrain_component_scene";
+    SceneNodeAsset node{};
+    node.id = "landscape";
+    node.terrain = SceneTerrainAsset{
+        .terrain_asset = terrain.output,
+        .visible = true,
+        .queryable = true,
+        .constrain_movement = false,
+    };
+    authored.nodes.push_back(std::move(node));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"terrain\""), std::string::npos);
+    EXPECT_NE(exported.find("\"asset\""), std::string::npos);
+    EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
+    EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
+    EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root, "terrain_component.scene.json", exported);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "terrain_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].terrain.has_value());
+    EXPECT_EQ(scene_data->nodes[0].terrain->terrain_asset, terrain.output);
+    EXPECT_TRUE(scene_data->nodes[0].terrain->visible);
+    EXPECT_TRUE(scene_data->nodes[0].terrain->queryable);
+    EXPECT_FALSE(scene_data->nodes[0].terrain->constrain_movement);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.terrains.size(), 1u);
+    EXPECT_EQ(
+        result.instance.terrains[0].component.terrain_asset,
+        terrain.output);
+    EXPECT_FALSE(result.instance.terrains[0].component.constrain_movement);
+}
+
 // ─── Descriptor validation (negative) tests ─────────────────────────────
 
 namespace
@@ -4521,4 +4614,137 @@ TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
 
     const uint64_t after = scene_asset_fingerprint(scene);
     EXPECT_EQ(before, after);
+}
+
+TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_terrain_mesh_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "terrain/source_rock",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "terrain_mesh_source_scene",
+  "nodes": [
+    {
+      "id": "terrain",
+      "terrain_mesh_source": {
+        "asset": "asset://meshes/source_rock",
+        "height_policy": "highest_accepted_surface",
+        "min_surface_normal_y": 0.35,
+        "include_backfaces": true
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "terrain_mesh_source.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "terrain_mesh_source",
+            .path = rel_path,
+            .mesh_asset_references = {
+                SceneAssetReferenceBinding{
+                    .uri = "asset://meshes/source_rock",
+                    .key = mesh.output,
+                },
+            },
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.terrain_mesh_source.has_value());
+    EXPECT_EQ(node.terrain_mesh_source->mesh_asset, mesh.output);
+    EXPECT_EQ(
+        node.terrain_mesh_source->height_policy,
+        SceneTerrainMeshHeightPolicy::HighestAcceptedSurface);
+    EXPECT_FLOAT_EQ(
+        node.terrain_mesh_source->min_surface_normal_y,
+        0.35f);
+    EXPECT_TRUE(node.terrain_mesh_source->include_backfaces);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"terrain_mesh_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"height_policy\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"highest_accepted_surface\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"min_surface_normal_y\""), std::string::npos);
+    EXPECT_NE(exported.find("\"include_backfaces\""), std::string::npos);
+    EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+
+    const wz::fs::Path reparse_root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_terrain_mesh_source_reparse_test");
+    ASSERT_EQ(
+        wz::fs::create_directories(reparse_root),
+        wz::fs::FileError::None);
+
+    wz::Logger reparse_logger;
+    wz::gpu::Device reparse_device{};
+    wz::engine::assets::EngineAssetLibrary reparse_assets{
+        reparse_device, reparse_logger, reparse_root };
+
+    auto exported_rel_path = write_scene_json(
+        reparse_root,
+        "terrain_mesh_source_exported.scene.json",
+        exported);
+    const auto exported_scene_asset =
+        reparse_assets.scenes().create_scene_from_json({
+            .name = "terrain_mesh_source_exported",
+            .path = exported_rel_path,
+        });
+    ASSERT_TRUE(exported_scene_asset.valid());
+    ASSERT_TRUE(reparse_assets.commit());
+    ASSERT_TRUE(reparse_assets.resolve_all().ok());
+
+    const auto* reparsed_scene_data = reparse_assets.scenes().get_scene_data(
+        reparse_assets.scenes().get_scene(exported_scene_asset));
+    ASSERT_NE(reparsed_scene_data, nullptr);
+    ASSERT_EQ(reparsed_scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(
+        reparsed_scene_data->nodes[0].terrain_mesh_source.has_value());
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.terrain_mesh_sources.size(), 1u);
+    EXPECT_EQ(
+        result.instance.terrain_mesh_sources[0].component.mesh_asset,
+        mesh.output);
+    EXPECT_FLOAT_EQ(
+        result.instance.terrain_mesh_sources[0]
+            .component.min_surface_normal_y,
+        0.35f);
+    EXPECT_TRUE(
+        result.instance.terrain_mesh_sources[0]
+            .component.include_backfaces);
 }

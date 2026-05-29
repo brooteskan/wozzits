@@ -146,6 +146,18 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000504ull
     };
 
+    // Semantic terrain asset generated from a 2D scalar height field.
+    // Produces kAssetTypeTerrain output.
+    inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{
+        0xF11E'CA55'E7'000A00ull
+    };
+
+    // Semantic terrain asset generated from a mesh surface.
+    // Produces kAssetTypeTerrain output.
+    inline constexpr wz::asset::SchemaID kTerrainFromMeshSchema{
+        0xF11E'CA55'E7'000A01ull
+    };
+
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.

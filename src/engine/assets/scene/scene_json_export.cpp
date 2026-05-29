@@ -142,6 +142,16 @@ namespace wz::engine::assets
             return "wireframe";
         }
 
+        const char* terrain_mesh_height_policy_name(
+            SceneTerrainMeshHeightPolicy policy)
+        {
+            switch (policy) {
+            case SceneTerrainMeshHeightPolicy::HighestAcceptedSurface:
+                return "highest_accepted_surface";
+            }
+            return "highest_accepted_surface";
+        }
+
         const char* pipeline_name(const SceneRenderableBinding& binding)
         {
             if (binding.node_class.default_surface
@@ -289,6 +299,34 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
+        {
+            auto obj = object_value();
+            add_member(*obj, "asset",
+                string_value(asset_key_string(terrain.terrain_asset)));
+            add_member(*obj, "visible", bool_value(terrain.visible));
+            add_member(*obj, "queryable", bool_value(terrain.queryable));
+            add_member(*obj, "constrain_movement",
+                bool_value(terrain.constrain_movement));
+            return obj;
+        }
+
+        JSONValuePtr terrain_mesh_source_value(
+            const SceneTerrainMeshSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "asset",
+                string_value(asset_key_string(source.mesh_asset)));
+            add_member(*obj, "height_policy",
+                string_value(terrain_mesh_height_policy_name(
+                    source.height_policy)));
+            add_member(*obj, "min_surface_normal_y",
+                number_value(source.min_surface_normal_y));
+            add_member(*obj, "include_backfaces",
+                bool_value(source.include_backfaces));
+            return obj;
+        }
+
         JSONValuePtr event_listener_value(
             const SceneEventListenerAsset& listener)
         {
@@ -382,6 +420,18 @@ namespace wz::engine::assets
             if (node.mesh_render_style) {
                 add_member(*obj, "mesh_render_style",
                     mesh_render_style_value(*node.mesh_render_style));
+            }
+            if (node.terrain
+                && !(node.terrain->terrain_asset == wz::asset::AssetKey{}))
+            {
+                add_member(*obj, "terrain", terrain_value(*node.terrain));
+            }
+            if (node.terrain_mesh_source
+                && !(node.terrain_mesh_source->mesh_asset
+                    == wz::asset::AssetKey{}))
+            {
+                add_member(*obj, "terrain_mesh_source",
+                    terrain_mesh_source_value(*node.terrain_mesh_source));
             }
             if (node.audio_listener) {
                 auto audio = object_value();

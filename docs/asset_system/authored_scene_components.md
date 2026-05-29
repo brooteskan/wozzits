@@ -189,7 +189,7 @@ The current high-level categories are:
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
-| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `AudioListener`, `EventListener` |
+| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `TerrainMeshSource`, `AudioListener`, `EventListener` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -335,6 +335,43 @@ motion solver. Future reusable landscapes should be assets; this component can
 then reference or annotate those assets while runtime movement systems consume
 the projected boundary table.
 
+### Terrain
+
+Runtime-relevant authored placement component for semantic terrain assets.
+
+Fields:
+
+- `asset`
+- `visible`
+- `queryable`
+- `constrain_movement`
+
+`Terrain` attaches a reusable `TerrainAsset` to a scene node. The asset defines
+the surface representation and policies; the component selects participation in
+scene-level systems. Authored scene JSON should reference terrain assets rather
+than embedding heightmap paths, mesh import settings, material graphs, or LOD
+recipes directly.
+
+### TerrainMeshSource
+
+Runtime/editor-relevant authored source component for building a terrain asset
+from one mesh asset.
+
+Fields:
+
+- `asset`
+- `height_policy`
+- `min_surface_normal_y`
+- `include_backfaces`
+
+`TerrainMeshSource` is an explicit authoring recipe attached to a terrain node.
+It does not search child nodes or choose from visible scene meshes. The default
+height policy is `highest_accepted_surface`: when several mesh hits exist at
+the same `(x, z)`, the terrain build should choose the highest hit whose normal
+passes `min_surface_normal_y`. This keeps rock-like or closed meshes from
+silently becoming arbitrary multi-layer terrain while still giving the editor a
+simple first mesh-to-terrain workflow.
+
 ### AudioListener
 
 Runtime-relevant authored audio listener marker.
@@ -394,6 +431,8 @@ component itself an asset-system node.
 Examples:
 
 - `renderable_asset` references `RenderableAssetData`
+- `terrain` references `TerrainAssetData`
+- `terrain_mesh_source` references a `MeshAsset`
 - future material, input-map, animation, or script components may reference
   asset-system resources
 

@@ -135,6 +135,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeGaussianSplatCloud =
         static_cast<wz::asset::AssetType>(131);
 
+    // Implemented: semantic terrain surface data.
+    // Runtime data is owned by TerrainAssetTable.
+    inline constexpr wz::asset::AssetType kAssetTypeTerrain =
+        static_cast<wz::asset::AssetType>(149);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);

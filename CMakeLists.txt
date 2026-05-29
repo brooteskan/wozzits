@@ -31,6 +31,11 @@ option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 
 include(FetchContent)
 
+function(wz_add_subdirectory_quiet source_dir)
+    set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
+    add_subdirectory(${source_dir} ${ARGN})
+endfunction()
+
 
 # ----------------------------
 # MSVC runtime configuration
@@ -94,7 +99,7 @@ endif()
 # ----------------------
 # dependency: fastgltf
 # ----------------------
-add_subdirectory(external/gltf/fastgltf)
+wz_add_subdirectory_quiet(external/gltf/fastgltf)
 
 # ----------------------
 # dependency: tinyply
@@ -129,7 +134,7 @@ set(RTAUDIO_API_WASAPI ON CACHE BOOL "" FORCE)
 set(RTAUDIO_API_DS OFF CACHE BOOL "" FORCE)
 set(RTAUDIO_API_ASIO OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(external/audio/rtaudio)
+wz_add_subdirectory_quiet(external/audio/rtaudio)
 
 # ----------------------------
 # Core library target
@@ -300,8 +305,6 @@ function(rs_add_test_group category name)
 
     add_test(NAME ${target} COMMAND ${target})
 
-    get_target_property(GTEST_INCLUDES GTest::gtest INTERFACE_INCLUDE_DIRECTORIES)
-    message(STATUS "gtest include dirs: ${GTEST_INCLUDES}")
 endfunction()
 
 # ----------------------------
@@ -378,6 +381,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_mesh mesh_asset_module_interface)
     rs_add_test_group(asset_mesh procedural_mesh)
     rs_add_test_group(asset_mesh mesh_asset_module) 
+
+    rs_add_test_group(asset_terrain terrain_asset_module)
 
     rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(asset_gaussian_splat ply_gaussian_splat)

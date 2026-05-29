@@ -161,6 +161,28 @@ namespace wz::engine::assets
         bool depth_write = false;
     };
 
+    struct SceneTerrainAsset
+    {
+        wz::asset::AssetKey terrain_asset{};
+        bool visible = true;
+        bool queryable = true;
+        bool constrain_movement = true;
+    };
+
+    enum class SceneTerrainMeshHeightPolicy : uint8_t
+    {
+        HighestAcceptedSurface = 0,
+    };
+
+    struct SceneTerrainMeshSourceAsset
+    {
+        wz::asset::AssetKey mesh_asset{};
+        SceneTerrainMeshHeightPolicy height_policy =
+            SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;
+        float min_surface_normal_y = 0.2f;
+        bool include_backfaces = false;
+    };
+
     struct SceneAudioListenerAsset
     {
         bool active = true;
@@ -202,6 +224,8 @@ namespace wz::engine::assets
         std::optional<SceneGroundBoundaryAsset> ground_boundary;
         std::optional<SceneMeshSourceAsset> mesh_source;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
+        std::optional<SceneTerrainAsset> terrain;
+        std::optional<SceneTerrainMeshSourceAsset> terrain_mesh_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
 
@@ -233,6 +257,8 @@ namespace wz::engine::assets
     struct SceneFromJSONCompileDesc
     {
         std::vector<SceneAssetReferenceBinding> renderable_asset_references;
+        std::vector<SceneAssetReferenceBinding> terrain_asset_references;
+        std::vector<SceneAssetReferenceBinding> mesh_asset_references;
     };
 
     inline SceneNodeAsset make_scene_node(
@@ -323,6 +349,20 @@ namespace wz::engine::assets
         node.mesh_render_style = style;
     }
 
+    inline void attach_terrain(
+        SceneNodeAsset& node,
+        SceneTerrainAsset terrain = {})
+    {
+        node.terrain = terrain;
+    }
+
+    inline void attach_terrain_mesh_source(
+        SceneNodeAsset& node,
+        SceneTerrainMeshSourceAsset source = {})
+    {
+        node.terrain_mesh_source = source;
+    }
+
     inline std::vector<wz::scene::SceneAuthoredComponentKind>
     authored_components_for_node(const SceneNodeAsset& node)
     {
@@ -360,6 +400,12 @@ namespace wz::engine::assets
         }
         if (node.mesh_render_style) {
             out.push_back(Kind::MeshRenderStyle);
+        }
+        if (node.terrain) {
+            out.push_back(Kind::Terrain);
+        }
+        if (node.terrain_mesh_source) {
+            out.push_back(Kind::TerrainMeshSource);
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
@@ -418,6 +464,8 @@ namespace wz::engine::assets
             || node.ground_boundary.has_value()
             || node.mesh_source.has_value()
             || node.mesh_render_style.has_value()
+            || node.terrain.has_value()
+            || node.terrain_mesh_source.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();
@@ -460,6 +508,12 @@ namespace wz::engine::assets
             }
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;
+            }
+            if (node.terrain) {
+                ++out.terrains;
+            }
+            if (node.terrain_mesh_source) {
+                ++out.terrain_mesh_sources;
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;

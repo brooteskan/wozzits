@@ -3,7 +3,7 @@ include(FetchContent)
 # If the target already exists due to the parent script already including it as a dependency, just directly link it.
 if (NOT TARGET simdjson::simdjson)
     # Try to find simdjson through a find_package call.
-    find_package(simdjson CONFIG)
+    find_package(simdjson CONFIG QUIET)
     if (simdjson_FOUND)
         message(STATUS "fastgltf: Found simdjson config")
     else ()

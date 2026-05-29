@@ -212,29 +212,39 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneTerrainMeshHeightPolicy>
+        parse_terrain_mesh_height_policy(std::string_view text)
+        {
+            if (text == "highest_accepted_surface") {
+                return SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;
+            }
+            return std::nullopt;
+        }
+
         using SceneAssetReferenceMap =
             std::unordered_map<std::string, wz::asset::AssetKey>;
 
-        bool parse_renderable_asset_reference(
+        bool parse_asset_reference_object(
             const wz::json::JSONValue& obj,
             const std::string& node_id,
+            std::string_view field_name,
             wz::Logger& logger,
             const SceneAssetReferenceMap& asset_references,
             std::optional<wz::asset::AssetKey>& out)
         {
-            const auto* renderable = find_member(obj, "renderable");
-            if (!renderable) {
+            const auto* value = find_member(obj, field_name);
+            if (!value) {
                 return true;
             }
-            if (renderable->kind != wz::json::JSONValueKind::Object) {
-                logger.error("renderable on node '" + node_id
+            if (value->kind != wz::json::JSONValueKind::Object) {
+                logger.error(std::string(field_name) + " on node '" + node_id
                     + "' is not an object");
                 return false;
             }
 
-            auto asset = read_string(*renderable, "asset");
+            auto asset = read_string(*value, "asset");
             if (!asset || asset->empty()) {
-                logger.error("renderable on node '" + node_id
+                logger.error(std::string(field_name) + " on node '" + node_id
                     + "' missing 'asset'");
                 return false;
             }
@@ -243,14 +253,14 @@ namespace wz::engine::assets::internal
             if (!key) {
                 const auto it = asset_references.find(std::string(*asset));
                 if (it == asset_references.end()) {
-                    logger.error("renderable.asset on node '" + node_id
+                    logger.error(std::string(field_name) + ".asset on node '" + node_id
                         + "' could not be resolved: " + std::string(*asset));
                     return false;
                 }
                 key = it->second;
             }
             if (*key == wz::asset::AssetKey{}) {
-                logger.error("renderable.asset on node '" + node_id
+                logger.error(std::string(field_name) + ".asset on node '" + node_id
                     + "' is empty");
                 return false;
             }
@@ -262,7 +272,9 @@ namespace wz::engine::assets::internal
         std::optional<SceneNodeAsset> parse_node(
             const wz::json::JSONValue& node_val,
             wz::Logger& logger,
-            const SceneAssetReferenceMap& asset_references)
+            const SceneAssetReferenceMap& renderable_asset_references,
+            const SceneAssetReferenceMap& terrain_asset_references,
+            const SceneAssetReferenceMap& mesh_asset_references)
         {
             if (node_val.kind != wz::json::JSONValueKind::Object)
                 return std::nullopt;
@@ -296,11 +308,12 @@ namespace wz::engine::assets::internal
             }
 
             node.renderable = parse_debug_renderable(node_val);
-            if (!parse_renderable_asset_reference(
+            if (!parse_asset_reference_object(
                     node_val,
                     node.id,
+                    "renderable",
                     logger,
-                    asset_references,
+                    renderable_asset_references,
                     node.renderable_asset))
             {
                 return std::nullopt;
@@ -501,6 +514,95 @@ namespace wz::engine::assets::internal
                 node.mesh_render_style = style;
             }
 
+            std::optional<wz::asset::AssetKey> terrain_asset;
+            if (!parse_asset_reference_object(
+                    node_val,
+                    node.id,
+                    "terrain",
+                    logger,
+                    terrain_asset_references,
+                    terrain_asset))
+            {
+                return std::nullopt;
+            }
+            if (terrain_asset) {
+                const auto* terrain = find_member(node_val, "terrain");
+                SceneTerrainAsset component{};
+                component.terrain_asset = *terrain_asset;
+                auto visible = read_bool(*terrain, "visible");
+                if (visible) {
+                    component.visible = *visible;
+                }
+                auto queryable = read_bool(*terrain, "queryable");
+                if (queryable) {
+                    component.queryable = *queryable;
+                }
+                auto constrain_movement =
+                    read_bool(*terrain, "constrain_movement");
+                if (constrain_movement) {
+                    component.constrain_movement = *constrain_movement;
+                }
+                node.terrain = component;
+            }
+
+            std::optional<wz::asset::AssetKey> terrain_mesh_asset;
+            if (!parse_asset_reference_object(
+                    node_val,
+                    node.id,
+                    "terrain_mesh_source",
+                    logger,
+                    mesh_asset_references,
+                    terrain_mesh_asset))
+            {
+                return std::nullopt;
+            }
+            if (terrain_mesh_asset) {
+                const auto* source = find_member(
+                    node_val,
+                    "terrain_mesh_source");
+                SceneTerrainMeshSourceAsset component{};
+                component.mesh_asset = *terrain_mesh_asset;
+
+                auto policy = read_string(*source, "height_policy");
+                if (policy) {
+                    auto parsed_policy =
+                        parse_terrain_mesh_height_policy(*policy);
+                    if (!parsed_policy) {
+                        logger.error("terrain_mesh_source on node '"
+                            + node.id + "' has unknown height_policy '"
+                            + std::string(*policy) + "'");
+                        return std::nullopt;
+                    }
+                    component.height_policy = *parsed_policy;
+                }
+
+                auto min_normal = read_number(
+                    *source,
+                    "min_surface_normal_y");
+                if (min_normal) {
+                    const float value = static_cast<float>(*min_normal);
+                    if (!std::isfinite(value)
+                        || value < -1.0f
+                        || value > 1.0f)
+                    {
+                        logger.error("terrain_mesh_source on node '"
+                            + node.id
+                            + "' has invalid min_surface_normal_y");
+                        return std::nullopt;
+                    }
+                    component.min_surface_normal_y = value;
+                }
+
+                auto include_backfaces = read_bool(
+                    *source,
+                    "include_backfaces");
+                if (include_backfaces) {
+                    component.include_backfaces = *include_backfaces;
+                }
+
+                node.terrain_mesh_source = component;
+            }
+
             const auto* al = find_member(node_val, "audio_listener");
             if (al && al->kind == wz::json::JSONValueKind::Object) {
                 SceneAudioListenerAsset listener{};
@@ -632,7 +734,9 @@ namespace wz::engine::assets::internal
         std::optional<SceneAssetData> parse_scene_json(
             const wz::json::JSONDocument& doc,
             wz::Logger& logger,
-            const SceneAssetReferenceMap& asset_references)
+            const SceneAssetReferenceMap& renderable_asset_references,
+            const SceneAssetReferenceMap& terrain_asset_references,
+            const SceneAssetReferenceMap& mesh_asset_references)
         {
             if (!doc.root || doc.root->kind != wz::json::JSONValueKind::Object) {
                 logger.error("scene JSON root is not an object");
@@ -657,7 +761,12 @@ namespace wz::engine::assets::internal
             }
 
             for (const auto& nv : nodes->array_values) {
-                auto node = parse_node(*nv, logger, asset_references);
+                auto node = parse_node(
+                    *nv,
+                    logger,
+                    renderable_asset_references,
+                    terrain_asset_references,
+                    mesh_asset_references);
                 if (!node) return std::nullopt;
                 scene.nodes.push_back(std::move(*node));
             }
@@ -724,7 +833,9 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                SceneAssetReferenceMap asset_references;
+                SceneAssetReferenceMap renderable_asset_references;
+                SceneAssetReferenceMap terrain_asset_references;
+                SceneAssetReferenceMap mesh_asset_references;
                 if (const auto* desc =
                         std::any_cast<SceneFromJSONCompileDesc>(&input.meta))
                 {
@@ -734,7 +845,25 @@ namespace wz::engine::assets::internal
                         if (!ref.uri.empty()
                             && !(ref.key == wz::asset::AssetKey{}))
                         {
-                            asset_references[ref.uri] = ref.key;
+                            renderable_asset_references[ref.uri] = ref.key;
+                        }
+                    }
+                    for (const auto& ref :
+                        desc->terrain_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            terrain_asset_references[ref.uri] = ref.key;
+                        }
+                    }
+                    for (const auto& ref :
+                        desc->mesh_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            mesh_asset_references[ref.uri] = ref.key;
                         }
                     }
                 }
@@ -742,7 +871,9 @@ namespace wz::engine::assets::internal
                 auto scene = parse_scene_json(
                     json_data->document,
                     logger,
-                    asset_references);
+                    renderable_asset_references,
+                    terrain_asset_references,
+                    mesh_asset_references);
                 if (!scene) {
                     return compile_failed_node(input);
                 }

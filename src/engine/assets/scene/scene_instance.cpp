@@ -259,6 +259,10 @@ namespace wz::engine::assets
                 instance.actor_movement_controllers.size()),
             .ground_boundaries = static_cast<uint32_t>(
                 instance.ground_boundaries.size()),
+            .terrains = static_cast<uint32_t>(
+                instance.terrains.size()),
+            .terrain_mesh_sources = static_cast<uint32_t>(
+                instance.terrain_mesh_sources.size()),
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
@@ -479,6 +483,33 @@ namespace wz::engine::assets
                 inst.ground_boundaries.push_back({
                     .node = h,
                     .component = component,
+                });
+            }
+
+            if (node.terrain) {
+                const auto& terrain = *node.terrain;
+                inst.terrains.push_back({
+                    .node = h,
+                    .component = TerrainComponent{
+                        .terrain_asset = terrain.terrain_asset,
+                        .visible = terrain.visible,
+                        .queryable = terrain.queryable,
+                        .constrain_movement = terrain.constrain_movement,
+                    },
+                });
+            }
+
+            if (node.terrain_mesh_source) {
+                const auto& source = *node.terrain_mesh_source;
+                inst.terrain_mesh_sources.push_back({
+                    .node = h,
+                    .component = TerrainMeshSourceComponent{
+                        .mesh_asset = source.mesh_asset,
+                        .height_policy = source.height_policy,
+                        .min_surface_normal_y =
+                            source.min_surface_normal_y,
+                        .include_backfaces = source.include_backfaces,
+                    },
                 });
             }
 

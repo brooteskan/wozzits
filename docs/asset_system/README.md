@@ -99,6 +99,28 @@ selects which mesh primitive inside the GLB to compile (default 0).
 
 ---
 
+## Terrain
+
+Terrain assets are semantic surface data products. They describe a reusable
+surface domain and the source representation needed by render/query/collision
+systems. A scene terrain component places a terrain asset in a scene; it does
+not embed heightmap files, mesh import settings, or compiler recipes.
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Terrain from height field | `kTerrainFromHeightFieldSchema` | `0x000A00` | `kAssetTypeTerrain` (149) | `TerrainAssetModule::create_from_height_field()` |
+| Terrain from mesh | `kTerrainFromMeshSchema` | `0x000A01` | `kAssetTypeTerrain` (149) | `TerrainAssetModule::create_from_mesh()` |
+
+Both schemas produce `TerrainAssetData` stored in `TerrainAssetTable`.
+The height-field variant depends on a compiled `kAssetTypeScalarField`; the mesh
+variant depends on a compiled `kAssetTypeMesh`. V0 records domain bounds,
+resolution/source metadata, basic render/collision policy, and query capability
+flags. Height-field terrain supports height-query semantics; mesh terrain records
+surface bounds/source metadata and leaves acceleration-backed ray/project queries
+for a later compiler/runtime layer.
+
+---
+
 ## Gaussian Splat Clouds
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
@@ -334,13 +356,14 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Shaders / render programs | 2 |
 | Scalar fields | 2 |
 | Meshes | 5 |
+| Terrain | 2 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
 | Renderables | 3 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **35** |
+| **Total** | **37** |
 
 ---
 
