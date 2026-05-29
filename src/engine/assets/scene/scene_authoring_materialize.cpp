@@ -5,7 +5,6 @@
 #include <engine/assets/type_extensions.h>
 
 #include <algorithm>
-#include <cmath>
 #include <sstream>
 #include <unordered_map>
 
@@ -147,30 +146,8 @@ namespace wz::engine::assets
             const SceneNodeAsset& node,
             const SceneDirectLightSourceAsset& source)
         {
-            const float qx = node.local.rotation_quat[0];
-            const float qy = node.local.rotation_quat[1];
-            const float qz = node.local.rotation_quat[2];
-            const float qw = node.local.rotation_quat[3];
-
-            // Rotate local -Y into world space. Directional lights interpret
-            // this as the direction light travels, matching common light gizmos.
-            float dir[3]{
-                2.0f * (qx * qy + qw * qz),
-                -1.0f + 2.0f * (qx * qx + qz * qz),
-                2.0f * (qy * qz - qw * qx),
-            };
-            const float len =
-                std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
-            if (len > 1e-6f) {
-                dir[0] /= len;
-                dir[1] /= len;
-                dir[2] /= len;
-            }
-            else {
-                dir[0] = 0.0f;
-                dir[1] = -1.0f;
-                dir[2] = 0.0f;
-            }
+            float dir[3]{};
+            authored_light_direction_from_node(node, dir);
 
             wz::scene::LightRecord out{};
             out.position = {
@@ -637,18 +614,6 @@ namespace wz::engine::assets
             }
 
             return true;
-        }
-
-        const SceneNodeAsset* find_scene_node(
-            const SceneAssetData& scene,
-            const wz::scene::AuthoredEntityId& id)
-        {
-            for (const auto& node : scene.nodes) {
-                if (node.id == id) {
-                    return &node;
-                }
-            }
-            return nullptr;
         }
 
         void append_unique_renderable(

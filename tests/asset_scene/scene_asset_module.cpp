@@ -4635,6 +4635,131 @@ TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
         == terrain_key);
 }
 
+TEST(SceneECSBoundary, TerrainSourceCandidateHelpersMatchEditorRules)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "terrain_source_candidates";
+
+    SceneNodeAsset terrain = make_scene_node("terrain");
+    terrain.terrain = SceneTerrainAsset{};
+    scene.nodes.push_back(std::move(terrain));
+
+    SceneNodeAsset child_mesh = make_scene_node("child_mesh");
+    child_mesh.parent_id = "terrain";
+    child_mesh.mesh_source = SceneMeshSourceAsset{};
+    scene.nodes.push_back(std::move(child_mesh));
+
+    SceneNodeAsset child_field = make_scene_node("child_field");
+    child_field.parent_id = "terrain";
+    child_field.scalar_field_source = SceneScalarFieldSourceAsset{};
+    scene.nodes.push_back(std::move(child_field));
+
+    SceneNodeAsset sibling_mesh = make_scene_node("sibling_mesh");
+    sibling_mesh.mesh_source = SceneMeshSourceAsset{};
+    scene.nodes.push_back(std::move(sibling_mesh));
+
+    const auto* terrain_node = find_scene_node(scene, "terrain");
+    ASSERT_NE(terrain_node, nullptr);
+
+    const auto mesh_candidates =
+        terrain_mesh_source_candidate_nodes(scene, *terrain_node);
+    ASSERT_EQ(mesh_candidates.size(), 1u);
+    EXPECT_EQ(mesh_candidates[0], "child_mesh");
+
+    const auto height_candidates =
+        terrain_height_field_source_candidate_nodes(scene, *terrain_node);
+    ASSERT_EQ(height_candidates.size(), 1u);
+    EXPECT_EQ(height_candidates[0], "child_field");
+
+    EXPECT_TRUE(is_terrain_mesh_source_node_candidate(
+        *terrain_node,
+        scene.nodes[1]));
+    EXPECT_FALSE(is_terrain_mesh_source_node_candidate(
+        *terrain_node,
+        scene.nodes[3]));
+}
+
+TEST(SceneECSBoundary, ExclusiveTerrainSourceAttachHelpersClearOppositeSource)
+{
+    using namespace wz::engine::assets;
+
+    SceneNodeAsset node = make_scene_node("terrain");
+    attach_terrain_mesh_source(node, SceneTerrainMeshSourceAsset{});
+    attach_exclusive_terrain_height_field_source(
+        node,
+        SceneTerrainHeightFieldSourceAsset{});
+
+    EXPECT_FALSE(node.terrain_mesh_source.has_value());
+    EXPECT_TRUE(node.terrain_height_field_source.has_value());
+
+    attach_exclusive_terrain_mesh_source(node, SceneTerrainMeshSourceAsset{});
+
+    EXPECT_TRUE(node.terrain_mesh_source.has_value());
+    EXPECT_FALSE(node.terrain_height_field_source.has_value());
+}
+
+TEST(SceneECSBoundary, AuthoredLightDirectionUsesNodeLocalNegativeY)
+{
+    using namespace wz::engine::assets;
+
+    SceneNodeAsset node = make_scene_node("sun");
+
+    float direction[3]{};
+    authored_light_direction_from_node(node, direction);
+    EXPECT_FLOAT_EQ(direction[0], 0.0f);
+    EXPECT_FLOAT_EQ(direction[1], -1.0f);
+    EXPECT_FLOAT_EQ(direction[2], 0.0f);
+
+    const float target[3]{ 0.0f, 0.0f, 1.0f };
+    set_node_rotation_from_authored_light_direction(node, target);
+    authored_light_direction_from_node(node, direction);
+
+    EXPECT_NEAR(direction[0], target[0], 1e-5f);
+    EXPECT_NEAR(direction[1], target[1], 1e-5f);
+    EXPECT_NEAR(direction[2], target[2], 1e-5f);
+}
+
+TEST(SceneECSBoundary, DetachesStaleMaterializedRenderables)
+{
+    using namespace wz::engine::assets;
+
+    wz::asset::AssetKey renderable_key{};
+    renderable_key.content_hash = { 0x9898, 0x1234 };
+
+    SceneAssetData scene{};
+    scene.name = "detach_stale_materialized_renderables";
+
+    SceneNodeAsset terrain = make_scene_node("terrain");
+    terrain.terrain = SceneTerrainAsset{};
+    terrain.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::SceneNode,
+        .source_node = "source_mesh",
+    };
+    terrain.renderable_asset = renderable_key;
+    scene.nodes.push_back(std::move(terrain));
+
+    SceneNodeAsset source = make_scene_node("source_mesh");
+    source.parent_id = "terrain";
+    source.mesh_source = SceneMeshSourceAsset{};
+    source.renderable_asset = renderable_key;
+    scene.nodes.push_back(std::move(source));
+
+    SceneNodeAsset stale = make_scene_node("empty");
+    stale.renderable_asset = renderable_key;
+    scene.nodes.push_back(std::move(stale));
+
+    EXPECT_TRUE(can_own_materialized_renderable_asset(scene, scene.nodes[0]));
+    EXPECT_FALSE(can_own_materialized_renderable_asset(scene, scene.nodes[1]));
+    EXPECT_FALSE(can_own_materialized_renderable_asset(scene, scene.nodes[2]));
+
+    EXPECT_EQ(detach_stale_materialized_renderable_assets(scene), 2u);
+    EXPECT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    EXPECT_FALSE(scene.nodes[1].renderable_asset.has_value());
+    EXPECT_FALSE(scene.nodes[2].renderable_asset.has_value());
+}
+
 TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
 {
     using namespace wz::engine::assets;

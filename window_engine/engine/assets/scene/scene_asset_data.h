@@ -11,6 +11,8 @@
 #include <scene/transform_node.h>
 #include <scene/compile/compiled_scene.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -445,6 +447,91 @@ namespace wz::engine::assets
         node.local = transform;
     }
 
+    inline void normalize_scene_direction(float direction[3]) noexcept
+    {
+        const float len =
+            std::sqrt(
+                direction[0] * direction[0]
+                + direction[1] * direction[1]
+                + direction[2] * direction[2]);
+        if (len > 1e-6f) {
+            direction[0] /= len;
+            direction[1] /= len;
+            direction[2] /= len;
+        }
+    }
+
+    inline void authored_light_direction_from_transform(
+        const AuthoredTransform& transform,
+        float out[3]) noexcept
+    {
+        const float qx = transform.rotation_quat[0];
+        const float qy = transform.rotation_quat[1];
+        const float qz = transform.rotation_quat[2];
+        const float qw = transform.rotation_quat[3];
+
+        out[0] = 2.0f * (qx * qy + qw * qz);
+        out[1] = -1.0f + 2.0f * (qx * qx + qz * qz);
+        out[2] = 2.0f * (qy * qz - qw * qx);
+        normalize_scene_direction(out);
+
+        if (out[0] == 0.0f && out[1] == 0.0f && out[2] == 0.0f) {
+            out[1] = -1.0f;
+        }
+    }
+
+    inline void authored_light_direction_from_node(
+        const SceneNodeAsset& node,
+        float out[3]) noexcept
+    {
+        authored_light_direction_from_transform(node.local, out);
+    }
+
+    inline void set_node_rotation_from_authored_light_direction(
+        SceneNodeAsset& node,
+        const float direction[3]) noexcept
+    {
+        constexpr float from[3]{ 0.0f, -1.0f, 0.0f };
+        float to[3]{ direction[0], direction[1], direction[2] };
+        normalize_scene_direction(to);
+
+        const float dot =
+            std::clamp(
+                from[0] * to[0] + from[1] * to[1] + from[2] * to[2],
+                -1.0f,
+                1.0f);
+
+        if (dot > 0.9999f) {
+            node.local.rotation_quat[0] = 0.0f;
+            node.local.rotation_quat[1] = 0.0f;
+            node.local.rotation_quat[2] = 0.0f;
+            node.local.rotation_quat[3] = 1.0f;
+            return;
+        }
+
+        if (dot < -0.9999f) {
+            node.local.rotation_quat[0] = 1.0f;
+            node.local.rotation_quat[1] = 0.0f;
+            node.local.rotation_quat[2] = 0.0f;
+            node.local.rotation_quat[3] = 0.0f;
+            return;
+        }
+
+        float axis[3]{
+            from[1] * to[2] - from[2] * to[1],
+            from[2] * to[0] - from[0] * to[2],
+            from[0] * to[1] - from[1] * to[0],
+        };
+        normalize_scene_direction(axis);
+
+        const float angle = std::acos(dot);
+        const float s = std::sin(angle * 0.5f);
+        node.local.rotation_quat[0] = axis[0] * s;
+        node.local.rotation_quat[1] = axis[1] * s;
+        node.local.rotation_quat[2] = axis[2] * s;
+        node.local.rotation_quat[3] = std::cos(angle * 0.5f);
+    }
+
     inline void attach_renderable_asset(
         SceneNodeAsset& node,
         wz::asset::AssetKey renderable_asset)
@@ -543,11 +630,27 @@ namespace wz::engine::assets
         node.terrain_mesh_source = source;
     }
 
+    inline void attach_exclusive_terrain_mesh_source(
+        SceneNodeAsset& node,
+        SceneTerrainMeshSourceAsset source = {})
+    {
+        node.terrain_height_field_source.reset();
+        attach_terrain_mesh_source(node, std::move(source));
+    }
+
     inline void attach_terrain_height_field_source(
         SceneNodeAsset& node,
         SceneTerrainHeightFieldSourceAsset source = {})
     {
         node.terrain_height_field_source = source;
+    }
+
+    inline void attach_exclusive_terrain_height_field_source(
+        SceneNodeAsset& node,
+        SceneTerrainHeightFieldSourceAsset source = {})
+    {
+        node.terrain_mesh_source.reset();
+        attach_terrain_height_field_source(node, std::move(source));
     }
 
     inline void attach_terrain_render_style(
@@ -657,6 +760,140 @@ namespace wz::engine::assets
         const SceneNodeAsset& node) noexcept
     {
         return node.debug_visual.has_value();
+    }
+
+    inline const SceneNodeAsset* find_scene_node(
+        const SceneAssetData& scene,
+        const wz::scene::AuthoredEntityId& id) noexcept
+    {
+        for (const auto& node : scene.nodes) {
+            if (node.id == id) {
+                return &node;
+            }
+        }
+        return nullptr;
+    }
+
+    inline SceneNodeAsset* find_scene_node(
+        SceneAssetData& scene,
+        const wz::scene::AuthoredEntityId& id) noexcept
+    {
+        for (auto& node : scene.nodes) {
+            if (node.id == id) {
+                return &node;
+            }
+        }
+        return nullptr;
+    }
+
+    inline bool is_direct_child_scene_node(
+        const SceneNodeAsset& parent,
+        const SceneNodeAsset& child) noexcept
+    {
+        return child.parent_id.has_value() && *child.parent_id == parent.id;
+    }
+
+    inline bool is_terrain_mesh_source_node_candidate(
+        const SceneNodeAsset& terrain_node,
+        const SceneNodeAsset& candidate) noexcept
+    {
+        return candidate.id != terrain_node.id
+            && candidate.mesh_source.has_value()
+            && is_direct_child_scene_node(terrain_node, candidate);
+    }
+
+    inline bool is_terrain_height_field_source_node_candidate(
+        const SceneNodeAsset& terrain_node,
+        const SceneNodeAsset& candidate) noexcept
+    {
+        return candidate.id != terrain_node.id
+            && candidate.scalar_field_source.has_value()
+            && is_direct_child_scene_node(terrain_node, candidate);
+    }
+
+    inline std::vector<wz::scene::AuthoredEntityId>
+    terrain_mesh_source_candidate_nodes(
+        const SceneAssetData& scene,
+        const SceneNodeAsset& terrain_node)
+    {
+        std::vector<wz::scene::AuthoredEntityId> out;
+        for (const auto& candidate : scene.nodes) {
+            if (is_terrain_mesh_source_node_candidate(
+                    terrain_node,
+                    candidate))
+            {
+                out.push_back(candidate.id);
+            }
+        }
+        return out;
+    }
+
+    inline std::vector<wz::scene::AuthoredEntityId>
+    terrain_height_field_source_candidate_nodes(
+        const SceneAssetData& scene,
+        const SceneNodeAsset& terrain_node)
+    {
+        std::vector<wz::scene::AuthoredEntityId> out;
+        for (const auto& candidate : scene.nodes) {
+            if (is_terrain_height_field_source_node_candidate(
+                    terrain_node,
+                    candidate))
+            {
+                out.push_back(candidate.id);
+            }
+        }
+        return out;
+    }
+
+    inline bool is_referenced_terrain_source_node(
+        const SceneAssetData& scene,
+        const SceneNodeAsset& node) noexcept
+    {
+        for (const auto& owner : scene.nodes) {
+            if (owner.terrain_mesh_source
+                && owner.terrain_mesh_source->source_node == node.id)
+            {
+                return true;
+            }
+            if (owner.terrain_height_field_source
+                && owner.terrain_height_field_source->source_node == node.id)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    inline bool can_own_materialized_renderable_asset(
+        const SceneAssetData& scene,
+        const SceneNodeAsset& node) noexcept
+    {
+        if (is_referenced_terrain_source_node(scene, node)) {
+            return false;
+        }
+
+        return node.renderable.has_value()
+            || node.mesh_source.has_value()
+            || node.scalar_field_source.has_value()
+            || node.vector_field_source.has_value()
+            || node.terrain.has_value()
+            || node.terrain_mesh_source.has_value()
+            || node.terrain_height_field_source.has_value();
+    }
+
+    inline uint32_t detach_stale_materialized_renderable_assets(
+        SceneAssetData& scene)
+    {
+        uint32_t detached = 0;
+        for (auto& node : scene.nodes) {
+            if (node.renderable_asset
+                && !can_own_materialized_renderable_asset(scene, node))
+            {
+                node.renderable_asset.reset();
+                ++detached;
+            }
+        }
+        return detached;
     }
 
     inline bool has_authored_debug_visual_component(
