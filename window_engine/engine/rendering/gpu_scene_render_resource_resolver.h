@@ -8,6 +8,7 @@
 
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/rendering/render_resource_resolver.h>
+#include <engine/rendering/renderable_gpu_cache.h>
 #include <engine/assets/engine_asset_library.h>
 
 #include <gpu/gpu.h>
@@ -21,7 +22,8 @@ namespace wz::engine::rendering
         GpuSceneRenderResourceResolver(
             wz::gpu::Device& device,
             wz::engine::assets::EngineAssetLibrary& assets,
-            RenderResourceResolver& render_resolver);
+            RenderResourceResolver& render_resolver,
+            RenderableGpuCache* cache = nullptr);
 
         bool realize_renderable_descriptor(
             const wz::engine::assets::RenderableAssetData& renderable,
@@ -31,5 +33,6 @@ namespace wz::engine::rendering
         wz::gpu::Device& device_;
         wz::engine::assets::EngineAssetLibrary& assets_;
         RenderResourceResolver& render_resolver_;
+        RenderableGpuCache* cache_ = nullptr;
     };
 }

@@ -64,25 +64,39 @@ namespace wz::engine::rendering
         if (!renderable || !renderable->valid())
             return {};
 
-        PreparedRenderable out{};
-        out.kind           = renderable->kind;
-        out.source_asset   = renderable->source_asset;
-        out.program        = renderable->program;
-        out.render_program = renderable->render_program;
-        out.domain         = renderable->domain;
-        out.policy_flags   = renderable->policy_flags;
+        return realize_data(device, assets, *renderable);
+    }
 
-        if (const Entry* cached = find(renderable->source_asset, renderable->kind)) {
+    PreparedRenderable RenderableGpuCache::realize_data(
+        wz::gpu::Device& device,
+        wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::RenderableAssetData& renderable)
+    {
+        if (!device.valid())
+            return {};
+
+        if (!renderable.valid())
+            return {};
+
+        PreparedRenderable out{};
+        out.kind           = renderable.kind;
+        out.source_asset   = renderable.source_asset;
+        out.program        = renderable.program;
+        out.render_program = renderable.render_program;
+        out.domain         = renderable.domain;
+        out.policy_flags   = renderable.policy_flags;
+
+        if (const Entry* cached = find(renderable.source_asset, renderable.kind)) {
             out.gpu_resource = cached->gpu_resource;
             return out;
         }
 
-        switch (renderable->kind)
+        switch (renderable.kind)
         {
         case wz::engine::assets::RenderableKind::Mesh:
         {
             const wz::engine::assets::MeshAsset mesh_asset{
-                .output = renderable->source_asset,
+                .output = renderable.source_asset,
             };
 
             const wz::engine::assets::MeshHandle mesh_handle =
@@ -103,7 +117,7 @@ namespace wz::engine::rendering
             if (!gpu_mesh.valid())
                 return {};
 
-            add(renderable->source_asset, renderable->kind, gpu_mesh);
+            add(renderable.source_asset, renderable.kind, gpu_mesh);
 
             out.gpu_resource = gpu_mesh;
             return out;
@@ -112,7 +126,7 @@ namespace wz::engine::rendering
         case wz::engine::assets::RenderableKind::ScalarField:
         {
             const wz::engine::assets::ScalarFieldAsset scalar_field_asset{
-                .output = renderable->source_asset,
+                .output = renderable.source_asset,
             };
 
             const wz::engine::assets::ScalarFieldHandle scalar_field_handle =
@@ -136,8 +150,8 @@ namespace wz::engine::rendering
                 return {};
 
             add(
-                renderable->source_asset,
-                renderable->kind,
+                renderable.source_asset,
+                renderable.kind,
                 gpu_scalar_field_texture);
 
             out.gpu_resource = gpu_scalar_field_texture;
@@ -147,7 +161,7 @@ namespace wz::engine::rendering
         case wz::engine::assets::RenderableKind::GaussianSplatCloud:
         {
             const wz::engine::assets::GaussianSplatCloudAsset splat_asset{
-                .output = renderable->source_asset,
+                .output = renderable.source_asset,
             };
 
             const wz::engine::assets::GaussianSplatCloudHandle splat_handle =
@@ -167,10 +181,10 @@ namespace wz::engine::rendering
             // (lod_color = base_color, confidence = 0).
             const wz::engine::assets::GaussianSplatColorLODData* lod_data = nullptr;
 
-            if (!(renderable->companion_asset == wz::asset::AssetKey{}))
+            if (!(renderable.companion_asset == wz::asset::AssetKey{}))
             {
                 const wz::engine::assets::GaussianSplatColorLODAsset lod_asset{
-                    .output = renderable->companion_asset,
+                    .output = renderable.companion_asset,
                 };
                 const wz::engine::assets::GaussianSplatColorLODHandle lod_handle =
                     assets.gaussian_splat_color_lods().get_lod(lod_asset);
@@ -189,7 +203,7 @@ namespace wz::engine::rendering
             if (!gpu_splat_cloud.valid())
                 return {};
 
-            add(renderable->source_asset, renderable->kind, gpu_splat_cloud);
+            add(renderable.source_asset, renderable.kind, gpu_splat_cloud);
 
             out.gpu_resource = gpu_splat_cloud;
             return out;

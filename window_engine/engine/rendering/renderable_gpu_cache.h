@@ -45,6 +45,11 @@ namespace wz::engine::rendering
             wz::engine::assets::EngineAssetLibrary& assets,
             wz::engine::assets::RenderableHandle handle);
 
+        PreparedRenderable realize_data(
+            wz::gpu::Device& device,
+            wz::engine::assets::EngineAssetLibrary& assets,
+            const wz::engine::assets::RenderableAssetData& renderable);
+
         void clear();
 
     private:

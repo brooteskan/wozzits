@@ -125,9 +125,6 @@
         ]
       },
       "visible": false,
-      "renderable": {
-        "asset": "asset-key:031aae010732c04c:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c"
-      },
       "mesh_source": {
         "kind": "glb",
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
@@ -163,13 +160,20 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:ded52d69d2ed640c:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c"
+        "asset": "asset-key:55a8a2c33a49608b:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000001:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
       },
       "terrain": {
-        "asset": "asset-key:2e9ff9a0206a7d72:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
+        "asset": "asset-key:1e942e8bb18f627f:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
         "visible": true,
         "queryable": true,
         "constrain_movement": true
+      },
+      "terrain_render_style": {
+        "path": "surface",
+        "depth_test": true,
+        "depth_write": true,
+        "directional_light_node": "directional_light_2",
+        "ambient_light_node": "ambient_lighting_1"
       },
       "terrain_mesh_source": {
         "mode": "scene_node",
@@ -248,6 +252,212 @@
         "kind": "procedural_cube",
         "path": "",
         "mesh_index": 0
+      }
+    },
+    {
+      "id": "ambient_lighting_1",
+      "parent": "root",
+      "name": "Ambient Lighting",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "ambient_lighting": {
+        "asset": "asset-key:19deb891ec36ea4b:ca11af3a4bb6ea9f:f11eca55e7001001:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "mode": "constant",
+        "color": [
+          0.14509804546833038,
+          0.050980392843484879,
+          0.34509804844856262
+        ],
+        "intensity": 0.34999999403953552,
+        "domain_mapping": "terrain_uv"
+      },
+      "editor_handle": {
+        "kind": "transform",
+        "enabled": true,
+        "visible": false,
+        "size": 1
+      }
+    },
+    {
+      "id": "directional_light_2",
+      "parent": "root",
+      "name": "Directional Light",
+      "transform": {
+        "translation": [
+          0,
+          4,
+          0
+        ],
+        "rotation_quat": [
+          -0.11135085672140121,
+          0,
+          0.32338637113571167,
+          0.93969261646270752
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "direct_light_source": {
+        "asset": "asset-key:50a3781257a090c7:12674604c8a7836a:f11eca55e7001000:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "kind": "directional",
+        "color": [
+          1,
+          0.95999997854232788,
+          0.81999999284744263
+        ],
+        "intensity": 2,
+        "range": 1,
+        "inner_cone_radians": 0.40000000596046448,
+        "outer_cone_radians": 0.80000001192092896
+      },
+      "debug_visual": {
+        "kind": "axes",
+        "scale": 1,
+        "visible": true
+      },
+      "editor_handle": {
+        "kind": "rotate",
+        "enabled": true,
+        "visible": false,
+        "size": 1
+      }
+    }
+  ],
+  "lights": [
+    {
+      "node_id": "directional_light_2",
+      "light": {
+        "position": [
+          0,
+          4,
+          0
+        ],
+        "direction": [
+          0.60776758193969727,
+          -0.7660444974899292,
+          0.20927116274833679
+        ],
+        "color": [
+          1,
+          0.95999997854232788,
+          0.81999999284744263
+        ],
+        "type": "directional",
+        "intensity": 2,
+        "range": 1
+      }
+    },
+    {
+      "node_id": "ambient_lighting_1",
+      "light": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          0
+        ],
+        "color": [
+          0.14509804546833038,
+          0.050980392843484879,
+          0.34509804844856262
+        ],
+        "type": "ambient",
+        "intensity": 0.34999999403953552,
+        "range": 10
+      }
+    },
+    {
+      "node_id": "empty_5",
+      "light": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          0
+        ],
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "type": "ambient",
+        "intensity": 0.73000001907348633,
+        "range": 10
+      }
+    },
+    {
+      "node_id": "root",
+      "light": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          -1,
+          0
+        ],
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "type": "point",
+        "intensity": 1,
+        "range": 10
+      }
+    },
+    {
+      "node_id": "empty_6",
+      "light": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          -1,
+          0
+        ],
+        "color": [
+          1,
+          1,
+          1
+        ],
+        "type": "point",
+        "intensity": 1,
+        "range": 10
       }
     }
   ],

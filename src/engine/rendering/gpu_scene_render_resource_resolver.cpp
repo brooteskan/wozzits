@@ -99,10 +99,12 @@ namespace wz::engine::rendering
     GpuSceneRenderResourceResolver::GpuSceneRenderResourceResolver(
         wz::gpu::Device& device,
         wz::engine::assets::EngineAssetLibrary& assets,
-        RenderResourceResolver& render_resolver)
+        RenderResourceResolver& render_resolver,
+        RenderableGpuCache* cache)
         : device_(device)
         , assets_(assets)
         , render_resolver_(render_resolver)
+        , cache_(cache)
     {
     }
 
@@ -112,22 +114,33 @@ namespace wz::engine::rendering
     {
         wz::engine::assets::MeshData preview_mesh{};
         const wz::engine::assets::MeshData* mesh_data = nullptr;
+        wz::gpu::GPUHandle cached_mesh{};
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
-            const wz::engine::assets::MeshAsset mesh_asset{
-                .output = renderable.source_asset,
-            };
+            if (cache_) {
+                const PreparedRenderable prepared =
+                    cache_->realize_data(device_, assets_, renderable);
+                if (!prepared.valid()) {
+                    return false;
+                }
+                cached_mesh = prepared.gpu_resource;
+            }
+            else {
+                const wz::engine::assets::MeshAsset mesh_asset{
+                    .output = renderable.source_asset,
+                };
 
-            const wz::engine::assets::MeshHandle mesh_handle =
-                assets_.meshes().get_mesh(mesh_asset);
+                const wz::engine::assets::MeshHandle mesh_handle =
+                    assets_.meshes().get_mesh(mesh_asset);
 
-            if (!mesh_handle.valid())
-                return false;
+                if (!mesh_handle.valid())
+                    return false;
 
-            mesh_data = assets_.meshes().get_mesh_data(mesh_handle);
+                mesh_data = assets_.meshes().get_mesh_data(mesh_handle);
 
-            if (!mesh_data || !mesh_data->valid())
-                return false;
+                if (!mesh_data || !mesh_data->valid())
+                    return false;
+            }
         }
         else if (renderable.kind
             == wz::engine::assets::RenderableKind::ScalarField)
@@ -171,8 +184,9 @@ namespace wz::engine::rendering
             return false;
         }
 
-        const wz::gpu::GPUHandle gpu_mesh =
-            wz::gpu::upload_mesh(device_, *mesh_data);
+        const wz::gpu::GPUHandle gpu_mesh = cached_mesh.valid()
+            ? cached_mesh
+            : wz::gpu::upload_mesh(device_, *mesh_data);
 
         if (!gpu_mesh.valid())
             return false;
