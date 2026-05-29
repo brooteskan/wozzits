@@ -30,11 +30,13 @@ captures:
 - Vertex and pixel shader asset keys
 
 The `BuiltinRenderProgram` enum drives which PSO the backend ultimately creates.
-Six variants currently exist:
+Eight variants currently exist:
 
 | Variant | Domain | Notes |
 |---------|--------|-------|
 | `MeshWireframeDebug` | `Debug` | IA-driven wireframe; depends on mesh vertex/index buffers |
+| `MeshWireframeDepthDebug` | `Debug` | Depth-tested/depth-writing mesh wireframe debug path |
+| `MeshDepthPrepassDebug` | `Debug` | Depth-only mesh prepass path used before some debug rendering |
 | `GaussianSplatDebug` | `Splat` | Classic per-splat path |
 | `ScalarFieldDebug` | `Debug` | Field-to-geometry debug visualization |
 | `GaussianSplatPullDebug` | `Splat` | Pull-based path: no IA, reads t0 `StructuredBuffer<Splat>` at SRV slot 0 |
@@ -75,6 +77,8 @@ All defined in `engine/assets/renderable/renderable.h`:
 ```cpp
 enum class BuiltinRenderProgram : uint8_t {
     MeshWireframeDebug,
+    MeshWireframeDepthDebug,
+    MeshDepthPrepassDebug,
     GaussianSplatDebug,
     ScalarFieldDebug,
     GaussianSplatPullDebug,

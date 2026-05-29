@@ -183,8 +183,8 @@ and packs LOD color + confidence into the GPU vertex layout.
 
 ## Renderables
 
-Renderables bind a source data asset (mesh, splat cloud, scalar field) to a
-render program and domain, producing an entry in `RenderableAssetTable`.
+Renderables bind a source data asset (mesh, splat cloud, scalar field, terrain)
+to a render program and domain, producing an entry in `RenderableAssetTable`.
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
@@ -206,12 +206,14 @@ slot falls back to base color with confidence = 0 (no behavioral change versus t
 pre-LOD renderer).
 
 `BuiltinRenderProgram` is an enum in `engine/assets/renderable/renderable.h`:
-- `MeshWireframeDebug` → `RenderDomain::Debug`
-- `GaussianSplatDebug` → `RenderDomain::Splat`
-- `ScalarFieldDebug` → `RenderDomain::Debug`
-- `GaussianSplatPullDebug` → pull-based splat path (no IA, t0 SRV)
-- `GaussianSplatNeighborhoodColorBlend` → pull-based + LOD color blend modes
-- `GaussianSplatTerrainCoverageDebug` → pull-based + coverage modes (depth-writing)
+- `MeshWireframeDebug` -> `RenderDomain::Debug`
+- `MeshWireframeDepthDebug` -> depth-tested/depth-writing mesh wireframe debug
+- `MeshDepthPrepassDebug` -> depth-only mesh prepass debug
+- `GaussianSplatDebug` -> `RenderDomain::Splat`
+- `ScalarFieldDebug` -> `RenderDomain::Debug`
+- `GaussianSplatPullDebug` -> pull-based splat path (no IA, t0 SRV)
+- `GaussianSplatNeighborhoodColorBlend` -> pull-based + LOD color blend modes
+- `GaussianSplatTerrainCoverageDebug` -> pull-based + coverage modes (depth-writing)
 
 ---
 
@@ -369,11 +371,11 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Terrain | 2 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
-| Renderables | 3 |
+| Renderables | 4 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **37** |
+| **Total** | **38** |
 
 ---
 

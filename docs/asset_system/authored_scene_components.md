@@ -578,6 +578,7 @@ Good current test areas:
 
 ```text
 tests/asset_scene/scene_asset_module.cpp
+tests/asset_scene/scene_authoring_materialize.cpp
 ```
 
 ## Non-Goals For Now
