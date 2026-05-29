@@ -152,6 +152,18 @@ namespace wz::engine::assets
             return "highest_accepted_surface";
         }
 
+        const char* terrain_mesh_source_mode_name(
+            SceneTerrainMeshSourceMode mode)
+        {
+            switch (mode) {
+            case SceneTerrainMeshSourceMode::MeshAsset:
+                return "mesh_asset";
+            case SceneTerrainMeshSourceMode::SceneNode:
+                return "scene_node";
+            }
+            return "mesh_asset";
+        }
+
         const char* pipeline_name(const SceneRenderableBinding& binding)
         {
             if (binding.node_class.default_surface
@@ -315,8 +327,16 @@ namespace wz::engine::assets
             const SceneTerrainMeshSourceAsset& source)
         {
             auto obj = object_value();
-            add_member(*obj, "asset",
-                string_value(asset_key_string(source.mesh_asset)));
+            add_member(*obj, "mode",
+                string_value(terrain_mesh_source_mode_name(source.mode)));
+            if (source.mode == SceneTerrainMeshSourceMode::SceneNode) {
+                add_member(*obj, "source_node",
+                    string_value(source.source_node));
+            }
+            if (!(source.mesh_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(source.mesh_asset)));
+            }
             add_member(*obj, "height_policy",
                 string_value(terrain_mesh_height_policy_name(
                     source.height_policy)));
@@ -426,10 +446,7 @@ namespace wz::engine::assets
             {
                 add_member(*obj, "terrain", terrain_value(*node.terrain));
             }
-            if (node.terrain_mesh_source
-                && !(node.terrain_mesh_source->mesh_asset
-                    == wz::asset::AssetKey{}))
-            {
+            if (node.terrain_mesh_source) {
                 add_member(*obj, "terrain_mesh_source",
                     terrain_mesh_source_value(*node.terrain_mesh_source));
             }

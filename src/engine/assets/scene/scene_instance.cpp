@@ -504,6 +504,8 @@ namespace wz::engine::assets
                 inst.terrain_mesh_sources.push_back({
                     .node = h,
                     .component = TerrainMeshSourceComponent{
+                        .mode = source.mode,
+                        .source_node = source.source_node,
                         .mesh_asset = source.mesh_asset,
                         .height_policy = source.height_policy,
                         .min_surface_normal_y =

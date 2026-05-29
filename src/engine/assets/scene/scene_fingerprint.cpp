@@ -177,6 +177,8 @@ namespace wz::engine::assets
             if (node.terrain_mesh_source) {
                 const auto& source = *node.terrain_mesh_source;
                 const auto& key = source.mesh_asset;
+                fp.mix_value(source.mode);
+                fp.mix_string(source.source_node);
                 fp.mix_value(key.content_hash.lo);
                 fp.mix_value(key.content_hash.hi);
                 fp.mix_value(key.schema_hash.lo);

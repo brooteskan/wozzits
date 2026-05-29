@@ -4644,8 +4644,16 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
   "name": "terrain_mesh_source_scene",
   "nodes": [
     {
+      "id": "source_mesh",
+      "mesh_source": {
+        "kind": "procedural_cube"
+      }
+    },
+    {
       "id": "terrain",
       "terrain_mesh_source": {
+        "mode": "scene_node",
+        "source_node": "source_mesh",
         "asset": "asset://meshes/source_rock",
         "height_policy": "highest_accepted_surface",
         "min_surface_normal_y": 0.35,
@@ -4677,10 +4685,14 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     const auto* scene_data = assets.scenes().get_scene_data(
         assets.scenes().get_scene(scene_asset));
     ASSERT_NE(scene_data, nullptr);
-    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
 
-    const auto& node = scene_data->nodes[0];
+    const auto& node = scene_data->nodes[1];
     ASSERT_TRUE(node.terrain_mesh_source.has_value());
+    EXPECT_EQ(
+        node.terrain_mesh_source->mode,
+        SceneTerrainMeshSourceMode::SceneNode);
+    EXPECT_EQ(node.terrain_mesh_source->source_node, "source_mesh");
     EXPECT_EQ(node.terrain_mesh_source->mesh_asset, mesh.output);
     EXPECT_EQ(
         node.terrain_mesh_source->height_policy,
@@ -4693,6 +4705,8 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"terrain_mesh_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"scene_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"source_mesh\""), std::string::npos);
     EXPECT_NE(exported.find("\"height_policy\""), std::string::npos);
     EXPECT_NE(
         exported.find("\"highest_accepted_surface\""),
@@ -4730,9 +4744,12 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     const auto* reparsed_scene_data = reparse_assets.scenes().get_scene_data(
         reparse_assets.scenes().get_scene(exported_scene_asset));
     ASSERT_NE(reparsed_scene_data, nullptr);
-    ASSERT_EQ(reparsed_scene_data->nodes.size(), 1u);
+    ASSERT_EQ(reparsed_scene_data->nodes.size(), 2u);
     ASSERT_TRUE(
-        reparsed_scene_data->nodes[0].terrain_mesh_source.has_value());
+        reparsed_scene_data->nodes[1].terrain_mesh_source.has_value());
+    EXPECT_EQ(
+        reparsed_scene_data->nodes[1].terrain_mesh_source->source_node,
+        "source_mesh");
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -4740,6 +4757,9 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         result.instance.terrain_mesh_sources[0].component.mesh_asset,
         mesh.output);
+    EXPECT_EQ(
+        result.instance.terrain_mesh_sources[0].component.source_node,
+        "source_mesh");
     EXPECT_FLOAT_EQ(
         result.instance.terrain_mesh_sources[0]
             .component.min_surface_normal_y,

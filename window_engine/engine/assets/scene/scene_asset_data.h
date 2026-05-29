@@ -174,8 +174,16 @@ namespace wz::engine::assets
         HighestAcceptedSurface = 0,
     };
 
+    enum class SceneTerrainMeshSourceMode : uint8_t
+    {
+        MeshAsset = 0,
+        SceneNode,
+    };
+
     struct SceneTerrainMeshSourceAsset
     {
+        SceneTerrainMeshSourceMode mode = SceneTerrainMeshSourceMode::MeshAsset;
+        wz::scene::AuthoredEntityId source_node;
         wz::asset::AssetKey mesh_asset{};
         SceneTerrainMeshHeightPolicy height_policy =
             SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;

@@ -360,17 +360,23 @@ from one mesh asset.
 Fields:
 
 - `asset`
+- `mode`
+- `source_node`
 - `height_policy`
 - `min_surface_normal_y`
 - `include_backfaces`
 
 `TerrainMeshSource` is an explicit authoring recipe attached to a terrain node.
-It does not search child nodes or choose from visible scene meshes. The default
-height policy is `highest_accepted_surface`: when several mesh hits exist at
-the same `(x, z)`, the terrain build should choose the highest hit whose normal
-passes `min_surface_normal_y`. This keeps rock-like or closed meshes from
-silently becoming arbitrary multi-layer terrain while still giving the editor a
-simple first mesh-to-terrain workflow.
+It can reference a direct mesh asset or a `source_node` selected in the editor.
+Scene-node selection is intentionally scoped to mesh-source nodes parented
+directly under the terrain node. This keeps source meshes authored in terrain
+space and makes the terrain node transform the shared placement/scale for both
+source data and derived terrain. The default height policy is
+`highest_accepted_surface`: when several mesh hits exist at the same `(x, z)`,
+the terrain build should choose the highest hit whose normal passes
+`min_surface_normal_y`. This keeps rock-like or closed meshes from silently
+becoming arbitrary multi-layer terrain while still giving the editor a simple
+first mesh-to-terrain workflow.
 
 ### AudioListener
 
@@ -432,7 +438,10 @@ Examples:
 
 - `renderable_asset` references `RenderableAssetData`
 - `terrain` references `TerrainAssetData`
-- `terrain_mesh_source` references a `MeshAsset`
+- `terrain_mesh_source` may either reference a `MeshAsset` directly or name a
+  `source_node` with a mesh-producing scene component. The editor can then
+  resolve that scene node to the produced mesh asset during rebuild while
+  preserving the asset-system dependency path.
 - future material, input-map, animation, or script components may reference
   asset-system resources
 

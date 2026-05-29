@@ -59,9 +59,9 @@
       "parent": "root",
       "transform": {
         "translation": [
-          -5,
-          -0.5,
-          0
+          -4.9499998092651367,
+          136.5,
+          3.5499999523162842
         ],
         "rotation_quat": [
           0,
@@ -77,7 +77,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:2d54f0a29b592fa3:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:67032548a8e5d22f:7da0798d4ae900c1"
+        "asset": "asset-key:3f1d29be0b08eb31:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:67032548a8e5d22f:7da0798d4ae900c1"
       },
       "mesh_source": {
         "kind": "glb",
@@ -86,8 +86,8 @@
       },
       "mesh_render_style": {
         "kind": "wireframe",
-        "depth_test": false,
-        "depth_write": false
+        "depth_test": true,
+        "depth_write": true
       },
       "debug_visual": {
         "kind": "axes",
@@ -97,17 +97,17 @@
       "editor_handle": {
         "kind": "transform",
         "enabled": true,
-        "visible": false,
+        "visible": true,
         "size": 1
       }
     },
     {
       "id": "empty_1",
-      "parent": "root",
+      "parent": "empty_2",
       "transform": {
         "translation": [
           0,
-          0,
+          1.7999999523162842,
           0
         ],
         "rotation_quat": [
@@ -122,7 +122,60 @@
           1
         ]
       },
-      "visible": true
+      "visible": false,
+      "renderable": {
+        "asset": "asset-key:031aae010732c04c:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c"
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
+        "mesh_index": 0
+      },
+      "mesh_render_style": {
+        "kind": "wireframe",
+        "depth_test": true,
+        "depth_write": true
+      }
+    },
+    {
+      "id": "empty_2",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1000,
+          1000,
+          1000
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:ded52d69d2ed640c:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c"
+      },
+      "terrain": {
+        "asset": "asset-key:2e9ff9a0206a7d72:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
+        "visible": true,
+        "queryable": true,
+        "constrain_movement": true
+      },
+      "terrain_mesh_source": {
+        "mode": "scene_node",
+        "source_node": "empty_1",
+        "asset": "asset-key:d32f0b9d5e0b79d6:0000000000000000:f11eca55e7000403:0000000000000000:0000000000000002:0000000000000000:f90f3c0b1753645a:d974617c784f67aa",
+        "height_policy": "highest_accepted_surface",
+        "min_surface_normal_y": 0.20000000298023224,
+        "include_backfaces": true
+      }
     }
   ],
   "defaults": {

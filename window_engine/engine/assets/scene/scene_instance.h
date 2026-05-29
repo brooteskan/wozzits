@@ -62,6 +62,8 @@ namespace wz::engine::assets
 
     struct TerrainMeshSourceComponent
     {
+        SceneTerrainMeshSourceMode mode = SceneTerrainMeshSourceMode::MeshAsset;
+        wz::scene::AuthoredEntityId source_node;
         wz::asset::AssetKey mesh_asset{};
         SceneTerrainMeshHeightPolicy height_policy =
             SceneTerrainMeshHeightPolicy::HighestAcceptedSurface;

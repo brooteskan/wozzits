@@ -221,6 +221,18 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneTerrainMeshSourceMode>
+        parse_terrain_mesh_source_mode(std::string_view text)
+        {
+            if (text == "mesh_asset") {
+                return SceneTerrainMeshSourceMode::MeshAsset;
+            }
+            if (text == "scene_node") {
+                return SceneTerrainMeshSourceMode::SceneNode;
+            }
+            return std::nullopt;
+        }
+
         using SceneAssetReferenceMap =
             std::unordered_map<std::string, wz::asset::AssetKey>;
 
@@ -545,23 +557,47 @@ namespace wz::engine::assets::internal
                 node.terrain = component;
             }
 
-            std::optional<wz::asset::AssetKey> terrain_mesh_asset;
-            if (!parse_asset_reference_object(
-                    node_val,
-                    node.id,
-                    "terrain_mesh_source",
-                    logger,
-                    mesh_asset_references,
-                    terrain_mesh_asset))
-            {
-                return std::nullopt;
-            }
-            if (terrain_mesh_asset) {
-                const auto* source = find_member(
-                    node_val,
-                    "terrain_mesh_source");
+            const auto* source = find_member(node_val, "terrain_mesh_source");
+            if (source && source->kind == wz::json::JSONValueKind::Object) {
                 SceneTerrainMeshSourceAsset component{};
-                component.mesh_asset = *terrain_mesh_asset;
+
+                auto mode = read_string(*source, "mode");
+                if (mode) {
+                    auto parsed_mode = parse_terrain_mesh_source_mode(*mode);
+                    if (!parsed_mode) {
+                        logger.error("terrain_mesh_source on node '"
+                            + node.id + "' has unknown mode '"
+                            + std::string(*mode) + "'");
+                        return std::nullopt;
+                    }
+                    component.mode = *parsed_mode;
+                }
+
+                auto source_node = read_string(*source, "source_node");
+                if (source_node) {
+                    component.source_node = std::string(*source_node);
+                    component.mode = SceneTerrainMeshSourceMode::SceneNode;
+                }
+
+                auto asset = read_string(*source, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        const auto it = mesh_asset_references.find(
+                            std::string(*asset));
+                        if (it == mesh_asset_references.end()) {
+                            logger.error("terrain_mesh_source.asset on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*asset));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    component.mesh_asset = *key;
+                    if (component.mode != SceneTerrainMeshSourceMode::SceneNode) {
+                        component.mode = SceneTerrainMeshSourceMode::MeshAsset;
+                    }
+                }
 
                 auto policy = read_string(*source, "height_policy");
                 if (policy) {
