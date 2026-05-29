@@ -7,6 +7,7 @@
 build/
 CmakeUserPresets.json
 CMakeSettings.json
+/Testing/
 # this must be from ninja?
 /out
 

@@ -328,6 +328,17 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
     };
 
+    struct SceneAssetAuthoringRecipeSummary
+    {
+        uint32_t nodes_with_recipes = 0;
+        uint32_t total_recipes = 0;
+        uint32_t mesh_sources = 0;
+        uint32_t mesh_render_styles = 0;
+        uint32_t scalar_field_sources = 0;
+        uint32_t terrain_mesh_sources = 0;
+        uint32_t terrain_height_field_sources = 0;
+    };
+
     inline SceneNodeAsset make_scene_node(
         wz::scene::AuthoredEntityId id,
         std::string name = {})
@@ -540,6 +551,16 @@ namespace wz::engine::assets
         return has_authored_auxiliary_visual_component(node);
     }
 
+    inline bool has_asset_authoring_recipes(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.mesh_source.has_value()
+            || node.mesh_render_style.has_value()
+            || node.scalar_field_source.has_value()
+            || node.terrain_mesh_source.has_value()
+            || node.terrain_height_field_source.has_value();
+    }
+
     inline bool has_runtime_relevant_components(
         const SceneNodeAsset& node) noexcept
     {
@@ -553,6 +574,43 @@ namespace wz::engine::assets
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.debug_visual.has_value();
+    }
+
+    inline SceneAssetAuthoringRecipeSummary
+    summarize_scene_asset_authoring_recipes(const SceneAssetData& scene)
+    {
+        SceneAssetAuthoringRecipeSummary out{};
+
+        for (const auto& node : scene.nodes) {
+            if (!has_asset_authoring_recipes(node)) {
+                continue;
+            }
+
+            ++out.nodes_with_recipes;
+
+            if (node.mesh_source) {
+                ++out.mesh_sources;
+                ++out.total_recipes;
+            }
+            if (node.mesh_render_style) {
+                ++out.mesh_render_styles;
+                ++out.total_recipes;
+            }
+            if (node.scalar_field_source) {
+                ++out.scalar_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.terrain_mesh_source) {
+                ++out.terrain_mesh_sources;
+                ++out.total_recipes;
+            }
+            if (node.terrain_height_field_source) {
+                ++out.terrain_height_field_sources;
+                ++out.total_recipes;
+            }
+        }
+
+        return out;
     }
 
     inline wz::scene::SceneAuthoredComponentSummary summarize_authored_scene_components(

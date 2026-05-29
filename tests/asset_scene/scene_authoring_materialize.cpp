@@ -1,0 +1,381 @@
+// tests/asset_scene/scene_authoring_materialize.cpp
+
+#include <gtest/gtest.h>
+
+#include <engine/assets/engine_asset_library.h>
+#include <engine/assets/scene/scene_authoring_materialize.h>
+
+#include <file/filesystem.h>
+#include <gpu/gpu.h>
+#include <logging/logger.h>
+
+TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_source_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_source";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_EQ(report.renderables_to_realize.size(), 1u);
+    EXPECT_EQ(report.renderables_to_realize[0], *scene.nodes[0].renderable_asset);
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->kind, RenderableKind::Mesh);
+    EXPECT_EQ(
+        renderable_data->program,
+        BuiltinRenderProgram::MeshWireframeDepthDebug);
+}
+
+TEST(SceneAuthoringMaterialize, ScalarFieldSourceCreatesScalarFieldAsset)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_scalar_source_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "scalar_source";
+    SceneNodeAsset node = make_scene_node("field");
+    node.scalar_field_source = SceneScalarFieldSourceAsset{
+        .kind = SceneScalarFieldSourceKind::ProceduralSineWaves,
+        .width = 8,
+        .height = 4,
+        .depth = 1,
+        .frequency = 2.0f,
+        .amplitude = 0.5f,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].scalar_field_source.has_value());
+    const auto field_key =
+        scene.nodes[0].scalar_field_source->scalar_field_asset;
+    EXPECT_NE(field_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto field =
+        assets.scalar_fields().get_scalar_field(
+            ScalarFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field.valid());
+    const auto* field_data =
+        assets.scalar_fields().get_scalar_field_data(field);
+    ASSERT_NE(field_data, nullptr);
+    EXPECT_EQ(field_data->width, 8u);
+    EXPECT_EQ(field_data->height, 4u);
+}
+
+TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAssets)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_mesh_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const MeshAsset direct_mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/direct_mesh",
+            .kind = ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(direct_mesh.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_mesh_sources";
+
+    SceneNodeAsset direct = make_scene_node("direct_terrain");
+    direct.terrain = SceneTerrainAsset{};
+    direct.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = direct_mesh.output,
+    };
+    scene.nodes.push_back(std::move(direct));
+
+    SceneNodeAsset parent = make_scene_node("child_terrain");
+    parent.terrain = SceneTerrainAsset{};
+    parent.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::SceneNode,
+        .source_node = "child_mesh",
+    };
+    scene.nodes.push_back(std::move(parent));
+
+    SceneNodeAsset child = make_scene_node("child_mesh");
+    child.parent_id = "child_terrain";
+    child.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralQuad,
+    };
+    scene.nodes.push_back(std::move(child));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    EXPECT_EQ(scene.nodes[0].terrain_mesh_source->mesh_asset, direct_mesh.output);
+    EXPECT_NE(scene.nodes[0].terrain->terrain_asset, wz::asset::AssetKey{});
+    EXPECT_NE(scene.nodes[1].terrain_mesh_source->mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(scene.nodes[1].terrain->terrain_asset, wz::asset::AssetKey{});
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[1].renderable_asset.has_value());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    EXPECT_TRUE(
+        assets.terrains()
+            .get_terrain(TerrainAsset{
+                .output = scene.nodes[0].terrain->terrain_asset,
+            })
+            .valid());
+    EXPECT_TRUE(
+        assets.terrains()
+            .get_terrain(TerrainAsset{
+                .output = scene.nodes[1].terrain->terrain_asset,
+            })
+            .valid());
+}
+
+TEST(SceneAuthoringMaterialize, TerrainHeightFieldSourceSupportsDirectAndChildFields)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_heightfield_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const ScalarFieldAsset direct_field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "terrain/direct_field",
+            .width = 8,
+            .height = 8,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientY,
+        });
+    ASSERT_TRUE(direct_field.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_heightfield_sources";
+
+    SceneNodeAsset direct = make_scene_node("direct_terrain");
+    direct.terrain = SceneTerrainAsset{};
+    direct.terrain_height_field_source = SceneTerrainHeightFieldSourceAsset{
+        .mode = SceneTerrainHeightFieldSourceMode::ScalarFieldAsset,
+        .scalar_field_asset = direct_field.output,
+        .size = { 4.0f, 5.0f },
+        .vertical_scale = 2.0f,
+    };
+    scene.nodes.push_back(std::move(direct));
+
+    SceneNodeAsset parent = make_scene_node("child_terrain");
+    parent.terrain = SceneTerrainAsset{};
+    parent.terrain_height_field_source = SceneTerrainHeightFieldSourceAsset{
+        .mode = SceneTerrainHeightFieldSourceMode::SceneNode,
+        .source_node = "child_field",
+        .size = { 6.0f, 7.0f },
+    };
+    scene.nodes.push_back(std::move(parent));
+
+    SceneNodeAsset child = make_scene_node("child_field");
+    child.parent_id = "child_terrain";
+    child.scalar_field_source = SceneScalarFieldSourceAsset{
+        .kind = SceneScalarFieldSourceKind::ProceduralCheckerboard,
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+    };
+    scene.nodes.push_back(std::move(child));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    EXPECT_EQ(
+        scene.nodes[0].terrain_height_field_source->scalar_field_asset,
+        direct_field.output);
+    EXPECT_NE(scene.nodes[0].terrain->terrain_asset, wz::asset::AssetKey{});
+    EXPECT_NE(
+        scene.nodes[1].terrain_height_field_source->scalar_field_asset,
+        wz::asset::AssetKey{});
+    EXPECT_NE(scene.nodes[1].terrain->terrain_asset, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    EXPECT_TRUE(
+        assets.terrains()
+            .get_terrain(TerrainAsset{
+                .output = scene.nodes[0].terrain->terrain_asset,
+            })
+            .valid());
+    EXPECT_TRUE(
+        assets.terrains()
+            .get_terrain(TerrainAsset{
+                .output = scene.nodes[1].terrain->terrain_asset,
+            })
+            .valid());
+}
+
+TEST(SceneAuthoringMaterialize, TerrainSourceValidationAndVisibilityAreExplicit)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_validation_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    {
+        EngineAssetLibrary assets{ device, logger, root };
+        const MeshAsset mesh =
+            assets.meshes().create_procedural_mesh({
+                .name = "terrain/both_mesh",
+                .kind = ProceduralMeshKind::Cube,
+            });
+        const ScalarFieldAsset field =
+            assets.scalar_fields().create_procedural_scalar_field({
+                .name = "terrain/both_field",
+                .width = 4,
+                .height = 4,
+                .depth = 1,
+            });
+
+        SceneAssetData scene{};
+        scene.name = "invalid_both";
+        SceneNodeAsset node = make_scene_node("terrain");
+        node.terrain = SceneTerrainAsset{};
+        node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+            .mode = SceneTerrainMeshSourceMode::MeshAsset,
+            .mesh_asset = mesh.output,
+        };
+        node.terrain_height_field_source = SceneTerrainHeightFieldSourceAsset{
+            .mode = SceneTerrainHeightFieldSourceMode::ScalarFieldAsset,
+            .scalar_field_asset = field.output,
+        };
+        scene.nodes.push_back(std::move(node));
+
+        const auto report =
+            materialize_scene_authoring_components(scene, assets);
+        EXPECT_FALSE(report.ok);
+        EXPECT_NE(report.error.find("both mesh and heightfield"), std::string::npos);
+    }
+
+    {
+        EngineAssetLibrary assets{ device, logger, root };
+        SceneAssetData scene{};
+        scene.name = "missing_child";
+        SceneNodeAsset node = make_scene_node("terrain");
+        node.terrain = SceneTerrainAsset{};
+        node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+            .mode = SceneTerrainMeshSourceMode::SceneNode,
+            .source_node = "missing",
+            .mesh_asset = wz::asset::AssetKey{
+                .content_hash = { 1, 2 },
+            },
+        };
+        scene.nodes.push_back(std::move(node));
+
+        const auto report =
+            materialize_scene_authoring_components(scene, assets);
+        ASSERT_TRUE(report.ok) << report.error;
+        EXPECT_EQ(
+            scene.nodes[0].terrain_mesh_source->mesh_asset,
+            wz::asset::AssetKey{});
+        EXPECT_EQ(scene.nodes[0].terrain->terrain_asset, wz::asset::AssetKey{});
+        EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
+    }
+
+    {
+        EngineAssetLibrary assets{ device, logger, root };
+        const MeshAsset mesh =
+            assets.meshes().create_procedural_mesh({
+                .name = "terrain/invisible_mesh",
+                .kind = ProceduralMeshKind::Cube,
+            });
+
+        SceneAssetData scene{};
+        scene.name = "invisible";
+        SceneNodeAsset node = make_scene_node("terrain");
+        node.terrain = SceneTerrainAsset{ .visible = false };
+        node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+            .mode = SceneTerrainMeshSourceMode::MeshAsset,
+            .mesh_asset = mesh.output,
+        };
+        scene.nodes.push_back(std::move(node));
+
+        const auto report =
+            materialize_scene_authoring_components(scene, assets);
+        ASSERT_TRUE(report.ok) << report.error;
+        EXPECT_NE(scene.nodes[0].terrain->terrain_asset, wz::asset::AssetKey{});
+        EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
+        EXPECT_TRUE(report.renderables_to_realize.empty());
+    }
+}
+
+TEST(SceneAuthoringMaterialize, DefaultSceneHelperCreatesRootCameraScene)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene = make_default_scene_authoring_scene();
+
+    ASSERT_EQ(scene.nodes.size(), 2u);
+    EXPECT_EQ(scene.name, "scene_editor_scene");
+    EXPECT_EQ(scene.nodes[0].id, "root");
+    EXPECT_EQ(scene.nodes[1].id, "camera_01");
+    ASSERT_TRUE(scene.nodes[1].parent_id.has_value());
+    EXPECT_EQ(*scene.nodes[1].parent_id, "root");
+    EXPECT_TRUE(scene.nodes[1].camera.has_value());
+    ASSERT_TRUE(scene.defaults.active_camera_node.has_value());
+    EXPECT_EQ(*scene.defaults.active_camera_node, "camera_01");
+}

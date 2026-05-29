@@ -542,6 +542,18 @@ has_authored_camera_component(...)
 has_runtime_relevant_components(...)
 ```
 
+Asset-authoring recipe helpers:
+
+```cpp
+has_asset_authoring_recipes(...)
+summarize_scene_asset_authoring_recipes(...)
+```
+
+These helpers intentionally track the editor/import recipe records separately
+from normal scene composition. They are a compatibility inventory for the
+current shadow-DAG fields and a migration point for moving reusable asset
+recipes out of `SceneAssetData` later.
+
 Runtime helpers:
 
 ```cpp

@@ -421,6 +421,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_render_program render_program_asset_module)
 
     rs_add_test_group(asset_scene scene_asset_module)
+    rs_add_test_group(asset_scene scene_authoring_materialize)
 
     rs_add_test_group(asset_gltf gltf_importer)
     # rs_add_test_group(game_app game_app_main)
