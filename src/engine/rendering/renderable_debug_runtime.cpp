@@ -45,6 +45,7 @@ namespace wz::engine::rendering
         }
 
         case BuiltinRenderProgram::MeshDepthPrepassDebug:
+        case BuiltinRenderProgram::TerrainMeshSurface:
             return false;
 
         case BuiltinRenderProgram::GaussianSplatDebug:

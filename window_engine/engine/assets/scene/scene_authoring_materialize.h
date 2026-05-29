@@ -13,6 +13,7 @@ namespace wz::engine::assets
     struct SceneAuthoringMaterializeOptions
     {
         bool create_preview_renderables = true;
+        bool create_terrain_surface_renderables = true;
         bool create_terrain_debug_renderables = true;
     };
 

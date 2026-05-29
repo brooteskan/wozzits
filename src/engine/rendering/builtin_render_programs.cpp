@@ -32,6 +32,18 @@ namespace wz::engine::rendering
             };
             return true;
 
+        case BuiltinRenderProgram::TerrainMeshSurface:
+            out = ShaderPairDesc{
+                .name = "terrain_mesh_surface",
+                .vertex_path = "shaders/terrain_mesh_surface/terrain_mesh_surface_vs.hlsl",
+                .pixel_path = "shaders/terrain_mesh_surface/terrain_mesh_surface_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target = "ps_5_0",
+            };
+            return true;
+
         case BuiltinRenderProgram::GaussianSplatDebug:
             out = ShaderPairDesc{
                 .name = "gaussian_splat_debug",

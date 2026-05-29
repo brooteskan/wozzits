@@ -255,6 +255,19 @@ TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAsset
                 .output = scene.nodes[1].terrain->terrain_asset,
             })
             .valid());
+
+    const auto direct_renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(direct_renderable.valid());
+    const auto* direct_renderable_data =
+        assets.renderables().get_renderable_data(direct_renderable);
+    ASSERT_NE(direct_renderable_data, nullptr);
+    EXPECT_EQ(
+        direct_renderable_data->program,
+        BuiltinRenderProgram::TerrainMeshSurface);
+    EXPECT_EQ(direct_renderable_data->domain, RenderDomain::Opaque);
+    EXPECT_EQ(direct_renderable_data->companion_asset,
+        scene.nodes[0].terrain->terrain_asset);
 }
 
 TEST(SceneAuthoringMaterialize, TerrainHeightFieldSourceSupportsDirectAndChildFields)

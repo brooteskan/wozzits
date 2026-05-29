@@ -7,6 +7,8 @@
 #include <gpu/dx12/dx12_pipeline_factory.h>
 #include <gpu/dx12/dx12_internal.h>
 
+#include <engine/assets/mesh/mesh.h>
+
 #include "dx12_device_internal.h"
 
 #include <cassert>
@@ -85,6 +87,7 @@ namespace wz::gpu::dx12::internal
         case P::MeshWireframeDebug:
         case P::MeshWireframeDepthDebug:
         case P::MeshDepthPrepassDebug:
+        case P::TerrainMeshSurface:
             return create_mesh_wireframe_root_sig(device);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_root_sig(device);
@@ -209,6 +212,72 @@ namespace wz::gpu::dx12::internal
         return pso;
     }
 
+    static ID3D12PipelineState* create_terrain_mesh_surface_pso(
+        Device& device,
+        ID3D12RootSignature* root_sig,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader)
+    {
+        const DX12Shader* vs = get_shader(device, vertex_shader);
+        const DX12Shader* ps = get_shader(device, pixel_shader);
+
+        assert(vs && vs->blob);
+        assert(ps && ps->blob);
+
+        using Vertex = wz::engine::assets::MeshVertex;
+
+        D3D12_INPUT_ELEMENT_DESC layout[] = {
+            {
+                "POSITION", 0,
+                DXGI_FORMAT_R32G32B32_FLOAT,
+                0, static_cast<UINT>(offsetof(Vertex, position)),
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+            },
+            {
+                "NORMAL", 0,
+                DXGI_FORMAT_R32G32B32_FLOAT,
+                0, static_cast<UINT>(offsetof(Vertex, normal)),
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+            },
+            {
+                "TEXCOORD", 0,
+                DXGI_FORMAT_R32G32_FLOAT,
+                0, static_cast<UINT>(offsetof(Vertex, uv)),
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+            },
+        };
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature = root_sig;
+        desc.VS = { vs->blob->GetBufferPointer(), vs->blob->GetBufferSize() };
+        desc.PS = { ps->blob->GetBufferPointer(), ps->blob->GetBufferSize() };
+        desc.InputLayout = { layout, static_cast<UINT>(std::size(layout)) };
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState.DepthEnable = TRUE;
+        desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleMask = UINT_MAX;
+        desc.SampleDesc.Count = 1;
+
+        ID3D12PipelineState* pso = nullptr;
+        HRESULT hr = get_device(device)->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pso));
+
+        if (FAILED(hr))
+            return nullptr;
+        return pso;
+    }
+
     static ID3D12PipelineState* create_gaussian_splat_pso(
         Device& device,
         ID3D12RootSignature* root_sig,
@@ -320,6 +389,12 @@ namespace wz::gpu::dx12::internal
                 root_sig,
                 vertex_shader,
                 pixel_shader);
+        case P::TerrainMeshSurface:
+            return create_terrain_mesh_surface_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_pso(device, root_sig, vertex_shader, pixel_shader);
         default:
@@ -370,6 +445,15 @@ namespace wz::gpu::dx12::internal
                     0, 0,
                     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
                 }};
+            case K::MeshPositionNormalUV:
+            {
+                using Vertex = wz::engine::assets::MeshVertex;
+                return {
+                    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, static_cast<UINT>(offsetof(Vertex, position)), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                    { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, static_cast<UINT>(offsetof(Vertex, normal)),   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, static_cast<UINT>(offsetof(Vertex, uv)),       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                };
+            }
             case K::GaussianSplatVertex:
                 // Use offsetof — APPEND_ALIGNED_ELEMENT would skip pad0 between
                 // scale and rotation, putting COLOR 4 bytes early (reading qw as red).

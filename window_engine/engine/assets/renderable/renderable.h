@@ -29,6 +29,7 @@ namespace wz::engine::assets
         MeshWireframeDebug,
         MeshWireframeDepthDebug,
         MeshDepthPrepassDebug,
+        TerrainMeshSurface,
         GaussianSplatDebug,
         ScalarFieldDebug,
         GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
@@ -120,6 +121,17 @@ namespace wz::engine::assets
         uint32_t mesh_policy_flags =
             RenderPolicy_Wireframe
             | RenderPolicy_DepthTest
+            | RenderPolicy_DepthWrite;
+    };
+
+    struct TerrainSurfaceRenderableCompileDesc
+    {
+        wz::asset::AssetKey terrain_asset{};
+        BuiltinRenderProgram mesh_program =
+            BuiltinRenderProgram::TerrainMeshSurface;
+        RenderDomain domain = RenderDomain::Opaque;
+        uint32_t mesh_policy_flags =
+            RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite;
     };
 }

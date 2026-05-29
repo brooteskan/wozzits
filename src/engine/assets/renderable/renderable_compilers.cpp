@@ -199,6 +199,85 @@ namespace wz::engine::assets::internal
             });
 
         registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kTerrainSurfaceRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .compile = [logger, terrain_table, renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<TerrainSurfaceRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    logger->error("terrain surface renderable missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 1) {
+                    logger->error("terrain surface renderable requires one terrain dependency");
+                    return compile_failed_node(input);
+                }
+
+                const TerrainAssetData* terrain =
+                    terrain_table->get(dep_handles[0]);
+
+                if (!terrain || !terrain->valid()) {
+                    logger->error("terrain surface renderable source terrain is invalid");
+                    return compile_failed_node(input);
+                }
+
+                if (terrain->representation
+                    != TerrainRepresentationKind::MeshSurface)
+                {
+                    logger->error("terrain surface renderable currently requires mesh terrain");
+                    return compile_failed_node(input);
+                }
+
+                if (!terrain->supports_render_mesh
+                    || terrain->render_mode == TerrainRenderMode::None)
+                {
+                    logger->error("terrain surface renderable source terrain is not renderable");
+                    return compile_failed_node(input);
+                }
+
+                if (terrain->mesh == wz::asset::AssetKey{}) {
+                    logger->error("terrain surface renderable mesh terrain has no mesh");
+                    return compile_failed_node(input);
+                }
+
+                RenderableAssetData data{};
+                data.kind = RenderableKind::Mesh;
+                data.source_asset = terrain->mesh;
+                data.companion_asset = desc->terrain_asset;
+                data.program = desc->mesh_program;
+                data.domain = desc->domain;
+                data.policy_flags = desc->mesh_policy_flags;
+
+                copy_bounds(
+                    data.bounds_min,
+                    data.bounds_max,
+                    terrain->bounds_min,
+                    terrain->bounds_max);
+
+                wz::asset::ResourceHandle handle =
+                    renderable_table->add(std::move(data));
+
+                if (!handle.valid()) {
+                    logger->error("failed to store terrain surface renderable");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
             .compile = [logger, scalar_fields_table, renderable_table](

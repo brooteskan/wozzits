@@ -400,3 +400,61 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshWireframeDebug)
     EXPECT_TRUE(pipeline_cache.get(handle).valid());
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));  // idempotent
 }
+
+TEST_F(RenderProgramGpuFixture, ResolvesBuiltinTerrainMeshSurface)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name = "stub/terrain_mesh_surface",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path = "shaders/stub/stub_ps.hlsl",
+        });
+
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_builtin({
+        .name = "program/terrain_mesh_surface",
+        .program = BuiltinRenderProgram::TerrainMeshSurface,
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader = shaders.pixel_shader,
+        });
+
+    ASSERT_TRUE(program.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto handle = assets.render_programs().get_render_program(program);
+    ASSERT_TRUE(handle.valid());
+    EXPECT_EQ(handle.type, kAssetTypeRenderProgram);
+
+    const auto* data = assets.render_programs().get_render_program_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->builtin_program, BuiltinRenderProgram::TerrainMeshSurface);
+    EXPECT_EQ(data->binding_model, RenderBindingModel::MeshIA);
+    EXPECT_EQ(data->topology, RenderPrimitiveTopology::TriangleList);
+    EXPECT_EQ(data->default_domain, RenderDomain::Opaque);
+
+    EXPECT_EQ(data->default_policy_flags & RenderPolicy_Wireframe, 0u);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthTest, 0u);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthWrite, 0u);
+
+    EXPECT_EQ(data->input_layout, InputLayoutKind::MeshPositionNormalUV);
+    EXPECT_EQ(data->blend_mode, BlendMode::Opaque);
+    EXPECT_EQ(data->depth_mode, DepthMode::TestWrite);
+    EXPECT_EQ(data->raster_mode, RasterMode::SolidCullBack);
+
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility, ShaderVisibility::Vertex);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space, 0u);
+    EXPECT_EQ(data->root_constants[0].value_count, 32u);
+
+    EXPECT_TRUE(data->descriptor_bindings.empty());
+}

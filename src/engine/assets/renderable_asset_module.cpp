@@ -188,6 +188,49 @@ namespace wz::engine::assets
         };
     }
 
+    RenderableAsset RenderableAssetModule::create_terrain_surface(
+        const TerrainSurfaceRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("terrain surface renderable has empty name");
+            return {};
+        }
+
+        if (!desc.terrain.valid()) {
+            logger_.error("terrain surface renderable has invalid terrain: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_terrain_surface_renderable_key(
+                desc.name,
+                desc.terrain.output,
+                desc.mesh_program,
+                desc.mesh_policy_flags,
+                desc.domain);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kTerrainSurfaceRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = TerrainSurfaceRenderableCompileDesc{
+            .terrain_asset = desc.terrain.output,
+            .mesh_program = desc.mesh_program,
+            .domain = desc.domain,
+            .mesh_policy_flags = desc.mesh_policy_flags,
+        };
+
+        if (!system_.register_asset(std::move(node), { desc.terrain.output }))
+            return RenderableAsset{ .output = key };
+
+        return RenderableAsset{
+            .output = key,
+        };
+    }
+
     RenderableHandle RenderableAssetModule::get_renderable(
         const RenderableAsset& asset) const
     {

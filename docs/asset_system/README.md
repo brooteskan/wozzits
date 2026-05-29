@@ -173,6 +173,15 @@ the height field as their source asset and are realized by the GPU scene
 resolver as a bounded wireframe preview mesh until a terrain-specific renderer
 is available.
 
+Mesh-backed terrain can also register a surface renderable through
+`RenderableAssetModule::create_terrain_surface()`. This remains a
+`kAssetTypeRenderable` recipe: the renderable source is the terrain mesh, the
+terrain asset is preserved in `RenderableAssetData::companion_asset`, and the
+selected program is `BuiltinRenderProgram::TerrainMeshSurface`. V1 consumes
+mesh normals and UV0 when present on the mesh asset. Height-field terrain still
+uses the existing debug/preview path until a generated surface mesh path is
+introduced.
+
 ---
 
 ## Gaussian Splat Clouds
@@ -237,8 +246,9 @@ to a render program and domain, producing an entry in `RenderableAssetTable`.
 | Gaussian splat debug | `kGaussianSplatDebugRenderableSchema` | `0x000701` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_debug()` |
 | Scalar field debug | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
 | Terrain debug | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
+| Terrain mesh surface | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
 
-All four produce `RenderableAssetData` in `RenderableAssetTable`.
+All five produce `RenderableAssetData` in `RenderableAssetTable`.
 `RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,
 policy flags, spatial bounds, and an optional `companion_asset` key (used to attach
 a `GaussianSplatColorLOD` to a splat renderable).
@@ -254,6 +264,7 @@ pre-LOD renderer).
 - `MeshWireframeDebug` -> `RenderDomain::Debug`
 - `MeshWireframeDepthDebug` -> depth-tested/depth-writing mesh wireframe debug
 - `MeshDepthPrepassDebug` -> depth-only mesh prepass debug
+- `TerrainMeshSurface` -> opaque mesh terrain surface path consuming position/normal/UV
 - `GaussianSplatDebug` -> `RenderDomain::Splat`
 - `ScalarFieldDebug` -> `RenderDomain::Debug`
 - `GaussianSplatPullDebug` -> pull-based splat path (no IA, t0 SRV)
@@ -417,11 +428,11 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Terrain | 2 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
-| Renderables | 4 |
+| Renderables | 5 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **39** |
+| **Total** | **40** |
 
 ---
 

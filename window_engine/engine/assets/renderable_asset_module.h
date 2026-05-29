@@ -58,6 +58,18 @@ namespace wz::engine::assets
             | RenderPolicy_DepthWrite;
     };
 
+    struct TerrainSurfaceRenderableDesc
+    {
+        std::string name;
+        TerrainAsset terrain{};
+        BuiltinRenderProgram mesh_program =
+            BuiltinRenderProgram::TerrainMeshSurface;
+        RenderDomain domain = RenderDomain::Opaque;
+        uint32_t mesh_policy_flags =
+            RenderPolicy_DepthTest
+            | RenderPolicy_DepthWrite;
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -97,6 +109,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_terrain_debug(
             const TerrainDebugRenderableDesc& desc);
+
+        RenderableAsset create_terrain_surface(
+            const TerrainSurfaceRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;

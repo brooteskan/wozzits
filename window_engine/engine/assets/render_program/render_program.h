@@ -40,6 +40,7 @@ namespace wz::engine::assets
     {
         None,               // pull-based or fullscreen — no IA vertex buffer
         MeshPositionOnly,   // float3 POSITION, per-vertex
+        MeshPositionNormalUV, // POSITION + NORMAL + TEXCOORD0 from MeshVertex
         GaussianSplatVertex, // per-instance: position, opacity, scale, rotation, color
     };
 

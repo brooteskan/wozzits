@@ -753,6 +753,129 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainDebugRenderable)
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
 }
 
+TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mesh_terrain_surface_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/surface_mesh_quad",
+            .kind = ProceduralMeshKind::Quad,
+            });
+
+    ASSERT_TRUE(mesh.valid());
+
+    const auto terrain =
+        assets.terrains().create_from_mesh({
+            .name = "terrain/surface_mesh",
+            .mesh = mesh,
+            });
+
+    ASSERT_TRUE(terrain.valid());
+
+    const auto renderable =
+        assets.renderables().create_terrain_surface({
+            .name = "terrain/surface_mesh_renderable",
+            .terrain = terrain,
+            });
+
+    ASSERT_TRUE(renderable.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 3u);
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->kind, RenderableKind::Mesh);
+    EXPECT_EQ(data->source_asset, mesh.output);
+    EXPECT_EQ(data->companion_asset, terrain.output);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::TerrainMeshSurface);
+    EXPECT_EQ(data->domain, RenderDomain::Opaque);
+    EXPECT_EQ(data->policy_flags & RenderPolicy_Wireframe, 0u);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
+    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
+}
+
+TEST(RenderableAssetModule, RejectsHeightFieldTerrainSurfaceRenderable)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_heightfield_terrain_surface_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "terrain/heightfield_surface_source",
+            .width = 2,
+            .height = 2,
+            .depth = 1,
+            });
+
+    ASSERT_TRUE(field.valid());
+
+    const auto terrain =
+        assets.terrains().create_from_height_field({
+            .name = "terrain/heightfield_surface",
+            .height_field = field,
+            .size = { 1.0f, 1.0f },
+            .vertical_scale = 1.0f,
+            });
+
+    ASSERT_TRUE(terrain.valid());
+
+    const auto renderable =
+        assets.renderables().create_terrain_surface({
+            .name = "terrain/heightfield_surface_renderable",
+            .terrain = terrain,
+            });
+
+    ASSERT_TRUE(renderable.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_FALSE(report.ok());
+    EXPECT_FALSE(assets.renderables().get_renderable(renderable).valid());
+}
+
 TEST(RenderableAssetModule, RejectsScalarFieldDebugRenderableWithInvalidSource)
 {
     const wz::fs::Path root =

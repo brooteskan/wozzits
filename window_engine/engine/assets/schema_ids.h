@@ -328,6 +328,10 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000703ull
     };
 
+    inline constexpr wz::asset::SchemaID kTerrainSurfaceRenderableSchema{
+    0xF11E'CA55'E7'000704ull
+    };
+
     // Scene asset compiled from a JSON document dependency.
     // Produces kAssetTypeScene output containing SceneAssetData in SceneAssetTable.
     inline constexpr wz::asset::SchemaID kSceneFromJSONSchema{

@@ -329,6 +329,36 @@ namespace wz::engine::assets
             return true;
         }
 
+        bool ensure_surface_renderable_for_terrain_asset(
+            EngineAssetLibrary& assets,
+            const std::string& key,
+            const std::string& name,
+            TerrainAsset terrain,
+            RenderableCache& renderables,
+            RenderableAsset& out)
+        {
+            if (const auto found = renderables.find(key);
+                found != renderables.end())
+            {
+                out = found->second;
+                return true;
+            }
+
+            RenderableAsset renderable =
+                assets.renderables().create_terrain_surface({
+                    .name = name,
+                    .terrain = terrain,
+                });
+
+            if (!renderable.valid()) {
+                return false;
+            }
+
+            renderables.emplace(key, renderable);
+            out = renderable;
+            return true;
+        }
+
         TerrainMeshSurfaceHeightPolicy terrain_height_policy_for_source(
             SceneTerrainMeshHeightPolicy policy)
         {
@@ -645,6 +675,7 @@ namespace wz::engine::assets
             }
 
             TerrainAsset terrain_asset{};
+            bool is_mesh_terrain = false;
             if (node.terrain_height_field_source) {
                 const auto& source = *node.terrain_height_field_source;
                 if (source.scalar_field_asset == wz::asset::AssetKey{}) {
@@ -673,6 +704,7 @@ namespace wz::engine::assets
                 }
             }
             else if (node.terrain_mesh_source) {
+                is_mesh_terrain = true;
                 const auto& source = *node.terrain_mesh_source;
                 if (source.mesh_asset == wz::asset::AssetKey{}) {
                     terrain.terrain_asset = {};
@@ -702,20 +734,43 @@ namespace wz::engine::assets
 
             terrain.terrain_asset = terrain_asset.output;
 
-            if (!terrain.visible || !options.create_terrain_debug_renderables) {
+            if (!terrain.visible) {
                 node.renderable_asset.reset();
                 continue;
             }
 
             RenderableAsset renderable{};
-            const std::string key = "terrain:" + node.id + ":debug";
-            if (!ensure_debug_renderable_for_terrain_asset(
+            const bool use_surface =
+                is_mesh_terrain && options.create_terrain_surface_renderables;
+            const bool use_debug =
+                !use_surface && options.create_terrain_debug_renderables;
+
+            if (!use_surface && !use_debug) {
+                node.renderable_asset.reset();
+                continue;
+            }
+
+            const std::string key = "terrain:" + node.id
+                + (use_surface ? ":surface" : ":debug");
+            const std::string name = "scene_editor/terrain/" + node.id
+                + (use_surface ? "_surface" : "_debug");
+            const bool renderable_ok = use_surface
+                ? ensure_surface_renderable_for_terrain_asset(
                     assets,
                     key,
-                    "scene_editor/terrain/" + node.id + "_debug",
+                    name,
                     terrain_asset,
                     renderables,
-                    renderable))
+                    renderable)
+                : ensure_debug_renderable_for_terrain_asset(
+                    assets,
+                    key,
+                    name,
+                    terrain_asset,
+                    renderables,
+                    renderable);
+
+            if (!renderable_ok)
             {
                 report.error =
                     "terrain renderable unavailable for node: " + node.id;
