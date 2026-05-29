@@ -72,4 +72,28 @@ namespace wz::engine::assets
             .deps_hash = detail::key_to_dep_hash(scalar_field_key),
         };
     }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_terrain_debug_renderable_key(
+        std::string_view name,
+        const wz::asset::AssetKey& terrain_key,
+        BuiltinRenderProgram mesh_program =
+            BuiltinRenderProgram::MeshWireframeDepthDebug,
+        uint32_t mesh_policy_flags =
+            RenderPolicy_Wireframe
+            | RenderPolicy_DepthTest
+            | RenderPolicy_DepthWrite,
+        RenderDomain domain = RenderDomain::Debug) noexcept
+    {
+        uint64_t h = detail::fnv1a_64(name);
+        h = detail::mix64(h, static_cast<uint64_t>(mesh_program));
+        h = detail::mix64(h, static_cast<uint64_t>(mesh_policy_flags));
+        h = detail::mix64(h, static_cast<uint64_t>(domain));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(kTerrainDebugRenderableSchema.value),
+            .compiler_hash = detail::hash_u64(kTerrainDebugRenderableCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(terrain_key),
+        };
+    }
 }

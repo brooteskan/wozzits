@@ -110,4 +110,16 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey scalar_field_asset{};
     };
+
+    struct TerrainDebugRenderableCompileDesc
+    {
+        wz::asset::AssetKey terrain_asset{};
+        BuiltinRenderProgram mesh_program =
+            BuiltinRenderProgram::MeshWireframeDepthDebug;
+        RenderDomain domain = RenderDomain::Debug;
+        uint32_t mesh_policy_flags =
+            RenderPolicy_Wireframe
+            | RenderPolicy_DepthTest
+            | RenderPolicy_DepthWrite;
+    };
 }

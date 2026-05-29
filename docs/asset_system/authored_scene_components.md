@@ -439,6 +439,13 @@ Before preview/runtime instantiation, the editor must resolve this draft into a
 store that key on the `Terrain` component. `TerrainHeightFieldSource` does not
 instantiate into `SceneInstance` runtime component tables.
 
+When a terrain node is visible, the editor should also register a terrain debug
+renderable through `RenderableAssetModule::create_terrain_debug()` and attach the
+resulting `RenderableAsset` to the node. That renderable remains part of the
+asset DAG: it depends on the compiled `TerrainAsset`, adapts mesh terrain to the
+mesh debug path, and adapts height-field terrain to a bounded wireframe preview
+mesh in the GPU scene resolver until a terrain-specific renderer is available.
+
 ### AudioListener
 
 Runtime-relevant authored audio listener marker.
@@ -503,6 +510,8 @@ Examples:
   `source_node` with a mesh-producing scene component. The editor can then
   resolve that scene node to the produced mesh asset during rebuild while
   preserving the asset-system dependency path.
+- visible terrain nodes may reference a terrain debug `RenderableAsset` derived
+  from the node's `TerrainAsset`
 - future material, input-map, animation, or script components may reference
   asset-system resources
 

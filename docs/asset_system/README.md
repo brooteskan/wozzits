@@ -119,6 +119,15 @@ flags. Height-field terrain supports height-query semantics; mesh terrain record
 surface bounds/source metadata and leaves acceleration-backed ray/project queries
 for a later compiler/runtime layer.
 
+Terrain visibility is expressed through a renderable asset, not editor preview
+state. `RenderableAssetModule::create_terrain_debug()` registers a renderable
+that depends on a compiled `TerrainAsset`. The compiler adapts mesh terrain to
+the mesh debug path and keeps the terrain key as
+`RenderableAssetData::companion_asset`. Height-field terrain renderables keep
+the height field as their source asset and are realized by the GPU scene
+resolver as a bounded wireframe preview mesh until a terrain-specific renderer
+is available.
+
 ---
 
 ## Gaussian Splat Clouds
@@ -182,8 +191,9 @@ render program and domain, producing an entry in `RenderableAssetTable`.
 | Mesh wireframe debug | `kMeshWireframeRenderableSchema` | `0x000700` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_mesh_wireframe()` |
 | Gaussian splat debug | `kGaussianSplatDebugRenderableSchema` | `0x000701` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_debug()` |
 | Scalar field debug | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
+| Terrain debug | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
 
-All three produce `RenderableAssetData` in `RenderableAssetTable`.
+All four produce `RenderableAssetData` in `RenderableAssetTable`.
 `RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,
 policy flags, spatial bounds, and an optional `companion_asset` key (used to attach
 a `GaussianSplatColorLOD` to a splat renderable).

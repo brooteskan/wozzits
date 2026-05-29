@@ -52,6 +52,7 @@ namespace wz::engine::assets::internal
     {
         auto* logger = &ctx.logger;
         auto* mesh_table = &ctx.mesh_table;
+        auto* terrain_table = &ctx.terrain_table;
         auto* scalar_fields_table = &ctx.scalar_fields_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
         auto* renderable_table = &ctx.renderable_table;
@@ -99,6 +100,94 @@ namespace wz::engine::assets::internal
 
                 if (!handle.valid()) {
                     logger->error("failed to store mesh wireframe renderable");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kTerrainDebugRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .compile = [logger, terrain_table, renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<TerrainDebugRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    logger->error("terrain debug renderable missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 1) {
+                    logger->error("terrain debug renderable requires one terrain dependency");
+                    return compile_failed_node(input);
+                }
+
+                const TerrainAssetData* terrain =
+                    terrain_table->get(dep_handles[0]);
+
+                if (!terrain || !terrain->valid()) {
+                    logger->error("terrain debug renderable source terrain is invalid");
+                    return compile_failed_node(input);
+                }
+
+                if (!terrain->supports_render_mesh
+                    || terrain->render_mode == TerrainRenderMode::None)
+                {
+                    logger->error("terrain debug renderable source terrain is not renderable");
+                    return compile_failed_node(input);
+                }
+
+                RenderableAssetData data{};
+                data.companion_asset = desc->terrain_asset;
+                copy_bounds(
+                    data.bounds_min,
+                    data.bounds_max,
+                    terrain->bounds_min,
+                    terrain->bounds_max);
+
+                switch (terrain->representation)
+                {
+                case TerrainRepresentationKind::MeshSurface:
+                    if (terrain->mesh == wz::asset::AssetKey{}) {
+                        logger->error("terrain debug renderable mesh terrain has no mesh");
+                        return compile_failed_node(input);
+                    }
+                    data.kind = RenderableKind::Mesh;
+                    data.source_asset = terrain->mesh;
+                    data.program = desc->mesh_program;
+                    data.domain = desc->domain;
+                    data.policy_flags = desc->mesh_policy_flags;
+                    break;
+
+                case TerrainRepresentationKind::HeightField:
+                    if (terrain->height_field == wz::asset::AssetKey{}) {
+                        logger->error("terrain debug renderable heightfield terrain has no height field");
+                        return compile_failed_node(input);
+                    }
+                    data.kind = RenderableKind::ScalarField;
+                    data.source_asset = terrain->height_field;
+                    data.program = desc->mesh_program;
+                    data.domain = desc->domain;
+                    data.policy_flags = desc->mesh_policy_flags;
+                    break;
+                }
+
+                wz::asset::ResourceHandle handle =
+                    renderable_table->add(std::move(data));
+
+                if (!handle.valid()) {
+                    logger->error("failed to store terrain debug renderable");
                     return compile_failed_node(input);
                 }
 

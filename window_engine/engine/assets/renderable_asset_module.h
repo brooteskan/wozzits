@@ -9,6 +9,7 @@
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/terrain_asset_module.h>
 
 #include <logging/logger.h>
 
@@ -42,6 +43,19 @@ namespace wz::engine::assets
     {
         std::string name;
         ScalarFieldAsset scalar_field{};
+    };
+
+    struct TerrainDebugRenderableDesc
+    {
+        std::string name;
+        TerrainAsset terrain{};
+        BuiltinRenderProgram mesh_program =
+            BuiltinRenderProgram::MeshWireframeDepthDebug;
+        RenderDomain domain = RenderDomain::Debug;
+        uint32_t mesh_policy_flags =
+            RenderPolicy_Wireframe
+            | RenderPolicy_DepthTest
+            | RenderPolicy_DepthWrite;
     };
 
     struct RenderableAsset
@@ -80,6 +94,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_scalar_field_debug(
             const ScalarFieldDebugRenderableDesc& desc);
+
+        RenderableAsset create_terrain_debug(
+            const TerrainDebugRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;
