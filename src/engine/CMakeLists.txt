@@ -19,6 +19,10 @@ target_sources(window_engine PRIVATE
     assets/scalar_field/scalar_field_compilers.cpp
     assets/scalar_field/scalar_field_set.cpp
 
+    assets/vector_field_asset_module.cpp
+    assets/vector_field/vector_field.cpp
+    assets/vector_field/vector_field_compilers.cpp
+
     assets/csv/csv.cpp
     assets/csv/csv_compilers.cpp
     assets/csv_asset_module.cpp

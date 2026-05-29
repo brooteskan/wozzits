@@ -1099,8 +1099,8 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeDecal =
         static_cast<wz::asset::AssetType>(2257);
 
-    // Reserved VFX asset type. Not implemented yet.
-    // Represents a vector field used by particles, flow, wind, fluids, or motion.
+    // Implemented sampled vector field asset. Used for normal maps, flow, wind,
+    // fluids, motion, terrain material inputs, and future particle/VFX systems.
     inline constexpr wz::asset::AssetType kAssetTypeVectorField =
         static_cast<wz::asset::AssetType>(2258);
 

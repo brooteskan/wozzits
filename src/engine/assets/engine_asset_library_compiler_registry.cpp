@@ -19,6 +19,7 @@ namespace wz::engine::assets::internal
         register_file_carrier_compilers(registry, ctx.logger);
         register_shader_compilers(registry, ctx.logger, ctx.device);
         register_scalar_field_compilers(registry, ctx.logger, ctx.scalar_fields_table);
+        register_vector_field_compilers(registry, ctx.logger, ctx.vector_fields_table);
         register_csv_compilers(registry, ctx.logger, ctx.csv_table);
         register_json_compilers(registry, ctx.logger, ctx.json_table);
         register_toml_compilers(registry, ctx.logger, ctx.toml_table);

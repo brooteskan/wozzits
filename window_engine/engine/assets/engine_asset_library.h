@@ -15,10 +15,12 @@
 #include <logging/logger.h>
 
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/vector_field/vector_field.h>
 #include <engine/assets/csv/csv.h>
 #include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/shader_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/vector_field_asset_module.h>
 #include <engine/assets/csv_asset_module.h>
 
 #include <engine/assets/toml/toml.h>
@@ -102,11 +104,13 @@ namespace wz::engine::assets
         FileCarrierAssetModule&       files()         { return files_; }
         ShaderAssetModule&            shaders()       { return shaders_; }
         ScalarFieldAssetModule&       scalar_fields() { return scalar_fields_; }
+        VectorFieldAssetModule&       vector_fields() { return vector_fields_; }
         CSVAssetModule&               csv()           { return csv_; }
 
         const FileCarrierAssetModule&  files()         const { return files_; }
         const ShaderAssetModule&       shaders()       const { return shaders_; }
         const ScalarFieldAssetModule&  scalar_fields() const { return scalar_fields_; }
+        const VectorFieldAssetModule&  vector_fields() const { return vector_fields_; }
         const CSVAssetModule&          csv()           const { return csv_; }
 
         JSONAssetModule&               json()           { return json_; }
@@ -169,6 +173,7 @@ namespace wz::engine::assets
         wz::fs::Path     resource_root_;
 
         ScalarFieldTable            scalar_fields_table_;
+        VectorFieldTable            vector_fields_table_;
         CSVTable                    csv_table_;
         JSONTable                   json_table_;
         TOMLTable                   toml_table_;
@@ -189,6 +194,7 @@ namespace wz::engine::assets
         FileCarrierAssetModule      files_;
         ShaderAssetModule           shaders_;
         ScalarFieldAssetModule      scalar_fields_;
+        VectorFieldAssetModule      vector_fields_;
         CSVAssetModule              csv_;
         JSONAssetModule             json_;
         TOMLAssetModule             toml_;

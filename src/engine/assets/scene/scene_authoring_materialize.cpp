@@ -16,6 +16,8 @@ namespace wz::engine::assets
             std::unordered_map<std::string, RenderableAsset>;
         using ScalarFieldCache =
             std::unordered_map<std::string, ScalarFieldAsset>;
+        using VectorFieldCache =
+            std::unordered_map<std::string, VectorFieldAsset>;
 
         std::string mesh_source_cache_key(const SceneMeshSourceAsset& source)
         {
@@ -97,6 +99,26 @@ namespace wz::engine::assets
             return out.str();
         }
 
+        std::string vector_field_source_cache_key(
+            const SceneVectorFieldSourceAsset& source)
+        {
+            std::ostringstream out;
+            out << "vector:";
+            switch (source.kind) {
+            case SceneVectorFieldSourceKind::RawF32:
+                out << "raw_f32:" << source.path;
+                break;
+            }
+            out << ':' << source.width
+                << ':' << source.height
+                << ':' << source.depth
+                << ':' << source.components_per_channel;
+            for (const auto& channel : source.channels) {
+                out << ':' << channel.name;
+            }
+            return out.str();
+        }
+
         ScalarFieldGenerator scalar_field_generator_for_source(
             SceneScalarFieldSourceKind kind)
         {
@@ -156,6 +178,34 @@ namespace wz::engine::assets
                 .format = ScalarFieldFormat::Float32,
                 .domain_kind = ScalarFieldDomainKind::Spatial2D,
             });
+        }
+
+        VectorFieldAsset create_vector_field_asset_for_scene_source(
+            EngineAssetLibrary& assets,
+            const SceneVectorFieldSourceAsset& source,
+            const std::string& key,
+            std::string& error)
+        {
+            if (source.kind == SceneVectorFieldSourceKind::RawF32) {
+                if (source.path.empty()) {
+                    error = "vector field source has empty path";
+                    return {};
+                }
+
+                return assets.vector_fields().create_vector_field({
+                    .name = "scene_editor/" + key,
+                    .path = source.path,
+                    .width = source.width,
+                    .height = source.height,
+                    .depth = source.depth,
+                    .components_per_channel = source.components_per_channel,
+                    .channels = source.channels,
+                    .format = VectorFieldFormat::Float32,
+                    .domain_kind = VectorFieldDomainKind::Spatial2D,
+                });
+            }
+
+            return {};
         }
 
         MeshAsset create_mesh_asset_for_scene_source(
@@ -384,6 +434,7 @@ namespace wz::engine::assets
         RenderableCache renderables;
         MeshCache meshes;
         ScalarFieldCache scalar_fields;
+        VectorFieldCache vector_fields;
         std::unordered_map<std::string, wz::asset::AssetKey> mesh_assets_by_node;
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
@@ -421,6 +472,39 @@ namespace wz::engine::assets
 
             source.scalar_field_asset = scalar_field.output;
             scalar_field_assets_by_node[node.id] = scalar_field.output;
+        }
+
+        for (auto& node : scene.nodes) {
+            if (!node.vector_field_source) {
+                continue;
+            }
+
+            auto& source = *node.vector_field_source;
+            const std::string key = vector_field_source_cache_key(source);
+            VectorFieldAsset vector_field{};
+            if (const auto found = vector_fields.find(key);
+                found != vector_fields.end())
+            {
+                vector_field = found->second;
+            }
+            else {
+                vector_field = create_vector_field_asset_for_scene_source(
+                    assets,
+                    source,
+                    key,
+                    report.error);
+                if (!vector_field.valid()) {
+                    if (report.error.empty()) {
+                        report.error =
+                            "vector field source unavailable for node: "
+                            + node.id;
+                    }
+                    return report;
+                }
+                vector_fields.emplace(key, vector_field);
+            }
+
+            source.vector_field_asset = vector_field.output;
         }
 
         for (auto& node : scene.nodes) {

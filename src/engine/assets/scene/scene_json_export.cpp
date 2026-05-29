@@ -162,6 +162,16 @@ namespace wz::engine::assets
             return "procedural_gradient_x";
         }
 
+        const char* vector_field_source_kind_name(
+            SceneVectorFieldSourceKind kind)
+        {
+            switch (kind) {
+            case SceneVectorFieldSourceKind::RawF32:
+                return "raw_f32";
+            }
+            return "raw_f32";
+        }
+
         const char* terrain_mesh_height_policy_name(
             SceneTerrainMeshHeightPolicy policy)
         {
@@ -362,6 +372,31 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr vector_field_source_value(
+            const SceneVectorFieldSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(vector_field_source_kind_name(source.kind)));
+            if (!(source.vector_field_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(source.vector_field_asset)));
+            }
+            add_member(*obj, "path", string_value(source.path));
+            add_member(*obj, "width", number_value(source.width));
+            add_member(*obj, "height", number_value(source.height));
+            add_member(*obj, "depth", number_value(source.depth));
+            add_member(*obj, "components_per_channel",
+                number_value(source.components_per_channel));
+
+            auto channels = array_value();
+            for (const auto& channel : source.channels) {
+                channels->array_values.push_back(string_value(channel.name));
+            }
+            add_member(*obj, "channels", std::move(channels));
+            return obj;
+        }
+
         JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
         {
             auto obj = object_value();
@@ -518,6 +553,10 @@ namespace wz::engine::assets
             if (node.scalar_field_source) {
                 add_member(*obj, "scalar_field_source",
                     scalar_field_source_value(*node.scalar_field_source));
+            }
+            if (node.vector_field_source) {
+                add_member(*obj, "vector_field_source",
+                    vector_field_source_value(*node.vector_field_source));
             }
             if (node.terrain
                 && !(node.terrain->terrain_asset == wz::asset::AssetKey{}))

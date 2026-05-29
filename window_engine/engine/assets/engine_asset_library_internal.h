@@ -5,6 +5,8 @@
 #include <asset/compiler.h>
 #include <logging/logger.h>
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/vector_field/vector_field.h>
+#include <engine/assets/vector_field/vector_field_compilers.h>
 #include <engine/assets/csv/csv.h>
 #include <engine/assets/json/json.h>
 #include <engine/assets/toml/toml.h>
@@ -45,6 +47,7 @@ namespace wz::engine::assets::internal {
         wz::gpu::Device&            device;
         wz::Logger&                 logger;
         ScalarFieldTable&           scalar_fields_table;
+        VectorFieldTable&           vector_fields_table;
         CSVTable&                   csv_table;
         JSONTable&                  json_table;
         TOMLTable&                  toml_table;

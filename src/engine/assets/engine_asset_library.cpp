@@ -46,6 +46,7 @@ namespace wz::engine::assets
         , logger_(logger)
         , resource_root_(std::move(resource_root))
         , scalar_fields_table_{}
+        , vector_fields_table_{}
         , csv_table_{}
         , json_table_{}
         , toml_table_{}
@@ -65,6 +66,7 @@ namespace wz::engine::assets
                 .device                    = device,
                 .logger                    = logger,
                 .scalar_fields_table       = scalar_fields_table_,
+                .vector_fields_table       = vector_fields_table_,
                 .csv_table                 = csv_table_,
                 .json_table                = json_table_,
                 .toml_table                = toml_table_,
@@ -83,6 +85,7 @@ namespace wz::engine::assets
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
+        , vector_fields_(system_, logger_, files_, vector_fields_table_)
         , csv_(system_, logger_, files_, csv_table_)
         , json_(system_, logger_, files_, json_table_)
         , toml_(system_, logger_, files_, toml_table_)

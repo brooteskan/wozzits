@@ -81,6 +81,38 @@ Both schemas produce the same `kAssetTypeScalarField` output stored in
 
 ---
 
+## Vector Fields
+
+Vector fields are sampled fields with named channels and a fixed component count
+per channel. They are the first step toward a shared `Field<T, C>` model where
+scalar fields are the `C = 1` specialization and vector fields cover `C = 2..4`.
+
+V1 stores raw interleaved `f32` values in sample-major, channel, component order:
+
+```text
+sample_count * channel_count * components_per_channel
+```
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| File-backed vector field | `kVectorFieldFromRawF32Schema` | `0x000202` | `kAssetTypeVectorField` (2258) | `VectorFieldAssetModule::create_vector_field()` |
+
+The file-backed variant depends on a `kRawFileSchema` carrier and produces
+`VectorFieldData` stored in `VectorFieldTable`. Current validation keeps
+`components_per_channel` to 2, 3, or 4; the existing scalar-field asset remains
+the active `1 x 1` path until the common `Field` representation lands.
+
+Common intended uses include normal fields (`components_per_channel = 3`), flow
+fields (`components_per_channel = 2`), and multi-layer vector data with named
+channels over one spatial domain.
+
+Scenes may carry an editor-only `VectorFieldSource` authoring recipe. The
+materialization pass turns it into a `VectorFieldAsset` and stores the asset key
+back on the recipe; runtime scene instantiation does not create a component
+table for vector-field sources.
+
+---
+
 ## Meshes
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
@@ -367,6 +399,7 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | File carriers | 7 |
 | Shaders / render programs | 2 |
 | Scalar fields | 2 |
+| Vector fields | 1 |
 | Meshes | 5 |
 | Terrain | 2 |
 | Gaussian splat clouds | 5 |
@@ -375,7 +408,7 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **38** |
+| **Total** | **39** |
 
 ---
 
@@ -394,7 +427,7 @@ schema, compiler, module API, or runtime table:
 - UI layouts, font atlases
 - All gameplay data types (items, quests, dialogue, etc.)
 - All AI behavior types (behavior trees, GOAP, etc.)
-- All VFX / particle types
+- Remaining VFX / particle types other than `kAssetTypeVectorField`
 - All lighting environment types (probes, skybox, lightmaps, etc.)
 - All cinematic types (timelines, cutscenes, camera paths)
 

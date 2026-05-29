@@ -190,7 +190,7 @@ The current high-level categories are:
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
-| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
+| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -384,6 +384,31 @@ recipe data to rebuild a scalar-field asset DAG node. It may describe a raw F32
 file or a procedural field. Before another editor recipe consumes it, the editor
 materializes it into a `ScalarFieldAsset` and stores that key on `asset`.
 `ScalarFieldSource` does not instantiate into runtime scene component tables.
+
+### VectorFieldSource
+
+Editor/import authoring draft for building a vector-field asset.
+
+Fields:
+
+- `kind`
+- `asset`
+- `path`
+- `width`
+- `height`
+- `depth`
+- `components_per_channel`
+- `channels`
+
+`VectorFieldSource` is the vector counterpart to `ScalarFieldSource`. It lets
+the editor keep enough source recipe data to rebuild a vector-field asset DAG
+node for imported normal maps, flow fields, or other sampled vector data. V1
+supports raw interleaved F32 data with named channels and 2, 3, or 4 components
+per channel.
+
+Before another editor recipe consumes it, the editor materializes this draft
+into a `VectorFieldAsset` and stores that key on `asset`. `VectorFieldSource`
+does not instantiate into runtime scene component tables.
 
 ### TerrainMeshSource
 

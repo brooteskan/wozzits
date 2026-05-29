@@ -4653,6 +4653,8 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
     mesh_key.content_hash = { 0x1111, 0x2222 };
     wz::asset::AssetKey scalar_key{};
     scalar_key.content_hash = { 0x3333, 0x4444 };
+    wz::asset::AssetKey vector_key{};
+    vector_key.content_hash = { 0x5555, 0x6666 };
 
     SceneNodeAsset node{};
     node.id = "rock";
@@ -4673,6 +4675,15 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
         .height = 16,
         .frequency = 2.0f,
         .amplitude = 0.5f,
+    };
+    node.vector_field_source = SceneVectorFieldSourceAsset{
+        .kind = SceneVectorFieldSourceKind::RawF32,
+        .vector_field_asset = vector_key,
+        .path = "fields/normal.raw",
+        .width = 32,
+        .height = 16,
+        .components_per_channel = 3,
+        .channels = { VectorFieldChannelDesc{ .name = "normal" } },
     };
     node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
         .mode = SceneTerrainMeshSourceMode::MeshAsset,
@@ -4704,6 +4715,10 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
     EXPECT_NE(original, scene_asset_fingerprint(scene));
     scene.nodes[0].scalar_field_source->amplitude = 0.5f;
 
+    scene.nodes[0].vector_field_source->components_per_channel = 2;
+    EXPECT_NE(original, scene_asset_fingerprint(scene));
+    scene.nodes[0].vector_field_source->components_per_channel = 3;
+
     scene.nodes[0].terrain_mesh_source->include_backfaces = false;
     EXPECT_NE(original, scene_asset_fingerprint(scene));
     scene.nodes[0].terrain_mesh_source->include_backfaces = true;
@@ -4723,6 +4738,8 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     mesh_key.content_hash = { 0x5151, 0x6161 };
     wz::asset::AssetKey scalar_key{};
     scalar_key.content_hash = { 0x7171, 0x8181 };
+    wz::asset::AssetKey vector_key{};
+    vector_key.content_hash = { 0x9191, 0xA1A1 };
 
     SceneNodeAsset node{};
     node.id = "drafts";
@@ -4735,6 +4752,11 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     node.scalar_field_source = SceneScalarFieldSourceAsset{
         .kind = SceneScalarFieldSourceKind::ProceduralCheckerboard,
         .scalar_field_asset = scalar_key,
+    };
+    node.vector_field_source = SceneVectorFieldSourceAsset{
+        .kind = SceneVectorFieldSourceKind::RawF32,
+        .vector_field_asset = vector_key,
+        .path = "fields/normal.raw",
     };
     node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
         .mode = SceneTerrainMeshSourceMode::MeshAsset,
@@ -4752,10 +4774,11 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     const auto recipe_summary =
         summarize_scene_asset_authoring_recipes(scene);
     EXPECT_EQ(recipe_summary.nodes_with_recipes, 1u);
-    EXPECT_EQ(recipe_summary.total_recipes, 5u);
+    EXPECT_EQ(recipe_summary.total_recipes, 6u);
     EXPECT_EQ(recipe_summary.mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_render_styles, 1u);
     EXPECT_EQ(recipe_summary.scalar_field_sources, 1u);
+    EXPECT_EQ(recipe_summary.vector_field_sources, 1u);
     EXPECT_EQ(recipe_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.terrain_height_field_sources, 1u);
 
@@ -4763,6 +4786,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(authored_summary.mesh_sources, 1u);
     EXPECT_EQ(authored_summary.mesh_render_styles, 1u);
     EXPECT_EQ(authored_summary.scalar_field_sources, 1u);
+    EXPECT_EQ(authored_summary.vector_field_sources, 1u);
     EXPECT_EQ(authored_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(authored_summary.terrain_height_field_sources, 1u);
 
@@ -5024,6 +5048,90 @@ TEST(SceneAssetModule, ParsesExportsAndSummarizesScalarFieldSource)
     EXPECT_NE(exported.find("\"procedural_checkerboard\""), std::string::npos);
     EXPECT_NE(exported.find("\"frequency\""), std::string::npos);
     EXPECT_NE(exported.find("\"amplitude\""), std::string::npos);
+}
+
+TEST(SceneAssetModule, ParsesExportsAndSummarizesVectorFieldSource)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_vector_field_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "vector_field_source_scene",
+  "nodes": [
+    {
+      "id": "normal",
+      "transform": {
+        "translation": [0, 0, 0]
+      },
+      "vector_field_source": {
+        "kind": "raw_f32",
+        "path": "normals.raw",
+        "width": 32,
+        "height": 16,
+        "depth": 1,
+        "components_per_channel": 3,
+        "channels": ["normal"]
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "vector_field_source.scene.json", scene_json);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "vector_field_source",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.vector_field_source.has_value());
+    EXPECT_EQ(
+        node.vector_field_source->kind,
+        SceneVectorFieldSourceKind::RawF32);
+    EXPECT_EQ(node.vector_field_source->path, "normals.raw");
+    EXPECT_EQ(node.vector_field_source->width, 32u);
+    EXPECT_EQ(node.vector_field_source->height, 16u);
+    EXPECT_EQ(node.vector_field_source->depth, 1u);
+    EXPECT_EQ(node.vector_field_source->components_per_channel, 3u);
+    ASSERT_EQ(node.vector_field_source->channels.size(), 1u);
+    EXPECT_EQ(node.vector_field_source->channels[0].name, "normal");
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.vector_field_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"vector_field_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"raw_f32\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"components_per_channel\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"normal\""), std::string::npos);
 }
 
 TEST(SceneAssetModule, TerrainHeightFieldSourceComponentRoundTripsThroughSceneJSON)

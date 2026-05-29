@@ -85,6 +85,8 @@ namespace wz::engine::assets
                 node.mesh_render_style.has_value();
             const bool has_scalar_field_source =
                 node.scalar_field_source.has_value();
+            const bool has_vector_field_source =
+                node.vector_field_source.has_value();
             const bool has_terrain = node.terrain.has_value();
             const bool has_terrain_mesh_source =
                 node.terrain_mesh_source.has_value();
@@ -98,6 +100,7 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
+            fp.mix_value(has_vector_field_source);
             fp.mix_value(has_terrain);
             fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_terrain_height_field_source);
@@ -152,6 +155,21 @@ namespace wz::engine::assets
                 fp.mix_value(source.depth);
                 fp.mix_value(source.frequency);
                 fp.mix_value(source.amplitude);
+            }
+
+            if (node.vector_field_source) {
+                const auto& source = *node.vector_field_source;
+                fp.mix_value(source.kind);
+                mix_asset_key(fp, source.vector_field_asset);
+                fp.mix_string(source.path);
+                fp.mix_value(source.width);
+                fp.mix_value(source.height);
+                fp.mix_value(source.depth);
+                fp.mix_value(source.components_per_channel);
+                fp.mix_value(source.channels.size());
+                for (const auto& channel : source.channels) {
+                    fp.mix_string(channel.name);
+                }
             }
 
             if (node.input_receiver) {

@@ -107,6 +107,13 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000201ull
     };
 
+    // Vector field recipe: interpret a raw float32 file dependency as
+    // VectorFieldData. Values are interleaved by sample, then channel, then
+    // component. Produces kAssetTypeVectorField output.
+    inline constexpr wz::asset::SchemaID kVectorFieldFromRawF32Schema{
+    0xF11E'CA55'E7'000202ull
+    };
+
     // Gaussian splat cloud loaded from a PLY file.
     inline constexpr wz::asset::SchemaID kGaussianSplatFromPLYSchema{
     0xF11E'CA55'E7'000500ull

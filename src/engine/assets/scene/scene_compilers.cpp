@@ -236,6 +236,15 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneVectorFieldSourceKind>
+        parse_vector_field_source_kind(std::string_view text)
+        {
+            if (text == "raw_f32") {
+                return SceneVectorFieldSourceKind::RawF32;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneTerrainMeshHeightPolicy>
         parse_terrain_mesh_height_policy(std::string_view text)
         {
@@ -353,7 +362,8 @@ namespace wz::engine::assets::internal
             const SceneAssetReferenceMap& renderable_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
             const SceneAssetReferenceMap& mesh_asset_references,
-            const SceneAssetReferenceMap& scalar_field_asset_references)
+            const SceneAssetReferenceMap& scalar_field_asset_references,
+            const SceneAssetReferenceMap& vector_field_asset_references)
         {
             if (node_val.kind != wz::json::JSONValueKind::Object)
                 return std::nullopt;
@@ -687,6 +697,125 @@ namespace wz::engine::assets::internal
                 }
 
                 node.scalar_field_source = source;
+            }
+
+            const auto* vfs = find_member(node_val, "vector_field_source");
+            if (vfs && vfs->kind == wz::json::JSONValueKind::Object) {
+                auto kind_str = read_string(*vfs, "kind");
+                if (!kind_str) {
+                    logger.error("vector_field_source on node '" + node.id
+                        + "' missing 'kind'");
+                    return std::nullopt;
+                }
+
+                auto kind = parse_vector_field_source_kind(*kind_str);
+                if (!kind) {
+                    logger.error("vector_field_source on node '" + node.id
+                        + "' has unknown kind '" + std::string(*kind_str)
+                        + "'");
+                    return std::nullopt;
+                }
+
+                SceneVectorFieldSourceAsset source{};
+                source.kind = *kind;
+
+                auto asset = read_string(*vfs, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        const auto it = vector_field_asset_references.find(
+                            std::string(*asset));
+                        if (it == vector_field_asset_references.end()) {
+                            logger.error("vector_field_source.asset on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*asset));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    source.vector_field_asset = *key;
+                }
+
+                auto path = read_string(*vfs, "path");
+                if (path) {
+                    source.path = std::string(*path);
+                }
+                if (source.kind == SceneVectorFieldSourceKind::RawF32
+                    && source.path.empty()
+                    && source.vector_field_asset == wz::asset::AssetKey{})
+                {
+                    logger.error("vector_field_source on node '" + node.id
+                        + "' with kind 'raw_f32' missing 'path'");
+                    return std::nullopt;
+                }
+
+                auto read_dimension =
+                    [&](const char* field_name, uint32_t& out) -> bool
+                {
+                    auto value = read_number(*vfs, field_name);
+                    if (!value) {
+                        return true;
+                    }
+                    if (*value < 1.0 || !std::isfinite(*value)) {
+                        logger.error("vector_field_source on node '" + node.id
+                            + "' has invalid " + field_name);
+                        return false;
+                    }
+                    out = static_cast<uint32_t>(*value);
+                    return true;
+                };
+                if (!read_dimension("width", source.width)
+                    || !read_dimension("height", source.height)
+                    || !read_dimension("depth", source.depth))
+                {
+                    return std::nullopt;
+                }
+
+                auto components =
+                    read_number(*vfs, "components_per_channel");
+                if (components) {
+                    if (*components < 2.0
+                        || *components > 4.0
+                        || !std::isfinite(*components))
+                    {
+                        logger.error("vector_field_source on node '" + node.id
+                            + "' has invalid components_per_channel");
+                        return std::nullopt;
+                    }
+                    source.components_per_channel =
+                        static_cast<uint32_t>(*components);
+                }
+
+                const auto* channels = find_member(*vfs, "channels");
+                if (channels) {
+                    if (channels->kind != wz::json::JSONValueKind::Array) {
+                        logger.error("vector_field_source on node '" + node.id
+                            + "' has invalid channels");
+                        return std::nullopt;
+                    }
+
+                    source.channels.clear();
+                    for (const auto& channel : channels->array_values) {
+                        if (!channel
+                            || channel->kind != wz::json::JSONValueKind::String
+                            || channel->string_value.empty())
+                        {
+                            logger.error("vector_field_source on node '"
+                                + node.id + "' has invalid channel name");
+                            return std::nullopt;
+                        }
+                        source.channels.push_back(VectorFieldChannelDesc{
+                            .name = channel->string_value,
+                        });
+                    }
+                    if (source.channels.empty()) {
+                        logger.error("vector_field_source on node '" + node.id
+                            + "' has no channels");
+                        return std::nullopt;
+                    }
+                }
+
+                node.vector_field_source = source;
             }
 
             std::optional<wz::asset::AssetKey> terrain_asset;
@@ -1032,7 +1161,8 @@ namespace wz::engine::assets::internal
             const SceneAssetReferenceMap& renderable_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
             const SceneAssetReferenceMap& mesh_asset_references,
-            const SceneAssetReferenceMap& scalar_field_asset_references)
+            const SceneAssetReferenceMap& scalar_field_asset_references,
+            const SceneAssetReferenceMap& vector_field_asset_references)
         {
             if (!doc.root || doc.root->kind != wz::json::JSONValueKind::Object) {
                 logger.error("scene JSON root is not an object");
@@ -1063,7 +1193,8 @@ namespace wz::engine::assets::internal
                     renderable_asset_references,
                     terrain_asset_references,
                     mesh_asset_references,
-                    scalar_field_asset_references);
+                    scalar_field_asset_references,
+                    vector_field_asset_references);
                 if (!node) return std::nullopt;
                 scene.nodes.push_back(std::move(*node));
             }
@@ -1134,6 +1265,7 @@ namespace wz::engine::assets::internal
                 SceneAssetReferenceMap terrain_asset_references;
                 SceneAssetReferenceMap mesh_asset_references;
                 SceneAssetReferenceMap scalar_field_asset_references;
+                SceneAssetReferenceMap vector_field_asset_references;
                 if (const auto* desc =
                         std::any_cast<SceneFromJSONCompileDesc>(&input.meta))
                 {
@@ -1173,6 +1305,15 @@ namespace wz::engine::assets::internal
                             scalar_field_asset_references[ref.uri] = ref.key;
                         }
                     }
+                    for (const auto& ref :
+                        desc->vector_field_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            vector_field_asset_references[ref.uri] = ref.key;
+                        }
+                    }
                 }
 
                 auto scene = parse_scene_json(
@@ -1181,7 +1322,8 @@ namespace wz::engine::assets::internal
                     renderable_asset_references,
                     terrain_asset_references,
                     mesh_asset_references,
-                    scalar_field_asset_references);
+                    scalar_field_asset_references,
+                    vector_field_asset_references);
                 if (!scene) {
                     return compile_failed_node(input);
                 }

@@ -18,7 +18,8 @@ namespace wz::engine::assets
             std::vector<SceneAssetReferenceBinding> refs,
             std::vector<SceneAssetReferenceBinding> terrain_refs = {},
             std::vector<SceneAssetReferenceBinding> mesh_refs = {},
-            std::vector<SceneAssetReferenceBinding> scalar_field_refs = {})
+            std::vector<SceneAssetReferenceBinding> scalar_field_refs = {},
+            std::vector<SceneAssetReferenceBinding> vector_field_refs = {})
         {
             refs.insert(
                 refs.end(),
@@ -32,6 +33,10 @@ namespace wz::engine::assets
                 refs.end(),
                 scalar_field_refs.begin(),
                 scalar_field_refs.end());
+            refs.insert(
+                refs.end(),
+                vector_field_refs.begin(),
+                vector_field_refs.end());
 
             if (refs.empty())
                 return {};
@@ -111,7 +116,8 @@ namespace wz::engine::assets
                     desc.renderable_asset_references,
                     desc.terrain_asset_references,
                     desc.mesh_asset_references,
-                    desc.scalar_field_asset_references));
+                    desc.scalar_field_asset_references,
+                    desc.vector_field_asset_references));
 
         wz::asset::AssetNode node;
         node.key = scene_key;
@@ -126,6 +132,8 @@ namespace wz::engine::assets
             .mesh_asset_references = desc.mesh_asset_references,
             .scalar_field_asset_references =
                 desc.scalar_field_asset_references,
+            .vector_field_asset_references =
+                desc.vector_field_asset_references,
         };
 
         std::vector<wz::asset::AssetKey> deps;
@@ -142,6 +150,9 @@ namespace wz::engine::assets
         append_reference_dependencies(
             deps,
             desc.scalar_field_asset_references);
+        append_reference_dependencies(
+            deps,
+            desc.vector_field_asset_references);
 
         if (!system_.register_asset(std::move(node), std::move(deps))) {
             logger_.error("failed to register scene node: " + desc.name);

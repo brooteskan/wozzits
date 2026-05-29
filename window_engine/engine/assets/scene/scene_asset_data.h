@@ -4,6 +4,8 @@
 
 #include <asset/types.h>
 
+#include <engine/assets/vector_field/vector_field.h>
+
 #include <scene/scene_ecs.h>
 #include <scene/transform_node.h>
 #include <scene/compile/compiled_scene.h>
@@ -192,6 +194,28 @@ namespace wz::engine::assets
         float amplitude = 1.0f;
     };
 
+    enum class SceneVectorFieldSourceKind : uint8_t
+    {
+        RawF32 = 0,
+    };
+
+    // Editor/import recipe for building a vector-field asset node.
+    // The editor materialization pass should resolve this to vector_field_asset
+    // before other editor-authored asset recipes consume it.
+    struct SceneVectorFieldSourceAsset
+    {
+        SceneVectorFieldSourceKind kind = SceneVectorFieldSourceKind::RawF32;
+        wz::asset::AssetKey vector_field_asset{};
+        std::string path;
+        uint32_t width = 64;
+        uint32_t height = 64;
+        uint32_t depth = 1;
+        uint32_t components_per_channel = 3;
+        std::vector<VectorFieldChannelDesc> channels{
+            VectorFieldChannelDesc{ .name = "normal" },
+        };
+    };
+
     struct SceneTerrainAsset
     {
         wz::asset::AssetKey terrain_asset{};
@@ -288,6 +312,7 @@ namespace wz::engine::assets
         std::optional<SceneMeshSourceAsset> mesh_source;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
+        std::optional<SceneVectorFieldSourceAsset> vector_field_source;
         std::optional<SceneTerrainAsset> terrain;
         std::optional<SceneTerrainMeshSourceAsset> terrain_mesh_source;
         std::optional<SceneTerrainHeightFieldSourceAsset>
@@ -326,6 +351,7 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> terrain_asset_references;
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
         std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
+        std::vector<SceneAssetReferenceBinding> vector_field_asset_references;
     };
 
     struct SceneAssetAuthoringRecipeSummary
@@ -335,6 +361,7 @@ namespace wz::engine::assets
         uint32_t mesh_sources = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
+        uint32_t vector_field_sources = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
     };
@@ -434,6 +461,13 @@ namespace wz::engine::assets
         node.scalar_field_source = std::move(source);
     }
 
+    inline void attach_vector_field_source(
+        SceneNodeAsset& node,
+        SceneVectorFieldSourceAsset source = {})
+    {
+        node.vector_field_source = std::move(source);
+    }
+
     inline void attach_terrain(
         SceneNodeAsset& node,
         SceneTerrainAsset terrain = {})
@@ -496,6 +530,9 @@ namespace wz::engine::assets
         if (node.scalar_field_source) {
             out.push_back(Kind::ScalarFieldSource);
         }
+        if (node.vector_field_source) {
+            out.push_back(Kind::VectorFieldSource);
+        }
         if (node.terrain) {
             out.push_back(Kind::Terrain);
         }
@@ -557,6 +594,7 @@ namespace wz::engine::assets
         return node.mesh_source.has_value()
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
+            || node.vector_field_source.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value();
     }
@@ -598,6 +636,10 @@ namespace wz::engine::assets
             }
             if (node.scalar_field_source) {
                 ++out.scalar_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.vector_field_source) {
+                ++out.vector_field_sources;
                 ++out.total_recipes;
             }
             if (node.terrain_mesh_source) {
@@ -653,6 +695,9 @@ namespace wz::engine::assets
             }
             if (node.scalar_field_source) {
                 ++out.scalar_field_sources;
+            }
+            if (node.vector_field_source) {
+                ++out.vector_field_sources;
             }
             if (node.terrain) {
                 ++out.terrains;

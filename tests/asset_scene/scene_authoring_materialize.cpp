@@ -9,6 +9,22 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <cstring>
+#include <vector>
+
+namespace
+{
+    bool write_raw_f32(
+        const wz::fs::Path& path,
+        const std::vector<float>& values)
+    {
+        const size_t byte_count = values.size() * sizeof(float);
+        wz::fs::Buffer bytes(byte_count);
+        std::memcpy(bytes.data(), values.data(), byte_count);
+        return wz::fs::write_file(path, bytes, true) == wz::fs::FileError::None;
+    }
+}
+
 TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
 {
     using namespace wz::engine::assets;
@@ -104,6 +120,68 @@ TEST(SceneAuthoringMaterialize, ScalarFieldSourceCreatesScalarFieldAsset)
     ASSERT_NE(field_data, nullptr);
     EXPECT_EQ(field_data->width, 8u);
     EXPECT_EQ(field_data->height, 4u);
+}
+
+TEST(SceneAuthoringMaterialize, VectorFieldSourceCreatesVectorFieldAsset)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_vector_source_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path rel_path{ "normal.raw" };
+    const wz::fs::Path full_path = wz::fs::join(root, rel_path);
+    ASSERT_TRUE(write_raw_f32(
+        full_path,
+        {
+            0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 1.0f,
+        }));
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "vector_source";
+    SceneNodeAsset node = make_scene_node("normal");
+    node.vector_field_source = SceneVectorFieldSourceAsset{
+        .kind = SceneVectorFieldSourceKind::RawF32,
+        .path = rel_path,
+        .width = 2,
+        .height = 1,
+        .depth = 1,
+        .components_per_channel = 3,
+        .channels = { VectorFieldChannelDesc{ .name = "normal" } },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].vector_field_source.has_value());
+    const auto field_key =
+        scene.nodes[0].vector_field_source->vector_field_asset;
+    EXPECT_NE(field_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto field =
+        assets.vector_fields().get_vector_field(
+            VectorFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field.valid());
+    const auto* field_data =
+        assets.vector_fields().get_vector_field_data(field);
+    ASSERT_NE(field_data, nullptr);
+    EXPECT_EQ(field_data->width, 2u);
+    EXPECT_EQ(field_data->height, 1u);
+    EXPECT_EQ(field_data->components_per_channel, 3u);
+    ASSERT_EQ(field_data->channels.size(), 1u);
+    EXPECT_EQ(field_data->channels[0].name, "normal");
 }
 
 TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAssets)
