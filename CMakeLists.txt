@@ -158,6 +158,9 @@ target_compile_definitions(window_engine PRIVATE
 )
 
 target_sources(window_engine PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/tinyexr/miniz.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/tinyexr/tinyexr_impl.cpp"
+
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/yyjson/yyjson.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/json_polytree.cpp"
@@ -192,6 +195,7 @@ target_include_directories(window_engine
         "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/gltf/fastgltf/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/tinyexr"
 )
 
 target_link_libraries(window_engine
@@ -422,6 +426,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_render_program render_program_asset_module)
 
     rs_add_test_group(asset_light light_asset_module)
+
+    rs_add_test_group(asset_hdri hdri_image_loader)
 
     rs_add_test_group(asset_scene scene_asset_module)
     rs_add_test_group(asset_scene scene_authoring_materialize)
