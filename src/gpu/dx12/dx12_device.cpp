@@ -234,7 +234,7 @@ namespace wz::gpu::dx12
 
         // ────── scalar fields ───────────────────────────────────────────────
         D3D12_DESCRIPTOR_HEAP_DESC srv_heap_desc = {};
-        srv_heap_desc.NumDescriptors = 16;
+        srv_heap_desc.NumDescriptors = 1024;
         srv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         srv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -249,7 +249,7 @@ namespace wz::gpu::dx12
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
             );
 
-        impl->scalar_field_srv_capacity = 16;
+        impl->scalar_field_srv_capacity = 1024;
         impl->scalar_field_srv_count = 0;
 
         // ────── general SRV/CBV/UAV allocator ──────────────────────────────────────────

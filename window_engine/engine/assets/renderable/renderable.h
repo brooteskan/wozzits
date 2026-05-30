@@ -14,11 +14,13 @@ namespace wz::engine::assets
         Mesh,
         GaussianSplatCloud,
         ScalarField,
+        VectorField,
     };
 
     enum class RenderDomain : uint8_t
     {
         Debug,
+        Sky,
         Opaque,
         Transparent,
         Splat,
@@ -35,6 +37,7 @@ namespace wz::engine::assets
         GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
         GaussianSplatNeighborhoodColorBlend,  // SplatPull + LOD color blend modes
         GaussianSplatTerrainCoverageDebug,    // SplatPull + coverage modes (depth-writing)
+        SkySurface,
 
         Count  // sentinel — keep last
     };

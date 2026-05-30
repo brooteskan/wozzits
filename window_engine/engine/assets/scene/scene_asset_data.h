@@ -72,7 +72,7 @@ namespace wz::engine::assets
         wz::asset::AssetKey environment_asset{};
         std::string path;
         HDRIEnvironmentFormat format = HDRIEnvironmentFormat::Auto;
-        float exposure = 0.0f;
+        float exposure = 1.0f;
         float rotation_x_radians = 0.0f;
         float rotation_y_radians = 0.0f;
         float rotation_z_radians = 0.0f;
@@ -91,8 +91,11 @@ namespace wz::engine::assets
     {
         None = 0,
         SolidColor,
+        DirectionDebug,
+        Gradient,
         EquirectangularTexture,
         ScalarField,
+        VectorField,
     };
 
     enum class SceneSkyProjection : uint8_t
@@ -104,11 +107,15 @@ namespace wz::engine::assets
     {
         SceneSkyVisualKind kind = SceneSkyVisualKind::None;
         float solid_color[3]{ 0.0f, 0.0f, 0.0f };
+        float gradient_top_color[3]{ 0.08f, 0.22f, 0.55f };
+        float gradient_bottom_color[3]{ 0.62f, 0.78f, 0.95f };
 
         // Texture assets do not own lighting/radiance semantics here. They are
         // just visual content for the sky canvas; HDRIEnvironment remains the
         // lighting-oriented environment source.
         wz::asset::AssetKey texture_asset{};
+        std::string texture_path;
+        HDRIEnvironmentFormat texture_format = HDRIEnvironmentFormat::Auto;
 
         // Scalar fields are accepted as another drawable sky visual source so
         // debug/painted/procedural data can be projected onto the sky without
@@ -116,7 +123,13 @@ namespace wz::engine::assets
         wz::asset::AssetKey scalar_field_asset{};
         std::string scalar_field_node;
 
-        float exposure = 0.0f;
+        // Vector fields are visual sky content here, not lighting policy.
+        // Later they can feed richer sky effects while the environment system
+        // continues to own radiance/lighting interpretation.
+        wz::asset::AssetKey vector_field_asset{};
+        std::string vector_field_node;
+
+        float exposure = 1.0f;
         float rotation_x_radians = 0.0f;
         float rotation_y_radians = 0.0f;
         float rotation_z_radians = 0.0f;
@@ -139,8 +152,13 @@ namespace wz::engine::assets
         float radius = 1.0f;
         bool visible_to_camera = true;
         float solid_color[3]{ 0.0f, 0.0f, 0.0f };
+        float gradient_top_color[3]{ 0.08f, 0.22f, 0.55f };
+        float gradient_bottom_color[3]{ 0.62f, 0.78f, 0.95f };
         wz::asset::AssetKey texture_asset{};
+        std::string texture_path;
+        HDRIEnvironmentFormat texture_format = HDRIEnvironmentFormat::Auto;
         wz::asset::AssetKey scalar_field_asset{};
+        wz::asset::AssetKey vector_field_asset{};
         float exposure = 0.0f;
         float rotation_x_radians = 0.0f;
         float rotation_y_radians = 0.0f;

@@ -231,10 +231,16 @@ namespace wz::engine::assets
                 return "none";
             case SceneSkyVisualKind::SolidColor:
                 return "solid_color";
+            case SceneSkyVisualKind::DirectionDebug:
+                return "direction_debug";
+            case SceneSkyVisualKind::Gradient:
+                return "gradient";
             case SceneSkyVisualKind::EquirectangularTexture:
                 return "equirectangular_texture";
             case SceneSkyVisualKind::ScalarField:
                 return "scalar_field";
+            case SceneSkyVisualKind::VectorField:
+                return "vector_field";
             }
             return "none";
         }
@@ -506,9 +512,20 @@ namespace wz::engine::assets
                 string_value(sky_visual_kind_name(visual.kind)));
             add_member(*obj, "solid_color",
                 float_array(visual.solid_color, 3));
+            add_member(*obj, "gradient_top_color",
+                float_array(visual.gradient_top_color, 3));
+            add_member(*obj, "gradient_bottom_color",
+                float_array(visual.gradient_bottom_color, 3));
             if (!(visual.texture_asset == wz::asset::AssetKey{})) {
                 add_member(*obj, "texture_asset",
                     string_value(asset_key_string(visual.texture_asset)));
+            }
+            if (!visual.texture_path.empty()) {
+                add_member(*obj, "texture_path",
+                    string_value(visual.texture_path));
+                add_member(*obj, "texture_format",
+                    string_value(
+                        hdri_environment_format_name(visual.texture_format)));
             }
             if (!(visual.scalar_field_asset == wz::asset::AssetKey{})) {
                 add_member(*obj, "scalar_field_asset",
@@ -517,6 +534,14 @@ namespace wz::engine::assets
             if (!visual.scalar_field_node.empty()) {
                 add_member(*obj, "scalar_field_node",
                     string_value(visual.scalar_field_node));
+            }
+            if (!(visual.vector_field_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "vector_field_asset",
+                    string_value(asset_key_string(visual.vector_field_asset)));
+            }
+            if (!visual.vector_field_node.empty()) {
+                add_member(*obj, "vector_field_node",
+                    string_value(visual.vector_field_node));
             }
             add_member(*obj, "exposure", number_value(visual.exposure));
             add_member(*obj, "rotation_x_radians",

@@ -865,11 +865,16 @@ namespace wz::engine::assets
         {
             switch (visual.kind) {
             case SceneSkyVisualKind::SolidColor:
+            case SceneSkyVisualKind::DirectionDebug:
+            case SceneSkyVisualKind::Gradient:
                 return true;
             case SceneSkyVisualKind::EquirectangularTexture:
-                return !(visual.texture_asset == wz::asset::AssetKey{});
+                return !(visual.texture_asset == wz::asset::AssetKey{})
+                    || !visual.texture_path.empty();
             case SceneSkyVisualKind::ScalarField:
                 return !(visual.scalar_field_asset == wz::asset::AssetKey{});
+            case SceneSkyVisualKind::VectorField:
+                return !(visual.vector_field_asset == wz::asset::AssetKey{});
             case SceneSkyVisualKind::None:
                 return false;
             }
@@ -879,7 +884,9 @@ namespace wz::engine::assets
         void materialize_sky_draws(
             SceneAssetData& scene,
             const std::unordered_map<std::string, wz::asset::AssetKey>&
-                scalar_field_assets_by_node)
+                scalar_field_assets_by_node,
+            const std::unordered_map<std::string, wz::asset::AssetKey>&
+                vector_field_assets_by_node)
         {
             scene.sky_draws.clear();
 
@@ -901,7 +908,12 @@ namespace wz::engine::assets
 
                 SceneSkyVisualAsset visual = *visual_node->sky_visual;
                 if (visual.kind == SceneSkyVisualKind::ScalarField
-                    && visual.scalar_field_asset == wz::asset::AssetKey{}
+                    && visual.scalar_field_node.empty()
+                    && visual_node->scalar_field_source)
+                {
+                    visual.scalar_field_node = visual_node->id;
+                }
+                if (visual.kind == SceneSkyVisualKind::ScalarField
                     && !visual.scalar_field_node.empty())
                 {
                     const auto found =
@@ -909,6 +921,22 @@ namespace wz::engine::assets
                             visual.scalar_field_node);
                     if (found != scalar_field_assets_by_node.end()) {
                         visual.scalar_field_asset = found->second;
+                    }
+                }
+                if (visual.kind == SceneSkyVisualKind::VectorField
+                    && visual.vector_field_node.empty()
+                    && visual_node->vector_field_source)
+                {
+                    visual.vector_field_node = visual_node->id;
+                }
+                if (visual.kind == SceneSkyVisualKind::VectorField
+                    && !visual.vector_field_node.empty())
+                {
+                    const auto found =
+                        vector_field_assets_by_node.find(
+                            visual.vector_field_node);
+                    if (found != vector_field_assets_by_node.end()) {
+                        visual.vector_field_asset = found->second;
                     }
                 }
 
@@ -926,8 +954,20 @@ namespace wz::engine::assets
                 draw.solid_color[0] = visual.solid_color[0];
                 draw.solid_color[1] = visual.solid_color[1];
                 draw.solid_color[2] = visual.solid_color[2];
+                draw.gradient_top_color[0] = visual.gradient_top_color[0];
+                draw.gradient_top_color[1] = visual.gradient_top_color[1];
+                draw.gradient_top_color[2] = visual.gradient_top_color[2];
+                draw.gradient_bottom_color[0] =
+                    visual.gradient_bottom_color[0];
+                draw.gradient_bottom_color[1] =
+                    visual.gradient_bottom_color[1];
+                draw.gradient_bottom_color[2] =
+                    visual.gradient_bottom_color[2];
                 draw.texture_asset = visual.texture_asset;
+                draw.texture_path = visual.texture_path;
+                draw.texture_format = visual.texture_format;
                 draw.scalar_field_asset = visual.scalar_field_asset;
+                draw.vector_field_asset = visual.vector_field_asset;
                 draw.exposure = visual.exposure;
                 draw.rotation_x_radians = visual.rotation_x_radians;
                 draw.rotation_y_radians = visual.rotation_y_radians;
@@ -954,6 +994,8 @@ namespace wz::engine::assets
         std::unordered_map<std::string, wz::asset::AssetKey> mesh_assets_by_node;
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
+        std::unordered_map<std::string, wz::asset::AssetKey>
+            vector_field_assets_by_node;
         const SceneMeshRenderStyleAsset default_render_style{};
         scene.sky_draws.clear();
 
@@ -1022,9 +1064,13 @@ namespace wz::engine::assets
             }
 
             source.vector_field_asset = vector_field.output;
+            vector_field_assets_by_node[node.id] = vector_field.output;
         }
 
-        materialize_sky_draws(scene, scalar_field_assets_by_node);
+        materialize_sky_draws(
+            scene,
+            scalar_field_assets_by_node,
+            vector_field_assets_by_node);
 
         for (auto& node : scene.nodes) {
             if (!node.direct_light_source) {

@@ -329,11 +329,20 @@ namespace wz::engine::assets::internal
             if (text == "solid_color") {
                 return SceneSkyVisualKind::SolidColor;
             }
+            if (text == "direction_debug") {
+                return SceneSkyVisualKind::DirectionDebug;
+            }
+            if (text == "gradient") {
+                return SceneSkyVisualKind::Gradient;
+            }
             if (text == "equirectangular_texture") {
                 return SceneSkyVisualKind::EquirectangularTexture;
             }
             if (text == "scalar_field") {
                 return SceneSkyVisualKind::ScalarField;
+            }
+            if (text == "vector_field") {
+                return SceneSkyVisualKind::VectorField;
             }
             return std::nullopt;
         }
@@ -804,6 +813,14 @@ namespace wz::engine::assets::internal
                     visual.kind = *parsed_kind;
                 }
                 read_float3(*sky_visual, "solid_color", visual.solid_color);
+                read_float3(
+                    *sky_visual,
+                    "gradient_top_color",
+                    visual.gradient_top_color);
+                read_float3(
+                    *sky_visual,
+                    "gradient_bottom_color",
+                    visual.gradient_bottom_color);
 
                 auto texture_asset =
                     read_string(*sky_visual, "texture_asset");
@@ -816,6 +833,24 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     visual.texture_asset = *key;
+                }
+                auto texture_path =
+                    read_string(*sky_visual, "texture_path");
+                if (texture_path) {
+                    visual.texture_path = std::string(*texture_path);
+                }
+                auto texture_format =
+                    read_string(*sky_visual, "texture_format");
+                if (texture_format) {
+                    auto parsed_format =
+                        parse_hdri_environment_format(*texture_format);
+                    if (!parsed_format) {
+                        logger.error("sky_visual.texture_format on node '"
+                            + node.id + "' has unknown format '"
+                            + std::string(*texture_format) + "'");
+                        return std::nullopt;
+                    }
+                    visual.texture_format = *parsed_format;
                 }
 
                 auto scalar_field_asset =
@@ -836,6 +871,31 @@ namespace wz::engine::assets::internal
                     read_string(*sky_visual, "scalar_field_node");
                 if (scalar_field_node) {
                     visual.scalar_field_node = std::string(*scalar_field_node);
+                }
+
+                auto vector_field_asset =
+                    read_string(*sky_visual, "vector_field_asset");
+                if (vector_field_asset && !vector_field_asset->empty()) {
+                    auto key = parse_asset_key_string(*vector_field_asset);
+                    if (!key) {
+                        const auto it = vector_field_asset_references.find(
+                            std::string(*vector_field_asset));
+                        if (it == vector_field_asset_references.end()) {
+                            logger.error(
+                                "sky_visual.vector_field_asset on node '"
+                                + node.id + "' could not be resolved: "
+                                + std::string(*vector_field_asset));
+                            return std::nullopt;
+                        }
+                        key = it->second;
+                    }
+                    visual.vector_field_asset = *key;
+                }
+
+                auto vector_field_node =
+                    read_string(*sky_visual, "vector_field_node");
+                if (vector_field_node) {
+                    visual.vector_field_node = std::string(*vector_field_node);
                 }
 
                 auto exposure = read_number(*sky_visual, "exposure");

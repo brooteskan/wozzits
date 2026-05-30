@@ -199,9 +199,19 @@ namespace wz::engine::assets
                 const auto& visual = *node.sky_visual;
                 fp.mix_value(visual.kind);
                 fp.mix_bytes(visual.solid_color, sizeof(visual.solid_color));
+                fp.mix_bytes(
+                    visual.gradient_top_color,
+                    sizeof(visual.gradient_top_color));
+                fp.mix_bytes(
+                    visual.gradient_bottom_color,
+                    sizeof(visual.gradient_bottom_color));
                 mix_asset_key(fp, visual.texture_asset);
+                fp.mix_string(visual.texture_path);
+                fp.mix_value(visual.texture_format);
                 mix_asset_key(fp, visual.scalar_field_asset);
                 fp.mix_string(visual.scalar_field_node);
+                mix_asset_key(fp, visual.vector_field_asset);
+                fp.mix_string(visual.vector_field_node);
                 fp.mix_value(visual.exposure);
                 fp.mix_value(visual.rotation_x_radians);
                 fp.mix_value(visual.rotation_y_radians);

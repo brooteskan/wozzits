@@ -83,7 +83,7 @@ namespace wz::gpu::dx12
         //scalar field
         ID3D12DescriptorHeap* scalar_field_srv_heap = nullptr;
         UINT scalar_field_srv_stride = 0;
-        uint32_t scalar_field_srv_capacity = 16;
+        uint32_t scalar_field_srv_capacity = 1024;
         uint32_t scalar_field_srv_count = 0;
 
         ScalarFieldDebugContext* scalar_debug_ctx = nullptr;

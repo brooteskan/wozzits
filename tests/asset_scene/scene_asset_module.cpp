@@ -5570,13 +5570,24 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         .dominant_light_confidence = 0.8f,
     };
     node.sky_visual = SceneSkyVisualAsset{
-        .kind = SceneSkyVisualKind::EquirectangularTexture,
+        .kind = SceneSkyVisualKind::VectorField,
+        .gradient_top_color = { 0.1f, 0.2f, 0.3f },
+        .gradient_bottom_color = { 0.7f, 0.8f, 0.9f },
         .texture_asset = wz::asset::AssetKey{
             .content_hash = { 1, 2 },
             .schema_hash = { 3, 4 },
             .compiler_hash = { 5, 6 },
             .deps_hash = { 7, 8 },
         },
+        .texture_path = "skies/studio.exr",
+        .texture_format = HDRIEnvironmentFormat::OpenEXR,
+        .vector_field_asset = wz::asset::AssetKey{
+            .content_hash = { 11, 12 },
+            .schema_hash = { 13, 14 },
+            .compiler_hash = { 15, 16 },
+            .deps_hash = { 17, 18 },
+        },
+        .vector_field_node = "wind_field",
         .exposure = -0.5f,
         .rotation_y_radians = 0.25f,
     };
@@ -5594,6 +5605,7 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     EXPECT_NE(exported.find("\"hdri_environment\""), std::string::npos);
     EXPECT_NE(exported.find("\"sky_visual\""), std::string::npos);
     EXPECT_NE(exported.find("\"sky_surface\""), std::string::npos);
+    EXPECT_NE(exported.find("\"gradient_top_color\""), std::string::npos);
     EXPECT_NE(exported.find("\"field_modulated\""), std::string::npos);
     EXPECT_NE(exported.find("\"world_xz\""), std::string::npos);
     EXPECT_NE(exported.find("\"radiance_hdr\""), std::string::npos);
@@ -5649,13 +5661,31 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         0.8f);
     EXPECT_EQ(
         scene_data->nodes[0].sky_visual->kind,
-        SceneSkyVisualKind::EquirectangularTexture);
+        SceneSkyVisualKind::VectorField);
     EXPECT_FALSE(
         scene_data->nodes[0].sky_visual->texture_asset
         == wz::asset::AssetKey{});
+    EXPECT_EQ(
+        scene_data->nodes[0].sky_visual->texture_path,
+        "skies/studio.exr");
+    EXPECT_EQ(
+        scene_data->nodes[0].sky_visual->texture_format,
+        HDRIEnvironmentFormat::OpenEXR);
+    EXPECT_FALSE(
+        scene_data->nodes[0].sky_visual->vector_field_asset
+        == wz::asset::AssetKey{});
+    EXPECT_EQ(
+        scene_data->nodes[0].sky_visual->vector_field_node,
+        "wind_field");
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].sky_visual->rotation_y_radians,
         0.25f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].sky_visual->gradient_top_color[1],
+        0.2f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].sky_visual->gradient_bottom_color[2],
+        0.9f);
     EXPECT_EQ(
         scene_data->nodes[0].sky_surface->projection,
         SceneSkyProjection::Sphere);

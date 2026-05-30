@@ -5,11 +5,13 @@
 #include <gpu/mesh.h>
 #include <gpu/gaussian_splat.h>
 #include <gpu/scalar_field.h>
+#include <gpu/vector_field.h>
 
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/vector_field_asset_module.h>
 
 namespace wz::engine::rendering
 {
@@ -155,6 +157,42 @@ namespace wz::engine::rendering
                 gpu_scalar_field_texture);
 
             out.gpu_resource = gpu_scalar_field_texture;
+            return out;
+        }
+
+        case wz::engine::assets::RenderableKind::VectorField:
+        {
+            const wz::engine::assets::VectorFieldAsset vector_field_asset{
+                .output = renderable.source_asset,
+            };
+
+            const wz::engine::assets::VectorFieldHandle vector_field_handle =
+                assets.vector_fields().get_vector_field(vector_field_asset);
+
+            if (!vector_field_handle.valid())
+                return {};
+
+            const wz::engine::assets::VectorFieldData* vector_field_data =
+                assets.vector_fields().get_vector_field_data(
+                    vector_field_handle);
+
+            if (!vector_field_data || !vector_field_data->valid())
+                return {};
+
+            const wz::gpu::GPUHandle gpu_vector_field_texture =
+                wz::gpu::upload_vector_field_texture(
+                    device,
+                    *vector_field_data);
+
+            if (!gpu_vector_field_texture.valid())
+                return {};
+
+            add(
+                renderable.source_asset,
+                renderable.kind,
+                gpu_vector_field_texture);
+
+            out.gpu_resource = gpu_vector_field_texture;
             return out;
         }
 

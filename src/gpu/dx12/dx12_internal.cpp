@@ -92,6 +92,22 @@ namespace wz::gpu::dx12::internal {
         return &slot.tex;
     }
 
+    const DX12ScalarFieldTexture* get_scalar_field_texture(
+        Device& device,
+        GPUHandle handle)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return nullptr;
+        return impl->scalar_field_textures.get(handle);
+    }
+
+    ID3D12DescriptorHeap* get_scalar_field_srv_heap(Device& device)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        return impl ? impl->scalar_field_srv_heap : nullptr;
+    }
+
     DX12MeshTable::DX12MeshTable()
     {
         slots_.emplace_back(); // id 0 invalid

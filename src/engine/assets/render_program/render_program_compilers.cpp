@@ -249,6 +249,31 @@ namespace wz::engine::assets::internal
                 };
                 return true;
 
+            case BuiltinRenderProgram::SkySurface:
+                // A sky surface is an encompassing, camera-relative projection
+                // lane. Sphere is the first authored projection, but the render
+                // program is deliberately fullscreen/no-IA so later projections
+                // can be evaluated from view direction instead of being tied to
+                // a particular mesh.
+                out.binding_model        = RenderBindingModel::Fullscreen;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Sky;
+                out.default_policy_flags = RenderPolicy_None;
+                out.input_layout = InputLayoutKind::None;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::Disabled;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    // Packed as seven float4 groups: solid color/exposure,
+                    // gradient top/bottom, mode/rotation, rotation/right, up,
+                    // and forward.
+                    .value_count     = 28,
+                }};
+                return true;
+
             case BuiltinRenderProgram::Count:
                 return false;
             }

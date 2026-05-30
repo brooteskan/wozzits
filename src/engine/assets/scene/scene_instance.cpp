@@ -42,9 +42,10 @@ namespace wz::engine::assets
                 nc.spatial  = sc::SpatialKind::Box;
                 break;
             case RenderableKind::ScalarField:
+            case RenderableKind::VectorField:
                 // Provisional: scalar fields enter scene-render as mesh-like
-                // descriptors for debug visualization.  A dedicated producer
-                // kind may be needed when scalar fields get their own render path.
+                // descriptors for debug visualization. Vector fields reuse this
+                // placeholder until field renderables get a dedicated producer.
                 nc.producer = sc::ProducerKind::Mesh;
                 nc.spatial  = sc::SpatialKind::Box;
                 break;
@@ -54,6 +55,11 @@ namespace wz::engine::assets
             case RenderDomain::Debug:
                 nc.default_surface = sc::SurfaceClass::Opaque;
                 nc.domains = sc::RenderDomain::Surface | sc::RenderDomain::Debug;
+                break;
+            case RenderDomain::Sky:
+                nc.role = sc::SceneRole::None;
+                nc.default_surface = sc::SurfaceClass::None;
+                nc.domains = 0;
                 break;
             case RenderDomain::Opaque:
                 nc.default_surface = sc::SurfaceClass::Opaque;

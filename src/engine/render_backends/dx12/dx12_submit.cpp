@@ -143,6 +143,189 @@ namespace wz::render::backend::dx12
 
             return out;
         }
+
+        void submit_sky_pass(
+            wz::gpu::Device& device,
+            const Mat4& view,
+            std::span<const SkyDrawCommand> sky,
+            const wz::engine::rendering::RenderablePipelineCache* pipeline_cache)
+        {
+            auto* cmdList =
+                wz::gpu::dx12::internal::get_command_list(device);
+            static bool logged_scalar_missing = false;
+            static bool logged_scalar_bound = false;
+            static bool logged_texture_missing = false;
+            static bool logged_texture_bound = false;
+            static bool logged_vector_missing = false;
+            static bool logged_vector_bound = false;
+
+            for (const SkyDrawCommand& dc : sky)
+            {
+                if (dc.visual_kind != SkyVisualKind::SolidColor
+                    && dc.visual_kind != SkyVisualKind::DirectionDebug
+                    && dc.visual_kind != SkyVisualKind::Gradient
+                    && dc.visual_kind != SkyVisualKind::EquirectangularTexture
+                    && dc.visual_kind != SkyVisualKind::ScalarField
+                    && dc.visual_kind != SkyVisualKind::VectorField)
+                {
+                    continue;
+                }
+
+                const bool needs_scalar_field =
+                    dc.visual_kind == SkyVisualKind::ScalarField;
+                const bool needs_texture =
+                    dc.visual_kind == SkyVisualKind::EquirectangularTexture;
+                const bool needs_vector_field =
+                    dc.visual_kind == SkyVisualKind::VectorField;
+                const auto* field_texture = needs_texture
+                    ? wz::gpu::dx12::internal::get_scalar_field_texture(
+                        device,
+                        wz::gpu::GPUHandle{
+                            .id = dc.texture_handle,
+                            .epoch = 1,
+                            .type = wz::gpu::GPUResourceType::Texture,
+                        })
+                    : (needs_scalar_field
+                    ? wz::gpu::dx12::internal::get_scalar_field_texture(
+                        device,
+                        wz::gpu::GPUHandle{
+                            .id = dc.scalar_field_handle,
+                            .epoch = 1,
+                            .type = wz::gpu::GPUResourceType::Texture,
+                        })
+                    : (needs_vector_field
+                        ? wz::gpu::dx12::internal::get_scalar_field_texture(
+                            device,
+                            wz::gpu::GPUHandle{
+                                .id = dc.vector_field_handle,
+                                .epoch = 1,
+                                .type = wz::gpu::GPUResourceType::Texture,
+                            })
+                        : nullptr));
+                if (needs_texture && !field_texture) {
+                    if (!logged_texture_missing) {
+                        OutputDebugStringA(
+                            "[scene_editor] sky texture skipped: texture lookup failed\n");
+                        logged_texture_missing = true;
+                    }
+                    continue;
+                }
+                if (needs_scalar_field && !field_texture) {
+                    if (!logged_scalar_missing) {
+                        OutputDebugStringA(
+                            "[scene_editor] sky scalar skipped: texture lookup failed\n");
+                        logged_scalar_missing = true;
+                    }
+                    continue;
+                }
+                if (needs_vector_field && !field_texture) {
+                    if (!logged_vector_missing) {
+                        OutputDebugStringA(
+                            "[scene_editor] sky vector skipped: texture lookup failed\n");
+                        logged_vector_missing = true;
+                    }
+                    continue;
+                }
+
+                const float exposure = (std::max)(0.0f, dc.exposure);
+                if (pipeline_cache)
+                {
+                    const auto pipeline_handle = pipeline_cache->get(
+                        wz::engine::assets::BuiltinRenderProgram::SkySurface);
+                    const auto* pl = wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        pipeline_handle);
+
+                    if (pl && pl->valid())
+                    {
+                        const float constants[28] = {
+                            dc.solid_color.x,
+                            dc.solid_color.y,
+                            dc.solid_color.z,
+                            exposure,
+                            dc.gradient_top_color.x,
+                            dc.gradient_top_color.y,
+                            dc.gradient_top_color.z,
+                            0.0f,
+                            dc.gradient_bottom_color.x,
+                            dc.gradient_bottom_color.y,
+                            dc.gradient_bottom_color.z,
+                            0.0f,
+                            static_cast<float>(static_cast<uint32_t>(dc.visual_kind)),
+                            static_cast<float>(static_cast<uint32_t>(dc.projection)),
+                            dc.rotation_x_radians,
+                            dc.rotation_y_radians,
+                            dc.rotation_z_radians,
+                            view.m[0],
+                            view.m[4],
+                            view.m[8],
+                            view.m[1],
+                            view.m[5],
+                            view.m[9],
+                            0.0f,
+                            view.m[2],
+                            view.m[6],
+                            view.m[10],
+                            0.0f,
+                        };
+
+                        cmdList->SetGraphicsRootSignature(pl->root_sig);
+                        cmdList->SetPipelineState(pl->pso);
+                        cmdList->IASetPrimitiveTopology(
+                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        if (needs_texture || needs_scalar_field || needs_vector_field) {
+                            ID3D12DescriptorHeap* heap =
+                                wz::gpu::dx12::internal
+                                    ::get_scalar_field_srv_heap(device);
+                            if (!heap) {
+                                continue;
+                            }
+                            cmdList->SetDescriptorHeaps(1, &heap);
+                            cmdList->SetGraphicsRootDescriptorTable(
+                                1,
+                                field_texture->srv_gpu);
+                            if (needs_texture && !logged_texture_bound) {
+                                OutputDebugStringA(
+                                    "[scene_editor] sky texture bound\n");
+                                logged_texture_bound = true;
+                            }
+                            if (needs_scalar_field && !logged_scalar_bound) {
+                                OutputDebugStringA(
+                                    "[scene_editor] sky scalar texture bound\n");
+                                logged_scalar_bound = true;
+                            }
+                            if (needs_vector_field && !logged_vector_bound) {
+                                OutputDebugStringA(
+                                    "[scene_editor] sky vector texture bound\n");
+                                logged_vector_bound = true;
+                            }
+                        }
+                        cmdList->SetGraphicsRoot32BitConstants(
+                            0,
+                            28,
+                            constants,
+                            0);
+                        cmdList->DrawInstanced(3, 1, 0, 0);
+                        break;
+                    }
+                }
+
+                if (dc.visual_kind != SkyVisualKind::SolidColor) {
+                    continue;
+                }
+
+                const float color[4] = {
+                    (std::clamp)(dc.solid_color.x * exposure, 0.0f, 1.0f),
+                    (std::clamp)(dc.solid_color.y * exposure, 0.0f, 1.0f),
+                    (std::clamp)(dc.solid_color.z * exposure, 0.0f, 1.0f),
+                    1.0f,
+                };
+                const auto rtv =
+                    wz::gpu::dx12::internal::get_current_rtv(device);
+                cmdList->ClearRenderTargetView(rtv, color, 0, nullptr);
+                break;
+            }
+        }
     }
 
     Context* create(
@@ -255,6 +438,8 @@ namespace wz::render::backend::dx12
         auto* cmdList =
             wz::gpu::dx12::internal::get_command_list(*ctx->device);
 
+        submit_sky_pass(*ctx->device, frame.view.view, frame.sky, nullptr);
+
         cmdList->SetGraphicsRootSignature(ctx->root_sig);
         cmdList->SetPipelineState(ctx->pso);
 
@@ -307,6 +492,8 @@ namespace wz::render::backend::dx12
                 const wz::engine::rendering::RenderResourceResolver& resolver)
     {
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
+
+        submit_sky_pass(device, frame.view.view, frame.sky, nullptr);
 
         // ── Opaque mesh pass (resolver path) ──────────────────────────────────
 
@@ -410,6 +597,8 @@ namespace wz::render::backend::dx12
                 const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
     {
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
+
+        submit_sky_pass(device, frame.view.view, frame.sky, &pipeline_cache);
 
         // ── Opaque mesh pass ──────────────────────────────────────────────────
 
@@ -545,6 +734,8 @@ namespace wz::render::backend::dx12
                 const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
     {
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
+
+        submit_sky_pass(device, frame.view.view, frame.sky, &pipeline_cache);
 
         const float vp_w = static_cast<float>(
             wz::gpu::dx12::internal::get_width(device));
