@@ -44,10 +44,14 @@ namespace wz::engine::assets
         wz::fs::Path path;
         HDRIEnvironmentFormat format = HDRIEnvironmentFormat::Auto;
         float exposure = 0.0f;
+        float rotation_x_radians = 0.0f;
         float rotation_y_radians = 0.0f;
+        float rotation_z_radians = 0.0f;
         float lighting_intensity = 1.0f;
         float reflection_intensity = 1.0f;
         float background_intensity = 1.0f;
+        float environment_light_color[3]{ 1.0f, 1.0f, 1.0f };
+        float environment_light_intensity = 0.0f;
         float dominant_light_direction[3]{ 0.0f, -1.0f, 0.0f };
         float dominant_light_color[3]{ 1.0f, 1.0f, 1.0f };
         float dominant_light_intensity = 0.0f;

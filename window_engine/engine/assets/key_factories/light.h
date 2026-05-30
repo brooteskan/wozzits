@@ -108,9 +108,13 @@ namespace wz::engine::assets
                 static_cast<uint64_t>(desc.format),
                 detail::float_bits(desc.exposure)),
             detail::mix64(
-                detail::float_bits(desc.rotation_y_radians),
                 detail::mix64(
-                    detail::float_bits(desc.lighting_intensity),
+                    detail::float_bits(desc.rotation_x_radians),
+                    detail::float_bits(desc.rotation_y_radians)),
+                detail::mix64(
+                    detail::mix64(
+                        detail::float_bits(desc.rotation_z_radians),
+                        detail::float_bits(desc.lighting_intensity)),
                     detail::mix64(
                         detail::float_bits(desc.reflection_intensity),
                         detail::float_bits(desc.background_intensity)))));
@@ -118,17 +122,25 @@ namespace wz::engine::assets
             desc.dominant_light_direction[0],
             desc.dominant_light_direction[1],
             desc.dominant_light_direction[2]);
+        const uint64_t environment_color = detail::mix_float3(
+            desc.environment_light_color[0],
+            desc.environment_light_color[1],
+            desc.environment_light_color[2]);
         const uint64_t dominant_color = detail::mix_float3(
             desc.dominant_light_color[0],
             desc.dominant_light_color[1],
             desc.dominant_light_color[2]);
         const uint64_t dominant_params = detail::mix64(
-            dominant_direction,
             detail::mix64(
-                dominant_color,
+                environment_color,
+                detail::float_bits(desc.environment_light_intensity)),
+            detail::mix64(
+                dominant_direction,
                 detail::mix64(
-                    detail::float_bits(desc.dominant_light_intensity),
-                    detail::float_bits(desc.dominant_light_confidence))));
+                    dominant_color,
+                    detail::mix64(
+                        detail::float_bits(desc.dominant_light_intensity),
+                        detail::float_bits(desc.dominant_light_confidence)))));
 
         wz::asset::Hash deps{};
         if (!(desc.source_file == wz::asset::AssetKey{})) {

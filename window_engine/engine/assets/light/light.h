@@ -87,10 +87,19 @@ namespace wz::engine::assets
         // Scene environment controls. A sky sphere/environment component can
         // decide which of these channels it consumes.
         float exposure = 0.0f;
+        float rotation_x_radians = 0.0f;
         float rotation_y_radians = 0.0f;
+        float rotation_z_radians = 0.0f;
         float lighting_intensity = 1.0f;
         float reflection_intensity = 1.0f;
         float background_intensity = 1.0f;
+
+        // Diffuse environment-light metadata derived from the HDR image or
+        // authored explicitly. This is not a scene AmbientLighting component;
+        // it is shader-facing environment radiance for consumers such as
+        // terrain, sky, and later material/probe systems.
+        float environment_light_color[3]{ 1.0f, 1.0f, 1.0f };
+        float environment_light_intensity = 0.0f;
 
         // Optional dominant-light metadata for editor actions such as
         // "align directional light to HDRI sun". Confidence 0 means absent.
@@ -105,14 +114,21 @@ namespace wz::engine::assets
                 !(source_file == wz::asset::AssetKey{});
             const bool finite_controls =
                 std::isfinite(exposure)
+                && std::isfinite(rotation_x_radians)
                 && std::isfinite(rotation_y_radians)
+                && std::isfinite(rotation_z_radians)
                 && std::isfinite(lighting_intensity)
                 && std::isfinite(reflection_intensity)
-                && std::isfinite(background_intensity);
+                && std::isfinite(background_intensity)
+                && std::isfinite(environment_light_color[0])
+                && std::isfinite(environment_light_color[1])
+                && std::isfinite(environment_light_color[2])
+                && std::isfinite(environment_light_intensity);
             const bool nonnegative_controls =
                 lighting_intensity >= 0.0f
                 && reflection_intensity >= 0.0f
-                && background_intensity >= 0.0f;
+                && background_intensity >= 0.0f
+                && environment_light_intensity >= 0.0f;
             const bool finite_dominant =
                 std::isfinite(dominant_light_direction[0])
                 && std::isfinite(dominant_light_direction[1])

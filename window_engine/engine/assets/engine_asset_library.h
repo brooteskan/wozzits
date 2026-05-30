@@ -102,6 +102,11 @@ namespace wz::engine::assets
         bool          commit();
         ResolveReport resolve_all();
 
+        const wz::fs::Path& resource_root() const noexcept
+        {
+            return resource_root_;
+        }
+
         // ── Module accessors ──────────────────────────────────────────────────────
 
         FileCarrierAssetModule&       files()         { return files_; }

@@ -5,10 +5,13 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/scene/scene_authoring_materialize.h>
 
+#include <external/tinyexr/tinyexr.h>
+
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -22,6 +25,29 @@ namespace
         wz::fs::Buffer bytes(byte_count);
         std::memcpy(bytes.data(), values.data(), byte_count);
         return wz::fs::write_file(path, bytes, true) == wz::fs::FileError::None;
+    }
+
+    wz::fs::Buffer make_test_exr_bytes(const std::vector<float>& rgba)
+    {
+        unsigned char* data = nullptr;
+        const char* error = nullptr;
+        const int size = SaveEXRToMemory(
+            rgba.data(),
+            2,
+            2,
+            4,
+            0,
+            &data,
+            &error);
+        if (error) {
+            FreeEXRErrorMessage(error);
+        }
+        wz::fs::Buffer out;
+        if (size > 0 && data) {
+            out.assign(data, data + size);
+        }
+        std::free(data);
+        return out;
     }
 }
 
@@ -549,6 +575,115 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)
     EXPECT_FLOAT_EQ(data->terrain_lighting.dominant_light_intensity, 0.5f);
     EXPECT_FLOAT_EQ(data->terrain_lighting.sky_visibility_strength, 0.75f);
     EXPECT_FLOAT_EQ(data->terrain_lighting.terrain_bounce_strength, 0.1f);
+}
+
+TEST(SceneAuthoringMaterialize, TerrainHDRILightingCanBeDerivedFromEXR)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_exr_lighting_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path exr_path = wz::fs::join(root, "derived_sky.exr");
+    const std::vector<float> rgba{
+        0.1f, 0.1f, 0.1f, 1.0f,
+        4.0f, 3.0f, 2.0f, 1.0f,
+        0.2f, 0.2f, 0.3f, 1.0f,
+        0.1f, 0.1f, 0.2f, 1.0f,
+    };
+    const wz::fs::Buffer exr_bytes = make_test_exr_bytes(rgba);
+    ASSERT_FALSE(exr_bytes.empty());
+    ASSERT_EQ(
+        wz::fs::write_file(exr_path, exr_bytes, true),
+        wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const MeshAsset mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/exr_lit_mesh",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_exr_lighting";
+
+    SceneNodeAsset environment = make_scene_node("sky");
+    environment.hdri_environment = SceneHDRIEnvironmentAsset{
+        .path = exr_path,
+        .format = HDRIEnvironmentFormat::OpenEXR,
+        .lighting_intensity = 0.5f,
+    };
+    scene.nodes.push_back(std::move(environment));
+
+    SceneNodeAsset terrain = make_scene_node("terrain");
+    terrain.terrain = SceneTerrainAsset{};
+    terrain.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = mesh.output,
+    };
+    terrain.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::Surface,
+        .lighting_source = SceneTerrainLightingSource::EnvironmentNode,
+        .environment_node = "sky",
+        .ambient_strength = 0.6f,
+        .normal_lighting_strength = 0.5f,
+    };
+    scene.nodes.push_back(std::move(terrain));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].hdri_environment.has_value());
+    ASSERT_TRUE(scene.nodes[1].renderable_asset.has_value());
+    EXPECT_GT(
+        scene.nodes[0].hdri_environment->environment_light_intensity,
+        0.0f);
+    EXPECT_GT(
+        scene.nodes[0].hdri_environment->dominant_light_intensity,
+        0.0f);
+    const float unrotated_x =
+        scene.nodes[0].hdri_environment->dominant_light_direction[0];
+    const float unrotated_z =
+        scene.nodes[0].hdri_environment->dominant_light_direction[2];
+
+    scene.nodes[0].hdri_environment->rotation_y_radians = 1.57079632679f;
+    const auto rotated_report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(rotated_report.ok) << rotated_report.error;
+    EXPECT_NE(
+        scene.nodes[0].hdri_environment->dominant_light_direction[0],
+        unrotated_x);
+    EXPECT_NE(
+        scene.nodes[0].hdri_environment->dominant_light_direction[2],
+        unrotated_z);
+    EXPECT_NEAR(
+        scene.nodes[0].hdri_environment->dominant_light_direction[0],
+        unrotated_z,
+        0.0001f);
+    EXPECT_NEAR(
+        scene.nodes[0].hdri_environment->dominant_light_direction[2],
+        -unrotated_x,
+        0.0001f);
+    EXPECT_TRUE(scene.lights.empty());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[1].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* data = assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::HDRIEnvironment);
+    EXPECT_GT(data->terrain_lighting.environment_intensity, 0.0f);
+    EXPECT_GT(data->terrain_lighting.dominant_light_intensity, 0.0f);
 }
 
 TEST(SceneAuthoringMaterialize, TerrainHeightFieldSourceSupportsDirectAndChildFields)

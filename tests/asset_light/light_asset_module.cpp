@@ -2,11 +2,40 @@
 
 #include <engine/assets/engine_asset_library.h>
 
+#include <external/tinyexr/tinyexr.h>
+
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <cstdlib>
 #include <vector>
+
+namespace
+{
+    wz::fs::Buffer make_test_exr_bytes(const std::vector<float>& rgba)
+    {
+        unsigned char* data = nullptr;
+        const char* error = nullptr;
+        const int size = SaveEXRToMemory(
+            rgba.data(),
+            2,
+            2,
+            4,
+            0,
+            &data,
+            &error);
+        if (error) {
+            FreeEXRErrorMessage(error);
+        }
+        wz::fs::Buffer out;
+        if (size > 0 && data) {
+            out.assign(data, data + size);
+        }
+        std::free(data);
+        return out;
+    }
+}
 
 TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
 {
@@ -55,7 +84,9 @@ TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
             .path = hdri_path,
             .format = HDRIEnvironmentFormat::RadianceHDR,
             .exposure = 0.5f,
+            .rotation_x_radians = 0.125f,
             .rotation_y_radians = 1.25f,
+            .rotation_z_radians = -0.25f,
             .lighting_intensity = 0.75f,
             .reflection_intensity = 0.6f,
             .background_intensity = 0.0f,
@@ -97,7 +128,9 @@ TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
     ASSERT_NE(hdri_data, nullptr);
     EXPECT_EQ(hdri_data->format, HDRIEnvironmentFormat::RadianceHDR);
     EXPECT_FLOAT_EQ(hdri_data->exposure, 0.5f);
+    EXPECT_FLOAT_EQ(hdri_data->rotation_x_radians, 0.125f);
     EXPECT_FLOAT_EQ(hdri_data->rotation_y_radians, 1.25f);
+    EXPECT_FLOAT_EQ(hdri_data->rotation_z_radians, -0.25f);
     EXPECT_FLOAT_EQ(hdri_data->lighting_intensity, 0.75f);
     EXPECT_FLOAT_EQ(hdri_data->reflection_intensity, 0.6f);
     EXPECT_FLOAT_EQ(hdri_data->background_intensity, 0.0f);
@@ -106,4 +139,55 @@ TEST(LightAssetModule, CreatesDirectAndAmbientLightingAssets)
     EXPECT_FLOAT_EQ(hdri_data->dominant_light_intensity, 3.0f);
     EXPECT_FLOAT_EQ(hdri_data->dominant_light_confidence, 0.8f);
     EXPECT_FALSE(hdri_data->source_file == wz::asset::AssetKey{});
+}
+
+TEST(LightAssetModule, OpenEXRHDRIEnvironmentDerivesLightingMetadata)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_light_hdri_exr_metadata_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path exr_path = wz::fs::join(root, "sky.exr");
+    const std::vector<float> rgba{
+        0.1f, 0.1f, 0.1f, 1.0f,
+        4.0f, 3.0f, 2.0f, 1.0f,
+        0.2f, 0.2f, 0.3f, 1.0f,
+        0.1f, 0.1f, 0.2f, 1.0f,
+    };
+    const wz::fs::Buffer exr_bytes = make_test_exr_bytes(rgba);
+    ASSERT_FALSE(exr_bytes.empty());
+    ASSERT_EQ(
+        wz::fs::write_file(exr_path, exr_bytes, true),
+        wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const HDRIEnvironmentAsset hdri =
+        assets.lights().create_hdri_environment({
+            .name = "test/exr_sky",
+            .path = exr_path,
+            .format = HDRIEnvironmentFormat::OpenEXR,
+        });
+    ASSERT_TRUE(hdri.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const HDRIEnvironmentHandle handle =
+        assets.lights().get_hdri_environment(hdri);
+    ASSERT_TRUE(handle.valid());
+    const HDRIEnvironmentData* data =
+        assets.lights().get_hdri_environment_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->format, HDRIEnvironmentFormat::OpenEXR);
+    EXPECT_GT(data->environment_light_intensity, 0.0f);
+    EXPECT_GT(data->dominant_light_intensity, 0.0f);
+    EXPECT_GT(data->dominant_light_confidence, 0.0f);
+    EXPECT_NEAR(data->dominant_light_color[0], 4.0f / 3.1406f, 0.05f);
 }

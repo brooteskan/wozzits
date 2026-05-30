@@ -171,10 +171,16 @@ namespace wz::engine::assets
                 fp.mix_string(environment.path);
                 fp.mix_value(environment.format);
                 fp.mix_value(environment.exposure);
+                fp.mix_value(environment.rotation_x_radians);
                 fp.mix_value(environment.rotation_y_radians);
+                fp.mix_value(environment.rotation_z_radians);
                 fp.mix_value(environment.lighting_intensity);
                 fp.mix_value(environment.reflection_intensity);
                 fp.mix_value(environment.background_intensity);
+                fp.mix_bytes(
+                    environment.environment_light_color,
+                    sizeof(environment.environment_light_color));
+                fp.mix_value(environment.environment_light_intensity);
                 fp.mix_bytes(
                     environment.dominant_light_direction,
                     sizeof(environment.dominant_light_direction));

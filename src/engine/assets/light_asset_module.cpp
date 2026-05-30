@@ -123,10 +123,20 @@ namespace wz::engine::assets
         compile_desc.source_file = file_key;
         compile_desc.format = desc.format;
         compile_desc.exposure = desc.exposure;
+        compile_desc.rotation_x_radians = desc.rotation_x_radians;
         compile_desc.rotation_y_radians = desc.rotation_y_radians;
+        compile_desc.rotation_z_radians = desc.rotation_z_radians;
         compile_desc.lighting_intensity = desc.lighting_intensity;
         compile_desc.reflection_intensity = desc.reflection_intensity;
         compile_desc.background_intensity = desc.background_intensity;
+        compile_desc.environment_light_color[0] =
+            desc.environment_light_color[0];
+        compile_desc.environment_light_color[1] =
+            desc.environment_light_color[1];
+        compile_desc.environment_light_color[2] =
+            desc.environment_light_color[2];
+        compile_desc.environment_light_intensity =
+            desc.environment_light_intensity;
         compile_desc.dominant_light_direction[0] =
             desc.dominant_light_direction[0];
         compile_desc.dominant_light_direction[1] =

@@ -447,14 +447,22 @@ namespace wz::engine::assets
                 string_value(hdri_environment_format_name(
                     environment.format)));
             add_member(*obj, "exposure", number_value(environment.exposure));
+            add_member(*obj, "rotation_x_radians",
+                number_value(environment.rotation_x_radians));
             add_member(*obj, "rotation_y_radians",
                 number_value(environment.rotation_y_radians));
+            add_member(*obj, "rotation_z_radians",
+                number_value(environment.rotation_z_radians));
             add_member(*obj, "lighting_intensity",
                 number_value(environment.lighting_intensity));
             add_member(*obj, "reflection_intensity",
                 number_value(environment.reflection_intensity));
             add_member(*obj, "background_intensity",
                 number_value(environment.background_intensity));
+            add_member(*obj, "environment_light_color",
+                float_array(environment.environment_light_color, 3));
+            add_member(*obj, "environment_light_intensity",
+                number_value(environment.environment_light_intensity));
             add_member(*obj, "dominant_light_direction",
                 float_array(environment.dominant_light_direction, 3));
             add_member(*obj, "dominant_light_color",

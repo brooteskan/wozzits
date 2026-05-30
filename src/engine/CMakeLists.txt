@@ -80,6 +80,7 @@ target_sources(window_engine PRIVATE
 
     assets/gltf/gltf_importer.cpp 
 
+    assets/hdri/hdri_lighting_metadata.cpp
     assets/hdri/hdri_image_loader_tinyexr.cpp
 
     assets/renderable/renderable.cpp

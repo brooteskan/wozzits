@@ -1,10 +1,14 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/hdri/hdri_image_loader.h>
+#include <engine/assets/hdri/hdri_lighting_metadata.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+#include <file/filesystem.h>
 
 #include <algorithm>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 
@@ -161,10 +165,16 @@ namespace wz::engine::assets
                 << environment.path << ":"
                 << static_cast<int>(environment.format) << ":"
                 << environment.exposure << ":"
+                << environment.rotation_x_radians << ":"
                 << environment.rotation_y_radians << ":"
+                << environment.rotation_z_radians << ":"
                 << environment.lighting_intensity << ":"
                 << environment.reflection_intensity << ":"
                 << environment.background_intensity << ":"
+                << environment.environment_light_color[0] << ":"
+                << environment.environment_light_color[1] << ":"
+                << environment.environment_light_color[2] << ":"
+                << environment.environment_light_intensity << ":"
                 << environment.dominant_light_direction[0] << ":"
                 << environment.dominant_light_direction[1] << ":"
                 << environment.dominant_light_direction[2] << ":"
@@ -174,6 +184,103 @@ namespace wz::engine::assets
                 << environment.dominant_light_intensity << ":"
                 << environment.dominant_light_confidence;
             return out.str();
+        }
+
+        void derive_hdri_environment_metadata_for_scene(
+            const EngineAssetLibrary& assets,
+            SceneHDRIEnvironmentAsset& environment)
+        {
+            if (environment.path.empty()) {
+                return;
+            }
+            if (environment.format == HDRIEnvironmentFormat::RadianceHDR) {
+                return;
+            }
+
+            const wz::fs::Path full_path =
+                wz::fs::is_absolute(environment.path)
+                    ? environment.path
+                    : wz::fs::join(assets.resource_root(), environment.path);
+
+            static std::mutex cache_mutex;
+            static std::unordered_map<std::string, HDRILightingMetadata> cache;
+
+            HDRILightingMetadata metadata{};
+            bool found_cached = false;
+            {
+                std::lock_guard<std::mutex> lock(cache_mutex);
+                const auto found = cache.find(full_path);
+                if (found != cache.end()) {
+                    metadata = found->second;
+                    found_cached = true;
+                }
+            }
+
+            if (!found_cached) {
+                const auto bytes = wz::fs::read_file(full_path);
+                if (!bytes) {
+                    return;
+                }
+
+                HDRImageData image{};
+                std::string error;
+                if (!load_openexr_image_from_memory(bytes.value, image, error)) {
+                    return;
+                }
+
+                if (!derive_hdri_lighting_metadata(
+                        image,
+                        0.0f,
+                        0.0f,
+                        0.0f,
+                        0.0f,
+                        metadata))
+                {
+                    return;
+                }
+
+                std::lock_guard<std::mutex> lock(cache_mutex);
+                cache[full_path] = metadata;
+            }
+
+            metadata = transform_hdri_lighting_metadata(
+                metadata,
+                environment.exposure,
+                environment.rotation_x_radians,
+                environment.rotation_y_radians,
+                environment.rotation_z_radians);
+
+            if (metadata.environment_light_intensity <= 0.0f
+                && metadata.dominant_light_intensity <= 0.0f)
+            {
+                return;
+            }
+
+            environment.environment_light_color[0] =
+                metadata.environment_light_color[0];
+            environment.environment_light_color[1] =
+                metadata.environment_light_color[1];
+            environment.environment_light_color[2] =
+                metadata.environment_light_color[2];
+            environment.environment_light_intensity =
+                metadata.environment_light_intensity;
+
+            environment.dominant_light_direction[0] =
+                metadata.dominant_light_direction[0];
+            environment.dominant_light_direction[1] =
+                metadata.dominant_light_direction[1];
+            environment.dominant_light_direction[2] =
+                metadata.dominant_light_direction[2];
+            environment.dominant_light_color[0] =
+                metadata.dominant_light_color[0];
+            environment.dominant_light_color[1] =
+                metadata.dominant_light_color[1];
+            environment.dominant_light_color[2] =
+                metadata.dominant_light_color[2];
+            environment.dominant_light_intensity =
+                metadata.dominant_light_intensity;
+            environment.dominant_light_confidence =
+                metadata.dominant_light_confidence;
         }
 
         const SceneHDRIEnvironmentAsset* find_hdri_environment_for_style(
@@ -215,16 +322,23 @@ namespace wz::engine::assets
             }
 
             out.mode = TerrainLightingMode::HDRIEnvironment;
+            const bool has_environment_light =
+                environment->environment_light_intensity > 0.0f;
             for (int i = 0; i < 3; ++i) {
                 out.environment_color[i] =
-                    environment->dominant_light_color[i];
+                    has_environment_light
+                        ? environment->environment_light_color[i]
+                        : environment->dominant_light_color[i];
                 out.dominant_light_direction[i] =
                     environment->dominant_light_direction[i];
                 out.dominant_light_color[i] =
                     environment->dominant_light_color[i];
             }
             out.environment_intensity =
-                (std::max)(0.0f, environment->lighting_intensity)
+                (environment->environment_light_intensity > 0.0f
+                    ? (std::max)(0.0f, environment->environment_light_intensity)
+                        * (std::max)(0.0f, environment->lighting_intensity)
+                    : (std::max)(0.0f, environment->lighting_intensity))
                 * (std::max)(0.0f, style.ambient_strength);
             out.dominant_light_intensity =
                 (std::max)(0.0f, environment->dominant_light_intensity)
@@ -936,6 +1050,10 @@ namespace wz::engine::assets
                 continue;
             }
 
+            derive_hdri_environment_metadata_for_scene(
+                assets,
+                environment_source);
+
             const std::string key =
                 hdri_environment_cache_key(environment_source);
             HDRIEnvironmentAsset environment{};
@@ -950,14 +1068,25 @@ namespace wz::engine::assets
                     .path = environment_source.path,
                     .format = environment_source.format,
                     .exposure = environment_source.exposure,
+                    .rotation_x_radians =
+                        environment_source.rotation_x_radians,
                     .rotation_y_radians =
                         environment_source.rotation_y_radians,
+                    .rotation_z_radians =
+                        environment_source.rotation_z_radians,
                     .lighting_intensity =
                         environment_source.lighting_intensity,
                     .reflection_intensity =
                         environment_source.reflection_intensity,
                     .background_intensity =
                         environment_source.background_intensity,
+                    .environment_light_color = {
+                        environment_source.environment_light_color[0],
+                        environment_source.environment_light_color[1],
+                        environment_source.environment_light_color[2],
+                    },
+                    .environment_light_intensity =
+                        environment_source.environment_light_intensity,
                     .dominant_light_direction = {
                         environment_source.dominant_light_direction[0],
                         environment_source.dominant_light_direction[1],

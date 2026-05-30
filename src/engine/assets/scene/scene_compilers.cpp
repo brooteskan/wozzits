@@ -690,10 +690,23 @@ namespace wz::engine::assets::internal
                 if (exposure) {
                     environment.exposure = static_cast<float>(*exposure);
                 }
-                auto rotation = read_number(*hdri, "rotation_y_radians");
-                if (rotation) {
+                auto rotation_x =
+                    read_number(*hdri, "rotation_x_radians");
+                if (rotation_x) {
+                    environment.rotation_x_radians =
+                        static_cast<float>(*rotation_x);
+                }
+                auto rotation_y =
+                    read_number(*hdri, "rotation_y_radians");
+                if (rotation_y) {
                     environment.rotation_y_radians =
-                        static_cast<float>(*rotation);
+                        static_cast<float>(*rotation_y);
+                }
+                auto rotation_z =
+                    read_number(*hdri, "rotation_z_radians");
+                if (rotation_z) {
+                    environment.rotation_z_radians =
+                        static_cast<float>(*rotation_z);
                 }
                 auto lighting_intensity =
                     read_number(*hdri, "lighting_intensity");
@@ -712,6 +725,16 @@ namespace wz::engine::assets::internal
                 if (background_intensity) {
                     environment.background_intensity =
                         static_cast<float>(*background_intensity);
+                }
+                read_float3(
+                    *hdri,
+                    "environment_light_color",
+                    environment.environment_light_color);
+                auto environment_light_intensity =
+                    read_number(*hdri, "environment_light_intensity");
+                if (environment_light_intensity) {
+                    environment.environment_light_intensity =
+                        static_cast<float>(*environment_light_intensity);
                 }
                 read_float3(
                     *hdri,

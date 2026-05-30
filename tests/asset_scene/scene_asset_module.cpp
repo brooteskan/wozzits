@@ -5558,7 +5558,9 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         .path = "studio.hdr",
         .format = HDRIEnvironmentFormat::RadianceHDR,
         .exposure = 0.5f,
+        .rotation_x_radians = 0.125f,
         .rotation_y_radians = 1.25f,
+        .rotation_z_radians = -0.25f,
         .lighting_intensity = 0.75f,
         .reflection_intensity = 0.6f,
         .background_intensity = 0.0f,
@@ -5614,8 +5616,14 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         scene_data->nodes[0].hdri_environment->format,
         HDRIEnvironmentFormat::RadianceHDR);
     EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].hdri_environment->rotation_x_radians,
+        0.125f);
+    EXPECT_FLOAT_EQ(
         scene_data->nodes[0].hdri_environment->rotation_y_radians,
         1.25f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].hdri_environment->rotation_z_radians,
+        -0.25f);
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].hdri_environment->dominant_light_confidence,
         0.8f);
