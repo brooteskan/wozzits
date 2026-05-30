@@ -87,6 +87,66 @@ namespace wz::engine::assets
         float dominant_light_confidence = 0.0f;
     };
 
+    enum class SceneSkyVisualKind : uint8_t
+    {
+        None = 0,
+        SolidColor,
+        EquirectangularTexture,
+        ScalarField,
+    };
+
+    enum class SceneSkyProjection : uint8_t
+    {
+        Sphere = 0,
+    };
+
+    struct SceneSkyVisualAsset
+    {
+        SceneSkyVisualKind kind = SceneSkyVisualKind::None;
+        float solid_color[3]{ 0.0f, 0.0f, 0.0f };
+
+        // Texture assets do not own lighting/radiance semantics here. They are
+        // just visual content for the sky canvas; HDRIEnvironment remains the
+        // lighting-oriented environment source.
+        wz::asset::AssetKey texture_asset{};
+
+        // Scalar fields are accepted as another drawable sky visual source so
+        // debug/painted/procedural data can be projected onto the sky without
+        // pretending it is a texture asset.
+        wz::asset::AssetKey scalar_field_asset{};
+        std::string scalar_field_node;
+
+        float exposure = 0.0f;
+        float rotation_x_radians = 0.0f;
+        float rotation_y_radians = 0.0f;
+        float rotation_z_radians = 0.0f;
+    };
+
+    struct SceneSkySurfaceAsset
+    {
+        std::string visual_node;
+        SceneSkyProjection projection = SceneSkyProjection::Sphere;
+        float radius = 1.0f;
+        bool visible_to_camera = true;
+    };
+
+    struct SceneSkyDrawAsset
+    {
+        wz::scene::AuthoredEntityId surface_node;
+        wz::scene::AuthoredEntityId visual_node;
+        SceneSkyVisualKind visual_kind = SceneSkyVisualKind::None;
+        SceneSkyProjection projection = SceneSkyProjection::Sphere;
+        float radius = 1.0f;
+        bool visible_to_camera = true;
+        float solid_color[3]{ 0.0f, 0.0f, 0.0f };
+        wz::asset::AssetKey texture_asset{};
+        wz::asset::AssetKey scalar_field_asset{};
+        float exposure = 0.0f;
+        float rotation_x_radians = 0.0f;
+        float rotation_y_radians = 0.0f;
+        float rotation_z_radians = 0.0f;
+    };
+
     struct SceneCameraAsset
     {
         float fov_y = 1.0472f;   // ~60 degrees
@@ -392,6 +452,8 @@ namespace wz::engine::assets
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
         std::optional<SceneAmbientLightingAsset> ambient_lighting;
         std::optional<SceneHDRIEnvironmentAsset> hdri_environment;
+        std::optional<SceneSkyVisualAsset> sky_visual;
+        std::optional<SceneSkySurfaceAsset> sky_surface;
 
         std::optional<SceneInputReceiverAsset> input_receiver;
         std::optional<SceneFlyingCameraControllerAsset> flying_camera_controller;
@@ -423,6 +485,7 @@ namespace wz::engine::assets
         std::string name;
         std::vector<SceneNodeAsset> nodes;
         std::vector<SceneLightAsset> lights;
+        std::vector<SceneSkyDrawAsset> sky_draws;
         SceneDefaults defaults{};
 
         bool valid() const noexcept { return !nodes.empty(); }
@@ -611,6 +674,20 @@ namespace wz::engine::assets
         node.hdri_environment = std::move(environment);
     }
 
+    inline void attach_sky_visual(
+        SceneNodeAsset& node,
+        SceneSkyVisualAsset visual = {})
+    {
+        node.sky_visual = std::move(visual);
+    }
+
+    inline void attach_sky_surface(
+        SceneNodeAsset& node,
+        SceneSkySurfaceAsset surface = {})
+    {
+        node.sky_surface = std::move(surface);
+    }
+
     inline void attach_auxiliary_visual(
         SceneNodeAsset& node,
         SceneAuxiliaryVisualAsset visual)
@@ -739,6 +816,12 @@ namespace wz::engine::assets
         }
         if (node.hdri_environment) {
             out.push_back(Kind::HDRIEnvironment);
+        }
+        if (node.sky_visual) {
+            out.push_back(Kind::SkyVisual);
+        }
+        if (node.sky_surface) {
+            out.push_back(Kind::SkySurface);
         }
         if (node.input_receiver) {
             out.push_back(Kind::InputReceiver);
@@ -966,6 +1049,8 @@ namespace wz::engine::assets
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
             || node.hdri_environment.has_value()
+            || node.sky_visual.has_value()
+            || node.sky_surface.has_value()
             || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value();
@@ -979,6 +1064,7 @@ namespace wz::engine::assets
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
             || node.hdri_environment.has_value()
+            || node.sky_surface.has_value()
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
@@ -1074,6 +1160,12 @@ namespace wz::engine::assets
             }
             if (node.hdri_environment) {
                 ++out.hdri_environments;
+            }
+            if (node.sky_visual) {
+                ++out.sky_visuals;
+            }
+            if (node.sky_surface) {
+                ++out.sky_surfaces;
             }
             if (node.input_receiver) {
                 ++out.input_receivers;

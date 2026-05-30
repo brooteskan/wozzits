@@ -256,6 +256,7 @@ namespace wz::engine::assets
             .renderable_descriptor_slots = static_cast<uint32_t>(
                 instance.renderables.size()),
             .lights = static_cast<uint32_t>(instance.lights.size()),
+            .sky_draws = static_cast<uint32_t>(instance.sky_draws.size()),
             .input_receivers = static_cast<uint32_t>(
                 instance.input_receivers.size()),
             .flying_camera_controllers = static_cast<uint32_t>(
@@ -552,6 +553,8 @@ namespace wz::engine::assets
         for (const auto& light : scene.lights) {
             inst.lights.push_back(light.light);
         }
+
+        inst.sky_draws = scene.sky_draws;
 
         // Populate default_view from the active camera node, if specified.
         if (scene.defaults.active_camera_node) {

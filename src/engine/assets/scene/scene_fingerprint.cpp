@@ -86,6 +86,8 @@ namespace wz::engine::assets
                 node.ambient_lighting.has_value();
             const bool has_hdri_environment =
                 node.hdri_environment.has_value();
+            const bool has_sky_visual = node.sky_visual.has_value();
+            const bool has_sky_surface = node.sky_surface.has_value();
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
@@ -108,6 +110,8 @@ namespace wz::engine::assets
             fp.mix_value(has_direct_light_source);
             fp.mix_value(has_ambient_lighting);
             fp.mix_value(has_hdri_environment);
+            fp.mix_value(has_sky_visual);
+            fp.mix_value(has_sky_surface);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
@@ -189,6 +193,27 @@ namespace wz::engine::assets
                     sizeof(environment.dominant_light_color));
                 fp.mix_value(environment.dominant_light_intensity);
                 fp.mix_value(environment.dominant_light_confidence);
+            }
+
+            if (node.sky_visual) {
+                const auto& visual = *node.sky_visual;
+                fp.mix_value(visual.kind);
+                fp.mix_bytes(visual.solid_color, sizeof(visual.solid_color));
+                mix_asset_key(fp, visual.texture_asset);
+                mix_asset_key(fp, visual.scalar_field_asset);
+                fp.mix_string(visual.scalar_field_node);
+                fp.mix_value(visual.exposure);
+                fp.mix_value(visual.rotation_x_radians);
+                fp.mix_value(visual.rotation_y_radians);
+                fp.mix_value(visual.rotation_z_radians);
+            }
+
+            if (node.sky_surface) {
+                const auto& surface = *node.sky_surface;
+                fp.mix_string(surface.visual_node);
+                fp.mix_value(surface.projection);
+                fp.mix_value(surface.radius);
+                fp.mix_value(surface.visible_to_camera);
             }
 
             if (node.mesh_source) {

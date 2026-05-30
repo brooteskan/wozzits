@@ -224,6 +224,30 @@ namespace wz::engine::assets
             return "terrain_uv";
         }
 
+        const char* sky_visual_kind_name(SceneSkyVisualKind kind)
+        {
+            switch (kind) {
+            case SceneSkyVisualKind::None:
+                return "none";
+            case SceneSkyVisualKind::SolidColor:
+                return "solid_color";
+            case SceneSkyVisualKind::EquirectangularTexture:
+                return "equirectangular_texture";
+            case SceneSkyVisualKind::ScalarField:
+                return "scalar_field";
+            }
+            return "none";
+        }
+
+        const char* sky_projection_name(SceneSkyProjection projection)
+        {
+            switch (projection) {
+            case SceneSkyProjection::Sphere:
+                return "sphere";
+            }
+            return "sphere";
+        }
+
         const char* hdri_environment_format_name(
             HDRIEnvironmentFormat format)
         {
@@ -471,6 +495,52 @@ namespace wz::engine::assets
                 number_value(environment.dominant_light_intensity));
             add_member(*obj, "dominant_light_confidence",
                 number_value(environment.dominant_light_confidence));
+            return obj;
+        }
+
+        JSONValuePtr sky_visual_value(
+            const SceneSkyVisualAsset& visual)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(sky_visual_kind_name(visual.kind)));
+            add_member(*obj, "solid_color",
+                float_array(visual.solid_color, 3));
+            if (!(visual.texture_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "texture_asset",
+                    string_value(asset_key_string(visual.texture_asset)));
+            }
+            if (!(visual.scalar_field_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "scalar_field_asset",
+                    string_value(asset_key_string(visual.scalar_field_asset)));
+            }
+            if (!visual.scalar_field_node.empty()) {
+                add_member(*obj, "scalar_field_node",
+                    string_value(visual.scalar_field_node));
+            }
+            add_member(*obj, "exposure", number_value(visual.exposure));
+            add_member(*obj, "rotation_x_radians",
+                number_value(visual.rotation_x_radians));
+            add_member(*obj, "rotation_y_radians",
+                number_value(visual.rotation_y_radians));
+            add_member(*obj, "rotation_z_radians",
+                number_value(visual.rotation_z_radians));
+            return obj;
+        }
+
+        JSONValuePtr sky_surface_value(
+            const SceneSkySurfaceAsset& surface)
+        {
+            auto obj = object_value();
+            if (!surface.visual_node.empty()) {
+                add_member(*obj, "visual_node",
+                    string_value(surface.visual_node));
+            }
+            add_member(*obj, "projection",
+                string_value(sky_projection_name(surface.projection)));
+            add_member(*obj, "radius", number_value(surface.radius));
+            add_member(*obj, "visible_to_camera",
+                bool_value(surface.visible_to_camera));
             return obj;
         }
 
@@ -750,6 +820,14 @@ namespace wz::engine::assets
             if (node.hdri_environment) {
                 add_member(*obj, "hdri_environment",
                     hdri_environment_value(*node.hdri_environment));
+            }
+            if (node.sky_visual) {
+                add_member(*obj, "sky_visual",
+                    sky_visual_value(*node.sky_visual));
+            }
+            if (node.sky_surface) {
+                add_member(*obj, "sky_surface",
+                    sky_surface_value(*node.sky_surface));
             }
             if (node.input_receiver) {
                 auto input = object_value();

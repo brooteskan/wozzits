@@ -848,6 +848,94 @@ namespace wz::engine::assets
             }
             report.renderables_to_realize.push_back(key);
         }
+
+        const SceneNodeAsset* find_sky_visual_node(
+            const SceneAssetData& scene,
+            const SceneNodeAsset& surface_node,
+            const SceneSkySurfaceAsset& surface)
+        {
+            if (!surface.visual_node.empty()) {
+                return find_scene_node(scene, surface.visual_node);
+            }
+            return surface_node.sky_visual ? &surface_node : nullptr;
+        }
+
+        bool sky_visual_has_drawable_source(
+            const SceneSkyVisualAsset& visual)
+        {
+            switch (visual.kind) {
+            case SceneSkyVisualKind::SolidColor:
+                return true;
+            case SceneSkyVisualKind::EquirectangularTexture:
+                return !(visual.texture_asset == wz::asset::AssetKey{});
+            case SceneSkyVisualKind::ScalarField:
+                return !(visual.scalar_field_asset == wz::asset::AssetKey{});
+            case SceneSkyVisualKind::None:
+                return false;
+            }
+            return false;
+        }
+
+        void materialize_sky_draws(
+            SceneAssetData& scene,
+            const std::unordered_map<std::string, wz::asset::AssetKey>&
+                scalar_field_assets_by_node)
+        {
+            scene.sky_draws.clear();
+
+            for (const auto& node : scene.nodes) {
+                if (!node.sky_surface || !node.visible) {
+                    continue;
+                }
+
+                const SceneSkySurfaceAsset& surface = *node.sky_surface;
+                if (!surface.visible_to_camera) {
+                    continue;
+                }
+
+                const SceneNodeAsset* visual_node =
+                    find_sky_visual_node(scene, node, surface);
+                if (!visual_node || !visual_node->sky_visual) {
+                    continue;
+                }
+
+                SceneSkyVisualAsset visual = *visual_node->sky_visual;
+                if (visual.kind == SceneSkyVisualKind::ScalarField
+                    && visual.scalar_field_asset == wz::asset::AssetKey{}
+                    && !visual.scalar_field_node.empty())
+                {
+                    const auto found =
+                        scalar_field_assets_by_node.find(
+                            visual.scalar_field_node);
+                    if (found != scalar_field_assets_by_node.end()) {
+                        visual.scalar_field_asset = found->second;
+                    }
+                }
+
+                if (!sky_visual_has_drawable_source(visual)) {
+                    continue;
+                }
+
+                SceneSkyDrawAsset draw{};
+                draw.surface_node = node.id;
+                draw.visual_node = visual_node->id;
+                draw.visual_kind = visual.kind;
+                draw.projection = surface.projection;
+                draw.radius = surface.radius;
+                draw.visible_to_camera = surface.visible_to_camera;
+                draw.solid_color[0] = visual.solid_color[0];
+                draw.solid_color[1] = visual.solid_color[1];
+                draw.solid_color[2] = visual.solid_color[2];
+                draw.texture_asset = visual.texture_asset;
+                draw.scalar_field_asset = visual.scalar_field_asset;
+                draw.exposure = visual.exposure;
+                draw.rotation_x_radians = visual.rotation_x_radians;
+                draw.rotation_y_radians = visual.rotation_y_radians;
+                draw.rotation_z_radians = visual.rotation_z_radians;
+
+                scene.sky_draws.push_back(draw);
+            }
+        }
     }
 
     SceneAuthoringMaterializeReport materialize_scene_authoring_components(
@@ -867,6 +955,7 @@ namespace wz::engine::assets
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
         const SceneMeshRenderStyleAsset default_render_style{};
+        scene.sky_draws.clear();
 
         for (auto& node : scene.nodes) {
             if (!node.scalar_field_source) {
@@ -934,6 +1023,8 @@ namespace wz::engine::assets
 
             source.vector_field_asset = vector_field.output;
         }
+
+        materialize_sky_draws(scene, scalar_field_assets_by_node);
 
         for (auto& node : scene.nodes) {
             if (!node.direct_light_source) {

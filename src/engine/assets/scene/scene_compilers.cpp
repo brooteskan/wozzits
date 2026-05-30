@@ -320,6 +320,33 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneSkyVisualKind> parse_sky_visual_kind(
+            std::string_view text)
+        {
+            if (text == "none") {
+                return SceneSkyVisualKind::None;
+            }
+            if (text == "solid_color") {
+                return SceneSkyVisualKind::SolidColor;
+            }
+            if (text == "equirectangular_texture") {
+                return SceneSkyVisualKind::EquirectangularTexture;
+            }
+            if (text == "scalar_field") {
+                return SceneSkyVisualKind::ScalarField;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneSkyProjection> parse_sky_projection(
+            std::string_view text)
+        {
+            if (text == "sphere") {
+                return SceneSkyProjection::Sphere;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneScalarFieldSourceKind>
         parse_scalar_field_source_kind(std::string_view text)
         {
@@ -757,6 +784,119 @@ namespace wz::engine::assets::internal
                         static_cast<float>(*dominant_light_confidence);
                 }
                 node.hdri_environment = environment;
+            }
+
+            const auto* sky_visual =
+                find_member(node_val, "sky_visual");
+            if (sky_visual
+                && sky_visual->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneSkyVisualAsset visual{};
+                auto kind = read_string(*sky_visual, "kind");
+                if (kind) {
+                    auto parsed_kind = parse_sky_visual_kind(*kind);
+                    if (!parsed_kind) {
+                        logger.error("sky_visual on node '"
+                            + node.id + "' has unknown kind '"
+                            + std::string(*kind) + "'");
+                        return std::nullopt;
+                    }
+                    visual.kind = *parsed_kind;
+                }
+                read_float3(*sky_visual, "solid_color", visual.solid_color);
+
+                auto texture_asset =
+                    read_string(*sky_visual, "texture_asset");
+                if (texture_asset && !texture_asset->empty()) {
+                    auto key = parse_asset_key_string(*texture_asset);
+                    if (!key) {
+                        logger.error("sky_visual.texture_asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*texture_asset));
+                        return std::nullopt;
+                    }
+                    visual.texture_asset = *key;
+                }
+
+                auto scalar_field_asset =
+                    read_string(*sky_visual, "scalar_field_asset");
+                if (scalar_field_asset && !scalar_field_asset->empty()) {
+                    auto key = parse_asset_key_string(*scalar_field_asset);
+                    if (!key) {
+                        logger.error(
+                            "sky_visual.scalar_field_asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*scalar_field_asset));
+                        return std::nullopt;
+                    }
+                    visual.scalar_field_asset = *key;
+                }
+
+                auto scalar_field_node =
+                    read_string(*sky_visual, "scalar_field_node");
+                if (scalar_field_node) {
+                    visual.scalar_field_node = std::string(*scalar_field_node);
+                }
+
+                auto exposure = read_number(*sky_visual, "exposure");
+                if (exposure) {
+                    visual.exposure = static_cast<float>(*exposure);
+                }
+                auto rotation_x =
+                    read_number(*sky_visual, "rotation_x_radians");
+                if (rotation_x) {
+                    visual.rotation_x_radians =
+                        static_cast<float>(*rotation_x);
+                }
+                auto rotation_y =
+                    read_number(*sky_visual, "rotation_y_radians");
+                if (rotation_y) {
+                    visual.rotation_y_radians =
+                        static_cast<float>(*rotation_y);
+                }
+                auto rotation_z =
+                    read_number(*sky_visual, "rotation_z_radians");
+                if (rotation_z) {
+                    visual.rotation_z_radians =
+                        static_cast<float>(*rotation_z);
+                }
+                node.sky_visual = visual;
+            }
+
+            const auto* sky_surface =
+                find_member(node_val, "sky_surface");
+            if (sky_surface
+                && sky_surface->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneSkySurfaceAsset surface{};
+                auto visual_node = read_string(*sky_surface, "visual_node");
+                if (visual_node) {
+                    surface.visual_node = std::string(*visual_node);
+                }
+
+                auto projection = read_string(*sky_surface, "projection");
+                if (projection) {
+                    auto parsed_projection =
+                        parse_sky_projection(*projection);
+                    if (!parsed_projection) {
+                        logger.error("sky_surface on node '"
+                            + node.id + "' has unknown projection '"
+                            + std::string(*projection) + "'");
+                        return std::nullopt;
+                    }
+                    surface.projection = *parsed_projection;
+                }
+
+                auto radius = read_number(*sky_surface, "radius");
+                if (radius) {
+                    surface.radius = static_cast<float>(*radius);
+                }
+                auto visible_to_camera =
+                    read_bool(*sky_surface, "visible_to_camera");
+                if (visible_to_camera) {
+                    surface.visible_to_camera = *visible_to_camera;
+                }
+                node.sky_surface = surface;
             }
 
             // ── Non-render component descriptors ──────────────────────

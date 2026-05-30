@@ -148,6 +148,100 @@ TEST(SceneAuthoringMaterialize, ScalarFieldSourceCreatesScalarFieldAsset)
     EXPECT_EQ(field_data->height, 4u);
 }
 
+TEST(SceneAuthoringMaterialize, SkySurfaceMaterializesScalarFieldDraw)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_sky_scalar_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "sky_scalar";
+
+    SceneNodeAsset field = make_scene_node("sky_field");
+    field.scalar_field_source = SceneScalarFieldSourceAsset{
+        .kind = SceneScalarFieldSourceKind::ProceduralGradientY,
+        .width = 8,
+        .height = 4,
+        .depth = 1,
+    };
+    scene.nodes.push_back(std::move(field));
+
+    SceneNodeAsset visual = make_scene_node("sky_visual");
+    visual.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::ScalarField,
+        .scalar_field_node = "sky_field",
+        .exposure = -1.0f,
+        .rotation_y_radians = 0.5f,
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    SceneNodeAsset surface = make_scene_node("sky_surface");
+    surface.sky_surface = SceneSkySurfaceAsset{
+        .visual_node = "sky_visual",
+        .projection = SceneSkyProjection::Sphere,
+        .radius = 10.0f,
+        .visible_to_camera = true,
+    };
+    scene.nodes.push_back(std::move(surface));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].scalar_field_source.has_value());
+    ASSERT_NE(
+        scene.nodes[0].scalar_field_source->scalar_field_asset,
+        wz::asset::AssetKey{});
+    ASSERT_EQ(scene.sky_draws.size(), 1u);
+
+    const SceneSkyDrawAsset& draw = scene.sky_draws[0];
+    EXPECT_EQ(draw.surface_node, "sky_surface");
+    EXPECT_EQ(draw.visual_node, "sky_visual");
+    EXPECT_EQ(draw.visual_kind, SceneSkyVisualKind::ScalarField);
+    EXPECT_EQ(draw.projection, SceneSkyProjection::Sphere);
+    EXPECT_FLOAT_EQ(draw.radius, 10.0f);
+    EXPECT_FLOAT_EQ(draw.exposure, -1.0f);
+    EXPECT_FLOAT_EQ(draw.rotation_y_radians, 0.5f);
+    EXPECT_NE(draw.scalar_field_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(
+        draw.scalar_field_asset,
+        scene.nodes[0].scalar_field_source->scalar_field_asset);
+}
+
+TEST(SceneAuthoringMaterialize, SkySurfaceSkipsNoneVisual)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{
+        device,
+        logger,
+        wz::fs::temp_directory_path(),
+    };
+
+    SceneAssetData scene{};
+    scene.name = "sky_none";
+    SceneNodeAsset node = make_scene_node("sky");
+    node.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::None,
+    };
+    node.sky_surface = SceneSkySurfaceAsset{};
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    EXPECT_TRUE(scene.sky_draws.empty());
+}
+
 TEST(SceneAuthoringMaterialize, VectorFieldSourceCreatesVectorFieldAsset)
 {
     using namespace wz::engine::assets;

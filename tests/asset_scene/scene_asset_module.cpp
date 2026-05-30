@@ -5569,6 +5569,22 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         .dominant_light_intensity = 3.0f,
         .dominant_light_confidence = 0.8f,
     };
+    node.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::EquirectangularTexture,
+        .texture_asset = wz::asset::AssetKey{
+            .content_hash = { 1, 2 },
+            .schema_hash = { 3, 4 },
+            .compiler_hash = { 5, 6 },
+            .deps_hash = { 7, 8 },
+        },
+        .exposure = -0.5f,
+        .rotation_y_radians = 0.25f,
+    };
+    node.sky_surface = SceneSkySurfaceAsset{
+        .projection = SceneSkyProjection::Sphere,
+        .radius = 42.0f,
+        .visible_to_camera = true,
+    };
     authored.nodes.push_back(std::move(node));
 
     const std::string exported =
@@ -5576,6 +5592,8 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     EXPECT_NE(exported.find("\"direct_light_source\""), std::string::npos);
     EXPECT_NE(exported.find("\"ambient_lighting\""), std::string::npos);
     EXPECT_NE(exported.find("\"hdri_environment\""), std::string::npos);
+    EXPECT_NE(exported.find("\"sky_visual\""), std::string::npos);
+    EXPECT_NE(exported.find("\"sky_surface\""), std::string::npos);
     EXPECT_NE(exported.find("\"field_modulated\""), std::string::npos);
     EXPECT_NE(exported.find("\"world_xz\""), std::string::npos);
     EXPECT_NE(exported.find("\"radiance_hdr\""), std::string::npos);
@@ -5600,6 +5618,8 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     ASSERT_TRUE(scene_data->nodes[0].direct_light_source.has_value());
     ASSERT_TRUE(scene_data->nodes[0].ambient_lighting.has_value());
     ASSERT_TRUE(scene_data->nodes[0].hdri_environment.has_value());
+    ASSERT_TRUE(scene_data->nodes[0].sky_visual.has_value());
+    ASSERT_TRUE(scene_data->nodes[0].sky_surface.has_value());
     EXPECT_EQ(
         scene_data->nodes[0].direct_light_source->kind,
         DirectLightKind::Spot);
@@ -5627,6 +5647,19 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].hdri_environment->dominant_light_confidence,
         0.8f);
+    EXPECT_EQ(
+        scene_data->nodes[0].sky_visual->kind,
+        SceneSkyVisualKind::EquirectangularTexture);
+    EXPECT_FALSE(
+        scene_data->nodes[0].sky_visual->texture_asset
+        == wz::asset::AssetKey{});
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].sky_visual->rotation_y_radians,
+        0.25f);
+    EXPECT_EQ(
+        scene_data->nodes[0].sky_surface->projection,
+        SceneSkyProjection::Sphere);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].sky_surface->radius, 42.0f);
 
     const auto components = authored_components_for_node(scene_data->nodes[0]);
     EXPECT_EQ(std::count(

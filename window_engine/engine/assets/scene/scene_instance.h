@@ -97,6 +97,7 @@ namespace wz::engine::assets
 
         std::vector<wz::scene::RenderableDescriptor> renderables;
         std::vector<wz::scene::LightRecord> lights;
+        std::vector<SceneSkyDrawAsset> sky_draws;
 
         wz::scene::ViewData default_view{};
 
