@@ -592,5 +592,27 @@
   ],
   "defaults": {
     "active_camera": "camera_01"
+  },
+  "scene_editor_metadata": {
+    "schema": "wozzits.scene_editor_metadata.v1",
+    "version": 1,
+    "note": "Editor-only metadata; not part of the authored game scene.",
+    "camera": {
+      "position": [
+        10.466737747192383,
+        175.68757629394531,
+        152.41383361816406
+      ],
+      "orientation": [
+        0.018293935805559158,
+        -0.97617644071578979,
+        0.19930043816566467,
+        0.083810776472091675
+      ],
+      "move_speed": 8,
+      "look_speed": 0.00050000002374872565,
+      "boost_multiplier": 4,
+      "roll_speed": 1.5
+    }
   }
 }
