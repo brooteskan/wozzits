@@ -232,10 +232,11 @@ namespace wz::engine::assets
         bool depth_test = true;
         bool depth_write = true;
 
-        // Terrain declares how it consumes resolved scene lighting; it should
-        // not become the environment system. A future SceneLightingContext can
-        // resolve SceneDefault/EnvironmentNode/Hybrid into concrete constants
-        // and GPU resources before render-frame construction.
+        // Terrain declares how it consumes resolved lighting; it should not
+        // become the environment system. Materialization can already resolve
+        // EnvironmentNode into terrain shader constants, and a future
+        // SceneLightingContext can add shared irradiance/prefiltered-map GPU
+        // resources without routing HDRI through scene light nodes.
         SceneTerrainLightingSource lighting_source =
             SceneTerrainLightingSource::ExplicitNodes;
         std::string directional_light_node;

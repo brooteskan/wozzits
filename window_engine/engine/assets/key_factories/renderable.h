@@ -7,10 +7,46 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/compiler_version_tokens.h>
 
+#include <cstring>
 #include <string_view>
 
 namespace wz::engine::assets
 {
+    [[nodiscard]] inline uint64_t terrain_lighting_float_bits(
+        float value) noexcept
+    {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<uint64_t>(bits);
+    }
+
+    [[nodiscard]] inline uint64_t mix_terrain_lighting_data(
+        uint64_t h,
+        const TerrainLightingData& lighting) noexcept
+    {
+        h = detail::mix64(h, static_cast<uint64_t>(lighting.mode));
+        for (float channel : lighting.environment_color) {
+            h = detail::mix64(h, terrain_lighting_float_bits(channel));
+        }
+        h = detail::mix64(h,
+            terrain_lighting_float_bits(lighting.environment_intensity));
+        for (float axis : lighting.dominant_light_direction) {
+            h = detail::mix64(h, terrain_lighting_float_bits(axis));
+        }
+        for (float channel : lighting.dominant_light_color) {
+            h = detail::mix64(h, terrain_lighting_float_bits(channel));
+        }
+        h = detail::mix64(h,
+            terrain_lighting_float_bits(lighting.dominant_light_intensity));
+        h = detail::mix64(h,
+            terrain_lighting_float_bits(lighting.sky_visibility_strength));
+        h = detail::mix64(h,
+            terrain_lighting_float_bits(lighting.normal_lighting_strength));
+        h = detail::mix64(h,
+            terrain_lighting_float_bits(lighting.terrain_bounce_strength));
+        return h;
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_mesh_wireframe_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& mesh_key,
@@ -105,12 +141,14 @@ namespace wz::engine::assets
         uint32_t mesh_policy_flags =
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite,
-        RenderDomain domain = RenderDomain::Opaque) noexcept
+        RenderDomain domain = RenderDomain::Opaque,
+        const TerrainLightingData& lighting = {}) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, static_cast<uint64_t>(mesh_program));
         h = detail::mix64(h, static_cast<uint64_t>(mesh_policy_flags));
         h = detail::mix64(h, static_cast<uint64_t>(domain));
+        h = mix_terrain_lighting_data(h, lighting);
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

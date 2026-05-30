@@ -25,7 +25,7 @@ namespace wz::engine::rendering
             return std::nullopt;
         const Entry& e = splat_entries_[handle];
         return ResolvedRenderableResource{
-            e.gpu_resource, e.program, e.render_program };
+            e.gpu_resource, e.program, e.render_program, e.terrain_lighting };
     }
 
     bool RenderResourceResolver::set_splat_render_program(
@@ -55,11 +55,13 @@ namespace wz::engine::rendering
     wz::scene::MeshHandle RenderResourceResolver::register_mesh(
         wz::gpu::GPUHandle                       gpu_resource,
         wz::engine::assets::BuiltinRenderProgram program,
-        wz::asset::ResourceHandle                render_program)
+        wz::asset::ResourceHandle                render_program,
+        wz::engine::assets::TerrainLightingData  terrain_lighting)
     {
         const auto index =
             static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
-        mesh_entries_.push_back({ gpu_resource, program, render_program });
+        mesh_entries_.push_back(
+            { gpu_resource, program, render_program, terrain_lighting });
         return index;
     }
 
@@ -73,6 +75,6 @@ namespace wz::engine::rendering
             return std::nullopt;
         const Entry& e = mesh_entries_[handle];
         return ResolvedRenderableResource{
-            e.gpu_resource, e.program, e.render_program };
+            e.gpu_resource, e.program, e.render_program, e.terrain_lighting };
     }
 }

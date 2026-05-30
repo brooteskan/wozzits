@@ -107,6 +107,15 @@ namespace wz::engine::assets
             }
             out += style.depth_test ? ":depth_test" : ":no_depth_test";
             out += style.depth_write ? ":depth_write" : ":no_depth_write";
+            out += ":lighting:";
+            out += std::to_string(static_cast<int>(style.lighting_source));
+            out += ":env:" + style.environment_node;
+            out += ":dir:" + style.directional_light_node;
+            out += ":amb:" + style.ambient_light_node;
+            out += ":ambient_strength:" + std::to_string(style.ambient_strength);
+            out += ":sky_visibility:" + std::to_string(style.sky_visibility_strength);
+            out += ":normal_lighting:" + std::to_string(style.normal_lighting_strength);
+            out += ":terrain_bounce:" + std::to_string(style.terrain_bounce_strength);
             return out;
         }
 
@@ -167,6 +176,69 @@ namespace wz::engine::assets
             return out.str();
         }
 
+        const SceneHDRIEnvironmentAsset* find_hdri_environment_for_style(
+            const SceneAssetData& scene,
+            const SceneTerrainRenderStyleAsset& style)
+        {
+            if (!style.environment_node.empty()) {
+                const SceneNodeAsset* node =
+                    find_scene_node(scene, style.environment_node);
+                return node && node->hdri_environment
+                    ? &*node->hdri_environment
+                    : nullptr;
+            }
+
+            for (const auto& node : scene.nodes) {
+                if (node.hdri_environment) {
+                    return &*node.hdri_environment;
+                }
+            }
+            return nullptr;
+        }
+
+        TerrainLightingData terrain_lighting_for_style(
+            const SceneAssetData& scene,
+            const SceneTerrainRenderStyleAsset& style)
+        {
+            TerrainLightingData out{};
+            const bool use_environment =
+                style.lighting_source == SceneTerrainLightingSource::EnvironmentNode
+                || style.lighting_source == SceneTerrainLightingSource::Hybrid;
+            if (!use_environment) {
+                return out;
+            }
+
+            const SceneHDRIEnvironmentAsset* environment =
+                find_hdri_environment_for_style(scene, style);
+            if (!environment) {
+                return out;
+            }
+
+            out.mode = TerrainLightingMode::HDRIEnvironment;
+            for (int i = 0; i < 3; ++i) {
+                out.environment_color[i] =
+                    environment->dominant_light_color[i];
+                out.dominant_light_direction[i] =
+                    environment->dominant_light_direction[i];
+                out.dominant_light_color[i] =
+                    environment->dominant_light_color[i];
+            }
+            out.environment_intensity =
+                (std::max)(0.0f, environment->lighting_intensity)
+                * (std::max)(0.0f, style.ambient_strength);
+            out.dominant_light_intensity =
+                (std::max)(0.0f, environment->dominant_light_intensity)
+                * (std::max)(0.0f, environment->lighting_intensity)
+                * (std::max)(0.0f, style.normal_lighting_strength);
+            out.sky_visibility_strength =
+                (std::max)(0.0f, style.sky_visibility_strength);
+            out.normal_lighting_strength =
+                (std::max)(0.0f, style.normal_lighting_strength);
+            out.terrain_bounce_strength =
+                (std::max)(0.0f, style.terrain_bounce_strength);
+            return out;
+        }
+
         wz::scene::LightRecord scene_light_record_for_node(
             const SceneNodeAsset& node,
             const SceneDirectLightSourceAsset& source)
@@ -221,6 +293,14 @@ namespace wz::engine::assets
                     continue;
                 }
                 const auto& style = *node.terrain_render_style;
+                const bool uses_explicit_lights =
+                    style.lighting_source
+                        == SceneTerrainLightingSource::ExplicitNodes
+                    || style.lighting_source
+                        == SceneTerrainLightingSource::Hybrid;
+                if (!uses_explicit_lights) {
+                    continue;
+                }
                 if (directional_light_node.empty()) {
                     directional_light_node = style.directional_light_node;
                 }
@@ -529,6 +609,7 @@ namespace wz::engine::assets
 
         bool ensure_surface_renderable_for_terrain_asset(
             EngineAssetLibrary& assets,
+            const SceneAssetData& scene,
             const std::string& key,
             const std::string& name,
             TerrainAsset terrain,
@@ -549,6 +630,7 @@ namespace wz::engine::assets
                     .terrain = terrain,
                     .mesh_policy_flags =
                         policy_flags_for_terrain_render_style(style, false),
+                    .lighting = terrain_lighting_for_style(scene, style),
                 });
 
             if (!renderable.valid()) {
@@ -1145,6 +1227,7 @@ namespace wz::engine::assets
             const bool renderable_ok = use_surface
                 ? ensure_surface_renderable_for_terrain_asset(
                     assets,
+                    scene,
                     key,
                     name,
                     terrain_asset,

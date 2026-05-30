@@ -51,6 +51,31 @@ namespace wz::engine::assets
         RenderPolicy_DepthWrite = 1u << 3,
     };
 
+    enum class TerrainLightingMode : uint8_t
+    {
+        SceneLights = 0,
+        HDRIEnvironment,
+    };
+
+    struct TerrainLightingData
+    {
+        TerrainLightingMode mode = TerrainLightingMode::SceneLights;
+
+        // HDRI lighting starts as authored metadata so terrain can move onto
+        // a real environment-lighting path before generated irradiance maps,
+        // prefiltered cubemaps, or SH probes exist. Those GPU products can be
+        // added beside these constants without routing HDRI through scene
+        // ambient/directional light nodes.
+        float environment_color[3]{ 1.0f, 1.0f, 1.0f };
+        float environment_intensity = 0.25f;
+        float dominant_light_direction[3]{ 0.0f, -1.0f, 0.0f };
+        float dominant_light_color[3]{ 1.0f, 1.0f, 1.0f };
+        float dominant_light_intensity = 0.0f;
+        float sky_visibility_strength = 1.0f;
+        float normal_lighting_strength = 1.0f;
+        float terrain_bounce_strength = 0.0f;
+    };
+
     struct RenderableAssetData
     {
         RenderableKind kind{};
@@ -72,6 +97,8 @@ namespace wz::engine::assets
 
         float bounds_min[3]{};
         float bounds_max[3]{};
+
+        TerrainLightingData terrain_lighting{};
 
         bool valid() const noexcept;
     };
@@ -133,5 +160,6 @@ namespace wz::engine::assets
         uint32_t mesh_policy_flags =
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite;
+        TerrainLightingData lighting{};
     };
 }

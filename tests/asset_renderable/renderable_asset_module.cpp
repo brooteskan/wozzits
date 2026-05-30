@@ -817,9 +817,87 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
     EXPECT_EQ(data->companion_asset, terrain.output);
     EXPECT_EQ(data->program, BuiltinRenderProgram::TerrainMeshSurface);
     EXPECT_EQ(data->domain, RenderDomain::Opaque);
+    EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::SceneLights);
     EXPECT_EQ(data->policy_flags & RenderPolicy_Wireframe, 0u);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
+}
+
+TEST(RenderableAssetModule, TerrainSurfaceRenderableCarriesHDRILighting)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_terrain_hdri_lighting_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/hdri_surface_mesh_quad",
+            .kind = ProceduralMeshKind::Quad,
+            });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto terrain =
+        assets.terrains().create_from_mesh({
+            .name = "terrain/hdri_surface_mesh",
+            .mesh = mesh,
+            });
+    ASSERT_TRUE(terrain.valid());
+
+    TerrainLightingData lighting{};
+    lighting.mode = TerrainLightingMode::HDRIEnvironment;
+    lighting.environment_color[0] = 0.6f;
+    lighting.environment_color[1] = 0.7f;
+    lighting.environment_color[2] = 1.0f;
+    lighting.environment_intensity = 0.8f;
+    lighting.dominant_light_direction[0] = 0.0f;
+    lighting.dominant_light_direction[1] = -0.5f;
+    lighting.dominant_light_direction[2] = 0.8660254f;
+    lighting.dominant_light_intensity = 2.0f;
+    lighting.sky_visibility_strength = 0.75f;
+    lighting.terrain_bounce_strength = 0.1f;
+
+    const auto renderable =
+        assets.renderables().create_terrain_surface({
+            .name = "terrain/hdri_surface_mesh_renderable",
+            .terrain = terrain,
+            .lighting = lighting,
+            });
+    ASSERT_TRUE(renderable.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::HDRIEnvironment);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.environment_color[1], 0.7f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.environment_intensity, 0.8f);
+    EXPECT_FLOAT_EQ(
+        data->terrain_lighting.dominant_light_direction[2],
+        0.8660254f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.dominant_light_intensity, 2.0f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.sky_visibility_strength, 0.75f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.terrain_bounce_strength, 0.1f);
 }
 
 TEST(RenderableAssetModule, RejectsHeightFieldTerrainSurfaceRenderable)

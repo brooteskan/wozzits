@@ -208,7 +208,8 @@ namespace wz::engine::assets
                 desc.terrain.output,
                 desc.mesh_program,
                 desc.mesh_policy_flags,
-                desc.domain);
+                desc.domain,
+                desc.lighting);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -221,6 +222,7 @@ namespace wz::engine::assets
             .mesh_program = desc.mesh_program,
             .domain = desc.domain,
             .mesh_policy_flags = desc.mesh_policy_flags,
+            .lighting = desc.lighting,
         };
 
         if (!system_.register_asset(std::move(node), { desc.terrain.output }))

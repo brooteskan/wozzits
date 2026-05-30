@@ -68,6 +68,7 @@ namespace wz::engine::assets
         uint32_t mesh_policy_flags =
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite;
+        TerrainLightingData lighting{};
     };
 
     struct RenderableAsset

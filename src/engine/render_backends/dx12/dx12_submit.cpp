@@ -102,6 +102,47 @@ namespace wz::render::backend::dx12
 
             return out;
         }
+
+        TerrainLightingConstants terrain_lighting_from_renderable(
+            const wz::engine::assets::TerrainLightingData& lighting,
+            std::span<const wz::scene::LightRecord> lights)
+        {
+            if (lighting.mode
+                != wz::engine::assets::TerrainLightingMode::HDRIEnvironment)
+            {
+                return terrain_lighting_from_scene(lights);
+            }
+
+            TerrainLightingConstants out{};
+            out.light_position[0] = lighting.sky_visibility_strength;
+            out.light_position[1] = lighting.terrain_bounce_strength;
+            out.light_position[2] = 0.0f;
+            out.light_position[3] = 0.0f;
+
+            out.light_direction[0] = lighting.dominant_light_direction[0];
+            out.light_direction[1] = lighting.dominant_light_direction[1];
+            out.light_direction[2] = lighting.dominant_light_direction[2];
+            normalize3(out.light_direction);
+
+            out.light_color_intensity[0] = lighting.dominant_light_color[0];
+            out.light_color_intensity[1] = lighting.dominant_light_color[1];
+            out.light_color_intensity[2] = lighting.dominant_light_color[2];
+            out.light_color_intensity[3] =
+                (std::max)(0.0f, lighting.dominant_light_intensity);
+
+            out.lighting_params[0] =
+                (std::max)(0.0f, lighting.environment_color[0])
+                * (std::max)(0.0f, lighting.environment_intensity);
+            out.lighting_params[1] =
+                (std::max)(0.0f, lighting.environment_color[1])
+                * (std::max)(0.0f, lighting.environment_intensity);
+            out.lighting_params[2] =
+                (std::max)(0.0f, lighting.environment_color[2])
+                * (std::max)(0.0f, lighting.environment_intensity);
+            out.lighting_params[3] = -1.0f;
+
+            return out;
+        }
     }
 
     Context* create(
@@ -405,7 +446,9 @@ namespace wz::render::backend::dx12
                 == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
             if (terrain_surface) {
                 const TerrainLightingConstants lighting =
-                    terrain_lighting_from_scene(frame.lights);
+                    terrain_lighting_from_renderable(
+                        resolved->terrain_lighting,
+                        frame.lights);
                 for (int i = 0; i < 4; ++i) {
                     constants[32 + i] = lighting.light_position[i];
                     constants[36 + i] = lighting.light_direction[i];
@@ -550,7 +593,9 @@ namespace wz::render::backend::dx12
                 == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
             if (terrain_surface) {
                 const TerrainLightingConstants lighting =
-                    terrain_lighting_from_scene(frame.lights);
+                    terrain_lighting_from_renderable(
+                        resolved->terrain_lighting,
+                        frame.lights);
                 for (int i = 0; i < 4; ++i) {
                     constants[32 + i] = lighting.light_position[i];
                     constants[36 + i] = lighting.light_direction[i];

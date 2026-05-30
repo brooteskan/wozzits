@@ -469,6 +469,88 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleSelectsRenderablePath)
     EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
 }
 
+TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_hdri_lighting_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::vector<uint8_t> hdri_bytes{
+        '#', '?', 'R', 'A', 'D', 'I', 'A', 'N', 'C', 'E', '\n'
+    };
+    ASSERT_EQ(
+        wz::fs::write_file(wz::fs::join(root, "ridge.hdr"), hdri_bytes, true),
+        wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const MeshAsset mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/hdri_lit_mesh",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_hdri_lighting";
+
+    SceneNodeAsset environment = make_scene_node("sky");
+    environment.hdri_environment = SceneHDRIEnvironmentAsset{
+        .path = "ridge.hdr",
+        .lighting_intensity = 0.5f,
+        .dominant_light_direction = { 0.0f, -0.5f, 0.8660254f },
+        .dominant_light_color = { 1.0f, 0.9f, 0.75f },
+        .dominant_light_intensity = 2.0f,
+        .dominant_light_confidence = 0.8f,
+    };
+    scene.nodes.push_back(std::move(environment));
+
+    SceneNodeAsset terrain = make_scene_node("terrain");
+    terrain.terrain = SceneTerrainAsset{};
+    terrain.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = mesh.output,
+    };
+    terrain.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::Surface,
+        .lighting_source = SceneTerrainLightingSource::EnvironmentNode,
+        .environment_node = "sky",
+        .ambient_strength = 0.6f,
+        .sky_visibility_strength = 0.75f,
+        .normal_lighting_strength = 0.5f,
+        .terrain_bounce_strength = 0.1f,
+    };
+    scene.nodes.push_back(std::move(terrain));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[1].renderable_asset.has_value());
+    EXPECT_TRUE(scene.lights.empty());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[1].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* data = assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::TerrainMeshSurface);
+    EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::HDRIEnvironment);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.environment_color[1], 0.9f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.environment_intensity, 0.3f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.dominant_light_intensity, 0.5f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.sky_visibility_strength, 0.75f);
+    EXPECT_FLOAT_EQ(data->terrain_lighting.terrain_bounce_strength, 0.1f);
+}
+
 TEST(SceneAuthoringMaterialize, TerrainHeightFieldSourceSupportsDirectAndChildFields)
 {
     using namespace wz::engine::assets;

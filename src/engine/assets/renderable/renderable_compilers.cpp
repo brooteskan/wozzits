@@ -255,6 +255,7 @@ namespace wz::engine::assets::internal
                 data.program = desc->mesh_program;
                 data.domain = desc->domain;
                 data.policy_flags = desc->mesh_policy_flags;
+                data.terrain_lighting = desc->lighting;
 
                 copy_bounds(
                     data.bounds_min,

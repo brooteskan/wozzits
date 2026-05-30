@@ -20,10 +20,11 @@ float4 main(PSInput input) : SV_TARGET
 {
     float3 n = normalize(input.normal);
     float light_type = ambient_color_type.w;
+    bool hdri_lighting = light_type < -0.5f;
     float3 light_vec = normalize(-light_direction_type.xyz);
     float attenuation = 1.0f;
 
-    if (light_type > 0.5f)
+    if (!hdri_lighting && light_type > 0.5f)
     {
         float3 to_light = light_position_range.xyz - input.world_pos;
         float distance_to_light = length(to_light);
@@ -42,9 +43,25 @@ float4 main(PSInput input) : SV_TARGET
         * n_dot_l
         * attenuation;
 
+    float3 environment = ambient_color_type.rgb;
+    if (hdri_lighting)
+    {
+        // HDRI terrain lighting starts with resolved metadata. Future generated
+        // irradiance/prefiltered maps can replace this approximation while
+        // keeping terrain independent from scene ambient/directional lights.
+        float sky_visibility_strength = saturate(light_position_range.x);
+        float terrain_bounce_strength = max(light_position_range.y, 0.0f);
+        float sky_visibility = lerp(
+            1.0f,
+            saturate(n.y * 0.5f + 0.5f),
+            sky_visibility_strength);
+        float ground_bounce = terrain_bounce_strength * saturate(-n.y);
+        environment *= sky_visibility + ground_bounce;
+    }
+
     float3 low = float3(0.20f, 0.34f, 0.18f);
     float3 high = float3(0.54f, 0.50f, 0.36f);
     float3 base = lerp(low, high, saturate(input.uv.y));
 
-    return float4(base * (ambient_color_type.rgb + direct), 1.0f);
+    return float4(base * (environment + direct), 1.0f);
 }
