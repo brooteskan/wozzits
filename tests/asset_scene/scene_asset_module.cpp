@@ -5564,6 +5564,7 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         .lighting_intensity = 0.75f,
         .reflection_intensity = 0.6f,
         .background_intensity = 0.0f,
+        .lighting_sample_resolution = 512,
         .dominant_light_direction = { 0.0f, -0.5f, 0.8660254f },
         .dominant_light_color = { 1.0f, 0.92f, 0.82f },
         .dominant_light_intensity = 3.0f,
@@ -5656,6 +5657,9 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].hdri_environment->rotation_z_radians,
         -0.25f);
+    EXPECT_EQ(
+        scene_data->nodes[0].hdri_environment->lighting_sample_resolution,
+        512u);
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].hdri_environment->dominant_light_confidence,
         0.8f);

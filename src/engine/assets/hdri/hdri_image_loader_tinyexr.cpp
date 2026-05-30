@@ -1,10 +1,18 @@
 #include <engine/assets/hdri/hdri_image_loader.h>
 
+#include <file/filesystem.h>
+
 #include <tinyexr.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <system_error>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -21,6 +29,63 @@ namespace wz::engine::assets
                 }
             }
         };
+
+        struct HDRImageFileCache
+        {
+            std::mutex mutex;
+            std::unordered_map<std::string, std::shared_ptr<const HDRImageData>>
+                images;
+            std::vector<std::string> order;
+        };
+
+        HDRImageFileCache& image_file_cache()
+        {
+            static HDRImageFileCache cache;
+            return cache;
+        }
+
+        void trim_image_file_cache_locked(HDRImageFileCache& cache)
+        {
+            constexpr size_t kMaxCachedImages = 4;
+            while (cache.order.size() > kMaxCachedImages) {
+                cache.images.erase(cache.order.front());
+                cache.order.erase(cache.order.begin());
+            }
+        }
+    }
+
+    bool openexr_image_file_identity_key(
+        const std::string& path,
+        std::string& out,
+        std::string& error)
+    {
+        out.clear();
+        error.clear();
+
+        if (path.empty()) {
+            error = "OpenEXR image path is empty";
+            return false;
+        }
+
+        std::error_code ec;
+        const std::filesystem::path fs_path{ path };
+        const auto size = std::filesystem::file_size(fs_path, ec);
+        if (ec) {
+            error = "OpenEXR image file size unavailable: " + path;
+            return false;
+        }
+
+        const auto write_time =
+            std::filesystem::last_write_time(fs_path, ec);
+        if (ec) {
+            error = "OpenEXR image write time unavailable: " + path;
+            return false;
+        }
+
+        out = path + ":size:" + std::to_string(size)
+            + ":write:" + std::to_string(
+                write_time.time_since_epoch().count());
+        return true;
     }
 
     bool load_openexr_image_from_memory(
@@ -81,6 +146,57 @@ namespace wz::engine::assets
         }
 
         out = std::move(decoded);
+        return true;
+    }
+
+    bool load_openexr_image_from_file_cached(
+        const std::string& path,
+        std::shared_ptr<const HDRImageData>& out,
+        std::string& error)
+    {
+        out.reset();
+        error.clear();
+
+        if (path.empty()) {
+            error = "OpenEXR image path is empty";
+            return false;
+        }
+
+        std::string cache_key;
+        if (!openexr_image_file_identity_key(path, cache_key, error)) {
+            return false;
+        }
+
+        HDRImageFileCache& cache = image_file_cache();
+        {
+            std::lock_guard<std::mutex> lock(cache.mutex);
+            const auto found = cache.images.find(cache_key);
+            if (found != cache.images.end()) {
+                out = found->second;
+                return out && out->valid();
+            }
+        }
+
+        const auto bytes = wz::fs::read_file(path);
+        if (!bytes) {
+            error = "OpenEXR image read failed: " + path;
+            return false;
+        }
+
+        HDRImageData decoded{};
+        if (!load_openexr_image_from_memory(bytes.value, decoded, error)) {
+            return false;
+        }
+
+        auto shared = std::make_shared<HDRImageData>(std::move(decoded));
+        {
+            std::lock_guard<std::mutex> lock(cache.mutex);
+            cache.images[cache_key] = shared;
+            cache.order.push_back(cache_key);
+            trim_image_file_cache_locked(cache);
+        }
+
+        out = std::move(shared);
         return true;
     }
 

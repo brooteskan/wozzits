@@ -7,6 +7,7 @@
 // without depending on a particular library's API or allocation rules.
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,6 +36,16 @@ namespace wz::engine::assets
     [[nodiscard]] bool load_openexr_image_from_memory(
         std::span<const uint8_t> bytes,
         HDRImageData& out,
+        std::string& error);
+
+    [[nodiscard]] bool load_openexr_image_from_file_cached(
+        const std::string& path,
+        std::shared_ptr<const HDRImageData>& out,
+        std::string& error);
+
+    [[nodiscard]] bool openexr_image_file_identity_key(
+        const std::string& path,
+        std::string& out,
         std::string& error);
 
 } // namespace wz::engine::assets

@@ -21,6 +21,15 @@ namespace wz::engine::assets
         float rotation_x_radians,
         float rotation_y_radians,
         float rotation_z_radians,
+        uint32_t sample_resolution,
+        HDRILightingMetadata& out) noexcept;
+
+    [[nodiscard]] bool derive_hdri_lighting_metadata(
+        const HDRImageData& image,
+        float exposure,
+        float rotation_x_radians,
+        float rotation_y_radians,
+        float rotation_z_radians,
         HDRILightingMetadata& out) noexcept;
 
     [[nodiscard]] HDRILightingMetadata transform_hdri_lighting_metadata(

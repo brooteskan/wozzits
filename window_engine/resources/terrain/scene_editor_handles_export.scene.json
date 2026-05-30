@@ -160,7 +160,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:b4ac4cc31a0b7780:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
+        "asset": "asset-key:69b28a67a217263a:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
       },
       "terrain": {
         "asset": "asset-key:1e942e8bb18f627f:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
@@ -176,10 +176,10 @@
         "directional_light_node": "directional_light_2",
         "ambient_light_node": "ambient_lighting_1",
         "environment_node": "hdri_environment_1",
-        "ambient_strength": 0.25,
-        "sky_visibility_strength": 0.75999999046325684,
-        "normal_lighting_strength": 1,
-        "terrain_bounce_strength": 0
+        "ambient_strength": 0.27000001072883606,
+        "sky_visibility_strength": 0.54000002145767212,
+        "normal_lighting_strength": 0.93000000715255737,
+        "terrain_bounce_strength": 0.079999998211860657
       },
       "terrain_mesh_source": {
         "mode": "scene_node",
@@ -371,35 +371,36 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "hdri_environment": {
-        "asset": "asset-key:4d7a8654b2a23eda:4a27986897edbab5:f11eca55e7001002:0000000000000000:0000000000000003:0000000000000000:f175c91f3859d74b:346c2c4442e03753",
+        "asset": "asset-key:ef830c1e17b0e540:4a2782bdad32afe6:f11eca55e7001002:0000000000000000:0000000000000004:0000000000000000:f175c91f3859d74b:346c2c4442e03753",
         "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\hdri\\HdrOutdoorFieldBaseballDayClear001_HDR_8K.exr",
         "format": "openexr",
-        "exposure": 0.25999999046325684,
+        "exposure": 0.15999999642372131,
         "rotation_x_radians": 0,
-        "rotation_y_radians": 1.7540559768676758,
+        "rotation_y_radians": 1.7976891994476318,
         "rotation_z_radians": 0,
         "lighting_intensity": 1.309999942779541,
         "reflection_intensity": 0.81999999284744263,
         "background_intensity": 0,
+        "lighting_sample_resolution": 1024,
         "environment_light_color": [
-          0.96258270740509033,
-          1.0004830360412598,
-          1.1053946018218994
+          0.93630927801132202,
+          1.0058219432830811,
+          1.1298731565475464
         ],
-        "environment_light_intensity": 0.9273645281791687,
+        "environment_light_intensity": 0.82771134376525879,
         "dominant_light_direction": [
-          0.43255969882011414,
-          -0.89783179759979248,
-          -0.082402884960174561
+          0.43004876375198364,
+          -0.8971552848815918,
+          -0.10084925591945648
         ],
         "dominant_light_color": [
-          0.91945070028305054,
-          1.0061663389205933,
-          1.176103949546814
+          0.91904127597808838,
+          1.0068072080612183,
+          1.1709587574005127
         ],
-        "dominant_light_intensity": 1.1974766254425049,
+        "dominant_light_intensity": 1.1172851324081421,
         "dominant_light_confidence": 1
       },
       "editor_handle": {
@@ -433,7 +434,7 @@
       },
       "visible": true,
       "sky_visual": {
-        "kind": "scalar_field",
+        "kind": "gradient",
         "solid_color": [
           0.4847654402256012,
           0.60053837299346924,
@@ -451,7 +452,7 @@
         ],
         "scalar_field_node": "sky_surface_1",
         "exposure": 1.5700000524520874,
-        "rotation_x_radians": 0,
+        "rotation_x_radians": 0.26616272330284119,
         "rotation_y_radians": 0,
         "rotation_z_radians": 0
       },

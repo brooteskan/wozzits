@@ -191,3 +191,55 @@ TEST(LightAssetModule, OpenEXRHDRIEnvironmentDerivesLightingMetadata)
     EXPECT_GT(data->dominant_light_confidence, 0.0f);
     EXPECT_NEAR(data->dominant_light_color[0], 4.0f / 3.1406f, 0.05f);
 }
+
+TEST(LightAssetModule, OpenEXRHDRIEnvironmentKeepsExplicitLightingMetadata)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_light_hdri_explicit_metadata_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path exr_path = wz::fs::join(root, "invalid.exr");
+    ASSERT_EQ(
+        wz::fs::write_file(
+            exr_path,
+            std::vector<uint8_t>{ 'n', 'o', 't', 'e', 'x', 'r' },
+            true),
+        wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const HDRIEnvironmentAsset hdri =
+        assets.lights().create_hdri_environment({
+            .name = "test/explicit_exr_sky",
+            .path = exr_path,
+            .format = HDRIEnvironmentFormat::OpenEXR,
+            .environment_light_color = { 0.5f, 0.75f, 1.0f },
+            .environment_light_intensity = 0.25f,
+            .dominant_light_direction = { 0.0f, -0.5f, 0.8660254f },
+            .dominant_light_color = { 1.0f, 0.9f, 0.8f },
+            .dominant_light_intensity = 0.75f,
+            .dominant_light_confidence = 0.5f,
+        });
+    ASSERT_TRUE(hdri.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const HDRIEnvironmentHandle handle =
+        assets.lights().get_hdri_environment(hdri);
+    ASSERT_TRUE(handle.valid());
+    const HDRIEnvironmentData* data =
+        assets.lights().get_hdri_environment_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->format, HDRIEnvironmentFormat::OpenEXR);
+    EXPECT_FLOAT_EQ(data->environment_light_intensity, 0.25f);
+    EXPECT_FLOAT_EQ(data->environment_light_color[1], 0.75f);
+    EXPECT_FLOAT_EQ(data->dominant_light_intensity, 0.75f);
+    EXPECT_FLOAT_EQ(data->dominant_light_confidence, 0.5f);
+}

@@ -8,6 +8,7 @@
 #include <file/filesystem.h>
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -171,6 +172,7 @@ namespace wz::engine::assets
                 << environment.lighting_intensity << ":"
                 << environment.reflection_intensity << ":"
                 << environment.background_intensity << ":"
+                << environment.lighting_sample_resolution << ":"
                 << environment.environment_light_color[0] << ":"
                 << environment.environment_light_color[1] << ":"
                 << environment.environment_light_color[2] << ":"
@@ -204,12 +206,25 @@ namespace wz::engine::assets
 
             static std::mutex cache_mutex;
             static std::unordered_map<std::string, HDRILightingMetadata> cache;
+            std::string file_identity;
+            std::string file_identity_error;
+            if (!openexr_image_file_identity_key(
+                    full_path,
+                    file_identity,
+                    file_identity_error))
+            {
+                return;
+            }
+            const std::string cache_key =
+                full_path + ":sample_width:"
+                + std::to_string(environment.lighting_sample_resolution)
+                + ":file_identity:" + file_identity;
 
             HDRILightingMetadata metadata{};
             bool found_cached = false;
             {
                 std::lock_guard<std::mutex> lock(cache_mutex);
-                const auto found = cache.find(full_path);
+                const auto found = cache.find(cache_key);
                 if (found != cache.end()) {
                     metadata = found->second;
                     found_cached = true;
@@ -217,30 +232,30 @@ namespace wz::engine::assets
             }
 
             if (!found_cached) {
-                const auto bytes = wz::fs::read_file(full_path);
-                if (!bytes) {
-                    return;
-                }
-
-                HDRImageData image{};
+                std::shared_ptr<const HDRImageData> image;
                 std::string error;
-                if (!load_openexr_image_from_memory(bytes.value, image, error)) {
+                if (!load_openexr_image_from_file_cached(
+                        full_path,
+                        image,
+                        error))
+                {
                     return;
                 }
 
                 if (!derive_hdri_lighting_metadata(
-                        image,
+                        *image,
                         0.0f,
                         0.0f,
                         0.0f,
                         0.0f,
+                        environment.lighting_sample_resolution,
                         metadata))
                 {
                     return;
                 }
 
                 std::lock_guard<std::mutex> lock(cache_mutex);
-                cache[full_path] = metadata;
+                cache[cache_key] = metadata;
             }
 
             metadata = transform_hdri_lighting_metadata(
@@ -1217,6 +1232,8 @@ namespace wz::engine::assets
                         environment_source.reflection_intensity,
                     .background_intensity =
                         environment_source.background_intensity,
+                    .lighting_sample_resolution =
+                        environment_source.lighting_sample_resolution,
                     .environment_light_color = {
                         environment_source.environment_light_color[0],
                         environment_source.environment_light_color[1],

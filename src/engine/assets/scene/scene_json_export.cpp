@@ -489,6 +489,8 @@ namespace wz::engine::assets
                 number_value(environment.reflection_intensity));
             add_member(*obj, "background_intensity",
                 number_value(environment.background_intensity));
+            add_member(*obj, "lighting_sample_resolution",
+                number_value(environment.lighting_sample_resolution));
             add_member(*obj, "environment_light_color",
                 float_array(environment.environment_light_color, 3));
             add_member(*obj, "environment_light_intensity",

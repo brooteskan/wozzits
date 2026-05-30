@@ -129,6 +129,8 @@ namespace wz::engine::assets
         compile_desc.lighting_intensity = desc.lighting_intensity;
         compile_desc.reflection_intensity = desc.reflection_intensity;
         compile_desc.background_intensity = desc.background_intensity;
+        compile_desc.lighting_sample_resolution =
+            desc.lighting_sample_resolution;
         compile_desc.environment_light_color[0] =
             desc.environment_light_color[0];
         compile_desc.environment_light_color[1] =

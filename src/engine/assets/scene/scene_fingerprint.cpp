@@ -181,6 +181,7 @@ namespace wz::engine::assets
                 fp.mix_value(environment.lighting_intensity);
                 fp.mix_value(environment.reflection_intensity);
                 fp.mix_value(environment.background_intensity);
+                fp.mix_value(environment.lighting_sample_resolution);
                 fp.mix_bytes(
                     environment.environment_light_color,
                     sizeof(environment.environment_light_color));

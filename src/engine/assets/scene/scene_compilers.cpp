@@ -12,6 +12,7 @@
 #include <external/json/json_document.h>
 #include <external/json/json_read_helpers.h>
 
+#include <algorithm>
 #include <any>
 #include <array>
 #include <charconv>
@@ -761,6 +762,15 @@ namespace wz::engine::assets::internal
                 if (background_intensity) {
                     environment.background_intensity =
                         static_cast<float>(*background_intensity);
+                }
+                auto lighting_sample_resolution =
+                    read_number(*hdri, "lighting_sample_resolution");
+                if (lighting_sample_resolution) {
+                    environment.lighting_sample_resolution =
+                        static_cast<uint32_t>(
+                            (std::max)(
+                                1.0,
+                                *lighting_sample_resolution));
                 }
                 read_float3(
                     *hdri,

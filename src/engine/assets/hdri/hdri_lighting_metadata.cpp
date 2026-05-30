@@ -80,12 +80,27 @@ namespace wz::engine::assets
         float rotation_x_radians,
         float rotation_y_radians,
         float rotation_z_radians,
+        uint32_t sample_resolution,
         HDRILightingMetadata& out) noexcept
     {
         out = {};
         if (!image.valid() || image.channels < 3) {
             return false;
         }
+
+        const uint32_t clamped_sample_resolution =
+            sample_resolution == 0
+                ? image.width
+                : (std::min)(sample_resolution, image.width);
+        const uint32_t sample_step =
+            (std::max)(
+                1u,
+                (image.width + clamped_sample_resolution - 1u)
+                    / clamped_sample_resolution);
+        const uint32_t sample_start_x =
+            (std::min)(sample_step / 2u, image.width - 1u);
+        const uint32_t sample_start_y =
+            (std::min)(sample_step / 2u, image.height - 1u);
 
         const float exposure_scale = std::exp2(exposure);
         float weighted_rgb[3]{};
@@ -95,14 +110,17 @@ namespace wz::engine::assets
         uint32_t max_y = 0;
         float max_rgb[3]{};
 
-        for (uint32_t y = 0; y < image.height; ++y) {
+        for (uint32_t y = sample_start_y; y < image.height; y += sample_step)
+        {
             const float v =
                 (static_cast<float>(y) + 0.5f)
                 / static_cast<float>(image.height);
             const float phi = v * kPi;
             const float weight = (std::max)(std::sin(phi), 1e-5f);
 
-            for (uint32_t x = 0; x < image.width; ++x) {
+            for (uint32_t x = sample_start_x; x < image.width;
+                 x += sample_step)
+            {
                 const size_t index =
                     (static_cast<size_t>(y) * image.width + x)
                     * image.channels;
@@ -188,6 +206,24 @@ namespace wz::engine::assets
         }
 
         return true;
+    }
+
+    bool derive_hdri_lighting_metadata(
+        const HDRImageData& image,
+        float exposure,
+        float rotation_x_radians,
+        float rotation_y_radians,
+        float rotation_z_radians,
+        HDRILightingMetadata& out) noexcept
+    {
+        return derive_hdri_lighting_metadata(
+            image,
+            exposure,
+            rotation_x_radians,
+            rotation_y_radians,
+            rotation_z_radians,
+            0,
+            out);
     }
 
     HDRILightingMetadata transform_hdri_lighting_metadata(

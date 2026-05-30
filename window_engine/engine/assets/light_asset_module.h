@@ -50,6 +50,7 @@ namespace wz::engine::assets
         float lighting_intensity = 1.0f;
         float reflection_intensity = 1.0f;
         float background_intensity = 1.0f;
+        uint32_t lighting_sample_resolution = 1024;
         float environment_light_color[3]{ 1.0f, 1.0f, 1.0f };
         float environment_light_intensity = 0.0f;
         float dominant_light_direction[3]{ 0.0f, -1.0f, 0.0f };

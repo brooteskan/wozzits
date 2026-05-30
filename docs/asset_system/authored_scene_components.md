@@ -85,6 +85,23 @@ write only explicit component references such as `renderable_asset`,
 `terrain.asset`, or future material/input/script asset references into the
 runtime-ready scene data.
 
+Current compatibility materialization lives in window-engine:
+
+```cpp
+SceneAuthoringMaterializeReport materialize_scene_authoring_components(
+    SceneAssetData& scene,
+    EngineAssetLibrary& assets,
+    const SceneAuthoringMaterializeOptions& options = {});
+```
+
+That pass owns the editor/import semantics for the compatibility source fields.
+It materializes mesh, scalar-field, vector-field, light, HDRI environment, sky,
+terrain, and terrain-preview resources into asset-DAG nodes, writes the derived
+asset keys back onto authored scene components, and reports renderable assets
+that the editor or importer should realize after committing and resolving the
+asset library. UI layers should edit authored data, call this shared pass, then
+instantiate the scene from the materialized asset references.
+
 The compatibility source fields may continue to parse, export, fingerprint, and
 materialize so existing editor scenes can reopen. New source-like fields should
 not be added to `SceneNodeAsset` unless they are deliberately compatibility
@@ -367,6 +384,7 @@ Fields:
 - `lighting_intensity`
 - `reflection_intensity`
 - `background_intensity`
+- `lighting_sample_resolution`
 - `environment_light_color`
 - `environment_light_intensity`
 - `dominant_light_direction`
@@ -704,6 +722,12 @@ lighting constants and, later, GPU environment resources.
 - `sky_visibility_strength`
 - `normal_lighting_strength`
 - `terrain_bounce_strength`
+
+`lighting_sample_resolution` controls how many pixels wide the metadata
+derivation pass samples from large OpenEXR source images. The decoded OpenEXR
+image is cached by file identity during the editor process, so repeated metadata
+derivation can share decoded pixels. The control affects ambient and
+dominant-light metadata only; visible sky texture resolution remains independent.
 
 The node fields are authored scene-node ids. Empty values mean automatic
 selection. In the current renderer bridge, materialization prioritizes selected

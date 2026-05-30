@@ -93,6 +93,7 @@ namespace wz::engine::assets
         float lighting_intensity = 1.0f;
         float reflection_intensity = 1.0f;
         float background_intensity = 1.0f;
+        uint32_t lighting_sample_resolution = 1024;
 
         // Diffuse environment-light metadata derived from the HDR image or
         // authored explicitly. This is not a scene AmbientLighting component;
@@ -142,6 +143,7 @@ namespace wz::engine::assets
             return has_source
                 && finite_controls
                 && nonnegative_controls
+                && lighting_sample_resolution > 0
                 && finite_dominant
                 && dominant_light_intensity >= 0.0f
                 && dominant_light_confidence >= 0.0f

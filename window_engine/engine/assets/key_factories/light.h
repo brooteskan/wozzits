@@ -117,7 +117,9 @@ namespace wz::engine::assets
                         detail::float_bits(desc.lighting_intensity)),
                     detail::mix64(
                         detail::float_bits(desc.reflection_intensity),
-                        detail::float_bits(desc.background_intensity)))));
+                        detail::mix64(
+                            detail::float_bits(desc.background_intensity),
+                            desc.lighting_sample_resolution)))));
         const uint64_t dominant_direction = detail::mix_float3(
             desc.dominant_light_direction[0],
             desc.dominant_light_direction[1],

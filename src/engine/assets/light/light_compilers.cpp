@@ -113,9 +113,13 @@ namespace wz::engine::assets::internal
                 }
 
                 HDRIEnvironmentData environment = *desc;
+                const bool has_explicit_lighting_metadata =
+                    desc->environment_light_intensity > 0.0f
+                    || desc->dominant_light_intensity > 0.0f;
                 const bool can_decode_exr =
-                    desc->format == HDRIEnvironmentFormat::Auto
-                    || desc->format == HDRIEnvironmentFormat::OpenEXR;
+                    !has_explicit_lighting_metadata
+                    && (desc->format == HDRIEnvironmentFormat::Auto
+                        || desc->format == HDRIEnvironmentFormat::OpenEXR);
                 if (can_decode_exr) {
                     static std::mutex cache_mutex;
                     static std::unordered_map<uint64_t, HDRILightingMetadata>
@@ -124,7 +128,9 @@ namespace wz::engine::assets::internal
                     const uint64_t cache_key =
                         desc->source_file.content_hash.lo
                         ^ desc->source_file.deps_hash.lo
-                        ^ desc->source_file.schema_hash.lo;
+                        ^ desc->source_file.schema_hash.lo
+                        ^ static_cast<uint64_t>(
+                            desc->lighting_sample_resolution);
 
                     HDRILightingMetadata metadata{};
                     bool found_cached = false;
@@ -159,6 +165,7 @@ namespace wz::engine::assets::internal
                                 0.0f,
                                 0.0f,
                                 0.0f,
+                                desc->lighting_sample_resolution,
                                 metadata))
                             {
                                 std::lock_guard<std::mutex> lock(cache_mutex);
