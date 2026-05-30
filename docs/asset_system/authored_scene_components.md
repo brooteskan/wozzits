@@ -64,11 +64,11 @@ Rules of thumb:
 ## Scene Editor Asset Authoring Layer
 
 The current `mesh_source`, `mesh_render_style`, `scalar_field_source`,
-`vector_field_source`, `terrain_render_style`, `terrain_mesh_source`, and
-`terrain_height_field_source` fields are compatibility fields for the scene
-editor's first asset-authoring workflow. They let an editor document reopen and
-rebuild asset-system nodes, but they should not be treated as the long-term home
-for reusable resource recipes.
+`vector_field_source`, `sky_visual.texture_path`, `terrain_render_style`,
+`terrain_mesh_source`, and `terrain_height_field_source` fields are compatibility
+fields for the scene editor's first asset-authoring workflow. They let an editor
+document reopen and rebuild asset-system nodes, but they should not be treated
+as the long-term home for reusable resource recipes.
 
 The intended long-term split is:
 
@@ -168,7 +168,9 @@ It should be updated as decisions become concrete.
 | RenderStyle / Material | Asset | Should be referenced by renderable/material components, not copied into scene nodes. |
 | Light | Asset-backed component | `DirectLightSource` stores authored component placement/participation and materializes a `DirectLightAsset`; legacy scene-level `SceneLightAsset` records remain as the scene-render bridge. |
 | AmbientLighting | Asset-backed component | Stores ambient participation on a node and materializes an `AmbientLightingAsset`; field modulation can reference scalar/vector field assets. |
-| HDRIEnvironment | Asset-backed component | Stores authored environment-map participation and materializes an `HDRIEnvironmentAsset`; future sky sphere/environment controllers can consume it for background, ambient, reflection, and directional-light metadata. |
+| HDRIEnvironment | Asset-backed component | Stores authored environment-map participation and materializes an `HDRIEnvironmentAsset`; sky surfaces may share image sources with it, but HDRI environment remains radiance/lighting data rather than the visible sky surface. |
+| SkyVisual | Component / visual-content bridge | Describes what appears on a sky surface: solid color, direction debug, gradient, scalar/vector field projection, or equirectangular OpenEXR texture. Future general texture/field material assets should replace source-path compatibility fields. |
+| SkySurface | Component | Describes the camera-relative sky presentation surface. It does not own lighting and does not affect terrain lighting. |
 
 ## Source To Runtime Flow
 
@@ -235,7 +237,7 @@ The current high-level categories are:
 | Category | Components |
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
-| Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `HDRIEnvironment`, `AuxiliaryVisual` |
+| Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `HDRIEnvironment`, `SkyVisual`, `SkySurface`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
 | Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
@@ -359,10 +361,14 @@ Fields:
 - `path`
 - `format`
 - `exposure`
+- `rotation_x_radians`
 - `rotation_y_radians`
+- `rotation_z_radians`
 - `lighting_intensity`
 - `reflection_intensity`
 - `background_intensity`
+- `environment_light_color`
+- `environment_light_intensity`
 - `dominant_light_direction`
 - `dominant_light_color`
 - `dominant_light_intensity`
@@ -370,9 +376,97 @@ Fields:
 
 The component is intentionally data-only for now: it gives the scene a stable
 reference to an HDRI-backed environment asset without deciding whether that HDRI
-is rendered as a background. Later sky sphere/environment behavior can consume
-the same component to feed ambient lighting, reflection probes, or editor-driven
+is rendered as a background. Later sky/environment behavior can consume the same
+component to feed ambient lighting, reflection probes, or editor-driven
 directional-light alignment.
+
+### SkyVisual
+
+Sky visuals are authored visual-content components for the sky surface path.
+They do not own environment lighting or terrain lighting policy.
+
+Fields:
+
+- `kind`
+- `solid_color`
+- `gradient_top_color`
+- `gradient_bottom_color`
+- `texture_asset`
+- `texture_path`
+- `texture_format`
+- `scalar_field_asset`
+- `scalar_field_node`
+- `vector_field_asset`
+- `vector_field_node`
+- `exposure`
+- `rotation_x_radians`
+- `rotation_y_radians`
+- `rotation_z_radians`
+
+Current visual kinds:
+
+- `none`
+- `solid_color`
+- `direction_debug`
+- `gradient`
+- `equirectangular_texture`
+- `scalar_field`
+- `vector_field`
+
+`SkyVisual` is deliberately broader than "skybox." It is visual content that can
+be projected onto an encompassing sky canvas. `ScalarField` and `VectorField`
+let authored field data be drawn on that canvas for debugging, painting, masks,
+normal/flow fields, or later procedural sky effects. The current vector-field
+GPU realization uploads the first vector channel as `RGBA32_FLOAT` and colors it
+as signed direction/magnitude data in the sky shader.
+
+`EquirectangularTexture` currently supports OpenEXR image paths through
+`texture_path` and `texture_format`. This is a scene-editor compatibility bridge
+until a real `TextureAsset` / image asset pipeline exists. `texture_asset` is
+reserved in the authored shape for that future pipeline, but the working visible
+sky path is the OpenEXR path today. Radiance `.hdr` decode is not implemented
+for visible sky textures yet.
+
+### SkySurface
+
+Sky surfaces are authored presentation components for drawing a camera-relative,
+unlit sky.
+
+Fields:
+
+- `visual_node`
+- `projection`
+- `radius`
+- `visible_to_camera`
+
+V0 supports `sphere` as the authored projection. The implementation renders a
+special sky pass rather than treating the sky as ordinary scene geometry: it is
+camera-relative, unlit, does not write depth, and draws through
+`BuiltinRenderProgram::SkySurface`.
+
+The split is:
+
+```text
+SkySurface
+  where/how sky content is presented
+
+SkyVisual
+  what appears on the sky
+
+HDRIEnvironment
+  radiance/lighting/environment metadata
+```
+
+This means these are all valid authored choices:
+
+- HDRI lights terrain, but the visible sky is a stylized gradient.
+- An EXR is visible as the sky, while lighting comes from explicit scene lights.
+- A scalar or vector field is projected onto the sky for debugging/authoring.
+- The sky surface is invisible while environment lighting still exists.
+
+Sky surfaces do not affect terrain lighting directly. Any future
+sky-to-lighting relationship should be expressed through a scene lighting context
+or environment resolver, not by making the drawable surface own lighting.
 
 ### InputReceiver
 
@@ -682,6 +776,10 @@ Examples:
 - `direct_light_source` references `DirectLightAsset`
 - `ambient_lighting` references `AmbientLightingAsset`, which may depend on
   scalar/vector fields
+- `hdri_environment` references `HDRIEnvironmentAsset`, which owns
+  radiance/lighting metadata
+- `sky_visual` may reference scalar/vector fields or, temporarily, an OpenEXR
+  texture path for visible sky content
 - `terrain_mesh_source` may either reference a `MeshAsset` directly or name a
   `source_node` with a mesh-producing scene component. The editor can then
   resolve that scene node to the produced mesh asset during rebuild while
@@ -748,6 +846,9 @@ Component additions should normally update or add tests for:
 - runtime component summary
 - instantiation into `SceneInstance`
 - fingerprint changes when authored component data changes
+- materialized records such as `SceneSkyDrawAsset`, generated lights, terrain
+  assets, or renderables when a component participates in authoring
+  materialization
 - runtime preview behavior, if the component has runtime behavior
 
 Good current test areas:

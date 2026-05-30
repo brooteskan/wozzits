@@ -25,12 +25,12 @@ A render program is not a GPU pipeline object. It is a CPU-side record that
 captures:
 
 - Which `BuiltinRenderProgram` variant this is (enum in `renderable/renderable.h`)
-- Which `RenderDomain` it targets (`Debug`, `Opaque`, `Transparent`, `Splat`)
+- Which `RenderDomain` it targets (`Debug`, `Sky`, `Opaque`, `Transparent`, `Splat`)
 - Which `RenderPolicyFlags` apply (`Wireframe`, `AlphaBlend`, `DepthTest`, `DepthWrite`)
 - Vertex and pixel shader asset keys
 
 The `BuiltinRenderProgram` enum drives which PSO the backend ultimately creates.
-Nine variants currently exist:
+Ten variants currently exist:
 
 | Variant | Domain | Notes |
 |---------|--------|-------|
@@ -43,6 +43,7 @@ Nine variants currently exist:
 | `GaussianSplatPullDebug` | `Splat` | Pull-based path: no IA, reads t0 `StructuredBuffer<Splat>` at SRV slot 0 |
 | `GaussianSplatNeighborhoodColorBlend` | `Splat` | Pull-based + LOD color blend modes (distance/stride/confidence blending) |
 | `GaussianSplatTerrainCoverageDebug` | `Splat` | Pull-based + coverage kernel modes (depth-writing terrain surface) |
+| `SkySurface` | `Sky` | Fullscreen/camera-relative sky visual path; samples optional field/image texture at t0 |
 
 ## Where this asset lives in the graph
 
@@ -86,11 +87,12 @@ enum class BuiltinRenderProgram : uint8_t {
     GaussianSplatPullDebug,
     GaussianSplatNeighborhoodColorBlend,
     GaussianSplatTerrainCoverageDebug,
+    SkySurface,
     Count   // sentinel
 };
 
 enum class RenderDomain : uint8_t {
-    Debug, Opaque, Transparent, Splat
+    Debug, Sky, Opaque, Transparent, Splat
 };
 
 enum RenderPolicyFlags : uint32_t {
@@ -178,6 +180,13 @@ The scene-render `DrawCommand` structure carries only the data needed to issue
 a draw call. The PSO selection belongs to the frame submission layer in
 window-engine.
 
+Sky drawing is the exception in shape rather than ownership: scene-render carries
+`SkyDrawCommand` records in the render frame, while window-engine still owns PSO
+selection, GPU texture lookup, and descriptor binding. Sky commands can request
+solid color, direction debug, gradient, scalar field, vector field, or
+equirectangular texture visuals. Field/image GPU resources are resolved before
+submission and passed as lightweight texture ids.
+
 ## Notes
 
 - `kBuiltinRenderProgramCount` = `static_cast<size_t>(BuiltinRenderProgram::Count)`.
@@ -196,6 +205,11 @@ window-engine.
 - `GaussianSplatTerrainCoverageDebug` extends the pull path with terrain
   coverage kernel evaluation (Gaussian, SmoothDisc, PolynomialDisc, HardDisc).
   Writes depth, enabling use as a depth prepass for field accumulation rendering.
+
+- `SkySurface` is unlit and camera-relative. It currently binds one optional
+  `Texture2D<float4>` SRV at t0 for scalar fields, vector fields, or visible
+  equirectangular EXR sky images. This is a render-resource binding detail, not a
+  general `TextureAsset` capability.
 
 - Backend PSO creation is intentionally decoupled: the asset records *what* is
   needed; a separate initialization step uses that record to create the actual

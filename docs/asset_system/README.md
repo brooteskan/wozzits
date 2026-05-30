@@ -111,6 +111,12 @@ materialization pass turns it into a `VectorFieldAsset` and stores the asset key
 back on the recipe; runtime scene instantiation does not create a component
 table for vector-field sources.
 
+Scalar and vector fields can also be projected onto sky visuals. The GPU upload
+path currently supports `ScalarFieldData` as an `R32_FLOAT` texture and
+`VectorFieldData` as an `RGBA32_FLOAT` texture containing the first vector
+channel. This is render-resource realization, not a separate texture asset
+capability.
+
 ---
 
 ## Meshes
@@ -270,6 +276,11 @@ pre-LOD renderer).
 - `GaussianSplatPullDebug` -> pull-based splat path (no IA, t0 SRV)
 - `GaussianSplatNeighborhoodColorBlend` -> pull-based + LOD color blend modes
 - `GaussianSplatTerrainCoverageDebug` -> pull-based + coverage modes (depth-writing)
+- `SkySurface` -> `RenderDomain::Sky`, camera-relative sky surface visual path
+
+`RenderableKind::VectorField` exists so editor/runtime realization can upload
+vector fields for non-mesh visual consumers such as the sky path. There is no
+dedicated vector-field renderable schema yet.
 
 ---
 
@@ -282,11 +293,18 @@ pre-LOD renderer).
 | HDRI environment | `kHDRIEnvironmentSchema` | `0x001002` | `kAssetTypeEnvironmentMap` (2273) | `LightAssetModule::create_hdri_environment()` |
 
 `HDRIEnvironmentAsset` depends on an imported source file carrier and stores
-environment-level controls: exposure, Y rotation, lighting/reflection/background
-intensity, and optional dominant-light metadata. Scene components such as a sky
-sphere can reference this asset later while deciding independently whether to
-render the HDRI as a background, feed ambient lighting, or align/link authored
-directional lights.
+environment-level controls: exposure, X/Y/Z rotation,
+lighting/reflection/background intensity, diffuse environment metadata, and
+optional dominant-light metadata. Scene components such as a sky surface can
+reference or share source images with this asset while deciding independently
+whether to render an image as a background, feed environment lighting, or
+align/link authored directional lights.
+
+`HDRIEnvironmentAsset` is radiance/lighting data. It is not the sky surface.
+The current visible sky path can decode OpenEXR image data through the same HDR
+image loader and upload it as an `RGBA32_FLOAT` GPU texture, but that is a
+narrow sky visual realization path. It does not create a general `TextureAsset`
+and does not make the sky visual affect terrain lighting.
 
 ---
 
@@ -302,6 +320,32 @@ covered separately in [`authored_scene_components.md`](authored_scene_components
 
 `SceneAssetModule::create_scene_from_json()` creates a JSON document asset first,
 then registers a scene node depending on that parsed JSON document.
+
+### Sky Visual Scene Components
+
+Sky surface and sky visual records are authored scene components, not standalone
+asset-system capabilities yet. They materialize into `SceneSkyDrawAsset` records
+on `SceneAssetData` / `SceneInstance`, and the scene editor converts those into
+scene-render `SkyDrawCommand` values.
+
+Current visual kinds:
+
+- `SolidColor`
+- `DirectionDebug`
+- `Gradient`
+- `ScalarField`
+- `VectorField`
+- `EquirectangularTexture`
+
+The sky surface is the presentation canvas: camera-relative, unlit, no depth
+write, and drawn through `BuiltinRenderProgram::SkySurface`. The sky visual is
+the content projected onto that canvas. HDRI environment assets remain separate
+radiance/lighting sources. They may share image files with sky visuals, but
+neither owns the other.
+
+`EquirectangularTexture` currently supports OpenEXR image paths through
+`texture_path` / `texture_format`. This is a compatibility bridge while the
+general texture asset pipeline is still reserved but unimplemented.
 
 ---
 
@@ -446,10 +490,11 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
 | Renderables | 5 |
+| Lighting / environment | 3 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **40** |
+| **Total** | **43** |
 
 ---
 
@@ -458,7 +503,9 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 The following AssetType constants are reserved in `type_extensions.h` but have no
 schema, compiler, module API, or runtime table:
 
-- Textures (`kAssetTypeTexture`, all GPU texture variants)
+- Textures (`kAssetTypeTexture`, all general GPU texture variants). The sky path
+  has a narrow OpenEXR float-image upload for visible equirectangular sky
+  visuals, but that is not a reusable `TextureAsset`.
 - All GPU-resident types (`kAssetTypeGPUShader`, `kAssetTypeGPUPipeline`, etc.)
 - Material definitions, instances, graphs
 - Prefab / world / level assets beyond the implemented JSON scene asset
@@ -469,7 +516,7 @@ schema, compiler, module API, or runtime table:
 - All gameplay data types (items, quests, dialogue, etc.)
 - All AI behavior types (behavior trees, GOAP, etc.)
 - Remaining VFX / particle types other than `kAssetTypeVectorField`
-- All lighting environment types (probes, skybox, lightmaps, etc.)
+- Remaining lighting environment types (probes, skybox assets, lightmaps, etc.)
 - All cinematic types (timelines, cutscenes, camera paths)
 
 See `type_extensions.h` for the full reserved range with numeric values.
