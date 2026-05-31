@@ -403,6 +403,7 @@ namespace wz::app
             app.debug_object.ready = false;
             app.debug_object.compiled_scene_valid = false;
             app.debug_object.transforms_dirty = false;
+            app.debug_object.animation_time_seconds = 0.0f;
             app.frame_dirty.mark_render_full_compile();
 
             const DebugSceneConfig& config = kDebugSceneModes[mode_index];
@@ -1032,11 +1033,13 @@ namespace wz::app
     {
         assert(app.jobs.ready);
 
-        static float debug_anim_t = 0.0f;
-        debug_anim_t += static_cast<float>(fctx.frame.delta_seconds());
-
         handle_debug_scene_mode_input(app, fctx.input);
-        update_debug_object_animation(app, debug_anim_t);
+
+        app.debug_object.animation_time_seconds +=
+            static_cast<float>(fctx.frame.delta_seconds());
+        update_debug_object_animation(
+            app,
+            app.debug_object.animation_time_seconds);
 
         if (!g_logged_job_update_once)
         {

@@ -51,6 +51,7 @@ namespace wz::app
         const DebugSceneConfig* config = nullptr;
         uint32_t mode_index = 0;
         uint32_t renderable_count = 0;
+        float animation_time_seconds = 0.0f;
 
         std::vector<wz::core::graph::NodeHandle> animated_parent_nodes{};
         std::vector<wz::math::Vec3> animated_parent_base_positions{};
