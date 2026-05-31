@@ -62,6 +62,22 @@ TEST(FrameDirtyState, TracksRenderPrepPathFromDirtyBits)
         wz::engine::RenderPrepPath::FullCompile);
 }
 
+TEST(FrameDirtyState, NamesRenderPrepPaths)
+{
+    EXPECT_STREQ(
+        wz::engine::render_prep_path_name(wz::engine::RenderPrepPath::FullCompile),
+        "FullCompile");
+    EXPECT_STREQ(
+        wz::engine::render_prep_path_name(wz::engine::RenderPrepPath::ViewOnly),
+        "ViewOnly");
+    EXPECT_STREQ(
+        wz::engine::render_prep_path_name(wz::engine::RenderPrepPath::TransformOnly),
+        "TransformOnly");
+    EXPECT_STREQ(
+        wz::engine::render_prep_path_name(wz::engine::RenderPrepPath::TransformAndView),
+        "TransformAndView");
+}
+
 TEST(FrameStorageTypes, AppAndBenchmarkFramesUseSharedStorageAndDirtyState)
 {
     wz::app::GameApp app{};

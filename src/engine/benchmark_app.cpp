@@ -120,18 +120,6 @@ namespace wz::bench
             return static_cast<double>(ticks) * 1000.0 / tps;
         }
 
-        const char* prep_path_name(RenderPrepPath p)
-        {
-            switch (p)
-            {
-            case RenderPrepPath::FullCompile:     return "FullCompile";
-            case RenderPrepPath::ViewOnly:        return "ViewOnly";
-            case RenderPrepPath::TransformOnly:   return "TransformOnly";
-            case RenderPrepPath::TransformAndView:return "TransformAndView";
-            default:                              return "Unknown";
-            }
-        }
-
         void log_profile_if_due(BenchmarkApp& app, const wz::jobs::FrameJobProfile& profile)
         {
             if (profile.timings.empty())
@@ -173,7 +161,7 @@ namespace wz::bench
             summary
                 << "bench frame=" << profile.frame_index
                 << " scene=" << app.scene_def.name
-                << " path=" << prep_path_name(app.frame_dirty.render_prep_path())
+                << " path=" << wz::engine::render_prep_path_name(app.frame_dirty.render_prep_path())
                 << " nav=" << (app.navigation_active ? "on" : "off")
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(prep_ticks)   << " ms"

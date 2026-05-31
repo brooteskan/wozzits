@@ -561,27 +561,6 @@ namespace wz::app
             return out;
         }
 
-        const char* render_prep_path_name(wz::app::RenderPrepPath path)
-        {
-            switch (path)
-            {
-            case wz::app::RenderPrepPath::FullCompile:
-                return "FullCompile";
-
-            case wz::app::RenderPrepPath::ViewOnly:
-                return "ViewOnly";
-
-            case wz::app::RenderPrepPath::TransformOnly:
-                return "TransformOnly";
-
-            case wz::app::RenderPrepPath::TransformAndView:
-                return "TransformAndView";
-
-            default:
-                return "Unknown";
-            }
-        }
-
         void log_job_profile_if_due(
             wz::app::GameApp& app,
             const wz::jobs::FrameJobProfile& profile)
@@ -637,7 +616,7 @@ namespace wz::app
             summary
                 << "jobs frame=" << profile.frame_index
                 << " mode=" << (config ? config->name : "<none>")
-                << " path=" << render_prep_path_name(app.frame_dirty.render_prep_path())
+                << " path=" << wz::engine::render_prep_path_name(app.frame_dirty.render_prep_path())
                 << " anim=" << (
                     config
                     ? debug_scene_animation_name(config->animation)
@@ -1179,7 +1158,7 @@ namespace wz::app
             allocs.reallocations_this_frame;
 
         out.render_prep_path =
-            render_prep_path_name(app.frame_dirty.render_prep_path());
+            wz::engine::render_prep_path_name(app.frame_dirty.render_prep_path());
 
         out.job_count = 0;
         out.total_job_ms = 0.0;

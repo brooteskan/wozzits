@@ -12,6 +12,27 @@ namespace wz::engine
         TransformAndView,
     };
 
+    inline const char* render_prep_path_name(RenderPrepPath path)
+    {
+        switch (path)
+        {
+        case RenderPrepPath::FullCompile:
+            return "FullCompile";
+
+        case RenderPrepPath::ViewOnly:
+            return "ViewOnly";
+
+        case RenderPrepPath::TransformOnly:
+            return "TransformOnly";
+
+        case RenderPrepPath::TransformAndView:
+            return "TransformAndView";
+
+        default:
+            return "Unknown";
+        }
+    }
+
     struct FrameDirtyState
     {
         bool render_scene_dirty = true;
