@@ -54,7 +54,27 @@ namespace wz::engine::assets::internal
                     .visibility      = ShaderVisibility::All,
                     .shader_register = 0,
                     .register_space  = 0,
-                    .value_count     = 32,  // world[16] + view_proj[16]
+                    .value_count     = 40,
+                }};
+                return true;
+
+            case BuiltinRenderProgram::MeshWireframeAlpha:
+                out.binding_model     = RenderBindingModel::MeshIA;
+                out.topology          = RenderPrimitiveTopology::TriangleList;
+                out.default_domain    = RenderDomain::Transparent;
+                out.default_policy_flags =
+                    RenderPolicy_Wireframe
+                    | RenderPolicy_AlphaBlend
+                    | RenderPolicy_DepthTest;
+                out.input_layout = InputLayoutKind::MeshPositionOnly;
+                out.blend_mode   = BlendMode::AlphaBlend;
+                out.depth_mode   = DepthMode::TestNoWrite;
+                out.raster_mode  = RasterMode::WireframeCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 40,
                 }};
                 return true;
 
@@ -71,7 +91,45 @@ namespace wz::engine::assets::internal
                     .visibility      = ShaderVisibility::All,
                     .shader_register = 0,
                     .register_space  = 0,
-                    .value_count     = 32,  // world[16] + view_proj[16]
+                    .value_count     = 40,
+                }};
+                return true;
+
+            case BuiltinRenderProgram::MeshSurface:
+                out.binding_model        = RenderBindingModel::MeshIA;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Opaque;
+                out.default_policy_flags =
+                    RenderPolicy_DepthTest
+                    | RenderPolicy_DepthWrite;
+                out.input_layout = InputLayoutKind::MeshPositionNormalUV;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 40,
+                }};
+                return true;
+
+            case BuiltinRenderProgram::MeshSurfaceAlpha:
+                out.binding_model        = RenderBindingModel::MeshIA;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Transparent;
+                out.default_policy_flags =
+                    RenderPolicy_AlphaBlend
+                    | RenderPolicy_DepthTest;
+                out.input_layout = InputLayoutKind::MeshPositionNormalUV;
+                out.blend_mode   = BlendMode::AlphaBlend;
+                out.depth_mode   = DepthMode::TestNoWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 40,
                 }};
                 return true;
 

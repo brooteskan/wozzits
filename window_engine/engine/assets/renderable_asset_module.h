@@ -6,6 +6,7 @@
 
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_render_style_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
@@ -24,6 +25,13 @@ namespace wz::engine::assets
         BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
         RenderDomain domain = RenderDomain::Debug;
         uint32_t policy_flags = RenderPolicy_Wireframe;
+    };
+
+    struct MeshStyledRenderableDesc
+    {
+        std::string name;
+        MeshAsset mesh{};
+        MeshRenderStyleAsset style{};
     };
 
     struct GaussianSplatDebugRenderableDesc
@@ -101,6 +109,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_mesh_wireframe(
             const MeshWireframeRenderableDesc& desc);
+
+        RenderableAsset create_mesh_styled(
+            const MeshStyledRenderableDesc& desc);
 
         RenderableAsset create_gaussian_splat_debug(
             const GaussianSplatDebugRenderableDesc& desc);

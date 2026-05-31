@@ -241,6 +241,28 @@ and packs LOD color + confidence into the GPU vertex layout.
 
 ---
 
+## Mesh Render Styles
+
+Mesh render styles are CPU-side authored draw-style assets for mesh-backed
+renderables. They are intentionally separate from mesh geometry and terrain
+source data so one style can be shared by ordinary meshes and mesh-backed terrain
+renderables.
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Mesh render style | `kMeshRenderStyleSchema` | `0x000600` | `kAssetTypeMeshRenderStyle` (1071) | `MeshRenderStyleAssetModule::create_mesh_render_style()` |
+
+V1 styles carry two authored layers: `wireframe` and `surface`. Each layer has an
+enabled flag, RGBA color, and emissive strength. Shared flags carry depth
+test/write, double-sided intent, and a hidden-line prepass hint for wireframe
+rendering. `RenderableAssetModule::create_mesh_styled()` chooses the surface
+shader when the surface layer is enabled and the mesh has normals; otherwise it
+uses the wireframe path and logs a normals-specific fallback when needed. Scene
+mesh authoring materialization creates the style asset from the node component
+before creating the renderable.
+
+---
+
 ## Renderables
 
 Renderables bind a source data asset (mesh, splat cloud, scalar field, terrain)
@@ -253,6 +275,7 @@ to a render program and domain, producing an entry in `RenderableAssetTable`.
 | Scalar field debug | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
 | Terrain debug | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
 | Terrain mesh surface | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
+| Mesh styled | `kMeshStyledRenderableSchema` | `0x000705` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_mesh_styled()` |
 
 All five produce `RenderableAssetData` in `RenderableAssetTable`.
 `RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,

@@ -312,8 +312,16 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'001205ull
     };
 
+    inline constexpr wz::asset::SchemaID kMeshRenderStyleSchema{
+        0xF11E'CA55'E7'000600ull
+    };
+
     inline constexpr wz::asset::SchemaID kMeshWireframeRenderableSchema{
     0xF11E'CA55'E7'000700ull
+    };
+
+    inline constexpr wz::asset::SchemaID kMeshStyledRenderableSchema{
+        0xF11E'CA55'E7'000705ull
     };
 
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{

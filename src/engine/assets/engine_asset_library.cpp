@@ -58,6 +58,7 @@ namespace wz::engine::assets
         , diagnostic_resampled_time_series_table_{}
         , diagnostic_timeframe_summary_table_{}
         , csv_export_table_{}
+        , mesh_render_style_table_{}
         , renderable_table_{}
         , render_program_table_{}
         , direct_light_table_{}
@@ -81,6 +82,7 @@ namespace wz::engine::assets
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
                 .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
                 .csv_export_table    = csv_export_table_,
+                .mesh_render_style_table = mesh_render_style_table_,
                 .renderable_table    = renderable_table_,
                 .render_program_table = render_program_table_,
                 .direct_light_table = direct_light_table_,
@@ -103,6 +105,7 @@ namespace wz::engine::assets
         , diagnostic_resampled_time_series_(system_, logger_, diagnostic_resampled_time_series_table_)
         , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)
         , csv_export_(system_, logger_, csv_export_table_)
+        , mesh_render_styles_(system_, logger_, mesh_render_style_table_)
         , renderables_(system_, logger_, renderable_table_)
         , render_programs_(system_, render_program_table_)
         , lights_(

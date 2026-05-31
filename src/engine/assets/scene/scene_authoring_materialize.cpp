@@ -50,32 +50,59 @@ namespace wz::engine::assets
             return "placeholder";
         }
 
-        uint32_t policy_flags_for_mesh_render_style(
-            const SceneMeshRenderStyleAsset& style)
+        MeshRenderLayerStyle mesh_render_layer_style_for_scene_layer(
+            const SceneMeshRenderLayerAsset& layer)
         {
-            uint32_t flags = RenderPolicy_Wireframe;
-            if (style.depth_test || style.depth_write) {
-                flags |= RenderPolicy_DepthTest;
-                flags |= RenderPolicy_DepthWrite;
+            MeshRenderLayerStyle out{};
+            out.enabled = layer.enabled;
+            for (int i = 0; i < 4; ++i) {
+                out.color[i] = layer.color[i];
             }
-            return flags;
+            out.emissive_strength = layer.emissive_strength;
+            return out;
         }
 
-        BuiltinRenderProgram program_for_mesh_render_style(
+        MeshRenderStyleData mesh_render_style_data_for_scene_style(
             const SceneMeshRenderStyleAsset& style)
         {
-            return style.depth_test || style.depth_write
-                ? BuiltinRenderProgram::MeshWireframeDepthDebug
-                : BuiltinRenderProgram::MeshWireframeDebug;
+            MeshRenderStyleData out{};
+            out.wireframe =
+                mesh_render_layer_style_for_scene_layer(style.wireframe);
+            out.surface =
+                mesh_render_layer_style_for_scene_layer(style.surface);
+            out.alpha = style.alpha;
+            out.depth_test = style.depth_test;
+            out.depth_write = style.depth_write;
+            out.double_sided = style.double_sided;
+            out.hidden_line_prepass = style.hidden_line_prepass;
+            return out;
         }
 
         std::string mesh_render_style_cache_key(
             const SceneMeshRenderStyleAsset& style)
         {
-            return std::string("wireframe")
+            const auto layer_key =
+                [](const char* prefix, const SceneMeshRenderLayerAsset& layer) {
+                    return std::string(prefix)
+                        + (layer.enabled ? ":on" : ":off")
+                        + ":color:" + std::to_string(layer.color[0])
+                        + "," + std::to_string(layer.color[1])
+                        + "," + std::to_string(layer.color[2])
+                        + "," + std::to_string(layer.color[3])
+                        + ":emissive:"
+                        + std::to_string(layer.emissive_strength);
+                };
+            return std::string("mesh_style")
                 + ((style.depth_test || style.depth_write)
                     ? ":depth_occlusion"
-                    : ":no_depth_occlusion");
+                    : ":no_depth_occlusion")
+                + ":" + layer_key("wireframe", style.wireframe)
+                + ":" + layer_key("surface", style.surface)
+                + ":alpha:" + std::to_string(style.alpha)
+                + (style.double_sided ? ":double_sided" : ":single_sided")
+                + (style.hidden_line_prepass
+                    ? ":hidden_line_prepass"
+                    : ":no_hidden_line_prepass");
         }
 
         uint32_t policy_flags_for_terrain_render_style(
@@ -670,7 +697,7 @@ namespace wz::engine::assets
             const std::string& key,
             const std::string& name,
             MeshAsset mesh,
-            const SceneMeshRenderStyleAsset& style,
+            SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -681,13 +708,27 @@ namespace wz::engine::assets
                 return true;
             }
 
+            MeshRenderStyleAsset style_asset{};
+            if (style.style_asset == wz::asset::AssetKey{}) {
+                style_asset =
+                    assets.mesh_render_styles().create_mesh_render_style({
+                        .name = name + "_style",
+                        .style = mesh_render_style_data_for_scene_style(style),
+                    });
+                if (!style_asset.valid()) {
+                    return false;
+                }
+                style.style_asset = style_asset.output;
+            }
+            else {
+                style_asset = MeshRenderStyleAsset{ .output = style.style_asset };
+            }
+
             RenderableAsset renderable =
-                assets.renderables().create_mesh_wireframe({
+                assets.renderables().create_mesh_styled({
                     .name = name,
                     .mesh = mesh,
-                    .program = program_for_mesh_render_style(style),
-                    .domain = RenderDomain::Debug,
-                    .policy_flags = policy_flags_for_mesh_render_style(style),
+                    .style = style_asset,
                 });
 
             if (!renderable.valid()) {
@@ -810,7 +851,7 @@ namespace wz::engine::assets
         bool ensure_renderable_for_mesh_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
-            const SceneMeshRenderStyleAsset& style,
+            SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
             RenderableAsset& out,
@@ -1276,7 +1317,9 @@ namespace wz::engine::assets
             }
 
             MeshAsset mesh{};
-            const SceneMeshRenderStyleAsset render_style =
+            const bool has_authored_render_style =
+                node.mesh_render_style.has_value();
+            SceneMeshRenderStyleAsset render_style =
                 node.mesh_render_style.value_or(default_render_style);
 
             if (options.create_preview_renderables) {
@@ -1301,6 +1344,9 @@ namespace wz::engine::assets
 
                 node.renderable.reset();
                 attach_renderable_asset(node, renderable.output);
+                if (has_authored_render_style) {
+                    node.mesh_render_style = render_style;
+                }
                 append_unique_renderable(report, renderable.output);
             }
             else if (!ensure_mesh_for_source(

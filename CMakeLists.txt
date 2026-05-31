@@ -420,6 +420,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_csv_export csv_export)
     rs_add_test_group(asset_csv_export csv_export_asset_module)
 
+    rs_add_test_group(asset_render_style mesh)
+
     rs_add_test_group(asset_renderable renderable_table)
     rs_add_test_group(asset_renderable renderable_asset_module)
 

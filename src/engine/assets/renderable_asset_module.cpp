@@ -145,6 +145,53 @@ namespace wz::engine::assets
         };
     }
 
+    RenderableAsset RenderableAssetModule::create_mesh_styled(
+        const MeshStyledRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("mesh styled renderable has empty name");
+            return {};
+        }
+
+        if (!desc.mesh.valid()) {
+            logger_.error("mesh styled renderable has invalid mesh: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.style.valid()) {
+            logger_.error("mesh styled renderable has invalid style: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_mesh_styled_renderable_key(
+                desc.name,
+                desc.mesh.output,
+                desc.style.output);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kMeshStyledRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = MeshStyledRenderableCompileDesc{
+            .mesh_asset = desc.mesh.output,
+            .style_asset = desc.style.output,
+        };
+
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.mesh.output, desc.style.output }))
+        {
+            return RenderableAsset{ .output = key };
+        }
+
+        return RenderableAsset{ .output = key };
+    }
+
     RenderableAsset RenderableAssetModule::create_terrain_debug(
         const TerrainDebugRenderableDesc& desc)
     {

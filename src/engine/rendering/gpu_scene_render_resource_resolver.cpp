@@ -196,7 +196,8 @@ namespace wz::engine::rendering
                 gpu_mesh,
                 renderable.program,
                 renderable.render_program,
-                renderable.terrain_lighting);
+                renderable.terrain_lighting,
+                renderable.mesh_style);
 
         descriptor.mesh = scene_mesh;
         descriptor.material = wz::scene::INVALID_MATERIAL;

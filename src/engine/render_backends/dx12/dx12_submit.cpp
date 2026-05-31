@@ -13,6 +13,8 @@ namespace wz::render::backend::dx12
 {
     namespace
     {
+        using wz::engine::assets::BuiltinRenderProgram;
+
         struct TerrainLightingConstants
         {
             float light_position[4]{ 0.0f, 8.0f, 0.0f, 0.0f };
@@ -142,6 +144,254 @@ namespace wz::render::backend::dx12
             out.lighting_params[3] = -1.0f;
 
             return out;
+        }
+
+        void write_mesh_layer_style_constants(
+            float constants[40],
+            const wz::engine::assets::MeshRenderLayerStyle& layer,
+            float alpha)
+        {
+            constants[32] = layer.color[0];
+            constants[33] = layer.color[1];
+            constants[34] = layer.color[2];
+            constants[35] = (std::clamp)(alpha, 0.0f, 1.0f);
+            constants[36] = (std::max)(0.0f, layer.emissive_strength);
+            constants[37] = 0.0f;
+            constants[38] = 0.0f;
+            constants[39] = 0.0f;
+        }
+
+        void write_mesh_wireframe_style_constants(
+            float constants[40],
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            write_mesh_layer_style_constants(constants, style.wireframe, style.alpha);
+        }
+
+        void write_mesh_surface_style_constants(
+            float constants[40],
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            write_mesh_layer_style_constants(constants, style.surface, style.alpha);
+        }
+
+        bool mesh_wireframe_wants_prepass(
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            return style.depth_write;
+        }
+
+        bool is_terrain_surface_program(BuiltinRenderProgram program)
+        {
+            return program == BuiltinRenderProgram::TerrainMeshSurface;
+        }
+
+        bool is_mesh_wireframe_program(BuiltinRenderProgram program)
+        {
+            return program == BuiltinRenderProgram::MeshWireframeDebug
+                || program == BuiltinRenderProgram::MeshWireframeDepthDebug
+                || program == BuiltinRenderProgram::MeshWireframeAlpha;
+        }
+
+        bool is_mesh_surface_program(BuiltinRenderProgram program)
+        {
+            return program == BuiltinRenderProgram::MeshSurface
+                || program == BuiltinRenderProgram::MeshSurfaceAlpha;
+        }
+
+        UINT root_constant_count_for_program(BuiltinRenderProgram program)
+        {
+            if (is_terrain_surface_program(program)) {
+                return 48;
+            }
+
+            if (is_mesh_wireframe_program(program)
+                || is_mesh_surface_program(program))
+            {
+                return 40;
+            }
+
+            return 32;
+        }
+
+        void draw_mesh_surface_wireframe_overlay(
+            wz::gpu::Device& device,
+            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+            const wz::gpu::dx12::internal::DX12MeshResource& mesh,
+            float constants[48],
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            if (!style.wireframe.enabled) {
+                return;
+            }
+
+            const bool transparent =
+                wz::engine::assets::is_mesh_render_style_transparent(style);
+            const auto program = transparent
+                ? BuiltinRenderProgram::MeshWireframeAlpha
+                : style.depth_test || style.depth_write
+                    ? BuiltinRenderProgram::MeshWireframeDepthDebug
+                    : BuiltinRenderProgram::MeshWireframeDebug;
+            const auto pipeline_handle = pipeline_cache.get(program);
+            const auto* overlay =
+                wz::gpu::dx12::internal::get_graphics_pipeline(
+                    device,
+                    pipeline_handle);
+            if (!overlay || !overlay->valid()) {
+                return;
+            }
+
+            auto* cmdList =
+                wz::gpu::dx12::internal::get_command_list(device);
+            if (!transparent && mesh_wireframe_wants_prepass(style)) {
+                const auto prepass_handle = pipeline_cache.get(
+                    BuiltinRenderProgram::MeshDepthPrepassDebug);
+                const auto* prepass =
+                    wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        prepass_handle);
+                if (prepass && prepass->valid()) {
+                    cmdList->SetGraphicsRootSignature(prepass->root_sig);
+                    cmdList->SetPipelineState(prepass->pso);
+                    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
+                    cmdList->IASetVertexBuffers(0, 1, &mesh.vertex_view);
+                    cmdList->IASetIndexBuffer(&mesh.index_view);
+                    cmdList->DrawIndexedInstanced(mesh.index_count, 1, 0, 0, 0);
+                }
+            }
+            write_mesh_wireframe_style_constants(constants, style);
+            cmdList->SetGraphicsRootSignature(overlay->root_sig);
+            cmdList->SetPipelineState(overlay->pso);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
+            cmdList->IASetVertexBuffers(0, 1, &mesh.vertex_view);
+            cmdList->IASetIndexBuffer(&mesh.index_view);
+            cmdList->DrawIndexedInstanced(mesh.index_count, 1, 0, 0, 0);
+        }
+
+        void submit_mesh_commands(
+            wz::gpu::Device& device,
+            std::span<const DrawCommand> commands,
+            const RenderFrameView& frame,
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+            const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache)
+        {
+            auto* cmdList =
+                wz::gpu::dx12::internal::get_command_list(device);
+
+            for (const DrawCommand& dc : commands)
+            {
+                if (dc.kind != DrawCommandKind::Mesh)
+                    continue;
+                if (dc.mesh == INVALID_MESH)
+                    continue;
+
+                const auto resolved = resolver.resolve_mesh(dc.mesh);
+                if (!resolved)
+                    continue;
+
+                wz::gpu::GPUHandle pipeline_handle;
+                if (render_program_cache && resolved->render_program.valid()) {
+                    pipeline_handle =
+                        render_program_cache->get(resolved->render_program);
+                }
+                else {
+                    pipeline_handle = pipeline_cache.get(resolved->program);
+                }
+
+                const auto* pl =
+                    wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        pipeline_handle);
+                if (!pl || !pl->valid())
+                    continue;
+
+                const auto* mesh = wz::gpu::dx12::internal::get_mesh(
+                    device,
+                    resolved->gpu_resource);
+                if (!mesh || !mesh->vertex_buffer)
+                    continue;
+
+                float constants[48] = {};
+                for (int i = 0; i < 16; ++i) constants[i] = dc.world.m[i];
+                for (int i = 0; i < 16; ++i) {
+                    constants[16 + i] = frame.view.view_projection.m[i];
+                }
+
+                const bool terrain_surface =
+                    is_terrain_surface_program(resolved->program);
+                const bool mesh_wireframe =
+                    is_mesh_wireframe_program(resolved->program);
+                const bool mesh_surface =
+                    is_mesh_surface_program(resolved->program);
+
+                if (terrain_surface) {
+                    const TerrainLightingConstants lighting =
+                        terrain_lighting_from_renderable(
+                            resolved->terrain_lighting,
+                            frame.lights);
+                    for (int i = 0; i < 4; ++i) {
+                        constants[32 + i] = lighting.light_position[i];
+                        constants[36 + i] = lighting.light_direction[i];
+                        constants[40 + i] = lighting.light_color_intensity[i];
+                        constants[44 + i] = lighting.lighting_params[i];
+                    }
+                }
+                else if (mesh_wireframe) {
+                    write_mesh_wireframe_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
+                else if (mesh_surface) {
+                    write_mesh_surface_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
+
+                if (resolved->program == BuiltinRenderProgram::MeshWireframeDepthDebug
+                    && mesh_wireframe_wants_prepass(resolved->mesh_style))
+                {
+                    const auto prepass_handle = pipeline_cache.get(
+                        BuiltinRenderProgram::MeshDepthPrepassDebug);
+                    const auto* prepass =
+                        wz::gpu::dx12::internal::get_graphics_pipeline(
+                            device,
+                            prepass_handle);
+
+                    if (prepass && prepass->valid()) {
+                        cmdList->SetGraphicsRootSignature(prepass->root_sig);
+                        cmdList->SetPipelineState(prepass->pso);
+                        cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
+                        cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                        cmdList->IASetIndexBuffer(&mesh->index_view);
+                        cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                    }
+                }
+
+                cmdList->SetGraphicsRootSignature(pl->root_sig);
+                cmdList->SetPipelineState(pl->pso);
+                cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmdList->SetGraphicsRoot32BitConstants(
+                    0,
+                    root_constant_count_for_program(resolved->program),
+                    constants,
+                    0);
+                cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                cmdList->IASetIndexBuffer(&mesh->index_view);
+                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+
+                if (mesh_surface) {
+                    draw_mesh_surface_wireframe_overlay(
+                        device,
+                        pipeline_cache,
+                        *mesh,
+                        constants,
+                        resolved->mesh_style);
+                }
+            }
         }
 
         void submit_sky_pass(
@@ -451,6 +701,8 @@ namespace wz::render::backend::dx12
         {
             Mat4 world;
             Mat4 view_proj;
+            float style_color[4];
+            float style_params[4];
         } data;
 
         for (const DrawCommand& dc : frame.opaque)
@@ -466,10 +718,18 @@ namespace wz::render::backend::dx12
 
             data.world = dc.world;
             data.view_proj = frame.view.view_projection;
+            data.style_color[0] = 0.0f;
+            data.style_color[1] = 1.0f;
+            data.style_color[2] = 0.15f;
+            data.style_color[3] = 1.0f;
+            data.style_params[0] = 1.0f;
+            data.style_params[1] = 0.0f;
+            data.style_params[2] = 0.0f;
+            data.style_params[3] = 0.0f;
 
             cmdList->SetGraphicsRoot32BitConstants(
                 0,
-                32,
+                40,
                 &data,
                 0
             );
@@ -508,7 +768,7 @@ namespace wz::render::backend::dx12
                 cmdList->SetPipelineState(mesh_pipeline.pso);
                 cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-                struct { Mat4 world; Mat4 view_proj; } constants;
+                float constants[40] = {};
 
                 for (const DrawCommand& dc : frame.opaque)
                 {
@@ -526,10 +786,15 @@ namespace wz::render::backend::dx12
                     if (!mesh || !mesh->vertex_buffer)
                         continue;
 
-                    constants.world     = dc.world;
-                    constants.view_proj = frame.view.view_projection;
+                    for (int i = 0; i < 16; ++i) {
+                        constants[i] = dc.world.m[i];
+                        constants[16 + i] = frame.view.view_projection.m[i];
+                    }
+                    write_mesh_wireframe_style_constants(
+                        constants,
+                        resolved->mesh_style);
 
-                    cmdList->SetGraphicsRoot32BitConstants(0, 32, &constants, 0);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
                     cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                     cmdList->IASetIndexBuffer(&mesh->index_view);
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -589,6 +854,7 @@ namespace wz::render::backend::dx12
             cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
             cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
         }
+
     }
 
     void submit(wz::gpu::Device& device,
@@ -631,8 +897,11 @@ namespace wz::render::backend::dx12
             }
 
             const bool terrain_surface =
-                resolved->program
-                == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
+                is_terrain_surface_program(resolved->program);
+            const bool mesh_wireframe =
+                is_mesh_wireframe_program(resolved->program);
+            const bool mesh_surface =
+                is_mesh_surface_program(resolved->program);
             if (terrain_surface) {
                 const TerrainLightingConstants lighting =
                     terrain_lighting_from_renderable(
@@ -645,12 +914,23 @@ namespace wz::render::backend::dx12
                     constants[44 + i] = lighting.lighting_params[i];
                 }
             }
+            else if (mesh_wireframe) {
+                write_mesh_wireframe_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
+            else if (mesh_surface) {
+                write_mesh_surface_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
 
             if (resolved->program
-                == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
+                == BuiltinRenderProgram::MeshWireframeDepthDebug
+                && mesh_wireframe_wants_prepass(resolved->mesh_style))
             {
                 const auto prepass_handle = pipeline_cache.get(
-                    wz::engine::assets::BuiltinRenderProgram::MeshDepthPrepassDebug);
+                    BuiltinRenderProgram::MeshDepthPrepassDebug);
                 const auto* prepass =
                     wz::gpu::dx12::internal::get_graphics_pipeline(
                         device,
@@ -660,7 +940,7 @@ namespace wz::render::backend::dx12
                     cmdList->SetGraphicsRootSignature(prepass->root_sig);
                     cmdList->SetPipelineState(prepass->pso);
                     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    cmdList->SetGraphicsRoot32BitConstants(0, 32, constants, 0);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
                     cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                     cmdList->IASetIndexBuffer(&mesh->index_view);
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -672,12 +952,21 @@ namespace wz::render::backend::dx12
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             cmdList->SetGraphicsRoot32BitConstants(
                 0,
-                terrain_surface ? 48 : 32,
+                root_constant_count_for_program(resolved->program),
                 constants,
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+
+            if (mesh_surface) {
+                draw_mesh_surface_wireframe_overlay(
+                    device,
+                    pipeline_cache,
+                    *mesh,
+                    constants,
+                    resolved->mesh_style);
+            }
         }
 
         // ── Splat pass ────────────────────────────────────────────────────────
@@ -725,6 +1014,14 @@ namespace wz::render::backend::dx12
             cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
             cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
         }
+
+        submit_mesh_commands(
+            device,
+            frame.transparent,
+            frame,
+            resolver,
+            pipeline_cache,
+            nullptr);
     }
 
     void submit(wz::gpu::Device& device,
@@ -780,8 +1077,11 @@ namespace wz::render::backend::dx12
             }
 
             const bool terrain_surface =
-                resolved->program
-                == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface;
+                is_terrain_surface_program(resolved->program);
+            const bool mesh_wireframe =
+                is_mesh_wireframe_program(resolved->program);
+            const bool mesh_surface =
+                is_mesh_surface_program(resolved->program);
             if (terrain_surface) {
                 const TerrainLightingConstants lighting =
                     terrain_lighting_from_renderable(
@@ -794,12 +1094,23 @@ namespace wz::render::backend::dx12
                     constants[44 + i] = lighting.lighting_params[i];
                 }
             }
+            else if (mesh_wireframe) {
+                write_mesh_wireframe_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
+            else if (mesh_surface) {
+                write_mesh_surface_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
 
             if (resolved->program
-                == wz::engine::assets::BuiltinRenderProgram::MeshWireframeDepthDebug)
+                == BuiltinRenderProgram::MeshWireframeDepthDebug
+                && mesh_wireframe_wants_prepass(resolved->mesh_style))
             {
                 const auto prepass_handle = pipeline_cache.get(
-                    wz::engine::assets::BuiltinRenderProgram::MeshDepthPrepassDebug);
+                    BuiltinRenderProgram::MeshDepthPrepassDebug);
                 const auto* prepass =
                     wz::gpu::dx12::internal::get_graphics_pipeline(
                         device,
@@ -809,7 +1120,7 @@ namespace wz::render::backend::dx12
                     cmdList->SetGraphicsRootSignature(prepass->root_sig);
                     cmdList->SetPipelineState(prepass->pso);
                     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    cmdList->SetGraphicsRoot32BitConstants(0, 32, constants, 0);
+                    cmdList->SetGraphicsRoot32BitConstants(0, 40, constants, 0);
                     cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                     cmdList->IASetIndexBuffer(&mesh->index_view);
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -821,12 +1132,21 @@ namespace wz::render::backend::dx12
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             cmdList->SetGraphicsRoot32BitConstants(
                 0,
-                terrain_surface ? 48 : 32,
+                root_constant_count_for_program(resolved->program),
                 constants,
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+
+            if (mesh_surface) {
+                draw_mesh_surface_wireframe_overlay(
+                    device,
+                    pipeline_cache,
+                    *mesh,
+                    constants,
+                    resolved->mesh_style);
+            }
         }
 
         // ── Splat pass ────────────────────────────────────────────────────────
@@ -987,6 +1307,14 @@ namespace wz::render::backend::dx12
                 cmdList->DrawInstanced(4, cloud->splat_count, 0, 0);
             }
         }
+
+        submit_mesh_commands(
+            device,
+            frame.transparent,
+            frame,
+            resolver,
+            pipeline_cache,
+            &render_program_cache);
     }
 
     void destroy(Context* ctx)

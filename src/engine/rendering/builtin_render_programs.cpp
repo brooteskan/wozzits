@@ -16,15 +16,34 @@ namespace wz::engine::rendering
         case BuiltinRenderProgram::MeshWireframeDebug:
         case BuiltinRenderProgram::MeshWireframeDepthDebug:
         case BuiltinRenderProgram::MeshDepthPrepassDebug:
+        case BuiltinRenderProgram::MeshWireframeAlpha:
             out = ShaderPairDesc{
                 .name =
                     program == BuiltinRenderProgram::MeshDepthPrepassDebug
                         ? "mesh_depth_prepass_debug"
-                        : program == BuiltinRenderProgram::MeshWireframeDepthDebug
-                            ? "mesh_wireframe_depth_debug"
-                            : "mesh_wireframe_debug",
+                        : program == BuiltinRenderProgram::MeshWireframeAlpha
+                            ? "mesh_wireframe_alpha"
+                            : program == BuiltinRenderProgram::MeshWireframeDepthDebug
+                                ? "mesh_wireframe_depth_debug"
+                                : "mesh_wireframe_debug",
                 .vertex_path = "shaders/mesh_wireframe/mesh_wireframe_vs.hlsl",
                 .pixel_path = "shaders/mesh_wireframe/mesh_wireframe_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target = "ps_5_0",
+            };
+            return true;
+
+        case BuiltinRenderProgram::MeshSurface:
+        case BuiltinRenderProgram::MeshSurfaceAlpha:
+            out = ShaderPairDesc{
+                .name =
+                    program == BuiltinRenderProgram::MeshSurfaceAlpha
+                        ? "mesh_surface_alpha"
+                        : "mesh_surface",
+                .vertex_path = "shaders/mesh_surface/mesh_surface_vs.hlsl",
+                .pixel_path = "shaders/mesh_surface/mesh_surface_ps.hlsl",
                 .vertex_entry = "main",
                 .pixel_entry = "main",
                 .vertex_target = "vs_5_0",

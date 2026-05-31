@@ -156,8 +156,7 @@ namespace wz::gpu::dx12
         cmd->SetGraphicsRootSignature(ctx->root_sig);
         cmd->SetPipelineState(ctx->pso);
 
-        // Root parameter 0: 32 x 32-bit constants.
-        // Layout: world[16], view_proj[16].
+        // Root parameter 0: world[16], view_proj[16], style color/params.
         cmd->SetGraphicsRoot32BitConstants(
             0,
             16,
@@ -171,6 +170,10 @@ namespace wz::gpu::dx12
             view.view_proj,
             16
         );
+        const float style_color[4]{ 0.0f, 1.0f, 0.15f, 1.0f };
+        const float style_params[4]{ 1.0f, 0.0f, 0.0f, 0.0f };
+        cmd->SetGraphicsRoot32BitConstants(0, 4, style_color, 32);
+        cmd->SetGraphicsRoot32BitConstants(0, 4, style_params, 36);
 
         cmd->IASetPrimitiveTopology(
             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST

@@ -132,16 +132,6 @@ namespace wz::engine::assets
             return "placeholder";
         }
 
-        const char* mesh_render_style_kind_name(
-            SceneMeshRenderStyleKind kind)
-        {
-            switch (kind) {
-            case SceneMeshRenderStyleKind::Wireframe:
-                return "wireframe";
-            }
-            return "wireframe";
-        }
-
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
         {
             switch (path) {
@@ -622,14 +612,35 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_render_layer_value(
+            const SceneMeshRenderLayerAsset& layer)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(layer.enabled));
+            add_member(*obj, "color", float_array(layer.color, 4));
+            add_member(*obj, "emissive_strength",
+                number_value(layer.emissive_strength));
+            return obj;
+        }
+
         JSONValuePtr mesh_render_style_value(
             const SceneMeshRenderStyleAsset& style)
         {
             auto obj = object_value();
-            add_member(*obj, "kind",
-                string_value(mesh_render_style_kind_name(style.kind)));
+            if (!(style.style_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(style.style_asset)));
+            }
+            add_member(*obj, "wireframe",
+                mesh_render_layer_value(style.wireframe));
+            add_member(*obj, "surface",
+                mesh_render_layer_value(style.surface));
+            add_member(*obj, "alpha", number_value(style.alpha));
             add_member(*obj, "depth_test", bool_value(style.depth_test));
             add_member(*obj, "depth_write", bool_value(style.depth_write));
+            add_member(*obj, "double_sided", bool_value(style.double_sided));
+            add_member(*obj, "hidden_line_prepass",
+                bool_value(style.hidden_line_prepass));
             return obj;
         }
 

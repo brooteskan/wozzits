@@ -27,6 +27,7 @@ namespace wz::engine::rendering
         wz::engine::assets::BuiltinRenderProgram program{};
         wz::asset::ResourceHandle                render_program{};  // preferred when valid
         wz::engine::assets::TerrainLightingData  terrain_lighting{};
+        wz::engine::assets::MeshRenderStyleData  mesh_style{};
     };
 
     class RenderResourceResolver
@@ -71,7 +72,8 @@ namespace wz::engine::rendering
             wz::gpu::GPUHandle                       gpu_resource,
             wz::engine::assets::BuiltinRenderProgram program,
             wz::asset::ResourceHandle                render_program = {},
-            wz::engine::assets::TerrainLightingData  terrain_lighting = {});
+            wz::engine::assets::TerrainLightingData  terrain_lighting = {},
+            wz::engine::assets::MeshRenderStyleData  mesh_style = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
@@ -85,6 +87,7 @@ namespace wz::engine::rendering
             wz::engine::assets::BuiltinRenderProgram program{};
             wz::asset::ResourceHandle                render_program{};
             wz::engine::assets::TerrainLightingData  terrain_lighting{};
+            wz::engine::assets::MeshRenderStyleData  mesh_style{};
         };
 
         std::vector<Entry> splat_entries_;

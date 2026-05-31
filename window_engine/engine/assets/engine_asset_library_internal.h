@@ -27,6 +27,8 @@
 #include <engine/assets/csv_export/csv_export_compilers.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable/renderable_compilers.h>
+#include <engine/assets/mesh_render_style/mesh_render_style.h>
+#include <engine/assets/mesh_render_style/mesh_render_style_compilers.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_compilers.h>
 #include <engine/assets/light/light.h>
@@ -61,6 +63,7 @@ namespace wz::engine::assets::internal {
         DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
         DiagnosticTimeframeSummaryTable&    diagnostic_timeframe_summary_table;
         CSVExportTable&                     csv_export_table;
+        MeshRenderStyleTable&               mesh_render_style_table;
         RenderableAssetTable&               renderable_table;
         RenderProgramTable&                 render_program_table;
         DirectLightTable&                   direct_light_table;

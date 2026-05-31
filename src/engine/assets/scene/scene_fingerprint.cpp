@@ -236,9 +236,22 @@ namespace wz::engine::assets
 
             if (node.mesh_render_style) {
                 const auto& style = *node.mesh_render_style;
-                fp.mix_value(style.kind);
+                mix_asset_key(fp, style.style_asset);
+                const auto mix_layer =
+                    [&fp](const SceneMeshRenderLayerAsset& layer) {
+                        fp.mix_value(layer.enabled);
+                        for (float channel : layer.color) {
+                            fp.mix_value(channel);
+                        }
+                        fp.mix_value(layer.emissive_strength);
+                };
+                mix_layer(style.wireframe);
+                mix_layer(style.surface);
+                fp.mix_value(style.alpha);
                 fp.mix_value(style.depth_test);
                 fp.mix_value(style.depth_write);
+                fp.mix_value(style.double_sided);
+                fp.mix_value(style.hidden_line_prepass);
             }
 
             if (node.scalar_field_source) {

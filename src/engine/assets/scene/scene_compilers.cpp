@@ -204,13 +204,64 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
-        std::optional<SceneMeshRenderStyleKind> parse_mesh_render_style_kind(
-            std::string_view text)
+        void read_mesh_render_layer(
+            const wz::json::JSONValue& obj,
+            const char* field_name,
+            SceneMeshRenderLayerAsset& layer)
         {
-            if (text == "wireframe") {
-                return SceneMeshRenderStyleKind::Wireframe;
+            const auto* layer_value = find_member(obj, field_name);
+            if (!layer_value
+                || layer_value->kind != wz::json::JSONValueKind::Object)
+            {
+                return;
             }
-            return std::nullopt;
+
+            auto enabled = read_bool(*layer_value, "enabled");
+            if (enabled) {
+                layer.enabled = *enabled;
+            }
+            read_float4(*layer_value, "color", layer.color);
+            auto emissive_strength =
+                read_number(*layer_value, "emissive_strength");
+            if (emissive_strength) {
+                layer.emissive_strength =
+                    static_cast<float>(*emissive_strength);
+            }
+        }
+
+        bool apply_legacy_mesh_render_style_kind(
+            std::string_view text,
+            SceneMeshRenderStyleAsset& style,
+            const wz::json::JSONValue& obj)
+        {
+            float color[4]{
+                style.wireframe.color[0],
+                style.wireframe.color[1],
+                style.wireframe.color[2],
+                style.wireframe.color[3],
+            };
+            read_float4(obj, "color", color);
+
+            float emissive_strength = style.wireframe.emissive_strength;
+            if (auto value = read_number(obj, "emissive_strength")) {
+                emissive_strength = static_cast<float>(*value);
+            }
+
+            if (text == "wireframe" || text == "vector_wireframe") {
+                style.wireframe.enabled = true;
+                std::copy(color, color + 4, style.wireframe.color);
+                style.wireframe.emissive_strength = emissive_strength;
+                style.surface.enabled = false;
+                return true;
+            }
+            if (text == "opaque_surface" || text == "transparent_surface") {
+                style.wireframe.enabled = false;
+                style.surface.enabled = true;
+                std::copy(color, color + 4, style.surface.color);
+                style.surface.emissive_strength = emissive_strength;
+                return true;
+            }
+            return false;
         }
 
         std::optional<SceneTerrainRenderPath> parse_terrain_render_path(
@@ -1122,22 +1173,37 @@ namespace wz::engine::assets::internal
 
             const auto* mrs = find_member(node_val, "mesh_render_style");
             if (mrs && mrs->kind == wz::json::JSONValueKind::Object) {
-                auto kind_str = read_string(*mrs, "kind");
-                if (!kind_str) {
-                    logger.error("mesh_render_style on node '" + node.id
-                        + "' missing 'kind'");
-                    return std::nullopt;
-                }
-
-                auto kind = parse_mesh_render_style_kind(*kind_str);
-                if (!kind) {
-                    logger.error("mesh_render_style on node '" + node.id
-                        + "' has unknown kind '" + std::string(*kind_str) + "'");
-                    return std::nullopt;
-                }
-
                 SceneMeshRenderStyleAsset style{};
-                style.kind = *kind;
+                auto asset = read_string(*mrs, "asset");
+                if (asset) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("mesh_render_style.asset on node '"
+                            + node.id + "' could not be parsed");
+                        return std::nullopt;
+                    }
+                    style.style_asset = *key;
+                }
+                read_mesh_render_layer(*mrs, "wireframe", style.wireframe);
+                read_mesh_render_layer(*mrs, "surface", style.surface);
+
+                if (auto kind_str = read_string(*mrs, "kind")) {
+                    if (!apply_legacy_mesh_render_style_kind(
+                            *kind_str,
+                            style,
+                            *mrs))
+                    {
+                        logger.error("mesh_render_style on node '" + node.id
+                            + "' has unknown kind '"
+                            + std::string(*kind_str) + "'");
+                        return std::nullopt;
+                    }
+                }
+                auto alpha = read_number(*mrs, "alpha");
+                if (alpha) {
+                    style.alpha = static_cast<float>(
+                        (std::clamp)(*alpha, 0.0, 1.0));
+                }
                 auto depth_test = read_bool(*mrs, "depth_test");
                 if (depth_test) {
                     style.depth_test = *depth_test;
@@ -1145,6 +1211,15 @@ namespace wz::engine::assets::internal
                 auto depth_write = read_bool(*mrs, "depth_write");
                 if (depth_write) {
                     style.depth_write = *depth_write;
+                }
+                auto double_sided = read_bool(*mrs, "double_sided");
+                if (double_sided) {
+                    style.double_sided = *double_sided;
+                }
+                auto hidden_line_prepass =
+                    read_bool(*mrs, "hidden_line_prepass");
+                if (hidden_line_prepass) {
+                    style.hidden_line_prepass = *hidden_line_prepass;
                 }
 
                 node.mesh_render_style = style;

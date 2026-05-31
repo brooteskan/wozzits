@@ -816,10 +816,10 @@ namespace wz::gpu::dx12::internal
     {
         D3D12_ROOT_PARAMETER param = {};
         param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        param.Constants.Num32BitValues = 32; // 4x4 matrix
+        param.Constants.Num32BitValues = 40;
         param.Constants.RegisterSpace = 0;
         param.Constants.ShaderRegister = 0;
-        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
         D3D12_ROOT_SIGNATURE_DESC desc = {};
         desc.NumParameters = 1;

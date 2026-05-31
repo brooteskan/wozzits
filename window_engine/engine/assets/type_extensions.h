@@ -582,6 +582,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeSamplerBindingSet =
         static_cast<wz::asset::AssetType>(1070);
 
+    // Implemented mesh render style asset.
+    // CPU-side draw style for mesh-backed renderables, including mesh terrain.
+    inline constexpr wz::asset::AssetType kAssetTypeMeshRenderStyle =
+        static_cast<wz::asset::AssetType>(1071);
+
 
     // ─── Scene / prefab / world asset types: 2048–2079 ──────────────────────────
     // High-level authored scene, prefab, and world-organization assets.

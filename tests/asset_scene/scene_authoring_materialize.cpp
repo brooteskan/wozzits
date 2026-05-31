@@ -81,6 +81,10 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
     ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
+    EXPECT_NE(
+        scene.nodes[0].mesh_render_style->style_asset,
+        wz::asset::AssetKey{});
     ASSERT_EQ(report.renderables_to_realize.size(), 1u);
     EXPECT_EQ(report.renderables_to_realize[0], *scene.nodes[0].renderable_asset);
 
@@ -95,8 +99,13 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
     ASSERT_NE(renderable_data, nullptr);
     EXPECT_EQ(renderable_data->kind, RenderableKind::Mesh);
     EXPECT_EQ(
+        renderable_data->companion_asset,
+        scene.nodes[0].mesh_render_style->style_asset);
+    EXPECT_EQ(
         renderable_data->program,
         BuiltinRenderProgram::MeshWireframeDepthDebug);
+    EXPECT_TRUE(renderable_data->mesh_style.depth_test);
+    EXPECT_TRUE(renderable_data->mesh_style.depth_write);
 }
 
 TEST(SceneAuthoringMaterialize, ScalarFieldSourceCreatesScalarFieldAsset)

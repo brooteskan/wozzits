@@ -21,7 +21,53 @@ namespace wz::gpu::dx12::internal
     static ID3D12RootSignature* create_mesh_wireframe_root_sig(ID3D12Device* device)
     {
         // 32 × 32-bit constants (world[16] + view_proj[16]), register 0, VS only.
-        return create_empty_root_signature(device);
+        D3D12_ROOT_PARAMETER param = {};
+        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        param.Constants.Num32BitValues = 40;
+        param.Constants.RegisterSpace  = 0;
+        param.Constants.ShaderRegister = 0;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC desc = {};
+        desc.NumParameters   = 1;
+        desc.pParameters     = &param;
+        desc.NumStaticSamplers = 0;
+        desc.pStaticSamplers = nullptr;
+        desc.Flags =
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        ID3DBlob* sig_blob   = nullptr;
+        ID3DBlob* error_blob = nullptr;
+
+        HRESULT hr = D3D12SerializeRootSignature(
+            &desc,
+            D3D_ROOT_SIGNATURE_VERSION_1,
+            &sig_blob,
+            &error_blob);
+
+        if (FAILED(hr))
+        {
+            if (error_blob)
+            {
+                OutputDebugStringA(
+                    static_cast<const char*>(error_blob->GetBufferPointer()));
+                error_blob->Release();
+            }
+            return nullptr;
+        }
+
+        ID3D12RootSignature* root_sig = nullptr;
+        hr = device->CreateRootSignature(
+            0,
+            sig_blob->GetBufferPointer(),
+            sig_blob->GetBufferSize(),
+            IID_PPV_ARGS(&root_sig));
+
+        sig_blob->Release();
+        if (error_blob) error_blob->Release();
+
+        assert(SUCCEEDED(hr));
+        return root_sig;
     }
 
     static ID3D12RootSignature* create_gaussian_splat_root_sig(ID3D12Device* device)
@@ -224,6 +270,9 @@ namespace wz::gpu::dx12::internal
         case P::MeshWireframeDebug:
         case P::MeshWireframeDepthDebug:
         case P::MeshDepthPrepassDebug:
+        case P::MeshWireframeAlpha:
+        case P::MeshSurface:
+        case P::MeshSurfaceAlpha:
             return create_mesh_wireframe_root_sig(device);
         case P::TerrainMeshSurface:
             return create_terrain_mesh_surface_root_sig(device);
@@ -243,7 +292,8 @@ namespace wz::gpu::dx12::internal
         ID3D12RootSignature* root_sig,
         GPUHandle vertex_shader,
         GPUHandle pixel_shader,
-        bool depth_enabled)
+        bool depth_enabled,
+        bool alpha_blend = false)
     {
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
@@ -277,6 +327,18 @@ namespace wz::gpu::dx12::internal
         }
 
         desc.BlendState        = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        if (alpha_blend) {
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable           = TRUE;
+            rt.LogicOpEnable         = FALSE;
+            rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
+            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp               = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         desc.DepthStencilState.DepthEnable =
             depth_enabled ? TRUE : FALSE;
@@ -356,7 +418,9 @@ namespace wz::gpu::dx12::internal
         Device& device,
         ID3D12RootSignature* root_sig,
         GPUHandle vertex_shader,
-        GPUHandle pixel_shader)
+        GPUHandle pixel_shader,
+        bool double_sided,
+        bool alpha_blend = false)
     {
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
@@ -396,16 +460,31 @@ namespace wz::gpu::dx12::internal
 
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-        desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+        desc.RasterizerState.CullMode =
+            double_sided ? D3D12_CULL_MODE_NONE : D3D12_CULL_MODE_BACK;
 
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        if (alpha_blend) {
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable           = TRUE;
+            rt.LogicOpEnable         = FALSE;
+            rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
+            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp               = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         desc.DepthStencilState.DepthEnable = TRUE;
-        desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        desc.DepthStencilState.DepthWriteMask =
+            alpha_blend ? D3D12_DEPTH_WRITE_MASK_ZERO : D3D12_DEPTH_WRITE_MASK_ALL;
         desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
         desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.RTVFormats[0] =
+            alpha_blend ? get_backbuffer_format() : DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
 
@@ -573,18 +652,42 @@ namespace wz::gpu::dx12::internal
                 vertex_shader,
                 pixel_shader,
                 true);
+        case P::MeshWireframeAlpha:
+            return create_mesh_wireframe_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                true,
+                true);
         case P::MeshDepthPrepassDebug:
             return create_mesh_depth_prepass_pso(
                 device,
                 root_sig,
                 vertex_shader,
                 pixel_shader);
+        case P::MeshSurface:
+            return create_terrain_mesh_surface_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                true);
+        case P::MeshSurfaceAlpha:
+            return create_terrain_mesh_surface_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                true,
+                true);
         case P::TerrainMeshSurface:
             return create_terrain_mesh_surface_pso(
                 device,
                 root_sig,
                 vertex_shader,
-                pixel_shader);
+                pixel_shader,
+                false);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_pso(device, root_sig, vertex_shader, pixel_shader);
         case P::SkySurface:

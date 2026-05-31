@@ -286,9 +286,20 @@ namespace
         "mesh_index": 1
       },
       "mesh_render_style": {
-        "kind": "wireframe",
+        "wireframe": {
+          "enabled": true,
+          "color": [0.0, 1.0, 0.2, 0.75],
+          "emissive_strength": 2.5
+        },
+        "surface": {
+          "enabled": false,
+          "color": [0.25, 0.9, 0.35, 1.0],
+          "emissive_strength": 0.0
+        },
         "depth_test": true,
-        "depth_write": true
+        "depth_write": true,
+        "double_sided": false,
+        "hidden_line_prepass": false
       }
     }
   ]
@@ -1523,11 +1534,18 @@ TEST(SceneAssetModule, MeshComponentDescriptorsRoundTrip)
     EXPECT_EQ(node.mesh_source->mesh_index, 1u);
 
     ASSERT_TRUE(node.mesh_render_style.has_value());
-    EXPECT_EQ(
-        node.mesh_render_style->kind,
-        SceneMeshRenderStyleKind::Wireframe);
+    EXPECT_TRUE(node.mesh_render_style->wireframe.enabled);
+    EXPECT_FALSE(node.mesh_render_style->surface.enabled);
+    EXPECT_FLOAT_EQ(node.mesh_render_style->wireframe.color[1], 1.0f);
+    EXPECT_FLOAT_EQ(node.mesh_render_style->wireframe.color[2], 0.2f);
+    EXPECT_FLOAT_EQ(node.mesh_render_style->wireframe.color[3], 0.75f);
+    EXPECT_FLOAT_EQ(
+        node.mesh_render_style->wireframe.emissive_strength,
+        2.5f);
     EXPECT_TRUE(node.mesh_render_style->depth_test);
     EXPECT_TRUE(node.mesh_render_style->depth_write);
+    EXPECT_FALSE(node.mesh_render_style->double_sided);
+    EXPECT_FALSE(node.mesh_render_style->hidden_line_prepass);
 
     const auto summary = summarize_authored_scene_components(*scene_data);
     EXPECT_EQ(summary.mesh_sources, 1u);
@@ -1538,6 +1556,8 @@ TEST(SceneAssetModule, MeshComponentDescriptorsRoundTrip)
     EXPECT_NE(exported.find("\"mesh_source\""), std::string::npos);
     EXPECT_NE(exported.find("\"mesh_render_style\""), std::string::npos);
     EXPECT_NE(exported.find("\"gltf/low_poly_rock.glb\""), std::string::npos);
+    EXPECT_NE(exported.find("\"color\""), std::string::npos);
+    EXPECT_NE(exported.find("\"emissive_strength\""), std::string::npos);
     EXPECT_NE(exported.find("\"depth_test\""), std::string::npos);
 
     const wz::fs::Path reparse_root =
@@ -3832,14 +3852,40 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
+    MeshRenderStyleData style{};
+    style.wireframe.color[0] = 1.0f;
+    style.wireframe.color[1] = 0.25f;
+    style.wireframe.color[2] = 0.0f;
+    style.wireframe.color[3] = 1.0f;
+    style.wireframe.emissive_strength = 1.5f;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/orange_wire",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable = assets.renderables().create_mesh_styled({
         .name = "debug/cube_wireframe",
         .mesh = mesh,
+        .style = render_style,
     });
     ASSERT_TRUE(renderable.valid());
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
+    const auto renderable_handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(renderable_handle.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable_handle);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[0], 1.0f);
+    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[1], 0.25f);
+    EXPECT_FLOAT_EQ(
+        renderable_data->mesh_style.wireframe.emissive_strength,
+        1.5f);
 
     // The concrete resolver uses RenderResourceResolver::register_mesh()
     // to allocate a scene-render MeshHandle.
@@ -3882,6 +3928,11 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     auto resolved = render_resolver.resolve_mesh(desc.mesh);
     ASSERT_TRUE(resolved.has_value());
     EXPECT_TRUE(resolved->gpu_resource.valid());
+    EXPECT_FLOAT_EQ(resolved->mesh_style.wireframe.color[0], 1.0f);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.wireframe.color[1], 0.25f);
+    EXPECT_FLOAT_EQ(
+        resolved->mesh_style.wireframe.emissive_strength,
+        1.5f);
 
     // Full pipeline: compile → IR → frame
     wz::scene::ViewData view{};
@@ -4927,7 +4978,6 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
         .mesh_index = 0,
     };
     node.mesh_render_style = SceneMeshRenderStyleAsset{
-        .kind = SceneMeshRenderStyleKind::Wireframe,
         .depth_test = true,
         .depth_write = false,
     };

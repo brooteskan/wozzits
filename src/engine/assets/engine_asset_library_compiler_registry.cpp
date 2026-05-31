@@ -33,6 +33,7 @@ namespace wz::engine::assets::internal
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
         register_diagnostic_timeframe_summary_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_timeframe_summary_table);
         register_csv_export_compilers(registry, ctx.logger, ctx.data_table, ctx.csv_export_table);
+        register_mesh_render_style_compilers(registry, ctx.logger, ctx.mesh_render_style_table);
         register_renderable_compilers(registry, ctx);
         register_render_program_compilers(registry, ctx.logger, ctx.render_program_table);
         register_light_compilers(

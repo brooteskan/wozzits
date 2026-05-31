@@ -26,6 +26,9 @@ namespace wz::engine::rendering
         {
         case BuiltinRenderProgram::MeshWireframeDebug:
         case BuiltinRenderProgram::MeshWireframeDepthDebug:
+        case BuiltinRenderProgram::MeshWireframeAlpha:
+        case BuiltinRenderProgram::MeshSurface:
+        case BuiltinRenderProgram::MeshSurfaceAlpha:
         {
             if (prepared.kind != RenderableKind::Mesh)
                 return false;

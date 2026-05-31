@@ -281,16 +281,31 @@ namespace wz::engine::assets
         uint32_t mesh_index = 0;
     };
 
-    enum class SceneMeshRenderStyleKind : uint8_t
+    struct SceneMeshRenderLayerAsset
     {
-        Wireframe = 0,
+        bool enabled = false;
+        float color[4]{ 0.0f, 1.0f, 0.15f, 1.0f };
+        float emissive_strength = 1.0f;
     };
 
     struct SceneMeshRenderStyleAsset
     {
-        SceneMeshRenderStyleKind kind = SceneMeshRenderStyleKind::Wireframe;
+        wz::asset::AssetKey style_asset{};
+        SceneMeshRenderLayerAsset wireframe{
+            true,
+            { 0.0f, 1.0f, 0.15f, 1.0f },
+            1.0f,
+        };
+        SceneMeshRenderLayerAsset surface{
+            false,
+            { 0.25f, 0.9f, 0.35f, 1.0f },
+            0.0f,
+        };
+        float alpha = 1.0f;
         bool depth_test = false;
         bool depth_write = false;
+        bool double_sided = true;
+        bool hidden_line_prepass = true;
     };
 
     enum class SceneTerrainRenderPath : uint8_t

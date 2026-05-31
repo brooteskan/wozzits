@@ -45,6 +45,7 @@
 #include <engine/assets/diagnostic_timeframe_summary_asset_module.h>
 #include <engine/assets/csv_export_asset_module.h>
 
+#include <engine/assets/mesh_render_style_asset_module.h>
 #include <engine/assets/renderable_asset_module.h>
 
 #include <engine/assets/render_program/render_program_asset_module.h>
@@ -151,6 +152,9 @@ namespace wz::engine::assets
         CSVExportAssetModule&       csv_export()       { return csv_export_; }
         const CSVExportAssetModule& csv_export() const { return csv_export_; }
 
+        MeshRenderStyleAssetModule&       mesh_render_styles()       { return mesh_render_styles_; }
+        const MeshRenderStyleAssetModule& mesh_render_styles() const { return mesh_render_styles_; }
+
         RenderableAssetModule&       renderables()        { return renderables_; }
         const RenderableAssetModule& renderables()  const { return renderables_; }
 
@@ -196,6 +200,7 @@ namespace wz::engine::assets
         DiagnosticResampledTimeSeriesTable  diagnostic_resampled_time_series_table_;
         DiagnosticTimeframeSummaryTable     diagnostic_timeframe_summary_table_;
         CSVExportTable                      csv_export_table_;
+        MeshRenderStyleTable        mesh_render_style_table_;
         RenderableAssetTable        renderable_table_;
         RenderProgramTable          render_program_table_;
         DirectLightTable            direct_light_table_;
@@ -220,6 +225,7 @@ namespace wz::engine::assets
         DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
         DiagnosticTimeframeSummaryAssetModule    diagnostic_timeframe_summaries_;
         CSVExportAssetModule                     csv_export_;
+        MeshRenderStyleAssetModule  mesh_render_styles_;
         RenderableAssetModule       renderables_;
         RenderProgramAssetModule    render_programs_;
         LightAssetModule            lights_;

@@ -78,6 +78,10 @@ target_sources(window_engine PRIVATE
     assets/csv_export/csv_export_compilers.cpp
     assets/csv_export_asset_module.cpp
 
+    assets/mesh_render_style/mesh_render_style.cpp
+    assets/mesh_render_style/mesh_render_style_compilers.cpp
+    assets/mesh_render_style_asset_module.cpp
+
     assets/gltf/gltf_importer.cpp 
 
     assets/hdri/hdri_lighting_metadata.cpp

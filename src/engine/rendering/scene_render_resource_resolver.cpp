@@ -36,7 +36,10 @@ namespace wz::engine::rendering
         const wz::scene::MeshHandle scene_mesh =
             render_resolver_.register_mesh(
                 mesh_handle.handle,
-                renderable.program);
+                renderable.program,
+                renderable.render_program,
+                renderable.terrain_lighting,
+                renderable.mesh_style);
 
         descriptor.mesh = scene_mesh;
 

@@ -3,6 +3,7 @@
 // engine/assets/renderable/renderable.h
 
 #include <asset/types.h>
+#include <engine/assets/mesh_render_style/mesh_render_style.h>
 
 #include <cstdint>
 #include <vector>
@@ -31,6 +32,9 @@ namespace wz::engine::assets
         MeshWireframeDebug,
         MeshWireframeDepthDebug,
         MeshDepthPrepassDebug,
+        MeshWireframeAlpha,
+        MeshSurface,
+        MeshSurfaceAlpha,
         TerrainMeshSurface,
         GaussianSplatDebug,
         ScalarFieldDebug,
@@ -102,6 +106,7 @@ namespace wz::engine::assets
         float bounds_max[3]{};
 
         TerrainLightingData terrain_lighting{};
+        MeshRenderStyleData mesh_style{};
 
         bool valid() const noexcept;
     };
@@ -127,6 +132,12 @@ namespace wz::engine::assets
         BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
         RenderDomain domain = RenderDomain::Debug;
         uint32_t policy_flags = RenderPolicy_Wireframe;
+    };
+
+    struct MeshStyledRenderableCompileDesc
+    {
+        wz::asset::AssetKey mesh_asset{};
+        wz::asset::AssetKey style_asset{};
     };
 
     struct GaussianSplatDebugRenderableCompileDesc

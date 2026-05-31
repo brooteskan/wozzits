@@ -52,6 +52,7 @@ namespace wz::engine::assets::internal
     {
         auto* logger = &ctx.logger;
         auto* mesh_table = &ctx.mesh_table;
+        auto* mesh_render_style_table = &ctx.mesh_render_style_table;
         auto* terrain_table = &ctx.terrain_table;
         auto* scalar_fields_table = &ctx.scalar_fields_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
@@ -197,6 +198,142 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshStyledRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .compile = [logger,
+                         mesh_table,
+                         mesh_render_style_table,
+                         renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<MeshStyledRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    logger->error("mesh styled renderable missing compile desc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "mesh styled renderable requires mesh and style dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const MeshData* mesh = mesh_table->get(dep_handles[0]);
+                if (!mesh || !mesh->valid()) {
+                    logger->error("mesh styled renderable source mesh is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const MeshRenderStyleData* style =
+                    mesh_render_style_table->get(dep_handles[1]);
+                if (!style || !style->valid()) {
+                    logger->error("mesh styled renderable style is invalid");
+                    return compile_failed_node(input);
+                }
+
+                RenderableAssetData data{};
+                data.kind = RenderableKind::Mesh;
+                data.source_asset = desc->mesh_asset;
+                data.companion_asset = desc->style_asset;
+                data.program = BuiltinRenderProgram::MeshWireframeDebug;
+                data.domain = RenderDomain::Opaque;
+                data.policy_flags = RenderPolicy_Wireframe;
+                MeshRenderStyleData effective_style = *style;
+                const bool transparent = is_mesh_render_style_transparent(*style);
+                if (!transparent) {
+                    effective_style.alpha = 1.0f;
+                }
+                effective_style.hidden_line_prepass = false;
+
+                if (!style->wireframe.enabled && !style->surface.enabled) {
+                    logger->warn(
+                        "mesh styled renderable has no enabled render layers");
+                    return compile_failed_node(input);
+                }
+
+                auto apply_depth_policy = [&]()
+                {
+                    if (effective_style.depth_test) {
+                        data.policy_flags |= RenderPolicy_DepthTest;
+                    }
+                    if (effective_style.depth_write) {
+                        data.policy_flags |= RenderPolicy_DepthWrite;
+                    }
+                };
+
+                if (style->surface.enabled) {
+                    if (!mesh->has_normals) {
+                        logger->warn(
+                            "mesh surface layer requires normals; falling back to wireframe layer");
+                        if (!effective_style.wireframe.enabled) {
+                            effective_style.wireframe.enabled = true;
+                            for (int i = 0; i < 4; ++i) {
+                                effective_style.wireframe.color[i] =
+                                    style->surface.color[i];
+                            }
+                            effective_style.wireframe.emissive_strength =
+                                style->surface.emissive_strength;
+                        }
+                        effective_style.surface.enabled = false;
+                    }
+                    else {
+                        if (!style->double_sided) {
+                            logger->warn(
+                                "mesh surface renderables are currently two-sided; treating style as double-sided");
+                            effective_style.double_sided = true;
+                        }
+                        data.program = transparent
+                            ? BuiltinRenderProgram::MeshSurfaceAlpha
+                            : BuiltinRenderProgram::MeshSurface;
+                        data.domain = transparent
+                            ? RenderDomain::Transparent
+                            : RenderDomain::Opaque;
+                        data.policy_flags = transparent
+                            ? RenderPolicy_AlphaBlend
+                            : RenderPolicy_None;
+                        apply_depth_policy();
+                    }
+                }
+
+                if (data.program != BuiltinRenderProgram::MeshSurface
+                    && data.program != BuiltinRenderProgram::MeshSurfaceAlpha)
+                {
+                    data.program = transparent
+                        ? BuiltinRenderProgram::MeshWireframeAlpha
+                        : BuiltinRenderProgram::MeshWireframeDepthDebug;
+                    data.domain = transparent
+                        ? RenderDomain::Transparent
+                        : RenderDomain::Opaque;
+                    data.policy_flags = transparent
+                        ? RenderPolicy_Wireframe | RenderPolicy_AlphaBlend
+                        : RenderPolicy_Wireframe;
+                    apply_depth_policy();
+                }
+                data.mesh_style = effective_style;
+                copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
+
+                wz::asset::ResourceHandle handle =
+                    renderable_table->add(std::move(data));
+
+                if (!handle.valid()) {
+                    logger->error("failed to store mesh styled renderable");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+        });
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainSurfaceRenderableSchema,
