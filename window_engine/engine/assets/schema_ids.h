@@ -168,6 +168,20 @@ namespace wz::engine::assets {
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.
+    // Collision asset derived from CPU MeshData. The recipe chooses how the
+    // source mesh occupies space: bounds, triangle surface, or future proxy
+    // methods. Produces kAssetTypeCollisionAsset output.
+    inline constexpr wz::asset::SchemaID kCollisionFromMeshSchema{
+        0xF11E'CA55'E7'000B00ull
+    };
+
+    // Collision asset derived from semantic terrain data. The recipe chooses
+    // terrain's query-facing occupancy independently of its visual render path.
+    // Produces kAssetTypeCollisionAsset output.
+    inline constexpr wz::asset::SchemaID kCollisionFromTerrainSchema{
+        0xF11E'CA55'E7'000B01ull
+    };
+
     inline constexpr wz::asset::SchemaID kCSVTableSchema{
         0xF11E'CA55'E7'000D00ull
     };

@@ -190,6 +190,28 @@ introduced.
 
 ---
 
+## Collision Assets
+
+Collision assets are CPU-side query/occupancy data products derived from source
+assets. They describe how something occupies space independently of its visual
+representation, so a mesh or terrain can produce bounds, triangle, terrain
+height, or future proxy collision without making the source asset itself
+implicitly collide.
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Collision from mesh | `kCollisionFromMeshSchema` | `0x000B00` | `kAssetTypeCollisionAsset` (150) | `CollisionAssetModule::create_from_mesh()` |
+| Collision from terrain | `kCollisionFromTerrainSchema` | `0x000B01` | `kAssetTypeCollisionAsset` (150) | `CollisionAssetModule::create_from_terrain()` |
+
+Both schemas produce `CollisionAssetData` stored in `CollisionAssetTable`.
+The recipe carries occupancy semantics (`Solid`, `Surface`, `WalkableSurface`,
+or `Sensor`) and behavior flags such as `blocks_movement` and `queryable`.
+Mesh-derived collision can currently emit bounds or a triangle mesh copy.
+Terrain-derived collision emits a heightfield shape for height-field terrain and
+a terrain mesh surface descriptor for mesh terrain.
+
+---
+
 ## Gaussian Splat Clouds
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |

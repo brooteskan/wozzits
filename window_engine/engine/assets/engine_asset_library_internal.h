@@ -13,6 +13,8 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_compilers.h>
+#include <engine/assets/collision/collision.h>
+#include <engine/assets/collision/collision_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
@@ -57,6 +59,7 @@ namespace wz::engine::assets::internal {
         TOMLTable&                  toml_table;
         MeshTable&                  mesh_table;
         TerrainAssetTable&          terrain_table;
+        CollisionAssetTable&        collision_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
         GaussianSplatColorLODTable& gaussian_splat_color_lod_table;
         DataTable&                          data_table;

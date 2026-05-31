@@ -140,6 +140,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeTerrain =
         static_cast<wz::asset::AssetType>(149);
 
+    // Implemented: CPU-side collision/query data derived from authored source
+    // assets. Runtime data is owned by CollisionAssetTable.
+    inline constexpr wz::asset::AssetType kAssetTypeCollisionAsset =
+        static_cast<wz::asset::AssetType>(150);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);

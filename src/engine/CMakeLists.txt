@@ -44,6 +44,10 @@ target_sources(window_engine PRIVATE
     assets/terrain/terrain_compilers.cpp
     assets/terrain_asset_module.cpp
 
+    assets/collision/collision.cpp
+    assets/collision/collision_compilers.cpp
+    assets/collision_asset_module.cpp
+
     assets/gaussian_splat/gaussian_splat.cpp
     assets/gaussian_splat/gaussian_splat_decode.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp

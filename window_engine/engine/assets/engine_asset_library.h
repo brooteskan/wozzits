@@ -35,6 +35,9 @@
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain_asset_module.h>
 
+#include <engine/assets/collision/collision.h>
+#include <engine/assets/collision_asset_module.h>
+
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
@@ -134,6 +137,9 @@ namespace wz::engine::assets
         TerrainAssetModule&            terrains()       { return terrains_; }
         const TerrainAssetModule&      terrains() const { return terrains_; }
 
+        CollisionAssetModule&       collisions()       { return collisions_; }
+        const CollisionAssetModule& collisions() const { return collisions_; }
+
         GaussianSplatAssetModule&       gaussian_splats()         { return gaussian_splats_; }
         const GaussianSplatAssetModule& gaussian_splats()   const { return gaussian_splats_; }
 
@@ -194,6 +200,7 @@ namespace wz::engine::assets
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
         TerrainAssetTable           terrain_table_;
+        CollisionAssetTable         collision_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         GaussianSplatColorLODTable  gaussian_splat_color_lod_table_;
         DataTable                   data_table_;
@@ -219,6 +226,7 @@ namespace wz::engine::assets
         TOMLAssetModule             toml_;
         MeshAssetModule             meshes_;
         TerrainAssetModule          terrains_;
+        CollisionAssetModule        collisions_;
         GaussianSplatAssetModule    gaussian_splats_;
         GaussianSplatColorLODAssetModule gaussian_splat_color_lods_;
         DataTableAssetModule        data_tables_;
