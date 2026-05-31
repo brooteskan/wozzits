@@ -946,36 +946,6 @@ namespace wz::app
 
             return jobs.ready;
         }
-
-
-
-        wz::render::RenderFrameView build_debug_object_frame(
-            wz::app::GameApp& app,
-            const wz::scene::ViewData& view)
-        {
-            using namespace wz::scene;
-            using namespace wz::render;
-
-            auto cs = compile(
-                app.frame.compiled_scene,
-                app.debug_object.scene.polytree,
-                app.debug_object.descriptors,
-                {},
-                view
-            );
-
-            auto ir = build_render_ir(
-                app.frame.render_ir,
-                cs
-            );
-
-            return build_frame(
-                app.frame.render_frame,
-                ir,
-                cs
-            );
-        }
-
     } // anonymous namespace
 
     void render_contents(
