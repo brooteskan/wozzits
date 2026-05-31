@@ -24,6 +24,7 @@
 namespace wz::app
 {
     using RenderPrepPath = wz::engine::RenderPrepPath;
+    using FrameDirtyState = wz::engine::FrameDirtyState;
     using FrameStorage = wz::engine::FrameStorage;
 
     enum class DebugSceneAnimation
@@ -97,6 +98,7 @@ namespace wz::app
         ScalarFieldDebugRuntime scalar_debug{};
         DebugObjectRuntime      debug_object{};
         AppJobRuntime           jobs{};
+        FrameDirtyState         frame_dirty{};
         FrameStorage            frame{};
     };
 

@@ -403,7 +403,7 @@ namespace wz::app
             app.debug_object.ready = false;
             app.debug_object.compiled_scene_valid = false;
             app.debug_object.transforms_dirty = false;
-            app.frame.render_prep_path = RenderPrepPath::FullCompile;
+            app.frame_dirty.mark_render_full_compile();
 
             const DebugSceneConfig& config = kDebugSceneModes[mode_index];
 
@@ -611,7 +611,7 @@ namespace wz::app
             summary
                 << "jobs frame=" << profile.frame_index
                 << " mode=" << (config ? config->name : "<none>")
-                << " path=" << render_prep_path_name(app.frame.render_prep_path)
+                << " path=" << render_prep_path_name(app.frame_dirty.render_prep_path())
                 << " anim=" << (
                     config
                     ? debug_scene_animation_name(config->animation)
@@ -695,7 +695,7 @@ namespace wz::app
                 dbg.compiled_scene_valid = true;
                 dbg.transforms_dirty = false;
 
-                app.frame.render_prep_path = RenderPrepPath::FullCompile;
+                app.frame_dirty.mark_render_full_compile();
                 return;
             }
 
@@ -720,7 +720,7 @@ namespace wz::app
 
                 dbg.transforms_dirty = false;
 
-                app.frame.render_prep_path = RenderPrepPath::TransformAndView;
+                app.frame_dirty.mark_render_transform_and_view();
                 return;
             }
 
@@ -729,7 +729,7 @@ namespace wz::app
                 app.frame.view
             );
 
-            app.frame.render_prep_path = RenderPrepPath::ViewOnly;
+            app.frame_dirty.mark_render_view_only();
         }
 
         void job_build_render_ir(wz::jobs::JobContext& ctx)
@@ -741,7 +741,7 @@ namespace wz::app
             if (!data->app->debug_object.ready)
                 return;
 
-            if (data->app->frame.render_prep_path == RenderPrepPath::FullCompile)
+            if (data->app->frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
             {
                 wz::render::build_render_ir(
                     data->app->frame.render_ir,
@@ -763,7 +763,7 @@ namespace wz::app
             if (!data->app->debug_object.ready)
                 return;
 
-            if (data->app->frame.render_prep_path == RenderPrepPath::FullCompile)
+            if (data->app->frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
             {
                 wz::render::build_frame(
                     data->app->frame.render_frame,
@@ -1152,7 +1152,7 @@ namespace wz::app
             allocs.reallocations_this_frame;
 
         out.render_prep_path =
-            render_prep_path_name(app.frame.render_prep_path);
+            render_prep_path_name(app.frame_dirty.render_prep_path());
 
         out.job_count = 0;
         out.total_job_ms = 0.0;

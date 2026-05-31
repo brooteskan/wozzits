@@ -25,6 +25,7 @@
 namespace wz::bench
 {
     using RenderPrepPath = wz::engine::RenderPrepPath;
+    using FrameDirtyState = wz::engine::FrameDirtyState;
     using BenchFrameStorage = wz::engine::FrameStorage;
 
     // Owns the CPU-side scene data for one benchmark scene.
@@ -91,6 +92,7 @@ namespace wz::bench
         SceneDefinition scene_def{};
         SceneRuntime    scene_runtime{};
         BenchJobRuntime jobs{};
+        FrameDirtyState frame_dirty{};
         BenchFrameStorage frame{};
     };
 

@@ -173,7 +173,7 @@ namespace wz::bench
             summary
                 << "bench frame=" << profile.frame_index
                 << " scene=" << app.scene_def.name
-                << " path=" << prep_path_name(app.frame.render_prep_path)
+                << " path=" << prep_path_name(app.frame_dirty.render_prep_path())
                 << " nav=" << (app.navigation_active ? "on" : "off")
                 << " total=" << ticks_to_ms(total_ticks) << " ms"
                 << " prep=" << ticks_to_ms(prep_ticks)   << " ms"
@@ -301,7 +301,7 @@ namespace wz::bench
 
                 sr.compiled_scene_valid = true;
                 sr.transforms_dirty     = false;
-                app.frame.render_prep_path = RenderPrepPath::FullCompile;
+                app.frame_dirty.mark_render_full_compile();
                 return;
             }
 
@@ -320,12 +320,12 @@ namespace wz::bench
                     true);
 
                 sr.transforms_dirty        = false;
-                app.frame.render_prep_path = RenderPrepPath::TransformAndView;
+                app.frame_dirty.mark_render_transform_and_view();
                 return;
             }
 
             wz::scene::update_view(app.frame.compiled_scene, app.frame.view);
-            app.frame.render_prep_path = RenderPrepPath::ViewOnly;
+            app.frame_dirty.mark_render_view_only();
         }
 
         void job_build_render_ir(wz::jobs::JobContext& ctx)
@@ -336,7 +336,7 @@ namespace wz::bench
             if (!app.scene_runtime.ready)
                 return;
 
-            if (app.frame.render_prep_path == RenderPrepPath::FullCompile)
+            if (app.frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
                 wz::render::build_render_ir(app.frame.render_ir, app.frame.compiled_scene.scene);
             else
                 wz::render::update_render_ir(app.frame.render_ir, app.frame.compiled_scene.scene);
@@ -350,7 +350,7 @@ namespace wz::bench
             if (!app.scene_runtime.ready)
                 return;
 
-            if (app.frame.render_prep_path == RenderPrepPath::FullCompile)
+            if (app.frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
             {
                 wz::render::build_frame(
                     app.frame.render_frame,
