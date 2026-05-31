@@ -14,6 +14,7 @@ namespace wz::render::backend::dx12
     namespace
     {
         using wz::engine::assets::BuiltinRenderProgram;
+        using wz::math::Mat4;
 
         struct TerrainLightingConstants
         {
