@@ -32,7 +32,6 @@ namespace wz::app
 {
     namespace
     {
-        static bool g_logged_job_update_once = false;
         constexpr uint32_t kAnimatedDebugObjectCount = 10;
         constexpr uint32_t kAnimatedSubtreeRootCount = 10;
         constexpr uint32_t kAnimatedSubtreeLeafCount = 10;
@@ -1023,10 +1022,10 @@ namespace wz::app
             app,
             app.debug_object.animation_time_seconds);
 
-        if (!g_logged_job_update_once)
+        if (!app.jobs.update_logged)
         {
             app.ctx.logger.info("app update running through DagScheduler");
-            g_logged_job_update_once = true;
+            app.jobs.update_logged = true;
         }
 
         PlatformEventsJobData platform_events_data{

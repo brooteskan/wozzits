@@ -88,6 +88,7 @@ namespace wz::app
         wz::jobs::FrameJobProfile profile{};
 
         bool ready = false;
+        bool update_logged = false;
     };
 
     struct GameApp
