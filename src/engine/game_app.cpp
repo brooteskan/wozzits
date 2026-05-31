@@ -69,12 +69,37 @@ namespace wz::app
 
         constexpr uint32_t kDefaultDebugSceneModeIndex = 1;
 
-        struct AppUpdateFrameData
+        struct PlatformEventsJobData
         {
             wz::engine::Context* ctx = nullptr;
-            wz::engine::FrameContext* fctx = nullptr;
-            wz::app::GameApp* app = nullptr;
-            float                     dt = 0.0f;
+            wz::engine::AppContext* app_ctx = nullptr;
+        };
+
+        struct ShutdownInputJobData
+        {
+            wz::engine::Context* ctx = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
+        };
+
+        struct CameraUpdateJobData
+        {
+            wz::app::RuntimeCamera* camera = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
+            float dt = 0.0f;
+        };
+
+        struct BuildViewJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            const wz::app::RuntimeCamera* camera = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
+        };
+
+        struct RenderPrepJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            wz::engine::FrameDirtyState* frame_dirty = nullptr;
+            wz::app::DebugObjectRuntime* debug_object = nullptr;
         };
 
         void update_world_for_nodes(
@@ -662,23 +687,27 @@ namespace wz::app
 
         void job_build_view(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<BuildViewJobData*>(ctx.frame_user);
             assert(data);
             assert(data->fctx);
-            assert(data->app);
+            assert(data->camera);
+            assert(data->frame);
 
-            data->app->frame.view =
-                build_view_data(data->app->camera, *data->fctx);
+            data->frame->view =
+                build_view_data(*data->camera, *data->fctx);
         }
 
         void job_compile_scene(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<RenderPrepJobData*>(ctx.frame_user);
             assert(data);
-            assert(data->app);
+            assert(data->frame);
+            assert(data->frame_dirty);
+            assert(data->debug_object);
 
-            auto& app = *data->app;
-            auto& dbg = app.debug_object;
+            auto& frame = *data->frame;
+            auto& frame_dirty = *data->frame_dirty;
+            auto& dbg = *data->debug_object;
 
             if (!dbg.ready)
                 return;
@@ -686,17 +715,17 @@ namespace wz::app
             if (!dbg.compiled_scene_valid)
             {
                 wz::scene::compile(
-                    app.frame.compiled_scene,
+                    frame.compiled_scene,
                     dbg.scene.polytree,
                     dbg.descriptors,
                     {},
-                    app.frame.view
+                    frame.view
                 );
 
                 dbg.compiled_scene_valid = true;
                 dbg.transforms_dirty = false;
 
-                app.frame_dirty.mark_render_full_compile();
+                frame_dirty.mark_render_full_compile();
                 return;
             }
 
@@ -711,88 +740,92 @@ namespace wz::app
                 );
 
                 wz::scene::update_compiled_transforms(
-                    app.frame.compiled_scene,
+                    frame.compiled_scene,
                     dbg.scene.polytree,
                     dbg.descriptors,
-                    app.frame.view,
+                    frame.view,
                     dbg.transform_affected_nodes,
                     true
                 );
 
                 dbg.transforms_dirty = false;
 
-                app.frame_dirty.mark_render_transform_and_view();
+                frame_dirty.mark_render_transform_and_view();
                 return;
             }
 
             wz::scene::update_view(
-                app.frame.compiled_scene,
-                app.frame.view
+                frame.compiled_scene,
+                frame.view
             );
 
-            app.frame_dirty.mark_render_view_only();
+            frame_dirty.mark_render_view_only();
         }
 
         void job_build_render_ir(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<RenderPrepJobData*>(ctx.frame_user);
             assert(data);
-            assert(data->app);
+            assert(data->frame);
+            assert(data->frame_dirty);
+            assert(data->debug_object);
 
-            if (!data->app->debug_object.ready)
+            if (!data->debug_object->ready)
                 return;
 
-            if (data->app->frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
+            if (data->frame_dirty->render_prep_path() == RenderPrepPath::FullCompile)
             {
                 wz::render::build_render_ir(
-                    data->app->frame.render_ir,
-                    data->app->frame.compiled_scene.scene
+                    data->frame->render_ir,
+                    data->frame->compiled_scene.scene
                 );
             }
             else
             {
-                wz::render::update_render_ir(data->app->frame.render_ir, data->app->frame.compiled_scene.scene);
+                wz::render::update_render_ir(data->frame->render_ir, data->frame->compiled_scene.scene);
             }
         }
 
         void job_build_render_frame(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<RenderPrepJobData*>(ctx.frame_user);
             assert(data);
-            assert(data->app);
+            assert(data->frame);
+            assert(data->frame_dirty);
+            assert(data->debug_object);
 
-            if (!data->app->debug_object.ready)
+            if (!data->debug_object->ready)
                 return;
 
-            if (data->app->frame_dirty.render_prep_path() == RenderPrepPath::FullCompile)
+            if (data->frame_dirty->render_prep_path() == RenderPrepPath::FullCompile)
             {
                 wz::render::build_frame(
-                    data->app->frame.render_frame,
-                    data->app->frame.render_ir.ir,
-                    data->app->frame.compiled_scene.scene
+                    data->frame->render_frame,
+                    data->frame->render_ir.ir,
+                    data->frame->compiled_scene.scene
                 );
             }
             else
             {
                 wz::render::update_frame_view(
-                    data->app->frame.render_frame,
-                    data->app->frame.render_ir.ir,
-                    data->app->frame.compiled_scene.scene
+                    data->frame->render_frame,
+                    data->frame->render_ir.ir,
+                    data->frame->compiled_scene.scene
                 );
             }
         }
 
         void job_platform_events(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<PlatformEventsJobData*>(ctx.frame_user);
             assert(data);
             assert(data->ctx);
-            assert(data->app);
+            assert(data->app_ctx);
 
             wz::window::pump_messages();
 
             PlatformEvent event{};
-            while (wz::window::poll_event(data->app->ctx.window, event))
+            while (wz::window::poll_event(data->app_ctx->window, event))
             {
                 switch (event.type)
                 {
@@ -804,7 +837,7 @@ namespace wz::app
                     if (event.resize.width > 0 && event.resize.height > 0)
                     {
                         wz::gpu::resize(
-                            data->app->ctx.device,
+                            data->app_ctx->device,
                             event.resize.width,
                             event.resize.height
                         );
@@ -816,13 +849,13 @@ namespace wz::app
                 }
             }
 
-            if (wz::window::window_should_close(data->app->ctx.window))
+            if (wz::window::window_should_close(data->app_ctx->window))
                 data->ctx->running = false;
         }
 
         void job_shutdown_input(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<ShutdownInputJobData*>(ctx.frame_user);
             assert(data);
             assert(data->ctx);
             assert(data->fctx);
@@ -833,13 +866,13 @@ namespace wz::app
 
         void job_update_camera(wz::jobs::JobContext& ctx)
         {
-            auto* data = static_cast<AppUpdateFrameData*>(ctx.frame_user);
+            auto* data = static_cast<CameraUpdateJobData*>(ctx.frame_user);
             assert(data);
             assert(data->fctx);
-            assert(data->app);
+            assert(data->camera);
 
             wz::app::update_camera(
-                data->app->camera,
+                *data->camera,
                 data->fctx->input,
                 data->dt
             );
@@ -1047,25 +1080,46 @@ namespace wz::app
             g_logged_job_update_once = true;
         }
 
-        AppUpdateFrameData frame_data{
+        PlatformEventsJobData platform_events_data{
+            .ctx = &ctx,
+            .app_ctx = &app.ctx,
+        };
+
+        ShutdownInputJobData shutdown_input_data{
             .ctx = &ctx,
             .fctx = &fctx,
-            .app = &app,
+        };
+
+        CameraUpdateJobData camera_update_data{
+            .camera = &app.camera,
+            .fctx = &fctx,
             .dt = static_cast<float>(fctx.frame.delta_seconds()),
+        };
+
+        BuildViewJobData build_view_data{
+            .frame = &app.frame,
+            .camera = &app.camera,
+            .fctx = &fctx,
+        };
+
+        RenderPrepJobData render_prep_data{
+            .frame = &app.frame,
+            .frame_dirty = &app.frame_dirty,
+            .debug_object = &app.debug_object,
         };
 
         reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
 
-        app.jobs.exec.bind(app.jobs.platform_events, &frame_data);
-        app.jobs.exec.bind(app.jobs.shutdown_input, &frame_data);
-        app.jobs.exec.bind(app.jobs.camera_update, &frame_data);
+        app.jobs.exec.bind(app.jobs.platform_events, &platform_events_data);
+        app.jobs.exec.bind(app.jobs.shutdown_input, &shutdown_input_data);
+        app.jobs.exec.bind(app.jobs.camera_update, &camera_update_data);
 
-        app.jobs.exec.bind(app.jobs.build_view, &frame_data);
-        app.jobs.exec.bind(app.jobs.compile_scene, &frame_data);
-        app.jobs.exec.bind(app.jobs.build_render_ir, &frame_data);
-        app.jobs.exec.bind(app.jobs.build_render_frame, &frame_data);
+        app.jobs.exec.bind(app.jobs.build_view, &build_view_data);
+        app.jobs.exec.bind(app.jobs.compile_scene, &render_prep_data);
+        app.jobs.exec.bind(app.jobs.build_render_ir, &render_prep_data);
+        app.jobs.exec.bind(app.jobs.build_render_frame, &render_prep_data);
 
         app.jobs.profile.reset(fctx.frame.index);
         app.jobs.scheduler.set_profile(&app.jobs.profile);
