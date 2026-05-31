@@ -1245,7 +1245,6 @@ namespace wz::engine::assets
             }
             if (node.debug_visual) {
                 ++out.auxiliary_visuals;
-                ++out.debug_visuals;
             }
             if (node.editor_handle) {
                 ++out.editor_handles;

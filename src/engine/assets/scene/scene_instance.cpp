@@ -280,9 +280,7 @@ namespace wz::engine::assets
             .event_listeners = static_cast<uint32_t>(
                 instance.event_listeners.size()),
             .auxiliary_visuals = static_cast<uint32_t>(
-                instance.debug_visuals.size()),
-            .debug_visuals = static_cast<uint32_t>(
-                instance.debug_visuals.size()),
+                instance.auxiliary_visuals.size()),
             .editor_handles = static_cast<uint32_t>(
                 instance.editor_handles.size()),
         };
@@ -532,7 +530,7 @@ namespace wz::engine::assets
             }
 
             if (node.debug_visual) {
-                inst.debug_visuals.push_back({
+                inst.auxiliary_visuals.push_back({
                     .node = h,
                     .component = AuxiliaryVisualComponent{
                         .kind    = node.debug_visual->kind,

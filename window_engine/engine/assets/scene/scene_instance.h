@@ -77,8 +77,6 @@ namespace wz::engine::assets
         bool visible = true;
     };
 
-    using DebugVisualComponent = AuxiliaryVisualComponent;
-
     struct EditorHandleComponent
     {
         SceneEditorHandleKind kind = SceneEditorHandleKind::Transform;
@@ -109,7 +107,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
-        std::vector<SceneComponentRecord<DebugVisualComponent>> debug_visuals;
+        std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 
         std::vector<wz::scene::AuthoredEntityId> runtime_to_authored;

@@ -1987,11 +1987,11 @@ TEST(SceneAssetModule, EmptyAnchorWithAxesDebugVisual)
     auto anchor_h = inst.authored_to_runtime["empty_anchor"];
 
     // One debug visual record
-    ASSERT_EQ(inst.debug_visuals.size(), 1u);
-    EXPECT_EQ(inst.debug_visuals[0].node, anchor_h);
-    EXPECT_EQ(inst.debug_visuals[0].component.kind, SceneDebugVisualKind::Axes);
-    EXPECT_FLOAT_EQ(inst.debug_visuals[0].component.scale, 1.5f);
-    EXPECT_TRUE(inst.debug_visuals[0].component.visible);
+    ASSERT_EQ(inst.auxiliary_visuals.size(), 1u);
+    EXPECT_EQ(inst.auxiliary_visuals[0].node, anchor_h);
+    EXPECT_EQ(inst.auxiliary_visuals[0].component.kind, SceneDebugVisualKind::Axes);
+    EXPECT_FLOAT_EQ(inst.auxiliary_visuals[0].component.scale, 1.5f);
+    EXPECT_TRUE(inst.auxiliary_visuals[0].component.visible);
 
     // No renderable
     EXPECT_EQ(inst.renderables[anchor_h].node_class.role,
@@ -2070,10 +2070,10 @@ TEST(SceneAssetModule, CameraNodeWithDebugVisual)
     EXPECT_NE(inst.default_view.projection.m[0], 0.0f);
 
     // Debug visual record exists
-    ASSERT_EQ(inst.debug_visuals.size(), 1u);
-    EXPECT_EQ(inst.debug_visuals[0].node, cam_h);
-    EXPECT_EQ(inst.debug_visuals[0].component.kind, SceneDebugVisualKind::Axes);
-    EXPECT_FLOAT_EQ(inst.debug_visuals[0].component.scale, 0.5f);
+    ASSERT_EQ(inst.auxiliary_visuals.size(), 1u);
+    EXPECT_EQ(inst.auxiliary_visuals[0].node, cam_h);
+    EXPECT_EQ(inst.auxiliary_visuals[0].component.kind, SceneDebugVisualKind::Axes);
+    EXPECT_FLOAT_EQ(inst.auxiliary_visuals[0].component.scale, 0.5f);
 
     // No renderable
     EXPECT_EQ(inst.renderables[cam_h].node_class.role,
@@ -2141,11 +2141,11 @@ TEST(SceneAssetModule, FlyCameraWithDebugVisual)
     ASSERT_EQ(inst.flying_camera_controllers.size(), 1u);
     EXPECT_EQ(inst.flying_camera_controllers[0].node, fly_h);
 
-    ASSERT_EQ(inst.debug_visuals.size(), 1u);
-    EXPECT_EQ(inst.debug_visuals[0].node, fly_h);
-    EXPECT_EQ(inst.debug_visuals[0].component.kind, SceneDebugVisualKind::Axes);
-    EXPECT_FLOAT_EQ(inst.debug_visuals[0].component.scale, 2.0f);
-    EXPECT_FALSE(inst.debug_visuals[0].component.visible);
+    ASSERT_EQ(inst.auxiliary_visuals.size(), 1u);
+    EXPECT_EQ(inst.auxiliary_visuals[0].node, fly_h);
+    EXPECT_EQ(inst.auxiliary_visuals[0].component.kind, SceneDebugVisualKind::Axes);
+    EXPECT_FLOAT_EQ(inst.auxiliary_visuals[0].component.scale, 2.0f);
+    EXPECT_FALSE(inst.auxiliary_visuals[0].component.visible);
 
     // Camera default view still works
     EXPECT_NEAR(inst.default_view.camera_position.y, 10.0f, 1e-4f);
@@ -2198,8 +2198,8 @@ TEST(SceneAssetModule, DebugVisualDefaultsVisibleTrue)
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok());
 
-    ASSERT_EQ(result.instance.debug_visuals.size(), 1u);
-    EXPECT_TRUE(result.instance.debug_visuals[0].component.visible);
+    ASSERT_EQ(result.instance.auxiliary_visuals.size(), 1u);
+    EXPECT_TRUE(result.instance.auxiliary_visuals[0].component.visible);
 }
 
 // ─── Issue #57: debug visual validation tests ───────────────────────────
@@ -2251,22 +2251,20 @@ TEST(SceneAssetModule, AuxiliaryVisualJSONSpellingCompilesToVisualComponent)
     const auto authored_summary =
         summarize_authored_scene_components(*scene_data);
     EXPECT_EQ(authored_summary.auxiliary_visuals, 1u);
-    EXPECT_EQ(authored_summary.debug_visuals, 1u);
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
 
-    ASSERT_EQ(result.instance.debug_visuals.size(), 1u);
+    ASSERT_EQ(result.instance.auxiliary_visuals.size(), 1u);
     EXPECT_EQ(
-        result.instance.debug_visuals[0].component.kind,
+        result.instance.auxiliary_visuals[0].component.kind,
         SceneAuxiliaryVisualKind::Axes);
-    EXPECT_FLOAT_EQ(result.instance.debug_visuals[0].component.scale, 1.25f);
-    EXPECT_FALSE(result.instance.debug_visuals[0].component.visible);
+    EXPECT_FLOAT_EQ(result.instance.auxiliary_visuals[0].component.scale, 1.25f);
+    EXPECT_FALSE(result.instance.auxiliary_visuals[0].component.visible);
 
     const auto runtime_summary =
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.auxiliary_visuals, 1u);
-    EXPECT_EQ(runtime_summary.debug_visuals, 1u);
 }
 
 TEST(SceneDescriptorValidation, RejectsMissingDebugVisualKind)
@@ -2477,8 +2475,8 @@ TEST(SceneAssetModule, NonRenderableAnchorNodeWithEditorHandle)
     EXPECT_EQ(inst.renderables[anchor_h].node_class.role,
         wz::scene::SceneRole::None);
 
-    ASSERT_EQ(inst.debug_visuals.size(), 1u);
-    EXPECT_EQ(inst.debug_visuals[0].node, anchor_h);
+    ASSERT_EQ(inst.auxiliary_visuals.size(), 1u);
+    EXPECT_EQ(inst.auxiliary_visuals[0].node, anchor_h);
 
     ASSERT_EQ(inst.editor_handles.size(), 1u);
     EXPECT_EQ(inst.editor_handles[0].node, anchor_h);
@@ -3440,8 +3438,8 @@ TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
     auto cam_h = inst.authored_to_runtime["cam"];
     EXPECT_EQ(inst.renderables[cam_h].node_class.role,
         wz::scene::SceneRole::None);
-    ASSERT_EQ(inst.debug_visuals.size(), 1u);
-    EXPECT_EQ(inst.debug_visuals[0].node, cam_h);
+    ASSERT_EQ(inst.auxiliary_visuals.size(), 1u);
+    EXPECT_EQ(inst.auxiliary_visuals[0].node, cam_h);
 
     // Compile: only one draw command (from the cube)
     wz::scene::ViewData view{};
@@ -4426,7 +4424,6 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
-    EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
@@ -4447,7 +4444,6 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
-    EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
@@ -4492,7 +4488,6 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
-    EXPECT_EQ(summary.debug_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
 }
 
@@ -4557,7 +4552,6 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
-    EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
 }
 
@@ -4891,7 +4885,6 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
-    EXPECT_EQ(summary.debug_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
 }
 
@@ -5130,7 +5123,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(runtime_summary.renderable_descriptor_slots, 1u);
     EXPECT_TRUE(result.instance.input_receivers.empty());
     EXPECT_TRUE(result.instance.ground_boundaries.empty());
-    EXPECT_TRUE(result.instance.debug_visuals.empty());
+    EXPECT_TRUE(result.instance.auxiliary_visuals.empty());
 }
 
 TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
