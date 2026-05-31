@@ -556,6 +556,7 @@ namespace wz::engine::assets::internal
             const wz::json::JSONValue& node_val,
             wz::Logger& logger,
             const SceneAssetReferenceMap& renderable_asset_references,
+            const SceneAssetReferenceMap& collision_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
             const SceneAssetReferenceMap& mesh_asset_references,
             const SceneAssetReferenceMap& scalar_field_asset_references,
@@ -1440,6 +1441,63 @@ namespace wz::engine::assets::internal
                 node.vector_field_source = source;
             }
 
+            std::optional<wz::asset::AssetKey> collision_asset;
+            if (!parse_asset_reference_object(
+                    node_val,
+                    node.id,
+                    "collision",
+                    logger,
+                    collision_asset_references,
+                    collision_asset))
+            {
+                return std::nullopt;
+            }
+            if (collision_asset) {
+                const auto* collision = find_member(node_val, "collision");
+                SceneCollisionAsset component{};
+                component.collision_asset = *collision_asset;
+
+                auto layer_mask = read_number(*collision, "layer_mask");
+                if (layer_mask) {
+                    if (*layer_mask < 0.0
+                        || *layer_mask > 4294967295.0
+                        || !std::isfinite(*layer_mask))
+                    {
+                        logger.error("collision on node '" + node.id
+                            + "' has invalid layer_mask");
+                        return std::nullopt;
+                    }
+                    component.layer_mask =
+                        static_cast<uint32_t>(*layer_mask);
+                }
+
+                auto collides_with_mask =
+                    read_number(*collision, "collides_with_mask");
+                if (collides_with_mask) {
+                    if (*collides_with_mask < 0.0
+                        || *collides_with_mask > 4294967295.0
+                        || !std::isfinite(*collides_with_mask))
+                    {
+                        logger.error("collision on node '" + node.id
+                            + "' has invalid collides_with_mask");
+                        return std::nullopt;
+                    }
+                    component.collides_with_mask =
+                        static_cast<uint32_t>(*collides_with_mask);
+                }
+
+                auto is_trigger = read_bool(*collision, "is_trigger");
+                if (is_trigger) {
+                    component.is_trigger = *is_trigger;
+                }
+                auto enabled = read_bool(*collision, "enabled");
+                if (enabled) {
+                    component.enabled = *enabled;
+                }
+
+                node.collision = component;
+            }
+
             std::optional<wz::asset::AssetKey> terrain_asset;
             if (!parse_asset_reference_object(
                     node_val,
@@ -1873,6 +1931,7 @@ namespace wz::engine::assets::internal
             const wz::json::JSONDocument& doc,
             wz::Logger& logger,
             const SceneAssetReferenceMap& renderable_asset_references,
+            const SceneAssetReferenceMap& collision_asset_references,
             const SceneAssetReferenceMap& terrain_asset_references,
             const SceneAssetReferenceMap& mesh_asset_references,
             const SceneAssetReferenceMap& scalar_field_asset_references,
@@ -1905,6 +1964,7 @@ namespace wz::engine::assets::internal
                     *nv,
                     logger,
                     renderable_asset_references,
+                    collision_asset_references,
                     terrain_asset_references,
                     mesh_asset_references,
                     scalar_field_asset_references,
@@ -1986,6 +2046,7 @@ namespace wz::engine::assets::internal
                 }
 
                 SceneAssetReferenceMap renderable_asset_references;
+                SceneAssetReferenceMap collision_asset_references;
                 SceneAssetReferenceMap terrain_asset_references;
                 SceneAssetReferenceMap mesh_asset_references;
                 SceneAssetReferenceMap scalar_field_asset_references;
@@ -2000,6 +2061,15 @@ namespace wz::engine::assets::internal
                             && !(ref.key == wz::asset::AssetKey{}))
                         {
                             renderable_asset_references[ref.uri] = ref.key;
+                        }
+                    }
+                    for (const auto& ref :
+                        desc->collision_asset_references)
+                    {
+                        if (!ref.uri.empty()
+                            && !(ref.key == wz::asset::AssetKey{}))
+                        {
+                            collision_asset_references[ref.uri] = ref.key;
                         }
                     }
                     for (const auto& ref :
@@ -2044,6 +2114,7 @@ namespace wz::engine::assets::internal
                     json_data->document,
                     logger,
                     renderable_asset_references,
+                    collision_asset_references,
                     terrain_asset_references,
                     mesh_asset_references,
                     scalar_field_asset_references,

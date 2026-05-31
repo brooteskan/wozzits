@@ -16,11 +16,16 @@ namespace wz::engine::assets
     {
         wz::asset::Hash scene_reference_bindings_hash(
             std::vector<SceneAssetReferenceBinding> refs,
+            std::vector<SceneAssetReferenceBinding> collision_refs = {},
             std::vector<SceneAssetReferenceBinding> terrain_refs = {},
             std::vector<SceneAssetReferenceBinding> mesh_refs = {},
             std::vector<SceneAssetReferenceBinding> scalar_field_refs = {},
             std::vector<SceneAssetReferenceBinding> vector_field_refs = {})
         {
+            refs.insert(
+                refs.end(),
+                collision_refs.begin(),
+                collision_refs.end());
             refs.insert(
                 refs.end(),
                 terrain_refs.begin(),
@@ -114,6 +119,7 @@ namespace wz::engine::assets
                 json_asset.output,
                 scene_reference_bindings_hash(
                     desc.renderable_asset_references,
+                    desc.collision_asset_references,
                     desc.terrain_asset_references,
                     desc.mesh_asset_references,
                     desc.scalar_field_asset_references,
@@ -128,6 +134,8 @@ namespace wz::engine::assets
         node.meta = SceneFromJSONCompileDesc{
             .renderable_asset_references =
                 desc.renderable_asset_references,
+            .collision_asset_references =
+                desc.collision_asset_references,
             .terrain_asset_references = desc.terrain_asset_references,
             .mesh_asset_references = desc.mesh_asset_references,
             .scalar_field_asset_references =
@@ -141,6 +149,9 @@ namespace wz::engine::assets
         append_reference_dependencies(
             deps,
             desc.renderable_asset_references);
+        append_reference_dependencies(
+            deps,
+            desc.collision_asset_references);
         append_reference_dependencies(
             deps,
             desc.terrain_asset_references);

@@ -113,28 +113,29 @@ namespace {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Linear chain with 7 nodes (mirrors the real app pipeline)
+// 1. Linear chain with 8 nodes (mirrors the real app pipeline)
 // ─────────────────────────────────────────────────────────────────────────────
 // The real pipeline is:
 //   platform_events → shutdown_input → camera_update → build_view
-//   → compile_scene → build_render_ir → build_render_frame
+//   → compile_scene → build_collision_frame
+//   → build_render_ir → build_render_frame
 //
-// Collision inserts between compile_scene and build_render_ir.
-// This test validates a 7-node linear chain executes in strict order.
+// Collision runs between compile_scene and build_render_ir.
+// This test validates an 8-node linear chain executes in strict order.
 
-TEST(EngineJobs, SevenNodeLinearChainExecutesInOrder)
+TEST(EngineJobs, EightNodeLinearChainExecutesInOrder)
 {
     JobGraphTemplate tmpl;
 
-    NodeHandle nodes[7];
-    for (int i = 0; i < 7; ++i)
+    NodeHandle nodes[8];
+    for (int i = 0; i < 8; ++i)
         nodes[i] = tmpl.add_job({ .name = "node", .run = record_fn });
 
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 7; ++i)
         ASSERT_TRUE(tmpl.add_dependency(nodes[i], nodes[i + 1]));
 
     ASSERT_TRUE(tmpl.commit());
-    EXPECT_EQ(tmpl.node_count(), 7u);
+    EXPECT_EQ(tmpl.node_count(), 8u);
 
     FrameExecution exec;
     exec.reset(tmpl);
@@ -145,8 +146,8 @@ TEST(EngineJobs, SevenNodeLinearChainExecutesInOrder)
     DagScheduler sched;
     sched.execute(tmpl, exec);
 
-    ASSERT_EQ(order.size(), 7u);
-    for (int i = 0; i < 7; ++i)
+    ASSERT_EQ(order.size(), 8u);
+    for (int i = 0; i < 8; ++i)
         EXPECT_EQ(order[i], nodes[i]) << "node " << i << " out of order";
 }
 
@@ -162,7 +163,7 @@ TEST(EngineJobs, InsertNodeIntoLinearChain)
     JobGraphTemplate tmpl;
 
     auto a = tmpl.add_job({ .name = "compile_scene",     .run = record_fn });
-    auto b = tmpl.add_job({ .name = "build_collision",   .run = record_fn });
+    auto b = tmpl.add_job({ .name = "build_collision_frame", .run = record_fn });
     auto c = tmpl.add_job({ .name = "build_render_ir",   .run = record_fn });
     auto d = tmpl.add_job({ .name = "build_render_frame",.run = record_fn });
 
@@ -206,7 +207,7 @@ TEST(EngineJobs, DiamondDependencyCollisionParallelWithRenderIR)
     JobGraphTemplate tmpl;
 
     auto compile     = tmpl.add_job({ .name = "compile_scene",       .run = record_fn });
-    auto collision   = tmpl.add_job({ .name = "build_collision",     .run = record_fn });
+    auto collision   = tmpl.add_job({ .name = "build_collision_frame", .run = record_fn });
     auto render_ir   = tmpl.add_job({ .name = "build_render_ir",     .run = record_fn });
     auto render_frame= tmpl.add_job({ .name = "build_render_frame",  .run = record_fn });
 

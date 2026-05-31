@@ -95,6 +95,7 @@ namespace wz::engine::assets
                 node.scalar_field_source.has_value();
             const bool has_vector_field_source =
                 node.vector_field_source.has_value();
+            const bool has_collision = node.collision.has_value();
             const bool has_terrain = node.terrain.has_value();
             const bool has_terrain_render_style =
                 node.terrain_render_style.has_value();
@@ -116,6 +117,7 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
+            fp.mix_value(has_collision);
             fp.mix_value(has_terrain);
             fp.mix_value(has_terrain_render_style);
             fp.mix_value(has_terrain_mesh_source);
@@ -307,6 +309,15 @@ namespace wz::engine::assets
                 fp.mix_bytes(boundary.max, sizeof(boundary.max));
                 fp.mix_value(boundary.constrain_vertical);
                 fp.mix_value(boundary.enabled);
+            }
+
+            if (node.collision) {
+                const auto& collision = *node.collision;
+                mix_asset_key(fp, collision.collision_asset);
+                fp.mix_value(collision.layer_mask);
+                fp.mix_value(collision.collides_with_mask);
+                fp.mix_value(collision.is_trigger);
+                fp.mix_value(collision.enabled);
             }
 
             if (node.terrain) {

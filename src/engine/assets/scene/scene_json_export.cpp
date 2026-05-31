@@ -700,6 +700,22 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr collision_value(const SceneCollisionAsset& collision)
+        {
+            auto obj = object_value();
+            add_member(*obj, "asset",
+                string_value(asset_key_string(collision.collision_asset)));
+            add_member(*obj, "layer_mask",
+                number_value(collision.layer_mask));
+            add_member(*obj, "collides_with_mask",
+                number_value(collision.collides_with_mask));
+            add_member(*obj, "is_trigger",
+                bool_value(collision.is_trigger));
+            add_member(*obj, "enabled",
+                bool_value(collision.enabled));
+            return obj;
+        }
+
         JSONValuePtr terrain_render_style_value(
             const SceneTerrainRenderStyleAsset& style)
         {
@@ -902,6 +918,12 @@ namespace wz::engine::assets
             if (node.vector_field_source) {
                 add_member(*obj, "vector_field_source",
                     vector_field_source_value(*node.vector_field_source));
+            }
+            if (node.collision
+                && !(node.collision->collision_asset == wz::asset::AssetKey{}))
+            {
+                add_member(*obj, "collision",
+                    collision_value(*node.collision));
             }
             if (node.terrain
                 && !(node.terrain->terrain_asset == wz::asset::AssetKey{}))

@@ -392,6 +392,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_terrain terrain_asset_module)
 
     rs_add_test_group(asset_collision collision_asset_module)
+    rs_add_test_group(collision collision_frame_tests)
 
     rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(asset_gaussian_splat ply_gaussian_splat)

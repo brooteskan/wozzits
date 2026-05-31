@@ -403,6 +403,15 @@ namespace wz::engine::assets
         bool constrain_movement = true;
     };
 
+    struct SceneCollisionAsset
+    {
+        wz::asset::AssetKey collision_asset{};
+        uint32_t layer_mask = 1;
+        uint32_t collides_with_mask = 0xffffffffu;
+        bool is_trigger = false;
+        bool enabled = true;
+    };
+
     enum class SceneTerrainMeshHeightPolicy : uint8_t
     {
         HighestAcceptedSurface = 0,
@@ -497,6 +506,7 @@ namespace wz::engine::assets
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
+        std::optional<SceneCollisionAsset> collision;
         std::optional<SceneTerrainAsset> terrain;
         std::optional<SceneTerrainRenderStyleAsset> terrain_render_style;
         std::optional<SceneTerrainMeshSourceAsset> terrain_mesh_source;
@@ -534,6 +544,7 @@ namespace wz::engine::assets
     struct SceneFromJSONCompileDesc
     {
         std::vector<SceneAssetReferenceBinding> renderable_asset_references;
+        std::vector<SceneAssetReferenceBinding> collision_asset_references;
         std::vector<SceneAssetReferenceBinding> terrain_asset_references;
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
         std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
@@ -785,6 +796,13 @@ namespace wz::engine::assets
         node.terrain = terrain;
     }
 
+    inline void attach_collision(
+        SceneNodeAsset& node,
+        SceneCollisionAsset collision = {})
+    {
+        node.collision = collision;
+    }
+
     inline void attach_terrain_mesh_source(
         SceneNodeAsset& node,
         SceneTerrainMeshSourceAsset source = {})
@@ -880,6 +898,9 @@ namespace wz::engine::assets
         }
         if (node.vector_field_source) {
             out.push_back(Kind::VectorFieldSource);
+        }
+        if (node.collision) {
+            out.push_back(Kind::Collision);
         }
         if (node.terrain) {
             out.push_back(Kind::Terrain);
@@ -1103,6 +1124,7 @@ namespace wz::engine::assets
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
             || node.ground_boundary.has_value()
+            || node.collision.has_value()
             || node.terrain.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
@@ -1224,6 +1246,9 @@ namespace wz::engine::assets
             }
             if (node.vector_field_source) {
                 ++out.vector_field_sources;
+            }
+            if (node.collision) {
+                ++out.collisions;
             }
             if (node.terrain) {
                 ++out.terrains;

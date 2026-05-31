@@ -23,6 +23,7 @@ namespace wz::engine::assets
         std::string  name;
         wz::fs::Path path;
         std::vector<SceneAssetReferenceBinding> renderable_asset_references;
+        std::vector<SceneAssetReferenceBinding> collision_asset_references;
         std::vector<SceneAssetReferenceBinding> terrain_asset_references;
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
         std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;

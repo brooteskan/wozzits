@@ -6,6 +6,7 @@
 #include <gpu/gpu_types.h>
 
 #include <engine/app_context.h>
+#include <engine/assets/scene/scene_instance.h>
 #include <engine/engine.h>
 #include <engine/frame_storage.h>
 #include <engine/frame_types.h>
@@ -45,7 +46,7 @@ namespace wz::app
 
     struct DebugObjectRuntime
     {
-        wz::scene::SceneStorage scene{};
+        wz::engine::assets::SceneInstance collision_scene{};
         std::vector<wz::scene::RenderableDescriptor> descriptors{};
 
         const DebugSceneConfig* config = nullptr;
@@ -60,6 +61,7 @@ namespace wz::app
         std::vector<wz::core::graph::NodeHandle> transform_affected_nodes{};
 
         bool ready = false;
+        bool collision_scene_valid = false;
         bool transforms_dirty = false;
         bool compiled_scene_valid = false;
     };
@@ -82,6 +84,7 @@ namespace wz::app
 
         wz::jobs::NodeHandle build_view = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle compile_scene = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle build_collision_frame = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_ir = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_frame = wz::jobs::INVALID_JOB;
 

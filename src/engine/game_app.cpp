@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <engine/game_app.h>
+#include <engine/collision/collision_frame.h>
 #include <engine/runtime_camera.h>
 #include <math/projection.h>
 
@@ -101,6 +102,13 @@ namespace wz::app
             wz::app::DebugObjectRuntime* debug_object = nullptr;
         };
 
+        struct CollisionFrameJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            const wz::engine::assets::SceneInstance* scene = nullptr;
+            const wz::engine::assets::CollisionAssetModule* collisions = nullptr;
+        };
+
         void update_world_for_nodes(
             wz::scene::SceneGraph& g,
             std::span<const wz::core::graph::NodeHandle> nodes)
@@ -120,6 +128,23 @@ namespace wz::app
                         wz::core::graph::node_data(g, p).world,
                         node.local);
             }
+        }
+
+        void set_debug_object_local(
+            wz::app::DebugObjectRuntime& dbg,
+            wz::core::graph::NodeHandle n,
+            const wz::math::Mat4& local)
+        {
+            if (!dbg.collision_scene_valid)
+                return;
+
+            if (n >= wz::core::graph::node_count(dbg.collision_scene.storage.polytree))
+                return;
+
+            wz::scene::set_local(
+                dbg.collision_scene.storage.polytree,
+                n,
+                local);
         }
 
         void update_debug_object_animation(
@@ -152,7 +177,7 @@ namespace wz::app
                     local.m[13] = base.y + 0.5f * std::sin(t * 2.0f + static_cast<float>(i));
                     local.m[14] = base.z;
 
-                    wz::scene::set_local(dbg.scene.polytree, n, local);
+                    set_debug_object_local(dbg, n, local);
 
                     dbg.transform_affected_nodes.push_back(n);
                 }
@@ -173,7 +198,7 @@ namespace wz::app
                     local.m[13] = base.y + 0.75f * std::sin(t * 1.5f + static_cast<float>(i));
                     local.m[14] = base.z;
 
-                    wz::scene::set_local(dbg.scene.polytree, n, local);
+                    set_debug_object_local(dbg, n, local);
 
                     dbg.transform_affected_nodes.push_back(n);
                 }
@@ -365,11 +390,12 @@ namespace wz::app
             if (!scene_result.has_value())
                 return false;
 
-            app.debug_object.scene = std::move(*scene_result);
+            app.debug_object.collision_scene = {};
+            app.debug_object.collision_scene.storage = std::move(*scene_result);
 
             app.debug_object.descriptors.clear();
             app.debug_object.descriptors.resize(
-                node_count(app.debug_object.scene.polytree)
+                node_count(app.debug_object.collision_scene.storage.polytree)
             );
 
             for (auto& desc : app.debug_object.descriptors)
@@ -402,9 +428,10 @@ namespace wz::app
                 };
             }
 
-            propagate_all(app.debug_object.scene.polytree);
+            propagate_all(app.debug_object.collision_scene.storage.polytree);
 
             app.debug_object.ready = true;
+            app.debug_object.collision_scene_valid = true;
             app.debug_object.transforms_dirty = false;
 
             return true;
@@ -425,6 +452,7 @@ namespace wz::app
             }
 
             app.debug_object.ready = false;
+            app.debug_object.collision_scene_valid = false;
             app.debug_object.compiled_scene_valid = false;
             app.debug_object.transforms_dirty = false;
             app.debug_object.animation_time_seconds = 0.0f;
@@ -598,7 +626,8 @@ namespace wz::app
 
             const auto scene_nodes =
                 app.debug_object.ready
-                ? wz::core::graph::node_count(app.debug_object.scene.polytree)
+                ? wz::core::graph::node_count(
+                    app.debug_object.collision_scene.storage.polytree)
                 : 0;
             const auto& culling = app.frame.render_ir.ir.culling;
             const DebugSceneConfig* config = app.debug_object.config;
@@ -694,7 +723,7 @@ namespace wz::app
             {
                 wz::scene::compile(
                     frame.compiled_scene,
-                    dbg.scene.polytree,
+                    dbg.collision_scene.storage.polytree,
                     dbg.descriptors,
                     {},
                     frame.view
@@ -713,13 +742,13 @@ namespace wz::app
             if (dbg.transforms_dirty)
             {
                 update_world_for_nodes(
-                    dbg.scene.polytree,
+                    dbg.collision_scene.storage.polytree,
                     dbg.transform_affected_nodes
                 );
 
                 wz::scene::update_compiled_transforms(
                     frame.compiled_scene,
-                    dbg.scene.polytree,
+                    dbg.collision_scene.storage.polytree,
                     dbg.descriptors,
                     frame.view,
                     dbg.transform_affected_nodes,
@@ -762,6 +791,28 @@ namespace wz::app
             {
                 wz::render::update_render_ir(data->frame->render_ir, data->frame->compiled_scene.scene);
             }
+        }
+
+        void job_build_collision_frame(wz::jobs::JobContext& ctx)
+        {
+            auto* data = static_cast<CollisionFrameJobData*>(ctx.frame_user);
+            assert(data);
+            assert(data->frame);
+
+            auto& collision = data->frame->collision;
+            if (!data->scene || !data->collisions)
+            {
+                collision.world.clear();
+                collision.current_pairs.clear();
+                collision.prev_pairs.clear();
+                collision.events.clear();
+                return;
+            }
+
+            wz::engine::collision::build_collision_frame(
+                *data->scene,
+                *data->collisions,
+                collision);
         }
 
         void job_build_render_frame(wz::jobs::JobContext& ctx)
@@ -890,6 +941,12 @@ namespace wz::app
                 .run = job_compile_scene,
                 });
 
+            jobs.build_collision_frame = jobs.graph.add_job({
+                .name = "build_collision_frame",
+                .lane = wz::jobs::ExecutionLane::MainThread,
+                .run = job_build_collision_frame,
+                });
+
             jobs.build_render_ir = jobs.graph.add_job({
                 .name = "build_render_ir",
                 .lane = wz::jobs::ExecutionLane::MainThread,
@@ -907,14 +964,15 @@ namespace wz::app
             jobs.graph.add_dependency(jobs.shutdown_input, jobs.camera_update);
             jobs.graph.add_dependency(jobs.camera_update, jobs.build_view);
             jobs.graph.add_dependency(jobs.build_view, jobs.compile_scene);
-            jobs.graph.add_dependency(jobs.compile_scene, jobs.build_render_ir);
+            jobs.graph.add_dependency(jobs.compile_scene, jobs.build_collision_frame);
+            jobs.graph.add_dependency(jobs.build_collision_frame, jobs.build_render_ir);
             jobs.graph.add_dependency(jobs.build_render_ir, jobs.build_render_frame);
             jobs.ready = jobs.graph.commit();
 
             if (jobs.ready)
             {
                 app.ctx.logger.info(
-                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_render_ir -> build_render_frame"
+                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> build_render_ir -> build_render_frame"
                 );
             }
             else
@@ -1056,6 +1114,15 @@ namespace wz::app
             .debug_object = &app.debug_object,
         };
 
+        CollisionFrameJobData collision_frame_data{
+            .frame = &app.frame,
+            .scene =
+                app.debug_object.collision_scene_valid
+                ? &app.debug_object.collision_scene
+                : nullptr,
+            .collisions = app.ctx.assets ? &app.ctx.assets->collisions() : nullptr,
+        };
+
         reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
@@ -1066,6 +1133,7 @@ namespace wz::app
 
         app.jobs.exec.bind(app.jobs.build_view, &build_view_data);
         app.jobs.exec.bind(app.jobs.compile_scene, &render_prep_data);
+        app.jobs.exec.bind(app.jobs.build_collision_frame, &collision_frame_data);
         app.jobs.exec.bind(app.jobs.build_render_ir, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_render_frame, &render_prep_data);
 
@@ -1122,7 +1190,7 @@ namespace wz::app
             app.debug_object.ready
             ? static_cast<uint64_t>(
                 wz::core::graph::node_count(
-                    app.debug_object.scene.polytree))
+                    app.debug_object.collision_scene.storage.polytree))
             : 0;
 
         out.opaque_commands =

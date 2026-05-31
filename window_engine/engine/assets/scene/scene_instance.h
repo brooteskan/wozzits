@@ -60,6 +60,15 @@ namespace wz::engine::assets
         bool constrain_movement = true;
     };
 
+    struct CollisionComponent
+    {
+        wz::asset::AssetKey collision_asset{};
+        uint32_t layer_mask = 1;
+        uint32_t collides_with_mask = 0xffffffffu;
+        bool is_trigger = false;
+        bool enabled = true;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -104,6 +113,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<FlyingCameraControllerComponent>> flying_camera_controllers;
         std::vector<SceneComponentRecord<ActorMovementControllerComponent>> actor_movement_controllers;
         std::vector<SceneComponentRecord<GroundBoundaryComponent>> ground_boundaries;
+        std::vector<SceneComponentRecord<CollisionComponent>> collisions;
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;

@@ -1738,6 +1738,210 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_FALSE(result.instance.terrains[0].component.constrain_movement);
 }
 
+TEST(SceneAssetModule, CollisionComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_collision_component_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "collision/source_cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto collision = assets.collisions().create_from_mesh({
+        .name = "collision/cube_sensor",
+        .mesh = mesh,
+        .build_method = CollisionBuildMethod::Bounds,
+        .occupancy = CollisionOccupancyData{
+            .kind = CollisionOccupancyKind::Sensor,
+            .blocks_movement = false,
+            .queryable = true,
+        },
+    });
+    ASSERT_TRUE(collision.valid());
+
+    SceneAssetData authored{};
+    authored.name = "collision_component_scene";
+    SceneNodeAsset node{};
+    node.id = "sensor";
+    node.collision = SceneCollisionAsset{
+        .collision_asset = collision.output,
+        .layer_mask = 0x2u,
+        .collides_with_mask = 0x5u,
+        .is_trigger = true,
+        .enabled = false,
+    };
+    authored.nodes.push_back(std::move(node));
+
+    const auto authored_components =
+        authored_components_for_node(authored.nodes[0]);
+    EXPECT_EQ(std::count(
+        authored_components.begin(),
+        authored_components.end(),
+        wz::scene::SceneAuthoredComponentKind::Collision), 1);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(authored);
+    EXPECT_EQ(authored_summary.collisions, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"collision\""), std::string::npos);
+    EXPECT_NE(exported.find("\"layer_mask\""), std::string::npos);
+    EXPECT_NE(exported.find("\"collides_with_mask\""), std::string::npos);
+    EXPECT_NE(exported.find("\"is_trigger\""), std::string::npos);
+    EXPECT_NE(exported.find("\"enabled\""), std::string::npos);
+    EXPECT_NE(exported.find("asset-key:"), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root, "collision_component.scene.json", exported);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "collision_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].collision.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].collision->collision_asset,
+        collision.output);
+    EXPECT_EQ(scene_data->nodes[0].collision->layer_mask, 0x2u);
+    EXPECT_EQ(scene_data->nodes[0].collision->collides_with_mask, 0x5u);
+    EXPECT_TRUE(scene_data->nodes[0].collision->is_trigger);
+    EXPECT_FALSE(scene_data->nodes[0].collision->enabled);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.collisions.size(), 1u);
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("sensor"));
+    EXPECT_EQ(
+        result.instance.collisions[0].node,
+        result.instance.authored_to_runtime["sensor"]);
+    EXPECT_EQ(
+        result.instance.collisions[0].component.collision_asset,
+        collision.output);
+    EXPECT_EQ(result.instance.collisions[0].component.layer_mask, 0x2u);
+    EXPECT_EQ(result.instance.collisions[0].component.collides_with_mask, 0x5u);
+    EXPECT_TRUE(result.instance.collisions[0].component.is_trigger);
+    EXPECT_FALSE(result.instance.collisions[0].component.enabled);
+
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.collisions, 1u);
+}
+
+TEST(SceneAssetModule, CollisionComponentResolvesSymbolicSceneReference)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_collision_symbolic_ref_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "collision/source_cube_symbolic",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto collision = assets.collisions().create_from_mesh({
+        .name = "collision/cube_symbolic",
+        .mesh = mesh,
+        .build_method = CollisionBuildMethod::Bounds,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    const char* json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "collision_symbolic_reference_scene",
+  "nodes": [
+    {
+      "id": "body",
+      "collision": {
+        "asset": "asset://collisions/cube_symbolic",
+        "layer_mask": 4,
+        "collides_with_mask": 7,
+        "is_trigger": false
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "collision_symbolic.scene.json", json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "collision_symbolic",
+            .path = rel_path,
+            .collision_asset_references = {
+                SceneAssetReferenceBinding{
+                    .uri = "asset://collisions/cube_symbolic",
+                    .key = collision.output,
+                },
+            },
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].collision.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].collision->collision_asset,
+        collision.output);
+    EXPECT_EQ(scene_data->nodes[0].collision->layer_mask, 4u);
+    EXPECT_EQ(scene_data->nodes[0].collision->collides_with_mask, 7u);
+    EXPECT_FALSE(scene_data->nodes[0].collision->is_trigger);
+    EXPECT_TRUE(scene_data->nodes[0].collision->enabled);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.collisions.size(), 1u);
+    EXPECT_EQ(
+        result.instance.collisions[0].component.collision_asset,
+        collision.output);
+    EXPECT_EQ(result.instance.collisions[0].component.layer_mask, 4u);
+    EXPECT_EQ(result.instance.collisions[0].component.collides_with_mask, 7u);
+    EXPECT_FALSE(result.instance.collisions[0].component.is_trigger);
+    EXPECT_TRUE(result.instance.collisions[0].component.enabled);
+}
+
 // ─── Descriptor validation (negative) tests ─────────────────────────────
 
 namespace
@@ -4189,7 +4393,13 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
 
     wz::asset::AssetKey renderable_key{};
     renderable_key.content_hash = { 0x60, 0x04 };
+    wz::asset::AssetKey collision_key{};
+    collision_key.content_hash = { 0xc0, 0x11 };
     attach_renderable_asset(node, renderable_key);
+    attach_collision(node, SceneCollisionAsset{
+        .collision_asset = collision_key,
+        .layer_mask = 0x2u,
+    });
     attach_camera(node, SceneCameraAsset{ .fov_y = 0.75f });
     attach_auxiliary_visual(node, SceneAuxiliaryVisualAsset{
         .kind = SceneAuxiliaryVisualKind::Axes,
@@ -4203,6 +4413,8 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     EXPECT_NE(std::find(components.begin(), components.end(), Kind::Transform),
         components.end());
     EXPECT_NE(std::find(components.begin(), components.end(), Kind::Renderable),
+        components.end());
+    EXPECT_NE(std::find(components.begin(), components.end(), Kind::Collision),
         components.end());
     EXPECT_NE(std::find(components.begin(), components.end(), Kind::Camera),
         components.end());
@@ -4219,6 +4431,7 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     EXPECT_EQ(summary.nodes, 1u);
     EXPECT_EQ(summary.transforms, 1u);
     EXPECT_EQ(summary.renderables, 1u);
+    EXPECT_EQ(summary.collisions, 1u);
     EXPECT_EQ(summary.cameras, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
@@ -4226,6 +4439,9 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     const auto& stored = scene.nodes.front();
     EXPECT_EQ(stored.local.translation[0], 1.0f);
     EXPECT_EQ(*stored.renderable_asset, renderable_key);
+    ASSERT_TRUE(stored.collision.has_value());
+    EXPECT_EQ(stored.collision->collision_asset, collision_key);
+    EXPECT_EQ(stored.collision->layer_mask, 0x2u);
     ASSERT_TRUE(stored.camera.has_value());
     EXPECT_FLOAT_EQ(stored.camera->fov_y, 0.75f);
     ASSERT_TRUE(stored.debug_visual.has_value());
@@ -4400,6 +4616,8 @@ TEST(SceneECSBoundary, SceneECSVocabularyIsSceneLayerOnly)
     EXPECT_EQ(record.component, 7);
     EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
         wz::scene::SceneAuthoredComponentKind::GroundBoundary));
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::Collision));
 }
 
 TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
@@ -4421,6 +4639,7 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
+    EXPECT_EQ(summary.collisions, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4441,6 +4660,7 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
+    EXPECT_EQ(summary.collisions, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4485,6 +4705,7 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
+    EXPECT_EQ(summary.collisions, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4518,6 +4739,9 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
         .min = { -5.0f, 0.0f, -5.0f },
         .max = { 5.0f, 0.0f, 5.0f },
     };
+    camera_node.collision = SceneCollisionAsset{
+        .layer_mask = 0x8u,
+    };
     camera_node.audio_listener = SceneAudioListenerAsset{};
     camera_node.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -4549,6 +4773,7 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.ground_boundaries, 1u);
+    EXPECT_EQ(summary.collisions, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
@@ -4859,6 +5084,9 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
         .min = { -5.0f, 0.0f, -5.0f },
         .max = { 5.0f, 0.0f, 5.0f },
     };
+    camera.collision = SceneCollisionAsset{
+        .layer_mask = 0x10u,
+    };
     camera.audio_listener = SceneAudioListenerAsset{};
     camera.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
@@ -4882,6 +5110,7 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.ground_boundaries, 1u);
+    EXPECT_EQ(summary.collisions, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
@@ -4944,6 +5173,33 @@ TEST(SceneECSBoundary, FingerprintTracksAuthoredComponentData)
     const uint64_t original = scene_asset_fingerprint(scene);
 
     scene.nodes[0].camera->fov_y = 0.75f;
+    const uint64_t changed = scene_asset_fingerprint(scene);
+
+    EXPECT_NE(original, changed);
+}
+
+TEST(SceneECSBoundary, FingerprintTracksCollisionComponentData)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "fingerprint_collision_scene";
+
+    wz::asset::AssetKey collision_key{};
+    collision_key.content_hash = { 0xc011, 0x510u };
+
+    SceneNodeAsset node{};
+    node.id = "body";
+    node.collision = SceneCollisionAsset{
+        .collision_asset = collision_key,
+        .layer_mask = 0x2u,
+        .collides_with_mask = 0x4u,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t original = scene_asset_fingerprint(scene);
+
+    scene.nodes[0].collision->collides_with_mask = 0x8u;
     const uint64_t changed = scene_asset_fingerprint(scene);
 
     EXPECT_NE(original, changed);

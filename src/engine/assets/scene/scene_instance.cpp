@@ -271,6 +271,8 @@ namespace wz::engine::assets
                 instance.actor_movement_controllers.size()),
             .ground_boundaries = static_cast<uint32_t>(
                 instance.ground_boundaries.size()),
+            .collisions = static_cast<uint32_t>(
+                instance.collisions.size()),
             .terrains = static_cast<uint32_t>(
                 instance.terrains.size()),
             .terrain_mesh_sources = 0,
@@ -495,6 +497,20 @@ namespace wz::engine::assets
                 inst.ground_boundaries.push_back({
                     .node = h,
                     .component = component,
+                });
+            }
+
+            if (node.collision) {
+                const auto& collision = *node.collision;
+                inst.collisions.push_back({
+                    .node = h,
+                    .component = CollisionComponent{
+                        .collision_asset = collision.collision_asset,
+                        .layer_mask = collision.layer_mask,
+                        .collides_with_mask = collision.collides_with_mask,
+                        .is_trigger = collision.is_trigger,
+                        .enabled = collision.enabled,
+                    },
                 });
             }
 
