@@ -7,9 +7,7 @@
 #include <file/filesystem.h>
 
 #include <any>
-#include <mutex>
 #include <span>
-#include <unordered_map>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -29,35 +27,15 @@ namespace wz::engine::assets::internal
                 return compile_failed_node(input);
             }
 
-            static std::mutex cache_mutex;
-            static std::unordered_map<std::string, std::vector<uint8_t>> cache;
-
-            std::vector<uint8_t> bytes;
-            bool found_cached = false;
-            {
-                std::lock_guard<std::mutex> lock(cache_mutex);
-                const auto found = cache.find(file->full_path);
-                if (found != cache.end()) {
-                    bytes = found->second;
-                    found_cached = true;
-                }
-            }
-
-            if (!found_cached) {
-                auto file_result = wz::fs::read_file(file->full_path);
-                if (!file_result) {
-                    logger.error("failed to read file: " + file->full_path);
-                    return compile_failed_node(input);
-                }
-                bytes = std::move(file_result.value);
-
-                std::lock_guard<std::mutex> lock(cache_mutex);
-                cache[file->full_path] = bytes;
+            auto file_result = wz::fs::read_file(file->full_path);
+            if (!file_result) {
+                logger.error("failed to read file: " + file->full_path);
+                return compile_failed_node(input);
             }
 
             wz::asset::AssetNode out = input;
             out.stage = wz::asset::AssetStage::Compiled;
-            out.payload = std::move(bytes);
+            out.payload = std::move(file_result.value);
             return out;
         }
 

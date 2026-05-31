@@ -350,6 +350,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     target_compile_definitions(window_engine PUBLIC WZ_ENABLE_TESTING)
 
     rs_add_test_group(engine engine)
+    rs_add_test_group(engine frame_storage_tests)
     rs_add_test_group(engine runtime_camera_tests)
 
     rs_add_test_group(logging logging)

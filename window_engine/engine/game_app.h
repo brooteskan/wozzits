@@ -7,6 +7,8 @@
 
 #include <engine/app_context.h>
 #include <engine/engine.h>
+#include <engine/frame_storage.h>
+#include <engine/frame_types.h>
 #include <engine/runtime_camera.h>
 
 #include <scene/compile/scene_compiler.h>
@@ -21,17 +23,8 @@
 
 namespace wz::app
 {
-    // Chooses between a full scene rebuild and a camera-only view refresh.
-    // Set each frame by job_compile_scene; read by job_build_render_ir and
-    // job_build_render_frame to select the matching incremental call.
-    // new: transform can change on objects
-    enum class RenderPrepPath
-    {
-        FullCompile,
-        ViewOnly,
-        TransformOnly,
-        TransformAndView,
-    };
+    using RenderPrepPath = wz::engine::RenderPrepPath;
+    using FrameStorage = wz::engine::FrameStorage;
 
     enum class DebugSceneAnimation
     {
@@ -93,20 +86,6 @@ namespace wz::app
         wz::jobs::FrameJobProfile profile{};
 
         bool ready = false;
-    };
-
-    // FrameStorage — owns all CPU-side per-frame products.
-    // Allocated once; overwritten each frame by compile/build_render_ir/build_frame.
-    // Must outlive all jobs that read from it in a given frame.
-    struct FrameStorage
-    {
-        wz::scene::ViewData             view{};
-
-        wz::scene::CompiledSceneStorage compiled_scene;
-        wz::render::RenderIRStorage     render_ir;
-        wz::render::RenderFrameStorage  render_frame;
-
-        RenderPrepPath render_prep_path = RenderPrepPath::FullCompile;
     };
 
     struct GameApp

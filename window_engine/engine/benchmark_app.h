@@ -8,6 +8,8 @@
 
 #include <engine/app_context.h>
 #include <engine/engine.h>
+#include <engine/frame_storage.h>
+#include <engine/frame_types.h>
 #include <engine/flying_camera.h>
 
 #include <scene/scene_graph.h>
@@ -22,14 +24,8 @@
 
 namespace wz::bench
 {
-    // Chooses the cheapest scene→IR update path each frame.
-    enum class RenderPrepPath
-    {
-        FullCompile,
-        ViewOnly,
-        TransformOnly,
-        TransformAndView,
-    };
+    using RenderPrepPath = wz::engine::RenderPrepPath;
+    using BenchFrameStorage = wz::engine::FrameStorage;
 
     // Owns the CPU-side scene data for one benchmark scene.
     // Populated by SceneDefinition::build; updated by SceneDefinition::update.
@@ -83,16 +79,6 @@ namespace wz::bench
         wz::jobs::FrameJobProfile profile{};
 
         bool ready = false;
-    };
-
-    // Owns all CPU-side per-frame products. Overwritten each frame.
-    struct BenchFrameStorage
-    {
-        wz::scene::ViewData             view{};
-        wz::scene::CompiledSceneStorage compiled_scene{};
-        wz::render::RenderIRStorage     render_ir{};
-        wz::render::RenderFrameStorage  render_frame{};
-        RenderPrepPath                  render_prep_path = RenderPrepPath::FullCompile;
     };
 
     struct BenchmarkApp

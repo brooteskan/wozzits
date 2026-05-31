@@ -6,6 +6,8 @@
 #include <jobs/frame_execution.h>
 #include <jobs/dag_scheduler.h>
 
+#include <engine/frame_storage.h>
+
 #include <scene/compile/scene_compiler.h>
 #include <render/ir/render_ir.h>
 #include <render/frame/render_frame.h>
@@ -15,13 +17,7 @@
 
 namespace
 {
-    struct TestFrameStorage
-    {
-        wz::scene::ViewData             view{};
-        wz::scene::CompiledSceneStorage compiled_scene{};
-        wz::render::RenderIRStorage     render_ir{};
-        wz::render::RenderFrameStorage  render_frame{};
-    };
+    using TestFrameStorage = wz::engine::FrameStorage;
 
     struct RenderPrepJobData
     {
