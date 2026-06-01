@@ -1,5 +1,6 @@
 #include <engine/behavior/behavior_dispatch.h>
 #include <engine/behavior/behavior_command_apply.h>
+#include <engine/behavior/builtin_behaviors.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/scene/scene_json_export.h>
@@ -144,6 +145,26 @@ TEST(BehaviorRegistry, ReRegisteringBehaviorUpdatesFunctionSlot)
     EXPECT_EQ(a.index, b.index);
     ASSERT_EQ(registry.registrations().size(), 1u);
     EXPECT_EQ(registry.get(a)->user_data, &second);
+}
+
+TEST(BehaviorRegistry, RegistersBuiltinDebugBehaviorPack)
+{
+    BehaviorRegistry registry;
+    wz::Logger logger{};
+
+    register_builtin_behaviors(registry, logger);
+
+    const auto found = registry.find(
+        kDebugBehaviorModule,
+        kLogCollisionEventsBehavior);
+    ASSERT_TRUE(found.has_value());
+
+    const BehaviorRegistration* registration = registry.get(*found);
+    ASSERT_NE(registration, nullptr);
+    EXPECT_EQ(registration->module, "debug");
+    EXPECT_EQ(registration->name, "log_collision_events");
+    EXPECT_NE(registration->function, nullptr);
+    EXPECT_EQ(registration->user_data, &logger);
 }
 
 TEST(BehaviorDispatch, RunsEnabledSceneBehaviorAndWritesCommands)

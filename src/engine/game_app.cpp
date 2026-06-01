@@ -15,6 +15,7 @@
 #include <engine/game_app.h>
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
+#include <engine/behavior/builtin_behaviors.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/runtime_camera.h>
 #include <math/projection.h>
@@ -1126,6 +1127,10 @@ namespace wz::app
                 .resource_root = "resources",
             }))
             return false;
+
+        wz::engine::behavior::register_builtin_behaviors(
+            app.behavior_registry,
+            app.ctx.logger);
 
         using namespace wz::engine::assets;
 

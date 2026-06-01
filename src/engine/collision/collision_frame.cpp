@@ -627,7 +627,7 @@ namespace wz::engine::collision
                 continue;
             }
 
-            const auto handle = collisions.get_collision(
+            const auto handle = collisions.find_collision(
                 wz::engine::assets::CollisionAsset{
                     .output = component.collision_asset,
                 });

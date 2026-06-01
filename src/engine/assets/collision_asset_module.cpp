@@ -103,6 +103,16 @@ namespace wz::engine::assets
     CollisionHandle CollisionAssetModule::get_collision(
         const CollisionAsset& asset) const
     {
+        CollisionHandle out = find_collision(asset);
+        if (asset.valid() && !out.valid()) {
+            logger_.error("collision asset handle not found");
+        }
+        return out;
+    }
+
+    CollisionHandle CollisionAssetModule::find_collision(
+        const CollisionAsset& asset) const
+    {
         if (!asset.valid()) {
             return {};
         }
@@ -110,9 +120,6 @@ namespace wz::engine::assets
         CollisionHandle out{};
         if (const auto* compiled = system_.find_compiled(asset.output)) {
             out.handle = compiled->handle;
-        }
-        if (!out.valid()) {
-            logger_.error("collision asset handle not found");
         }
         return out;
     }

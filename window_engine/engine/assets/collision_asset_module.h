@@ -72,6 +72,9 @@ namespace wz::engine::assets
         [[nodiscard]] CollisionHandle get_collision(
             const CollisionAsset& asset) const;
 
+        [[nodiscard]] CollisionHandle find_collision(
+            const CollisionAsset& asset) const;
+
         [[nodiscard]] const CollisionAssetData* get_collision_data(
             CollisionHandle handle) const;
 
