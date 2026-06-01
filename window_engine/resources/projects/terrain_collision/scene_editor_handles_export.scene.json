@@ -591,6 +591,17 @@
         "is_trigger": true,
         "enabled": true
       },
+      "event_listener": {
+        "channels": [
+          "collision.enter",
+          "collision.exit"
+        ]
+      },
+      "behavior": {
+        "module": "template",
+        "name": "log_collision_events",
+        "enabled": true
+      },
       "editor_handle": {
         "kind": "transform",
         "enabled": true,
@@ -725,21 +736,20 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        118.11509704589844,
-        85.189208984375,
-        13.43327808380127
+        -245.98562622070312,
+        188.49125671386719,
+        104.53301239013672
       ],
       "orientation": [
-        -0.1347653865814209,
-        -0.84995788335800171,
-        -0.094204217195510864,
-        0.50053524971008301
+        -0.049425836652517319,
+        -0.88039630651473999,
+        0.097895100712776184,
+        -0.46138489246368408
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
       "boost_multiplier": 4,
       "roll_speed": 1.5
-    },
-    "behavior_module_folder": "D:\\code\\wozzits\\wozzits-window-engine\\build\\clang-debug\\examples\\behavior_plugin_template"
+    }
   }
 }

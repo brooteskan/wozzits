@@ -1,0 +1,8 @@
+{
+  "schema": "wozzits.scene_editor.project.v1",
+  "version": 1,
+  "name": "terrain_collision",
+  "scene": "scene_editor_handles_export.scene.json",
+  "behavior_project_folder": "D:/code/wozzits/wozzits-window-engine/examples/behavior_plugin_template",
+  "behavior_module_folder": "D:/code/wozzits/wozzits-window-engine/build/clang-debug/examples/behavior_plugin_template"
+}
