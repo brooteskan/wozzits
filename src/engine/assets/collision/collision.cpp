@@ -42,8 +42,18 @@ namespace wz::engine::assets
                 && size[1] > 0.0f;
 
         case CollisionShapeKind::TerrainMeshSurface:
-            return mesh != wz::asset::AssetKey{}
-                && source_triangle_count > 0;
+            if (mesh == wz::asset::AssetKey{} || source_triangle_count == 0) {
+                return false;
+            }
+            if (!supports_overlap_query) {
+                return indices.empty()
+                    && triangle_bounds.empty()
+                    && surface_grid.cell_triangle_indices.empty();
+            }
+            return !points.empty()
+                && !indices.empty()
+                && (indices.size() % 3u) == 0u
+                && triangle_bounds.size() == indices.size() / 3u;
         }
 
         return false;

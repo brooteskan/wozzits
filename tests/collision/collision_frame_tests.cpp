@@ -250,6 +250,127 @@ TEST(CollisionFrameCore, MaskFilteringIsBidirectional)
     EXPECT_EQ(frame.current_pairs[0], make_collision_pair(1u, 2u));
 }
 
+TEST(CollisionFrameCore, NarrowphaseRejectsBoundsAwayFromTerrainSurfaceTriangle)
+{
+    wz::engine::assets::CollisionAssetData bounds_data{};
+    bounds_data.source_asset.content_hash.lo = 1;
+    bounds_data.shape_kind = wz::engine::assets::CollisionShapeKind::Bounds;
+    bounds_data.bounds_min[0] = 9.0f;
+    bounds_data.bounds_min[1] = -0.5f;
+    bounds_data.bounds_min[2] = 9.0f;
+    bounds_data.bounds_max[0] = 10.0f;
+    bounds_data.bounds_max[1] = 0.5f;
+    bounds_data.bounds_max[2] = 10.0f;
+
+    wz::engine::assets::CollisionAssetData terrain_data{};
+    terrain_data.source_asset.content_hash.lo = 2;
+    terrain_data.shape_kind =
+        wz::engine::assets::CollisionShapeKind::TerrainMeshSurface;
+    terrain_data.mesh.content_hash.lo = 3;
+    terrain_data.bounds_min[0] = 0.0f;
+    terrain_data.bounds_min[1] = 0.0f;
+    terrain_data.bounds_min[2] = 0.0f;
+    terrain_data.bounds_max[0] = 10.0f;
+    terrain_data.bounds_max[1] = 0.0f;
+    terrain_data.bounds_max[2] = 10.0f;
+    terrain_data.source_triangle_count = 1;
+    terrain_data.accepted_triangle_count = 1;
+    terrain_data.points = {
+        { .position = { 0.0f, 0.0f, 0.0f } },
+        { .position = { 1.0f, 0.0f, 0.0f } },
+        { .position = { 0.0f, 0.0f, 1.0f } },
+    };
+    terrain_data.indices = { 0, 1, 2 };
+    terrain_data.triangle_bounds = {
+        wz::engine::assets::CollisionTriangleBounds{
+            .min = { 0.0f, 0.0f, 0.0f },
+            .max = { 1.0f, 0.0f, 1.0f },
+        },
+    };
+
+    CollisionFrameStorage frame{};
+    frame.world = {
+        entry(1u, bounds(9, -0.5f, 9, 10, 0.5f, 10)),
+        entry(2u, bounds(0, 0, 0, 10, 0, 10)),
+    };
+    frame.world[0].resolved = &bounds_data;
+    frame.world[1].resolved = &terrain_data;
+
+    broadphase_aabb_overlap(frame.world, frame.broadphase_pairs);
+    ASSERT_EQ(frame.broadphase_pairs.size(), 1u);
+
+    narrowphase_filter_pairs(
+        frame.world,
+        frame.broadphase_pairs,
+        frame);
+
+    EXPECT_EQ(frame.narrowphase_tests, 1u);
+    EXPECT_EQ(frame.triangle_bounds_tested, 1u);
+    EXPECT_EQ(frame.triangle_bounds_rejected, 1u);
+    EXPECT_EQ(frame.early_out_hits, 0u);
+    EXPECT_TRUE(frame.current_pairs.empty());
+}
+
+TEST(CollisionFrameCore, NarrowphaseAcceptsBoundsTouchingTerrainSurfaceTriangle)
+{
+    wz::engine::assets::CollisionAssetData bounds_data{};
+    bounds_data.source_asset.content_hash.lo = 1;
+    bounds_data.shape_kind = wz::engine::assets::CollisionShapeKind::Bounds;
+    bounds_data.bounds_min[0] = 0.25f;
+    bounds_data.bounds_min[1] = -0.5f;
+    bounds_data.bounds_min[2] = 0.25f;
+    bounds_data.bounds_max[0] = 0.75f;
+    bounds_data.bounds_max[1] = 0.5f;
+    bounds_data.bounds_max[2] = 0.75f;
+
+    wz::engine::assets::CollisionAssetData terrain_data{};
+    terrain_data.source_asset.content_hash.lo = 2;
+    terrain_data.shape_kind =
+        wz::engine::assets::CollisionShapeKind::TerrainMeshSurface;
+    terrain_data.mesh.content_hash.lo = 3;
+    terrain_data.bounds_min[0] = 0.0f;
+    terrain_data.bounds_min[1] = 0.0f;
+    terrain_data.bounds_min[2] = 0.0f;
+    terrain_data.bounds_max[0] = 10.0f;
+    terrain_data.bounds_max[1] = 0.0f;
+    terrain_data.bounds_max[2] = 10.0f;
+    terrain_data.source_triangle_count = 1;
+    terrain_data.accepted_triangle_count = 1;
+    terrain_data.points = {
+        { .position = { 0.0f, 0.0f, 0.0f } },
+        { .position = { 1.0f, 0.0f, 0.0f } },
+        { .position = { 0.0f, 0.0f, 1.0f } },
+    };
+    terrain_data.indices = { 0, 1, 2 };
+    terrain_data.triangle_bounds = {
+        wz::engine::assets::CollisionTriangleBounds{
+            .min = { 0.0f, 0.0f, 0.0f },
+            .max = { 1.0f, 0.0f, 1.0f },
+        },
+    };
+
+    CollisionFrameStorage frame{};
+    frame.world = {
+        entry(1u, bounds(0.25f, -0.5f, 0.25f, 0.75f, 0.5f, 0.75f)),
+        entry(2u, bounds(0, 0, 0, 10, 0, 10)),
+    };
+    frame.world[0].resolved = &bounds_data;
+    frame.world[1].resolved = &terrain_data;
+
+    broadphase_aabb_overlap(frame.world, frame.broadphase_pairs);
+    narrowphase_filter_pairs(
+        frame.world,
+        frame.broadphase_pairs,
+        frame);
+
+    ASSERT_EQ(frame.current_pairs.size(), 1u);
+    EXPECT_EQ(frame.current_pairs[0], make_collision_pair(1u, 2u));
+    EXPECT_EQ(frame.narrowphase_tests, 1u);
+    EXPECT_EQ(frame.triangle_bounds_tested, 1u);
+    EXPECT_EQ(frame.triangle_bounds_rejected, 0u);
+    EXPECT_EQ(frame.early_out_hits, 1u);
+}
+
 TEST(CollisionFrameCore, TriggerOverlapStillReportsEvent)
 {
     CollisionFrameStorage frame{};

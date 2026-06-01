@@ -92,6 +92,9 @@ namespace wz::engine::assets
         bool supports_ray_query = false;
         bool supports_render_mesh = false;
 
+        std::vector<float> mesh_surface_points;
+        std::vector<uint32_t> mesh_surface_indices;
+
         bool valid() const noexcept;
     };
 

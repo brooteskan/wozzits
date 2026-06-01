@@ -78,7 +78,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:3f1d29be0b08eb31:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:67032548a8e5d22f:7da0798d4ae900c1"
+        "asset": "asset-key:dc418f2e7f42b779:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:c57b009403a50e4f:e80a4cea9078cc3e"
       },
       "mesh_source": {
         "kind": "glb",
@@ -86,9 +86,32 @@
         "mesh_index": 0
       },
       "mesh_render_style": {
-        "kind": "wireframe",
+        "asset": "asset-key:e0af2a42c46825b4:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": false,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
         "depth_test": true,
-        "depth_write": true
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": true
       },
       "debug_visual": {
         "kind": "axes",
@@ -131,9 +154,32 @@
         "mesh_index": 0
       },
       "mesh_render_style": {
-        "kind": "wireframe",
+        "asset": "asset-key:d5b13ca6ca9d6953:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": false,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
         "depth_test": true,
-        "depth_write": true
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": true
       }
     },
     {
@@ -160,7 +206,14 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:69b28a67a217263a:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
+        "asset": "asset-key:e37df32d8895750f:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
+      },
+      "collision": {
+        "asset": "asset-key:e6eecd7d8d567eaf:0000000000000000:f11eca55e7000b00:0000000000000000:0000000000000001:0000000000000000:eada519cd432e7ad:6fec39f84e4ce07a",
+        "layer_mask": 1,
+        "collides_with_mask": 4294967295,
+        "is_trigger": true,
+        "enabled": false
       },
       "terrain": {
         "asset": "asset-key:1e942e8bb18f627f:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
@@ -214,7 +267,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:f62f17b451fc1c5b:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:eada519cd432e7ad:6fec39f84e4ce07a"
+        "asset": "asset-key:b6c63f90e0e3b239:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:e0fcad82e754b828:4ac179bb3a2e5357"
       },
       "mesh_source": {
         "kind": "placeholder",
@@ -252,7 +305,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:0b8375fc6de0f6f1:0000000000000000:f11eca55e7000700:0000000000000000:0000000000000001:0000000000000000:eada519cd432bac4:6fec39f84e4ce07a"
+        "asset": "asset-key:820cdb058ef37d78:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:a28af14335f22ae3:4ac179bb3a2e5357"
       },
       "mesh_source": {
         "kind": "procedural_cube",
@@ -471,6 +524,79 @@
         "frequency": 1,
         "amplitude": 1
       }
+    },
+    {
+      "id": "empty_5",
+      "parent": "root",
+      "name": "vehicle",
+      "transform": {
+        "translation": [
+          109.94999694824219,
+          81.650001525878906,
+          -0.05000000074505806
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:2e1232316c17dbd9:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:5deb7984bb7b4040:4ac179bb3a2e5357"
+      },
+      "mesh_source": {
+        "kind": "placeholder",
+        "path": "",
+        "mesh_index": 0
+      },
+      "mesh_render_style": {
+        "asset": "asset-key:f9ee18d4c123dc75:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.26911783218383789,
+            0.89999997615814209,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": false,
+        "hidden_line_prepass": false
+      },
+      "collision": {
+        "asset": "asset-key:e6eecd7d8d567eaf:0000000000000000:f11eca55e7000b00:0000000000000000:0000000000000001:0000000000000000:eada519cd432e7ad:6fec39f84e4ce07a",
+        "layer_mask": 1,
+        "collides_with_mask": 4294967295,
+        "is_trigger": true,
+        "enabled": true
+      },
+      "editor_handle": {
+        "kind": "transform",
+        "enabled": true,
+        "visible": true,
+        "size": 1
+      }
     }
   ],
   "lights": [
@@ -599,15 +725,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        10.466737747192383,
-        175.68757629394531,
-        152.41383361816406
+        118.11509704589844,
+        85.189208984375,
+        13.43327808380127
       ],
       "orientation": [
-        0.018293935805559158,
-        -0.97617644071578979,
-        0.19930043816566467,
-        0.083810776472091675
+        0.087115392088890076,
+        0.89371341466903687,
+        -0.0026859072968363762,
+        -0.44009092450141907
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

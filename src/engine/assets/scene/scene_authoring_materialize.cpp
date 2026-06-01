@@ -1321,6 +1321,7 @@ namespace wz::engine::assets
                 node.mesh_render_style.has_value();
             SceneMeshRenderStyleAsset render_style =
                 node.mesh_render_style.value_or(default_render_style);
+            render_style.style_asset = {};
 
             if (options.create_preview_renderables) {
                 RenderableAsset renderable{};

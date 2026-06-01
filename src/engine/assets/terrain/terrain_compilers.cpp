@@ -119,6 +119,44 @@ namespace wz::engine::assets::internal
             }
             return accepted;
         }
+
+        void copy_accepted_mesh_surface(
+            TerrainAssetData& data,
+            const MeshData& mesh,
+            float min_surface_normal_y,
+            bool include_backfaces)
+        {
+            data.mesh_surface_points.reserve(mesh.vertices.size() * 3u);
+            for (const auto& vertex : mesh.vertices) {
+                data.mesh_surface_points.push_back(vertex.position[0]);
+                data.mesh_surface_points.push_back(vertex.position[1]);
+                data.mesh_surface_points.push_back(vertex.position[2]);
+            }
+
+            data.mesh_surface_indices.reserve(mesh.indices.size());
+            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                const uint32_t ia = mesh.indices[i + 0];
+                const uint32_t ib = mesh.indices[i + 1];
+                const uint32_t ic = mesh.indices[i + 2];
+                if (ia >= mesh.vertices.size()
+                    || ib >= mesh.vertices.size()
+                    || ic >= mesh.vertices.size())
+                {
+                    continue;
+                }
+
+                const float normal_y = mesh_triangle_normal_y(mesh, ia, ib, ic);
+                const float comparable_y =
+                    include_backfaces ? std::abs(normal_y) : normal_y;
+                if (comparable_y < min_surface_normal_y) {
+                    continue;
+                }
+
+                data.mesh_surface_indices.push_back(ia);
+                data.mesh_surface_indices.push_back(ib);
+                data.mesh_surface_indices.push_back(ic);
+            }
+        }
     }
 
     void register_terrain_compilers(
@@ -255,6 +293,11 @@ namespace wz::engine::assets::internal
                         *mesh,
                         desc->min_surface_normal_y,
                         desc->include_backfaces);
+                copy_accepted_mesh_surface(
+                    data,
+                    *mesh,
+                    desc->min_surface_normal_y,
+                    desc->include_backfaces);
                 data.normal_source = choose_terrain_normal_source(
                     desc->preferred_normal_source,
                     *mesh);

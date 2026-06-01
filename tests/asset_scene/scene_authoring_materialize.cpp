@@ -108,6 +108,55 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
     EXPECT_TRUE(renderable_data->mesh_style.depth_write);
 }
 
+TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_stale_style_asset_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::asset::AssetKey stale_style_key{
+        .content_hash = { 1, 2 },
+        .schema_hash = { 3, 4 },
+        .compiler_hash = { 5, 6 },
+        .deps_hash = { 7, 8 },
+    };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_source_stale_style";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .style_asset = stale_style_key,
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
+    EXPECT_NE(
+        scene.nodes[0].mesh_render_style->style_asset,
+        stale_style_key);
+    EXPECT_NE(
+        scene.nodes[0].mesh_render_style->style_asset,
+        wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+}
+
 TEST(SceneAuthoringMaterialize, ScalarFieldSourceCreatesScalarFieldAsset)
 {
     using namespace wz::engine::assets;

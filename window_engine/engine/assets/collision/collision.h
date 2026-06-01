@@ -50,6 +50,25 @@ namespace wz::engine::assets
         float position[3]{};
     };
 
+    struct CollisionTriangleBounds
+    {
+        float min[3]{};
+        float max[3]{};
+    };
+
+    struct CollisionSurfaceGrid
+    {
+        float origin_x = 0.0f;
+        float origin_z = 0.0f;
+        float cell_size_x = 1.0f;
+        float cell_size_z = 1.0f;
+        uint32_t cells_x = 0;
+        uint32_t cells_z = 0;
+        std::vector<uint32_t> cell_offsets;
+        std::vector<uint32_t> cell_triangle_indices;
+        std::vector<CollisionTriangleBounds> cell_bounds;
+    };
+
     struct CollisionAssetData
     {
         CollisionSourceKind source_kind = CollisionSourceKind::Mesh;
@@ -64,6 +83,8 @@ namespace wz::engine::assets
 
         std::vector<CollisionPoint> points;
         std::vector<uint32_t> indices;
+        std::vector<CollisionTriangleBounds> triangle_bounds;
+        CollisionSurfaceGrid surface_grid;
 
         wz::asset::AssetKey height_field{};
         wz::asset::AssetKey mesh{};

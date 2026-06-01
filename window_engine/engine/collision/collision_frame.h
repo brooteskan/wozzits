@@ -59,9 +59,16 @@ namespace wz::engine::collision
     struct CollisionFrameStorage
     {
         std::vector<CollisionWorldEntry> world;
+        std::vector<CollisionPair> broadphase_pairs;
         std::vector<CollisionPair> current_pairs;
         std::vector<CollisionPair> prev_pairs;
         std::vector<CollisionEvent> events;
+        uint32_t narrowphase_tests = 0;
+        uint32_t terrain_cells_tested = 0;
+        uint32_t terrain_cells_rejected = 0;
+        uint32_t triangle_bounds_tested = 0;
+        uint32_t triangle_bounds_rejected = 0;
+        uint32_t early_out_hits = 0;
     };
 
     CollisionPair make_collision_pair(
@@ -83,6 +90,11 @@ namespace wz::engine::collision
     void broadphase_aabb_overlap(
         std::span<const CollisionWorldEntry> world,
         std::vector<CollisionPair>& out_pairs);
+
+    void narrowphase_filter_pairs(
+        std::span<const CollisionWorldEntry> world,
+        std::span<const CollisionPair> candidate_pairs,
+        CollisionFrameStorage& storage);
 
     void diff_collision_events(
         std::span<const CollisionPair> prev_pairs,
