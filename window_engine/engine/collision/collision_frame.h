@@ -56,6 +56,19 @@ namespace wz::engine::collision
         CollisionEventKind kind = CollisionEventKind::Enter;
     };
 
+    struct CollisionEntityEvent
+    {
+        wz::scene::RuntimeEntityId entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::scene::RuntimeEntityId other =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        CollisionEventKind kind = CollisionEventKind::Enter;
+
+        // Trigger state for the addressed entity. Exit events can reference
+        // entities missing from the current world; those default to false.
+        bool self_is_trigger = false;
+    };
+
     struct CollisionFrameStorage
     {
         std::vector<CollisionWorldEntry> world;
@@ -63,6 +76,16 @@ namespace wz::engine::collision
         std::vector<CollisionPair> current_pairs;
         std::vector<CollisionPair> prev_pairs;
         std::vector<CollisionEvent> events;
+
+        // Entity events preserve pair event order. For each pair event, the
+        // event addressed to a is emitted before the event addressed to b.
+        std::vector<CollisionEntityEvent> entity_events;
+
+        // Entity events matched by the current scene event_listener snapshot.
+        // Routing is a filter: channels do not dispatch callbacks or mutate
+        // listeners.
+        std::vector<CollisionEntityEvent> routed_entity_events;
+
         uint32_t narrowphase_tests = 0;
         uint32_t terrain_cells_tested = 0;
         uint32_t terrain_cells_rejected = 0;
@@ -100,6 +123,20 @@ namespace wz::engine::collision
         std::span<const CollisionPair> prev_pairs,
         std::span<const CollisionPair> current_pairs,
         std::vector<CollisionEvent>& out_events);
+
+    void fanout_collision_entity_events(
+        std::span<const CollisionWorldEntry> world,
+        std::span<const CollisionEvent> pair_events,
+        std::vector<CollisionEntityEvent>& out_entity_events);
+
+    void route_collision_entity_events(
+        std::span<const CollisionEntityEvent> entity_events,
+        std::span<const wz::engine::assets::SceneComponentRecord<
+            wz::engine::assets::EventListenerComponent>> listeners,
+        std::vector<CollisionEntityEvent>& out_routed_events);
+    // Recognized listener channels are exact tokens:
+    // collision.enter, collision.stay, collision.exit, and collision.*.
+    // collision.* is a collision-only wildcard token, not a glob pattern.
 
     void advance_collision_frame(CollisionFrameStorage& storage);
 

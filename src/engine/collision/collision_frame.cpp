@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cfloat>
 #include <math/mat4.h>
+#include <string_view>
 
 namespace wz::engine::collision
 {
@@ -26,6 +27,46 @@ namespace wz::engine::collision
                 }
             }
             return nullptr;
+        }
+
+        bool entry_is_trigger(
+            std::span<const CollisionWorldEntry> world,
+            wz::scene::RuntimeEntityId entity) noexcept
+        {
+            const CollisionWorldEntry* entry = find_entry(world, entity);
+            return entry ? entry->is_trigger : false;
+        }
+
+        bool collision_channel_matches(
+            std::string_view channel,
+            CollisionEventKind kind) noexcept
+        {
+            if (channel == "collision.*") {
+                return true;
+            }
+
+            switch (kind) {
+            case CollisionEventKind::Enter:
+                return channel == "collision.enter";
+            case CollisionEventKind::Stay:
+                return channel == "collision.stay";
+            case CollisionEventKind::Exit:
+                return channel == "collision.exit";
+            }
+
+            return false;
+        }
+
+        bool listener_matches_collision_event(
+            const wz::engine::assets::EventListenerComponent& listener,
+            const CollisionEntityEvent& event) noexcept
+        {
+            for (const std::string& channel : listener.channels) {
+                if (collision_channel_matches(channel, event.kind)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         bool inverse_affine_point(
@@ -467,6 +508,53 @@ namespace wz::engine::collision
         }
     }
 
+    void fanout_collision_entity_events(
+        std::span<const CollisionWorldEntry> world,
+        std::span<const CollisionEvent> pair_events,
+        std::vector<CollisionEntityEvent>& out_entity_events)
+    {
+        out_entity_events.clear();
+        out_entity_events.reserve(pair_events.size() * 2u);
+
+        for (const CollisionEvent& event : pair_events) {
+            out_entity_events.push_back({
+                .entity = event.a,
+                .other = event.b,
+                .kind = event.kind,
+                .self_is_trigger = entry_is_trigger(world, event.a),
+            });
+            out_entity_events.push_back({
+                .entity = event.b,
+                .other = event.a,
+                .kind = event.kind,
+                .self_is_trigger = entry_is_trigger(world, event.b),
+            });
+        }
+    }
+
+    void route_collision_entity_events(
+        std::span<const CollisionEntityEvent> entity_events,
+        std::span<const wz::engine::assets::SceneComponentRecord<
+            wz::engine::assets::EventListenerComponent>> listeners,
+        std::vector<CollisionEntityEvent>& out_routed_events)
+    {
+        out_routed_events.clear();
+        out_routed_events.reserve(entity_events.size());
+
+        for (const CollisionEntityEvent& event : entity_events) {
+            for (const auto& listener : listeners) {
+                if (listener.node == event.entity
+                    && listener_matches_collision_event(
+                        listener.component,
+                        event))
+                {
+                    out_routed_events.push_back(event);
+                    break;
+                }
+            }
+        }
+    }
+
     void advance_collision_frame(CollisionFrameStorage& storage)
     {
         sort_unique_collision_pairs(storage.prev_pairs);
@@ -475,6 +563,11 @@ namespace wz::engine::collision
             storage.prev_pairs,
             storage.current_pairs,
             storage.events);
+        fanout_collision_entity_events(
+            storage.world,
+            storage.events,
+            storage.entity_events);
+        storage.routed_entity_events.clear();
         storage.prev_pairs = storage.current_pairs;
     }
 
@@ -588,5 +681,9 @@ namespace wz::engine::collision
             storage.broadphase_pairs,
             storage);
         advance_collision_frame(storage);
+        route_collision_entity_events(
+            storage.entity_events,
+            scene.event_listeners,
+            storage.routed_entity_events);
     }
 }

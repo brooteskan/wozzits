@@ -12,7 +12,10 @@
 
 #include <cmath>
 #include <limits>
+#include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -47,6 +50,20 @@ namespace
             .collides_with_mask = collides_with_mask,
             .is_trigger = is_trigger,
             .enabled = enabled,
+        };
+    }
+
+    wz::engine::assets::SceneComponentRecord<
+        wz::engine::assets::EventListenerComponent>
+    listener(
+        wz::scene::RuntimeEntityId entity,
+        std::vector<std::string> channels)
+    {
+        return {
+            .node = entity,
+            .component = {
+                .channels = std::move(channels),
+            },
         };
     }
 
@@ -387,6 +404,69 @@ TEST(CollisionFrameCore, TriggerOverlapStillReportsEvent)
     EXPECT_TRUE(frame.world[1].is_trigger);
 }
 
+TEST(CollisionFrameCore, EntityEventsFanOutPairEventsInPairOrder)
+{
+    CollisionFrameStorage frame{};
+    frame.world = {
+        entry(2u, bounds(0, 0, 0, 1, 1, 1),
+            1, 0xffffffffu, true, true),
+        entry(5u, bounds(0, 0, 0, 1, 1, 1)),
+    };
+    frame.events = {
+        CollisionEvent{
+            .a = 2u,
+            .b = 5u,
+            .kind = CollisionEventKind::Enter,
+        },
+    };
+
+    fanout_collision_entity_events(
+        frame.world,
+        frame.events,
+        frame.entity_events);
+
+    ASSERT_EQ(frame.entity_events.size(), 2u);
+    EXPECT_EQ(frame.entity_events[0].entity, 2u);
+    EXPECT_EQ(frame.entity_events[0].other, 5u);
+    EXPECT_EQ(frame.entity_events[0].kind, CollisionEventKind::Enter);
+    EXPECT_TRUE(frame.entity_events[0].self_is_trigger);
+    EXPECT_EQ(frame.entity_events[1].entity, 5u);
+    EXPECT_EQ(frame.entity_events[1].other, 2u);
+    EXPECT_EQ(frame.entity_events[1].kind, CollisionEventKind::Enter);
+    EXPECT_FALSE(frame.entity_events[1].self_is_trigger);
+}
+
+TEST(CollisionFrameCore, EntityEventsDefaultMissingExitEntryToNotTrigger)
+{
+    CollisionFrameStorage frame{};
+    frame.world = {
+        entry(5u, bounds(0, 0, 0, 1, 1, 1),
+            1, 0xffffffffu, true, true),
+    };
+    frame.events = {
+        CollisionEvent{
+            .a = 2u,
+            .b = 5u,
+            .kind = CollisionEventKind::Exit,
+        },
+    };
+
+    fanout_collision_entity_events(
+        frame.world,
+        frame.events,
+        frame.entity_events);
+
+    ASSERT_EQ(frame.entity_events.size(), 2u);
+    EXPECT_EQ(frame.entity_events[0].entity, 2u);
+    EXPECT_EQ(frame.entity_events[0].other, 5u);
+    EXPECT_EQ(frame.entity_events[0].kind, CollisionEventKind::Exit);
+    EXPECT_FALSE(frame.entity_events[0].self_is_trigger);
+    EXPECT_EQ(frame.entity_events[1].entity, 5u);
+    EXPECT_EQ(frame.entity_events[1].other, 2u);
+    EXPECT_EQ(frame.entity_events[1].kind, CollisionEventKind::Exit);
+    EXPECT_TRUE(frame.entity_events[1].self_is_trigger);
+}
+
 TEST(CollisionFrameCore, DisabledEntryRemovesPreviousOverlap)
 {
     CollisionFrameStorage frame{};
@@ -402,6 +482,168 @@ TEST(CollisionFrameCore, DisabledEntryRemovesPreviousOverlap)
     EXPECT_TRUE(frame.current_pairs.empty());
     ASSERT_EQ(frame.events.size(), 1u);
     EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Exit);
+}
+
+TEST(CollisionFrameCore, AdvanceCollisionFrameEmitsEntityEvents)
+{
+    CollisionFrameStorage frame{};
+    frame.world = {
+        entry(1u, bounds(0, 0, 0, 1, 1, 1)),
+        entry(2u, bounds(0, 0, 0, 1, 1, 1),
+            1, 0xffffffffu, true, true),
+    };
+
+    broadphase_aabb_overlap(frame.world, frame.current_pairs);
+    advance_collision_frame(frame);
+
+    ASSERT_EQ(frame.events.size(), 1u);
+    ASSERT_EQ(frame.entity_events.size(), 2u);
+    EXPECT_EQ(frame.entity_events[0].entity, 1u);
+    EXPECT_EQ(frame.entity_events[0].other, 2u);
+    EXPECT_EQ(frame.entity_events[0].kind, CollisionEventKind::Enter);
+    EXPECT_FALSE(frame.entity_events[0].self_is_trigger);
+    EXPECT_EQ(frame.entity_events[1].entity, 2u);
+    EXPECT_EQ(frame.entity_events[1].other, 1u);
+    EXPECT_EQ(frame.entity_events[1].kind, CollisionEventKind::Enter);
+    EXPECT_TRUE(frame.entity_events[1].self_is_trigger);
+}
+
+TEST(CollisionFrameCore, RouteCollisionEntityEventsRequiresListener)
+{
+    std::vector<CollisionEntityEvent> events{
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 2u,
+            .kind = CollisionEventKind::Enter,
+        },
+    };
+    std::vector<wz::engine::assets::SceneComponentRecord<
+        wz::engine::assets::EventListenerComponent>> listeners;
+    std::vector<CollisionEntityEvent> routed;
+
+    route_collision_entity_events(events, listeners, routed);
+
+    EXPECT_TRUE(routed.empty());
+}
+
+TEST(CollisionFrameCore, RouteCollisionEntityEventsMatchesExplicitKind)
+{
+    std::vector<CollisionEntityEvent> events{
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 2u,
+            .kind = CollisionEventKind::Enter,
+        },
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 3u,
+            .kind = CollisionEventKind::Stay,
+        },
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 4u,
+            .kind = CollisionEventKind::Exit,
+        },
+    };
+    std::vector listeners{
+        listener(1u, { "collision.enter", "collision.exit" }),
+    };
+    std::vector<CollisionEntityEvent> routed;
+
+    route_collision_entity_events(events, listeners, routed);
+
+    ASSERT_EQ(routed.size(), 2u);
+    EXPECT_EQ(routed[0].kind, CollisionEventKind::Enter);
+    EXPECT_EQ(routed[0].other, 2u);
+    EXPECT_EQ(routed[1].kind, CollisionEventKind::Exit);
+    EXPECT_EQ(routed[1].other, 4u);
+}
+
+TEST(CollisionFrameCore, RouteCollisionEntityEventsWildcardIsCollisionOnly)
+{
+    std::vector<CollisionEntityEvent> events{
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 2u,
+            .kind = CollisionEventKind::Enter,
+        },
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 3u,
+            .kind = CollisionEventKind::Stay,
+        },
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 4u,
+            .kind = CollisionEventKind::Exit,
+        },
+    };
+    std::vector listeners{
+        listener(1u, { "collision.*" }),
+    };
+    std::vector<CollisionEntityEvent> routed;
+
+    route_collision_entity_events(events, listeners, routed);
+
+    ASSERT_EQ(routed.size(), 3u);
+    EXPECT_EQ(routed[0].kind, CollisionEventKind::Enter);
+    EXPECT_EQ(routed[1].kind, CollisionEventKind::Stay);
+    EXPECT_EQ(routed[2].kind, CollisionEventKind::Exit);
+
+    listeners = {
+        listener(1u, { "*.enter", "collision.e*" }),
+    };
+    route_collision_entity_events(events, listeners, routed);
+    EXPECT_TRUE(routed.empty())
+        << "collision.* is a hardcoded token, not a general glob";
+}
+
+TEST(CollisionFrameCore, RouteCollisionEntityEventsPreservesPerspective)
+{
+    std::vector<CollisionEntityEvent> events{
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 2u,
+            .kind = CollisionEventKind::Enter,
+            .self_is_trigger = true,
+        },
+        CollisionEntityEvent{
+            .entity = 2u,
+            .other = 1u,
+            .kind = CollisionEventKind::Enter,
+            .self_is_trigger = false,
+        },
+    };
+    std::vector listeners{
+        listener(2u, { "collision.enter" }),
+    };
+    std::vector<CollisionEntityEvent> routed;
+
+    route_collision_entity_events(events, listeners, routed);
+
+    ASSERT_EQ(routed.size(), 1u);
+    EXPECT_EQ(routed[0].entity, 2u);
+    EXPECT_EQ(routed[0].other, 1u);
+    EXPECT_FALSE(routed[0].self_is_trigger);
+}
+
+TEST(CollisionFrameCore, RouteCollisionEntityEventsIgnoresUnknownChannels)
+{
+    std::vector<CollisionEntityEvent> events{
+        CollisionEntityEvent{
+            .entity = 1u,
+            .other = 2u,
+            .kind = CollisionEventKind::Enter,
+        },
+    };
+    std::vector listeners{
+        listener(1u, { "collision", "physics.enter", "input.key" }),
+    };
+    std::vector<CollisionEntityEvent> routed;
+
+    route_collision_entity_events(events, listeners, routed);
+
+    EXPECT_TRUE(routed.empty());
 }
 
 TEST(CollisionFrameCore, MultiplePairsEmitSortedEvents)
@@ -1457,6 +1699,9 @@ TEST(CollisionFrameAdversarial, BuildCollisionFrameCalledTwiceConsecutively)
     a.collision = SceneCollisionAsset{
         .collision_asset = collision.output,
     };
+    a.event_listener = SceneEventListenerAsset{
+        .channels = { "collision.enter" },
+    };
     scene.nodes.push_back(std::move(a));
 
     SceneNodeAsset b{};
@@ -1476,6 +1721,10 @@ TEST(CollisionFrameAdversarial, BuildCollisionFrameCalledTwiceConsecutively)
     build_collision_frame(result.instance, assets.collisions(), frame);
     ASSERT_EQ(frame.events.size(), 1u);
     EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Enter);
+    ASSERT_EQ(frame.routed_entity_events.size(), 1u);
+    EXPECT_EQ(frame.routed_entity_events[0].entity,
+        result.instance.authored_to_runtime["a"]);
+    EXPECT_EQ(frame.routed_entity_events[0].kind, CollisionEventKind::Enter);
 
     // Second call immediately: Stay (not another Enter)
     build_collision_frame(result.instance, assets.collisions(), frame);
@@ -1483,6 +1732,8 @@ TEST(CollisionFrameAdversarial, BuildCollisionFrameCalledTwiceConsecutively)
     EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Stay)
         << "Calling build_collision_frame twice on the same storage should "
            "produce Stay on the second call, not another Enter";
+    EXPECT_TRUE(frame.routed_entity_events.empty())
+        << "collision.enter listeners should not receive Stay";
 }
 
 TEST(CollisionFrameAdversarial, ThreeBodyChainOnlyAdjacentPairsOverlap)
