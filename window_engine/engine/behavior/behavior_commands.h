@@ -12,8 +12,8 @@ namespace wz::engine::behavior
     enum class BehaviorCommandKind : uint8_t
     {
         None = 0,
-        AddWorldTranslation,
-        SetWorldTranslation,
+        AddLocalTranslation,
+        SetLocalTranslation,
     };
 
     struct BehaviorCommand
@@ -30,7 +30,7 @@ namespace wz::engine::behavior
 
         void clear() { commands.clear(); }
 
-        void add_world_translation(
+        void add_local_translation(
             wz::scene::RuntimeEntityId entity,
             float x,
             float y,
@@ -38,12 +38,12 @@ namespace wz::engine::behavior
         {
             commands.push_back({
                 .entity = entity,
-                .kind = BehaviorCommandKind::AddWorldTranslation,
+                .kind = BehaviorCommandKind::AddLocalTranslation,
                 .values = { x, y, z, 0.0f },
             });
         }
 
-        void set_world_translation(
+        void set_local_translation(
             wz::scene::RuntimeEntityId entity,
             float x,
             float y,
@@ -51,7 +51,7 @@ namespace wz::engine::behavior
         {
             commands.push_back({
                 .entity = entity,
-                .kind = BehaviorCommandKind::SetWorldTranslation,
+                .kind = BehaviorCommandKind::SetLocalTranslation,
                 .values = { x, y, z, 0.0f },
             });
         }

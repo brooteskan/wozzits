@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <engine/game_app.h>
+#include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/runtime_camera.h>
@@ -116,6 +117,14 @@ namespace wz::app
             const wz::engine::FrameContext* fctx = nullptr;
             const wz::engine::assets::SceneInstance* scene = nullptr;
             const wz::engine::behavior::BehaviorRegistry* registry = nullptr;
+        };
+
+        struct BehaviorCommandApplyJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            wz::engine::FrameDirtyState* frame_dirty = nullptr;
+            wz::engine::assets::SceneInstance* scene = nullptr;
+            wz::app::DebugObjectRuntime* debug_object = nullptr;
         };
 
         void update_world_for_nodes(
@@ -850,6 +859,53 @@ namespace wz::app
                 behavior_ctx);
         }
 
+        void job_apply_behavior_commands(wz::jobs::JobContext& ctx)
+        {
+            auto* data =
+                static_cast<BehaviorCommandApplyJobData*>(ctx.frame_user);
+            assert(data);
+            assert(data->frame);
+
+            if (!data->scene) {
+                return;
+            }
+
+            std::vector<wz::scene::RuntimeEntityId> changed_entities;
+            const uint32_t applied =
+                wz::engine::behavior::apply_behavior_commands(
+                    *data->scene,
+                    data->frame->behavior_commands.commands,
+                    &changed_entities);
+
+            if (applied == 0) {
+                return;
+            }
+
+            if (data->debug_object) {
+                // compile_scene has already consumed debug_object transform
+                // dirtiness for this frame. Behavior commands patch the scene
+                // graph and compiled transforms here, so do not carry a stale
+                // debug animation dirty flag into the next frame.
+                data->debug_object->transforms_dirty = false;
+                if (data->debug_object->compiled_scene_valid) {
+                    wz::scene::update_compiled_transforms(
+                        data->frame->compiled_scene,
+                        data->scene->storage.polytree,
+                        data->debug_object->descriptors,
+                        data->frame->view,
+                        changed_entities,
+                        true);
+                }
+            }
+
+            if (data->frame_dirty
+                && data->frame_dirty->render_prep_path()
+                    != wz::engine::RenderPrepPath::FullCompile)
+            {
+                data->frame_dirty->mark_render_transform_and_view();
+            }
+        }
+
         void job_build_render_frame(wz::jobs::JobContext& ctx)
         {
             auto* data = static_cast<RenderPrepJobData*>(ctx.frame_user);
@@ -988,6 +1044,12 @@ namespace wz::app
                 .run = job_dispatch_behaviors,
                 });
 
+            jobs.apply_behavior_commands = jobs.graph.add_job({
+                .name = "apply_behavior_commands",
+                .lane = wz::jobs::ExecutionLane::MainThread,
+                .run = job_apply_behavior_commands,
+                });
+
             jobs.build_render_ir = jobs.graph.add_job({
                 .name = "build_render_ir",
                 .lane = wz::jobs::ExecutionLane::MainThread,
@@ -1007,14 +1069,15 @@ namespace wz::app
             jobs.graph.add_dependency(jobs.build_view, jobs.compile_scene);
             jobs.graph.add_dependency(jobs.compile_scene, jobs.build_collision_frame);
             jobs.graph.add_dependency(jobs.build_collision_frame, jobs.dispatch_behaviors);
-            jobs.graph.add_dependency(jobs.dispatch_behaviors, jobs.build_render_ir);
+            jobs.graph.add_dependency(jobs.dispatch_behaviors, jobs.apply_behavior_commands);
+            jobs.graph.add_dependency(jobs.apply_behavior_commands, jobs.build_render_ir);
             jobs.graph.add_dependency(jobs.build_render_ir, jobs.build_render_frame);
             jobs.ready = jobs.graph.commit();
 
             if (jobs.ready)
             {
                 app.ctx.logger.info(
-                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> dispatch_behaviors -> build_render_ir -> build_render_frame"
+                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> dispatch_behaviors -> apply_behavior_commands -> build_render_ir -> build_render_frame"
                 );
             }
             else
@@ -1175,6 +1238,16 @@ namespace wz::app
             .registry = &app.behavior_registry,
         };
 
+        BehaviorCommandApplyJobData behavior_command_apply_data{
+            .frame = &app.frame,
+            .frame_dirty = &app.frame_dirty,
+            .scene =
+                app.debug_object.collision_scene_valid
+                ? &app.debug_object.collision_scene
+                : nullptr,
+            .debug_object = &app.debug_object,
+        };
+
         reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
@@ -1187,6 +1260,9 @@ namespace wz::app
         app.jobs.exec.bind(app.jobs.compile_scene, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_collision_frame, &collision_frame_data);
         app.jobs.exec.bind(app.jobs.dispatch_behaviors, &behavior_dispatch_data);
+        app.jobs.exec.bind(
+            app.jobs.apply_behavior_commands,
+            &behavior_command_apply_data);
         app.jobs.exec.bind(app.jobs.build_render_ir, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_render_frame, &render_prep_data);
 

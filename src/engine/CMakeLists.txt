@@ -7,6 +7,7 @@ target_sources(window_engine PRIVATE
     runtime_camera.cpp
     behavior/behavior_registry.cpp
     behavior/behavior_dispatch.cpp
+    behavior/behavior_command_apply.cpp
     collision/collision_frame.cpp
     render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp
