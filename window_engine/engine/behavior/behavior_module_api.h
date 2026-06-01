@@ -29,6 +29,14 @@
             nullptr);                                                       \
     }
 
+// Transform command semantics:
+// - Commands are buffered during behavior dispatch and applied afterward.
+// - Local translation writes the matrix translation column directly.
+// - Local scale changes local basis-column lengths and preserves directions.
+// - Local rotation uses WzQuaternion {x, y, z, w}; it replaces rotation,
+//   preserves translation, and preserves current basis-column scale.
+// - AddLocalRotation is intentionally not part of this V1 API.
+
 static inline uint8_t wz_write_add_local_translation(
     const WzBehaviorFrameFacts* facts,
     WzBehaviorEntityId entity,
@@ -63,6 +71,61 @@ static inline uint8_t wz_write_set_local_translation(
         entity,
         WZ_BEHAVIOR_COMMAND_SET_LOCAL_TRANSLATION,
         { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline uint8_t wz_write_add_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_ADD_LOCAL_SCALE,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline uint8_t wz_write_set_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_LOCAL_SCALE,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline uint8_t wz_write_set_local_rotation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzQuaternion rotation)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_LOCAL_ROTATION,
+        { rotation.x, rotation.y, rotation.z, rotation.w },
     };
     return facts->write_command(facts->command_writer_user, &command);
 }
@@ -121,6 +184,154 @@ static inline uint8_t wz_self_set_local_translation(
     float z)
 {
     return wz_write_set_local_translation(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_add_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_add_local_scale(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_set_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_local_scale(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_set_local_rotation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzQuaternion rotation)
+{
+    return wz_write_set_local_rotation(facts, wz_self(event), rotation);
+}
+
+static inline uint8_t wz_read_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform)
+{
+    if (!facts || !facts->get_local_transform) {
+        return 0;
+    }
+    return facts->get_local_transform(
+        facts->transform_query_user,
+        entity,
+        out_transform);
+}
+
+static inline uint8_t wz_read_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform)
+{
+    if (!facts || !facts->get_world_transform) {
+        return 0;
+    }
+    return facts->get_world_transform(
+        facts->transform_query_user,
+        entity,
+        out_transform);
+}
+
+static inline uint8_t wz_read_local_position(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position)
+{
+    if (!facts || !facts->get_local_position) {
+        return 0;
+    }
+    return facts->get_local_position(
+        facts->transform_query_user,
+        entity,
+        out_position);
+}
+
+static inline uint8_t wz_read_world_position(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position)
+{
+    if (!facts || !facts->get_world_position) {
+        return 0;
+    }
+    return facts->get_world_position(
+        facts->transform_query_user,
+        entity,
+        out_position);
+}
+
+static inline uint8_t wz_self_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform)
+{
+    return wz_read_local_transform(facts, wz_self(event), out_transform);
+}
+
+static inline uint8_t wz_self_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform)
+{
+    return wz_read_world_transform(facts, wz_self(event), out_transform);
+}
+
+static inline uint8_t wz_self_local_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position)
+{
+    return wz_read_local_position(facts, wz_self(event), out_position);
+}
+
+static inline uint8_t wz_self_world_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position)
+{
+    return wz_read_world_position(facts, wz_self(event), out_position);
+}
+
+static inline uint8_t wz_other_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform)
+{
+    return wz_read_local_transform(facts, wz_other(event), out_transform);
+}
+
+static inline uint8_t wz_other_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform)
+{
+    return wz_read_world_transform(facts, wz_other(event), out_transform);
+}
+
+static inline uint8_t wz_other_local_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position)
+{
+    return wz_read_local_position(facts, wz_other(event), out_position);
+}
+
+static inline uint8_t wz_other_world_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position)
+{
+    return wz_read_world_position(facts, wz_other(event), out_position);
 }
 
 static inline const char* wz_event_name(WzBehaviorEventKind kind)

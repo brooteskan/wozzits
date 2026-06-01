@@ -1,10 +1,12 @@
 #include <engine/behavior/behavior_plugin_adapter.h>
 
+#include <engine/assets/scene/scene_instance.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/frame_storage.h>
 
 #include <input/input.h>
 #include <logging/logger.h>
+#include <scene/scene_graph.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -81,9 +83,34 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::AddLocalTranslation;
             case WZ_BEHAVIOR_COMMAND_SET_LOCAL_TRANSLATION:
                 return BehaviorCommandKind::SetLocalTranslation;
+            case WZ_BEHAVIOR_COMMAND_ADD_LOCAL_SCALE:
+                return BehaviorCommandKind::AddLocalScale;
+            case WZ_BEHAVIOR_COMMAND_SET_LOCAL_SCALE:
+                return BehaviorCommandKind::SetLocalScale;
+            case WZ_BEHAVIOR_COMMAND_SET_LOCAL_ROTATION:
+                return BehaviorCommandKind::SetLocalRotation;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;
+            }
+        }
+
+        bool entity_valid(
+            const wz::engine::assets::SceneInstance* scene,
+            wz::scene::RuntimeEntityId entity) noexcept
+        {
+            return scene
+                && entity != wz::scene::INVALID_RUNTIME_ENTITY
+                && entity < wz::core::graph::node_count(
+                    scene->storage.polytree);
+        }
+
+        void fill_mat4(
+            const wz::math::Mat4& matrix,
+            WzMat4& out) noexcept
+        {
+            for (uint32_t i = 0; i < 16; ++i) {
+                out.m[i] = matrix.m[i];
             }
         }
 
@@ -152,6 +179,90 @@ namespace wz::engine::behavior
                 .kind = to_abi_collision_kind(event.kind),
                 .self_is_trigger =
                     event.self_is_trigger ? uint8_t{ 1 } : uint8_t{ 0 },
+            };
+            return 1;
+        }
+
+        uint8_t get_local_transform(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzMat4* out_transform)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !out_transform
+                || !entity_valid(context->scene, entity))
+            {
+                return 0;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                context->scene->storage.polytree,
+                entity);
+            fill_mat4(node.local, *out_transform);
+            return 1;
+        }
+
+        uint8_t get_world_transform(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzMat4* out_transform)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !out_transform
+                || !entity_valid(context->scene, entity))
+            {
+                return 0;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                context->scene->storage.polytree,
+                entity);
+            fill_mat4(node.world, *out_transform);
+            return 1;
+        }
+
+        uint8_t get_local_position(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzVec3* out_position)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !out_position
+                || !entity_valid(context->scene, entity))
+            {
+                return 0;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                context->scene->storage.polytree,
+                entity);
+            *out_position = WzVec3{
+                .x = node.local.m[12],
+                .y = node.local.m[13],
+                .z = node.local.m[14],
+            };
+            return 1;
+        }
+
+        uint8_t get_world_position(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzVec3* out_position)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !out_position
+                || !entity_valid(context->scene, entity))
+            {
+                return 0;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                context->scene->storage.polytree,
+                entity);
+            *out_position = WzVec3{
+                .x = node.world.m[12],
+                .y = node.world.m[13],
+                .z = node.world.m[14],
             };
             return 1;
         }
@@ -233,6 +344,11 @@ namespace wz::engine::behavior
                     .count = collision_event_count,
                     .read = read_collision_event,
                 },
+                .transform_query_user = &context,
+                .get_local_transform = get_local_transform,
+                .get_world_transform = get_world_transform,
+                .get_local_position = get_local_position,
+                .get_world_position = get_world_position,
                 .command_writer_user = &context,
                 .write_command = write_behavior_command,
                 .log_user = binding->logger,
@@ -271,6 +387,11 @@ namespace wz::engine::behavior
                     .count = collision_event_count,
                     .read = read_collision_event,
                 },
+                .transform_query_user = &context,
+                .get_local_transform = get_local_transform,
+                .get_world_transform = get_world_transform,
+                .get_local_position = get_local_position,
+                .get_world_position = get_world_position,
                 .command_writer_user = &context,
                 .write_command = write_behavior_command,
                 .log_user = logger,

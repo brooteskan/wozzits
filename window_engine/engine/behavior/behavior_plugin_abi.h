@@ -17,6 +17,26 @@ extern "C" {
 
 typedef uint32_t WzBehaviorEntityId;
 
+typedef struct WzVec3
+{
+    float x;
+    float y;
+    float z;
+} WzVec3;
+
+typedef struct WzMat4
+{
+    float m[16];
+} WzMat4;
+
+typedef struct WzQuaternion
+{
+    float x;
+    float y;
+    float z;
+    float w;
+} WzQuaternion;
+
 typedef uint32_t WzCollisionEventKind;
 enum
 {
@@ -98,6 +118,10 @@ enum
     WZ_BEHAVIOR_COMMAND_NONE = 0u,
     WZ_BEHAVIOR_COMMAND_ADD_LOCAL_TRANSLATION = 1u,
     WZ_BEHAVIOR_COMMAND_SET_LOCAL_TRANSLATION = 2u,
+    WZ_BEHAVIOR_COMMAND_ADD_LOCAL_SCALE = 3u,
+    WZ_BEHAVIOR_COMMAND_SET_LOCAL_SCALE = 4u,
+    /* values = { x, y, z, w } matching WzQuaternion. */
+    WZ_BEHAVIOR_COMMAND_SET_LOCAL_ROTATION = 5u,
 };
 
 typedef struct WzBehaviorCommand
@@ -115,10 +139,26 @@ typedef void (*WzBehaviorLogFn)(
     void* user,
     const char* message);
 
+typedef uint8_t (*WzGetBehaviorTransformFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform);
+
+typedef uint8_t (*WzGetBehaviorPositionFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position);
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
     WzCollisionEntityEventView collision_events;
+
+    void* transform_query_user;
+    WzGetBehaviorTransformFn get_local_transform;
+    WzGetBehaviorTransformFn get_world_transform;
+    WzGetBehaviorPositionFn get_local_position;
+    WzGetBehaviorPositionFn get_world_position;
 
     void* command_writer_user;
     WzWriteBehaviorCommandFn write_command;
