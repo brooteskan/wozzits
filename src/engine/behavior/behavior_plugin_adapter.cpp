@@ -67,6 +67,12 @@ namespace wz::engine::behavior
             return 0u;
         }
 
+        WzBehaviorEventKind to_abi_behavior_event_kind(
+            const BehaviorEvent& event) noexcept
+        {
+            return event.kind;
+        }
+
         BehaviorCommandKind from_abi_command_kind(
             WzBehaviorCommandKind kind) noexcept
         {
@@ -236,6 +242,67 @@ namespace wz::engine::behavior
             binding->function(&facts, entity, binding->user_data);
         }
 
+        WzBehaviorFrameFacts make_frame_facts(
+            BehaviorFrameContext& context,
+            wz::Logger* logger,
+            WzInputStateView& input_view)
+        {
+            const WzInputStateView* input = nullptr;
+            if (context.frame_context) {
+                fill_input_view(context.frame_context->input, input_view);
+                input = &input_view;
+            }
+
+            uint32_t collision_event_count = 0;
+            if (context.frame_storage) {
+                const auto& routed =
+                    context.frame_storage->collision.routed_entity_events;
+                collision_event_count =
+                    static_cast<uint32_t>(
+                        std::min<std::size_t>(
+                            routed.size(),
+                            UINT32_MAX));
+            }
+
+            return WzBehaviorFrameFacts{
+                .input = input,
+                .collision_events = WzCollisionEntityEventView{
+                    .user = &context,
+                    .count = collision_event_count,
+                    .read = read_collision_event,
+                },
+                .command_writer_user = &context,
+                .write_command = write_behavior_command,
+                .log_user = logger,
+                .log_info = log_info,
+            };
+        }
+
+        void dispatch_abi_module_event(
+            BehaviorFrameContext& context,
+            const BehaviorEvent& event,
+            void* user_data)
+        {
+            auto* binding =
+                static_cast<BehaviorPluginHost::Binding*>(user_data);
+            if (!binding || !binding->on_event) {
+                return;
+            }
+
+            WzInputStateView input_view{};
+            WzBehaviorFrameFacts facts =
+                make_frame_facts(context, binding->logger, input_view);
+            const WzBehaviorEvent abi_event{
+                .kind = to_abi_behavior_event_kind(event),
+                .entity = event.entity,
+                .other = event.other,
+                .self_is_trigger =
+                    event.self_is_trigger ? uint8_t{ 1 } : uint8_t{ 0 },
+            };
+
+            binding->on_event(&facts, &abi_event, binding->user_data);
+        }
+
         uint8_t register_behavior(
             void* user,
             const char* module,
@@ -259,6 +326,31 @@ namespace wz::engine::behavior
                     module ? module : "",
                     name,
                     dispatch_abi_behavior,
+                    binding_ptr);
+            return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
+        }
+
+        uint8_t register_module(
+            void* user,
+            const char* module,
+            WzBehaviorModuleEventFn on_event,
+            void* module_user_data)
+        {
+            auto* context = static_cast<RegisterContext*>(user);
+            if (!context || !context->registry || !context->host
+                || !module || !on_event)
+            {
+                return 0;
+            }
+
+            auto* binding_ptr = context->host->add_module_binding(
+                on_event,
+                module_user_data,
+                context->logger);
+            const BehaviorModuleHandle handle =
+                context->registry->register_module(
+                    module,
+                    dispatch_abi_module_event,
                     binding_ptr);
             return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
         }
@@ -288,6 +380,7 @@ namespace wz::engine::behavior
             .version = api_version,
             .user = &context,
             .register_behavior = register_behavior,
+            .register_module = register_module,
         };
 
         return register_plugin(&api) != 0;
@@ -457,6 +550,21 @@ namespace wz::engine::behavior
     {
         auto binding = std::make_unique<Binding>(Binding{
             .function = function,
+            .user_data = user_data,
+            .logger = logger,
+        });
+        Binding* out = binding.get();
+        bindings_.push_back(std::move(binding));
+        return out;
+    }
+
+    BehaviorPluginHost::Binding* BehaviorPluginHost::add_module_binding(
+        WzBehaviorModuleEventFn on_event,
+        void* user_data,
+        wz::Logger* logger)
+    {
+        auto binding = std::make_unique<Binding>(Binding{
+            .on_event = on_event,
             .user_data = user_data,
             .logger = logger,
         });

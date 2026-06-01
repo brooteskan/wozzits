@@ -25,6 +25,30 @@ enum
     WZ_COLLISION_EVENT_EXIT = 3u,
 };
 
+typedef uint32_t WzBehaviorEventKind;
+enum
+{
+    WZ_EVENT_NONE = 0u,
+    WZ_EVENT_FRAME_UPDATE = 1u,
+    WZ_EVENT_SCENE_LOADED = 2u,
+    WZ_EVENT_COLLISION_ENTER = 100u,
+    WZ_EVENT_COLLISION_STAY = 101u,
+    WZ_EVENT_COLLISION_EXIT = 102u,
+};
+
+enum
+{
+    WZ_INVALID_BEHAVIOR_ENTITY = 0xffffffffu,
+};
+
+typedef struct WzBehaviorEvent
+{
+    WzBehaviorEventKind kind;
+    WzBehaviorEntityId entity;
+    WzBehaviorEntityId other;
+    uint8_t self_is_trigger;
+} WzBehaviorEvent;
+
 typedef struct WzCollisionEntityEvent
 {
     WzBehaviorEntityId entity;
@@ -108,6 +132,11 @@ typedef void (*WzBehaviorFn)(
     WzBehaviorEntityId entity,
     void* user_data);
 
+typedef void (*WzBehaviorModuleEventFn)(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    void* user_data);
+
 typedef uint8_t (*WzRegisterBehaviorFn)(
     void* user,
     const char* module,
@@ -115,11 +144,18 @@ typedef uint8_t (*WzRegisterBehaviorFn)(
     WzBehaviorFn function,
     void* behavior_user_data);
 
+typedef uint8_t (*WzRegisterBehaviorModuleFn)(
+    void* user,
+    const char* module,
+    WzBehaviorModuleEventFn on_event,
+    void* module_user_data);
+
 typedef struct WzBehaviorPluginApi
 {
     uint32_t version;
     void* user;
     WzRegisterBehaviorFn register_behavior;
+    WzRegisterBehaviorModuleFn register_module;
 } WzBehaviorPluginApi;
 
 typedef uint8_t (*WzRegisterBehaviorPluginFn)(

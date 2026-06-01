@@ -23,6 +23,7 @@ namespace wz::engine::behavior
         struct Binding
         {
             WzBehaviorFn function = nullptr;
+            WzBehaviorModuleEventFn on_event = nullptr;
             void* user_data = nullptr;
             wz::Logger* logger = nullptr;
         };
@@ -78,6 +79,11 @@ namespace wz::engine::behavior
 
         Binding* add_binding(
             WzBehaviorFn function,
+            void* user_data,
+            wz::Logger* logger);
+
+        Binding* add_module_binding(
+            WzBehaviorModuleEventFn on_event,
             void* user_data,
             wz::Logger* logger);
 

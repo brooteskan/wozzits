@@ -1,7 +1,117 @@
 #include <engine/behavior/behavior_dispatch.h>
 
+#include <engine/frame_storage.h>
+
 namespace wz::engine::behavior
 {
+    namespace
+    {
+        WzBehaviorEventKind collision_event_kind(
+            wz::engine::collision::CollisionEventKind kind) noexcept
+        {
+            using Kind = wz::engine::collision::CollisionEventKind;
+            switch (kind) {
+            case Kind::Enter:
+                return WZ_EVENT_COLLISION_ENTER;
+            case Kind::Stay:
+                return WZ_EVENT_COLLISION_STAY;
+            case Kind::Exit:
+                return WZ_EVENT_COLLISION_EXIT;
+            }
+            return WZ_EVENT_NONE;
+        }
+
+        const wz::engine::assets::BehaviorComponent* behavior_for_entity(
+            const wz::engine::assets::SceneInstance& scene,
+            wz::scene::RuntimeEntityId entity)
+        {
+            for (const auto& record : scene.behaviors) {
+                if (record.node == entity) {
+                    return &record.component;
+                }
+            }
+            return nullptr;
+        }
+
+        void dispatch_module_event(
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context,
+            const wz::engine::assets::BehaviorComponent& component,
+            const BehaviorEvent& event)
+        {
+            if (!component.enabled || component.module.empty()) {
+                return;
+            }
+
+            const auto module_handle = registry.find_module(component.module);
+            if (!module_handle) {
+                return;
+            }
+
+            const BehaviorModuleRegistration* module =
+                registry.get_module(*module_handle);
+            if (!module || !module->on_event) {
+                return;
+            }
+
+            module->on_event(context, event, module->user_data);
+        }
+
+        void dispatch_frame_update_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            for (const auto& record : scene.behaviors) {
+                const BehaviorEvent event{
+                    .kind = WZ_EVENT_FRAME_UPDATE,
+                    .entity = record.node,
+                    .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                    .self_is_trigger = false,
+                };
+                dispatch_module_event(
+                    registry,
+                    context,
+                    record.component,
+                    event);
+            }
+        }
+
+        void dispatch_collision_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            if (!context.frame_storage) {
+                return;
+            }
+
+            for (const auto& collision_event :
+                context.frame_storage->collision.routed_entity_events)
+            {
+                const auto* component =
+                    behavior_for_entity(scene, collision_event.entity);
+                if (!component || !component->enabled
+                    || component->module.empty())
+                {
+                    continue;
+                }
+
+                const BehaviorEvent event{
+                    .kind = collision_event_kind(collision_event.kind),
+                    .entity = collision_event.entity,
+                    .other = collision_event.other,
+                    .self_is_trigger = collision_event.self_is_trigger,
+                };
+                if (event.kind == WZ_EVENT_NONE) {
+                    continue;
+                }
+
+                dispatch_module_event(registry, context, *component, event);
+            }
+        }
+    }
+
     void dispatch_behaviors(
         const wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
@@ -12,6 +122,10 @@ namespace wz::engine::behavior
         }
 
         context.commands->clear();
+        // Command order is deterministic: module frame.update events,
+        // routed collision module events, then legacy named functions.
+        dispatch_frame_update_events_to_modules(scene, registry, context);
+        dispatch_collision_events_to_modules(scene, registry, context);
 
         for (const auto& record : scene.behaviors) {
             const auto& component = record.component;

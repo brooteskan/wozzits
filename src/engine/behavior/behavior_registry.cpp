@@ -40,6 +40,32 @@ namespace wz::engine::behavior
         return register_behavior({}, std::move(name), function, user_data);
     }
 
+    BehaviorModuleHandle BehaviorRegistry::register_module(
+        std::string module,
+        BehaviorModuleEventFn on_event,
+        void* user_data)
+    {
+        if (module.empty() || !on_event) {
+            return {};
+        }
+
+        if (auto existing = find_module(module)) {
+            modules_[existing->index].on_event = on_event;
+            modules_[existing->index].user_data = user_data;
+            return *existing;
+        }
+
+        const BehaviorModuleHandle handle{
+            .index = static_cast<uint32_t>(modules_.size()),
+        };
+        modules_.push_back({
+            .module = std::move(module),
+            .on_event = on_event,
+            .user_data = user_data,
+        });
+        return handle;
+    }
+
     std::optional<BehaviorHandle> BehaviorRegistry::find(
         std::string_view module,
         std::string_view name) const noexcept
@@ -64,8 +90,29 @@ namespace wz::engine::behavior
         return &registrations_[handle.index];
     }
 
+    std::optional<BehaviorModuleHandle> BehaviorRegistry::find_module(
+        std::string_view module) const noexcept
+    {
+        for (uint32_t i = 0; i < modules_.size(); ++i) {
+            if (modules_[i].module == module) {
+                return BehaviorModuleHandle{ .index = i };
+            }
+        }
+        return std::nullopt;
+    }
+
+    const BehaviorModuleRegistration* BehaviorRegistry::get_module(
+        BehaviorModuleHandle handle) const noexcept
+    {
+        if (!handle.valid() || handle.index >= modules_.size()) {
+            return nullptr;
+        }
+        return &modules_[handle.index];
+    }
+
     void BehaviorRegistry::clear()
     {
         registrations_.clear();
+        modules_.clear();
     }
 }
