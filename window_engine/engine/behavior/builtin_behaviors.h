@@ -2,6 +2,7 @@
 
 // engine/behavior/builtin_behaviors.h
 
+#include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 
 namespace wz
@@ -17,5 +18,6 @@ namespace wz::engine::behavior
 
     void register_builtin_behaviors(
         BehaviorRegistry& registry,
+        BehaviorPluginHost& plugins,
         wz::Logger& logger);
 }

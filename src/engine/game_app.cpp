@@ -1130,6 +1130,7 @@ namespace wz::app
 
         wz::engine::behavior::register_builtin_behaviors(
             app.behavior_registry,
+            app.behavior_plugins,
             app.ctx.logger);
 
         using namespace wz::engine::assets;

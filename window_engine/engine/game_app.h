@@ -6,6 +6,7 @@
 #include <gpu/gpu_types.h>
 
 #include <engine/app_context.h>
+#include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/engine.h>
@@ -109,6 +110,7 @@ namespace wz::app
         FrameDirtyState         frame_dirty{};
         FrameStorage            frame{};
         wz::engine::behavior::BehaviorRegistry behavior_registry{};
+        wz::engine::behavior::BehaviorPluginHost behavior_plugins{};
     };
 
 

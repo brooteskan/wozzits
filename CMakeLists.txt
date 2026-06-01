@@ -316,6 +316,8 @@ endfunction()
 # ----------------------------
 
 if(WINDOW_ENGINE_BUILD_EXAMPLES)
+    add_subdirectory(examples/behavior_plugin_template)
+
     add_executable(wozzits_rtaudio_smoke
         examples/rtaudio/main.cpp
     )
@@ -353,6 +355,25 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(engine frame_storage_tests)
     rs_add_test_group(engine runtime_camera_tests)
     rs_add_test_group(behavior behavior_registry_tests)
+
+    add_library(behavior_dynamic_test_plugin SHARED
+        tests/behavior/dynamic_behavior_plugin.cpp)
+    target_include_directories(behavior_dynamic_test_plugin
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/window_engine")
+    target_compile_features(behavior_dynamic_test_plugin PRIVATE cxx_std_20)
+    add_dependencies(behavior_behavior_registry_tests
+        behavior_dynamic_test_plugin)
+
+    add_library(behavior_dynamic_missing_symbol_plugin SHARED
+        tests/behavior/dynamic_behavior_missing_symbol.cpp)
+    add_dependencies(behavior_behavior_registry_tests
+        behavior_dynamic_missing_symbol_plugin)
+
+    target_compile_definitions(behavior_behavior_registry_tests PRIVATE
+        WZ_TEST_BEHAVIOR_PLUGIN_DLL="$<TARGET_FILE:behavior_dynamic_test_plugin>"
+        WZ_TEST_BEHAVIOR_MISSING_SYMBOL_DLL="$<TARGET_FILE:behavior_dynamic_missing_symbol_plugin>")
 
     rs_add_test_group(logging logging)
     rs_add_test_group(logging logger_queue_tests)

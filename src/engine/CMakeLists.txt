@@ -8,7 +8,9 @@ target_sources(window_engine PRIVATE
     behavior/behavior_registry.cpp
     behavior/behavior_dispatch.cpp
     behavior/behavior_command_apply.cpp
+    behavior/behavior_plugin_adapter.cpp
     behavior/builtin_behaviors.cpp
+    behavior/sample_collision_behaviors.cpp
     collision/collision_frame.cpp
     render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp

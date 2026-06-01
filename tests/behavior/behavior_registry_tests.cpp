@@ -2,6 +2,7 @@
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/builtin_behaviors.h>
 #include <engine/behavior/behavior_registry.h>
+#include <engine/behavior/sample_collision_behaviors.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene/scene_instance.h>
@@ -16,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -150,21 +153,268 @@ TEST(BehaviorRegistry, ReRegisteringBehaviorUpdatesFunctionSlot)
 TEST(BehaviorRegistry, RegistersBuiltinDebugBehaviorPack)
 {
     BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
     wz::Logger logger{};
 
-    register_builtin_behaviors(registry, logger);
+    register_builtin_behaviors(registry, plugins, logger);
 
-    const auto found = registry.find(
+    const auto found_log = registry.find(
         kDebugBehaviorModule,
         kLogCollisionEventsBehavior);
-    ASSERT_TRUE(found.has_value());
+    ASSERT_TRUE(found_log.has_value());
 
-    const BehaviorRegistration* registration = registry.get(*found);
+    const BehaviorRegistration* registration = registry.get(*found_log);
     ASSERT_NE(registration, nullptr);
     EXPECT_EQ(registration->module, "debug");
     EXPECT_EQ(registration->name, "log_collision_events");
     EXPECT_NE(registration->function, nullptr);
-    EXPECT_EQ(registration->user_data, &logger);
+
+    const auto found_bounce = registry.find(
+        kSampleBehaviorModule,
+        kBounceOnCollisionEnterBehavior);
+    ASSERT_TRUE(found_bounce.has_value());
+}
+
+namespace
+{
+    uint8_t register_empty_pack(WzBehaviorPluginApi* api)
+    {
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION ? 1 : 0;
+    }
+
+    struct AbiBoundaryProbe
+    {
+        uint32_t calls = 0;
+        uint32_t observed_count = UINT32_MAX;
+        bool read_was_present = false;
+        uint8_t out_of_range_read = 1;
+        uint8_t null_out_read = 1;
+        bool out_event_preserved = false;
+        uint8_t none_write = 1;
+        uint8_t bad_write = 1;
+    };
+
+    AbiBoundaryProbe* g_boundary_probe = nullptr;
+
+    void boundary_probe_behavior(
+        const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId,
+        void* user)
+    {
+        auto* probe = static_cast<AbiBoundaryProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+
+        ++probe->calls;
+        probe->observed_count = facts->collision_events.count;
+        probe->read_was_present = facts->collision_events.read != nullptr;
+
+        WzCollisionEntityEvent out{
+            .entity = 123u,
+            .other = 456u,
+            .kind = 789u,
+            .self_is_trigger = 1u,
+        };
+        probe->out_of_range_read = facts->collision_events.read(
+            facts->collision_events.user,
+            facts->collision_events.count,
+            &out);
+        probe->out_event_preserved =
+            out.entity == 123u
+            && out.other == 456u
+            && out.kind == 789u
+            && out.self_is_trigger == 1u;
+        probe->null_out_read = facts->collision_events.read(
+            facts->collision_events.user,
+            0u,
+            nullptr);
+
+        const WzBehaviorCommand none_command{
+            .entity = 7u,
+            .kind = WZ_BEHAVIOR_COMMAND_NONE,
+            .values = { 1.0f, 2.0f, 3.0f, 0.0f },
+        };
+        probe->none_write = facts->write_command(
+            facts->command_writer_user,
+            &none_command);
+
+        const WzBehaviorCommand bad_command{
+            .entity = 7u,
+            .kind = 999u,
+            .values = { 1.0f, 2.0f, 3.0f, 0.0f },
+        };
+        probe->bad_write = facts->write_command(
+            facts->command_writer_user,
+            &bad_command);
+    }
+
+    uint8_t register_boundary_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_behavior) {
+            return 0;
+        }
+        return api->register_behavior(
+            api->user,
+            "test",
+            "boundary_probe",
+            boundary_probe_behavior,
+            g_boundary_probe);
+    }
+
+    struct InvalidRegistrationProbe
+    {
+        uint8_t null_name_result = 1;
+        uint8_t null_function_result = 1;
+    };
+
+    InvalidRegistrationProbe* g_invalid_registration_probe = nullptr;
+
+    void no_op_abi_behavior(
+        const WzBehaviorFrameFacts*,
+        WzBehaviorEntityId,
+        void*)
+    {
+    }
+
+    uint8_t register_invalid_registration_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_behavior
+            || !g_invalid_registration_probe)
+        {
+            return 0;
+        }
+
+        g_invalid_registration_probe->null_name_result =
+            api->register_behavior(
+                api->user,
+                "test",
+                nullptr,
+                no_op_abi_behavior,
+                nullptr);
+        g_invalid_registration_probe->null_function_result =
+            api->register_behavior(
+                api->user,
+                "test",
+                "null_function",
+                nullptr,
+                nullptr);
+        return 1;
+    }
+
+    struct LogCapture
+    {
+        std::vector<std::string> messages;
+    };
+
+    void capture_log(
+        const wz::logging::LogRecordView& record,
+        void* user)
+    {
+        auto* capture = static_cast<LogCapture*>(user);
+        if (!capture || !record.text) {
+            return;
+        }
+        capture->messages.emplace_back(record.text, record.text_size);
+    }
+}
+
+TEST(BehaviorPluginAbi, RejectsVersionMismatch)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    EXPECT_FALSE(plugins.register_static_pack(
+        registry,
+        register_empty_pack,
+        nullptr,
+        WZ_BEHAVIOR_ABI_VERSION + 1u));
+    EXPECT_TRUE(registry.registrations().empty());
+}
+
+TEST(BehaviorPluginDynamicModule, RejectsMissingPath)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto result = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{
+            "definitely_missing_behavior_plugin_wozzits_test.dll" });
+
+    EXPECT_EQ(
+        result.status,
+        BehaviorPluginHost::DynamicLoadStatus::InvalidPath);
+    EXPECT_TRUE(registry.registrations().empty());
+}
+
+TEST(BehaviorPluginDynamicModule, RejectsMissingRegisterSymbol)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto result = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_MISSING_SYMBOL_DLL });
+
+    EXPECT_EQ(
+        result.status,
+        BehaviorPluginHost::DynamicLoadStatus::MissingRegisterSymbol);
+    EXPECT_TRUE(registry.registrations().empty());
+}
+
+TEST(BehaviorPluginDynamicModule, LoadsRegistersAndDispatchesBehavior)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto result = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+
+    ASSERT_TRUE(result.ok()) << result.detail;
+    ASSERT_TRUE(registry.find(
+        "dynamic_test",
+        "always_add_local_y").has_value());
+
+    SceneInstance scene = scene_with_behavior(
+        12u,
+        "dynamic_test",
+        "always_add_local_y");
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
+    const auto& command = frame_storage.behavior_commands.commands[0];
+    EXPECT_EQ(command.entity, 12u);
+    EXPECT_EQ(command.kind, BehaviorCommandKind::AddLocalTranslation);
+    EXPECT_FLOAT_EQ(command.values[0], 0.0f);
+    EXPECT_FLOAT_EQ(command.values[1], 2.0f);
+    EXPECT_FLOAT_EQ(command.values[2], 0.0f);
+}
+
+TEST(BehaviorPluginAbi, RejectsInvalidRegistrations)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    InvalidRegistrationProbe probe{};
+    g_invalid_registration_probe = &probe;
+
+    EXPECT_TRUE(plugins.register_static_pack(
+        registry,
+        register_invalid_registration_pack));
+    g_invalid_registration_probe = nullptr;
+
+    EXPECT_EQ(probe.null_name_result, 0u);
+    EXPECT_EQ(probe.null_function_result, 0u);
+    EXPECT_TRUE(registry.registrations().empty());
 }
 
 TEST(BehaviorDispatch, RunsEnabledSceneBehaviorAndWritesCommands)
@@ -279,6 +529,197 @@ TEST(BehaviorDispatch, BehaviorConsumesRoutedCollisionFacts)
     EXPECT_FLOAT_EQ(command.values[0], 0.0f);
     EXPECT_FLOAT_EQ(command.values[1], 8.0f);
     EXPECT_FLOAT_EQ(command.values[2], 0.0f);
+}
+
+TEST(BehaviorDispatch, AbiSampleBounceConsumesRoutedCollisionFacts)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    wz::Logger logger{};
+    register_builtin_behaviors(registry, plugins, logger);
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        kSampleBehaviorModule,
+        kBounceOnCollisionEnterBehavior);
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Stay,
+        },
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 5u,
+            .other = 4u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
+    const auto& command = frame_storage.behavior_commands.commands[0];
+    EXPECT_EQ(command.entity, 4u);
+    EXPECT_EQ(command.kind, BehaviorCommandKind::AddLocalTranslation);
+    EXPECT_FLOAT_EQ(command.values[0], 0.0f);
+    EXPECT_FLOAT_EQ(command.values[1], 1.0f);
+    EXPECT_FLOAT_EQ(command.values[2], 0.0f);
+}
+
+TEST(BehaviorPluginAbi, CollisionViewAndCommandWriterRejectBoundaries)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    AbiBoundaryProbe probe{};
+    g_boundary_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_boundary_pack));
+    g_boundary_probe = nullptr;
+
+    SceneInstance scene =
+        scene_with_behavior(7u, "test", "boundary_probe");
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.observed_count, 0u);
+    EXPECT_TRUE(probe.read_was_present);
+    EXPECT_EQ(probe.out_of_range_read, 0u);
+    EXPECT_EQ(probe.null_out_read, 0u);
+    EXPECT_TRUE(probe.out_event_preserved);
+    EXPECT_EQ(probe.none_write, 0u);
+    EXPECT_EQ(probe.bad_write, 0u);
+    EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
+}
+
+TEST(BehaviorPluginAbi, MultipleAbiBehaviorsReadSameFrameView)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    wz::Logger logger{};
+    register_builtin_behaviors(registry, plugins, logger);
+
+    SceneInstance scene{};
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = kSampleBehaviorModule,
+            .name = kBounceOnCollisionEnterBehavior,
+            .enabled = true,
+        },
+    });
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 5u,
+        .component = BehaviorComponent{
+            .module = kSampleBehaviorModule,
+            .name = kBounceOnCollisionEnterBehavior,
+            .enabled = true,
+        },
+    });
+
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 5u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 2u);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[0].entity, 4u);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[1].entity, 5u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[0].kind,
+        BehaviorCommandKind::AddLocalTranslation);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[1].kind,
+        BehaviorCommandKind::AddLocalTranslation);
+}
+
+TEST(BehaviorPluginAbi, DebugLogBehaviorWritesThroughLogCallback)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    LogCapture capture{};
+    wz::Logger logger{};
+    ASSERT_TRUE(wz::logging::init_logger(
+        logger,
+        wz::logging::LoggerDesc{
+            .min_level = wz::LogLevel::Debug,
+            .enable_stderr_sink = false,
+        }));
+    wz::logging::set_log_sink(logger, capture_log, &capture);
+    register_builtin_behaviors(registry, plugins, logger);
+
+    SceneInstance scene =
+        scene_with_behavior(4u, kDebugBehaviorModule, kLogCollisionEventsBehavior);
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+            .self_is_trigger = true,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+    wz::logging::wait_until_idle(logger);
+    wz::logging::shutdown_logger(logger);
+
+    const auto found = std::find_if(
+        capture.messages.begin(),
+        capture.messages.end(),
+        [](const std::string& message) {
+            return message.find("collision.enter") != std::string::npos
+                && message.find("entity=4") != std::string::npos
+                && message.find("other=9") != std::string::npos;
+        });
+    EXPECT_NE(found, capture.messages.end());
 }
 
 TEST(BehaviorCommands, ApplyLocalTranslationCommandsUpdatesSceneGraph)

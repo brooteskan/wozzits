@@ -1,7 +1,5 @@
 #include <engine/behavior/builtin_behaviors.h>
-
-#include <engine/collision/collision_frame.h>
-#include <engine/frame_storage.h>
+#include <engine/behavior/sample_collision_behaviors.h>
 
 #include <logging/logger.h>
 
@@ -11,34 +9,39 @@ namespace wz::engine::behavior
 {
     namespace
     {
-        const char* collision_kind_name(
-            wz::engine::collision::CollisionEventKind kind) noexcept
+        const char* collision_kind_name(WzCollisionEventKind kind) noexcept
         {
-            using Kind = wz::engine::collision::CollisionEventKind;
             switch (kind) {
-            case Kind::Enter:
+            case WZ_COLLISION_EVENT_ENTER:
                 return "enter";
-            case Kind::Stay:
+            case WZ_COLLISION_EVENT_STAY:
                 return "stay";
-            case Kind::Exit:
+            case WZ_COLLISION_EVENT_EXIT:
                 return "exit";
             }
             return "unknown";
         }
 
         void log_collision_events(
-            BehaviorFrameContext& context,
-            wz::scene::RuntimeEntityId entity,
-            void* user_data)
+            const WzBehaviorFrameFacts* facts,
+            WzBehaviorEntityId entity,
+            void*)
         {
-            auto* logger = static_cast<wz::Logger*>(user_data);
-            if (!logger || !context.frame_storage) {
+            if (!facts || !facts->log_info
+                || !facts->collision_events.read)
+            {
                 return;
             }
 
-            for (const auto& event :
-                context.frame_storage->collision.routed_entity_events)
-            {
+            for (uint32_t i = 0; i < facts->collision_events.count; ++i) {
+                WzCollisionEntityEvent event{};
+                if (!facts->collision_events.read(
+                        facts->collision_events.user,
+                        i,
+                        &event))
+                {
+                    continue;
+                }
                 if (event.entity != entity) {
                     continue;
                 }
@@ -50,20 +53,47 @@ namespace wz::engine::behavior
                     << " entity=" << event.entity
                     << " other=" << event.other
                     << " self_trigger="
-                    << (event.self_is_trigger ? "true" : "false");
-                logger->info(msg.str());
+                    << (event.self_is_trigger != 0 ? "true" : "false");
+                facts->log_info(facts->log_user, msg.str().c_str());
             }
+        }
+
+        uint8_t register_debug_pack(WzBehaviorPluginApi* api)
+        {
+            if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+                || !api->register_behavior)
+            {
+                return 0;
+            }
+
+            return api->register_behavior(
+                api->user,
+                kDebugBehaviorModule,
+                kLogCollisionEventsBehavior,
+                log_collision_events,
+                nullptr);
         }
     }
 
     void register_builtin_behaviors(
         BehaviorRegistry& registry,
+        BehaviorPluginHost& plugins,
         wz::Logger& logger)
     {
-        registry.register_behavior(
-            kDebugBehaviorModule,
-            kLogCollisionEventsBehavior,
-            log_collision_events,
-            &logger);
+        const bool registered_debug =
+            plugins.register_static_pack(registry, register_debug_pack, &logger);
+        const bool registered_sample =
+            plugins.register_static_pack(
+                registry,
+                register_sample_collision_behaviors,
+                &logger);
+        if (!registered_debug) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: debug");
+        }
+        if (!registered_sample) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: sample");
+        }
     }
 }
