@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <engine/game_app.h>
+#include <engine/behavior/behavior_dispatch.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/runtime_camera.h>
 #include <math/projection.h>
@@ -107,6 +108,14 @@ namespace wz::app
             wz::engine::FrameStorage* frame = nullptr;
             const wz::engine::assets::SceneInstance* scene = nullptr;
             const wz::engine::assets::CollisionAssetModule* collisions = nullptr;
+        };
+
+        struct BehaviorDispatchJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
+            const wz::engine::assets::SceneInstance* scene = nullptr;
+            const wz::engine::behavior::BehaviorRegistry* registry = nullptr;
         };
 
         void update_world_for_nodes(
@@ -806,6 +815,8 @@ namespace wz::app
                 collision.current_pairs.clear();
                 collision.prev_pairs.clear();
                 collision.events.clear();
+                collision.entity_events.clear();
+                collision.routed_entity_events.clear();
                 return;
             }
 
@@ -813,6 +824,30 @@ namespace wz::app
                 *data->scene,
                 *data->collisions,
                 collision);
+        }
+
+        void job_dispatch_behaviors(wz::jobs::JobContext& ctx)
+        {
+            auto* data = static_cast<BehaviorDispatchJobData*>(ctx.frame_user);
+            assert(data);
+            assert(data->frame);
+
+            if (!data->scene || !data->registry || !data->fctx)
+            {
+                data->frame->behavior_commands.clear();
+                return;
+            }
+
+            wz::engine::behavior::BehaviorFrameContext behavior_ctx{
+                .frame_context = data->fctx,
+                .frame_storage = data->frame,
+                .scene = data->scene,
+                .commands = &data->frame->behavior_commands,
+            };
+            wz::engine::behavior::dispatch_behaviors(
+                *data->scene,
+                *data->registry,
+                behavior_ctx);
         }
 
         void job_build_render_frame(wz::jobs::JobContext& ctx)
@@ -947,6 +982,12 @@ namespace wz::app
                 .run = job_build_collision_frame,
                 });
 
+            jobs.dispatch_behaviors = jobs.graph.add_job({
+                .name = "dispatch_behaviors",
+                .lane = wz::jobs::ExecutionLane::MainThread,
+                .run = job_dispatch_behaviors,
+                });
+
             jobs.build_render_ir = jobs.graph.add_job({
                 .name = "build_render_ir",
                 .lane = wz::jobs::ExecutionLane::MainThread,
@@ -965,14 +1006,15 @@ namespace wz::app
             jobs.graph.add_dependency(jobs.camera_update, jobs.build_view);
             jobs.graph.add_dependency(jobs.build_view, jobs.compile_scene);
             jobs.graph.add_dependency(jobs.compile_scene, jobs.build_collision_frame);
-            jobs.graph.add_dependency(jobs.build_collision_frame, jobs.build_render_ir);
+            jobs.graph.add_dependency(jobs.build_collision_frame, jobs.dispatch_behaviors);
+            jobs.graph.add_dependency(jobs.dispatch_behaviors, jobs.build_render_ir);
             jobs.graph.add_dependency(jobs.build_render_ir, jobs.build_render_frame);
             jobs.ready = jobs.graph.commit();
 
             if (jobs.ready)
             {
                 app.ctx.logger.info(
-                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> build_render_ir -> build_render_frame"
+                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> dispatch_behaviors -> build_render_ir -> build_render_frame"
                 );
             }
             else
@@ -1123,6 +1165,16 @@ namespace wz::app
             .collisions = app.ctx.assets ? &app.ctx.assets->collisions() : nullptr,
         };
 
+        BehaviorDispatchJobData behavior_dispatch_data{
+            .frame = &app.frame,
+            .fctx = &fctx,
+            .scene =
+                app.debug_object.collision_scene_valid
+                ? &app.debug_object.collision_scene
+                : nullptr,
+            .registry = &app.behavior_registry,
+        };
+
         reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
@@ -1134,6 +1186,7 @@ namespace wz::app
         app.jobs.exec.bind(app.jobs.build_view, &build_view_data);
         app.jobs.exec.bind(app.jobs.compile_scene, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_collision_frame, &collision_frame_data);
+        app.jobs.exec.bind(app.jobs.dispatch_behaviors, &behavior_dispatch_data);
         app.jobs.exec.bind(app.jobs.build_render_ir, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_render_frame, &render_prep_data);
 

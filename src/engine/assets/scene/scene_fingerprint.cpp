@@ -103,6 +103,7 @@ namespace wz::engine::assets
                 node.terrain_mesh_source.has_value();
             const bool has_terrain_height_field_source =
                 node.terrain_height_field_source.has_value();
+            const bool has_behavior = node.behavior.has_value();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
@@ -122,6 +123,7 @@ namespace wz::engine::assets
             fp.mix_value(has_terrain_render_style);
             fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_terrain_height_field_source);
+            fp.mix_value(has_behavior);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -373,6 +375,12 @@ namespace wz::engine::assets
                 for (const auto& channel : node.event_listener->channels) {
                     fp.mix_string(channel);
                 }
+            }
+
+            if (node.behavior) {
+                fp.mix_string(node.behavior->module);
+                fp.mix_string(node.behavior->name);
+                fp.mix_value(node.behavior->enabled);
             }
 
             if (node.debug_visual) {

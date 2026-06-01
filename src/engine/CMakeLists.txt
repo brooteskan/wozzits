@@ -5,6 +5,8 @@ target_sources(window_engine PRIVATE
     benchmark_app.cpp
     flying_camera.cpp
     runtime_camera.cpp
+    behavior/behavior_registry.cpp
+    behavior/behavior_dispatch.cpp
     collision/collision_frame.cpp
     render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp

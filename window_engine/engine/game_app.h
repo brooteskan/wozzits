@@ -6,6 +6,7 @@
 #include <gpu/gpu_types.h>
 
 #include <engine/app_context.h>
+#include <engine/behavior/behavior_registry.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/engine.h>
 #include <engine/frame_storage.h>
@@ -85,6 +86,7 @@ namespace wz::app
         wz::jobs::NodeHandle build_view = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle compile_scene = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_collision_frame = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle dispatch_behaviors = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_ir = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_frame = wz::jobs::INVALID_JOB;
 
@@ -105,6 +107,7 @@ namespace wz::app
         AppJobRuntime           jobs{};
         FrameDirtyState         frame_dirty{};
         FrameStorage            frame{};
+        wz::engine::behavior::BehaviorRegistry behavior_registry{};
     };
 
 

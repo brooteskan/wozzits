@@ -468,6 +468,13 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
+    struct SceneBehaviorAsset
+    {
+        std::string module;
+        std::string name;
+        bool enabled = true;
+    };
+
     // ─────────────────────────────────────────────────────────────────────
 
     struct SceneNodeAsset
@@ -514,6 +521,7 @@ namespace wz::engine::assets
             terrain_height_field_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
+        std::optional<SceneBehaviorAsset> behavior;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
@@ -1128,6 +1136,7 @@ namespace wz::engine::assets
             || node.terrain.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
+            || node.behavior.has_value()
             || node.debug_visual.has_value();
     }
 

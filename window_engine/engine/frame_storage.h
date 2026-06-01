@@ -1,6 +1,7 @@
 #pragma once
 // engine/frame_storage.h
 
+#include <engine/behavior/behavior_commands.h>
 #include <engine/collision/collision_frame.h>
 
 #include <scene/compile/scene_compiler.h>
@@ -15,6 +16,7 @@ namespace wz::engine
         wz::scene::ViewData             view{};
         wz::scene::CompiledSceneStorage compiled_scene{};
         wz::engine::collision::CollisionFrameStorage collision{};
+        wz::engine::behavior::BehaviorCommandBuffer behavior_commands{};
         wz::render::RenderIRStorage     render_ir{};
         wz::render::RenderFrameStorage  render_frame{};
     };

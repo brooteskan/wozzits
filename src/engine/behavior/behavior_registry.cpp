@@ -1,0 +1,71 @@
+#include <engine/behavior/behavior_registry.h>
+
+#include <utility>
+
+namespace wz::engine::behavior
+{
+    BehaviorHandle BehaviorRegistry::register_behavior(
+        std::string module,
+        std::string name,
+        BehaviorFn function,
+        void* user_data)
+    {
+        if (name.empty() || !function) {
+            return {};
+        }
+
+        if (auto existing = find(module, name)) {
+            registrations_[existing->index].function = function;
+            registrations_[existing->index].user_data = user_data;
+            return *existing;
+        }
+
+        const BehaviorHandle handle{
+            .index = static_cast<uint32_t>(registrations_.size()),
+        };
+        registrations_.push_back({
+            .module = std::move(module),
+            .name = std::move(name),
+            .function = function,
+            .user_data = user_data,
+        });
+        return handle;
+    }
+
+    BehaviorHandle BehaviorRegistry::register_behavior(
+        std::string name,
+        BehaviorFn function,
+        void* user_data)
+    {
+        return register_behavior({}, std::move(name), function, user_data);
+    }
+
+    std::optional<BehaviorHandle> BehaviorRegistry::find(
+        std::string_view module,
+        std::string_view name) const noexcept
+    {
+        for (uint32_t i = 0; i < registrations_.size(); ++i) {
+            const auto& registration = registrations_[i];
+            if (registration.module == module
+                && registration.name == name)
+            {
+                return BehaviorHandle{ .index = i };
+            }
+        }
+        return std::nullopt;
+    }
+
+    const BehaviorRegistration* BehaviorRegistry::get(
+        BehaviorHandle handle) const noexcept
+    {
+        if (!handle.valid() || handle.index >= registrations_.size()) {
+            return nullptr;
+        }
+        return &registrations_[handle.index];
+    }
+
+    void BehaviorRegistry::clear()
+    {
+        registrations_.clear();
+    }
+}

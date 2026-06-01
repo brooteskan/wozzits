@@ -79,6 +79,13 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
+    struct BehaviorComponent
+    {
+        std::string module;
+        std::string name;
+        bool enabled = true;
+    };
+
     struct AuxiliaryVisualComponent
     {
         SceneAuxiliaryVisualKind kind = SceneAuxiliaryVisualKind::None;
@@ -117,6 +124,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
+        std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 

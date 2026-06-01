@@ -545,6 +545,17 @@ namespace wz::engine::assets
                 });
             }
 
+            if (node.behavior) {
+                inst.behaviors.push_back({
+                    .node = h,
+                    .component = BehaviorComponent{
+                        .module = node.behavior->module,
+                        .name = node.behavior->name,
+                        .enabled = node.behavior->enabled,
+                    },
+                });
+            }
+
             if (node.debug_visual) {
                 inst.auxiliary_visuals.push_back({
                     .node = h,

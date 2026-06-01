@@ -1832,6 +1832,33 @@ namespace wz::engine::assets::internal
 
             // ── Debug/editor visual descriptor ───────────────────────
 
+            const auto* behavior = find_member(node_val, "behavior");
+            if (behavior
+                && behavior->kind == wz::json::JSONValueKind::Object)
+            {
+                auto name = read_string(*behavior, "name");
+                if (!name || name->empty()) {
+                    logger.error("behavior on node '" + node.id
+                        + "' missing non-empty name");
+                    return std::nullopt;
+                }
+
+                SceneBehaviorAsset component{};
+                component.name = std::string(*name);
+
+                auto module = read_string(*behavior, "module");
+                if (module) {
+                    component.module = std::string(*module);
+                }
+
+                auto enabled = read_bool(*behavior, "enabled");
+                if (enabled) {
+                    component.enabled = *enabled;
+                }
+
+                node.behavior = std::move(component);
+            }
+
             const auto* dv = find_member(node_val, "auxiliary_visual");
             const char* visual_field = "auxiliary_visual";
             if (!dv) {

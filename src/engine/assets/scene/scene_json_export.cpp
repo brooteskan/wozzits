@@ -809,6 +809,17 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr behavior_value(const SceneBehaviorAsset& behavior)
+        {
+            auto obj = object_value();
+            if (!behavior.module.empty()) {
+                add_member(*obj, "module", string_value(behavior.module));
+            }
+            add_member(*obj, "name", string_value(behavior.name));
+            add_member(*obj, "enabled", bool_value(behavior.enabled));
+            return obj;
+        }
+
         JSONValuePtr debug_visual_value(const SceneDebugVisualAsset& visual)
         {
             auto obj = object_value();
@@ -952,6 +963,10 @@ namespace wz::engine::assets
             if (node.event_listener) {
                 add_member(*obj, "event_listener",
                     event_listener_value(*node.event_listener));
+            }
+            if (node.behavior) {
+                add_member(*obj, "behavior",
+                    behavior_value(*node.behavior));
             }
             if (node.debug_visual
                 && node.debug_visual->kind != SceneDebugVisualKind::None)
