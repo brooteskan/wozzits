@@ -92,6 +92,92 @@ namespace wz::engine::behavior
             matrix.m[11u] = 0.0f;
             matrix.m[15u] = 1.0f;
         }
+
+        bool inverse_affine_point(
+            const wz::math::Mat4& matrix,
+            const wz::math::Vec3& point,
+            wz::math::Vec3& out) noexcept
+        {
+            const float a00 = matrix.m[0];
+            const float a01 = matrix.m[4];
+            const float a02 = matrix.m[8];
+            const float a10 = matrix.m[1];
+            const float a11 = matrix.m[5];
+            const float a12 = matrix.m[9];
+            const float a20 = matrix.m[2];
+            const float a21 = matrix.m[6];
+            const float a22 = matrix.m[10];
+
+            const float det =
+                a00 * (a11 * a22 - a12 * a21)
+                - a01 * (a10 * a22 - a12 * a20)
+                + a02 * (a10 * a21 - a11 * a20);
+            if (std::abs(det) <= 1e-8f) {
+                return false;
+            }
+
+            const float inv_det = 1.0f / det;
+            const float x = point.x - matrix.m[12];
+            const float y = point.y - matrix.m[13];
+            const float z = point.z - matrix.m[14];
+
+            out.x =
+                ((a11 * a22 - a12 * a21) * x
+                    + (a02 * a21 - a01 * a22) * y
+                    + (a01 * a12 - a02 * a11) * z)
+                * inv_det;
+            out.y =
+                ((a12 * a20 - a10 * a22) * x
+                    + (a00 * a22 - a02 * a20) * y
+                    + (a02 * a10 - a00 * a12) * z)
+                * inv_det;
+            out.z =
+                ((a10 * a21 - a11 * a20) * x
+                    + (a01 * a20 - a00 * a21) * y
+                    + (a00 * a11 - a01 * a10) * z)
+                * inv_det;
+            return true;
+        }
+
+        bool set_world_translation(
+            wz::scene::SceneGraph& graph,
+            wz::scene::TransformNode& node,
+            wz::scene::RuntimeEntityId entity,
+            const wz::math::Vec3& world_position) noexcept
+        {
+            const auto parent = wz::core::graph::parent(graph, entity);
+            if (parent == wz::core::graph::INVALID_NODE) {
+                node.local.m[12] = world_position.x;
+                node.local.m[13] = world_position.y;
+                node.local.m[14] = world_position.z;
+                return true;
+            }
+
+            wz::math::Vec3 local_position{};
+            if (!inverse_affine_point(
+                    wz::core::graph::node_data(graph, parent).world,
+                    world_position,
+                    local_position))
+            {
+                return false;
+            }
+
+            node.local.m[12] = local_position.x;
+            node.local.m[13] = local_position.y;
+            node.local.m[14] = local_position.z;
+            return true;
+        }
+
+        void mark_applied(
+            wz::scene::RuntimeEntityId entity,
+            uint32_t& applied,
+            std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
+        {
+            ++applied;
+            if (out_changed_entities) {
+                out_changed_entities->push_back(entity);
+            }
+        }
     }
 
     uint32_t apply_behavior_commands(
@@ -121,21 +207,55 @@ namespace wz::engine::behavior
                 node.local.m[12] += command.values[0];
                 node.local.m[13] += command.values[1];
                 node.local.m[14] += command.values[2];
-                ++applied;
-                if (out_changed_entities) {
-                    out_changed_entities->push_back(command.entity);
-                }
+                mark_applied(command.entity, applied, out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalTranslation:
                 node.local.m[12] = command.values[0];
                 node.local.m[13] = command.values[1];
                 node.local.m[14] = command.values[2];
-                ++applied;
-                if (out_changed_entities) {
-                    out_changed_entities->push_back(command.entity);
+                mark_applied(command.entity, applied, out_changed_entities);
+                break;
+
+            case BehaviorCommandKind::AddWorldTranslation: {
+                const wz::math::Vec3 world_position{
+                    .x = node.world.m[12] + command.values[0],
+                    .y = node.world.m[13] + command.values[1],
+                    .z = node.world.m[14] + command.values[2],
+                };
+                if (set_world_translation(
+                        scene.storage.polytree,
+                        node,
+                        command.entity,
+                        world_position))
+                {
+                    mark_applied(
+                        command.entity,
+                        applied,
+                        out_changed_entities);
                 }
                 break;
+            }
+
+            case BehaviorCommandKind::SetWorldTranslation: {
+                const wz::math::Vec3 world_position{
+                    .x = command.values[0],
+                    .y = command.values[1],
+                    .z = command.values[2],
+                };
+                if (set_world_translation(
+                        scene.storage.polytree,
+                        node,
+                        command.entity,
+                        world_position))
+                {
+                    mark_applied(
+                        command.entity,
+                        applied,
+                        out_changed_entities);
+                }
+                break;
+            }
 
             case BehaviorCommandKind::AddLocalScale:
                 add_local_scale(
@@ -143,10 +263,7 @@ namespace wz::engine::behavior
                     command.values[0],
                     command.values[1],
                     command.values[2]);
-                ++applied;
-                if (out_changed_entities) {
-                    out_changed_entities->push_back(command.entity);
-                }
+                mark_applied(command.entity, applied, out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalScale:
@@ -155,10 +272,7 @@ namespace wz::engine::behavior
                     command.values[0],
                     command.values[1],
                     command.values[2]);
-                ++applied;
-                if (out_changed_entities) {
-                    out_changed_entities->push_back(command.entity);
-                }
+                mark_applied(command.entity, applied, out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalRotation:
@@ -170,10 +284,7 @@ namespace wz::engine::behavior
                         command.values[2],
                         command.values[3],
                     });
-                ++applied;
-                if (out_changed_entities) {
-                    out_changed_entities->push_back(command.entity);
-                }
+                mark_applied(command.entity, applied, out_changed_entities);
                 break;
 
             case BehaviorCommandKind::None:

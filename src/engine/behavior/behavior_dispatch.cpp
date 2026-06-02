@@ -21,6 +21,21 @@ namespace wz::engine::behavior
             return WZ_EVENT_NONE;
         }
 
+        WzBehaviorEventKind proximity_event_kind(
+            wz::engine::collision::ProximityEventKind kind) noexcept
+        {
+            using Kind = wz::engine::collision::ProximityEventKind;
+            switch (kind) {
+            case Kind::Enter:
+                return WZ_EVENT_PROXIMITY_ENTER;
+            case Kind::Stay:
+                return WZ_EVENT_PROXIMITY_STAY;
+            case Kind::Exit:
+                return WZ_EVENT_PROXIMITY_EXIT;
+            }
+            return WZ_EVENT_NONE;
+        }
+
         const wz::engine::assets::BehaviorComponent* behavior_for_entity(
             const wz::engine::assets::SceneInstance& scene,
             wz::scene::RuntimeEntityId entity)
@@ -110,6 +125,40 @@ namespace wz::engine::behavior
                 dispatch_module_event(registry, context, *component, event);
             }
         }
+
+        void dispatch_proximity_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            if (!context.frame_storage) {
+                return;
+            }
+
+            for (const auto& proximity_event :
+                context.frame_storage->collision.routed_proximity_entity_events)
+            {
+                const auto* component =
+                    behavior_for_entity(scene, proximity_event.entity);
+                if (!component || !component->enabled
+                    || component->module.empty())
+                {
+                    continue;
+                }
+
+                const BehaviorEvent event{
+                    .kind = proximity_event_kind(proximity_event.kind),
+                    .entity = proximity_event.entity,
+                    .other = proximity_event.other,
+                    .self_is_trigger = false,
+                };
+                if (event.kind == WZ_EVENT_NONE) {
+                    continue;
+                }
+
+                dispatch_module_event(registry, context, *component, event);
+            }
+        }
     }
 
     void dispatch_behaviors(
@@ -123,9 +172,10 @@ namespace wz::engine::behavior
 
         context.commands->clear();
         // Command order is deterministic: module frame.update events,
-        // routed collision module events, then legacy named functions.
+        // routed collision/proximity module events, then legacy named functions.
         dispatch_frame_update_events_to_modules(scene, registry, context);
         dispatch_collision_events_to_modules(scene, registry, context);
+        dispatch_proximity_events_to_modules(scene, registry, context);
 
         for (const auto& record : scene.behaviors) {
             const auto& component = record.component;

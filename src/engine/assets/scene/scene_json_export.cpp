@@ -809,6 +809,18 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr proximity_value(const SceneProximityAsset& proximity)
+        {
+            auto obj = object_value();
+            add_member(*obj, "radius", number_value(proximity.radius));
+            add_member(*obj, "layer_mask",
+                number_value(proximity.layer_mask));
+            add_member(*obj, "detects_with_mask",
+                number_value(proximity.detects_with_mask));
+            add_member(*obj, "enabled", bool_value(proximity.enabled));
+            return obj;
+        }
+
         JSONValuePtr behavior_value(const SceneBehaviorAsset& behavior)
         {
             auto obj = object_value();
@@ -963,6 +975,10 @@ namespace wz::engine::assets
             if (node.event_listener) {
                 add_member(*obj, "event_listener",
                     event_listener_value(*node.event_listener));
+            }
+            if (node.proximity) {
+                add_member(*obj, "proximity",
+                    proximity_value(*node.proximity));
             }
             if (node.behavior) {
                 add_member(*obj, "behavior",

@@ -545,6 +545,19 @@ namespace wz::engine::assets
                 });
             }
 
+            if (node.proximity) {
+                const auto& proximity = *node.proximity;
+                inst.proximities.push_back({
+                    .node = h,
+                    .component = ProximityComponent{
+                        .radius = proximity.radius,
+                        .layer_mask = proximity.layer_mask,
+                        .detects_with_mask = proximity.detects_with_mask,
+                        .enabled = proximity.enabled,
+                    },
+                });
+            }
+
             if (node.behavior) {
                 inst.behaviors.push_back({
                     .node = h,

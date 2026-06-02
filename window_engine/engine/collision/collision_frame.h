@@ -69,6 +69,40 @@ namespace wz::engine::collision
         bool self_is_trigger = false;
     };
 
+    struct ProximityWorldEntry
+    {
+        wz::scene::RuntimeEntityId entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::math::Vec3 center{};
+        float radius = 1.0f;
+        uint32_t layer_mask = 1;
+        uint32_t detects_with_mask = 0xffffffffu;
+        bool enabled = true;
+    };
+
+    enum class ProximityEventKind : uint8_t
+    {
+        Enter,
+        Stay,
+        Exit,
+    };
+
+    struct ProximityEvent
+    {
+        wz::scene::RuntimeEntityId a = wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::scene::RuntimeEntityId b = wz::scene::INVALID_RUNTIME_ENTITY;
+        ProximityEventKind kind = ProximityEventKind::Enter;
+    };
+
+    struct ProximityEntityEvent
+    {
+        wz::scene::RuntimeEntityId entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::scene::RuntimeEntityId other =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        ProximityEventKind kind = ProximityEventKind::Enter;
+    };
+
     struct CollisionFrameStorage
     {
         std::vector<CollisionWorldEntry> world;
@@ -85,6 +119,16 @@ namespace wz::engine::collision
         // Routing is a filter: channels do not dispatch callbacks or mutate
         // listeners.
         std::vector<CollisionEntityEvent> routed_entity_events;
+
+        std::vector<ProximityWorldEntry> proximity_world;
+        std::vector<CollisionPair> proximity_current_pairs;
+        std::vector<CollisionPair> proximity_prev_pairs;
+        std::vector<ProximityEvent> proximity_events;
+        std::vector<ProximityEntityEvent> proximity_entity_events;
+        std::vector<ProximityEntityEvent> routed_proximity_entity_events;
+        uint32_t proximity_pairs_tested = 0;
+        uint32_t proximity_pairs_rejected = 0;
+        uint32_t proximity_pairs_matched = 0;
 
         uint32_t narrowphase_tests = 0;
         uint32_t terrain_cells_tested = 0;
@@ -138,6 +182,45 @@ namespace wz::engine::collision
     // collision.enter, collision.stay, collision.exit, and collision.*.
     // collision.* is a collision-only wildcard token, not a glob pattern.
 
+    bool proximity_masks_match(
+        const ProximityWorldEntry& a,
+        const ProximityWorldEntry& b) noexcept;
+
+    void build_proximity_world(
+        const wz::engine::assets::SceneInstance& scene,
+        CollisionFrameStorage& storage);
+
+    void broadphase_proximity_overlap(
+        std::span<const ProximityWorldEntry> world,
+        std::vector<CollisionPair>& out_pairs);
+
+    void broadphase_proximity_overlap(
+        std::span<const ProximityWorldEntry> world,
+        std::vector<CollisionPair>& out_pairs,
+        uint32_t& pairs_tested,
+        uint32_t& pairs_rejected,
+        uint32_t& pairs_matched);
+
+    void diff_proximity_events(
+        std::span<const CollisionPair> prev_pairs,
+        std::span<const CollisionPair> current_pairs,
+        std::vector<ProximityEvent>& out_events);
+
+    void fanout_proximity_entity_events(
+        std::span<const ProximityEvent> pair_events,
+        std::vector<ProximityEntityEvent>& out_entity_events);
+
+    void route_proximity_entity_events(
+        std::span<const ProximityEntityEvent> entity_events,
+        std::span<const wz::engine::assets::SceneComponentRecord<
+            wz::engine::assets::EventListenerComponent>> listeners,
+        std::vector<ProximityEntityEvent>& out_routed_events);
+    // Recognized listener channels are exact tokens:
+    // proximity.enter, proximity.stay, proximity.exit, and proximity.*.
+    // proximity.* is a proximity-only wildcard token, not a glob pattern.
+
+    void advance_proximity_frame(CollisionFrameStorage& storage);
+
     void advance_collision_frame(CollisionFrameStorage& storage);
 
     void build_collision_world(
@@ -148,5 +231,9 @@ namespace wz::engine::collision
     void build_collision_frame(
         const wz::engine::assets::SceneInstance& scene,
         const wz::engine::assets::CollisionAssetModule& collisions,
+        CollisionFrameStorage& storage);
+
+    void build_proximity_frame(
+        const wz::engine::assets::SceneInstance& scene,
         CollisionFrameStorage& storage);
 }

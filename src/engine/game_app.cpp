@@ -827,12 +827,24 @@ namespace wz::app
                 collision.events.clear();
                 collision.entity_events.clear();
                 collision.routed_entity_events.clear();
+                collision.proximity_world.clear();
+                collision.proximity_current_pairs.clear();
+                collision.proximity_prev_pairs.clear();
+                collision.proximity_events.clear();
+                collision.proximity_entity_events.clear();
+                collision.routed_proximity_entity_events.clear();
+                collision.proximity_pairs_tested = 0;
+                collision.proximity_pairs_rejected = 0;
+                collision.proximity_pairs_matched = 0;
                 return;
             }
 
             wz::engine::collision::build_collision_frame(
                 *data->scene,
                 *data->collisions,
+                collision);
+            wz::engine::collision::build_proximity_frame(
+                *data->scene,
                 collision);
         }
 

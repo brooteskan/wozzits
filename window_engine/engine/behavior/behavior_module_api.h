@@ -75,6 +75,44 @@ static inline uint8_t wz_write_set_local_translation(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+static inline uint8_t wz_write_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_ADD_WORLD_TRANSLATION,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline uint8_t wz_write_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_WORLD_TRANSLATION,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
 static inline uint8_t wz_write_add_local_scale(
     const WzBehaviorFrameFacts* facts,
     WzBehaviorEntityId entity,
@@ -184,6 +222,46 @@ static inline uint8_t wz_self_set_local_translation(
     float z)
 {
     return wz_write_set_local_translation(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_add_world_translation(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_world_translation(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_other_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_add_world_translation(facts, wz_other(event), x, y, z);
+}
+
+static inline uint8_t wz_other_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_world_translation(facts, wz_other(event), x, y, z);
 }
 
 static inline uint8_t wz_self_add_local_scale(
@@ -367,6 +445,12 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "collision.stay";
     case WZ_EVENT_COLLISION_EXIT:
         return "collision.exit";
+    case WZ_EVENT_PROXIMITY_ENTER:
+        return "proximity.enter";
+    case WZ_EVENT_PROXIMITY_STAY:
+        return "proximity.stay";
+    case WZ_EVENT_PROXIMITY_EXIT:
+        return "proximity.exit";
     default:
         return "unknown";
     }

@@ -17,6 +17,8 @@ namespace wz::engine::behavior
         AddLocalScale,
         SetLocalScale,
         SetLocalRotation,
+        AddWorldTranslation,
+        SetWorldTranslation,
     };
 
     struct BehaviorCommand
@@ -55,6 +57,32 @@ namespace wz::engine::behavior
             commands.push_back({
                 .entity = entity,
                 .kind = BehaviorCommandKind::SetLocalTranslation,
+                .values = { x, y, z, 0.0f },
+            });
+        }
+
+        void add_world_translation(
+            wz::scene::RuntimeEntityId entity,
+            float x,
+            float y,
+            float z)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::AddWorldTranslation,
+                .values = { x, y, z, 0.0f },
+            });
+        }
+
+        void set_world_translation(
+            wz::scene::RuntimeEntityId entity,
+            float x,
+            float y,
+            float z)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::SetWorldTranslation,
                 .values = { x, y, z, 0.0f },
             });
         }

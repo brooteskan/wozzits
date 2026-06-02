@@ -57,6 +57,26 @@ namespace wz::engine::collision
             return false;
         }
 
+        bool proximity_channel_matches(
+            std::string_view channel,
+            ProximityEventKind kind) noexcept
+        {
+            if (channel == "proximity.*") {
+                return true;
+            }
+
+            switch (kind) {
+            case ProximityEventKind::Enter:
+                return channel == "proximity.enter";
+            case ProximityEventKind::Stay:
+                return channel == "proximity.stay";
+            case ProximityEventKind::Exit:
+                return channel == "proximity.exit";
+            }
+
+            return false;
+        }
+
         bool listener_matches_collision_event(
             const wz::engine::assets::EventListenerComponent& listener,
             const CollisionEntityEvent& event) noexcept
@@ -67,6 +87,29 @@ namespace wz::engine::collision
                 }
             }
             return false;
+        }
+
+        bool listener_matches_proximity_event(
+            const wz::engine::assets::EventListenerComponent& listener,
+            const ProximityEntityEvent& event) noexcept
+        {
+            for (const std::string& channel : listener.channels) {
+                if (proximity_channel_matches(channel, event.kind)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool proximity_overlap(
+            const ProximityWorldEntry& a,
+            const ProximityWorldEntry& b) noexcept
+        {
+            const float dx = a.center.x - b.center.x;
+            const float dy = a.center.y - b.center.y;
+            const float dz = a.center.z - b.center.z;
+            const float r = a.radius + b.radius;
+            return dx * dx + dy * dy + dz * dz <= r * r;
         }
 
         bool inverse_affine_point(
@@ -555,6 +598,243 @@ namespace wz::engine::collision
         }
     }
 
+    bool proximity_masks_match(
+        const ProximityWorldEntry& a,
+        const ProximityWorldEntry& b) noexcept
+    {
+        return (a.layer_mask & b.detects_with_mask) != 0u
+            && (b.layer_mask & a.detects_with_mask) != 0u;
+    }
+
+    void build_proximity_world(
+        const wz::engine::assets::SceneInstance& scene,
+        CollisionFrameStorage& storage)
+    {
+        storage.proximity_world.clear();
+
+        const uint32_t node_count = static_cast<uint32_t>(
+            wz::core::graph::node_count(scene.storage.polytree));
+
+        for (const auto& record : scene.proximities) {
+            const auto& component = record.component;
+            if (!component.enabled
+                || component.radius <= 0.0f
+                || !std::isfinite(component.radius)
+                || record.node == wz::scene::INVALID_RUNTIME_ENTITY
+                || record.node >= node_count)
+            {
+                continue;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                scene.storage.polytree,
+                record.node);
+            storage.proximity_world.push_back(ProximityWorldEntry{
+                .entity = record.node,
+                .center = {
+                    node.world.m[12],
+                    node.world.m[13],
+                    node.world.m[14],
+                },
+                .radius = component.radius,
+                .layer_mask = component.layer_mask,
+                .detects_with_mask = component.detects_with_mask,
+                .enabled = component.enabled,
+            });
+        }
+    }
+
+    void broadphase_proximity_overlap(
+        std::span<const ProximityWorldEntry> world,
+        std::vector<CollisionPair>& out_pairs)
+    {
+        out_pairs.clear();
+        for (size_t i = 0; i < world.size(); ++i) {
+            const auto& a = world[i];
+            if (!a.enabled) {
+                continue;
+            }
+            for (size_t j = i + 1u; j < world.size(); ++j) {
+                const auto& b = world[j];
+                if (!b.enabled
+                    || !proximity_masks_match(a, b)
+                    || !proximity_overlap(a, b))
+                {
+                    continue;
+                }
+                const CollisionPair pair = make_collision_pair(
+                    a.entity,
+                    b.entity);
+                if (collision_pair_valid(pair)) {
+                    out_pairs.push_back(pair);
+                }
+            }
+        }
+        sort_unique_collision_pairs(out_pairs);
+    }
+
+    void broadphase_proximity_overlap(
+        std::span<const ProximityWorldEntry> world,
+        std::vector<CollisionPair>& out_pairs,
+        uint32_t& pairs_tested,
+        uint32_t& pairs_rejected,
+        uint32_t& pairs_matched)
+    {
+        out_pairs.clear();
+        pairs_tested = 0;
+        pairs_rejected = 0;
+        pairs_matched = 0;
+
+        for (size_t i = 0; i < world.size(); ++i) {
+            const auto& a = world[i];
+            if (!a.enabled) {
+                continue;
+            }
+            for (size_t j = i + 1u; j < world.size(); ++j) {
+                const auto& b = world[j];
+                if (!b.enabled) {
+                    continue;
+                }
+
+                ++pairs_tested;
+                if (!proximity_masks_match(a, b)
+                    || !proximity_overlap(a, b))
+                {
+                    ++pairs_rejected;
+                    continue;
+                }
+
+                const CollisionPair pair = make_collision_pair(
+                    a.entity,
+                    b.entity);
+                if (collision_pair_valid(pair)) {
+                    out_pairs.push_back(pair);
+                    ++pairs_matched;
+                }
+            }
+        }
+        sort_unique_collision_pairs(out_pairs);
+    }
+
+    void diff_proximity_events(
+        std::span<const CollisionPair> prev_pairs,
+        std::span<const CollisionPair> current_pairs,
+        std::vector<ProximityEvent>& out_events)
+    {
+        out_events.clear();
+        out_events.reserve(prev_pairs.size() + current_pairs.size());
+
+        size_t prev_i = 0;
+        size_t current_i = 0;
+        while (prev_i < prev_pairs.size() || current_i < current_pairs.size()) {
+            if (prev_i >= prev_pairs.size()) {
+                const auto& current = current_pairs[current_i++];
+                out_events.push_back({
+                    .a = current.a,
+                    .b = current.b,
+                    .kind = ProximityEventKind::Enter,
+                });
+                continue;
+            }
+            if (current_i >= current_pairs.size()) {
+                const auto& prev = prev_pairs[prev_i++];
+                out_events.push_back({
+                    .a = prev.a,
+                    .b = prev.b,
+                    .kind = ProximityEventKind::Exit,
+                });
+                continue;
+            }
+
+            const auto& prev = prev_pairs[prev_i];
+            const auto& current = current_pairs[current_i];
+            if (prev == current) {
+                out_events.push_back({
+                    .a = current.a,
+                    .b = current.b,
+                    .kind = ProximityEventKind::Stay,
+                });
+                ++prev_i;
+                ++current_i;
+            }
+            else if (prev < current) {
+                out_events.push_back({
+                    .a = prev.a,
+                    .b = prev.b,
+                    .kind = ProximityEventKind::Exit,
+                });
+                ++prev_i;
+            }
+            else {
+                out_events.push_back({
+                    .a = current.a,
+                    .b = current.b,
+                    .kind = ProximityEventKind::Enter,
+                });
+                ++current_i;
+            }
+        }
+    }
+
+    void fanout_proximity_entity_events(
+        std::span<const ProximityEvent> pair_events,
+        std::vector<ProximityEntityEvent>& out_entity_events)
+    {
+        out_entity_events.clear();
+        out_entity_events.reserve(pair_events.size() * 2u);
+
+        for (const ProximityEvent& event : pair_events) {
+            out_entity_events.push_back({
+                .entity = event.a,
+                .other = event.b,
+                .kind = event.kind,
+            });
+            out_entity_events.push_back({
+                .entity = event.b,
+                .other = event.a,
+                .kind = event.kind,
+            });
+        }
+    }
+
+    void route_proximity_entity_events(
+        std::span<const ProximityEntityEvent> entity_events,
+        std::span<const wz::engine::assets::SceneComponentRecord<
+            wz::engine::assets::EventListenerComponent>> listeners,
+        std::vector<ProximityEntityEvent>& out_routed_events)
+    {
+        out_routed_events.clear();
+        out_routed_events.reserve(entity_events.size());
+
+        for (const ProximityEntityEvent& event : entity_events) {
+            for (const auto& listener : listeners) {
+                if (listener.node == event.entity
+                    && listener_matches_proximity_event(
+                        listener.component,
+                        event))
+                {
+                    out_routed_events.push_back(event);
+                    break;
+                }
+            }
+        }
+    }
+
+    void advance_proximity_frame(CollisionFrameStorage& storage)
+    {
+        sort_unique_collision_pairs(storage.proximity_prev_pairs);
+        sort_unique_collision_pairs(storage.proximity_current_pairs);
+        diff_proximity_events(
+            storage.proximity_prev_pairs,
+            storage.proximity_current_pairs,
+            storage.proximity_events);
+        fanout_proximity_entity_events(
+            storage.proximity_events,
+            storage.proximity_entity_events);
+        storage.routed_proximity_entity_events.clear();
+        storage.proximity_prev_pairs = storage.proximity_current_pairs;
+    }
+
     void advance_collision_frame(CollisionFrameStorage& storage)
     {
         sort_unique_collision_pairs(storage.prev_pairs);
@@ -685,5 +965,23 @@ namespace wz::engine::collision
             storage.entity_events,
             scene.event_listeners,
             storage.routed_entity_events);
+    }
+
+    void build_proximity_frame(
+        const wz::engine::assets::SceneInstance& scene,
+        CollisionFrameStorage& storage)
+    {
+        build_proximity_world(scene, storage);
+        broadphase_proximity_overlap(
+            storage.proximity_world,
+            storage.proximity_current_pairs,
+            storage.proximity_pairs_tested,
+            storage.proximity_pairs_rejected,
+            storage.proximity_pairs_matched);
+        advance_proximity_frame(storage);
+        route_proximity_entity_events(
+            storage.proximity_entity_events,
+            scene.event_listeners,
+            storage.routed_proximity_entity_events);
     }
 }

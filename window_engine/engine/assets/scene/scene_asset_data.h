@@ -468,6 +468,14 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
+    struct SceneProximityAsset
+    {
+        float radius = 1.0f;
+        uint32_t layer_mask = 1;
+        uint32_t detects_with_mask = 0xffffffffu;
+        bool enabled = true;
+    };
+
     struct SceneBehaviorAsset
     {
         std::string module;
@@ -521,6 +529,7 @@ namespace wz::engine::assets
             terrain_height_field_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
+        std::optional<SceneProximityAsset> proximity;
         std::optional<SceneBehaviorAsset> behavior;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
@@ -1136,6 +1145,7 @@ namespace wz::engine::assets
             || node.terrain.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
+            || node.proximity.has_value()
             || node.behavior.has_value()
             || node.debug_visual.has_value();
     }

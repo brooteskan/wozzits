@@ -98,6 +98,9 @@ WZ_EVENT_SCENE_LOADED
 WZ_EVENT_COLLISION_ENTER
 WZ_EVENT_COLLISION_STAY
 WZ_EVENT_COLLISION_EXIT
+WZ_EVENT_PROXIMITY_ENTER
+WZ_EVENT_PROXIMITY_STAY
+WZ_EVENT_PROXIMITY_EXIT
 ```
 
 `WZ_EVENT_FRAME_UPDATE` is sent every behavior dispatch for enabled behavior
@@ -119,6 +122,22 @@ collision.*
 
 `collision.*` is a hardcoded "all collision events" token, not a general glob
 system.
+
+Proximity events are routed through the same Event Listener component. Add a
+Proximity component to define the node's radius and masks, then subscribe with:
+
+```text
+proximity.enter
+proximity.stay
+proximity.exit
+proximity.*
+```
+
+`proximity.*` is a hardcoded "all proximity events" token, not a general glob
+system. Proximity events are radius based and separate from collision overlap:
+they are intended for "close enough to matter" behavior such as starting a
+terrain snap/orient query before actual collision. Proximity radius is authored
+in world units and does not inherit scale from the node's transform hierarchy.
 
 ## Self And Other
 
@@ -234,6 +253,8 @@ Common helpers target `self`:
 ```cpp
 wz_self_add_local_translation(facts, event, 0.0f, 1.0f, 0.0f);
 wz_self_set_local_translation(facts, event, 0.0f, 2.0f, 0.0f);
+wz_self_add_world_translation(facts, event, 0.0f, 1.0f, 0.0f);
+wz_self_set_world_translation(facts, event, 0.0f, 2.0f, 0.0f);
 
 wz_self_add_local_scale(facts, event, 0.1f, 0.1f, 0.1f);
 wz_self_set_local_scale(facts, event, 2.0f, 2.0f, 2.0f);
@@ -249,6 +270,8 @@ Generic entity command helpers are also available:
 ```cpp
 wz_write_add_local_translation(facts, entity, x, y, z);
 wz_write_set_local_translation(facts, entity, x, y, z);
+wz_write_add_world_translation(facts, entity, x, y, z);
+wz_write_set_world_translation(facts, entity, x, y, z);
 wz_write_add_local_scale(facts, entity, x, y, z);
 wz_write_set_local_scale(facts, entity, x, y, z);
 wz_write_set_local_rotation(facts, entity, rotation);
@@ -257,12 +280,24 @@ wz_write_set_local_rotation(facts, entity, rotation);
 Command order is deterministic. Multiple commands targeting the same entity are
 legal and are applied in command-buffer order.
 
+World translation commands require an invertible parent transform. If an
+entity's parent has a degenerate transform, such as a zero scale axis, the
+world translation command is ignored during command application.
+
+World translation commands are applied before scene transform propagation runs.
+`set_world_translation` is absolute, but `add_world_translation` computes its
+target from the entity's world transform as it existed when command application
+began. Earlier commands in the same buffer that change the same entity's local
+transform are not visible to that world-space add until the next propagation.
+
 ## Rotation And Scale Semantics
 
 The scene graph stores local transforms as matrices. The V1 behavior API uses
 these rules:
 
 - Local translation writes the matrix translation column directly.
+- World translation writes are converted into the entity's parent-local
+  translation before scene transforms are propagated.
 - Local scale changes local basis-column lengths and preserves basis direction.
 - Local rotation uses `WzQuaternion {x, y, z, w}`.
 - `wz_self_set_local_rotation` replaces local rotation.

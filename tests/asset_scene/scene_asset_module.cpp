@@ -1852,6 +1852,66 @@ TEST(SceneAssetModule, CollisionComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(runtime_summary.collisions, 1u);
 }
 
+TEST(SceneAssetModule, ProximityComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_scene_proximity_roundtrip");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "proximity_scene",
+  "nodes": [
+    {
+      "id": "sensor",
+      "proximity": {
+        "radius": 12.5,
+        "layer_mask": 2,
+        "detects_with_mask": 4,
+        "enabled": true
+      }
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path path = wz::fs::join(root, "proximity.scene.json");
+    ASSERT_EQ(wz::fs::write_file_text(path, json), wz::fs::FileError::None);
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "proximity_scene",
+        .path = "proximity.scene.json",
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].proximity.has_value());
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].proximity->radius, 12.5f);
+    EXPECT_EQ(scene_data->nodes[0].proximity->layer_mask, 2u);
+    EXPECT_EQ(scene_data->nodes[0].proximity->detects_with_mask, 4u);
+    EXPECT_TRUE(scene_data->nodes[0].proximity->enabled);
+
+    const auto result = wz::engine::assets::instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.proximities.size(), 1u);
+    EXPECT_FLOAT_EQ(result.instance.proximities[0].component.radius, 12.5f);
+
+    const std::string exported = wz::json::serialize_json(
+        wz::engine::assets::export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"proximity\""), std::string::npos);
+    EXPECT_NE(exported.find("\"detects_with_mask\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, CollisionComponentResolvesSymbolicSceneReference)
 {
     const wz::fs::Path root =

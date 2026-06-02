@@ -387,6 +387,10 @@ namespace
         uint8_t wrote_set_scale = 0;
         uint8_t wrote_add_scale = 0;
         uint8_t wrote_set_rotation = 0;
+        uint8_t wrote_set_world_translation = 0;
+        uint8_t wrote_add_world_translation = 0;
+        uint8_t wrote_other_set_world_translation = 0;
+        uint8_t wrote_other_add_world_translation = 0;
     };
 
     TransformCommandProbe* g_transform_command_probe = nullptr;
@@ -427,6 +431,34 @@ namespace
                 .z = 0.70710677f,
                 .w = 0.70710677f,
             });
+        probe->wrote_set_world_translation =
+            wz_self_set_world_translation(
+                facts,
+                event,
+                10.0f,
+                20.0f,
+                30.0f);
+        probe->wrote_add_world_translation =
+            wz_self_add_world_translation(
+                facts,
+                event,
+                1.0f,
+                2.0f,
+                3.0f);
+        probe->wrote_other_set_world_translation =
+            wz_other_set_world_translation(
+                facts,
+                event,
+                40.0f,
+                50.0f,
+                60.0f);
+        probe->wrote_other_add_world_translation =
+            wz_other_add_world_translation(
+                facts,
+                event,
+                4.0f,
+                5.0f,
+                6.0f);
     }
 
     uint8_t register_transform_command_pack(WzBehaviorPluginApi* api)
@@ -799,6 +831,102 @@ TEST(BehaviorDispatch, DispatchesRoutedCollisionEventsToRegisteredModule)
     EXPECT_TRUE(probe.wrote_command);
     ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
     EXPECT_EQ(frame_storage.behavior_commands.commands[0].entity, 4u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[0].kind,
+        BehaviorCommandKind::AddLocalTranslation);
+
+    g_module_event_probe = nullptr;
+}
+
+TEST(BehaviorDispatch, DispatchesRoutedProximityEventsToRegisteredModule)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ModuleEventProbe probe{};
+    g_module_event_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_module_event_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "module_test",
+        "ignored_function_name");
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_proximity_entity_events = {
+        wz::engine::collision::ProximityEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::ProximityEventKind::Enter,
+        },
+    };
+
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    ASSERT_EQ(probe.kinds.size(), 2u);
+    EXPECT_EQ(probe.kinds[0], WZ_EVENT_FRAME_UPDATE);
+    EXPECT_EQ(probe.kinds[1], WZ_EVENT_PROXIMITY_ENTER);
+    EXPECT_EQ(probe.last_kind, WZ_EVENT_PROXIMITY_ENTER);
+    EXPECT_EQ(probe.last_entity, 4u);
+    EXPECT_EQ(probe.last_other, 9u);
+    EXPECT_FALSE(probe.wrote_command)
+        << "test handler only writes on collision.enter";
+
+    g_module_event_probe = nullptr;
+}
+
+TEST(BehaviorDispatch, DispatchesCollisionBeforeProximityInSameFrame)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ModuleEventProbe probe{};
+    g_module_event_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_module_event_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "module_test",
+        "ignored_function_name");
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    frame_storage.collision.routed_proximity_entity_events = {
+        wz::engine::collision::ProximityEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::ProximityEventKind::Enter,
+        },
+    };
+
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.kinds.size(), 3u);
+    EXPECT_EQ(probe.kinds[0], WZ_EVENT_FRAME_UPDATE);
+    EXPECT_EQ(probe.kinds[1], WZ_EVENT_COLLISION_ENTER);
+    EXPECT_EQ(probe.kinds[2], WZ_EVENT_PROXIMITY_ENTER);
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
     EXPECT_EQ(
         frame_storage.behavior_commands.commands[0].kind,
         BehaviorCommandKind::AddLocalTranslation);
@@ -1455,7 +1583,11 @@ TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
     EXPECT_EQ(probe.wrote_set_scale, 1u);
     EXPECT_EQ(probe.wrote_add_scale, 1u);
     EXPECT_EQ(probe.wrote_set_rotation, 1u);
-    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 3u);
+    EXPECT_EQ(probe.wrote_set_world_translation, 1u);
+    EXPECT_EQ(probe.wrote_add_world_translation, 1u);
+    EXPECT_EQ(probe.wrote_other_set_world_translation, 1u);
+    EXPECT_EQ(probe.wrote_other_add_world_translation, 1u);
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 7u);
     EXPECT_EQ(frame_storage.behavior_commands.commands[0].entity, 4u);
     EXPECT_EQ(
         frame_storage.behavior_commands.commands[0].kind,
@@ -1482,6 +1614,34 @@ TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
     EXPECT_FLOAT_EQ(
         frame_storage.behavior_commands.commands[2].values[3],
         0.70710677f);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[3].entity, 4u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[3].kind,
+        BehaviorCommandKind::SetWorldTranslation);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[3].values[0], 10.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[3].values[1], 20.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[3].values[2], 30.0f);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[4].entity, 4u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[4].kind,
+        BehaviorCommandKind::AddWorldTranslation);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[4].values[0], 1.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[4].values[1], 2.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[4].values[2], 3.0f);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[5].entity, 9u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[5].kind,
+        BehaviorCommandKind::SetWorldTranslation);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[5].values[0], 40.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[5].values[1], 50.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[5].values[2], 60.0f);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[6].entity, 9u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[6].kind,
+        BehaviorCommandKind::AddWorldTranslation);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[0], 4.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[1], 5.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[2], 6.0f);
 
     g_transform_command_probe = nullptr;
 }
@@ -2566,6 +2726,183 @@ TEST(BehaviorCommands, ApplySetLocalRotationPreservesTranslationAndScale)
     EXPECT_NEAR(child_node.world.m[12], 10.0f, 1e-5f);
     EXPECT_NEAR(child_node.world.m[13], 22.0f, 1e-5f);
     EXPECT_NEAR(child_node.world.m[14], 30.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, ApplySetWorldTranslationConvertsThroughParentTransform)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_apply_world_translation_scene";
+
+    wz::engine::assets::SceneNodeAsset parent{};
+    parent.id = "parent";
+    parent.local.translation[0] = 10.0f;
+    parent.local.translation[1] = 2.0f;
+    parent.local.scale[0] = 2.0f;
+    parent.local.scale[1] = 3.0f;
+    parent.local.scale[2] = 4.0f;
+    asset.nodes.push_back(std::move(parent));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "parent";
+    child.local.translation[0] = 1.0f;
+    child.local.translation[1] = 1.0f;
+    child.local.translation[2] = 1.0f;
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(child_id, 14.0f, 11.0f, 20.0f);
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        &changed);
+
+    EXPECT_EQ(applied, 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], child_id);
+
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_NEAR(child_node.local.m[12], 2.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[13], 3.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[14], 5.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[12], 14.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[13], 11.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[14], 20.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, ApplyAddWorldTranslationPreservesParentedWorldDelta)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_add_world_translation_scene";
+
+    wz::engine::assets::SceneNodeAsset parent{};
+    parent.id = "parent";
+    parent.local.translation[0] = 10.0f;
+    parent.local.scale[0] = 2.0f;
+    parent.local.scale[1] = 2.0f;
+    parent.local.scale[2] = 2.0f;
+    asset.nodes.push_back(std::move(parent));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "parent";
+    child.local.translation[0] = 1.0f;
+    child.local.translation[1] = 2.0f;
+    child.local.translation[2] = 3.0f;
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+    BehaviorCommandBuffer commands{};
+    commands.add_world_translation(child_id, 0.0f, 6.0f, 0.0f);
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        nullptr);
+
+    EXPECT_EQ(applied, 1u);
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_NEAR(child_node.local.m[12], 1.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[13], 5.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[14], 3.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[12], 12.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[13], 10.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[14], 6.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, ApplySetWorldTranslationUpdatesRootLocalTranslation)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_root_world_translation_scene";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 1.0f;
+    actor.local.translation[1] = 2.0f;
+    actor.local.translation[2] = 3.0f;
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor_id =
+        result.instance.authored_to_runtime["actor"];
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(actor_id, 7.0f, 8.0f, 9.0f);
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        nullptr);
+
+    EXPECT_EQ(applied, 1u);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor_id);
+    EXPECT_FLOAT_EQ(actor_node.local.m[12], 7.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[13], 8.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[14], 9.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 7.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 8.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 9.0f);
+}
+
+TEST(BehaviorCommands, ApplySetWorldTranslationHandlesRotatedParent)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_rotated_parent_world_translation_scene";
+
+    wz::engine::assets::SceneNodeAsset parent{};
+    parent.id = "parent";
+    parent.local.translation[0] = 10.0f;
+    parent.local.rotation_quat[2] = 0.70710677f;
+    parent.local.rotation_quat[3] = 0.70710677f;
+    asset.nodes.push_back(std::move(parent));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "parent";
+    child.local.translation[0] = 1.0f;
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(child_id, 8.0f, 3.0f, 4.0f);
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        nullptr);
+
+    EXPECT_EQ(applied, 1u);
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_NEAR(child_node.local.m[12], 3.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[13], 2.0f, 1e-5f);
+    EXPECT_NEAR(child_node.local.m[14], 4.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[12], 8.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[13], 3.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[14], 4.0f, 1e-5f);
 }
 
 TEST(BehaviorCommands, SetLocalRotationOnIdentityScaleEntity)

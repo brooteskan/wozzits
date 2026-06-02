@@ -93,6 +93,10 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetLocalScale;
             case WZ_BEHAVIOR_COMMAND_SET_LOCAL_ROTATION:
                 return BehaviorCommandKind::SetLocalRotation;
+            case WZ_BEHAVIOR_COMMAND_ADD_WORLD_TRANSLATION:
+                return BehaviorCommandKind::AddWorldTranslation;
+            case WZ_BEHAVIOR_COMMAND_SET_WORLD_TRANSLATION:
+                return BehaviorCommandKind::SetWorldTranslation;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

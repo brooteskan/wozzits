@@ -1498,6 +1498,59 @@ namespace wz::engine::assets::internal
                 node.collision = component;
             }
 
+            const auto* proximity =
+                find_member(node_val, "proximity");
+            if (proximity
+                && proximity->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneProximityAsset component{};
+                auto radius = read_number(*proximity, "radius");
+                if (radius) {
+                    if (*radius <= 0.0 || !std::isfinite(*radius)) {
+                        logger.error("proximity on node '" + node.id
+                            + "' has invalid radius");
+                        return std::nullopt;
+                    }
+                    component.radius = static_cast<float>(*radius);
+                }
+
+                auto layer_mask = read_number(*proximity, "layer_mask");
+                if (layer_mask) {
+                    if (*layer_mask < 0.0
+                        || *layer_mask > 4294967295.0
+                        || !std::isfinite(*layer_mask))
+                    {
+                        logger.error("proximity on node '" + node.id
+                            + "' has invalid layer_mask");
+                        return std::nullopt;
+                    }
+                    component.layer_mask =
+                        static_cast<uint32_t>(*layer_mask);
+                }
+
+                auto detects_with_mask =
+                    read_number(*proximity, "detects_with_mask");
+                if (detects_with_mask) {
+                    if (*detects_with_mask < 0.0
+                        || *detects_with_mask > 4294967295.0
+                        || !std::isfinite(*detects_with_mask))
+                    {
+                        logger.error("proximity on node '" + node.id
+                            + "' has invalid detects_with_mask");
+                        return std::nullopt;
+                    }
+                    component.detects_with_mask =
+                        static_cast<uint32_t>(*detects_with_mask);
+                }
+
+                auto enabled = read_bool(*proximity, "enabled");
+                if (enabled) {
+                    component.enabled = *enabled;
+                }
+
+                node.proximity = component;
+            }
+
             std::optional<wz::asset::AssetKey> terrain_asset;
             if (!parse_asset_reference_object(
                     node_val,

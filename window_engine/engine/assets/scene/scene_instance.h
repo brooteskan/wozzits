@@ -79,6 +79,14 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
+    struct ProximityComponent
+    {
+        float radius = 1.0f;
+        uint32_t layer_mask = 1;
+        uint32_t detects_with_mask = 0xffffffffu;
+        bool enabled = true;
+    };
+
     struct BehaviorComponent
     {
         std::string module;
@@ -124,6 +132,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
+        std::vector<SceneComponentRecord<ProximityComponent>> proximities;
         std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
