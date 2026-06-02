@@ -180,6 +180,49 @@ for invalid entities, missing scene context, or null output pointers.
 `WzMat4` uses column-major storage. Translation lives in `m[12]`, `m[13]`, and
 `m[14]`.
 
+## Querying Collision Surfaces
+
+Behavior code can ray-query a specific queryable collision surface entity.
+Collision events tell you `self` and `other`; your behavior decides whether
+`other` is a surface worth querying and what ray to cast:
+
+```cpp
+WzVec3 self_world{};
+WzSurfaceSample surface{};
+
+if (wz_self_world_position(facts, event, &self_world)
+    && wz_query_collision_surface_ray(
+        facts,
+        wz_other(event),
+        self_world,
+        WzVec3{ 0.0f, -1.0f, 0.0f },
+        100.0f,
+        &surface))
+{
+    // surface.surface_entity is the queried surface entity.
+    // surface.position is the world-space hit point.
+    // surface.normal is the world-space surface normal.
+}
+```
+
+The query form is:
+
+```cpp
+wz_query_collision_surface_ray(
+    facts,
+    surface_entity,
+    origin,
+    direction,
+    max_distance,
+    &surface);
+```
+
+The ray uses world-space `origin` and `direction` and returns the nearest hit
+within `max_distance`. It reads from `FrameStorage::collision.world`, so it
+uses collision assets already resolved for the frame. V1 supports queryable
+`TerrainMeshSurface` collision assets. Height-field collision assets are
+intentionally not sampled by this helper yet.
+
 ## Writing Commands
 
 Behaviors do not mutate the scene graph directly. They write commands into the

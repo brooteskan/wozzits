@@ -6,6 +6,8 @@
 
 #include <input/input.h>
 #include <logging/logger.h>
+#include <math/mat4.h>
+#include <math/vec3.h>
 #include <scene/scene_graph.h>
 
 #if defined(_WIN32)
@@ -19,7 +21,9 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <string>
 
 namespace wz::engine::behavior
@@ -112,6 +116,69 @@ namespace wz::engine::behavior
             for (uint32_t i = 0; i < 16; ++i) {
                 out.m[i] = matrix.m[i];
             }
+        }
+
+        bool normalize_checked(wz::math::Vec3& v) noexcept
+        {
+            const float len_sq = v.x * v.x + v.y * v.y + v.z * v.z;
+            if (len_sq <= 1e-12f || !std::isfinite(len_sq)) {
+                return false;
+            }
+            v = wz::math::normalize(v);
+            return true;
+        }
+
+        bool ray_triangle_hit(
+            const wz::math::Vec3& origin,
+            const wz::math::Vec3& direction,
+            const wz::math::Vec3& a,
+            const wz::math::Vec3& b,
+            const wz::math::Vec3& c,
+            float max_distance,
+            float& out_distance,
+            wz::math::Vec3& out_position,
+            wz::math::Vec3& out_normal) noexcept
+        {
+            const wz::math::Vec3 edge1 = b - a;
+            const wz::math::Vec3 edge2 = c - a;
+            const wz::math::Vec3 pvec = wz::math::cross(direction, edge2);
+            const float det = wz::math::dot(edge1, pvec);
+            if (std::abs(det) <= 1e-8f) {
+                return false;
+            }
+
+            const float inv_det = 1.0f / det;
+            const wz::math::Vec3 tvec = origin - a;
+            const float u = wz::math::dot(tvec, pvec) * inv_det;
+            if (u < -1e-5f || u > 1.0f + 1e-5f) {
+                return false;
+            }
+
+            const wz::math::Vec3 qvec = wz::math::cross(tvec, edge1);
+            const float v = wz::math::dot(direction, qvec) * inv_det;
+            if (v < -1e-5f || u + v > 1.0f + 1e-5f) {
+                return false;
+            }
+
+            const float t = wz::math::dot(edge2, qvec) * inv_det;
+            if (t < 0.0f || t > max_distance) {
+                return false;
+            }
+
+            wz::math::Vec3 normal = wz::math::cross(edge1, edge2);
+            if (!normalize_checked(normal)) {
+                return false;
+            }
+            if (wz::math::dot(normal, direction) >= 0.0f) {
+                normal.x = -normal.x;
+                normal.y = -normal.y;
+                normal.z = -normal.z;
+            }
+
+            out_distance = t;
+            out_position = origin + direction * t;
+            out_normal = normal;
+            return true;
         }
 
         void fill_input_view(
@@ -267,6 +334,149 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t query_collision_surface_ray(
+            void* user,
+            WzBehaviorEntityId surface_entity,
+            WzVec3 origin,
+            WzVec3 direction,
+            float max_distance,
+            WzSurfaceSample* out_sample)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->frame_storage || !out_sample
+                || max_distance <= 0.0f
+                || !std::isfinite(max_distance))
+            {
+                return 0;
+            }
+
+            *out_sample = WzSurfaceSample{
+                .hit = 0u,
+                .surface_entity =
+                    static_cast<WzBehaviorEntityId>(
+                        WZ_INVALID_BEHAVIOR_ENTITY),
+                .position = WzVec3{},
+                .normal = WzVec3{ .x = 0.0f, .y = 1.0f, .z = 0.0f },
+            };
+
+            wz::math::Vec3 ray_origin{
+                .x = origin.x,
+                .y = origin.y,
+                .z = origin.z,
+            };
+            wz::math::Vec3 ray_direction{
+                .x = direction.x,
+                .y = direction.y,
+                .z = direction.z,
+            };
+            if (!normalize_checked(ray_direction)) {
+                return 0;
+            }
+
+            float best_distance = std::numeric_limits<float>::max();
+            wz::math::Vec3 best_position{};
+            wz::math::Vec3 best_normal{ .x = 0.0f, .y = 1.0f, .z = 0.0f };
+            wz::scene::RuntimeEntityId best_surface =
+                wz::scene::INVALID_RUNTIME_ENTITY;
+
+            for (const auto& entry : context->frame_storage->collision.world) {
+                if (entry.entity != surface_entity
+                    || !entry.enabled
+                    || !entry.resolved
+                    || !entry.resolved->occupancy.queryable
+                    || entry.resolved->shape_kind
+                        != wz::engine::assets::CollisionShapeKind::
+                            TerrainMeshSurface)
+                {
+                    continue;
+                }
+
+                const auto& data = *entry.resolved;
+                if (data.points.empty() || data.indices.size() < 3u) {
+                    continue;
+                }
+
+                const auto make_local_point =
+                    [](const wz::engine::assets::CollisionPoint& point)
+                {
+                    return wz::math::Vec3{
+                        .x = point.position[0],
+                        .y = point.position[1],
+                        .z = point.position[2],
+                    };
+                };
+                const uint32_t triangle_count =
+                    static_cast<uint32_t>(data.indices.size() / 3u);
+                for (uint32_t tri = 0; tri < triangle_count; ++tri) {
+                    const size_t index = static_cast<size_t>(tri) * 3u;
+                    if (index + 2u >= data.indices.size()) {
+                        continue;
+                    }
+
+                    const uint32_t ia = data.indices[index + 0u];
+                    const uint32_t ib = data.indices[index + 1u];
+                    const uint32_t ic = data.indices[index + 2u];
+                    if (ia >= data.points.size()
+                        || ib >= data.points.size()
+                        || ic >= data.points.size())
+                    {
+                        continue;
+                    }
+
+                    const wz::math::Vec3 a = wz::math::mul_point(
+                        entry.world_from_local,
+                        make_local_point(data.points[ia]));
+                    const wz::math::Vec3 b = wz::math::mul_point(
+                        entry.world_from_local,
+                        make_local_point(data.points[ib]));
+                    const wz::math::Vec3 c = wz::math::mul_point(
+                        entry.world_from_local,
+                        make_local_point(data.points[ic]));
+
+                    float distance = 0.0f;
+                    wz::math::Vec3 position{};
+                    wz::math::Vec3 normal{};
+                    if (ray_triangle_hit(
+                            ray_origin,
+                            ray_direction,
+                            a,
+                            b,
+                            c,
+                            max_distance,
+                            distance,
+                            position,
+                            normal)
+                        && distance < best_distance)
+                    {
+                        best_distance = distance;
+                        best_position = position;
+                        best_normal = normal;
+                        best_surface = entry.entity;
+                    }
+                }
+            }
+
+            if (best_surface == wz::scene::INVALID_RUNTIME_ENTITY) {
+                return 0;
+            }
+
+            *out_sample = WzSurfaceSample{
+                .hit = 1u,
+                .surface_entity = best_surface,
+                .position = WzVec3{
+                    .x = best_position.x,
+                    .y = best_position.y,
+                    .z = best_position.z,
+                },
+                .normal = WzVec3{
+                    .x = best_normal.x,
+                    .y = best_normal.y,
+                    .z = best_normal.z,
+                },
+            };
+            return 1;
+        }
+
         uint8_t write_behavior_command(
             void* user,
             const WzBehaviorCommand* command)
@@ -353,6 +563,8 @@ namespace wz::engine::behavior
                 .write_command = write_behavior_command,
                 .log_user = binding->logger,
                 .log_info = log_info,
+                .collision_query_user = &context,
+                .query_collision_surface_ray = query_collision_surface_ray,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -396,6 +608,8 @@ namespace wz::engine::behavior
                 .write_command = write_behavior_command,
                 .log_user = logger,
                 .log_info = log_info,
+                .collision_query_user = &context,
+                .query_collision_surface_ray = query_collision_surface_ray,
             };
         }
 

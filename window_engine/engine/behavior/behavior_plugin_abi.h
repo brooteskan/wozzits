@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 1u
+#define WZ_BEHAVIOR_ABI_VERSION 2u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 typedef uint32_t WzBehaviorEntityId;
@@ -89,6 +89,14 @@ typedef struct WzCollisionEntityEventView
     WzReadCollisionEntityEventFn read;
 } WzCollisionEntityEventView;
 
+typedef struct WzSurfaceSample
+{
+    uint8_t hit;
+    WzBehaviorEntityId surface_entity;
+    WzVec3 position;
+    WzVec3 normal;
+} WzSurfaceSample;
+
 typedef struct WzInputStateView
 {
     uint8_t keyboard_down[256];
@@ -149,6 +157,14 @@ typedef uint8_t (*WzGetBehaviorPositionFn)(
     WzBehaviorEntityId entity,
     WzVec3* out_position);
 
+typedef uint8_t (*WzQueryBehaviorCollisionSurfaceRayFn)(
+    void* user,
+    WzBehaviorEntityId surface_entity,
+    WzVec3 origin,
+    WzVec3 direction,
+    float max_distance,
+    WzSurfaceSample* out_sample);
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
@@ -165,6 +181,9 @@ typedef struct WzBehaviorFrameFacts
 
     void* log_user;
     WzBehaviorLogFn log_info;
+
+    void* collision_query_user;
+    WzQueryBehaviorCollisionSurfaceRayFn query_collision_surface_ray;
 } WzBehaviorFrameFacts;
 
 typedef void (*WzBehaviorFn)(

@@ -334,6 +334,26 @@ static inline uint8_t wz_other_world_position(
     return wz_read_world_position(facts, wz_other(event), out_position);
 }
 
+static inline uint8_t wz_query_collision_surface_ray(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId surface_entity,
+    WzVec3 origin,
+    WzVec3 direction,
+    float max_distance,
+    WzSurfaceSample* out_sample)
+{
+    if (!facts || !facts->query_collision_surface_ray) {
+        return 0;
+    }
+    return facts->query_collision_surface_ray(
+        facts->collision_query_user,
+        surface_entity,
+        origin,
+        direction,
+        max_distance,
+        out_sample);
+}
+
 static inline const char* wz_event_name(WzBehaviorEventKind kind)
 {
     switch (kind) {
