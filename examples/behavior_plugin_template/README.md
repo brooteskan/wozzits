@@ -39,3 +39,9 @@ Transform commands are buffered during event dispatch and applied afterward.
 `wz_self_set_local_rotation` takes `WzQuaternion {x, y, z, w}`; it replaces the
 local rotation while preserving local translation and the current basis-column
 scale. Additive local rotation is intentionally not part of this V1 API.
+
+This folder also includes `angular_motion_plugin.cpp`, which registers an
+`angular_motion` module. It handles `frame.update` by switching the node to
+local-space motion and setting angular velocity around local Y. Bind it to a
+node with an enabled Behavior component to see continuous engine-integrated
+rotation without manually changing the transform every frame.

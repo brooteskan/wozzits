@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <math/mat4.h>
+#include <math/quaternion.h>
+#include <math/vec3.h>
 #include <scene/scene_graph.h>
 
 namespace wz::engine::behavior
@@ -108,6 +110,81 @@ namespace wz::engine::behavior
                 .y = axis_x.y * x + axis_y.y * y + axis_z.y * z,
                 .z = axis_x.z * x + axis_y.z * y + axis_z.z * z,
             };
+        }
+
+        wz::math::Quaternion inverse_unit_quaternion(
+            const wz::math::Quaternion& q) noexcept
+        {
+            const wz::math::Quaternion n = wz::math::normalize(q);
+            return { -n.x, -n.y, -n.z, n.w };
+        }
+
+        bool integrate_angular_velocity(
+            wz::scene::SceneGraph& graph,
+            wz::scene::TransformNode& node,
+            wz::scene::RuntimeEntityId entity,
+            const wz::engine::assets::MotionComponent& motion,
+            float delta_seconds) noexcept
+        {
+            const wz::math::Vec3 angular_velocity{
+                .x = motion.angular_velocity[0],
+                .y = motion.angular_velocity[1],
+                .z = motion.angular_velocity[2],
+            };
+            const float magnitude = wz::math::length(angular_velocity);
+            if (magnitude <= 0.0f || !std::isfinite(magnitude)) {
+                return false;
+            }
+
+            const float delta_angle = magnitude * delta_seconds;
+            if (delta_angle == 0.0f || !std::isfinite(delta_angle)) {
+                return false;
+            }
+
+            wz::math::Transform local_trs{};
+            if (!wz::math::decompose_trs(node.local, local_trs)) {
+                return false;
+            }
+
+            const wz::math::Vec3 axis = angular_velocity / magnitude;
+            const wz::math::Quaternion delta =
+                wz::math::from_axis_angle(axis, delta_angle);
+
+            if (motion.space == wz::engine::assets::SceneMotionSpace::Local) {
+                local_trs.rotation = wz::math::normalize(
+                    wz::math::mul(local_trs.rotation, delta));
+                node.local = wz::math::transform(local_trs);
+                return true;
+            }
+
+            const auto parent = wz::core::graph::parent(graph, entity);
+            if (parent == wz::core::graph::INVALID_NODE) {
+                local_trs.rotation = wz::math::normalize(
+                    wz::math::mul(delta, local_trs.rotation));
+                node.local = wz::math::transform(local_trs);
+                return true;
+            }
+
+            wz::math::Transform parent_world_trs{};
+            if (!wz::math::decompose_trs(
+                    wz::core::graph::node_data(graph, parent).world,
+                    parent_world_trs))
+            {
+                return false;
+            }
+
+            wz::math::Transform world_trs{};
+            if (!wz::math::decompose_trs(node.world, world_trs)) {
+                return false;
+            }
+
+            const wz::math::Quaternion new_world_rotation =
+                wz::math::normalize(wz::math::mul(delta, world_trs.rotation));
+            local_trs.rotation = wz::math::normalize(wz::math::mul(
+                inverse_unit_quaternion(parent_world_trs.rotation),
+                new_world_rotation));
+            node.local = wz::math::transform(local_trs);
+            return true;
         }
 
         void set_local_rotation(
@@ -491,20 +568,32 @@ namespace wz::engine::behavior
                     delta.y,
                     delta.z);
             }
-            if (delta.x == 0.0f && delta.y == 0.0f && delta.z == 0.0f) {
-                continue;
+            if (delta.x != 0.0f || delta.y != 0.0f || delta.z != 0.0f) {
+                const wz::math::Vec3 world_position{
+                    .x = node.world.m[12] + delta.x,
+                    .y = node.world.m[13] + delta.y,
+                    .z = node.world.m[14] + delta.z,
+                };
+                if (set_world_translation(
+                        scene.storage.polytree,
+                        node,
+                        record.node,
+                        world_position))
+                {
+                    mark_applied(
+                        record.node,
+                        applied,
+                        transform_applied,
+                        out_changed_entities);
+                }
             }
 
-            const wz::math::Vec3 world_position{
-                .x = node.world.m[12] + delta.x,
-                .y = node.world.m[13] + delta.y,
-                .z = node.world.m[14] + delta.z,
-            };
-            if (set_world_translation(
+            if (integrate_angular_velocity(
                     scene.storage.polytree,
                     node,
                     record.node,
-                    world_position))
+                    record.component,
+                    delta_seconds))
             {
                 mark_applied(
                     record.node,

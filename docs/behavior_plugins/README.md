@@ -432,21 +432,27 @@ target from the entity's world transform as it existed when command application
 began. Earlier commands in the same buffer that change the same entity's local
 transform are not visible to that world-space add until the next propagation.
 
-Linear velocity is motion in units per second. Motion defaults to world space,
-but a behavior can switch a node to local-space motion with
+Linear velocity is motion in units per second. Angular velocity is an
+axis-angle vector whose direction is the rotation axis and whose magnitude is
+radians per second. Motion defaults to world space, but a behavior can switch a
+node to local-space motion with
 `wz_self_set_motion_space(facts, event, WZ_BEHAVIOR_MOTION_SPACE_LOCAL)`.
 Set linear velocity with `wz_self_set_linear_velocity` or
-`wz_write_set_linear_velocity`. The engine stores that velocity as runtime
-motion state, then integrates it once per frame after behavior commands are
-applied and before render prep. Setting velocity does not immediately move the
-entity; the frame integration step moves it by `velocity * delta_seconds`.
+`wz_write_set_linear_velocity`; set angular velocity with
+`wz_self_set_angular_velocity` or `wz_write_set_angular_velocity`. The engine
+stores those values as runtime motion state, then integrates them once per frame
+after behavior commands are applied and before render prep. Setting velocity
+does not immediately move or rotate the entity; the frame integration step
+applies `velocity * delta_seconds`.
 
-Angular velocity can be stored with `wz_self_set_angular_velocity` or
-`wz_write_set_angular_velocity`. The representation is an axis-angle vector
-whose direction is the rotation axis and whose magnitude is radians per second.
-The runtime records this state now, but angular integration is intentionally
-deferred until the transform math path has robust matrix TRS decomposition and
-recomposition for scaled nodes.
+Local-space angular velocity composes in the node's local frame. World-space
+angular velocity composes in the world frame; for parented nodes the runtime
+converts through the parent's world rotation before writing the node's local
+transform. If the local or parent/world transform cannot be decomposed as safe
+TRS, angular integration for that node is skipped for the frame.
+
+For a minimal working module, see
+[`examples/behavior_plugin_template/angular_motion_plugin.cpp`](../../examples/behavior_plugin_template/angular_motion_plugin.cpp).
 
 Frame timing is available through:
 
