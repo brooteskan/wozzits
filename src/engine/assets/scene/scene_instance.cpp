@@ -572,6 +572,10 @@ namespace wz::engine::assets
                 component.linear_velocity[0] = motion.linear_velocity[0];
                 component.linear_velocity[1] = motion.linear_velocity[1];
                 component.linear_velocity[2] = motion.linear_velocity[2];
+                component.angular_velocity[0] = motion.angular_velocity[0];
+                component.angular_velocity[1] = motion.angular_velocity[1];
+                component.angular_velocity[2] = motion.angular_velocity[2];
+                component.space = motion.space;
                 component.enabled = motion.enabled;
                 inst.motions.push_back({
                     .node = h,

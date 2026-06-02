@@ -339,6 +339,10 @@ namespace wz::engine::assets
                 fp.mix_bytes(
                     motion.linear_velocity,
                     sizeof(motion.linear_velocity));
+                fp.mix_bytes(
+                    motion.angular_velocity,
+                    sizeof(motion.angular_velocity));
+                fp.mix_value(static_cast<uint8_t>(motion.space));
                 fp.mix_value(motion.enabled);
             }
 

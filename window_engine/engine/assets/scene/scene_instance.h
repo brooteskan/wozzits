@@ -90,6 +90,8 @@ namespace wz::engine::assets
     struct MotionComponent
     {
         float linear_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        float angular_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        SceneMotionSpace space = SceneMotionSpace::World;
         bool enabled = true;
     };
 

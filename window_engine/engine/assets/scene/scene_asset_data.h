@@ -476,9 +476,17 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    enum class SceneMotionSpace : uint8_t
+    {
+        World = 0,
+        Local,
+    };
+
     struct SceneMotionAsset
     {
         float linear_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        float angular_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        SceneMotionSpace space = SceneMotionSpace::World;
         bool enabled = true;
     };
 

@@ -1567,6 +1567,30 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                 }
+                if (find_member(*motion_component, "angular_velocity")) {
+                    if (!read_float3(
+                            *motion_component,
+                            "angular_velocity",
+                            component.angular_velocity))
+                    {
+                        logger.error("motion on node '" + node.id
+                            + "' has invalid angular_velocity");
+                        return std::nullopt;
+                    }
+                }
+                if (auto space = read_string(*motion_component, "space")) {
+                    if (*space == "world") {
+                        component.space = SceneMotionSpace::World;
+                    }
+                    else if (*space == "local") {
+                        component.space = SceneMotionSpace::Local;
+                    }
+                    else {
+                        logger.error("motion on node '" + node.id
+                            + "' has invalid space");
+                        return std::nullopt;
+                    }
+                }
                 auto enabled = read_bool(*motion_component, "enabled");
                 if (enabled) {
                     component.enabled = *enabled;

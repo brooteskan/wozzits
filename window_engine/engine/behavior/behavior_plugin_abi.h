@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 4u
+#define WZ_BEHAVIOR_ABI_VERSION 5u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 typedef uint32_t WzBehaviorEntityId;
@@ -152,6 +152,7 @@ enum
 };
 
 typedef uint32_t WzBehaviorCommandKind;
+typedef uint32_t WzBehaviorMotionSpace;
 enum
 {
     WZ_BEHAVIOR_COMMAND_NONE = 0u,
@@ -164,6 +165,14 @@ enum
     WZ_BEHAVIOR_COMMAND_ADD_WORLD_TRANSLATION = 6u,
     WZ_BEHAVIOR_COMMAND_SET_WORLD_TRANSLATION = 7u,
     WZ_BEHAVIOR_COMMAND_SET_LINEAR_VELOCITY = 8u,
+    WZ_BEHAVIOR_COMMAND_SET_ANGULAR_VELOCITY = 9u,
+    WZ_BEHAVIOR_COMMAND_SET_MOTION_SPACE = 10u,
+};
+
+enum
+{
+    WZ_BEHAVIOR_MOTION_SPACE_WORLD = 0u,
+    WZ_BEHAVIOR_MOTION_SPACE_LOCAL = 1u,
 };
 
 typedef struct WzBehaviorCommand

@@ -1927,6 +1927,8 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
       "id": "actor",
       "motion": {
         "linear_velocity": [1.5, -2.0, 3.25],
+        "angular_velocity": [0.25, 0.5, -0.75],
+        "space": "local",
         "enabled": true
       }
     }
@@ -1957,6 +1959,12 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 1.5f);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], -2.0f);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 3.25f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[0], 0.25f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[1], 0.5f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[2], -0.75f);
+    EXPECT_EQ(
+        scene_data->nodes[0].motion->space,
+        wz::engine::assets::SceneMotionSpace::Local);
     EXPECT_TRUE(scene_data->nodes[0].motion->enabled);
 
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
@@ -1971,12 +1979,26 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.linear_velocity[2],
         3.25f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[0],
+        0.25f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[1],
+        0.5f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[2],
+        -0.75f);
+    EXPECT_EQ(
+        result.instance.motions[0].component.space,
+        wz::engine::assets::SceneMotionSpace::Local);
     EXPECT_TRUE(result.instance.motions[0].component.enabled);
 
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"motion\""), std::string::npos);
     EXPECT_NE(exported.find("\"linear_velocity\""), std::string::npos);
+    EXPECT_NE(exported.find("\"angular_velocity\""), std::string::npos);
+    EXPECT_NE(exported.find("\"space\""), std::string::npos);
 }
 
 TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
@@ -2023,7 +2045,50 @@ TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 0.0f);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], 0.0f);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[0], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[1], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[2], 0.0f);
+    EXPECT_EQ(
+        scene_data->nodes[0].motion->space,
+        wz::engine::assets::SceneMotionSpace::World);
     EXPECT_FALSE(scene_data->nodes[0].motion->enabled);
+}
+
+TEST(SceneAssetModule, MotionComponentRejectsInvalidSpace)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_scene_motion_invalid_space");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "motion_invalid_space_scene",
+  "nodes": [
+    {
+      "id": "actor",
+      "motion": {
+        "space": "screen"
+      }
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path path =
+        wz::fs::join(root, "motion_invalid_space.scene.json");
+    ASSERT_EQ(wz::fs::write_file_text(path, json), wz::fs::FileError::None);
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "motion_invalid_space_scene",
+        .path = "motion_invalid_space.scene.json",
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    EXPECT_FALSE(assets.resolve_all().ok());
 }
 
 TEST(SceneAssetModule, CollisionComponentResolvesSymbolicSceneReference)
@@ -5424,6 +5489,32 @@ TEST(SceneECSBoundary, FingerprintTracksCollisionComponentData)
     const uint64_t changed = scene_asset_fingerprint(scene);
 
     EXPECT_NE(original, changed);
+}
+
+TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "fingerprint_motion_scene";
+
+    SceneNodeAsset node{};
+    node.id = "mover";
+    node.motion = SceneMotionAsset{
+        .linear_velocity = { 1.0f, 0.0f, 0.0f },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t original = scene_asset_fingerprint(scene);
+
+    scene.nodes[0].motion->angular_velocity[1] = 0.5f;
+    const uint64_t angular_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, angular_changed);
+
+    scene.nodes[0].motion->angular_velocity[1] = 0.0f;
+    scene.nodes[0].motion->space = SceneMotionSpace::Local;
+    const uint64_t space_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, space_changed);
 }
 
 TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)

@@ -432,12 +432,21 @@ target from the entity's world transform as it existed when command application
 began. Earlier commands in the same buffer that change the same entity's local
 transform are not visible to that world-space add until the next propagation.
 
-Linear velocity is world-space motion in units per second. A behavior can set
-velocity with `wz_self_set_linear_velocity` or `wz_write_set_linear_velocity`.
-The engine stores that velocity as runtime motion state, then integrates it
-once per frame after behavior commands are applied and before render prep.
-Setting velocity does not immediately move the entity; the frame integration
-step moves it by `velocity * delta_seconds`.
+Linear velocity is motion in units per second. Motion defaults to world space,
+but a behavior can switch a node to local-space motion with
+`wz_self_set_motion_space(facts, event, WZ_BEHAVIOR_MOTION_SPACE_LOCAL)`.
+Set linear velocity with `wz_self_set_linear_velocity` or
+`wz_write_set_linear_velocity`. The engine stores that velocity as runtime
+motion state, then integrates it once per frame after behavior commands are
+applied and before render prep. Setting velocity does not immediately move the
+entity; the frame integration step moves it by `velocity * delta_seconds`.
+
+Angular velocity can be stored with `wz_self_set_angular_velocity` or
+`wz_write_set_angular_velocity`. The representation is an axis-angle vector
+whose direction is the rotation axis and whose magnitude is radians per second.
+The runtime records this state now, but angular integration is intentionally
+deferred until the transform math path has robust matrix TRS decomposition and
+recomposition for scaled nodes.
 
 Frame timing is available through:
 

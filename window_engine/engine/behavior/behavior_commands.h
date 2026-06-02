@@ -2,6 +2,7 @@
 
 // engine/behavior/behavior_commands.h
 
+#include <engine/assets/scene/scene_asset_data.h>
 #include <scene/scene_ecs.h>
 
 #include <cstdint>
@@ -20,6 +21,8 @@ namespace wz::engine::behavior
         AddWorldTranslation,
         SetWorldTranslation,
         SetLinearVelocity,
+        SetAngularVelocity,
+        SetMotionSpace,
     };
 
     struct BehaviorCommand
@@ -138,6 +141,34 @@ namespace wz::engine::behavior
                 .entity = entity,
                 .kind = BehaviorCommandKind::SetLinearVelocity,
                 .values = { x, y, z, 0.0f },
+            });
+        }
+
+        void set_angular_velocity(
+            wz::scene::RuntimeEntityId entity,
+            float x,
+            float y,
+            float z)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::SetAngularVelocity,
+                .values = { x, y, z, 0.0f },
+            });
+        }
+
+        void set_motion_space(
+            wz::scene::RuntimeEntityId entity,
+            wz::engine::assets::SceneMotionSpace space)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::SetMotionSpace,
+                .values = {
+                    static_cast<float>(static_cast<uint8_t>(space)),
+                    0.0f,
+                    0.0f,
+                    0.0f },
             });
         }
     };

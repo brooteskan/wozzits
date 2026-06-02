@@ -332,6 +332,42 @@ static inline uint8_t wz_write_set_linear_velocity(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+static inline uint8_t wz_write_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_ANGULAR_VELOCITY,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline uint8_t wz_write_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzBehaviorMotionSpace space)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_MOTION_SPACE,
+        { (float)space, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
 static inline float wz_delta_seconds(const WzBehaviorFrameFacts* facts)
 {
     return facts && facts->timing ? facts->timing->delta_seconds : 0.0f;
@@ -476,6 +512,24 @@ static inline uint8_t wz_self_set_linear_velocity(
     return wz_write_set_linear_velocity(facts, wz_self(event), x, y, z);
 }
 
+static inline uint8_t wz_self_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_angular_velocity(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_self_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorMotionSpace space)
+{
+    return wz_write_set_motion_space(facts, wz_self(event), space);
+}
+
 static inline uint8_t wz_other_set_linear_velocity(
     const WzBehaviorFrameFacts* facts,
     const WzBehaviorEvent* event,
@@ -484,6 +538,24 @@ static inline uint8_t wz_other_set_linear_velocity(
     float z)
 {
     return wz_write_set_linear_velocity(facts, wz_other(event), x, y, z);
+}
+
+static inline uint8_t wz_other_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_angular_velocity(facts, wz_other(event), x, y, z);
+}
+
+static inline uint8_t wz_other_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorMotionSpace space)
+{
+    return wz_write_set_motion_space(facts, wz_other(event), space);
 }
 
 static inline uint8_t wz_read_local_transform(

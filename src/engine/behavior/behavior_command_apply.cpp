@@ -73,6 +73,43 @@ namespace wz::engine::behavior
                 column_length(matrix, 2u) + z);
         }
 
+        wz::math::Vec3 normalized_column(
+            const wz::math::Mat4& matrix,
+            uint32_t column) noexcept
+        {
+            const uint32_t i = column * 4u;
+            const float length = column_length(matrix, column);
+            if (length <= 0.0f) {
+                return {
+                    .x = column == 0u ? 1.0f : 0.0f,
+                    .y = column == 1u ? 1.0f : 0.0f,
+                    .z = column == 2u ? 1.0f : 0.0f,
+                };
+            }
+
+            return {
+                .x = matrix.m[i + 0u] / length,
+                .y = matrix.m[i + 1u] / length,
+                .z = matrix.m[i + 2u] / length,
+            };
+        }
+
+        wz::math::Vec3 local_motion_to_world(
+            const wz::math::Mat4& world,
+            float x,
+            float y,
+            float z) noexcept
+        {
+            const wz::math::Vec3 axis_x = normalized_column(world, 0u);
+            const wz::math::Vec3 axis_y = normalized_column(world, 1u);
+            const wz::math::Vec3 axis_z = normalized_column(world, 2u);
+            return {
+                .x = axis_x.x * x + axis_y.x * y + axis_z.x * z,
+                .y = axis_x.y * x + axis_y.y * y + axis_z.y * z,
+                .z = axis_x.z * x + axis_y.z * y + axis_z.z * z,
+            };
+        }
+
         void set_local_rotation(
             wz::math::Mat4& matrix,
             const wz::math::Quaternion& rotation) noexcept
@@ -366,6 +403,44 @@ namespace wz::engine::behavior
                 break;
             }
 
+            case BehaviorCommandKind::SetAngularVelocity: {
+                auto* motion = ensure_motion(scene, command.entity);
+                motion->angular_velocity[0] = command.values[0];
+                motion->angular_velocity[1] = command.values[1];
+                motion->angular_velocity[2] = command.values[2];
+                motion->enabled = true;
+                ++applied;
+                break;
+            }
+
+            case BehaviorCommandKind::SetMotionSpace: {
+                auto* motion = ensure_motion(scene, command.entity);
+                if (!std::isfinite(command.values[0])
+                    || command.values[0] < 0.0f)
+                {
+                    break;
+                }
+                const uint32_t raw =
+                    static_cast<uint32_t>(command.values[0]);
+                if (raw == static_cast<uint32_t>(
+                        wz::engine::assets::SceneMotionSpace::Local))
+                {
+                    motion->space =
+                        wz::engine::assets::SceneMotionSpace::Local;
+                    motion->enabled = true;
+                    ++applied;
+                }
+                else if (raw == static_cast<uint32_t>(
+                             wz::engine::assets::SceneMotionSpace::World))
+                {
+                    motion->space =
+                        wz::engine::assets::SceneMotionSpace::World;
+                    motion->enabled = true;
+                    ++applied;
+                }
+                break;
+            }
+
             case BehaviorCommandKind::None:
                 break;
             }
@@ -379,7 +454,7 @@ namespace wz::engine::behavior
         return applied;
     }
 
-    uint32_t integrate_linear_velocity(
+    uint32_t integrate_motion(
         wz::engine::assets::SceneInstance& scene,
         float delta_seconds,
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
@@ -398,24 +473,32 @@ namespace wz::engine::behavior
                 continue;
             }
 
-            const float dx = record.component.linear_velocity[0]
-                * delta_seconds;
-            const float dy = record.component.linear_velocity[1]
-                * delta_seconds;
-            const float dz = record.component.linear_velocity[2]
-                * delta_seconds;
-            if (dx == 0.0f && dy == 0.0f && dz == 0.0f) {
-                continue;
-            }
-
             auto& node = const_cast<wz::scene::TransformNode&>(
                 wz::core::graph::node_data(
                     scene.storage.polytree,
                     record.node));
+            wz::math::Vec3 delta{
+                .x = record.component.linear_velocity[0] * delta_seconds,
+                .y = record.component.linear_velocity[1] * delta_seconds,
+                .z = record.component.linear_velocity[2] * delta_seconds,
+            };
+            if (record.component.space
+                == wz::engine::assets::SceneMotionSpace::Local)
+            {
+                delta = local_motion_to_world(
+                    node.world,
+                    delta.x,
+                    delta.y,
+                    delta.z);
+            }
+            if (delta.x == 0.0f && delta.y == 0.0f && delta.z == 0.0f) {
+                continue;
+            }
+
             const wz::math::Vec3 world_position{
-                .x = node.world.m[12] + dx,
-                .y = node.world.m[13] + dy,
-                .z = node.world.m[14] + dz,
+                .x = node.world.m[12] + delta.x,
+                .y = node.world.m[13] + delta.y,
+                .z = node.world.m[14] + delta.z,
             };
             if (set_world_translation(
                     scene.storage.polytree,
@@ -437,5 +520,13 @@ namespace wz::engine::behavior
         }
 
         return applied;
+    }
+
+    uint32_t integrate_linear_velocity(
+        wz::engine::assets::SceneInstance& scene,
+        float delta_seconds,
+        std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
+    {
+        return integrate_motion(scene, delta_seconds, out_changed_entities);
     }
 }

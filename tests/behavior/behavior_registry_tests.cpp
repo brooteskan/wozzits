@@ -2524,6 +2524,10 @@ TEST(BehaviorCommands, SetLinearVelocityCreatesMotionStateAndIntegrates)
         result.instance.authored_to_runtime["actor"];
     BehaviorCommandBuffer commands{};
     commands.set_linear_velocity(actor, 2.0f, 4.0f, 6.0f);
+    commands.set_angular_velocity(actor, 0.25f, 0.5f, 0.75f);
+    commands.set_motion_space(
+        actor,
+        wz::engine::assets::SceneMotionSpace::Local);
     std::vector<RuntimeEntityId> changed;
 
     const uint32_t applied = apply_behavior_commands(
@@ -2531,7 +2535,7 @@ TEST(BehaviorCommands, SetLinearVelocityCreatesMotionStateAndIntegrates)
         commands.commands,
         &changed);
 
-    EXPECT_EQ(applied, 1u);
+    EXPECT_EQ(applied, 3u);
     EXPECT_TRUE(changed.empty())
         << "setting velocity updates motion state, not transform state";
     ASSERT_EQ(result.instance.motions.size(), 1u);
@@ -2545,9 +2549,21 @@ TEST(BehaviorCommands, SetLinearVelocityCreatesMotionStateAndIntegrates)
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.linear_velocity[2],
         6.0f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[0],
+        0.25f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[1],
+        0.5f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[2],
+        0.75f);
+    EXPECT_EQ(
+        result.instance.motions[0].component.space,
+        wz::engine::assets::SceneMotionSpace::Local);
 
     const uint32_t integrated =
-        integrate_linear_velocity(result.instance, 0.5f, &changed);
+        integrate_motion(result.instance, 0.5f, &changed);
 
     EXPECT_EQ(integrated, 1u);
     ASSERT_EQ(changed.size(), 1u);
@@ -2561,6 +2577,257 @@ TEST(BehaviorCommands, SetLinearVelocityCreatesMotionStateAndIntegrates)
     EXPECT_FLOAT_EQ(actor_node.world.m[12], 1.0f);
     EXPECT_FLOAT_EQ(actor_node.world.m[13], 2.0f);
     EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+TEST(BehaviorCommands, MotionIntegratesLocalLinearVelocityInWorldAxes)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_local_velocity_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.local.rotation_quat[1] = 0.70710677f;
+    node.local.rotation_quat[3] = 0.70710677f;
+    node.local.scale[0] = 2.0f;
+    node.local.scale[1] = 3.0f;
+    node.local.scale[2] = 4.0f;
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 0.0f, 0.0f, 2.0f },
+        .space = wz::engine::assets::SceneMotionSpace::Local,
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t integrated =
+        integrate_motion(result.instance, 0.5f, &changed);
+
+    EXPECT_EQ(integrated, 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_NEAR(actor_node.world.m[12], 1.0f, 1e-5f);
+    EXPECT_NEAR(actor_node.world.m[13], 0.0f, 1e-5f);
+    EXPECT_NEAR(actor_node.world.m[14], 0.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, MotionIntegratesLocalVelocityUsingWorldHierarchy)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_local_velocity_hierarchy_scene";
+
+    wz::engine::assets::SceneNodeAsset root{};
+    root.id = "root";
+    root.local.rotation_quat[2] = 0.70710677f;
+    root.local.rotation_quat[3] = 0.70710677f;
+    asset.nodes.push_back(std::move(root));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.local.rotation_quat[1] = 0.70710677f;
+    child.local.rotation_quat[3] = 0.70710677f;
+    child.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 0.0f, 0.0f, 2.0f },
+        .space = wz::engine::assets::SceneMotionSpace::Local,
+    };
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t integrated =
+        integrate_motion(result.instance, 0.5f, &changed);
+
+    EXPECT_EQ(integrated, 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], child_id);
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_NEAR(child_node.world.m[12], 0.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[13], 1.0f, 1e-5f);
+    EXPECT_NEAR(child_node.world.m[14], 0.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, MotionSpaceCanSwitchBetweenWorldAndLocal)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_motion_space_switch_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.local.rotation_quat[1] = 0.70710677f;
+    node.local.rotation_quat[3] = 0.70710677f;
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 0.0f, 0.0f, 2.0f },
+        .space = wz::engine::assets::SceneMotionSpace::World,
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 1u);
+    {
+        const auto& actor_node = wz::core::graph::node_data(
+            result.instance.storage.polytree,
+            actor);
+        EXPECT_NEAR(actor_node.world.m[12], 0.0f, 1e-5f);
+        EXPECT_NEAR(actor_node.world.m[13], 0.0f, 1e-5f);
+        EXPECT_NEAR(actor_node.world.m[14], 1.0f, 1e-5f);
+    }
+
+    BehaviorCommandBuffer commands{};
+    commands.set_motion_space(
+        actor,
+        wz::engine::assets::SceneMotionSpace::Local);
+    EXPECT_EQ(
+        apply_behavior_commands(result.instance, commands.commands, &changed),
+        1u);
+    EXPECT_TRUE(changed.empty());
+
+    EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 1u);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_NEAR(actor_node.world.m[12], 1.0f, 1e-5f);
+    EXPECT_NEAR(actor_node.world.m[13], 0.0f, 1e-5f);
+    EXPECT_NEAR(actor_node.world.m[14], 1.0f, 1e-5f);
+}
+
+TEST(BehaviorCommands, InvalidMotionSpaceCommandIsIgnored)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_invalid_motion_space_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .space = wz::engine::assets::SceneMotionSpace::Local,
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    std::vector<RuntimeEntityId> changed;
+
+    const BehaviorCommand commands[] = {
+        BehaviorCommand{
+            .entity = actor,
+            .kind = BehaviorCommandKind::SetMotionSpace,
+            .values = { 2.0f, 0.0f, 0.0f, 0.0f },
+        },
+        BehaviorCommand{
+            .entity = actor,
+            .kind = BehaviorCommandKind::SetMotionSpace,
+            .values = { -1.0f, 0.0f, 0.0f, 0.0f },
+        },
+        BehaviorCommand{
+            .entity = actor,
+            .kind = BehaviorCommandKind::SetMotionSpace,
+            .values = {
+                std::numeric_limits<float>::quiet_NaN(),
+                0.0f,
+                0.0f,
+                0.0f },
+        },
+    };
+
+    EXPECT_EQ(apply_behavior_commands(result.instance, commands, &changed), 0u);
+    EXPECT_TRUE(changed.empty());
+    ASSERT_EQ(result.instance.motions.size(), 1u);
+    EXPECT_EQ(
+        result.instance.motions[0].component.space,
+        wz::engine::assets::SceneMotionSpace::Local);
+}
+
+TEST(BehaviorCommands, AngularVelocityCreatesMotionButDoesNotIntegrateYet)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_angular_velocity_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    BehaviorCommandBuffer commands{};
+    commands.set_angular_velocity(actor, 0.0f, 1.5f, 0.0f);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_behavior_commands(result.instance, commands.commands, &changed),
+        1u);
+    EXPECT_TRUE(changed.empty());
+    ASSERT_EQ(result.instance.motions.size(), 1u);
+    EXPECT_TRUE(result.instance.motions[0].component.enabled);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.angular_velocity[1],
+        1.5f);
+
+    EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 0u);
+    EXPECT_TRUE(changed.empty());
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 0.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 0.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 0.0f);
+}
+
+TEST(BehaviorCommands, LocalMotionUsesFallbackAxisForDegenerateScale)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_degenerate_local_motion_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.local.scale[0] = 0.0f;
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 2.0f, 0.0f, 0.0f },
+        .space = wz::engine::assets::SceneMotionSpace::Local,
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 1.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 0.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 0.0f);
 }
 
 TEST(BehaviorCommands, LinearVelocityIntegratesWorldSpaceForParentedNode)
@@ -2589,7 +2856,7 @@ TEST(BehaviorCommands, LinearVelocityIntegratesWorldSpaceForParentedNode)
     std::vector<RuntimeEntityId> changed;
 
     const uint32_t integrated =
-        integrate_linear_velocity(result.instance, 0.25f, &changed);
+        integrate_motion(result.instance, 0.25f, &changed);
 
     EXPECT_EQ(integrated, 1u);
     ASSERT_EQ(changed.size(), 1u);
@@ -2624,12 +2891,12 @@ TEST(BehaviorCommands, LinearVelocityIgnoresNonPositiveOrInvalidDelta)
         result.instance.authored_to_runtime["actor"];
     std::vector<RuntimeEntityId> changed;
 
-    EXPECT_EQ(integrate_linear_velocity(result.instance, 0.0f, &changed), 0u);
+    EXPECT_EQ(integrate_motion(result.instance, 0.0f, &changed), 0u);
     EXPECT_TRUE(changed.empty());
-    EXPECT_EQ(integrate_linear_velocity(result.instance, -1.0f, &changed), 0u);
+    EXPECT_EQ(integrate_motion(result.instance, -1.0f, &changed), 0u);
     EXPECT_TRUE(changed.empty());
     EXPECT_EQ(
-        integrate_linear_velocity(
+        integrate_motion(
             result.instance,
             std::numeric_limits<float>::infinity(),
             &changed),

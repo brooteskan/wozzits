@@ -826,6 +826,15 @@ namespace wz::engine::assets
             auto obj = object_value();
             add_member(*obj, "linear_velocity",
                 float_array(motion.linear_velocity, 3));
+            add_member(*obj, "angular_velocity",
+                float_array(motion.angular_velocity, 3));
+            add_member(
+                *obj,
+                "space",
+                string_value(
+                    motion.space == SceneMotionSpace::Local
+                        ? "local"
+                        : "world"));
             add_member(*obj, "enabled", bool_value(motion.enabled));
             return obj;
         }

@@ -892,7 +892,7 @@ namespace wz::app
 
             std::vector<wz::scene::RuntimeEntityId> velocity_changed;
             if (data->fctx) {
-                (void)wz::engine::behavior::integrate_linear_velocity(
+                (void)wz::engine::behavior::integrate_motion(
                     *data->scene,
                     static_cast<float>(data->fctx->frame.delta_seconds()),
                     &velocity_changed);
