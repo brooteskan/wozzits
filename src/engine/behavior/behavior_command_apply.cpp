@@ -168,15 +168,61 @@ namespace wz::engine::behavior
             return true;
         }
 
+        wz::engine::assets::MotionComponent* find_motion(
+            wz::engine::assets::SceneInstance& scene,
+            wz::scene::RuntimeEntityId entity) noexcept
+        {
+            for (auto& record : scene.motions) {
+                if (record.node == entity) {
+                    return &record.component;
+                }
+            }
+            return nullptr;
+        }
+
+        wz::engine::assets::MotionComponent* ensure_motion(
+            wz::engine::assets::SceneInstance& scene,
+            wz::scene::RuntimeEntityId entity)
+        {
+            if (auto* motion = find_motion(scene, entity)) {
+                return motion;
+            }
+
+            scene.motions.push_back({
+                .node = entity,
+                .component = wz::engine::assets::MotionComponent{},
+            });
+            return &scene.motions.back().component;
+        }
+
         void mark_applied(
             wz::scene::RuntimeEntityId entity,
             uint32_t& applied,
+            uint32_t& transform_applied,
             std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
         {
             ++applied;
+            ++transform_applied;
             if (out_changed_entities) {
                 out_changed_entities->push_back(entity);
             }
+        }
+
+        void sort_unique_changed(
+            std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
+        {
+            if (!out_changed_entities) {
+                return;
+            }
+
+            std::sort(
+                out_changed_entities->begin(),
+                out_changed_entities->end());
+            out_changed_entities->erase(
+                std::unique(
+                    out_changed_entities->begin(),
+                    out_changed_entities->end()),
+                out_changed_entities->end());
         }
     }
 
@@ -186,6 +232,7 @@ namespace wz::engine::behavior
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
     {
         uint32_t applied = 0;
+        uint32_t transform_applied = 0;
         if (out_changed_entities) {
             out_changed_entities->clear();
         }
@@ -207,14 +254,22 @@ namespace wz::engine::behavior
                 node.local.m[12] += command.values[0];
                 node.local.m[13] += command.values[1];
                 node.local.m[14] += command.values[2];
-                mark_applied(command.entity, applied, out_changed_entities);
+                mark_applied(
+                    command.entity,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalTranslation:
                 node.local.m[12] = command.values[0];
                 node.local.m[13] = command.values[1];
                 node.local.m[14] = command.values[2];
-                mark_applied(command.entity, applied, out_changed_entities);
+                mark_applied(
+                    command.entity,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
                 break;
 
             case BehaviorCommandKind::AddWorldTranslation: {
@@ -232,6 +287,7 @@ namespace wz::engine::behavior
                     mark_applied(
                         command.entity,
                         applied,
+                        transform_applied,
                         out_changed_entities);
                 }
                 break;
@@ -252,6 +308,7 @@ namespace wz::engine::behavior
                     mark_applied(
                         command.entity,
                         applied,
+                        transform_applied,
                         out_changed_entities);
                 }
                 break;
@@ -263,7 +320,11 @@ namespace wz::engine::behavior
                     command.values[0],
                     command.values[1],
                     command.values[2]);
-                mark_applied(command.entity, applied, out_changed_entities);
+                mark_applied(
+                    command.entity,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalScale:
@@ -272,7 +333,11 @@ namespace wz::engine::behavior
                     command.values[0],
                     command.values[1],
                     command.values[2]);
-                mark_applied(command.entity, applied, out_changed_entities);
+                mark_applied(
+                    command.entity,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
                 break;
 
             case BehaviorCommandKind::SetLocalRotation:
@@ -284,25 +349,90 @@ namespace wz::engine::behavior
                         command.values[2],
                         command.values[3],
                     });
-                mark_applied(command.entity, applied, out_changed_entities);
+                mark_applied(
+                    command.entity,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
                 break;
+
+            case BehaviorCommandKind::SetLinearVelocity: {
+                auto* motion = ensure_motion(scene, command.entity);
+                motion->linear_velocity[0] = command.values[0];
+                motion->linear_velocity[1] = command.values[1];
+                motion->linear_velocity[2] = command.values[2];
+                motion->enabled = true;
+                ++applied;
+                break;
+            }
 
             case BehaviorCommandKind::None:
                 break;
             }
         }
 
-        if (applied != 0) {
-            if (out_changed_entities) {
-                std::sort(
-                    out_changed_entities->begin(),
-                    out_changed_entities->end());
-                out_changed_entities->erase(
-                    std::unique(
-                        out_changed_entities->begin(),
-                        out_changed_entities->end()),
-                    out_changed_entities->end());
+        if (transform_applied != 0) {
+            sort_unique_changed(out_changed_entities);
+            wz::scene::propagate_all(scene.storage.polytree);
+        }
+
+        return applied;
+    }
+
+    uint32_t integrate_linear_velocity(
+        wz::engine::assets::SceneInstance& scene,
+        float delta_seconds,
+        std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
+    {
+        uint32_t applied = 0;
+        uint32_t transform_applied = 0;
+        if (out_changed_entities) {
+            out_changed_entities->clear();
+        }
+        if (delta_seconds <= 0.0f || !std::isfinite(delta_seconds)) {
+            return 0;
+        }
+
+        for (auto& record : scene.motions) {
+            if (!record.component.enabled || !entity_valid(scene, record.node)) {
+                continue;
             }
+
+            const float dx = record.component.linear_velocity[0]
+                * delta_seconds;
+            const float dy = record.component.linear_velocity[1]
+                * delta_seconds;
+            const float dz = record.component.linear_velocity[2]
+                * delta_seconds;
+            if (dx == 0.0f && dy == 0.0f && dz == 0.0f) {
+                continue;
+            }
+
+            auto& node = const_cast<wz::scene::TransformNode&>(
+                wz::core::graph::node_data(
+                    scene.storage.polytree,
+                    record.node));
+            const wz::math::Vec3 world_position{
+                .x = node.world.m[12] + dx,
+                .y = node.world.m[13] + dy,
+                .z = node.world.m[14] + dz,
+            };
+            if (set_world_translation(
+                    scene.storage.polytree,
+                    node,
+                    record.node,
+                    world_position))
+            {
+                mark_applied(
+                    record.node,
+                    applied,
+                    transform_applied,
+                    out_changed_entities);
+            }
+        }
+
+        if (transform_applied != 0) {
+            sort_unique_changed(out_changed_entities);
             wz::scene::propagate_all(scene.storage.polytree);
         }
 

@@ -476,6 +476,12 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    struct SceneMotionAsset
+    {
+        float linear_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        bool enabled = true;
+    };
+
     struct SceneBehaviorAsset
     {
         std::string module;
@@ -530,6 +536,7 @@ namespace wz::engine::assets
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
         std::optional<SceneProximityAsset> proximity;
+        std::optional<SceneMotionAsset> motion;
         std::optional<SceneBehaviorAsset> behavior;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
@@ -1146,6 +1153,7 @@ namespace wz::engine::assets
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
             || node.proximity.has_value()
+            || node.motion.has_value()
             || node.behavior.has_value()
             || node.debug_visual.has_value();
     }

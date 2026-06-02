@@ -97,6 +97,7 @@ namespace wz::engine::assets
                 node.vector_field_source.has_value();
             const bool has_collision = node.collision.has_value();
             const bool has_proximity = node.proximity.has_value();
+            const bool has_motion = node.motion.has_value();
             const bool has_terrain = node.terrain.has_value();
             const bool has_terrain_render_style =
                 node.terrain_render_style.has_value();
@@ -121,6 +122,7 @@ namespace wz::engine::assets
             fp.mix_value(has_vector_field_source);
             fp.mix_value(has_collision);
             fp.mix_value(has_proximity);
+            fp.mix_value(has_motion);
             fp.mix_value(has_terrain);
             fp.mix_value(has_terrain_render_style);
             fp.mix_value(has_terrain_mesh_source);
@@ -330,6 +332,14 @@ namespace wz::engine::assets
                 fp.mix_value(proximity.layer_mask);
                 fp.mix_value(proximity.detects_with_mask);
                 fp.mix_value(proximity.enabled);
+            }
+
+            if (node.motion) {
+                const auto& motion = *node.motion;
+                fp.mix_bytes(
+                    motion.linear_velocity,
+                    sizeof(motion.linear_velocity));
+                fp.mix_value(motion.enabled);
             }
 
             if (node.terrain) {

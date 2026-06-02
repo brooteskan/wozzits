@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 2u
+#define WZ_BEHAVIOR_ABI_VERSION 3u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 typedef uint32_t WzBehaviorEntityId;
@@ -135,6 +135,7 @@ enum
     WZ_BEHAVIOR_COMMAND_SET_LOCAL_ROTATION = 5u,
     WZ_BEHAVIOR_COMMAND_ADD_WORLD_TRANSLATION = 6u,
     WZ_BEHAVIOR_COMMAND_SET_WORLD_TRANSLATION = 7u,
+    WZ_BEHAVIOR_COMMAND_SET_LINEAR_VELOCITY = 8u,
 };
 
 typedef struct WzBehaviorCommand
@@ -170,6 +171,13 @@ typedef uint8_t (*WzQueryBehaviorCollisionSurfaceRayFn)(
     float max_distance,
     WzSurfaceSample* out_sample);
 
+typedef struct WzFrameTiming
+{
+    float delta_seconds;
+    double elapsed_seconds;
+    uint64_t frame_index;
+} WzFrameTiming;
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
@@ -189,6 +197,8 @@ typedef struct WzBehaviorFrameFacts
 
     void* collision_query_user;
     WzQueryBehaviorCollisionSurfaceRayFn query_collision_surface_ray;
+
+    const WzFrameTiming* timing;
 } WzBehaviorFrameFacts;
 
 typedef void (*WzBehaviorFn)(

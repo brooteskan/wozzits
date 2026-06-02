@@ -263,6 +263,8 @@ wz_self_set_local_rotation(
     facts,
     event,
     WzQuaternion{ 0.0f, 0.0f, 0.70710677f, 0.70710677f });
+
+wz_self_set_linear_velocity(facts, event, 0.0f, 1.0f, 0.0f);
 ```
 
 Generic entity command helpers are also available:
@@ -275,6 +277,7 @@ wz_write_set_world_translation(facts, entity, x, y, z);
 wz_write_add_local_scale(facts, entity, x, y, z);
 wz_write_set_local_scale(facts, entity, x, y, z);
 wz_write_set_local_rotation(facts, entity, rotation);
+wz_write_set_linear_velocity(facts, entity, x, y, z);
 ```
 
 Command order is deterministic. Multiple commands targeting the same entity are
@@ -289,6 +292,24 @@ World translation commands are applied before scene transform propagation runs.
 target from the entity's world transform as it existed when command application
 began. Earlier commands in the same buffer that change the same entity's local
 transform are not visible to that world-space add until the next propagation.
+
+Linear velocity is world-space motion in units per second. A behavior can set
+velocity with `wz_self_set_linear_velocity` or `wz_write_set_linear_velocity`.
+The engine stores that velocity as runtime motion state, then integrates it
+once per frame after behavior commands are applied and before render prep.
+Setting velocity does not immediately move the entity; the frame integration
+step moves it by `velocity * delta_seconds`.
+
+Frame timing is available through:
+
+```cpp
+const float dt = wz_delta_seconds(facts);
+const uint64_t frame = wz_frame_index(facts);
+```
+
+`delta_seconds` is the current frame interval. `elapsed_seconds` in
+`facts->timing` is the engine monotonic clock value at the frame end; it is not
+reset per scene or per behavior module.
 
 ## Rotation And Scale Semantics
 

@@ -97,6 +97,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::AddWorldTranslation;
             case WZ_BEHAVIOR_COMMAND_SET_WORLD_TRANSLATION:
                 return BehaviorCommandKind::SetWorldTranslation;
+            case WZ_BEHAVIOR_COMMAND_SET_LINEAR_VELOCITY:
+                return BehaviorCommandKind::SetLinearVelocity;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;
@@ -225,6 +227,18 @@ namespace wz::engine::behavior
                 out.controller_buttons[i] =
                     input.controller.buttons[i] ? uint8_t{ 1 } : uint8_t{ 0 };
             }
+        }
+
+        void fill_timing_view(
+            const wz::engine::FrameContext& frame,
+            WzFrameTiming& out) noexcept
+        {
+            out.delta_seconds =
+                static_cast<float>(frame.frame.delta_seconds());
+            out.elapsed_seconds =
+                static_cast<double>(frame.frame.interval.end)
+                / static_cast<double>(wz::time::TimeSource::ticks_per_second());
+            out.frame_index = frame.frame.index;
         }
 
         uint8_t read_collision_event(
@@ -535,9 +549,13 @@ namespace wz::engine::behavior
 
             WzInputStateView input_view{};
             const WzInputStateView* input = nullptr;
+            WzFrameTiming timing_view{};
+            const WzFrameTiming* timing = nullptr;
             if (context.frame_context) {
                 fill_input_view(context.frame_context->input, input_view);
                 input = &input_view;
+                fill_timing_view(*context.frame_context, timing_view);
+                timing = &timing_view;
             }
 
             uint32_t collision_event_count = 0;
@@ -569,6 +587,7 @@ namespace wz::engine::behavior
                 .log_info = log_info,
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
+                .timing = timing,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -577,12 +596,16 @@ namespace wz::engine::behavior
         WzBehaviorFrameFacts make_frame_facts(
             BehaviorFrameContext& context,
             wz::Logger* logger,
-            WzInputStateView& input_view)
+            WzInputStateView& input_view,
+            WzFrameTiming& timing_view)
         {
             const WzInputStateView* input = nullptr;
+            const WzFrameTiming* timing = nullptr;
             if (context.frame_context) {
                 fill_input_view(context.frame_context->input, input_view);
                 input = &input_view;
+                fill_timing_view(*context.frame_context, timing_view);
+                timing = &timing_view;
             }
 
             uint32_t collision_event_count = 0;
@@ -614,6 +637,7 @@ namespace wz::engine::behavior
                 .log_info = log_info,
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
+                .timing = timing,
             };
         }
 
@@ -629,8 +653,13 @@ namespace wz::engine::behavior
             }
 
             WzInputStateView input_view{};
+            WzFrameTiming timing_view{};
             WzBehaviorFrameFacts facts =
-                make_frame_facts(context, binding->logger, input_view);
+                make_frame_facts(
+                    context,
+                    binding->logger,
+                    input_view,
+                    timing_view);
             const WzBehaviorEvent abi_event{
                 .kind = to_abi_behavior_event_kind(event),
                 .entity = event.entity,

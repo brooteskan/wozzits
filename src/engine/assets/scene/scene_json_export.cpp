@@ -821,6 +821,15 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr motion_value(const SceneMotionAsset& motion)
+        {
+            auto obj = object_value();
+            add_member(*obj, "linear_velocity",
+                float_array(motion.linear_velocity, 3));
+            add_member(*obj, "enabled", bool_value(motion.enabled));
+            return obj;
+        }
+
         JSONValuePtr behavior_value(const SceneBehaviorAsset& behavior)
         {
             auto obj = object_value();
@@ -979,6 +988,9 @@ namespace wz::engine::assets
             if (node.proximity) {
                 add_member(*obj, "proximity",
                     proximity_value(*node.proximity));
+            }
+            if (node.motion) {
+                add_member(*obj, "motion", motion_value(*node.motion));
             }
             if (node.behavior) {
                 add_member(*obj, "behavior",

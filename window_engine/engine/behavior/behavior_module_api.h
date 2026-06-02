@@ -35,6 +35,8 @@
 // - Local scale changes local basis-column lengths and preserves directions.
 // - Local rotation uses WzQuaternion {x, y, z, w}; it replaces rotation,
 //   preserves translation, and preserves current basis-column scale.
+// - Linear velocity is in world units per second and is integrated once per
+//   frame after behavior commands are applied.
 // - AddLocalRotation is intentionally not part of this V1 API.
 
 static inline uint8_t wz_write_add_local_translation(
@@ -168,6 +170,35 @@ static inline uint8_t wz_write_set_local_rotation(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+static inline uint8_t wz_write_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_LINEAR_VELOCITY,
+        { x, y, z, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+static inline float wz_delta_seconds(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->timing ? facts->timing->delta_seconds : 0.0f;
+}
+
+static inline uint64_t wz_frame_index(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->timing ? facts->timing->frame_index : 0u;
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)
@@ -290,6 +321,26 @@ static inline uint8_t wz_self_set_local_rotation(
     WzQuaternion rotation)
 {
     return wz_write_set_local_rotation(facts, wz_self(event), rotation);
+}
+
+static inline uint8_t wz_self_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_linear_velocity(facts, wz_self(event), x, y, z);
+}
+
+static inline uint8_t wz_other_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_linear_velocity(facts, wz_other(event), x, y, z);
 }
 
 static inline uint8_t wz_read_local_transform(

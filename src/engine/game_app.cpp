@@ -123,6 +123,7 @@ namespace wz::app
         struct BehaviorCommandApplyJobData
         {
             wz::engine::FrameStorage* frame = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
             wz::engine::FrameDirtyState* frame_dirty = nullptr;
             wz::engine::assets::SceneInstance* scene = nullptr;
             wz::app::DebugObjectRuntime* debug_object = nullptr;
@@ -884,13 +885,30 @@ namespace wz::app
             }
 
             std::vector<wz::scene::RuntimeEntityId> changed_entities;
-            const uint32_t applied =
-                wz::engine::behavior::apply_behavior_commands(
+            (void)wz::engine::behavior::apply_behavior_commands(
                     *data->scene,
                     data->frame->behavior_commands.commands,
                     &changed_entities);
 
-            if (applied == 0) {
+            std::vector<wz::scene::RuntimeEntityId> velocity_changed;
+            if (data->fctx) {
+                (void)wz::engine::behavior::integrate_linear_velocity(
+                    *data->scene,
+                    static_cast<float>(data->fctx->frame.delta_seconds()),
+                    &velocity_changed);
+                changed_entities.insert(
+                    changed_entities.end(),
+                    velocity_changed.begin(),
+                    velocity_changed.end());
+                std::sort(changed_entities.begin(), changed_entities.end());
+                changed_entities.erase(
+                    std::unique(
+                        changed_entities.begin(),
+                        changed_entities.end()),
+                    changed_entities.end());
+            }
+
+            if (changed_entities.empty()) {
                 return;
             }
 
@@ -1258,6 +1276,7 @@ namespace wz::app
 
         BehaviorCommandApplyJobData behavior_command_apply_data{
             .frame = &app.frame,
+            .fctx = &fctx,
             .frame_dirty = &app.frame_dirty,
             .scene =
                 app.debug_object.collision_scene_valid

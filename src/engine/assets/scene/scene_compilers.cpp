@@ -1551,6 +1551,29 @@ namespace wz::engine::assets::internal
                 node.proximity = component;
             }
 
+            const auto* motion_component = find_member(node_val, "motion");
+            if (motion_component
+                && motion_component->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneMotionAsset component{};
+                if (find_member(*motion_component, "linear_velocity")) {
+                    if (!read_float3(
+                            *motion_component,
+                            "linear_velocity",
+                            component.linear_velocity))
+                    {
+                        logger.error("motion on node '" + node.id
+                            + "' has invalid linear_velocity");
+                        return std::nullopt;
+                    }
+                }
+                auto enabled = read_bool(*motion_component, "enabled");
+                if (enabled) {
+                    component.enabled = *enabled;
+                }
+                node.motion = component;
+            }
+
             std::optional<wz::asset::AssetKey> terrain_asset;
             if (!parse_asset_reference_object(
                     node_val,

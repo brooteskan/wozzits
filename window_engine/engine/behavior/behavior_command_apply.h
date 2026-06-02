@@ -16,4 +16,10 @@ namespace wz::engine::behavior
         std::span<const BehaviorCommand> commands,
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities =
             nullptr);
+
+    uint32_t integrate_linear_velocity(
+        wz::engine::assets::SceneInstance& scene,
+        float delta_seconds,
+        std::vector<wz::scene::RuntimeEntityId>* out_changed_entities =
+            nullptr);
 }

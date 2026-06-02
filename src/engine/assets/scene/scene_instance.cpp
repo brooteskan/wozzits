@@ -558,6 +558,19 @@ namespace wz::engine::assets
                 });
             }
 
+            if (node.motion) {
+                const auto& motion = *node.motion;
+                MotionComponent component{};
+                component.linear_velocity[0] = motion.linear_velocity[0];
+                component.linear_velocity[1] = motion.linear_velocity[1];
+                component.linear_velocity[2] = motion.linear_velocity[2];
+                component.enabled = motion.enabled;
+                inst.motions.push_back({
+                    .node = h,
+                    .component = component,
+                });
+            }
+
             if (node.behavior) {
                 inst.behaviors.push_back({
                     .node = h,

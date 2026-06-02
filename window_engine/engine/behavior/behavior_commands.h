@@ -19,6 +19,7 @@ namespace wz::engine::behavior
         SetLocalRotation,
         AddWorldTranslation,
         SetWorldTranslation,
+        SetLinearVelocity,
     };
 
     struct BehaviorCommand
@@ -124,6 +125,19 @@ namespace wz::engine::behavior
                 .entity = entity,
                 .kind = BehaviorCommandKind::SetLocalRotation,
                 .values = { x, y, z, w },
+            });
+        }
+
+        void set_linear_velocity(
+            wz::scene::RuntimeEntityId entity,
+            float x,
+            float y,
+            float z)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::SetLinearVelocity,
+                .values = { x, y, z, 0.0f },
             });
         }
     };

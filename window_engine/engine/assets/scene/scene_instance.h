@@ -87,6 +87,12 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    struct MotionComponent
+    {
+        float linear_velocity[3]{ 0.0f, 0.0f, 0.0f };
+        bool enabled = true;
+    };
+
     struct BehaviorComponent
     {
         std::string module;
@@ -133,6 +139,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<ProximityComponent>> proximities;
+        std::vector<SceneComponentRecord<MotionComponent>> motions;
         std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;

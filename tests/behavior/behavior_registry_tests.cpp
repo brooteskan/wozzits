@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -391,6 +392,9 @@ namespace
         uint8_t wrote_add_world_translation = 0;
         uint8_t wrote_other_set_world_translation = 0;
         uint8_t wrote_other_add_world_translation = 0;
+        uint8_t wrote_set_linear_velocity = 0;
+        float delta_seconds = -1.0f;
+        uint64_t frame_index = UINT64_MAX;
     };
 
     TransformCommandProbe* g_transform_command_probe = nullptr;
@@ -410,6 +414,8 @@ namespace
             return;
         }
 
+        probe->delta_seconds = wz_delta_seconds(facts);
+        probe->frame_index = wz_frame_index(facts);
         probe->wrote_set_scale = wz_self_set_local_scale(
             facts,
             event,
@@ -459,6 +465,13 @@ namespace
                 4.0f,
                 5.0f,
                 6.0f);
+        probe->wrote_set_linear_velocity =
+            wz_self_set_linear_velocity(
+                facts,
+                event,
+                7.0f,
+                8.0f,
+                9.0f);
     }
 
     uint8_t register_transform_command_pack(WzBehaviorPluginApi* api)
@@ -1571,7 +1584,13 @@ TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
             .kind = wz::engine::collision::CollisionEventKind::Enter,
         },
     };
+    wz::engine::FrameContext frame_context{};
+    frame_context.frame.index = 42u;
+    frame_context.frame.interval.start = 0u;
+    frame_context.frame.interval.end =
+        wz::time::TimeSource::ticks_per_second() / 2u;
     BehaviorFrameContext context{
+        .frame_context = &frame_context,
         .frame_storage = &frame_storage,
         .scene = &scene,
         .commands = &frame_storage.behavior_commands,
@@ -1587,7 +1606,10 @@ TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
     EXPECT_EQ(probe.wrote_add_world_translation, 1u);
     EXPECT_EQ(probe.wrote_other_set_world_translation, 1u);
     EXPECT_EQ(probe.wrote_other_add_world_translation, 1u);
-    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 7u);
+    EXPECT_EQ(probe.wrote_set_linear_velocity, 1u);
+    EXPECT_NEAR(probe.delta_seconds, 0.5f, 1e-6f);
+    EXPECT_EQ(probe.frame_index, 42u);
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 8u);
     EXPECT_EQ(frame_storage.behavior_commands.commands[0].entity, 4u);
     EXPECT_EQ(
         frame_storage.behavior_commands.commands[0].kind,
@@ -1642,6 +1664,13 @@ TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
     EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[0], 4.0f);
     EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[1], 5.0f);
     EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[6].values[2], 6.0f);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[7].entity, 4u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[7].kind,
+        BehaviorCommandKind::SetLinearVelocity);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[7].values[0], 7.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[7].values[1], 8.0f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[7].values[2], 9.0f);
 
     g_transform_command_probe = nullptr;
 }
@@ -2075,6 +2104,142 @@ TEST(BehaviorCommands, MultipleAddCommandsAccumulateInOrder)
 }
 
 // ─── Adversarial tests ──────────────────────────────────────────────
+
+TEST(BehaviorCommands, SetLinearVelocityCreatesMotionStateAndIntegrates)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_velocity_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    BehaviorCommandBuffer commands{};
+    commands.set_linear_velocity(actor, 2.0f, 4.0f, 6.0f);
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        &changed);
+
+    EXPECT_EQ(applied, 1u);
+    EXPECT_TRUE(changed.empty())
+        << "setting velocity updates motion state, not transform state";
+    ASSERT_EQ(result.instance.motions.size(), 1u);
+    EXPECT_EQ(result.instance.motions[0].node, actor);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[0],
+        2.0f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[1],
+        4.0f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[2],
+        6.0f);
+
+    const uint32_t integrated =
+        integrate_linear_velocity(result.instance, 0.5f, &changed);
+
+    EXPECT_EQ(integrated, 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.local.m[12], 1.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[13], 2.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[14], 3.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 1.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 2.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+TEST(BehaviorCommands, LinearVelocityIntegratesWorldSpaceForParentedNode)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_velocity_parented_scene";
+
+    wz::engine::assets::SceneNodeAsset root{};
+    root.id = "root";
+    root.local.translation[0] = 10.0f;
+    asset.nodes.push_back(std::move(root));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "root";
+    child.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 0.0f, 2.0f, 0.0f },
+    };
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t integrated =
+        integrate_linear_velocity(result.instance, 0.25f, &changed);
+
+    EXPECT_EQ(integrated, 1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], child_id);
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_FLOAT_EQ(child_node.local.m[12], 0.0f);
+    EXPECT_FLOAT_EQ(child_node.local.m[13], 0.5f);
+    EXPECT_FLOAT_EQ(child_node.local.m[14], 0.0f);
+    EXPECT_FLOAT_EQ(child_node.world.m[12], 10.0f);
+    EXPECT_FLOAT_EQ(child_node.world.m[13], 0.5f);
+    EXPECT_FLOAT_EQ(child_node.world.m[14], 0.0f);
+}
+
+TEST(BehaviorCommands, LinearVelocityIgnoresNonPositiveOrInvalidDelta)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_velocity_delta_guard_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 2.0f, 3.0f, 4.0f },
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(integrate_linear_velocity(result.instance, 0.0f, &changed), 0u);
+    EXPECT_TRUE(changed.empty());
+    EXPECT_EQ(integrate_linear_velocity(result.instance, -1.0f, &changed), 0u);
+    EXPECT_TRUE(changed.empty());
+    EXPECT_EQ(
+        integrate_linear_velocity(
+            result.instance,
+            std::numeric_limits<float>::infinity(),
+            &changed),
+        0u);
+    EXPECT_TRUE(changed.empty());
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.local.m[12], 0.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[13], 0.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[14], 0.0f);
+}
 
 TEST(Adversarial, DisabledBehaviorReceivesNoModuleEvents)
 {

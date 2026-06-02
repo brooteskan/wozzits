@@ -1912,6 +1912,120 @@ TEST(SceneAssetModule, ProximityComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"detects_with_mask\""), std::string::npos);
 }
 
+TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_scene_motion_roundtrip");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "motion_scene",
+  "nodes": [
+    {
+      "id": "actor",
+      "motion": {
+        "linear_velocity": [1.5, -2.0, 3.25],
+        "enabled": true
+      }
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path path = wz::fs::join(root, "motion.scene.json");
+    ASSERT_EQ(wz::fs::write_file_text(path, json), wz::fs::FileError::None);
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "motion_scene",
+        .path = "motion.scene.json",
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].motion.has_value());
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 1.5f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], -2.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 3.25f);
+    EXPECT_TRUE(scene_data->nodes[0].motion->enabled);
+
+    const auto result = wz::engine::assets::instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.motions.size(), 1u);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[0],
+        1.5f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[1],
+        -2.0f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.linear_velocity[2],
+        3.25f);
+    EXPECT_TRUE(result.instance.motions[0].component.enabled);
+
+    const std::string exported = wz::json::serialize_json(
+        wz::engine::assets::export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"motion\""), std::string::npos);
+    EXPECT_NE(exported.find("\"linear_velocity\""), std::string::npos);
+}
+
+TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_scene_motion_default_velocity");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "motion_default_scene",
+  "nodes": [
+    {
+      "id": "actor",
+      "motion": {
+        "enabled": false
+      }
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path path = wz::fs::join(root, "motion_default.scene.json");
+    ASSERT_EQ(wz::fs::write_file_text(path, json), wz::fs::FileError::None);
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "motion_default_scene",
+        .path = "motion_default.scene.json",
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].motion.has_value());
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 0.0f);
+    EXPECT_FALSE(scene_data->nodes[0].motion->enabled);
+}
+
 TEST(SceneAssetModule, CollisionComponentResolvesSymbolicSceneReference)
 {
     const wz::fs::Path root =
