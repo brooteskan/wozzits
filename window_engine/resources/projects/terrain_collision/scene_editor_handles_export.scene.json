@@ -532,7 +532,7 @@
       "transform": {
         "translation": [
           109.94999694824219,
-          84.400001525878906,
+          84.449996948242188,
           -0.05000000074505806
         ],
         "rotation_quat": [
@@ -594,12 +594,13 @@
       "event_listener": {
         "channels": [
           "collision.enter",
-          "collision.exit"
+          "collision.exit",
+          "collision.stay"
         ]
       },
       "behavior": {
-        "module": "template",
-        "name": "log_collision_events",
+        "module": "test_behavior",
+        "name": "",
         "enabled": true
       },
       "editor_handle": {
@@ -736,15 +737,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -245.98562622070312,
-        188.49125671386719,
-        104.53301239013672
+        112.46030426025391,
+        88.648368835449219,
+        16.541799545288086
       ],
       "orientation": [
-        -0.049425836652517319,
-        -0.88039630651473999,
-        0.097895100712776184,
-        -0.46138489246368408
+        0.021799715235829353,
+        -0.96652698516845703,
+        0.081019148230552673,
+        0.24245892465114594
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

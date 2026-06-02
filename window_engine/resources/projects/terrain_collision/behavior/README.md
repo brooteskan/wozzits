@@ -8,9 +8,17 @@ The scene editor loads compiled behavior DLLs from:
 behavior/build/clang-debug
 ```
 
+Build the behavior DLLs with:
+
+```powershell
+cmake --preset clang-debug
+cmake --build --preset clang-debug
+```
+
 This behavior module currently registers:
 
 - `template`
+- `test_behavior`
 
 The handler uses `switch (event->kind)` to respond to routed events such as
 `WZ_EVENT_COLLISION_ENTER`. Use `wz_self(event)` for the receiving component's

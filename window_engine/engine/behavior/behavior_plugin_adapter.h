@@ -33,6 +33,7 @@ namespace wz::engine::behavior
             Loaded,
             InvalidPath,
             LoadFailed,
+            CopyFailed,
             MissingRegisterSymbol,
             RegistrationFailed,
             UnsupportedPlatform,
@@ -53,6 +54,7 @@ namespace wz::engine::behavior
         {
             void* handle = nullptr;
             std::string path;
+            std::string loaded_path;
         };
 
         ~BehaviorPluginHost();

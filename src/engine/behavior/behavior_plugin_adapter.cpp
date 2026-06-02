@@ -21,6 +21,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -49,6 +50,8 @@ namespace wz::engine::behavior
                 return "invalid_path";
             case Status::LoadFailed:
                 return "load_failed";
+            case Status::CopyFailed:
+                return "copy_failed";
             case Status::MissingRegisterSymbol:
                 return "missing_register_symbol";
             case Status::RegistrationFailed:
@@ -58,6 +61,39 @@ namespace wz::engine::behavior
             }
             return "unknown";
         }
+
+#if defined(_WIN32)
+        std::filesystem::path make_behavior_load_copy_path(
+            const std::filesystem::path& path)
+        {
+            static std::atomic<uint64_t> counter{ 0 };
+
+            const uint64_t id = counter.fetch_add(1u);
+            const std::wstring suffix =
+                L".wzload." + std::to_wstring(GetCurrentProcessId()) + L"."
+                + std::to_wstring(id);
+            return path.parent_path()
+                / (path.stem().wstring() + suffix
+                    + path.extension().wstring());
+        }
+
+        bool is_behavior_load_copy_path(
+            const std::filesystem::path& path)
+        {
+            return path.filename().wstring().find(L".wzload.")
+                != std::wstring::npos;
+        }
+
+        void remove_behavior_load_copy(const std::string& path)
+        {
+            if (path.empty()) {
+                return;
+            }
+
+            std::error_code ec;
+            std::filesystem::remove(std::filesystem::path{ path }, ec);
+        }
+#endif
 
         WzCollisionEventKind to_abi_collision_kind(
             wz::engine::collision::CollisionEventKind kind) noexcept
@@ -913,13 +949,30 @@ namespace wz::engine::behavior
         }
 
 #if defined(_WIN32)
-        HMODULE module = LoadLibraryW(path.wstring().c_str());
+        const std::filesystem::path loaded_path =
+            make_behavior_load_copy_path(path);
+        std::error_code copy_ec;
+        std::filesystem::copy_file(
+            path,
+            loaded_path,
+            std::filesystem::copy_options::overwrite_existing,
+            copy_ec);
+        if (copy_ec) {
+            return {
+                .status = DynamicLoadStatus::CopyFailed,
+                .detail = path.string() + " -> " + loaded_path.string()
+                    + " error=" + copy_ec.message(),
+            };
+        }
+
+        HMODULE module = LoadLibraryW(loaded_path.wstring().c_str());
         if (!module) {
             const DWORD error = GetLastError();
+            remove_behavior_load_copy(loaded_path.string());
             return {
                 .status = DynamicLoadStatus::LoadFailed,
                 .detail =
-                    path.string() + " error=" + std::to_string(error),
+                    loaded_path.string() + " error=" + std::to_string(error),
             };
         }
 
@@ -932,6 +985,7 @@ namespace wz::engine::behavior
                 GetProcAddress(module, symbol));
         if (!register_plugin) {
             FreeLibrary(module);
+            remove_behavior_load_copy(loaded_path.string());
             return {
                 .status = DynamicLoadStatus::MissingRegisterSymbol,
                 .detail = symbol,
@@ -940,6 +994,7 @@ namespace wz::engine::behavior
 
         if (!register_static_pack(registry, register_plugin, logger)) {
             FreeLibrary(module);
+            remove_behavior_load_copy(loaded_path.string());
             return {
                 .status = DynamicLoadStatus::RegistrationFailed,
                 .detail = path.string(),
@@ -949,10 +1004,11 @@ namespace wz::engine::behavior
         dynamic_modules_.push_back(DynamicModule{
             .handle = module,
             .path = path.string(),
+            .loaded_path = loaded_path.string(),
         });
         return {
             .status = DynamicLoadStatus::Loaded,
-            .detail = path.string(),
+            .detail = path.string() + " -> " + loaded_path.string(),
         };
 #else
         (void)registry;
@@ -1022,6 +1078,9 @@ namespace wz::engine::behavior
             if (path.extension() != ".dll") {
                 continue;
             }
+            if (is_behavior_load_copy_path(path)) {
+                continue;
+            }
 #else
             continue;
 #endif
@@ -1050,6 +1109,7 @@ namespace wz::engine::behavior
             if (module.handle) {
                 FreeLibrary(static_cast<HMODULE>(module.handle));
             }
+            remove_behavior_load_copy(module.loaded_path);
         }
 #endif
         dynamic_modules_.clear();

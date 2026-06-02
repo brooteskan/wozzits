@@ -975,6 +975,34 @@ TEST(BehaviorPluginDynamicModule, LoadsRegistersAndDispatchesBehavior)
     EXPECT_FLOAT_EQ(command.values[2], 0.0f);
 }
 
+TEST(BehaviorPluginDynamicModule, LoadsFromCopyAndCleansUpCopy)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto result = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+
+    ASSERT_TRUE(result.ok()) << result.detail;
+
+#if defined(_WIN32)
+    const std::string separator = " -> ";
+    const size_t separator_pos = result.detail.find(separator);
+    ASSERT_NE(separator_pos, std::string::npos) << result.detail;
+    const std::string loaded_path =
+        result.detail.substr(separator_pos + separator.size());
+    EXPECT_NE(loaded_path.find(".wzload."), std::string::npos);
+    EXPECT_TRUE(std::filesystem::exists(loaded_path));
+
+    plugins.clear();
+
+    EXPECT_FALSE(std::filesystem::exists(loaded_path));
+#else
+    plugins.clear();
+#endif
+}
+
 TEST(BehaviorPluginAbi, RejectsInvalidRegistrations)
 {
     BehaviorRegistry registry;
@@ -3703,4 +3731,52 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     EXPECT_NE(exported.find("\"terrain_id\""), std::string::npos);
     EXPECT_NE(exported.find("\"speed\""), std::string::npos);
     EXPECT_NE(exported.find("\"snap_to_ground\""), std::string::npos);
+}
+
+TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsEventModuleWithoutName)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_behavior_scene_json_event_module");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "behavior_scene",
+  "nodes": [
+    {
+      "id": "actor",
+      "behavior": {
+        "module": "test_behavior",
+        "name": "",
+        "enabled": true
+      }
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path rel_path =
+        write_text(root, "behavior_event_module.scene.json", json);
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "behavior_scene",
+        .path = rel_path,
+    });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].behavior.has_value());
+    EXPECT_EQ(scene_data->nodes[0].behavior->module, "test_behavior");
+    EXPECT_TRUE(scene_data->nodes[0].behavior->name.empty());
+    EXPECT_TRUE(scene_data->nodes[0].behavior->enabled);
 }

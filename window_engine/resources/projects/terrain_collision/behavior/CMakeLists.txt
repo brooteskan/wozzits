@@ -10,26 +10,35 @@ set(WZ_WINDOW_ENGINE_ROOT
     CACHE PATH
     "Path to the wozzits-window-engine repository root")
 
-add_library(terrain_collision_behaviors SHARED
+function(add_terrain_collision_behavior_module target source)
+    add_library(${target} SHARED
+        ${source})
+
+    target_include_directories(${target}
+        PRIVATE
+            "${WZ_WINDOW_ENGINE_ROOT}"
+            "${WZ_WINDOW_ENGINE_ROOT}/window_engine")
+
+    target_compile_features(${target} PRIVATE cxx_std_20)
+
+    set_target_properties(${target}
+        PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug"
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug"
+            ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug")
+
+    if(MSVC)
+        target_compile_definitions(${target}
+            PRIVATE
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX)
+    endif()
+endfunction()
+
+add_terrain_collision_behavior_module(
+    terrain_collision_behaviors
     sample_behavior_plugin.cpp)
 
-target_include_directories(terrain_collision_behaviors
-    PRIVATE
-        "${WZ_WINDOW_ENGINE_ROOT}"
-        "${WZ_WINDOW_ENGINE_ROOT}/window_engine")
-
-target_compile_features(terrain_collision_behaviors PRIVATE cxx_std_20)
-
-set_target_properties(terrain_collision_behaviors
-    PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug"
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build/clang-debug")
-
-if(MSVC)
-    target_compile_definitions(terrain_collision_behaviors
-        PRIVATE
-            WIN32_LEAN_AND_MEAN
-            NOMINMAX)
-endif()
-
+add_terrain_collision_behavior_module(
+    test_behavior
+    test_behavior_plugin.cpp)

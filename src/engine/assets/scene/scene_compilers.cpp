@@ -1912,19 +1912,19 @@ namespace wz::engine::assets::internal
             if (behavior
                 && behavior->kind == wz::json::JSONValueKind::Object)
             {
-                auto name = read_string(*behavior, "name");
-                if (!name || name->empty()) {
+                auto module = read_string(*behavior, "module");
+                if (!module || module->empty()) {
                     logger.error("behavior on node '" + node.id
-                        + "' missing non-empty name");
+                        + "' missing non-empty module");
                     return std::nullopt;
                 }
 
                 SceneBehaviorAsset component{};
-                component.name = std::string(*name);
+                component.module = std::string(*module);
 
-                auto module = read_string(*behavior, "module");
-                if (module) {
-                    component.module = std::string(*module);
+                auto name = read_string(*behavior, "name");
+                if (name) {
+                    component.name = std::string(*name);
                 }
 
                 auto enabled = read_bool(*behavior, "enabled");
