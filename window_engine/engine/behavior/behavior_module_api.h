@@ -7,6 +7,8 @@
 
 #include <engine/behavior/behavior_plugin_abi.h>
 
+#include <math.h>
+
 #if defined(_WIN32)
 #define WZ_BEHAVIOR_MODULE_EXPORT __declspec(dllexport)
 #else
@@ -28,6 +30,146 @@
             handler_fn,                                                     \
             nullptr);                                                       \
     }
+
+static inline uint8_t wz_key_down(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t key)
+{
+    return facts && facts->input && key < 256u
+        ? facts->input->keyboard_down[key]
+        : 0u;
+}
+
+static inline uint8_t wz_key_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t key)
+{
+    return facts && facts->input && key < 256u
+        ? facts->input->keyboard_pressed[key]
+        : 0u;
+}
+
+static inline uint8_t wz_key_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t key)
+{
+    return facts && facts->input && key < 256u
+        ? facts->input->keyboard_released[key]
+        : 0u;
+}
+
+static inline uint8_t wz_mouse_button_down(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button)
+{
+    return facts && facts->input && button < 3u
+        ? facts->input->mouse_down[button]
+        : 0u;
+}
+
+static inline uint8_t wz_mouse_button_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button)
+{
+    return facts && facts->input && button < 3u
+        ? facts->input->mouse_pressed[button]
+        : 0u;
+}
+
+static inline uint8_t wz_mouse_button_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button)
+{
+    return facts && facts->input && button < 3u
+        ? facts->input->mouse_released[button]
+        : 0u;
+}
+
+static inline int32_t wz_mouse_x(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->mouse_x : 0;
+}
+
+static inline int32_t wz_mouse_y(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->mouse_y : 0;
+}
+
+static inline int32_t wz_mouse_dx(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->mouse_dx : 0;
+}
+
+static inline int32_t wz_mouse_dy(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->mouse_dy : 0;
+}
+
+static inline uint8_t wz_window_focused(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->window_focused : 0u;
+}
+
+static inline int32_t wz_window_width(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->window_width : 0;
+}
+
+static inline int32_t wz_window_height(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->window_height : 0;
+}
+
+static inline uint8_t wz_controller_connected(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->input ? facts->input->controller_connected : 0u;
+}
+
+static inline float wz_controller_axis(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t axis)
+{
+    return facts && facts->input && axis < 8u
+        ? facts->input->controller_axes[axis]
+        : 0.0f;
+}
+
+static inline uint8_t wz_controller_button_down(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button)
+{
+    return facts && facts->input && button < 16u
+        ? facts->input->controller_buttons[button]
+        : 0u;
+}
+
+static inline uint8_t wz_input_wasd_axis(
+    const WzBehaviorFrameFacts* facts,
+    WzVec3* out_axis)
+{
+    if (!facts || !facts->input || !out_axis) {
+        return 0;
+    }
+
+    out_axis->x =
+        (wz_key_down(facts, WZ_KEY_D) ? 1.0f : 0.0f)
+        - (wz_key_down(facts, WZ_KEY_A) ? 1.0f : 0.0f);
+    out_axis->y = 0.0f;
+    out_axis->z =
+        (wz_key_down(facts, WZ_KEY_W) ? 1.0f : 0.0f)
+        - (wz_key_down(facts, WZ_KEY_S) ? 1.0f : 0.0f);
+
+    const float length =
+        sqrtf(out_axis->x * out_axis->x
+            + out_axis->z * out_axis->z);
+    if (length > 1.0f) {
+        const float inv_length = 1.0f / length;
+        out_axis->x *= inv_length;
+        out_axis->z *= inv_length;
+    }
+    return 1;
+}
 
 // Transform command semantics:
 // - Commands are buffered during behavior dispatch and applied afterward.
@@ -461,6 +603,131 @@ static inline uint8_t wz_other_world_position(
     WzVec3* out_position)
 {
     return wz_read_world_position(facts, wz_other(event), out_position);
+}
+
+static inline uint8_t wz_vector_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    WzVec3* out_vector)
+{
+    if (!out_vector) {
+        return 0;
+    }
+
+    WzVec3 from{};
+    WzVec3 to{};
+    if (!wz_read_world_position(facts, from_entity, &from)
+        || !wz_read_world_position(facts, to_entity, &to))
+    {
+        return 0;
+    }
+
+    out_vector->x = to.x - from.x;
+    out_vector->y = to.y - from.y;
+    out_vector->z = to.z - from.z;
+    return 1;
+}
+
+static inline uint8_t wz_vector_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_vector)
+{
+    return wz_vector_between_world_positions(
+        facts,
+        wz_self(event),
+        wz_other(event),
+        out_vector);
+}
+
+static inline uint8_t wz_distance_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    float* out_distance)
+{
+    if (!out_distance) {
+        return 0;
+    }
+
+    WzVec3 vector{};
+    if (!wz_vector_between_world_positions(
+            facts,
+            from_entity,
+            to_entity,
+            &vector))
+    {
+        return 0;
+    }
+
+    *out_distance =
+        sqrtf(vector.x * vector.x
+            + vector.y * vector.y
+            + vector.z * vector.z);
+    return 1;
+}
+
+static inline uint8_t wz_distance_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float* out_distance)
+{
+    return wz_distance_between_world_positions(
+        facts,
+        wz_self(event),
+        wz_other(event),
+        out_distance);
+}
+
+static inline uint8_t wz_direction_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    WzVec3* out_direction)
+{
+    if (!out_direction) {
+        return 0;
+    }
+
+    WzVec3 vector{};
+    if (!wz_vector_between_world_positions(
+            facts,
+            from_entity,
+            to_entity,
+            &vector))
+    {
+        return 0;
+    }
+
+    const float length =
+        sqrtf(vector.x * vector.x
+            + vector.y * vector.y
+            + vector.z * vector.z);
+    if (length <= 0.000001f) {
+        out_direction->x = 0.0f;
+        out_direction->y = 0.0f;
+        out_direction->z = 0.0f;
+        return 0;
+    }
+
+    const float inv_length = 1.0f / length;
+    out_direction->x = vector.x * inv_length;
+    out_direction->y = vector.y * inv_length;
+    out_direction->z = vector.z * inv_length;
+    return 1;
+}
+
+static inline uint8_t wz_direction_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_direction)
+{
+    return wz_direction_between_world_positions(
+        facts,
+        wz_self(event),
+        wz_other(event),
+        out_direction);
 }
 
 static inline uint8_t wz_query_collision_surface_ray(

@@ -382,6 +382,96 @@ namespace
             g_module_helper_probe);
     }
 
+    struct InputHelperProbe
+    {
+        uint32_t calls = 0;
+        uint8_t w_down = 0;
+        uint8_t space_pressed = 0;
+        uint8_t escape_released = 0;
+        uint8_t left_mouse_down = 0;
+        uint8_t right_mouse_pressed = 0;
+        uint8_t middle_mouse_released = 0;
+        int32_t mouse_x = 0;
+        int32_t mouse_y = 0;
+        int32_t mouse_dx = 0;
+        int32_t mouse_dy = 0;
+        uint8_t focused = 0;
+        int32_t window_width = 0;
+        int32_t window_height = 0;
+        uint8_t controller_connected = 0;
+        float left_axis_x = 0.0f;
+        uint8_t controller_button = 0;
+        uint8_t invalid_key = 1;
+        uint8_t invalid_mouse = 1;
+        float invalid_axis = 1.0f;
+        uint8_t wasd_result = 0;
+        WzVec3 wasd_axis{};
+        uint8_t wrote_velocity = 0;
+    };
+
+    InputHelperProbe* g_input_helper_probe = nullptr;
+
+    void input_helper_event_handler(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<InputHelperProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+        ASSERT_NE(event, nullptr);
+
+        ++probe->calls;
+        if (!wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+            return;
+        }
+
+        probe->w_down = wz_key_down(facts, WZ_KEY_W);
+        probe->space_pressed = wz_key_pressed(facts, WZ_KEY_SPACE);
+        probe->escape_released = wz_key_released(facts, WZ_KEY_ESCAPE);
+        probe->left_mouse_down =
+            wz_mouse_button_down(facts, WZ_MOUSE_BUTTON_LEFT);
+        probe->right_mouse_pressed =
+            wz_mouse_button_pressed(facts, WZ_MOUSE_BUTTON_RIGHT);
+        probe->middle_mouse_released =
+            wz_mouse_button_released(facts, WZ_MOUSE_BUTTON_MIDDLE);
+        probe->mouse_x = wz_mouse_x(facts);
+        probe->mouse_y = wz_mouse_y(facts);
+        probe->mouse_dx = wz_mouse_dx(facts);
+        probe->mouse_dy = wz_mouse_dy(facts);
+        probe->focused = wz_window_focused(facts);
+        probe->window_width = wz_window_width(facts);
+        probe->window_height = wz_window_height(facts);
+        probe->controller_connected = wz_controller_connected(facts);
+        probe->left_axis_x =
+            wz_controller_axis(facts, WZ_CONTROLLER_AXIS_LEFT_X);
+        probe->controller_button = wz_controller_button_down(facts, 2u);
+        probe->invalid_key = wz_key_down(facts, 999u);
+        probe->invalid_mouse = wz_mouse_button_down(facts, 9u);
+        probe->invalid_axis = wz_controller_axis(facts, 99u);
+        probe->wasd_result = wz_input_wasd_axis(facts, &probe->wasd_axis);
+        probe->wrote_velocity =
+            wz_self_set_linear_velocity(
+                facts,
+                event,
+                probe->wasd_axis.x,
+                probe->wasd_axis.y,
+                probe->wasd_axis.z);
+    }
+
+    uint8_t register_input_helper_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_module || !g_input_helper_probe) {
+            return 0;
+        }
+
+        return api->register_module(
+            api->user,
+            "input_helper_test",
+            input_helper_event_handler,
+            g_input_helper_probe);
+    }
+
     struct TransformCommandProbe
     {
         uint32_t calls = 0;
@@ -497,9 +587,18 @@ namespace
         uint8_t self_local_transform_result = 0;
         uint8_t invalid_entity_position_result = 1;
         uint8_t null_out_transform_result = 1;
+        uint8_t vector_self_to_other_result = 0;
+        uint8_t distance_self_to_other_result = 0;
+        uint8_t direction_self_to_other_result = 0;
+        uint8_t null_vector_result = 1;
+        uint8_t zero_direction_result = 1;
         WzVec3 self_local_position{};
         WzVec3 self_world_position{};
         WzVec3 other_world_position{};
+        WzVec3 vector_self_to_other{};
+        WzVec3 direction_self_to_other{};
+        WzVec3 zero_direction{};
+        float distance_self_to_other = -1.0f;
         WzMat4 self_local_transform{};
     };
 
@@ -547,6 +646,29 @@ namespace
                 facts,
                 event,
                 &probe->self_local_transform);
+        probe->vector_self_to_other_result =
+            wz_vector_self_to_other(
+                facts,
+                event,
+                &probe->vector_self_to_other);
+        probe->distance_self_to_other_result =
+            wz_distance_self_to_other(
+                facts,
+                event,
+                &probe->distance_self_to_other);
+        probe->direction_self_to_other_result =
+            wz_direction_self_to_other(
+                facts,
+                event,
+                &probe->direction_self_to_other);
+        probe->null_vector_result =
+            wz_vector_self_to_other(facts, event, nullptr);
+        probe->zero_direction_result =
+            wz_direction_between_world_positions(
+                facts,
+                wz_self(event),
+                wz_self(event),
+                &probe->zero_direction);
         probe->invalid_entity_position_result =
             wz_read_world_position(
                 facts,
@@ -1138,6 +1260,92 @@ TEST(BehaviorModuleApi, SelfAddLocalTranslationWritesCommandForEventEntity)
     g_module_helper_probe = nullptr;
 }
 
+TEST(BehaviorModuleApi, InputHelpersReadFrameSnapshotAndWriteVelocity)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    InputHelperProbe probe{};
+    g_input_helper_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_input_helper_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "input_helper_test",
+        "");
+    wz::engine::FrameContext frame_context{};
+    frame_context.input.keyboard.down[WZ_KEY_W] = true;
+    frame_context.input.keyboard.down[WZ_KEY_D] = true;
+    frame_context.input.keyboard.pressed[WZ_KEY_SPACE] = true;
+    frame_context.input.keyboard.released[WZ_KEY_ESCAPE] = true;
+    frame_context.input.mouse.x = 320;
+    frame_context.input.mouse.y = 240;
+    frame_context.input.mouse.dx = -3;
+    frame_context.input.mouse.dy = 5;
+    frame_context.input.mouse.down[WZ_MOUSE_BUTTON_LEFT] = true;
+    frame_context.input.mouse.pressed[WZ_MOUSE_BUTTON_RIGHT] = true;
+    frame_context.input.mouse.released[WZ_MOUSE_BUTTON_MIDDLE] = true;
+    frame_context.input.window.focused = true;
+    frame_context.input.window.width = 1280;
+    frame_context.input.window.height = 720;
+    frame_context.input.controller.connected = true;
+    frame_context.input.controller.axes[WZ_CONTROLLER_AXIS_LEFT_X] = 0.25f;
+    frame_context.input.controller.buttons[2] = true;
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.w_down, 1u);
+    EXPECT_EQ(probe.space_pressed, 1u);
+    EXPECT_EQ(probe.escape_released, 1u);
+    EXPECT_EQ(probe.left_mouse_down, 1u);
+    EXPECT_EQ(probe.right_mouse_pressed, 1u);
+    EXPECT_EQ(probe.middle_mouse_released, 1u);
+    EXPECT_EQ(probe.mouse_x, 320);
+    EXPECT_EQ(probe.mouse_y, 240);
+    EXPECT_EQ(probe.mouse_dx, -3);
+    EXPECT_EQ(probe.mouse_dy, 5);
+    EXPECT_EQ(probe.focused, 1u);
+    EXPECT_EQ(probe.window_width, 1280);
+    EXPECT_EQ(probe.window_height, 720);
+    EXPECT_EQ(probe.controller_connected, 1u);
+    EXPECT_FLOAT_EQ(probe.left_axis_x, 0.25f);
+    EXPECT_EQ(probe.controller_button, 1u);
+    EXPECT_EQ(probe.invalid_key, 0u);
+    EXPECT_EQ(probe.invalid_mouse, 0u);
+    EXPECT_FLOAT_EQ(probe.invalid_axis, 0.0f);
+    EXPECT_EQ(probe.wasd_result, 1u);
+    EXPECT_NEAR(probe.wasd_axis.x, 0.70710677f, 1e-6f);
+    EXPECT_FLOAT_EQ(probe.wasd_axis.y, 0.0f);
+    EXPECT_NEAR(probe.wasd_axis.z, 0.70710677f, 1e-6f);
+    EXPECT_EQ(probe.wrote_velocity, 1u);
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
+    EXPECT_EQ(frame_storage.behavior_commands.commands[0].entity, 4u);
+    EXPECT_EQ(
+        frame_storage.behavior_commands.commands[0].kind,
+        BehaviorCommandKind::SetLinearVelocity);
+    EXPECT_NEAR(
+        frame_storage.behavior_commands.commands[0].values[0],
+        0.70710677f,
+        1e-6f);
+    EXPECT_FLOAT_EQ(frame_storage.behavior_commands.commands[0].values[1], 0.0f);
+    EXPECT_NEAR(
+        frame_storage.behavior_commands.commands[0].values[2],
+        0.70710677f,
+        1e-6f);
+
+    g_input_helper_probe = nullptr;
+}
+
 TEST(BehaviorModuleApi, TransformQueriesReadSelfAndOtherSceneTransforms)
 {
     wz::engine::assets::SceneAssetData asset{};
@@ -1197,6 +1405,11 @@ TEST(BehaviorModuleApi, TransformQueriesReadSelfAndOtherSceneTransforms)
     EXPECT_EQ(probe.self_world_position_result, 1u);
     EXPECT_EQ(probe.other_world_position_result, 1u);
     EXPECT_EQ(probe.self_local_transform_result, 1u);
+    EXPECT_EQ(probe.vector_self_to_other_result, 1u);
+    EXPECT_EQ(probe.distance_self_to_other_result, 1u);
+    EXPECT_EQ(probe.direction_self_to_other_result, 1u);
+    EXPECT_EQ(probe.null_vector_result, 0u);
+    EXPECT_EQ(probe.zero_direction_result, 0u);
     EXPECT_EQ(probe.invalid_entity_position_result, 0u);
     EXPECT_EQ(probe.null_out_transform_result, 0u);
 
@@ -1212,6 +1425,20 @@ TEST(BehaviorModuleApi, TransformQueriesReadSelfAndOtherSceneTransforms)
     EXPECT_FLOAT_EQ(probe.self_local_transform.m[12], 0.0f);
     EXPECT_FLOAT_EQ(probe.self_local_transform.m[13], 2.0f);
     EXPECT_FLOAT_EQ(probe.self_local_transform.m[14], 3.0f);
+    EXPECT_FLOAT_EQ(probe.vector_self_to_other.x, 0.0f);
+    EXPECT_FLOAT_EQ(probe.vector_self_to_other.y, -2.0f);
+    EXPECT_FLOAT_EQ(probe.vector_self_to_other.z, -3.0f);
+    EXPECT_FLOAT_EQ(probe.distance_self_to_other, std::sqrt(13.0f));
+    EXPECT_FLOAT_EQ(probe.direction_self_to_other.x, 0.0f);
+    EXPECT_FLOAT_EQ(
+        probe.direction_self_to_other.y,
+        -2.0f / std::sqrt(13.0f));
+    EXPECT_FLOAT_EQ(
+        probe.direction_self_to_other.z,
+        -3.0f / std::sqrt(13.0f));
+    EXPECT_FLOAT_EQ(probe.zero_direction.x, 0.0f);
+    EXPECT_FLOAT_EQ(probe.zero_direction.y, 0.0f);
+    EXPECT_FLOAT_EQ(probe.zero_direction.z, 0.0f);
 
     g_transform_query_probe = nullptr;
 }

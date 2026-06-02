@@ -162,6 +162,64 @@ if (wz_other_world_position(facts, event, &other_position)) {
 }
 ```
 
+## Reading Input
+
+Input is exposed as a frame snapshot through `facts->input`. It is not delivered
+as a separate event stream. Behaviors that respond to input usually read it
+during `WZ_EVENT_FRAME_UPDATE`:
+
+```cpp
+if (wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+    WzVec3 axis{};
+    if (wz_input_wasd_axis(facts, &axis)) {
+        wz_self_set_linear_velocity(
+            facts,
+            event,
+            axis.x * 4.0f,
+            0.0f,
+            axis.z * 4.0f);
+    }
+}
+```
+
+Keyboard helpers:
+
+```cpp
+wz_key_down(facts, WZ_KEY_W);
+wz_key_pressed(facts, WZ_KEY_SPACE);
+wz_key_released(facts, WZ_KEY_ESCAPE);
+```
+
+Keyboard indices currently match Windows virtual-key codes. Common constants
+are defined in the ABI header; other keys can be read by numeric code until the
+named key set is expanded.
+
+Mouse and window helpers:
+
+```cpp
+wz_mouse_button_down(facts, WZ_MOUSE_BUTTON_LEFT);
+wz_mouse_x(facts);
+wz_mouse_y(facts);
+wz_mouse_dx(facts);
+wz_mouse_dy(facts);
+wz_window_focused(facts);
+wz_window_width(facts);
+wz_window_height(facts);
+```
+
+Controller helper stubs are present for the current ABI fields:
+
+```cpp
+wz_controller_connected(facts);
+wz_controller_axis(facts, WZ_CONTROLLER_AXIS_LEFT_X);
+wz_controller_button_down(facts, 0);
+```
+
+`wz_input_wasd_axis` returns a world-style horizontal axis where A/D map to X
+and W/S map to Z. Diagonal input is normalized. It returns `1` when input facts
+are available even if no WASD keys are pressed, in which case the output axis
+is `{0, 0, 0}`.
+
 ## Reading Transforms
 
 Behavior code reads stable frame state during dispatch. Commands written by one
@@ -198,6 +256,34 @@ for invalid entities, missing scene context, or null output pointers.
 
 `WzMat4` uses column-major storage. Translation lives in `m[12]`, `m[13]`, and
 `m[14]`.
+
+## Direction To Another Entity
+
+Collision and proximity events provide `self` and `other`. The helper layer can
+turn those entities into a world-space vector, distance, or normalized
+direction:
+
+```cpp
+WzVec3 vector{};
+WzVec3 direction{};
+float distance = 0.0f;
+
+if (wz_vector_self_to_other(facts, event, &vector)
+    && wz_distance_self_to_other(facts, event, &distance)
+    && wz_direction_self_to_other(facts, event, &direction))
+{
+    wz_self_set_linear_velocity(
+        facts,
+        event,
+        direction.x * 2.0f,
+        direction.y * 2.0f,
+        direction.z * 2.0f);
+}
+```
+
+The vector convention is `other_world_position - self_world_position`.
+Direction helpers return `0` when either entity cannot be read or the two
+positions are effectively the same.
 
 ## Querying Collision Surfaces
 

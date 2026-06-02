@@ -123,6 +123,34 @@ typedef struct WzInputStateView
     uint8_t controller_buttons[16];
 } WzInputStateView;
 
+/* Keyboard indices match Windows virtual-key codes for now. */
+enum
+{
+    WZ_KEY_A = 65u,
+    WZ_KEY_D = 68u,
+    WZ_KEY_S = 83u,
+    WZ_KEY_W = 87u,
+    WZ_KEY_SPACE = 32u,
+    WZ_KEY_ESCAPE = 27u,
+    WZ_KEY_SHIFT = 16u,
+    WZ_KEY_CONTROL = 17u,
+};
+
+enum
+{
+    WZ_MOUSE_BUTTON_LEFT = 0u,
+    WZ_MOUSE_BUTTON_RIGHT = 1u,
+    WZ_MOUSE_BUTTON_MIDDLE = 2u,
+};
+
+enum
+{
+    WZ_CONTROLLER_AXIS_LEFT_X = 0u,
+    WZ_CONTROLLER_AXIS_LEFT_Y = 1u,
+    WZ_CONTROLLER_AXIS_RIGHT_X = 2u,
+    WZ_CONTROLLER_AXIS_RIGHT_Y = 3u,
+};
+
 typedef uint32_t WzBehaviorCommandKind;
 enum
 {
