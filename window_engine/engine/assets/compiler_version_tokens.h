@@ -61,6 +61,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kTerrainCompilerVersion = 1;
     inline constexpr uint64_t kCollisionCompilerVersion = 1;
     inline constexpr uint64_t kSceneFromJSONCompilerVersion = 4;
+    inline constexpr uint64_t kSceneFromGLBCompilerVersion = 1;
     inline constexpr uint64_t kDirectLightCompilerVersion = 1;
     inline constexpr uint64_t kAmbientLightingCompilerVersion = 1;
     inline constexpr uint64_t kHDRIEnvironmentCompilerVersion = 4;

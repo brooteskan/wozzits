@@ -118,7 +118,15 @@ namespace wz::engine::assets
             direct_light_table_,
             ambient_lighting_table_,
             hdri_environment_table_)
-        , scenes_(system_, logger_, files_, json_, scene_table_)
+        , scenes_(
+            system_,
+            logger_,
+            files_,
+            json_,
+            meshes_,
+            mesh_render_styles_,
+            renderables_,
+            scene_table_)
     {
     }
 

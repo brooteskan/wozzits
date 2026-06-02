@@ -24,4 +24,20 @@ namespace wz::engine::assets
         return make_scene_from_json_key(json_document_key, {});
     }
 
+    [[nodiscard]] inline wz::asset::AssetKey make_scene_from_glb_key(
+        const wz::asset::AssetKey& glb_file_key,
+        uint32_t scene_index,
+        wz::asset::Hash companion_bindings_hash) noexcept
+    {
+        return wz::asset::AssetKey{
+            .content_hash = {
+                detail::mix64(companion_bindings_hash.lo, scene_index),
+                companion_bindings_hash.hi,
+            },
+            .schema_hash = detail::hash_u64(kSceneFromGLBSchema.value),
+            .compiler_hash = detail::hash_u64(kSceneFromGLBCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(glb_file_key),
+        };
+    }
+
 } // namespace wz::engine::assets

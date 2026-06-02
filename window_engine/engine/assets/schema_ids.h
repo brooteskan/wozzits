@@ -360,6 +360,12 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000710ull
     };
 
+    // Scene asset imported from a GLB/glTF scene hierarchy.
+    // Produces kAssetTypeScene output containing SceneAssetData in SceneAssetTable.
+    inline constexpr wz::asset::SchemaID kSceneFromGLBSchema{
+    0xF11E'CA55'E7'000711ull
+    };
+
     inline constexpr wz::asset::SchemaID kDirectLightSchema{
         0xF11E'CA55'E7'001000ull
     };

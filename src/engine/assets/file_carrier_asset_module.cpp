@@ -30,8 +30,7 @@ namespace wz::engine::assets
 
         const wz::asset::AssetKey key = make_file_key(canonical, schema);
 
-        const wz::fs::Path full_path =
-            wz::fs::is_absolute(path) ? path : wz::fs::join(resource_root_, path);
+        const wz::fs::Path full_path = resolve_path(path);
 
         wz::asset::AssetNode node;
         node.key     = key;
@@ -49,6 +48,12 @@ namespace wz::engine::assets
         system_.register_asset(std::move(node));
 
         return key;
+    }
+
+    wz::fs::Path FileCarrierAssetModule::resolve_path(
+        const wz::fs::Path& path) const
+    {
+        return wz::fs::is_absolute(path) ? path : wz::fs::join(resource_root_, path);
     }
 
 } // namespace wz::engine::assets

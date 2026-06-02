@@ -7,10 +7,14 @@
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
 
+#include <math/mat4.h>
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wz::engine::assets
@@ -135,6 +139,132 @@ namespace wz::engine::assets
 
             return result;
         }
+
+        bool load_gltf_asset(
+            const std::uint8_t* bytes,
+            std::size_t byte_count,
+            fastgltf::Options options,
+            fastgltf::Asset& out)
+        {
+            if (bytes == nullptr || byte_count == 0)
+                return false;
+
+            auto data = fastgltf::GltfDataBuffer::FromBytes(
+                reinterpret_cast<const std::byte*>(bytes),
+                byte_count);
+            if (data.error() != fastgltf::Error::None)
+                return false;
+
+            fastgltf::Parser parser;
+
+            auto asset = parser.loadGltf(
+                data.get(),
+                std::filesystem::path{},
+                options);
+
+            if (asset.error() != fastgltf::Error::None)
+                return false;
+
+            out = std::move(asset.get());
+            return true;
+        }
+
+        std::string node_id_for_index(
+            const fastgltf::Asset& asset,
+            std::size_t node_index)
+        {
+            if (node_index >= asset.nodes.size())
+                return {};
+
+            const auto& node = asset.nodes[node_index];
+            if (!node.name.empty())
+                return std::string(node.name);
+
+            return "glb_node_" + std::to_string(node_index);
+        }
+
+        wz::math::Mat4 to_wz_mat4(const fastgltf::math::fmat4x4& m)
+        {
+            wz::math::Mat4 out = wz::math::Mat4::identity();
+            const float* src = m.data();
+            std::copy(src, src + 16, out.m);
+            return out;
+        }
+
+        void write_authored_transform(
+            AuthoredTransform& out,
+            const fastgltf::TRS& trs)
+        {
+            out.translation[0] = trs.translation.x();
+            out.translation[1] = trs.translation.y();
+            out.translation[2] = trs.translation.z();
+            out.rotation_quat[0] = trs.rotation.x();
+            out.rotation_quat[1] = trs.rotation.y();
+            out.rotation_quat[2] = trs.rotation.z();
+            out.rotation_quat[3] = trs.rotation.w();
+            out.scale[0] = trs.scale.x();
+            out.scale[1] = trs.scale.y();
+            out.scale[2] = trs.scale.z();
+        }
+
+        bool write_authored_transform(
+            AuthoredTransform& out,
+            const fastgltf::math::fmat4x4& matrix)
+        {
+            wz::math::Transform trs{};
+            if (!wz::math::decompose_trs(to_wz_mat4(matrix), trs))
+                return false;
+
+            out.translation[0] = trs.position.x;
+            out.translation[1] = trs.position.y;
+            out.translation[2] = trs.position.z;
+            out.rotation_quat[0] = trs.rotation.x;
+            out.rotation_quat[1] = trs.rotation.y;
+            out.rotation_quat[2] = trs.rotation.z;
+            out.rotation_quat[3] = trs.rotation.w;
+            out.scale[0] = trs.scale.x;
+            out.scale[1] = trs.scale.y;
+            out.scale[2] = trs.scale.z;
+            return true;
+        }
+
+        bool write_authored_transform(
+            AuthoredTransform& out,
+            const fastgltf::Node& node)
+        {
+            if (const auto* trs = std::get_if<fastgltf::TRS>(&node.transform)) {
+                write_authored_transform(out, *trs);
+                return true;
+            }
+            if (const auto* matrix =
+                    std::get_if<fastgltf::math::fmat4x4>(&node.transform))
+            {
+                return write_authored_transform(out, *matrix);
+            }
+            return false;
+        }
+
+        void append_unique_mesh_index(std::vector<uint32_t>& out, uint32_t mesh)
+        {
+            if (std::find(out.begin(), out.end(), mesh) == out.end())
+                out.push_back(mesh);
+        }
+
+        std::vector<uint32_t> make_flattened_mesh_indices(
+            const fastgltf::Asset& asset)
+        {
+            std::vector<uint32_t> out;
+            out.reserve(asset.meshes.size());
+
+            uint32_t imported_mesh_index = 0;
+            for (const auto& mesh : asset.meshes) {
+                out.push_back(imported_mesh_index);
+                imported_mesh_index += static_cast<uint32_t>(
+                    mesh.primitives.size());
+            }
+
+            return out;
+        }
     }
 
     bool import_glb_meshes(
@@ -145,28 +275,17 @@ namespace wz::engine::assets
     {
         out.meshes.clear();
 
-        if (bytes == nullptr || byte_count == 0)
+        fastgltf::Asset asset;
+        if (!load_gltf_asset(
+                bytes,
+                byte_count,
+                make_fastgltf_options(options),
+                asset))
+        {
             return false;
+        }
 
-        auto data = fastgltf::GltfDataBuffer::FromBytes(
-            reinterpret_cast<const std::byte*>(bytes),
-            byte_count);
-        if (data.error() != fastgltf::Error::None)
-            return false;
-
-        fastgltf::Parser parser;
-
-        // Empty path is fine for self-contained GLB data.
-        // Later, file-based glTF import can provide the source directory here.
-        auto asset = parser.loadGltf(
-            data.get(),
-            std::filesystem::path{},
-            make_fastgltf_options(options));
-
-        if (asset.error() != fastgltf::Error::None)
-            return false;
-
-        for (const auto& source_mesh : asset->meshes)
+        for (const auto& source_mesh : asset.meshes)
         {
             for (std::size_t primitive_index = 0; primitive_index < source_mesh.primitives.size(); ++primitive_index)
             {
@@ -181,7 +300,7 @@ namespace wz::engine::assets
                     imported.name += std::to_string(primitive_index);
                 }
 
-                if (!import_primitive(asset.get(), primitive, options, imported.mesh))
+                if (!import_primitive(asset, primitive, options, imported.mesh))
                 {
                     out.meshes.clear();
                     return false;
@@ -192,5 +311,118 @@ namespace wz::engine::assets
         }
 
         return !out.meshes.empty();
+    }
+
+    bool import_gltf_scene(
+        const std::uint8_t* bytes,
+        std::size_t byte_count,
+        const GLTFSceneImportOptions& options,
+        ImportedGLTFScene& out,
+        std::string* error)
+    {
+        out = {};
+
+        auto fail = [&](std::string message)
+        {
+            if (error)
+                *error = std::move(message);
+            out = {};
+            return false;
+        };
+
+        fastgltf::Asset asset;
+        if (!load_gltf_asset(
+                bytes,
+                byte_count,
+                fastgltf::Options::None,
+                asset))
+        {
+            return fail("failed to parse glTF scene");
+        }
+
+        if (asset.scenes.empty())
+            return fail("glTF asset has no scenes");
+
+        std::size_t scene_index = 0;
+        if (options.scene_index) {
+            scene_index = *options.scene_index;
+        }
+        else if (asset.defaultScene.has_value()) {
+            scene_index = *asset.defaultScene;
+        }
+
+        if (scene_index >= asset.scenes.size())
+            return fail("glTF scene index is out of range");
+
+        const auto& scene = asset.scenes[scene_index];
+        out.scene_index = static_cast<uint32_t>(scene_index);
+        out.name = scene.name.empty()
+            ? "glb_scene_" + std::to_string(scene_index)
+            : std::string(scene.name);
+
+        std::unordered_map<std::size_t, std::string> ids;
+        ids.reserve(asset.nodes.size());
+        for (std::size_t i = 0; i < asset.nodes.size(); ++i)
+            ids.emplace(i, node_id_for_index(asset, i));
+
+        const auto flattened_mesh_indices =
+            make_flattened_mesh_indices(asset);
+
+        auto visit_node =
+            [&](std::size_t node_index,
+                const std::optional<std::string>& parent_id,
+                auto& self) -> bool
+        {
+            if (node_index >= asset.nodes.size())
+                return fail("glTF scene references node out of range");
+
+            const auto& node = asset.nodes[node_index];
+
+            ImportedGLTFSceneNode imported{};
+            imported.node_index = static_cast<uint32_t>(node_index);
+            imported.id = ids[node_index];
+            imported.name = std::string(node.name);
+            imported.parent_id = parent_id;
+
+            if (!write_authored_transform(imported.local, node)) {
+                return fail(
+                    "glTF node '" + imported.id
+                    + "' has unsupported matrix transform");
+            }
+
+            if (node.meshIndex.has_value()) {
+                const auto mesh_index = *node.meshIndex;
+                if (mesh_index >= asset.meshes.size()) {
+                    return fail(
+                        "glTF node '" + imported.id
+                        + "' references mesh out of range");
+                }
+                if (asset.meshes[mesh_index].primitives.size() != 1) {
+                    return fail(
+                        "glTF node '" + imported.id
+                        + "' references a multi-primitive mesh, which is not "
+                          "supported by GLB scene import yet");
+                }
+                imported.mesh_index = flattened_mesh_indices[mesh_index];
+                append_unique_mesh_index(out.mesh_indices, *imported.mesh_index);
+            }
+
+            const std::string child_parent_id = imported.id;
+            out.nodes.push_back(std::move(imported));
+
+            for (const auto child : node.children) {
+                if (!self(child, child_parent_id, self))
+                    return false;
+            }
+
+            return true;
+        };
+
+        for (const auto root_node : scene.nodeIndices) {
+            if (!visit_node(root_node, std::nullopt, visit_node))
+                return false;
+        }
+
+        return true;
     }
 }

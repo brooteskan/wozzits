@@ -2,6 +2,7 @@
 
 #include <engine/assets/scene/scene_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/json/json.h>
@@ -506,6 +507,20 @@ namespace wz::engine::assets::internal
 
         using SceneAssetReferenceMap =
             std::unordered_map<std::string, wz::asset::AssetKey>;
+
+        std::optional<wz::asset::AssetKey> find_glb_renderable_binding(
+            const SceneFromGLBCompileDesc& desc,
+            uint32_t mesh_index)
+        {
+            for (const auto& binding : desc.mesh_renderables) {
+                if (binding.mesh_index == mesh_index
+                    && !(binding.renderable_asset == wz::asset::AssetKey{}))
+                {
+                    return binding.renderable_asset;
+                }
+            }
+            return std::nullopt;
+        }
 
         bool parse_asset_reference_object(
             const wz::json::JSONValue& obj,
@@ -2181,6 +2196,43 @@ namespace wz::engine::assets::internal
 
             return scene;
         }
+
+        std::optional<SceneAssetData> scene_from_imported_gltf_scene(
+            const ImportedGLTFScene& imported,
+            const SceneFromGLBCompileDesc& desc,
+            wz::Logger& logger)
+        {
+            SceneAssetData scene{};
+            scene.name = imported.name.empty() ? "glb_scene" : imported.name;
+            scene.nodes.reserve(imported.nodes.size());
+
+            for (const auto& imported_node : imported.nodes) {
+                SceneNodeAsset node{};
+                node.id = imported_node.id;
+                if (imported_node.parent_id)
+                    node.parent_id = *imported_node.parent_id;
+                node.name = imported_node.name;
+                node.local = imported_node.local;
+
+                if (imported_node.mesh_index) {
+                    auto renderable = find_glb_renderable_binding(
+                        desc,
+                        *imported_node.mesh_index);
+                    if (!renderable) {
+                        logger.error(
+                            "GLB scene node '" + node.id
+                            + "' references unregistered mesh "
+                            + std::to_string(*imported_node.mesh_index));
+                        return std::nullopt;
+                    }
+                    node.renderable_asset = *renderable;
+                }
+
+                scene.nodes.push_back(std::move(node));
+            }
+
+            return scene;
+        }
     }
 
     void register_scene_compilers(
@@ -2287,6 +2339,64 @@ namespace wz::engine::assets::internal
                 if (!scene) {
                     return compile_failed_node(input);
                 }
+
+                wz::asset::ResourceHandle handle =
+                    scene_table.add(std::move(*scene));
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kSceneFromGLBSchema,
+            .output_type = kAssetTypeScene,
+            .compile = [&logger, &scene_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>)
+                    -> wz::asset::AssetNode
+            {
+                if (dep_nodes.empty()) {
+                    logger.error("GLB scene node has no file dependency");
+                    return compile_failed_node(input);
+                }
+
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                if (!bytes || bytes->empty()) {
+                    logger.error("GLB scene file dependency is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const auto* desc =
+                    std::any_cast<SceneFromGLBCompileDesc>(&input.meta);
+                if (!desc) {
+                    logger.error("GLB scene node missing compile descriptor");
+                    return compile_failed_node(input);
+                }
+
+                ImportedGLTFScene imported{};
+                std::string import_error;
+                if (!import_gltf_scene(
+                        bytes->data(),
+                        bytes->size(),
+                        GLTFSceneImportOptions{ .scene_index = desc->scene_index },
+                        imported,
+                        &import_error))
+                {
+                    logger.error("failed to import GLB scene: " + import_error);
+                    return compile_failed_node(input);
+                }
+
+                auto scene = scene_from_imported_gltf_scene(
+                    imported,
+                    *desc,
+                    logger);
+                if (!scene)
+                    return compile_failed_node(input);
 
                 wz::asset::ResourceHandle handle =
                     scene_table.add(std::move(*scene));

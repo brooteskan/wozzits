@@ -42,6 +42,9 @@ namespace wz::engine::assets
             wz::asset::AssetType type
         );
 
+        [[nodiscard]] wz::fs::Path resolve_path(
+            const wz::fs::Path& path) const;
+
     private:
         wz::asset::AssetSystem& system_;
         wz::Logger&             logger_;

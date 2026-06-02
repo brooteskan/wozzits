@@ -11,6 +11,7 @@
 #include <engine/assets/gltf/gltf_importer.h>
 
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -141,6 +142,90 @@ TEST(GLTFImporter, ImportsLowPolyRockGLBAsMeshData)
 
     for (const auto index : mesh.indices)
         EXPECT_LT(index, mesh.vertex_count());
+}
+
+TEST(GLTFImporter, ImportsSceneHierarchyAndTransforms)
+{
+    const char* gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [
+    { "name": "tank_scene", "nodes": [0] }
+  ],
+  "nodes": [
+    {
+      "name": "tank_body",
+      "translation": [1, 2, 3],
+      "children": [1]
+    },
+    {
+      "name": "turret",
+      "translation": [0, 1, 0],
+      "rotation": [0, 0, 0, 1],
+      "scale": [2, 2, 2]
+    }
+  ]
+})";
+
+    wz::engine::assets::ImportedGLTFScene out;
+    std::string error;
+
+    ASSERT_TRUE(wz::engine::assets::import_gltf_scene(
+        reinterpret_cast<const std::uint8_t*>(gltf),
+        std::strlen(gltf),
+        wz::engine::assets::GLTFSceneImportOptions{},
+        out,
+        &error)) << error;
+
+    ASSERT_EQ(out.nodes.size(), 2u);
+    EXPECT_EQ(out.name, "tank_scene");
+
+    EXPECT_EQ(out.nodes[0].id, "tank_body");
+    EXPECT_FALSE(out.nodes[0].parent_id.has_value());
+    EXPECT_FLOAT_EQ(out.nodes[0].local.translation[0], 1.0f);
+    EXPECT_FLOAT_EQ(out.nodes[0].local.translation[1], 2.0f);
+    EXPECT_FLOAT_EQ(out.nodes[0].local.translation[2], 3.0f);
+
+    EXPECT_EQ(out.nodes[1].id, "turret");
+    ASSERT_TRUE(out.nodes[1].parent_id.has_value());
+    EXPECT_EQ(*out.nodes[1].parent_id, "tank_body");
+    EXPECT_FLOAT_EQ(out.nodes[1].local.translation[1], 1.0f);
+    EXPECT_FLOAT_EQ(out.nodes[1].local.scale[0], 2.0f);
+    EXPECT_FLOAT_EQ(out.nodes[1].local.scale[1], 2.0f);
+    EXPECT_FLOAT_EQ(out.nodes[1].local.scale[2], 2.0f);
+}
+
+TEST(GLTFImporter, RejectsUnsupportedSceneMatrixTransform)
+{
+    const char* gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [
+    { "nodes": [0] }
+  ],
+  "nodes": [
+    {
+      "name": "sheared_node",
+      "matrix": [
+        1, 0, 0, 0,
+        0.25, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+      ]
+    }
+  ]
+})";
+
+    wz::engine::assets::ImportedGLTFScene out;
+    std::string error;
+
+    EXPECT_FALSE(wz::engine::assets::import_gltf_scene(
+        reinterpret_cast<const std::uint8_t*>(gltf),
+        std::strlen(gltf),
+        wz::engine::assets::GLTFSceneImportOptions{},
+        out,
+        &error));
+    EXPECT_NE(error.find("sheared_node"), std::string::npos);
 }
 
 TEST(GLBMeshAsset, ImportsCubeThroughAssetGraph)

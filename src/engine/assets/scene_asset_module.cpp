@@ -2,6 +2,7 @@
 
 #include <engine/assets/scene_asset_module.h>
 
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/key_factories/scene.h>
@@ -85,6 +86,28 @@ namespace wz::engine::assets
             for (const auto& ref : refs)
                 append_unique_dependency(deps, ref.key);
         }
+
+        wz::asset::Hash glb_scene_bindings_hash(
+            const std::vector<SceneGLBMeshRenderableBinding>& bindings)
+        {
+            uint64_t lo = 0;
+            uint64_t hi = 0;
+
+            for (const auto& binding : bindings) {
+                const auto mesh_hash =
+                    detail::key_to_dep_hash(binding.mesh_asset);
+                const auto renderable_hash =
+                    detail::key_to_dep_hash(binding.renderable_asset);
+
+                lo = detail::mix64(lo, binding.mesh_index);
+                lo = detail::mix64(lo, mesh_hash.lo);
+                lo = detail::mix64(lo, renderable_hash.lo);
+                hi = detail::mix64(hi, mesh_hash.hi);
+                hi = detail::mix64(hi, renderable_hash.hi);
+            }
+
+            return { lo, hi };
+        }
     }
 
     SceneAssetModule::SceneAssetModule(
@@ -92,11 +115,17 @@ namespace wz::engine::assets
         wz::Logger& logger,
         FileCarrierAssetModule& files,
         JSONAssetModule& json,
+        MeshAssetModule& meshes,
+        MeshRenderStyleAssetModule& mesh_render_styles,
+        RenderableAssetModule& renderables,
         SceneAssetTable& table)
         : system_(system)
         , logger_(logger)
         , files_(files)
         , json_(json)
+        , meshes_(meshes)
+        , mesh_render_styles_(mesh_render_styles)
+        , renderables_(renderables)
         , table_(table)
     {
     }
@@ -167,6 +196,129 @@ namespace wz::engine::assets
 
         if (!system_.register_asset(std::move(node), std::move(deps))) {
             logger_.error("failed to register scene node: " + desc.name);
+            return {};
+        }
+
+        return SceneAsset{ .output = scene_key };
+    }
+
+    SceneAsset SceneAssetModule::create_scene_from_glb(
+        const SceneFromGLBDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("GLB scene has empty name");
+            return {};
+        }
+
+        const wz::asset::AssetKey file_key =
+            files_.register_file_node(
+                desc.path,
+                kRawFileSchema,
+                kAssetTypeRawFile);
+
+        if (file_key == wz::asset::AssetKey{}) {
+            logger_.error("failed to register GLB file for scene: " + desc.name);
+            return {};
+        }
+
+        const auto file_result =
+            wz::fs::read_file(files_.resolve_path(desc.path));
+        if (!file_result) {
+            logger_.error("failed to read GLB scene source: " + desc.path);
+            return {};
+        }
+
+        ImportedGLTFScene imported{};
+        std::string import_error;
+        if (!import_gltf_scene(
+                file_result.value.data(),
+                file_result.value.size(),
+                GLTFSceneImportOptions{ .scene_index = desc.scene_index },
+                imported,
+                &import_error))
+        {
+            logger_.error(
+                "failed to discover GLB scene '" + desc.name + "': "
+                + import_error);
+            return {};
+        }
+
+        MeshRenderStyleAsset default_style{};
+        if (!imported.mesh_indices.empty()) {
+            MeshRenderStyleData style{};
+            default_style = mesh_render_styles_.create_mesh_render_style({
+                .name = desc.name + "/default_mesh_style",
+                .style = style,
+            });
+            if (!default_style.valid()) {
+                logger_.error(
+                    "failed to register GLB scene default style: "
+                    + desc.name);
+                return {};
+            }
+        }
+
+        std::vector<SceneGLBMeshRenderableBinding> bindings;
+        bindings.reserve(imported.mesh_indices.size());
+
+        for (const uint32_t mesh_index : imported.mesh_indices) {
+            MeshAsset mesh = meshes_.create_glb_mesh({
+                .name = desc.name + "/mesh_" + std::to_string(mesh_index),
+                .source_file = file_key,
+                .mesh_index = mesh_index,
+            });
+            if (!mesh.valid()) {
+                logger_.error("failed to register GLB mesh for scene: "
+                    + desc.name);
+                return {};
+            }
+
+            RenderableAsset renderable = renderables_.create_mesh_styled({
+                .name = desc.name + "/renderable_" + std::to_string(mesh_index),
+                .mesh = mesh,
+                .style = default_style,
+            });
+            if (!renderable.valid()) {
+                logger_.error("failed to register GLB renderable for scene: "
+                    + desc.name);
+                return {};
+            }
+
+            bindings.push_back(SceneGLBMeshRenderableBinding{
+                .mesh_index = mesh_index,
+                .mesh_asset = mesh.output,
+                .renderable_asset = renderable.output,
+            });
+        }
+
+        const wz::asset::AssetKey scene_key =
+            make_scene_from_glb_key(
+                file_key,
+                imported.scene_index,
+                glb_scene_bindings_hash(bindings));
+
+        wz::asset::AssetNode node;
+        node.key = scene_key;
+        node.type = kAssetTypeScene;
+        node.schema = kSceneFromGLBSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = SceneFromGLBCompileDesc{
+            .scene_index = imported.scene_index,
+            .mesh_renderables = bindings,
+        };
+
+        std::vector<wz::asset::AssetKey> deps;
+        append_unique_dependency(deps, file_key);
+        if (default_style.valid())
+            append_unique_dependency(deps, default_style.output);
+        for (const auto& binding : bindings) {
+            append_unique_dependency(deps, binding.mesh_asset);
+            append_unique_dependency(deps, binding.renderable_asset);
+        }
+
+        if (!system_.register_asset(std::move(node), std::move(deps))) {
+            logger_.error("failed to register GLB scene node: " + desc.name);
             return {};
         }
 

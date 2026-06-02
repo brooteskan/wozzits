@@ -601,6 +601,19 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> vector_field_asset_references;
     };
 
+    struct SceneGLBMeshRenderableBinding
+    {
+        uint32_t mesh_index = 0;
+        wz::asset::AssetKey mesh_asset{};
+        wz::asset::AssetKey renderable_asset{};
+    };
+
+    struct SceneFromGLBCompileDesc
+    {
+        uint32_t scene_index = 0;
+        std::vector<SceneGLBMeshRenderableBinding> mesh_renderables;
+    };
+
     struct SceneAssetAuthoringRecipeSummary
     {
         uint32_t nodes_with_recipes = 0;

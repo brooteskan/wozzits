@@ -10,9 +10,13 @@
 
 #include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/json_asset_module.h>
+#include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_render_style_asset_module.h>
+#include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene/scene_asset_data.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,6 +32,13 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> mesh_asset_references;
         std::vector<SceneAssetReferenceBinding> scalar_field_asset_references;
         std::vector<SceneAssetReferenceBinding> vector_field_asset_references;
+    };
+
+    struct SceneFromGLBDesc
+    {
+        std::string name;
+        wz::fs::Path path;
+        std::optional<uint32_t> scene_index;
     };
 
     struct SceneAsset
@@ -58,9 +69,14 @@ namespace wz::engine::assets
             wz::Logger& logger,
             FileCarrierAssetModule& files,
             JSONAssetModule& json,
+            MeshAssetModule& meshes,
+            MeshRenderStyleAssetModule& mesh_render_styles,
+            RenderableAssetModule& renderables,
             SceneAssetTable& table);
 
         SceneAsset create_scene_from_json(const SceneFromJSONDesc& desc);
+
+        SceneAsset create_scene_from_glb(const SceneFromGLBDesc& desc);
 
         SceneHandle get_scene(const SceneAsset& asset) const;
 
@@ -71,6 +87,9 @@ namespace wz::engine::assets
         wz::Logger& logger_;
         FileCarrierAssetModule& files_;
         JSONAssetModule& json_;
+        MeshAssetModule& meshes_;
+        MeshRenderStyleAssetModule& mesh_render_styles_;
+        RenderableAssetModule& renderables_;
         SceneAssetTable& table_;
     };
 
