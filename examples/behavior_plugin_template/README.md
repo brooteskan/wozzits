@@ -4,6 +4,9 @@ This folder is a minimal C++ DLL behavior module for the scene editor.
 
 Build it with CMake, then load it through a scene editor project.
 
+For the full authoring guide, see
+[`docs/behavior_plugins`](../../docs/behavior_plugins/README.md).
+
 The module uses the small event-handler API:
 
 ```cpp

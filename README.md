@@ -7,6 +7,7 @@ An experimental C++20 / Direct3D 12 rendering engine for Windows. This is person
 - D3D12 rendering backend with a GPU resource and shader pipeline
 - Asset system with a compiler registry, dependency graph, and typed asset modules (meshes, Gaussian splat clouds, scalar fields, textures, CSV/JSON/TOML data)
 - Scene integration via [wozzits-scene-render](https://github.com/woguls/wozzits-scene-render)
+- Project-authored behavior plugins documented in [docs/behavior_plugins](docs/behavior_plugins/README.md)
 - Optional V8 scripting support
 
 ## Status
