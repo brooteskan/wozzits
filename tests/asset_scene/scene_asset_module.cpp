@@ -4792,6 +4792,12 @@ TEST(SceneECSBoundary, SceneECSVocabularyIsSceneLayerOnly)
         wz::scene::SceneAuthoredComponentKind::GroundBoundary));
     EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
         wz::scene::SceneAuthoredComponentKind::Collision));
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::Proximity));
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::Motion));
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::Behavior));
 }
 
 TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
@@ -4814,6 +4820,9 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.collisions, 0u);
+    EXPECT_EQ(summary.proximities, 0u);
+    EXPECT_EQ(summary.motions, 0u);
+    EXPECT_EQ(summary.behaviors, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4835,6 +4844,9 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.collisions, 0u);
+    EXPECT_EQ(summary.proximities, 0u);
+    EXPECT_EQ(summary.motions, 0u);
+    EXPECT_EQ(summary.behaviors, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4880,6 +4892,9 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
     EXPECT_EQ(summary.ground_boundaries, 0u);
     EXPECT_EQ(summary.collisions, 0u);
+    EXPECT_EQ(summary.proximities, 0u);
+    EXPECT_EQ(summary.motions, 0u);
+    EXPECT_EQ(summary.behaviors, 0u);
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
@@ -4920,6 +4935,16 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     camera_node.event_listener = SceneEventListenerAsset{
         .channels = { "editor" },
     };
+    camera_node.proximity = SceneProximityAsset{
+        .radius = 2.0f,
+    };
+    camera_node.motion = SceneMotionAsset{
+        .linear_velocity = { 1.0f, 0.0f, 0.0f },
+    };
+    camera_node.behavior = SceneBehaviorAsset{
+        .module = "gameplay",
+        .name = "tick",
+    };
     camera_node.debug_visual = SceneDebugVisualAsset{
         .kind = SceneDebugVisualKind::Axes,
     };
@@ -4930,6 +4955,25 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_TRUE(has_authored_auxiliary_visual_component(camera_node));
     EXPECT_TRUE(has_authored_debug_visual_component(camera_node));
     EXPECT_TRUE(has_runtime_relevant_components(camera_node));
+    const auto components = authored_components_for_node(camera_node);
+    EXPECT_NE(
+        std::find(
+            components.begin(),
+            components.end(),
+            wz::scene::SceneAuthoredComponentKind::Proximity),
+        components.end());
+    EXPECT_NE(
+        std::find(
+            components.begin(),
+            components.end(),
+            wz::scene::SceneAuthoredComponentKind::Motion),
+        components.end());
+    EXPECT_NE(
+        std::find(
+            components.begin(),
+            components.end(),
+            wz::scene::SceneAuthoredComponentKind::Behavior),
+        components.end());
     scene.nodes.push_back(std::move(camera_node));
 
     scene.lights.push_back(SceneLightAsset{ .node_id = "render_node" });
@@ -4948,6 +4992,9 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.ground_boundaries, 1u);
     EXPECT_EQ(summary.collisions, 1u);
+    EXPECT_EQ(summary.proximities, 1u);
+    EXPECT_EQ(summary.motions, 1u);
+    EXPECT_EQ(summary.behaviors, 1u);
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);

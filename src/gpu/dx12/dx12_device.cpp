@@ -13,6 +13,7 @@
 #include <gpu/dx12/dx12.h>
 #include <window/window2.h>
 #include <cassert>
+#include <cstdio>
 
 // #include <engine/render/test/test_triangle_scene.h>
 #include <iostream>
@@ -97,6 +98,45 @@ namespace
             impl->depth_buffer->Release();
             impl->depth_buffer = nullptr;
         }
+    }
+
+    void report_present_failure(
+        wz::gpu::dx12::DX12Device* impl,
+        HRESULT present_result)
+    {
+        HRESULT removed_reason = S_OK;
+        if (impl && impl->device
+            && (present_result == DXGI_ERROR_DEVICE_REMOVED
+                || present_result == DXGI_ERROR_DEVICE_RESET))
+        {
+            removed_reason = impl->device->GetDeviceRemovedReason();
+        }
+
+        char msg[256]{};
+        std::snprintf(
+            msg,
+            sizeof(msg),
+            "wz::gpu::dx12::present failed hr=0x%08lx"
+            " device_removed_reason=0x%08lx\n",
+            static_cast<unsigned long>(present_result),
+            static_cast<unsigned long>(removed_reason));
+        OutputDebugStringA(msg);
+    }
+
+    bool present_swapchain(
+        wz::gpu::dx12::DX12Device* impl,
+        uint32_t sync_interval)
+    {
+        if (!impl || !impl->swapchain) {
+            return false;
+        }
+
+        const HRESULT hr = impl->swapchain->Present(sync_interval, 0);
+        if (FAILED(hr)) {
+            report_present_failure(impl, hr);
+            return false;
+        }
+        return true;
     }
 }
 
@@ -488,18 +528,14 @@ namespace wz::gpu::dx12
 
     void present(Device& d)
     {
-        HRESULT hr;
         auto* impl = (DX12Device*)d.impl;
-        hr = impl->swapchain->Present(1, 0);
-        assert(SUCCEEDED(hr));
+        (void)present_swapchain(impl, 1);
     }
 
     void present(Device& d, uint32_t sync_interval)
     {
-        HRESULT hr;
         auto* impl = (DX12Device*)d.impl;
-        hr = impl->swapchain->Present(sync_interval, 0);
-        assert(SUCCEEDED(hr));
+        (void)present_swapchain(impl, sync_interval);
     }
 
     namespace

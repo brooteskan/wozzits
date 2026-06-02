@@ -281,6 +281,12 @@ namespace wz::engine::assets
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
                 instance.event_listeners.size()),
+            .proximities = static_cast<uint32_t>(
+                instance.proximities.size()),
+            .motions = static_cast<uint32_t>(
+                instance.motions.size()),
+            .behaviors = static_cast<uint32_t>(
+                instance.behaviors.size()),
             .auxiliary_visuals = static_cast<uint32_t>(
                 instance.auxiliary_visuals.size()),
             .editor_handles = static_cast<uint32_t>(

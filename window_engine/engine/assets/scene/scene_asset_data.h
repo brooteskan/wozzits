@@ -944,6 +944,15 @@ namespace wz::engine::assets
         if (node.event_listener) {
             out.push_back(Kind::EventListener);
         }
+        if (node.proximity) {
+            out.push_back(Kind::Proximity);
+        }
+        if (node.motion) {
+            out.push_back(Kind::Motion);
+        }
+        if (node.behavior) {
+            out.push_back(Kind::Behavior);
+        }
         if (node.debug_visual) {
             out.push_back(Kind::AuxiliaryVisual);
         }
@@ -1294,6 +1303,15 @@ namespace wz::engine::assets
             }
             if (node.event_listener) {
                 ++out.event_listeners;
+            }
+            if (node.proximity) {
+                ++out.proximities;
+            }
+            if (node.motion) {
+                ++out.motions;
+            }
+            if (node.behavior) {
+                ++out.behaviors;
             }
             if (node.debug_visual) {
                 ++out.auxiliary_visuals;
