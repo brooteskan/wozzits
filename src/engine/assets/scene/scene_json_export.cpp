@@ -838,6 +838,32 @@ namespace wz::engine::assets
             }
             add_member(*obj, "name", string_value(behavior.name));
             add_member(*obj, "enabled", bool_value(behavior.enabled));
+            if (!behavior.config.empty()) {
+                auto config = object_value();
+                for (const auto& entry : behavior.config) {
+                    switch (entry.kind) {
+                    case SceneBehaviorConfigValueKind::Bool:
+                        add_member(
+                            *config,
+                            entry.key,
+                            bool_value(entry.bool_value));
+                        break;
+                    case SceneBehaviorConfigValueKind::Number:
+                        add_member(
+                            *config,
+                            entry.key,
+                            number_value(entry.number_value));
+                        break;
+                    case SceneBehaviorConfigValueKind::String:
+                        add_member(
+                            *config,
+                            entry.key,
+                            string_value(entry.string_value));
+                        break;
+                    }
+                }
+                add_member(*obj, "config", std::move(config));
+            }
             return obj;
         }
 

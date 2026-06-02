@@ -377,9 +377,11 @@ namespace wz::engine::assets
         // Build authored id <-> runtime handle maps
         uint32_t nc = node_count(inst.storage.polytree);
         inst.runtime_to_authored.resize(nc);
+        inst.runtime_names.resize(nc);
         for (const auto& node : scene.nodes) {
             NodeHandle h = id_to_handle[node.id];
             inst.runtime_to_authored[h] = node.id;
+            inst.runtime_names[h] = node.name;
             inst.authored_to_runtime[node.id] = h;
         }
 
@@ -584,6 +586,7 @@ namespace wz::engine::assets
                         .module = node.behavior->module,
                         .name = node.behavior->name,
                         .enabled = node.behavior->enabled,
+                        .config = node.behavior->config,
                     },
                 });
             }

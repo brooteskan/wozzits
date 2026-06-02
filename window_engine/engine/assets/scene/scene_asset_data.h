@@ -482,11 +482,29 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    enum class SceneBehaviorConfigValueKind : uint8_t
+    {
+        Bool = 0,
+        Number,
+        String,
+    };
+
+    struct SceneBehaviorConfigValue
+    {
+        std::string key;
+        SceneBehaviorConfigValueKind kind =
+            SceneBehaviorConfigValueKind::String;
+        bool bool_value = false;
+        double number_value = 0.0;
+        std::string string_value;
+    };
+
     struct SceneBehaviorAsset
     {
         std::string module;
         std::string name;
         bool enabled = true;
+        std::vector<SceneBehaviorConfigValue> config;
     };
 
     // ─────────────────────────────────────────────────────────────────────

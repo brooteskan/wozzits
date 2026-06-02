@@ -328,6 +328,59 @@ uses collision assets already resolved for the frame. V1 supports queryable
 `TerrainMeshSurface` collision assets. Height-field collision assets are
 intentionally not sampled by this helper yet.
 
+## Scene Lookup And Config
+
+Scene-authored behaviors can carry a small primitive config object:
+
+```json
+{
+  "behavior": {
+    "module": "gameplay",
+    "name": "move_cube",
+    "enabled": true,
+    "config": {
+      "terrain_id": "terrain",
+      "speed": 4.5,
+      "snap_to_ground": true
+    }
+  }
+}
+```
+
+Config values may be booleans, numbers, or strings. Arrays, objects, and nulls
+are rejected by the scene compiler.
+
+Behavior modules read authored config during dispatch:
+
+```cpp
+float speed = 1.0f;
+uint8_t snap_to_ground = 0;
+char terrain_id[64]{};
+
+wz_config_float(facts, "speed", &speed);
+wz_config_bool(facts, "snap_to_ground", &snap_to_ground);
+if (wz_config_string(
+        facts,
+        "terrain_id",
+        terrain_id,
+        sizeof(terrain_id),
+        nullptr))
+{
+    WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
+    wz_find_entity_by_authored_id(facts, terrain_id, &terrain);
+}
+```
+
+`wz_find_entity_by_authored_id` resolves stable scene node ids.
+`wz_find_entity_by_name` is also available for display names, but authored ids
+are usually better for gameplay bindings.
+
+`wz_config_string` writes the required byte count, including the null terminator,
+when `out_required_size` is non-null. A null or zero-sized output buffer can be
+used as a size query and returns `1` when the key exists and is a string. A
+non-empty buffer is always null-terminated when the key exists; the helper
+returns `0` if the value had to be truncated.
+
 ## Writing Commands
 
 Behaviors do not mutate the scene graph directly. They write commands into the

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 3u
+#define WZ_BEHAVIOR_ABI_VERSION 4u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 typedef uint32_t WzBehaviorEntityId;
@@ -199,6 +199,33 @@ typedef uint8_t (*WzQueryBehaviorCollisionSurfaceRayFn)(
     float max_distance,
     WzSurfaceSample* out_sample);
 
+typedef uint8_t (*WzFindBehaviorEntityByNameFn)(
+    void* user,
+    const char* name,
+    WzBehaviorEntityId* out_entity);
+
+typedef uint8_t (*WzFindBehaviorEntityByAuthoredIdFn)(
+    void* user,
+    const char* authored_id,
+    WzBehaviorEntityId* out_entity);
+
+typedef uint8_t (*WzGetBehaviorConfigBoolFn)(
+    void* user,
+    const char* key,
+    uint8_t* out_value);
+
+typedef uint8_t (*WzGetBehaviorConfigNumberFn)(
+    void* user,
+    const char* key,
+    double* out_value);
+
+typedef uint8_t (*WzGetBehaviorConfigStringFn)(
+    void* user,
+    const char* key,
+    char* out_buffer,
+    uint32_t buffer_size,
+    uint32_t* out_required_size);
+
 typedef struct WzFrameTiming
 {
     float delta_seconds;
@@ -227,6 +254,15 @@ typedef struct WzBehaviorFrameFacts
     WzQueryBehaviorCollisionSurfaceRayFn query_collision_surface_ray;
 
     const WzFrameTiming* timing;
+
+    void* scene_query_user;
+    WzFindBehaviorEntityByNameFn find_entity_by_name;
+    WzFindBehaviorEntityByAuthoredIdFn find_entity_by_authored_id;
+
+    void* behavior_config_user;
+    WzGetBehaviorConfigBoolFn get_config_bool;
+    WzGetBehaviorConfigNumberFn get_config_number;
+    WzGetBehaviorConfigStringFn get_config_string;
 } WzBehaviorFrameFacts;
 
 typedef void (*WzBehaviorFn)(

@@ -8,6 +8,7 @@
 #include <engine/behavior/behavior_plugin_abi.h>
 
 #include <math.h>
+#include <stdint.h>
 
 #if defined(_WIN32)
 #define WZ_BEHAVIOR_MODULE_EXPORT __declspec(dllexport)
@@ -748,6 +749,98 @@ static inline uint8_t wz_query_collision_surface_ray(
         direction,
         max_distance,
         out_sample);
+}
+
+static inline uint8_t wz_find_entity_by_name(
+    const WzBehaviorFrameFacts* facts,
+    const char* name,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_entity_by_name) {
+        return 0;
+    }
+    return facts->find_entity_by_name(
+        facts->scene_query_user,
+        name,
+        out_entity);
+}
+
+static inline uint8_t wz_find_entity_by_authored_id(
+    const WzBehaviorFrameFacts* facts,
+    const char* authored_id,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_entity_by_authored_id) {
+        return 0;
+    }
+    return facts->find_entity_by_authored_id(
+        facts->scene_query_user,
+        authored_id,
+        out_entity);
+}
+
+static inline uint8_t wz_config_bool(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    uint8_t* out_value)
+{
+    if (!facts || !facts->get_config_bool) {
+        return 0;
+    }
+    return facts->get_config_bool(
+        facts->behavior_config_user,
+        key,
+        out_value);
+}
+
+static inline uint8_t wz_config_number(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    double* out_value)
+{
+    if (!facts || !facts->get_config_number) {
+        return 0;
+    }
+    return facts->get_config_number(
+        facts->behavior_config_user,
+        key,
+        out_value);
+}
+
+static inline uint8_t wz_config_float(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    float* out_value)
+{
+    if (!out_value) {
+        return 0;
+    }
+
+    double value = 0.0;
+    if (!wz_config_number(facts, key, &value)) {
+        return 0;
+    }
+
+    *out_value = (float)value;
+    return 1;
+}
+
+static inline uint8_t wz_config_string(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    char* out_buffer,
+    uint32_t buffer_size,
+    uint32_t* out_required_size)
+{
+    if (!facts || !facts->get_config_string) {
+        return 0;
+    }
+    return facts->get_config_string(
+        facts->behavior_config_user,
+        key,
+        out_buffer,
+        buffer_size,
+        out_required_size);
 }
 
 static inline const char* wz_event_name(WzBehaviorEventKind kind)

@@ -264,6 +264,76 @@ namespace
             g_boundary_probe);
     }
 
+    struct SceneQueryConfigProbe
+    {
+        uint32_t calls = 0;
+        uint8_t find_player_by_id = 0;
+        uint8_t find_terrain_by_name = 0;
+        WzBehaviorEntityId player_entity = WZ_INVALID_BEHAVIOR_ENTITY;
+        WzBehaviorEntityId terrain_entity = WZ_INVALID_BEHAVIOR_ENTITY;
+        uint8_t enabled_value = 0;
+        uint8_t enabled_read = 0;
+        double speed_value = 0.0;
+        uint8_t speed_read = 0;
+        char terrain_id[64]{};
+        uint32_t terrain_id_required = 0;
+        uint8_t terrain_id_read = 0;
+        uint8_t missing_read = 1;
+    };
+
+    SceneQueryConfigProbe* g_scene_query_config_probe = nullptr;
+
+    void scene_query_config_behavior(
+        const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId,
+        void* user)
+    {
+        auto* probe = static_cast<SceneQueryConfigProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+
+        ++probe->calls;
+        probe->find_player_by_id = wz_find_entity_by_authored_id(
+            facts,
+            "player",
+            &probe->player_entity);
+        probe->find_terrain_by_name = wz_find_entity_by_name(
+            facts,
+            "Landscape",
+            &probe->terrain_entity);
+        probe->enabled_read = wz_config_bool(
+            facts,
+            "enabled",
+            &probe->enabled_value);
+        probe->speed_read = wz_config_number(
+            facts,
+            "speed",
+            &probe->speed_value);
+        probe->terrain_id_read = wz_config_string(
+            facts,
+            "terrain_id",
+            probe->terrain_id,
+            sizeof(probe->terrain_id),
+            &probe->terrain_id_required);
+        probe->missing_read = wz_config_number(
+            facts,
+            "missing",
+            &probe->speed_value);
+    }
+
+    uint8_t register_scene_query_config_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_behavior) {
+            return 0;
+        }
+        return api->register_behavior(
+            api->user,
+            "test",
+            "scene_query_config",
+            scene_query_config_behavior,
+            g_scene_query_config_probe);
+    }
+
     struct InvalidRegistrationProbe
     {
         uint8_t null_name_result = 1;
@@ -2099,6 +2169,84 @@ TEST(BehaviorPluginAbi, CollisionViewAndCommandWriterRejectBoundaries)
     EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
 }
 
+TEST(BehaviorPluginAbi, SceneQueryAndConfigCallbacksReadAuthoredSceneData)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    SceneQueryConfigProbe probe{};
+    g_scene_query_config_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_scene_query_config_pack));
+    g_scene_query_config_probe = nullptr;
+
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_scene_query_config";
+
+    wz::engine::assets::SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    terrain.name = "Landscape";
+    asset.nodes.push_back(std::move(terrain));
+
+    wz::engine::assets::SceneNodeAsset player{};
+    player.id = "player";
+    player.name = "PlayerCube";
+    player.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "test",
+        .name = "scene_query_config",
+        .enabled = true,
+        .config = {
+            wz::engine::assets::SceneBehaviorConfigValue{
+                .key = "enabled",
+                .kind = wz::engine::assets::SceneBehaviorConfigValueKind::Bool,
+                .bool_value = true,
+            },
+            wz::engine::assets::SceneBehaviorConfigValue{
+                .key = "speed",
+                .kind =
+                    wz::engine::assets::SceneBehaviorConfigValueKind::Number,
+                .number_value = 4.5,
+            },
+            wz::engine::assets::SceneBehaviorConfigValue{
+                .key = "terrain_id",
+                .kind =
+                    wz::engine::assets::SceneBehaviorConfigValueKind::String,
+                .string_value = "terrain",
+            },
+        },
+    };
+    asset.nodes.push_back(std::move(player));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.find_player_by_id, 1u);
+    EXPECT_EQ(probe.find_terrain_by_name, 1u);
+    EXPECT_EQ(probe.player_entity, scene.authored_to_runtime.at("player"));
+    EXPECT_EQ(probe.terrain_entity, scene.authored_to_runtime.at("terrain"));
+    EXPECT_EQ(probe.enabled_read, 1u);
+    EXPECT_EQ(probe.enabled_value, 1u);
+    EXPECT_EQ(probe.speed_read, 1u);
+    EXPECT_DOUBLE_EQ(probe.speed_value, 4.5);
+    EXPECT_EQ(probe.terrain_id_read, 1u);
+    EXPECT_EQ(probe.terrain_id_required, 8u);
+    EXPECT_EQ(std::string(probe.terrain_id), "terrain");
+    EXPECT_EQ(probe.missing_read, 0u);
+}
+
 TEST(BehaviorPluginAbi, MultipleAbiBehaviorsReadSameFrameView)
 {
     BehaviorRegistry registry;
@@ -3485,7 +3633,12 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
       "behavior": {
         "module": "gameplay",
         "name": "bounce_on_collision",
-        "enabled": true
+        "enabled": true,
+        "config": {
+          "terrain_id": "terrain",
+          "speed": 4.5,
+          "snap_to_ground": true
+        }
       }
     }
   ]
@@ -3515,14 +3668,39 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     EXPECT_EQ(scene_data->nodes[0].behavior->module, "gameplay");
     EXPECT_EQ(scene_data->nodes[0].behavior->name, "bounce_on_collision");
     EXPECT_TRUE(scene_data->nodes[0].behavior->enabled);
+    ASSERT_EQ(scene_data->nodes[0].behavior->config.size(), 3u);
+    EXPECT_EQ(scene_data->nodes[0].behavior->config[0].key, "terrain_id");
+    EXPECT_EQ(
+        scene_data->nodes[0].behavior->config[0].kind,
+        wz::engine::assets::SceneBehaviorConfigValueKind::String);
+    EXPECT_EQ(
+        scene_data->nodes[0].behavior->config[0].string_value,
+        "terrain");
+    EXPECT_EQ(scene_data->nodes[0].behavior->config[1].key, "speed");
+    EXPECT_EQ(
+        scene_data->nodes[0].behavior->config[1].kind,
+        wz::engine::assets::SceneBehaviorConfigValueKind::Number);
+    EXPECT_DOUBLE_EQ(
+        scene_data->nodes[0].behavior->config[1].number_value,
+        4.5);
+    EXPECT_EQ(scene_data->nodes[0].behavior->config[2].key, "snap_to_ground");
+    EXPECT_EQ(
+        scene_data->nodes[0].behavior->config[2].kind,
+        wz::engine::assets::SceneBehaviorConfigValueKind::Bool);
+    EXPECT_TRUE(scene_data->nodes[0].behavior->config[2].bool_value);
 
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
     ASSERT_EQ(result.instance.behaviors.size(), 1u);
+    ASSERT_EQ(result.instance.behaviors[0].component.config.size(), 3u);
 
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"behavior\""), std::string::npos);
+    EXPECT_NE(exported.find("\"config\""), std::string::npos);
     EXPECT_NE(exported.find("\"module\""), std::string::npos);
     EXPECT_NE(exported.find("\"bounce_on_collision\""), std::string::npos);
+    EXPECT_NE(exported.find("\"terrain_id\""), std::string::npos);
+    EXPECT_NE(exported.find("\"speed\""), std::string::npos);
+    EXPECT_NE(exported.find("\"snap_to_ground\""), std::string::npos);
 }

@@ -401,6 +401,22 @@ namespace wz::engine::assets
                 fp.mix_string(node.behavior->module);
                 fp.mix_string(node.behavior->name);
                 fp.mix_value(node.behavior->enabled);
+                fp.mix_value(node.behavior->config.size());
+                for (const auto& entry : node.behavior->config) {
+                    fp.mix_string(entry.key);
+                    fp.mix_value(entry.kind);
+                    switch (entry.kind) {
+                    case SceneBehaviorConfigValueKind::Bool:
+                        fp.mix_value(entry.bool_value);
+                        break;
+                    case SceneBehaviorConfigValueKind::Number:
+                        fp.mix_value(entry.number_value);
+                        break;
+                    case SceneBehaviorConfigValueKind::String:
+                        fp.mix_string(entry.string_value);
+                        break;
+                    }
+                }
             }
 
             if (node.debug_visual) {

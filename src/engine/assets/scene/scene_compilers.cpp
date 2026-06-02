@@ -1932,6 +1932,44 @@ namespace wz::engine::assets::internal
                     component.enabled = *enabled;
                 }
 
+                const auto* config = find_member(*behavior, "config");
+                if (config) {
+                    if (config->kind != wz::json::JSONValueKind::Object) {
+                        logger.error("behavior.config on node '" + node.id
+                            + "' is not an object");
+                        return std::nullopt;
+                    }
+
+                    for (const auto& member : config->object_members) {
+                        if (!member.value) {
+                            continue;
+                        }
+
+                        SceneBehaviorConfigValue value{};
+                        value.key = member.key;
+                        switch (member.value->kind) {
+                        case wz::json::JSONValueKind::Bool:
+                            value.kind = SceneBehaviorConfigValueKind::Bool;
+                            value.bool_value = member.value->bool_value;
+                            break;
+                        case wz::json::JSONValueKind::Number:
+                            value.kind = SceneBehaviorConfigValueKind::Number;
+                            value.number_value = member.value->number_value;
+                            break;
+                        case wz::json::JSONValueKind::String:
+                            value.kind = SceneBehaviorConfigValueKind::String;
+                            value.string_value = member.value->string_value;
+                            break;
+                        default:
+                            logger.error("behavior.config." + member.key
+                                + " on node '" + node.id
+                                + "' must be bool, number, or string");
+                            return std::nullopt;
+                        }
+                        component.config.push_back(std::move(value));
+                    }
+                }
+
                 node.behavior = std::move(component);
             }
 

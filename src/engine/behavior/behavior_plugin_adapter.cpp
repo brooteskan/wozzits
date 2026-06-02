@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -495,6 +496,135 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t find_entity_by_authored_id(
+            void* user,
+            const char* authored_id,
+            WzBehaviorEntityId* out_entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scene || !authored_id || !out_entity) {
+                return 0;
+            }
+
+            const auto it =
+                context->scene->authored_to_runtime.find(authored_id);
+            if (it == context->scene->authored_to_runtime.end()) {
+                return 0;
+            }
+
+            *out_entity = it->second;
+            return 1;
+        }
+
+        uint8_t find_entity_by_name(
+            void* user,
+            const char* name,
+            WzBehaviorEntityId* out_entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scene || !name || !out_entity) {
+                return 0;
+            }
+
+            const auto& names = context->scene->runtime_names;
+            for (uint32_t i = 0; i < names.size(); ++i) {
+                if (names[i] == name) {
+                    *out_entity = i;
+                    return 1;
+                }
+            }
+            return 0;
+        }
+
+        const wz::engine::assets::SceneBehaviorConfigValue*
+        find_config_value(BehaviorFrameContext* context, const char* key)
+        {
+            if (!context || !context->active_behavior || !key) {
+                return nullptr;
+            }
+
+            for (const auto& entry : context->active_behavior->config) {
+                if (entry.key == key) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        uint8_t get_config_bool(
+            void* user,
+            const char* key,
+            uint8_t* out_value)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            const auto* entry = find_config_value(context, key);
+            if (!entry || !out_value
+                || entry->kind
+                    != wz::engine::assets::SceneBehaviorConfigValueKind::Bool)
+            {
+                return 0;
+            }
+
+            *out_value = entry->bool_value ? uint8_t{ 1 } : uint8_t{ 0 };
+            return 1;
+        }
+
+        uint8_t get_config_number(
+            void* user,
+            const char* key,
+            double* out_value)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            const auto* entry = find_config_value(context, key);
+            if (!entry || !out_value
+                || entry->kind
+                    != wz::engine::assets::SceneBehaviorConfigValueKind::Number)
+            {
+                return 0;
+            }
+
+            *out_value = entry->number_value;
+            return 1;
+        }
+
+        uint8_t get_config_string(
+            void* user,
+            const char* key,
+            char* out_buffer,
+            uint32_t buffer_size,
+            uint32_t* out_required_size)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            const auto* entry = find_config_value(context, key);
+            if (!entry
+                || entry->kind
+                    != wz::engine::assets::SceneBehaviorConfigValueKind::String)
+            {
+                return 0;
+            }
+
+            const uint32_t required_size =
+                static_cast<uint32_t>(entry->string_value.size() + 1u);
+            if (out_required_size) {
+                *out_required_size = required_size;
+            }
+
+            if (!out_buffer || buffer_size == 0u) {
+                return 1;
+            }
+
+            const uint32_t copy_size =
+                std::min(buffer_size - 1u, required_size - 1u);
+            if (copy_size > 0u) {
+                std::memcpy(
+                    out_buffer,
+                    entry->string_value.data(),
+                    copy_size);
+            }
+            out_buffer[copy_size] = '\0';
+            return required_size <= buffer_size ? uint8_t{ 1 } : uint8_t{ 0 };
+        }
+
         uint8_t write_behavior_command(
             void* user,
             const WzBehaviorCommand* command)
@@ -588,6 +718,13 @@ namespace wz::engine::behavior
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
                 .timing = timing,
+                .scene_query_user = &context,
+                .find_entity_by_name = find_entity_by_name,
+                .find_entity_by_authored_id = find_entity_by_authored_id,
+                .behavior_config_user = &context,
+                .get_config_bool = get_config_bool,
+                .get_config_number = get_config_number,
+                .get_config_string = get_config_string,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -638,6 +775,13 @@ namespace wz::engine::behavior
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
                 .timing = timing,
+                .scene_query_user = &context,
+                .find_entity_by_name = find_entity_by_name,
+                .find_entity_by_authored_id = find_entity_by_authored_id,
+                .behavior_config_user = &context,
+                .get_config_bool = get_config_bool,
+                .get_config_number = get_config_number,
+                .get_config_string = get_config_string,
             };
         }
 

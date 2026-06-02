@@ -48,6 +48,26 @@ namespace wz::engine::behavior
             return nullptr;
         }
 
+        struct ActiveBehaviorScope
+        {
+            BehaviorFrameContext& context;
+            const wz::engine::assets::BehaviorComponent* previous = nullptr;
+
+            ActiveBehaviorScope(
+                BehaviorFrameContext& context_in,
+                const wz::engine::assets::BehaviorComponent& behavior)
+                : context(context_in)
+                , previous(context_in.active_behavior)
+            {
+                context.active_behavior = &behavior;
+            }
+
+            ~ActiveBehaviorScope()
+            {
+                context.active_behavior = previous;
+            }
+        };
+
         void dispatch_module_event(
             const BehaviorRegistry& registry,
             BehaviorFrameContext& context,
@@ -69,6 +89,7 @@ namespace wz::engine::behavior
                 return;
             }
 
+            ActiveBehaviorScope active_behavior(context, component);
             module->on_event(context, event, module->user_data);
         }
 
@@ -196,6 +217,7 @@ namespace wz::engine::behavior
                 continue;
             }
 
+            ActiveBehaviorScope active_behavior(context, component);
             registration->function(
                 context,
                 record.node,

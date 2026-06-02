@@ -98,6 +98,7 @@ namespace wz::engine::assets
         std::string module;
         std::string name;
         bool enabled = true;
+        std::vector<SceneBehaviorConfigValue> config;
     };
 
     struct AuxiliaryVisualComponent
@@ -145,6 +146,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 
         std::vector<wz::scene::AuthoredEntityId> runtime_to_authored;
+        std::vector<std::string> runtime_names;
         std::unordered_map<
             wz::scene::AuthoredEntityId,
             wz::scene::RuntimeEntityId> authored_to_runtime;

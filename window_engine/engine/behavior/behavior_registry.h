@@ -21,6 +21,7 @@ namespace wz::engine
 
 namespace wz::engine::assets
 {
+    struct BehaviorComponent;
     struct SceneInstance;
 }
 
@@ -31,6 +32,7 @@ namespace wz::engine::behavior
         const wz::engine::FrameContext* frame_context = nullptr;
         const wz::engine::FrameStorage* frame_storage = nullptr;
         const wz::engine::assets::SceneInstance* scene = nullptr;
+        const wz::engine::assets::BehaviorComponent* active_behavior = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
     };
 
