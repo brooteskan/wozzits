@@ -75,8 +75,12 @@ namespace wz::engine::assets
             if (key == wz::asset::AssetKey{})
                 return;
 
-            if (std::find(deps.begin(), deps.end(), key) == deps.end())
-                deps.push_back(key);
+            for (const auto& existing : deps) {
+                if (existing == key)
+                    return;
+            }
+
+            deps.push_back(key);
         }
 
         void append_reference_dependencies(

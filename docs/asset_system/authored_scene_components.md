@@ -63,12 +63,13 @@ Rules of thumb:
 
 ## Scene Editor Asset Authoring Layer
 
-The current `mesh_source`, `mesh_render_style`, `scalar_field_source`,
-`vector_field_source`, `sky_visual.texture_path`, `terrain_render_style`,
-`terrain_mesh_source`, and `terrain_height_field_source` fields are compatibility
-fields for the scene editor's first asset-authoring workflow. They let an editor
-document reopen and rebuild asset-system nodes, but they should not be treated
-as the long-term home for reusable resource recipes.
+The current `scene_import_source`, `mesh_source`, `mesh_render_style`,
+`scalar_field_source`, `vector_field_source`, `sky_visual.texture_path`,
+`terrain_render_style`, `terrain_mesh_source`, and
+`terrain_height_field_source` fields are compatibility fields for the scene
+editor's first asset-authoring workflow. They let an editor document reopen and
+rebuild asset-system nodes, but they should not be treated as the long-term home
+for reusable resource recipes.
 
 The intended long-term split is:
 
@@ -256,7 +257,7 @@ The current high-level categories are:
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `HDRIEnvironment`, `SkyVisual`, `SkySurface`, `AuxiliaryVisual` |
 | Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
-| Editor authoring drafts | `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
+| Editor authoring drafts | `SceneImportSource`, `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainRenderStyle`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -580,6 +581,24 @@ the surface representation and policies; the component selects participation in
 scene-level systems. Authored scene JSON should reference terrain assets rather
 than embedding heightmap paths, mesh import settings, material graphs, or LOD
 recipes directly.
+
+### SceneImportSource
+
+Editor/import authoring draft for expanding a source scene file into authored
+scene nodes and asset-system recipes.
+
+Fields:
+
+- `kind`
+- `path`
+- `import_prefix`
+- `scene_index`
+
+`SceneImportSource` is a bridge for the editor/import workflow. It may create
+child nodes with `MeshSource` records during materialization, but it does not
+instantiate into `SceneInstance` runtime component tables. Runtime-ready scene
+data should contain explicit component asset references produced from the
+import, not the import source recipe itself.
 
 ### MeshSource / MeshRenderStyle
 

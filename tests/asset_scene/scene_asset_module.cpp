@@ -5700,6 +5700,12 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
 
     SceneNodeAsset node{};
     node.id = "rock";
+    node.scene_import_source = SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "gltf/tank1.glb",
+        .import_prefix = "tank",
+        .scene_index = 0u,
+    };
     node.mesh_source = SceneMeshSourceAsset{
         .kind = SceneMeshSourceKind::GLB,
         .path = "gltf/low_poly_rock.glb",
@@ -5749,6 +5755,10 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
 
     const uint64_t original = scene_asset_fingerprint(scene);
 
+    scene.nodes[0].scene_import_source->import_prefix = "tank_alt";
+    EXPECT_NE(original, scene_asset_fingerprint(scene));
+    scene.nodes[0].scene_import_source->import_prefix = "tank";
+
     scene.nodes[0].mesh_source->mesh_index = 1;
     EXPECT_NE(original, scene_asset_fingerprint(scene));
     scene.nodes[0].mesh_source->mesh_index = 0;
@@ -5795,6 +5805,11 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
 
     SceneNodeAsset node{};
     node.id = "drafts";
+    node.scene_import_source = SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "gltf/tank1.glb",
+        .import_prefix = "tank",
+    };
     node.mesh_source = SceneMeshSourceAsset{
         .kind = SceneMeshSourceKind::ProceduralCube,
     };
@@ -5824,12 +5839,20 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
 
     EXPECT_FALSE(has_runtime_relevant_components(node));
     EXPECT_TRUE(has_asset_authoring_recipes(node));
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::SceneImportSource), 1);
+
     scene.nodes.push_back(std::move(node));
 
     const auto recipe_summary =
         summarize_scene_asset_authoring_recipes(scene);
     EXPECT_EQ(recipe_summary.nodes_with_recipes, 1u);
-    EXPECT_EQ(recipe_summary.total_recipes, 7u);
+    EXPECT_EQ(recipe_summary.total_recipes, 8u);
+    EXPECT_EQ(recipe_summary.scene_import_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_render_styles, 1u);
     EXPECT_EQ(recipe_summary.scalar_field_sources, 1u);
@@ -5839,6 +5862,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(recipe_summary.terrain_height_field_sources, 1u);
 
     const auto authored_summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(authored_summary.scene_import_sources, 1u);
     EXPECT_EQ(authored_summary.mesh_sources, 1u);
     EXPECT_EQ(authored_summary.mesh_render_styles, 1u);
     EXPECT_EQ(authored_summary.scalar_field_sources, 1u);

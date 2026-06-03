@@ -609,6 +609,239 @@
         "visible": true,
         "size": 1
       }
+    },
+    {
+      "id": "empty_6",
+      "parent": "root",
+      "name": "tank",
+      "transform": {
+        "translation": [
+          -84.400001525878906,
+          103.25,
+          84.449996948242188
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "scene_import_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
+        "import_prefix": ""
+      },
+      "editor_handle": {
+        "kind": "transform",
+        "enabled": true,
+        "visible": true,
+        "size": 1
+      }
+    },
+    {
+      "id": "empty_6/tank1/body",
+      "parent": "empty_6",
+      "name": "body",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.6399999856948853,
+          0.33000004291534424,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:bfec1621680d46a3:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:86e5abbcb7a9c592:1fcfd47f532d9d7f"
+      },
+      "imported_node": {
+        "anchor_node": "empty_6",
+        "import_prefix": "empty_6/tank1",
+        "source_node": "body",
+        "missing_source": false
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
+        "mesh_index": 2
+      },
+      "mesh_render_style": {
+        "asset": "asset-key:56518eb38d5e2b34:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": false
+      }
+    },
+    {
+      "id": "empty_6/tank1/turret",
+      "parent": "empty_6/tank1/body",
+      "name": "turret",
+      "transform": {
+        "translation": [
+          0,
+          1.6363635063171387,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.48170742392539978,
+          0.75757569074630737,
+          0.79000002145767212
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:489bf0306d8b9b1a:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:905f01d04186c5fc:1fcfd47f532d9d7f"
+      },
+      "imported_node": {
+        "anchor_node": "empty_6",
+        "import_prefix": "empty_6/tank1",
+        "source_node": "turret",
+        "missing_source": false
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
+        "mesh_index": 1
+      },
+      "mesh_render_style": {
+        "asset": "asset-key:f826bfc48c81719b:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": false
+      }
+    },
+    {
+      "id": "empty_6/tank1/gun",
+      "parent": "empty_6/tank1/turret",
+      "name": "gun",
+      "transform": {
+        "translation": [
+          -0.54270660877227783,
+          -0.14254975318908691,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0.53237670660018921,
+          0.84650766849517822
+        ],
+        "scale": [
+          0.50190979242324829,
+          1.642006516456604,
+          0.16455695033073425
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:2a4bb1fd8d7e7515:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:26c7bf9a8b28ee8f:1fcfd47f532d9d7f"
+      },
+      "imported_node": {
+        "anchor_node": "empty_6",
+        "import_prefix": "empty_6/tank1",
+        "source_node": "gun",
+        "missing_source": false
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
+        "mesh_index": 0
+      },
+      "mesh_render_style": {
+        "asset": "asset-key:6bd6d97bd9569a24:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": false
+      }
     }
   ],
   "lights": [
@@ -737,15 +970,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        112.46030426025391,
-        88.648368835449219,
-        16.541799545288086
+        -82.030166625976562,
+        104.42514801025391,
+        89.097007751464844
       ],
       "orientation": [
-        0.021799715235829353,
-        -0.96652698516845703,
-        0.081019148230552673,
-        0.24245892465114594
+        -0.047752127051353455,
+        -0.99014633893966675,
+        -0.03596443310379982,
+        0.12663622200489044
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

@@ -951,6 +951,9 @@ namespace wz::engine::assets
         if (node.renderable || node.renderable_asset) {
             out.push_back(Kind::Renderable);
         }
+        if (node.scene_import_source) {
+            out.push_back(Kind::SceneImportSource);
+        }
         if (node.camera) {
             out.push_back(Kind::Camera);
         }
@@ -1316,6 +1319,9 @@ namespace wz::engine::assets
             }
             if (has_authored_renderable_component(node)) {
                 ++out.renderables;
+            }
+            if (node.scene_import_source) {
+                ++out.scene_import_sources;
             }
             if (has_authored_camera_component(node)) {
                 ++out.cameras;
