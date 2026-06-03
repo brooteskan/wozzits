@@ -674,6 +674,11 @@ namespace wz::engine::assets::internal
             SceneBehaviorAsset component{};
             component.module = std::string(*module);
 
+            auto label = read_string(value, "label");
+            if (label) {
+                component.label = std::string(*label);
+            }
+
             auto name = read_string(value, "name");
             if (name) {
                 component.name = std::string(*name);

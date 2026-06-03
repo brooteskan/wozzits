@@ -883,6 +883,9 @@ namespace wz::engine::assets
         JSONValuePtr behavior_value(const SceneBehaviorAsset& behavior)
         {
             auto obj = object_value();
+            if (!behavior.label.empty()) {
+                add_member(*obj, "label", string_value(behavior.label));
+            }
             if (!behavior.module.empty()) {
                 add_member(*obj, "module", string_value(behavior.module));
             }

@@ -530,6 +530,7 @@ namespace wz::engine::assets
 
     struct SceneBehaviorAsset
     {
+        std::string label;
         std::string module;
         std::string name;
         bool enabled = true;

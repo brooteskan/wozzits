@@ -57,6 +57,7 @@ namespace wz::engine::assets
             SceneFingerprintBuilder& fp,
             const SceneBehaviorAsset& behavior)
         {
+            fp.mix_string(behavior.label);
             fp.mix_string(behavior.module);
             fp.mix_string(behavior.name);
             fp.mix_value(behavior.enabled);

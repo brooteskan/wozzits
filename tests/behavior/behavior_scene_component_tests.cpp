@@ -178,10 +178,12 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
       "id": "actor",
       "behaviors": [
         {
+          "label": "Player movement",
           "module": "player_move",
           "events": [ "input.*", "frame.update" ]
         },
         {
+          "label": "Footstep audio",
           "module": "footstep_audio",
           "events": [ "collision.enter" ],
           "config": {
@@ -215,10 +217,12 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     EXPECT_FALSE(scene_data->nodes[0].behavior.has_value());
     ASSERT_EQ(scene_data->nodes[0].behaviors.size(), 2u);
+    EXPECT_EQ(scene_data->nodes[0].behaviors[0].label, "Player movement");
     EXPECT_EQ(scene_data->nodes[0].behaviors[0].module, "player_move");
     ASSERT_EQ(scene_data->nodes[0].behaviors[0].events.size(), 2u);
     EXPECT_EQ(scene_data->nodes[0].behaviors[0].events[0], "input.*");
     EXPECT_EQ(scene_data->nodes[0].behaviors[1].module, "footstep_audio");
+    EXPECT_EQ(scene_data->nodes[0].behaviors[1].label, "Footstep audio");
     ASSERT_EQ(scene_data->nodes[0].behaviors[1].events.size(), 1u);
     EXPECT_EQ(scene_data->nodes[0].behaviors[1].events[0], "collision.enter");
 
@@ -236,6 +240,8 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"behaviors\""), std::string::npos);
+    EXPECT_NE(exported.find("\"label\""), std::string::npos);
+    EXPECT_NE(exported.find("\"Player movement\""), std::string::npos);
     EXPECT_NE(exported.find("\"events\""), std::string::npos);
     EXPECT_NE(exported.find("\"player_move\""), std::string::npos);
     EXPECT_NE(exported.find("\"footstep_audio\""), std::string::npos);
