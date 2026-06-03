@@ -181,6 +181,37 @@ TEST(BehaviorDispatch, DispatchesFrameUpdateToRegisteredModule)
     g_module_event_probe = nullptr;
 }
 
+TEST(BehaviorDispatch, SkipsFrameUpdateWithoutListenerSubscription)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ModuleEventProbe probe{};
+    g_module_event_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_module_event_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "module_test",
+        "");
+    scene.event_listeners.clear();
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.calls, 0u);
+    EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
+
+    g_module_event_probe = nullptr;
+}
+
 TEST(BehaviorDispatch, FrameUpdateRepeatsAndCollisionEventsAreFrameLocal)
 {
     BehaviorRegistry registry;

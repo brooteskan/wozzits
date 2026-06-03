@@ -469,6 +469,38 @@ static inline WzBehaviorEntityId wz_other(const WzBehaviorEvent* event)
     return event ? event->other : WZ_INVALID_BEHAVIOR_ENTITY;
 }
 
+static inline uint32_t wz_input_event_key(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->key
+        : WZ_INPUT_EVENT_INVALID_VALUE;
+}
+
+static inline uint32_t wz_input_event_mouse_button(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->button
+        : WZ_INPUT_EVENT_INVALID_VALUE;
+}
+
+static inline uint32_t wz_input_event_controller(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->controller
+        : WZ_INPUT_EVENT_INVALID_VALUE;
+}
+
+static inline uint32_t wz_input_event_controller_button(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->button
+        : WZ_INPUT_EVENT_INVALID_VALUE;
+}
+
 static inline uint8_t wz_self_is_trigger(const WzBehaviorEvent* event)
 {
     return event ? event->self_is_trigger : 0u;
@@ -994,6 +1026,18 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "proximity.stay";
     case WZ_EVENT_PROXIMITY_EXIT:
         return "proximity.exit";
+    case WZ_EVENT_INPUT_KEY_PRESSED:
+        return "input.key.pressed";
+    case WZ_EVENT_INPUT_KEY_RELEASED:
+        return "input.key.released";
+    case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
+        return "input.mouse_button.pressed";
+    case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
+        return "input.mouse_button.released";
+    case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
+        return "input.controller_button.pressed";
+    case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
+        return "input.controller_button.released";
     default:
         return "unknown";
     }

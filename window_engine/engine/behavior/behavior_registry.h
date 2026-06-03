@@ -33,6 +33,7 @@ namespace wz::engine::behavior
         const wz::engine::FrameStorage* frame_storage = nullptr;
         const wz::engine::assets::SceneInstance* scene = nullptr;
         const wz::engine::assets::BehaviorComponent* active_behavior = nullptr;
+        const WzInputEventPayload* active_input_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
     };
 

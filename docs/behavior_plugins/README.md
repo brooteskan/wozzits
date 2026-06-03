@@ -68,25 +68,24 @@ namespace
             return;
         }
 
-        if (wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
-            WzVec3 axis{};
-            if (wz_input_wasd_axis(facts, &axis)) {
-                wz_self_set_linear_velocity(
-                    facts,
-                    event,
-                    axis.x * 4.0f,
-                    0.0f,
-                    axis.z * 4.0f);
-            }
+        if (wz_is_event(event, WZ_EVENT_PROXIMITY_ENTER)) {
+            float speed = 3.0f;
+            wz_config_float(facts, "speed", &speed);
+            wz_self_set_linear_velocity(
+                facts,
+                event,
+                0.0f,
+                0.0f,
+                speed);
         }
     }
 }
 
-WZ_BEHAVIOR_MODULE("player_move", on_event)
+WZ_BEHAVIOR_MODULE("proximity_boost", on_event)
 ```
 
-This registers a module named `player_move`. A scene node's Behavior component
-can select `player_move` after the DLL is loaded.
+This registers a module named `proximity_boost`. A scene node's Behavior
+component can select `proximity_boost` after the DLL is loaded.
 
 ## Attaching Behavior To A Scene Node
 
@@ -96,11 +95,17 @@ In authored scene JSON, a node selects a behavior module by name:
 {
   "id": "player",
   "name": "Player",
+  "proximity": {
+    "radius": 3.0
+  },
+  "event_listener": {
+    "channels": [ "proximity.enter" ]
+  },
   "behavior": {
-    "module": "player_move",
+    "module": "proximity_boost",
     "enabled": true,
     "config": {
-      "speed": 4.0
+      "speed": 3.0
     }
   }
 }
@@ -115,6 +120,10 @@ off `module`, not `name`.
 
 `config` is optional. It may contain booleans, numbers, and strings. Arrays,
 objects, and null values are rejected by the scene compiler.
+
+The current API is event-driven for scene events such as collision, proximity,
+and input button/key edges. Continuous input state, such as held keys, mouse
+position, and controller axes, is also available as a frame snapshot.
 
 ## Event Routing
 
@@ -132,6 +141,12 @@ WZ_EVENT_COLLISION_EXIT
 WZ_EVENT_PROXIMITY_ENTER
 WZ_EVENT_PROXIMITY_STAY
 WZ_EVENT_PROXIMITY_EXIT
+WZ_EVENT_INPUT_KEY_PRESSED
+WZ_EVENT_INPUT_KEY_RELEASED
+WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED
+WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED
+WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED
+WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED
 ```
 
 Helper functions:
@@ -154,11 +169,19 @@ receiving side is a trigger participant.
 
 ## Frame Update Events
 
-`WZ_EVENT_FRAME_UPDATE` is sent every behavior dispatch. It does not require an
-Event Listener component.
+`WZ_EVENT_FRAME_UPDATE` is sent only to behavior components whose node has an
+Event Listener component with:
 
-Use frame update for continuous behavior such as input polling, timers, AI
+```text
+frame.update
+```
+
+Use frame update for continuous behavior such as held input checks, timers, AI
 state machines, and velocity control.
+
+Migration note: older behavior modules received `WZ_EVENT_FRAME_UPDATE`
+unconditionally. Add `frame.update` to the node's Event Listener channels for
+any behavior that still needs a per-frame callback.
 
 ## Collision Events
 
@@ -205,10 +228,59 @@ They are intended for "close enough to matter" behavior such as starting a
 terrain snap/orient query before actual collision. Proximity radius is authored
 in world units and does not inherit scale from the node's transform hierarchy.
 
+## Input Events
+
+Input edge events are routed through the Event Listener component, just like
+collision and proximity events. Subscribe with one or more of:
+
+```text
+input.key.pressed
+input.key.released
+input.mouse_button.pressed
+input.mouse_button.released
+input.controller_button.pressed
+input.controller_button.released
+input.*
+```
+
+`input.*` is a hardcoded "all input events" token, not a general glob system.
+The engine derives these events from the current frame input snapshot, so a
+pressed or released edge is delivered for the frame in which it appears.
+
+Input event payload helpers read the active routed input event:
+
+```cpp
+if (wz_is_event(event, WZ_EVENT_INPUT_KEY_PRESSED)) {
+    uint32_t key = wz_input_event_key(facts);
+}
+
+if (wz_is_event(event, WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED)) {
+    uint32_t button = wz_input_event_mouse_button(facts);
+}
+
+if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED)) {
+    uint32_t controller = wz_input_event_controller(facts);
+    uint32_t button = wz_input_event_controller_button(facts);
+}
+```
+
+Payload helpers return `WZ_INPUT_EVENT_INVALID_VALUE` when the current dispatch
+is not an input event or when that field does not apply. During an input event,
+the normal frame snapshot helpers still read `facts->input`, so a behavior can
+combine the routed edge with held-state or axis checks.
+
 ## Reading Input
 
-Input is exposed as a frame snapshot through `facts->input`. It is not delivered
-as a separate event stream. Read input during `WZ_EVENT_FRAME_UPDATE`.
+Input is exposed in two forms:
+
+- Edge events for key, mouse button, and controller button pressed/released
+  transitions.
+- A frame snapshot through `facts->input` for held state, mouse position/delta,
+  window state, controller connection state, and controller axes.
+
+Use event channels when behavior should only run on a transition. Use
+`WZ_EVENT_FRAME_UPDATE` when behavior must continuously react to held state,
+analog axes, timers, or per-frame motion.
 
 Keyboard helpers:
 

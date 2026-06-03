@@ -2,6 +2,8 @@
 
 #include <engine/frame_storage.h>
 
+#include <string>
+
 namespace wz::engine::behavior
 {
     namespace
@@ -36,6 +38,22 @@ namespace wz::engine::behavior
             return WZ_EVENT_NONE;
         }
 
+        WzBehaviorEventKind input_event_kind(
+            WzBehaviorEventKind kind) noexcept
+        {
+            switch (kind) {
+            case WZ_EVENT_INPUT_KEY_PRESSED:
+            case WZ_EVENT_INPUT_KEY_RELEASED:
+            case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
+            case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
+            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
+            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
+                return kind;
+            default:
+                return WZ_EVENT_NONE;
+            }
+        }
+
         const wz::engine::assets::BehaviorComponent* behavior_for_entity(
             const wz::engine::assets::SceneInstance& scene,
             wz::scene::RuntimeEntityId entity)
@@ -46,6 +64,25 @@ namespace wz::engine::behavior
                 }
             }
             return nullptr;
+        }
+
+        bool has_frame_update_listener(
+            const wz::engine::assets::SceneInstance& scene,
+            wz::scene::RuntimeEntityId entity)
+        {
+            for (const auto& listener : scene.event_listeners) {
+                if (listener.node != entity) {
+                    continue;
+                }
+                for (const std::string& channel :
+                     listener.component.channels)
+                {
+                    if (channel == "frame.update") {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         struct ActiveBehaviorScope
@@ -65,6 +102,26 @@ namespace wz::engine::behavior
             ~ActiveBehaviorScope()
             {
                 context.active_behavior = previous;
+            }
+        };
+
+        struct ActiveInputPayloadScope
+        {
+            BehaviorFrameContext& context;
+            const WzInputEventPayload* previous = nullptr;
+
+            ActiveInputPayloadScope(
+                BehaviorFrameContext& context_in,
+                const WzInputEventPayload& payload)
+                : context(context_in)
+                , previous(context_in.active_input_payload)
+            {
+                context.active_input_payload = &payload;
+            }
+
+            ~ActiveInputPayloadScope()
+            {
+                context.active_input_payload = previous;
             }
         };
 
@@ -99,6 +156,9 @@ namespace wz::engine::behavior
             BehaviorFrameContext& context)
         {
             for (const auto& record : scene.behaviors) {
+                if (!has_frame_update_listener(scene, record.node)) {
+                    continue;
+                }
                 const BehaviorEvent event{
                     .kind = WZ_EVENT_FRAME_UPDATE,
                     .entity = record.node,
@@ -143,6 +203,43 @@ namespace wz::engine::behavior
                     continue;
                 }
 
+                dispatch_module_event(registry, context, *component, event);
+            }
+        }
+
+        void dispatch_input_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            if (!context.frame_storage) {
+                return;
+            }
+
+            for (const auto& input_event :
+                context.frame_storage->input_events.routed_entity_events)
+            {
+                const auto* component =
+                    behavior_for_entity(scene, input_event.entity);
+                if (!component || !component->enabled
+                    || component->module.empty())
+                {
+                    continue;
+                }
+
+                const BehaviorEvent event{
+                    .kind = input_event_kind(input_event.kind),
+                    .entity = input_event.entity,
+                    .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                    .self_is_trigger = false,
+                };
+                if (event.kind == WZ_EVENT_NONE) {
+                    continue;
+                }
+
+                ActiveInputPayloadScope active_payload(
+                    context,
+                    input_event.payload);
                 dispatch_module_event(registry, context, *component, event);
             }
         }
@@ -192,9 +289,11 @@ namespace wz::engine::behavior
         }
 
         context.commands->clear();
-        // Command order is deterministic: module frame.update events,
-        // routed collision/proximity module events, then legacy named functions.
+        // Command order is deterministic: subscribed module frame.update
+        // events, routed input/collision/proximity module events, then legacy
+        // named functions.
         dispatch_frame_update_events_to_modules(scene, registry, context);
+        dispatch_input_events_to_modules(scene, registry, context);
         dispatch_collision_events_to_modules(scene, registry, context);
         dispatch_proximity_events_to_modules(scene, registry, context);
 

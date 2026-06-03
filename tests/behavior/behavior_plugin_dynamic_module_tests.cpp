@@ -10,6 +10,11 @@ TEST(BehaviorPluginAbi, RejectsVersionMismatch)
         register_empty_pack,
         nullptr,
         WZ_BEHAVIOR_ABI_VERSION + 1u));
+    EXPECT_FALSE(plugins.register_static_pack(
+        registry,
+        register_empty_pack,
+        nullptr,
+        6u));
     EXPECT_TRUE(registry.registrations().empty());
 }
 

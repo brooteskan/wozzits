@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 6u
+#define WZ_BEHAVIOR_ABI_VERSION 7u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -61,6 +61,12 @@ enum
     WZ_EVENT_PROXIMITY_ENTER = 200u,
     WZ_EVENT_PROXIMITY_STAY = 201u,
     WZ_EVENT_PROXIMITY_EXIT = 202u,
+    WZ_EVENT_INPUT_KEY_PRESSED = 300u,
+    WZ_EVENT_INPUT_KEY_RELEASED = 301u,
+    WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED = 302u,
+    WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED = 303u,
+    WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED = 304u,
+    WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED = 305u,
 };
 
 enum
@@ -133,6 +139,15 @@ typedef struct WzInputStateView
     uint8_t controller_buttons_released
         [WZ_MAX_CONTROLLERS][WZ_CONTROLLER_BUTTON_COUNT];
 } WzInputStateView;
+
+#define WZ_INPUT_EVENT_INVALID_VALUE UINT32_C(0xffffffff)
+
+typedef struct WzInputEventPayload
+{
+    uint32_t key;
+    uint32_t controller;
+    uint32_t button;
+} WzInputEventPayload;
 
 /* Keyboard indices match Windows virtual-key codes for now. */
 enum
@@ -303,6 +318,8 @@ typedef struct WzBehaviorFrameFacts
     WzGetBehaviorConfigBoolFn get_config_bool;
     WzGetBehaviorConfigNumberFn get_config_number;
     WzGetBehaviorConfigStringFn get_config_string;
+
+    const WzInputEventPayload* active_input_event;
 } WzBehaviorFrameFacts;
 
 typedef void (*WzBehaviorFn)(

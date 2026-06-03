@@ -358,6 +358,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)
     rs_add_test_group(behavior behavior_dispatch_tests)
+    rs_add_test_group(behavior behavior_input_dispatch_tests)
+    rs_add_test_group(behavior behavior_input_event_api_tests)
     rs_add_test_group(behavior behavior_module_api_tests)
     rs_add_test_group(behavior behavior_commands_motion_tests)
     rs_add_test_group(behavior behavior_adversarial_tests)
@@ -391,6 +393,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     # rs_add_test_group(jobs render_prep_job_tests)
     rs_add_test_group(jobs profiler_tests)
     rs_add_test_group(jobs engine_adversarial_tests)
+    rs_add_test_group(engine input_events)
 
 
 

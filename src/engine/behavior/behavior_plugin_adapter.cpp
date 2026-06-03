@@ -796,6 +796,7 @@ namespace wz::engine::behavior
                 .get_config_bool = get_config_bool,
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
+                .active_input_event = context.active_input_payload,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -853,6 +854,7 @@ namespace wz::engine::behavior
                 .get_config_bool = get_config_bool,
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
+                .active_input_event = context.active_input_payload,
             };
         }
 

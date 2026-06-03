@@ -3,6 +3,7 @@
 
 #include <engine/behavior/behavior_commands.h>
 #include <engine/collision/collision_frame.h>
+#include <engine/input_events.h>
 
 #include <scene/compile/scene_compiler.h>
 #include <render/frame/render_frame.h>
@@ -16,6 +17,7 @@ namespace wz::engine
         wz::scene::ViewData             view{};
         wz::scene::CompiledSceneStorage compiled_scene{};
         wz::engine::collision::CollisionFrameStorage collision{};
+        wz::engine::input_events::InputEventStorage input_events{};
         wz::engine::behavior::BehaviorCommandBuffer behavior_commands{};
         wz::render::RenderIRStorage     render_ir{};
         wz::render::RenderFrameStorage  render_frame{};

@@ -1,0 +1,179 @@
+#include <engine/input_events.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <string>
+
+namespace wz::engine::input_events
+{
+    namespace
+    {
+        constexpr WzInputEventPayload invalid_payload() noexcept
+        {
+            return WzInputEventPayload{
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+            };
+        }
+
+        bool listener_matches_input_event(
+            const wz::engine::assets::EventListenerComponent& listener,
+            const InputEvent& event) noexcept
+        {
+            for (const std::string& channel : listener.channels) {
+                if (input_channel_matches(channel, event.kind)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    bool input_channel_matches(
+        std::string_view channel,
+        WzBehaviorEventKind kind) noexcept
+    {
+        if (channel == "input.*") {
+            switch (kind) {
+            case WZ_EVENT_INPUT_KEY_PRESSED:
+            case WZ_EVENT_INPUT_KEY_RELEASED:
+            case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
+            case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
+            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
+            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        switch (kind) {
+        case WZ_EVENT_INPUT_KEY_PRESSED:
+            return channel == "input.key.pressed";
+        case WZ_EVENT_INPUT_KEY_RELEASED:
+            return channel == "input.key.released";
+        case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
+            return channel == "input.mouse_button.pressed";
+        case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
+            return channel == "input.mouse_button.released";
+        case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
+            return channel == "input.controller_button.pressed";
+        case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
+            return channel == "input.controller_button.released";
+        default:
+            return false;
+        }
+    }
+
+    void generate_input_events(
+        const wz::input::InputState& input,
+        std::vector<InputEvent>& out_events)
+    {
+        out_events.clear();
+
+        for (uint32_t key = 0; key < 256u; ++key) {
+            if (input.keyboard.pressed[key]) {
+                WzInputEventPayload payload = invalid_payload();
+                payload.key = key;
+                out_events.push_back({
+                    .kind = WZ_EVENT_INPUT_KEY_PRESSED,
+                    .payload = payload,
+                });
+            }
+            if (input.keyboard.released[key]) {
+                WzInputEventPayload payload = invalid_payload();
+                payload.key = key;
+                out_events.push_back({
+                    .kind = WZ_EVENT_INPUT_KEY_RELEASED,
+                    .payload = payload,
+                });
+            }
+        }
+
+        for (uint32_t button = 0; button < 3u; ++button) {
+            if (input.mouse.pressed[button]) {
+                WzInputEventPayload payload = invalid_payload();
+                payload.button = button;
+                out_events.push_back({
+                    .kind = WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED,
+                    .payload = payload,
+                });
+            }
+            if (input.mouse.released[button]) {
+                WzInputEventPayload payload = invalid_payload();
+                payload.button = button;
+                out_events.push_back({
+                    .kind = WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED,
+                    .payload = payload,
+                });
+            }
+        }
+
+        const uint32_t controller_count = std::min<uint32_t>(
+            input.controllers.count,
+            wz::input::kMaxControllers);
+        for (uint32_t controller = 0; controller < controller_count;
+             ++controller)
+        {
+            const auto& state = input.controllers.controllers[controller];
+            for (uint32_t button = 0;
+                 button < wz::input::kControllerButtonCount;
+                 ++button)
+            {
+                if (state.buttons_pressed[button]) {
+                    WzInputEventPayload payload = invalid_payload();
+                    payload.controller = controller;
+                    payload.button = button;
+                    out_events.push_back({
+                        .kind = WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED,
+                        .payload = payload,
+                    });
+                }
+                if (state.buttons_released[button]) {
+                    WzInputEventPayload payload = invalid_payload();
+                    payload.controller = controller;
+                    payload.button = button;
+                    out_events.push_back({
+                        .kind = WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED,
+                        .payload = payload,
+                    });
+                }
+            }
+        }
+    }
+
+    void route_input_events(
+        std::span<const InputEvent> events,
+        std::span<const wz::engine::assets::SceneComponentRecord<
+            wz::engine::assets::EventListenerComponent>> listeners,
+        std::vector<InputEntityEvent>& out_routed_events)
+    {
+        out_routed_events.clear();
+        out_routed_events.reserve(events.size() * listeners.size());
+
+        for (const InputEvent& event : events) {
+            for (const auto& listener : listeners) {
+                if (listener_matches_input_event(listener.component, event)) {
+                    out_routed_events.push_back({
+                        .entity = listener.node,
+                        .kind = event.kind,
+                        .payload = event.payload,
+                    });
+                }
+            }
+        }
+    }
+
+    void build_input_event_frame(
+        const wz::input::InputState& input,
+        const wz::engine::assets::SceneInstance& scene,
+        InputEventStorage& storage)
+    {
+        generate_input_events(input, storage.events);
+        route_input_events(
+            storage.events,
+            scene.event_listeners,
+            storage.routed_entity_events);
+    }
+}

@@ -87,6 +87,7 @@ namespace wz::app
         wz::jobs::NodeHandle build_view = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle compile_scene = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_collision_frame = wz::jobs::INVALID_JOB;
+        wz::jobs::NodeHandle build_input_events = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle dispatch_behaviors = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle apply_behavior_commands = wz::jobs::INVALID_JOB;
         wz::jobs::NodeHandle build_render_ir = wz::jobs::INVALID_JOB;

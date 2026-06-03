@@ -177,6 +177,7 @@ TEST(BehaviorModuleApi, TransformQueriesReadSelfAndOtherSceneTransforms)
     SceneInstance scene = std::move(result.instance);
     const RuntimeEntityId root_id = scene.authored_to_runtime["root"];
     const RuntimeEntityId actor_id = scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
 
     BehaviorRegistry registry;
     BehaviorPluginHost plugins;
@@ -274,6 +275,7 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQuerySamplesTerrainMeshSurface)
         scene.authored_to_runtime["terrain"];
     const RuntimeEntityId actor_id =
         scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
 
     wz::engine::assets::CollisionAssetData surface{};
     surface.shape_kind =
@@ -364,6 +366,7 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQueryIgnoresUnqueryableSurfaces)
         scene.authored_to_runtime["terrain"];
     const RuntimeEntityId actor_id =
         scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
 
     wz::engine::assets::CollisionAssetData surface{};
     surface.shape_kind =
@@ -443,6 +446,7 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQueryIgnoresNonTerrainSurfaceShapes)
         scene.authored_to_runtime["surface"];
     const RuntimeEntityId actor_id =
         scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
 
     wz::engine::assets::CollisionAssetData surface{};
     surface.shape_kind = wz::engine::assets::CollisionShapeKind::Bounds;
@@ -525,6 +529,7 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQueryReturnsNearestMatchingSurfaceHit
         scene.authored_to_runtime["other_terrain"];
     const RuntimeEntityId actor_id =
         scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
 
     wz::engine::assets::CollisionAssetData surface{};
     surface.shape_kind =

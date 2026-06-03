@@ -112,6 +112,13 @@ namespace wz::app
             const wz::engine::assets::CollisionAssetModule* collisions = nullptr;
         };
 
+        struct InputEventJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
+            const wz::engine::assets::SceneInstance* scene = nullptr;
+        };
+
         struct BehaviorDispatchJobData
         {
             wz::engine::FrameStorage* frame = nullptr;
@@ -849,6 +856,26 @@ namespace wz::app
                 collision);
         }
 
+        void job_build_input_events(wz::jobs::JobContext& ctx)
+        {
+            auto* data = static_cast<InputEventJobData*>(ctx.frame_user);
+            assert(data);
+            assert(data->frame);
+
+            auto& input_events = data->frame->input_events;
+            if (!data->scene || !data->fctx)
+            {
+                input_events.events.clear();
+                input_events.routed_entity_events.clear();
+                return;
+            }
+
+            wz::engine::input_events::build_input_event_frame(
+                data->fctx->input,
+                *data->scene,
+                input_events);
+        }
+
         void job_dispatch_behaviors(wz::jobs::JobContext& ctx)
         {
             auto* data = static_cast<BehaviorDispatchJobData*>(ctx.frame_user);
@@ -1069,6 +1096,12 @@ namespace wz::app
                 .run = job_build_collision_frame,
                 });
 
+            jobs.build_input_events = jobs.graph.add_job({
+                .name = "build_input_events",
+                .lane = wz::jobs::ExecutionLane::MainThread,
+                .run = job_build_input_events,
+                });
+
             jobs.dispatch_behaviors = jobs.graph.add_job({
                 .name = "dispatch_behaviors",
                 .lane = wz::jobs::ExecutionLane::MainThread,
@@ -1099,7 +1132,8 @@ namespace wz::app
             jobs.graph.add_dependency(jobs.camera_update, jobs.build_view);
             jobs.graph.add_dependency(jobs.build_view, jobs.compile_scene);
             jobs.graph.add_dependency(jobs.compile_scene, jobs.build_collision_frame);
-            jobs.graph.add_dependency(jobs.build_collision_frame, jobs.dispatch_behaviors);
+            jobs.graph.add_dependency(jobs.build_collision_frame, jobs.build_input_events);
+            jobs.graph.add_dependency(jobs.build_input_events, jobs.dispatch_behaviors);
             jobs.graph.add_dependency(jobs.dispatch_behaviors, jobs.apply_behavior_commands);
             jobs.graph.add_dependency(jobs.apply_behavior_commands, jobs.build_render_ir);
             jobs.graph.add_dependency(jobs.build_render_ir, jobs.build_render_frame);
@@ -1108,7 +1142,7 @@ namespace wz::app
             if (jobs.ready)
             {
                 app.ctx.logger.info(
-                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> dispatch_behaviors -> apply_behavior_commands -> build_render_ir -> build_render_frame"
+                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> build_input_events -> dispatch_behaviors -> apply_behavior_commands -> build_render_ir -> build_render_frame"
                 );
             }
             else
@@ -1264,6 +1298,15 @@ namespace wz::app
             .collisions = app.ctx.assets ? &app.ctx.assets->collisions() : nullptr,
         };
 
+        InputEventJobData input_event_data{
+            .frame = &app.frame,
+            .fctx = &fctx,
+            .scene =
+                app.debug_object.collision_scene_valid
+                ? &app.debug_object.collision_scene
+                : nullptr,
+        };
+
         BehaviorDispatchJobData behavior_dispatch_data{
             .frame = &app.frame,
             .fctx = &fctx,
@@ -1296,6 +1339,7 @@ namespace wz::app
         app.jobs.exec.bind(app.jobs.build_view, &build_view_data);
         app.jobs.exec.bind(app.jobs.compile_scene, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_collision_frame, &collision_frame_data);
+        app.jobs.exec.bind(app.jobs.build_input_events, &input_event_data);
         app.jobs.exec.bind(app.jobs.dispatch_behaviors, &behavior_dispatch_data);
         app.jobs.exec.bind(
             app.jobs.apply_behavior_commands,

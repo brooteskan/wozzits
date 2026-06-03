@@ -248,6 +248,8 @@ TEST(Adversarial, MultipleEntitiesSameModuleDifferentCollisionKinds)
             .enabled = true,
         },
     });
+    subscribe_frame_update(scene, 4u);
+    subscribe_frame_update(scene, 5u);
 
     wz::engine::FrameStorage frame_storage{};
     frame_storage.collision.routed_entity_events = {

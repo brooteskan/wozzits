@@ -122,6 +122,10 @@ namespace
         }
     }
 
+    void subscribe_frame_update(
+        SceneInstance& scene,
+        RuntimeEntityId entity);
+
     SceneInstance scene_with_behavior(
         RuntimeEntityId entity,
         std::string module,
@@ -137,7 +141,22 @@ namespace
                 .enabled = enabled,
             },
         });
+        subscribe_frame_update(scene, entity);
         return scene;
+    }
+
+    void subscribe_frame_update(
+        SceneInstance& scene,
+        RuntimeEntityId entity)
+    {
+        scene.event_listeners.push_back(
+            SceneComponentRecord<
+                wz::engine::assets::EventListenerComponent>{
+                .node = entity,
+                .component = wz::engine::assets::EventListenerComponent{
+                    .channels = { "frame.update" },
+                },
+            });
     }
 
     wz::fs::Path write_text(
