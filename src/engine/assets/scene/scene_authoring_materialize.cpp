@@ -6,6 +6,7 @@
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+#include <asset/key_utils.h>
 #include <file/filesystem.h>
 
 #include <algorithm>
@@ -1095,12 +1096,7 @@ namespace wz::engine::assets
             SceneAuthoringMaterializeReport& report,
             wz::asset::AssetKey key)
         {
-            for (const auto& existing : report.renderables_to_realize) {
-                if (existing == key) {
-                    return;
-                }
-            }
-            report.renderables_to_realize.push_back(key);
+            wz::asset::append_unique_key(report.renderables_to_realize, key);
         }
 
         const SceneNodeAsset* find_sky_visual_node(

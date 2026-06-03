@@ -6,6 +6,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/key_factories/scene.h>
+#include <asset/key_utils.h>
 
 #include <algorithm>
 #include <string>
@@ -72,15 +73,7 @@ namespace wz::engine::assets
             std::vector<wz::asset::AssetKey>& deps,
             wz::asset::AssetKey key)
         {
-            if (key == wz::asset::AssetKey{})
-                return;
-
-            for (const auto& existing : deps) {
-                if (existing == key)
-                    return;
-            }
-
-            deps.push_back(key);
+            wz::asset::append_unique_non_empty_key(deps, key);
         }
 
         void append_reference_dependencies(
