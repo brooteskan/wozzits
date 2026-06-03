@@ -355,7 +355,14 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(engine engine)
     rs_add_test_group(engine frame_storage_tests)
     rs_add_test_group(engine runtime_camera_tests)
-    rs_add_test_group(behavior behavior_registry_tests)
+    rs_add_test_group(behavior behavior_registry_core_tests)
+    rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)
+    rs_add_test_group(behavior behavior_dispatch_tests)
+    rs_add_test_group(behavior behavior_module_api_tests)
+    rs_add_test_group(behavior behavior_commands_motion_tests)
+    rs_add_test_group(behavior behavior_adversarial_tests)
+    rs_add_test_group(behavior behavior_commands_transform_tests)
+    rs_add_test_group(behavior behavior_scene_component_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)
@@ -364,15 +371,15 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
             "${CMAKE_CURRENT_SOURCE_DIR}"
             "${CMAKE_CURRENT_SOURCE_DIR}/window_engine")
     target_compile_features(behavior_dynamic_test_plugin PRIVATE cxx_std_20)
-    add_dependencies(behavior_behavior_registry_tests
+    add_dependencies(behavior_behavior_plugin_dynamic_module_tests
         behavior_dynamic_test_plugin)
 
     add_library(behavior_dynamic_missing_symbol_plugin SHARED
         tests/behavior/dynamic_behavior_missing_symbol.cpp)
-    add_dependencies(behavior_behavior_registry_tests
+    add_dependencies(behavior_behavior_plugin_dynamic_module_tests
         behavior_dynamic_missing_symbol_plugin)
 
-    target_compile_definitions(behavior_behavior_registry_tests PRIVATE
+    target_compile_definitions(behavior_behavior_plugin_dynamic_module_tests PRIVATE
         WZ_TEST_BEHAVIOR_PLUGIN_DLL="$<TARGET_FILE:behavior_dynamic_test_plugin>"
         WZ_TEST_BEHAVIOR_MISSING_SYMBOL_DLL="$<TARGET_FILE:behavior_dynamic_missing_symbol_plugin>")
 
@@ -415,7 +422,12 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_terrain terrain_asset_module)
 
     rs_add_test_group(asset_collision collision_asset_module)
-    rs_add_test_group(collision collision_frame_tests)
+    rs_add_test_group(collision proximity_frame_tests)
+    rs_add_test_group(collision collision_frame_core_tests)
+    rs_add_test_group(collision collision_frame_world_builder_tests)
+    rs_add_test_group(collision collision_frame_job_tests)
+    rs_add_test_group(collision collision_frame_adversarial_tests)
+    rs_add_test_group(collision collision_frame_adversarial_more_tests)
 
     rs_add_test_group(asset_gaussian_splat gaussian_splat_asset_module)
     rs_add_test_group(asset_gaussian_splat ply_gaussian_splat)
@@ -451,7 +463,9 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_render_style mesh)
 
     rs_add_test_group(asset_renderable renderable_table)
-    rs_add_test_group(asset_renderable renderable_asset_module)
+    rs_add_test_group(asset_renderable renderable_mesh_tests)
+    rs_add_test_group(asset_renderable renderable_field_splat_tests)
+    rs_add_test_group(asset_renderable renderable_terrain_tests)
 
     rs_add_test_group(asset_render_program render_program_asset_module)
 
@@ -459,8 +473,21 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
 
     rs_add_test_group(asset_hdri hdri_image_loader)
 
-    rs_add_test_group(asset_scene scene_asset_module)
-    rs_add_test_group(asset_scene scene_authoring_materialize)
+    rs_add_test_group(asset_scene scene_asset_compile_tests)
+    rs_add_test_group(asset_scene scene_instantiation_transform_tests)
+    rs_add_test_group(asset_scene scene_runtime_component_roundtrip_tests)
+    rs_add_test_group(asset_scene scene_descriptor_validation_tests)
+    rs_add_test_group(asset_scene scene_editor_visual_tests)
+    rs_add_test_group(asset_scene scene_renderable_reference_tests)
+    rs_add_test_group(asset_scene scene_resource_resolver_tests)
+    rs_add_test_group(asset_scene scene_ecs_construction_tests)
+    rs_add_test_group(asset_scene scene_ecs_boundary_tests)
+    rs_add_test_group(asset_scene scene_authoring_component_roundtrip_tests)
+    rs_add_test_group(asset_scene scene_materialize_mesh_import_tests)
+    rs_add_test_group(asset_scene scene_materialize_field_sky_tests)
+    rs_add_test_group(asset_scene scene_materialize_light_tests)
+    rs_add_test_group(asset_scene scene_materialize_terrain_tests)
+    rs_add_test_group(asset_scene scene_materialize_default_scene_tests)
 
     rs_add_test_group(asset_gltf gltf_importer)
     # rs_add_test_group(game_app game_app_main)
