@@ -139,9 +139,23 @@ namespace
                 .module = std::move(module),
                 .name = std::move(name),
                 .enabled = enabled,
+                .events = {
+                    "frame.update",
+                    "collision.*",
+                    "proximity.*",
+                    "input.*",
+                },
+                .channel_mask =
+                    wz::engine::behavior::channel_mask_for_token(
+                        "frame.update")
+                    | wz::engine::behavior::channel_mask_for_token(
+                        "collision.*")
+                    | wz::engine::behavior::channel_mask_for_token(
+                        "proximity.*")
+                    | wz::engine::behavior::channel_mask_for_token(
+                        "input.*"),
             },
         });
-        subscribe_frame_update(scene, entity);
         return scene;
     }
 
@@ -149,18 +163,21 @@ namespace
         SceneInstance& scene,
         RuntimeEntityId entity)
     {
-        std::vector<std::string> channels{ "frame.update" };
+        std::vector<std::string> channels{
+            "frame.update",
+            "collision.*",
+            "proximity.*",
+            "input.*",
+        };
         const auto compiled =
             wz::engine::behavior::compile_channel_mask(channels);
-        scene.event_listeners.push_back(
-            SceneComponentRecord<
-                wz::engine::assets::EventListenerComponent>{
-                .node = entity,
-                .component = wz::engine::assets::EventListenerComponent{
-                    .channels = std::move(channels),
-                    .channel_mask = compiled.mask,
-                },
-            });
+        for (auto& behavior : scene.behaviors) {
+            if (behavior.node == entity) {
+                behavior.component.events = std::move(channels);
+                behavior.component.channel_mask = compiled.mask;
+                return;
+            }
+        }
     }
 
     wz::fs::Path write_text(

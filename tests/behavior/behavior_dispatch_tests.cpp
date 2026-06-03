@@ -1,5 +1,70 @@
 ﻿#include "behavior_test_support.h"
 
+namespace
+{
+    struct MultiModuleProbe
+    {
+        uint32_t a_calls = 0;
+        uint32_t b_calls = 0;
+    };
+
+    void count_module_a(
+        BehaviorFrameContext&,
+        const BehaviorEvent& event,
+        void* user)
+    {
+        auto* probe = static_cast<MultiModuleProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        if (event.kind == WZ_EVENT_COLLISION_ENTER) {
+            ++probe->a_calls;
+        }
+    }
+
+    void count_module_b(
+        BehaviorFrameContext&,
+        const BehaviorEvent& event,
+        void* user)
+    {
+        auto* probe = static_cast<MultiModuleProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        if (event.kind == WZ_EVENT_COLLISION_ENTER) {
+            ++probe->b_calls;
+        }
+    }
+
+    ModuleEventProbe* g_desc_default_probe = nullptr;
+
+    void desc_default_event_handler(
+        const WzBehaviorFrameFacts*,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<ModuleEventProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(event, nullptr);
+        ++probe->calls;
+        probe->kinds.push_back(event->kind);
+        probe->entities.push_back(event->entity);
+    }
+
+    uint8_t register_desc_default_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_module_desc || !g_desc_default_probe) {
+            return 0;
+        }
+        static const char* channels[] = { "collision.enter" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "desc_default",
+            .on_event = desc_default_event_handler,
+            .event_channels = channels,
+            .event_channel_count = 1u,
+            .module_user_data = g_desc_default_probe,
+        };
+        return api->register_module_desc(api->user, &desc);
+    }
+}
+
 TEST(BehaviorDispatch, DispatchesRoutedCollisionEventsToRegisteredModule)
 {
     BehaviorRegistry registry;
@@ -181,7 +246,7 @@ TEST(BehaviorDispatch, DispatchesFrameUpdateToRegisteredModule)
     g_module_event_probe = nullptr;
 }
 
-TEST(BehaviorDispatch, SkipsFrameUpdateWithoutListenerSubscription)
+TEST(BehaviorDispatch, SkipsFrameUpdateWithoutBehaviorSubscription)
 {
     BehaviorRegistry registry;
     BehaviorPluginHost plugins;
@@ -195,7 +260,9 @@ TEST(BehaviorDispatch, SkipsFrameUpdateWithoutListenerSubscription)
         4u,
         "module_test",
         "");
-    scene.event_listeners.clear();
+    ASSERT_EQ(scene.behaviors.size(), 1u);
+    scene.behaviors[0].component.events.clear();
+    scene.behaviors[0].component.channel_mask = 0u;
 
     wz::engine::FrameStorage frame_storage{};
     BehaviorFrameContext context{
@@ -315,5 +382,161 @@ TEST(BehaviorDispatch, ModuleAndLegacyBehaviorComposeOnSameEntity)
         3.0f);
 
     g_module_event_probe = nullptr;
+}
+
+TEST(BehaviorDispatch, MultipleBehaviorBindingsOnSameEntityReceiveSameEvent)
+{
+    BehaviorRegistry registry;
+    MultiModuleProbe probe{};
+    const auto mask =
+        wz::engine::behavior::channel_mask_for_token("collision.enter");
+    ASSERT_TRUE(registry.register_module(
+        "module_a",
+        count_module_a,
+        &probe).valid());
+    ASSERT_TRUE(registry.register_module(
+        "module_b",
+        count_module_b,
+        &probe).valid());
+
+    SceneInstance scene{};
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = "module_a",
+            .enabled = true,
+            .events = { "collision.enter" },
+            .channel_mask = mask,
+        },
+    });
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = "module_b",
+            .enabled = true,
+            .events = { "collision.enter" },
+            .channel_mask = mask,
+        },
+    });
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.a_calls, 1u);
+    EXPECT_EQ(probe.b_calls, 1u);
+}
+
+TEST(BehaviorDispatch, SkipsBindingsThatDoNotAcceptEventKind)
+{
+    BehaviorRegistry registry;
+    MultiModuleProbe probe{};
+    ASSERT_TRUE(registry.register_module(
+        "collision_module",
+        count_module_a,
+        &probe).valid());
+    ASSERT_TRUE(registry.register_module(
+        "input_module",
+        count_module_b,
+        &probe).valid());
+
+    SceneInstance scene{};
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = "collision_module",
+            .enabled = true,
+            .events = { "collision.*" },
+            .channel_mask =
+                wz::engine::behavior::channel_mask_for_token("collision.*"),
+        },
+    });
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = "input_module",
+            .enabled = true,
+            .events = { "input.*" },
+            .channel_mask =
+                wz::engine::behavior::channel_mask_for_token("input.*"),
+        },
+    });
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.a_calls, 1u);
+    EXPECT_EQ(probe.b_calls, 0u);
+}
+
+TEST(BehaviorDispatch, UsesPluginDescriptorDefaultEventsWhenBindingOmitsEvents)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ModuleEventProbe probe{};
+    g_desc_default_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_desc_default_pack));
+
+    SceneInstance scene{};
+    scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+        .node = 4u,
+        .component = BehaviorComponent{
+            .module = "desc_default",
+            .enabled = true,
+        },
+    });
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Exit,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.kinds.size(), 1u);
+    EXPECT_EQ(probe.kinds[0], WZ_EVENT_COLLISION_ENTER);
+    EXPECT_EQ(probe.entities[0], 4u);
+    g_desc_default_probe = nullptr;
 }
 

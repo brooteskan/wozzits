@@ -52,18 +52,6 @@ namespace wz::engine::behavior
             }
         }
 
-        const wz::engine::assets::BehaviorComponent* behavior_for_entity(
-            const wz::engine::assets::SceneInstance& scene,
-            wz::scene::RuntimeEntityId entity)
-        {
-            for (const auto& record : scene.behaviors) {
-                if (record.node == entity) {
-                    return &record.component;
-                }
-            }
-            return nullptr;
-        }
-
         struct ActiveBehaviorScope
         {
             BehaviorFrameContext& context;
@@ -104,6 +92,33 @@ namespace wz::engine::behavior
             }
         };
 
+        bool behavior_accepts_event(
+            const BehaviorRegistry& registry,
+            const wz::engine::assets::BehaviorComponent& component,
+            WzBehaviorEventKind kind)
+        {
+            if (!component.enabled || component.module.empty()) {
+                return false;
+            }
+
+            const auto module_handle = registry.find_module(component.module);
+            if (!module_handle) {
+                return false;
+            }
+
+            const BehaviorModuleRegistration* module =
+                registry.get_module(*module_handle);
+            if (!module || !module->on_event) {
+                return false;
+            }
+
+            const EventChannelMask mask =
+                component.events.empty()
+                    ? module->default_channel_mask
+                    : component.channel_mask;
+            return channel_mask_accepts_event(mask, kind);
+        }
+
         void dispatch_module_event(
             const BehaviorRegistry& registry,
             BehaviorFrameContext& context,
@@ -129,34 +144,31 @@ namespace wz::engine::behavior
             module->on_event(context, event, module->user_data);
         }
 
+        void dispatch_matching_module_event(
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context,
+            const wz::engine::assets::BehaviorComponent& component,
+            const BehaviorEvent& event)
+        {
+            if (!behavior_accepts_event(registry, component, event.kind)) {
+                return;
+            }
+            dispatch_module_event(registry, context, component, event);
+        }
+
         void dispatch_frame_update_events_to_modules(
             const wz::engine::assets::SceneInstance& scene,
             const BehaviorRegistry& registry,
             BehaviorFrameContext& context)
         {
             for (const auto& record : scene.behaviors) {
-                bool subscribed = false;
-                for (const auto& listener : scene.event_listeners) {
-                    if (listener.node == record.node
-                        && wz::engine::assets::listener_accepts_event(
-                            listener.component,
-                            WZ_EVENT_FRAME_UPDATE))
-                    {
-                        subscribed = true;
-                        break;
-                    }
-                }
-                if (!subscribed) {
-                    continue;
-                }
-
                 const BehaviorEvent event{
                     .kind = WZ_EVENT_FRAME_UPDATE,
                     .entity = record.node,
                     .other = wz::scene::INVALID_RUNTIME_ENTITY,
                     .self_is_trigger = false,
                 };
-                dispatch_module_event(
+                dispatch_matching_module_event(
                     registry,
                     context,
                     record.component,
@@ -173,17 +185,15 @@ namespace wz::engine::behavior
                 return;
             }
 
-            for (const auto& collision_event :
-                context.frame_storage->collision.routed_entity_events)
-            {
-                const auto* component =
-                    behavior_for_entity(scene, collision_event.entity);
-                if (!component || !component->enabled
-                    || component->module.empty())
-                {
-                    continue;
-                }
+            const auto entity_events =
+                !context.frame_storage->collision.entity_events.empty()
+                    ? std::span<const wz::engine::collision::CollisionEntityEvent>(
+                        context.frame_storage->collision.entity_events)
+                    : std::span<const wz::engine::collision::CollisionEntityEvent>(
+                        context.frame_storage->collision.routed_entity_events);
 
+            for (const auto& collision_event : entity_events)
+            {
                 const BehaviorEvent event{
                     .kind = collision_event_kind(collision_event.kind),
                     .entity = collision_event.entity,
@@ -194,7 +204,16 @@ namespace wz::engine::behavior
                     continue;
                 }
 
-                dispatch_module_event(registry, context, *component, event);
+                for (const auto& record : scene.behaviors) {
+                    if (record.node != collision_event.entity) {
+                        continue;
+                    }
+                    dispatch_matching_module_event(
+                        registry,
+                        context,
+                        record.component,
+                        event);
+                }
             }
         }
 
@@ -207,17 +226,38 @@ namespace wz::engine::behavior
                 return;
             }
 
+            if (!context.frame_storage->input_events.events.empty()) {
+                for (const auto& input_event :
+                    context.frame_storage->input_events.events)
+                {
+                    const BehaviorEvent event{
+                        .kind = input_event_kind(input_event.kind),
+                        .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                        .self_is_trigger = false,
+                    };
+                    if (event.kind == WZ_EVENT_NONE) {
+                        continue;
+                    }
+
+                    ActiveInputPayloadScope active_payload(
+                        context,
+                        input_event.payload);
+                    for (const auto& record : scene.behaviors) {
+                        BehaviorEvent routed_event = event;
+                        routed_event.entity = record.node;
+                        dispatch_matching_module_event(
+                            registry,
+                            context,
+                            record.component,
+                            routed_event);
+                    }
+                }
+                return;
+            }
+
             for (const auto& input_event :
                 context.frame_storage->input_events.routed_entity_events)
             {
-                const auto* component =
-                    behavior_for_entity(scene, input_event.entity);
-                if (!component || !component->enabled
-                    || component->module.empty())
-                {
-                    continue;
-                }
-
                 const BehaviorEvent event{
                     .kind = input_event_kind(input_event.kind),
                     .entity = input_event.entity,
@@ -231,7 +271,16 @@ namespace wz::engine::behavior
                 ActiveInputPayloadScope active_payload(
                     context,
                     input_event.payload);
-                dispatch_module_event(registry, context, *component, event);
+                for (const auto& record : scene.behaviors) {
+                    if (record.node != input_event.entity) {
+                        continue;
+                    }
+                    dispatch_matching_module_event(
+                        registry,
+                        context,
+                        record.component,
+                        event);
+                }
             }
         }
 
@@ -244,17 +293,15 @@ namespace wz::engine::behavior
                 return;
             }
 
-            for (const auto& proximity_event :
-                context.frame_storage->collision.routed_proximity_entity_events)
-            {
-                const auto* component =
-                    behavior_for_entity(scene, proximity_event.entity);
-                if (!component || !component->enabled
-                    || component->module.empty())
-                {
-                    continue;
-                }
+            const auto entity_events =
+                !context.frame_storage->collision.proximity_entity_events.empty()
+                    ? std::span<const wz::engine::collision::ProximityEntityEvent>(
+                        context.frame_storage->collision.proximity_entity_events)
+                    : std::span<const wz::engine::collision::ProximityEntityEvent>(
+                        context.frame_storage->collision.routed_proximity_entity_events);
 
+            for (const auto& proximity_event : entity_events)
+            {
                 const BehaviorEvent event{
                     .kind = proximity_event_kind(proximity_event.kind),
                     .entity = proximity_event.entity,
@@ -265,7 +312,16 @@ namespace wz::engine::behavior
                     continue;
                 }
 
-                dispatch_module_event(registry, context, *component, event);
+                for (const auto& record : scene.behaviors) {
+                    if (record.node != proximity_event.entity) {
+                        continue;
+                    }
+                    dispatch_matching_module_event(
+                        registry,
+                        context,
+                        record.component,
+                        event);
+                }
             }
         }
     }

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 7u
+#define WZ_BEHAVIOR_ABI_VERSION 8u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -345,12 +345,27 @@ typedef uint8_t (*WzRegisterBehaviorModuleFn)(
     WzBehaviorModuleEventFn on_event,
     void* module_user_data);
 
+typedef struct WzBehaviorModuleDesc
+{
+    uint32_t size;
+    const char* module;
+    WzBehaviorModuleEventFn on_event;
+    const char* const* event_channels;
+    uint32_t event_channel_count;
+    void* module_user_data;
+} WzBehaviorModuleDesc;
+
+typedef uint8_t (*WzRegisterBehaviorModuleDescFn)(
+    void* user,
+    const WzBehaviorModuleDesc* desc);
+
 typedef struct WzBehaviorPluginApi
 {
     uint32_t version;
     void* user;
     WzRegisterBehaviorFn register_behavior;
     WzRegisterBehaviorModuleFn register_module;
+    WzRegisterBehaviorModuleDescFn register_module_desc;
 } WzBehaviorPluginApi;
 
 typedef uint8_t (*WzRegisterBehaviorPluginFn)(

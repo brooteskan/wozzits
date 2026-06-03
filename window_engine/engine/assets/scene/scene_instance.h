@@ -111,6 +111,8 @@ namespace wz::engine::assets
         std::string module;
         std::string name;
         bool enabled = true;
+        std::vector<std::string> events;
+        wz::engine::behavior::EventChannelMask channel_mask = 0u;
         std::vector<SceneBehaviorConfigValue> config;
     };
 

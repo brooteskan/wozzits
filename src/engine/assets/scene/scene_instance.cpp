@@ -155,9 +155,10 @@ namespace wz::engine::assets
             context.logger->info(msg.str());
         }
 
-        void log_event_listener_channel_warnings(
+        void log_channel_warnings(
             const SceneNodeAsset& node,
             const SceneInstantiateContext& context,
+            const char* component_name,
             const wz::engine::behavior::EventChannelCompileResult& compiled)
         {
             if (!context.logger) {
@@ -168,7 +169,8 @@ namespace wz::engine::assets
                 std::ostringstream msg;
                 msg << "[" << log_owner(context) << "] "
                     << node_log_name(node)
-                    << " event_listener has " << compiled.unknown_count
+                    << " " << component_name << " has "
+                    << compiled.unknown_count
                     << " unknown channel token(s)";
                 context.logger->warn(msg.str());
             }
@@ -177,10 +179,41 @@ namespace wz::engine::assets
                 std::ostringstream msg;
                 msg << "[" << log_owner(context) << "] "
                     << node_log_name(node)
-                    << " event_listener has " << compiled.redundant_count
+                    << " " << component_name << " has "
+                    << compiled.redundant_count
                     << " redundant channel token(s)";
                 context.logger->warn(msg.str());
             }
+        }
+
+        void log_event_listener_channel_warnings(
+            const SceneNodeAsset& node,
+            const SceneInstantiateContext& context,
+            const wz::engine::behavior::EventChannelCompileResult& compiled)
+        {
+            log_channel_warnings(
+                node,
+                context,
+                "event_listener",
+                compiled);
+        }
+
+        BehaviorComponent instantiate_behavior_component(
+            const SceneNodeAsset& node,
+            const SceneInstantiateContext& context,
+            const SceneBehaviorAsset& behavior)
+        {
+            const auto compiled =
+                wz::engine::behavior::compile_channel_mask(behavior.events);
+            log_channel_warnings(node, context, "behavior", compiled);
+            return BehaviorComponent{
+                .module = behavior.module,
+                .name = behavior.name,
+                .enabled = behavior.enabled,
+                .events = behavior.events,
+                .channel_mask = compiled.mask,
+                .config = behavior.config,
+            };
         }
 
         void log_instantiate_failure(
@@ -622,12 +655,19 @@ namespace wz::engine::assets
             if (node.behavior) {
                 inst.behaviors.push_back({
                     .node = h,
-                    .component = BehaviorComponent{
-                        .module = node.behavior->module,
-                        .name = node.behavior->name,
-                        .enabled = node.behavior->enabled,
-                        .config = node.behavior->config,
-                    },
+                    .component = instantiate_behavior_component(
+                        node,
+                        context,
+                        *node.behavior),
+                });
+            }
+            for (const auto& behavior : node.behaviors) {
+                inst.behaviors.push_back({
+                    .node = h,
+                    .component = instantiate_behavior_component(
+                        node,
+                        context,
+                        behavior),
                 });
             }
 

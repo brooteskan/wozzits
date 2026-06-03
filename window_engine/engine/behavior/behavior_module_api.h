@@ -32,6 +32,28 @@
             nullptr);                                                       \
     }
 
+#define WZ_BEHAVIOR_MODULE_EVENTS(                                          \
+    module_name, handler_fn, event_channel_array)                           \
+    extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(     \
+        WzBehaviorPluginApi* api)                                           \
+    {                                                                       \
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION                 \
+            || !api->register_module_desc)                                  \
+        {                                                                   \
+            return 0;                                                       \
+        }                                                                   \
+        const WzBehaviorModuleDesc desc = {                                 \
+            sizeof(WzBehaviorModuleDesc),                                   \
+            module_name,                                                    \
+            handler_fn,                                                     \
+            event_channel_array,                                            \
+            (uint32_t)(sizeof(event_channel_array)                          \
+                / sizeof((event_channel_array)[0])),                        \
+            nullptr,                                                        \
+        };                                                                  \
+        return api->register_module_desc(api->user, &desc);                 \
+    }
+
 static inline uint8_t wz_key_down(
     const WzBehaviorFrameFacts* facts,
     uint32_t key)

@@ -163,3 +163,81 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsEventModuleWithoutName)
     EXPECT_TRUE(scene_data->nodes[0].behavior->enabled);
 }
 
+TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
+{
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wz_behavior_scene_json_plural_behaviors");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const std::string json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "behavior_scene",
+  "nodes": [
+    {
+      "id": "actor",
+      "behaviors": [
+        {
+          "module": "player_move",
+          "events": [ "input.*", "frame.update" ]
+        },
+        {
+          "module": "footstep_audio",
+          "events": [ "collision.enter" ],
+          "config": {
+            "volume": 0.75
+          }
+        }
+      ]
+    }
+  ]
+})";
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    const wz::fs::Path rel_path =
+        write_text(root, "behavior_plural.scene.json", json);
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "behavior_scene",
+        .path = rel_path,
+    });
+
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    EXPECT_FALSE(scene_data->nodes[0].behavior.has_value());
+    ASSERT_EQ(scene_data->nodes[0].behaviors.size(), 2u);
+    EXPECT_EQ(scene_data->nodes[0].behaviors[0].module, "player_move");
+    ASSERT_EQ(scene_data->nodes[0].behaviors[0].events.size(), 2u);
+    EXPECT_EQ(scene_data->nodes[0].behaviors[0].events[0], "input.*");
+    EXPECT_EQ(scene_data->nodes[0].behaviors[1].module, "footstep_audio");
+    ASSERT_EQ(scene_data->nodes[0].behaviors[1].events.size(), 1u);
+    EXPECT_EQ(scene_data->nodes[0].behaviors[1].events[0], "collision.enter");
+
+    const auto result = wz::engine::assets::instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.behaviors.size(), 2u);
+    EXPECT_EQ(
+        result.instance.behaviors[0].component.channel_mask,
+        wz::engine::behavior::kInputEventChannels
+            | wz::engine::behavior::EventChannelFrameUpdate);
+    EXPECT_EQ(
+        result.instance.behaviors[1].component.channel_mask,
+        wz::engine::behavior::EventChannelCollisionEnter);
+
+    const std::string exported = wz::json::serialize_json(
+        wz::engine::assets::export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"behaviors\""), std::string::npos);
+    EXPECT_NE(exported.find("\"events\""), std::string::npos);
+    EXPECT_NE(exported.find("\"player_move\""), std::string::npos);
+    EXPECT_NE(exported.find("\"footstep_audio\""), std::string::npos);
+}
+

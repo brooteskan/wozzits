@@ -576,6 +576,133 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        bool read_behavior_events(
+            const wz::json::JSONValue& value,
+            const std::string& field_name,
+            const std::string& node_id,
+            wz::Logger& logger,
+            std::vector<std::string>& out)
+        {
+            const auto* events = find_member(value, "events");
+            if (!events) {
+                return true;
+            }
+            if (events->kind != wz::json::JSONValueKind::Array) {
+                logger.error(field_name + ".events on node '" + node_id
+                    + "' is not an array");
+                return false;
+            }
+
+            for (const auto& event : events->array_values) {
+                if (event
+                    && event->kind == wz::json::JSONValueKind::String
+                    && !event->string_value.empty())
+                {
+                    out.push_back(event->string_value);
+                }
+            }
+            return true;
+        }
+
+        bool read_behavior_config(
+            const wz::json::JSONValue& value,
+            const std::string& field_name,
+            const std::string& node_id,
+            wz::Logger& logger,
+            std::vector<SceneBehaviorConfigValue>& out)
+        {
+            const auto* config = find_member(value, "config");
+            if (!config) {
+                return true;
+            }
+            if (config->kind != wz::json::JSONValueKind::Object) {
+                logger.error(field_name + ".config on node '" + node_id
+                    + "' is not an object");
+                return false;
+            }
+
+            for (const auto& member : config->object_members) {
+                if (!member.value) {
+                    continue;
+                }
+
+                SceneBehaviorConfigValue entry{};
+                entry.key = member.key;
+                switch (member.value->kind) {
+                case wz::json::JSONValueKind::Bool:
+                    entry.kind = SceneBehaviorConfigValueKind::Bool;
+                    entry.bool_value = member.value->bool_value;
+                    break;
+                case wz::json::JSONValueKind::Number:
+                    entry.kind = SceneBehaviorConfigValueKind::Number;
+                    entry.number_value = member.value->number_value;
+                    break;
+                case wz::json::JSONValueKind::String:
+                    entry.kind = SceneBehaviorConfigValueKind::String;
+                    entry.string_value = member.value->string_value;
+                    break;
+                default:
+                    logger.error(field_name + ".config." + member.key
+                        + " on node '" + node_id
+                        + "' must be bool, number, or string");
+                    return false;
+                }
+                out.push_back(std::move(entry));
+            }
+            return true;
+        }
+
+        std::optional<SceneBehaviorAsset> parse_behavior_component(
+            const wz::json::JSONValue& value,
+            const std::string& field_name,
+            const std::string& node_id,
+            wz::Logger& logger)
+        {
+            if (value.kind != wz::json::JSONValueKind::Object) {
+                logger.error(field_name + " on node '" + node_id
+                    + "' is not an object");
+                return std::nullopt;
+            }
+
+            auto module = read_string(value, "module");
+            if (!module || module->empty()) {
+                logger.error(field_name + " on node '" + node_id
+                    + "' missing non-empty module");
+                return std::nullopt;
+            }
+
+            SceneBehaviorAsset component{};
+            component.module = std::string(*module);
+
+            auto name = read_string(value, "name");
+            if (name) {
+                component.name = std::string(*name);
+            }
+
+            auto enabled = read_bool(value, "enabled");
+            if (enabled) {
+                component.enabled = *enabled;
+            }
+
+            if (!read_behavior_events(
+                    value,
+                    field_name,
+                    node_id,
+                    logger,
+                    component.events)
+                || !read_behavior_config(
+                    value,
+                    field_name,
+                    node_id,
+                    logger,
+                    component.config))
+            {
+                return std::nullopt;
+            }
+
+            return component;
+        }
+
         std::optional<SceneNodeAsset> parse_node(
             const wz::json::JSONValue& node_val,
             wz::Logger& logger,
@@ -2046,65 +2173,38 @@ namespace wz::engine::assets::internal
             if (behavior
                 && behavior->kind == wz::json::JSONValueKind::Object)
             {
-                auto module = read_string(*behavior, "module");
-                if (!module || module->empty()) {
-                    logger.error("behavior on node '" + node.id
-                        + "' missing non-empty module");
+                auto component = parse_behavior_component(
+                    *behavior,
+                    "behavior",
+                    node.id,
+                    logger);
+                if (!component) {
                     return std::nullopt;
                 }
 
-                SceneBehaviorAsset component{};
-                component.module = std::string(*module);
-
-                auto name = read_string(*behavior, "name");
-                if (name) {
-                    component.name = std::string(*name);
+                node.behavior = std::move(*component);
+            }
+            const auto* behaviors = find_member(node_val, "behaviors");
+            if (behaviors) {
+                if (behaviors->kind != wz::json::JSONValueKind::Array) {
+                    logger.error("behaviors on node '" + node.id
+                        + "' is not an array");
+                    return std::nullopt;
                 }
-
-                auto enabled = read_bool(*behavior, "enabled");
-                if (enabled) {
-                    component.enabled = *enabled;
-                }
-
-                const auto* config = find_member(*behavior, "config");
-                if (config) {
-                    if (config->kind != wz::json::JSONValueKind::Object) {
-                        logger.error("behavior.config on node '" + node.id
-                            + "' is not an object");
+                for (const auto& entry : behaviors->array_values) {
+                    if (!entry) {
+                        continue;
+                    }
+                    auto component = parse_behavior_component(
+                        *entry,
+                        "behaviors[]",
+                        node.id,
+                        logger);
+                    if (!component) {
                         return std::nullopt;
                     }
-
-                    for (const auto& member : config->object_members) {
-                        if (!member.value) {
-                            continue;
-                        }
-
-                        SceneBehaviorConfigValue value{};
-                        value.key = member.key;
-                        switch (member.value->kind) {
-                        case wz::json::JSONValueKind::Bool:
-                            value.kind = SceneBehaviorConfigValueKind::Bool;
-                            value.bool_value = member.value->bool_value;
-                            break;
-                        case wz::json::JSONValueKind::Number:
-                            value.kind = SceneBehaviorConfigValueKind::Number;
-                            value.number_value = member.value->number_value;
-                            break;
-                        case wz::json::JSONValueKind::String:
-                            value.kind = SceneBehaviorConfigValueKind::String;
-                            value.string_value = member.value->string_value;
-                            break;
-                        default:
-                            logger.error("behavior.config." + member.key
-                                + " on node '" + node.id
-                                + "' must be bool, number, or string");
-                            return std::nullopt;
-                        }
-                        component.config.push_back(std::move(value));
-                    }
+                    node.behaviors.push_back(std::move(*component));
                 }
-
-                node.behavior = std::move(component);
             }
 
             const auto* dv = find_member(node_val, "auxiliary_visual");

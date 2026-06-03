@@ -52,6 +52,35 @@ namespace wz::engine::assets
             fp.mix_value(key.deps_hash.lo);
             fp.mix_value(key.deps_hash.hi);
         }
+
+        void mix_behavior(
+            SceneFingerprintBuilder& fp,
+            const SceneBehaviorAsset& behavior)
+        {
+            fp.mix_string(behavior.module);
+            fp.mix_string(behavior.name);
+            fp.mix_value(behavior.enabled);
+            fp.mix_value(behavior.events.size());
+            for (const auto& event : behavior.events) {
+                fp.mix_string(event);
+            }
+            fp.mix_value(behavior.config.size());
+            for (const auto& entry : behavior.config) {
+                fp.mix_string(entry.key);
+                fp.mix_value(entry.kind);
+                switch (entry.kind) {
+                case SceneBehaviorConfigValueKind::Bool:
+                    fp.mix_value(entry.bool_value);
+                    break;
+                case SceneBehaviorConfigValueKind::Number:
+                    fp.mix_value(entry.number_value);
+                    break;
+                case SceneBehaviorConfigValueKind::String:
+                    fp.mix_string(entry.string_value);
+                    break;
+                }
+            }
+        }
     }
 
     uint64_t scene_asset_fingerprint(const SceneAssetData& scene)
@@ -109,6 +138,7 @@ namespace wz::engine::assets
             const bool has_terrain_height_field_source =
                 node.terrain_height_field_source.has_value();
             const bool has_behavior = node.behavior.has_value();
+            const bool has_behaviors = !node.behaviors.empty();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
@@ -133,6 +163,7 @@ namespace wz::engine::assets
             fp.mix_value(has_terrain_mesh_source);
             fp.mix_value(has_terrain_height_field_source);
             fp.mix_value(has_behavior);
+            fp.mix_value(has_behaviors);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -427,25 +458,11 @@ namespace wz::engine::assets
             }
 
             if (node.behavior) {
-                fp.mix_string(node.behavior->module);
-                fp.mix_string(node.behavior->name);
-                fp.mix_value(node.behavior->enabled);
-                fp.mix_value(node.behavior->config.size());
-                for (const auto& entry : node.behavior->config) {
-                    fp.mix_string(entry.key);
-                    fp.mix_value(entry.kind);
-                    switch (entry.kind) {
-                    case SceneBehaviorConfigValueKind::Bool:
-                        fp.mix_value(entry.bool_value);
-                        break;
-                    case SceneBehaviorConfigValueKind::Number:
-                        fp.mix_value(entry.number_value);
-                        break;
-                    case SceneBehaviorConfigValueKind::String:
-                        fp.mix_string(entry.string_value);
-                        break;
-                    }
-                }
+                mix_behavior(fp, *node.behavior);
+            }
+            fp.mix_value(node.behaviors.size());
+            for (const auto& behavior : node.behaviors) {
+                mix_behavior(fp, behavior);
             }
 
             if (node.debug_visual) {

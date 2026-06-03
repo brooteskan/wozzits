@@ -939,6 +939,60 @@ namespace wz::engine::behavior
                     binding_ptr);
             return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
         }
+
+        uint8_t register_module_desc(
+            void* user,
+            const WzBehaviorModuleDesc* desc)
+        {
+            auto* context = static_cast<RegisterContext*>(user);
+            if (!context || !context->registry || !context->host
+                || !desc || desc->size < sizeof(WzBehaviorModuleDesc)
+                || !desc->module || !desc->on_event)
+            {
+                return 0;
+            }
+
+            std::vector<std::string> default_events;
+            default_events.reserve(desc->event_channel_count);
+            for (uint32_t i = 0; i < desc->event_channel_count; ++i) {
+                if (!desc->event_channels || !desc->event_channels[i]
+                    || desc->event_channels[i][0] == '\0')
+                {
+                    continue;
+                }
+                default_events.emplace_back(desc->event_channels[i]);
+            }
+
+            const auto compiled = compile_channel_mask(default_events);
+            if (context->logger && compiled.unknown_count > 0u) {
+                context->logger->warn(
+                    std::string("behavior module '")
+                    + desc->module
+                    + "' default events have "
+                    + std::to_string(compiled.unknown_count)
+                    + " unknown channel token(s)");
+            }
+            if (context->logger && compiled.redundant_count > 0u) {
+                context->logger->warn(
+                    std::string("behavior module '")
+                    + desc->module
+                    + "' default events have "
+                    + std::to_string(compiled.redundant_count)
+                    + " redundant channel token(s)");
+            }
+            auto* binding_ptr = context->host->add_module_binding(
+                desc->on_event,
+                desc->module_user_data,
+                context->logger);
+            const BehaviorModuleHandle handle =
+                context->registry->register_module(
+                    desc->module,
+                    dispatch_abi_module_event,
+                    std::move(default_events),
+                    compiled.mask,
+                    binding_ptr);
+            return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
+        }
     }
 
     BehaviorPluginHost::~BehaviorPluginHost()
@@ -966,6 +1020,7 @@ namespace wz::engine::behavior
             .user = &context,
             .register_behavior = register_behavior,
             .register_module = register_module,
+            .register_module_desc = register_module_desc,
         };
 
         return register_plugin(&api) != 0;

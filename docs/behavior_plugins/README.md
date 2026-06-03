@@ -98,12 +98,10 @@ In authored scene JSON, a node selects a behavior module by name:
   "proximity": {
     "radius": 3.0
   },
-  "event_listener": {
-    "channels": [ "proximity.enter" ]
-  },
   "behavior": {
     "module": "proximity_boost",
     "enabled": true,
+    "events": [ "proximity.enter" ],
     "config": {
       "speed": 3.0
     }
@@ -118,8 +116,33 @@ off `module`, not `name`.
 
 `enabled` defaults to true when omitted.
 
+`events` is optional. When present, it lists the event channels this behavior
+binding receives. When omitted, the binding uses the module's default event
+channels if the plugin registered any defaults.
+
 `config` is optional. It may contain booleans, numbers, and strings. Arrays,
 objects, and null values are rejected by the scene compiler.
+
+Nodes may also use plural `behaviors` to attach multiple behavior modules:
+
+```json
+{
+  "id": "player",
+  "behaviors": [
+    {
+      "module": "player_move",
+      "events": [ "input.*", "frame.update" ]
+    },
+    {
+      "module": "footstep_audio",
+      "events": [ "collision.enter" ]
+    }
+  ]
+}
+```
+
+Each behavior binding has its own event list. Multiple behavior bindings on the
+same node may subscribe to the same event; each matching binding is called.
 
 The current API is event-driven for scene events such as collision, proximity,
 and input button/key edges. Continuous input state, such as held keys, mouse
@@ -149,6 +172,9 @@ WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED
 WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED
 ```
 
+`WZ_EVENT_SCENE_LOADED` is reserved in the ABI and channel table; current
+runtime dispatch sends frame, collision, proximity, and input events.
+
 Helper functions:
 
 ```cpp
@@ -167,10 +193,43 @@ For frame and scene-loaded events, `other` is `WZ_INVALID_BEHAVIOR_ENTITY`.
 `wz_self_is_trigger(event)` is set for collision/proximity events when the
 receiving side is a trigger participant.
 
+## Event Channel Tokens
+
+Scene behavior bindings and plugin defaults use the same channel tokens:
+
+```text
+frame.update
+scene.loaded
+collision.enter
+collision.stay
+collision.exit
+collision.*
+proximity.enter
+proximity.stay
+proximity.exit
+proximity.*
+input.key.pressed
+input.key.released
+input.mouse_button.pressed
+input.mouse_button.released
+input.controller_button.pressed
+input.controller_button.released
+input.*
+```
+
+`collision.*`, `proximity.*`, and `input.*` are hardcoded group tokens, not a
+general glob system.
+
+`event_listener` still exists for generic/non-behavior event participation,
+such as collision or proximity entities that need to appear in routed event
+storage even when they do not have behavior bindings. Normal scene-authored
+behavior should put subscriptions on the behavior binding instead.
+`event_listener` does not restrict which events a behavior binding receives.
+
 ## Frame Update Events
 
-`WZ_EVENT_FRAME_UPDATE` is sent only to behavior components whose node has an
-Event Listener component with:
+`WZ_EVENT_FRAME_UPDATE` is sent only to behavior bindings whose `events` list,
+or plugin default event list, includes:
 
 ```text
 frame.update
@@ -180,13 +239,13 @@ Use frame update for continuous behavior such as held input checks, timers, AI
 state machines, and velocity control.
 
 Migration note: older behavior modules received `WZ_EVENT_FRAME_UPDATE`
-unconditionally. Add `frame.update` to the node's Event Listener channels for
+unconditionally. Add `frame.update` to the behavior binding's `events` list for
 any behavior that still needs a per-frame callback.
 
 ## Collision Events
 
-Collision events are routed through the node's Event Listener component. To
-receive collision events, add an Event Listener component with one or more of:
+To receive collision events, add one or more collision channels to the behavior
+binding's `events` list:
 
 ```text
 collision.enter
@@ -212,8 +271,8 @@ if (wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
 
 ## Proximity Events
 
-Proximity events are routed through the same Event Listener component. Add a
-Proximity component to define radius and masks, then subscribe with:
+Add a Proximity component to define radius and masks, then subscribe the
+behavior binding with:
 
 ```text
 proximity.enter
@@ -230,8 +289,8 @@ in world units and does not inherit scale from the node's transform hierarchy.
 
 ## Input Events
 
-Input edge events are routed through the Event Listener component, just like
-collision and proximity events. Subscribe with one or more of:
+Input edge events are routed to behavior bindings that subscribe with one or
+more of:
 
 ```text
 input.key.pressed
@@ -687,26 +746,62 @@ wz_log_info(facts, "hello from behavior");
 
 ## Raw ABI Registration
 
-Most modules should use `WZ_BEHAVIOR_MODULE`. If a DLL needs to register
-multiple modules or pass module-specific user data, implement
-`wz_register_behaviors` directly and call `api->register_module`:
+Most modules should use `WZ_BEHAVIOR_MODULE` or
+`WZ_BEHAVIOR_MODULE_EVENTS`. The `_EVENTS` form declares default channel
+subscriptions for behavior bindings that omit an authored `events` list:
+
+```cpp
+static const char* kEvents[] = {
+    "input.*",
+    "frame.update",
+};
+
+WZ_BEHAVIOR_MODULE_EVENTS("player_move", on_event, kEvents)
+```
+
+If a DLL needs to register multiple modules or pass module-specific user data,
+implement `wz_register_behaviors` directly and call
+`api->register_module_desc`:
 
 ```cpp
 extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(
     WzBehaviorPluginApi* api)
 {
     if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
-        || !api->register_module)
+        || !api->register_module_desc)
     {
         return 0;
     }
 
+    static const char* move_events[] = { "input.*", "frame.update" };
+    const WzBehaviorModuleDesc move{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "move",
+        .on_event = move_event,
+        .event_channels = move_events,
+        .event_channel_count = 2,
+        .module_user_data = nullptr,
+    };
+
+    static const char* snap_events[] = { "proximity.enter" };
+    const WzBehaviorModuleDesc snap{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "snap",
+        .on_event = snap_event,
+        .event_channels = snap_events,
+        .event_channel_count = 1,
+        .module_user_data = nullptr,
+    };
+
     uint8_t ok = 1;
-    ok &= api->register_module(api->user, "move", move_event, nullptr);
-    ok &= api->register_module(api->user, "snap", snap_event, nullptr);
+    ok &= api->register_module_desc(api->user, &move);
+    ok &= api->register_module_desc(api->user, &snap);
     return ok;
 }
 ```
+
+`api->register_module` is still available for modules with no declared default
+subscriptions.
 
 The older `api->register_behavior` callback is still present for legacy
 behavior functions with the signature:

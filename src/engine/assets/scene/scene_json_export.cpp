@@ -888,6 +888,13 @@ namespace wz::engine::assets
             }
             add_member(*obj, "name", string_value(behavior.name));
             add_member(*obj, "enabled", bool_value(behavior.enabled));
+            if (!behavior.events.empty()) {
+                auto events = array_value();
+                for (const auto& event : behavior.events) {
+                    events->array_values.push_back(string_value(event));
+                }
+                add_member(*obj, "events", std::move(events));
+            }
             if (!behavior.config.empty()) {
                 auto config = object_value();
                 for (const auto& entry : behavior.config) {
@@ -1079,6 +1086,14 @@ namespace wz::engine::assets
             if (node.behavior) {
                 add_member(*obj, "behavior",
                     behavior_value(*node.behavior));
+            }
+            if (!node.behaviors.empty()) {
+                auto behaviors = array_value();
+                for (const auto& behavior : node.behaviors) {
+                    behaviors->array_values.push_back(
+                        behavior_value(behavior));
+                }
+                add_member(*obj, "behaviors", std::move(behaviors));
             }
             if (node.debug_visual
                 && node.debug_visual->kind != SceneDebugVisualKind::None)

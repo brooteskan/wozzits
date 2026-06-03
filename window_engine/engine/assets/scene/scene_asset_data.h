@@ -533,6 +533,7 @@ namespace wz::engine::assets
         std::string module;
         std::string name;
         bool enabled = true;
+        std::vector<std::string> events;
         std::vector<SceneBehaviorConfigValue> config;
     };
 
@@ -587,6 +588,7 @@ namespace wz::engine::assets
         std::optional<SceneProximityAsset> proximity;
         std::optional<SceneMotionAsset> motion;
         std::optional<SceneBehaviorAsset> behavior;
+        std::vector<SceneBehaviorAsset> behaviors;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
@@ -1023,7 +1025,7 @@ namespace wz::engine::assets
         if (node.motion) {
             out.push_back(Kind::Motion);
         }
-        if (node.behavior) {
+        if (node.behavior || !node.behaviors.empty()) {
             out.push_back(Kind::Behavior);
         }
         if (node.debug_visual) {
@@ -1239,6 +1241,7 @@ namespace wz::engine::assets
             || node.proximity.has_value()
             || node.motion.has_value()
             || node.behavior.has_value()
+            || !node.behaviors.empty()
             || node.debug_visual.has_value();
     }
 
@@ -1395,6 +1398,7 @@ namespace wz::engine::assets
             if (node.behavior) {
                 ++out.behaviors;
             }
+            out.behaviors += static_cast<uint32_t>(node.behaviors.size());
             if (node.debug_visual) {
                 ++out.auxiliary_visuals;
             }

@@ -3,6 +3,7 @@
 // engine/behavior/behavior_registry.h
 
 #include <engine/behavior/behavior_commands.h>
+#include <engine/behavior/event_channels.h>
 #include <engine/behavior/behavior_plugin_abi.h>
 #include <engine/engine.h>
 
@@ -83,6 +84,8 @@ namespace wz::engine::behavior
     {
         std::string module;
         BehaviorModuleEventFn on_event = nullptr;
+        std::vector<std::string> default_events;
+        EventChannelMask default_channel_mask = 0u;
         void* user_data = nullptr;
     };
 
@@ -98,6 +101,13 @@ namespace wz::engine::behavior
         BehaviorHandle register_behavior(
             std::string name,
             BehaviorFn function,
+            void* user_data = nullptr);
+
+        BehaviorModuleHandle register_module(
+            std::string module,
+            BehaviorModuleEventFn on_event,
+            std::vector<std::string> default_events,
+            EventChannelMask default_channel_mask,
             void* user_data = nullptr);
 
         BehaviorModuleHandle register_module(
