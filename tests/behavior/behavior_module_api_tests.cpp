@@ -9,6 +9,35 @@ TEST(BehaviorModuleApi, NullEventHelpersReturnSentinels)
     EXPECT_EQ(wz_self_is_trigger(nullptr), 0u);
 }
 
+TEST(BehaviorModuleApi, LogInfofFormatsThroughLogCallback)
+{
+    std::string message;
+    WzBehaviorFrameFacts facts{
+        .log_user = &message,
+        .log_info = [](void* user, const char* text)
+        {
+            auto* out = static_cast<std::string*>(user);
+            ASSERT_NE(out, nullptr);
+            ASSERT_NE(text, nullptr);
+            *out = text;
+        },
+    };
+
+    wz_log_infof(
+        &facts,
+        "controller=%u axis=%u value=%.2f",
+        1u,
+        WZ_CONTROLLER_AXIS_LEFT_X,
+        0.25);
+
+    EXPECT_EQ(message, "controller=1 axis=0 value=0.25");
+
+    message = "unchanged";
+    wz_log_infof(nullptr, "ignored");
+    wz_log_infof(&facts, nullptr);
+    EXPECT_EQ(message, "unchanged");
+}
+
 TEST(BehaviorModuleApi, SelfAddLocalTranslationWritesCommandForEventEntity)
 {
     BehaviorRegistry registry;

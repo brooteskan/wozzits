@@ -308,7 +308,8 @@ usually trying to do.
   [`wz_config_string`](#scene-lookup-and-config).
 - Read frame timing: [`wz_delta_seconds`](#frame-timing) and
   [`wz_frame_index`](#frame-timing).
-- Write editor/runtime diagnostics: [`wz_log_info`](#logging).
+- Write editor/runtime diagnostics: [`wz_log_info`](#logging) and
+  [`wz_log_infof`](#logging).
 
 ## Event Routing
 
@@ -966,9 +967,12 @@ Use the frame facts logger callback through the helper:
 
 ```cpp
 wz_log_info(facts, "hello from behavior");
+wz_log_infof(facts, "axis %u value %.2f", axis, value);
 ```
 
 `wz_log_info` ignores null facts, missing logger callbacks, and null messages.
+`wz_log_infof` formats into a fixed local buffer, then forwards the result to
+`wz_log_info`.
 
 ## Raw ABI Registration
 

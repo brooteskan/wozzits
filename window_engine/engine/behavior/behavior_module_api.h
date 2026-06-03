@@ -8,7 +8,9 @@
 #include <engine/behavior/behavior_plugin_abi.h>
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(_WIN32)
 #define WZ_BEHAVIOR_MODULE_EXPORT __declspec(dllexport)
@@ -467,6 +469,28 @@ static inline void wz_log_info(
     if (facts && facts->log_info && message) {
         facts->log_info(facts->log_user, message);
     }
+}
+
+static inline void wz_log_infof(
+    const WzBehaviorFrameFacts* facts,
+    const char* format,
+    ...)
+{
+    if (!facts || !facts->log_info || !format) {
+        return;
+    }
+
+    char message[512];
+    va_list args;
+    va_start(args, format);
+    const int written = vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+
+    if (written < 0) {
+        return;
+    }
+    message[sizeof(message) - 1u] = '\0';
+    wz_log_info(facts, message);
 }
 
 static inline WzBehaviorEntityId wz_self(const WzBehaviorEvent* event)
