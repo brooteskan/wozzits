@@ -209,6 +209,7 @@ PRIVATE
     d3d12
     dxgi
     dxguid
+    windowsapp
     xinput)
 
 add_subdirectory(src)
