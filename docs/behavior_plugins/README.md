@@ -192,10 +192,8 @@ usually trying to do.
   `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED`, and
   `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED`, and
   `WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED`.
-- Event helpers: [`wz_event_kind`](#event-routing),
-  [`wz_is_event`](#event-routing), [`wz_event_name`](#event-routing),
-  [`wz_self`](#event-routing), [`wz_other`](#event-routing), and
-  [`wz_self_is_trigger`](#event-routing).
+- Event helper signatures and examples are in
+  [Event Routing](#event-routing).
 - Event channel tokens: `frame.update`, `scene.loaded`, `collision.enter`,
   `collision.stay`, `collision.exit`, `collision.*`, `proximity.enter`,
   `proximity.stay`, `proximity.exit`, `proximity.*`,
@@ -207,127 +205,38 @@ usually trying to do.
 
 ### Input Dispatch And Snapshot Reads
 
-- Edge-event payload helpers: [`wz_input_event_key`](#input-events),
-  [`wz_input_event_mouse_button`](#input-events),
-  [`wz_input_event_controller`](#input-events), and
-  [`wz_input_event_controller_button`](#input-events),
-  [`wz_input_event_controller_axis`](#input-events), and
-  [`wz_input_event_controller_axis_value`](#input-events).
-- Keyboard snapshot helpers: [`wz_key_down`](#reading-input),
-  [`wz_key_pressed`](#reading-input), and
-  [`wz_key_released`](#reading-input).
-- Mouse snapshot helpers: [`wz_mouse_button_down`](#reading-input),
-  [`wz_mouse_button_pressed`](#reading-input),
-  [`wz_mouse_button_released`](#reading-input),
-  [`wz_mouse_x`](#reading-input), [`wz_mouse_y`](#reading-input),
-  [`wz_mouse_dx`](#reading-input), and [`wz_mouse_dy`](#reading-input).
-- Window snapshot helpers: [`wz_window_focused`](#reading-input),
-  [`wz_window_width`](#reading-input), and
-  [`wz_window_height`](#reading-input).
-- Controller snapshot helpers: [`wz_controller_count`](#reading-input),
-  [`wz_controller_connected`](#reading-input),
-  [`wz_controller_connected_pressed`](#reading-input),
-  [`wz_controller_connected_released`](#reading-input),
-  [`wz_controller_axis`](#reading-input),
-  [`wz_controller_button_down`](#reading-input),
-  [`wz_controller_button_pressed`](#reading-input), and
-  [`wz_controller_button_released`](#reading-input).
-- Convenience axis helper: [`wz_input_wasd_axis`](#reading-input).
+- Edge-event payload helper signatures and examples are in
+  [Input Events](#input-events).
+- Keyboard, mouse, window, controller, and WASD snapshot helper signatures are
+  in [Reading Input](#reading-input).
 
 ### Things To Do With Motion And Transforms
 
-- Move or scale self: [`wz_self_add_local_translation`](#writing-commands),
-  [`wz_self_set_local_translation`](#writing-commands),
-  [`wz_self_add_world_translation`](#writing-commands),
-  [`wz_self_set_world_translation`](#writing-commands),
-  [`wz_self_add_local_scale`](#writing-commands), and
-  [`wz_self_set_local_scale`](#writing-commands).
-- Rotate self: [`wz_self_set_local_rotation`](#writing-commands).
-- Set runtime motion for self:
-  [`wz_self_set_linear_velocity`](#writing-commands),
-  [`wz_self_set_angular_velocity`](#writing-commands), and
-  [`wz_self_set_motion_space`](#writing-commands).
-- Affect the paired entity in collision/proximity events:
-  [`wz_other_add_world_translation`](#writing-commands),
-  [`wz_other_set_world_translation`](#writing-commands),
-  [`wz_other_set_linear_velocity`](#writing-commands),
-  [`wz_other_set_angular_velocity`](#writing-commands), and
-  [`wz_other_set_motion_space`](#writing-commands).
-- Write commands to any entity id:
-  [`wz_write_add_local_translation`](#writing-commands),
-  [`wz_write_set_local_translation`](#writing-commands),
-  [`wz_write_add_world_translation`](#writing-commands),
-  [`wz_write_set_world_translation`](#writing-commands),
-  [`wz_write_add_local_scale`](#writing-commands),
-  [`wz_write_set_local_scale`](#writing-commands),
-  [`wz_write_set_local_rotation`](#writing-commands),
-  [`wz_write_set_linear_velocity`](#writing-commands),
-  [`wz_write_set_angular_velocity`](#writing-commands), and
-  [`wz_write_set_motion_space`](#writing-commands).
+- Move, rotate, scale, and velocity command signatures are in
+  [Writing Commands](#writing-commands).
 - Motion spaces: `WZ_BEHAVIOR_MOTION_SPACE_WORLD` and
   [`WZ_BEHAVIOR_MOTION_SPACE_LOCAL`](#motion-rotation-and-scale-semantics).
 
 ### Reading Scene State
 
-- Read self transforms and positions:
-  [`wz_self_local_transform`](#reading-transforms),
-  [`wz_self_world_transform`](#reading-transforms),
-  [`wz_self_local_position`](#reading-transforms), and
-  [`wz_self_world_position`](#reading-transforms).
-- Read paired-entity transforms and positions:
-  [`wz_other_local_transform`](#reading-transforms),
-  [`wz_other_world_transform`](#reading-transforms),
-  [`wz_other_local_position`](#reading-transforms), and
-  [`wz_other_world_position`](#reading-transforms).
-- Read any entity by id: [`wz_read_local_transform`](#reading-transforms),
-  [`wz_read_world_transform`](#reading-transforms),
-  [`wz_read_local_position`](#reading-transforms), and
-  [`wz_read_world_position`](#reading-transforms).
-- Find entities by authored scene data:
-  [`wz_find_entity_by_authored_id`](#scene-lookup-and-config) and
-  [`wz_find_entity_by_name`](#scene-lookup-and-config).
+- Transform and position read signatures are in
+  [Reading Transforms](#reading-transforms).
+- Entity lookup signatures are in
+  [Scene Lookup And Config](#scene-lookup-and-config).
 
 ### Spatial Relationship And Collision Surface Queries
 
-- Compute vectors, distances, and normalized directions between entities:
-  [`wz_vector_between_world_positions`](#direction-and-distance-helpers),
-  [`wz_distance_between_world_positions`](#direction-and-distance-helpers),
-  [`wz_direction_between_world_positions`](#direction-and-distance-helpers),
-  [`wz_vector_self_to_other`](#direction-and-distance-helpers),
-  [`wz_distance_self_to_other`](#direction-and-distance-helpers), and
-  [`wz_direction_self_to_other`](#direction-and-distance-helpers).
-- Query a collision surface ray:
-  [`wz_query_collision_surface_ray`](#querying-collision-surfaces).
+- Vector, distance, and direction helper signatures are in
+  [Direction And Distance Helpers](#direction-and-distance-helpers).
+- Collision surface query signatures are in
+  [Querying Collision Surfaces](#querying-collision-surfaces).
 
 ### Authored Config, Timing, And Diagnostics
 
-- Read primitive behavior config:
-  [`wz_config_bool`](#scene-lookup-and-config),
-  [`wz_config_number`](#scene-lookup-and-config),
-  [`wz_config_float`](#scene-lookup-and-config), and
-  [`wz_config_string`](#scene-lookup-and-config).
-- Read frame timing: [`wz_delta_seconds`](#frame-timing) and
-  [`wz_frame_index`](#frame-timing).
-- Write editor/runtime diagnostics: [`wz_log_info`](#logging) and
-  [`wz_log_infof`](#logging).
-
-### Helper Return Types
-
-All `wz_` behavior helpers are C-compatible functions. Helpers that return
-`uint8_t` use `1` for success/true and `0` for failure/false unless the section
-for that helper says otherwise.
-
-| Return type | Helpers |
-| --- | --- |
-| `uint8_t` | `wz_key_down`, `wz_key_pressed`, `wz_key_released`, `wz_mouse_button_down`, `wz_mouse_button_pressed`, `wz_mouse_button_released`, `wz_window_focused`, `wz_controller_count`, `wz_controller_connected`, `wz_controller_connected_pressed`, `wz_controller_connected_released`, `wz_controller_button_down`, `wz_controller_button_pressed`, `wz_controller_button_released`, `wz_input_wasd_axis`, `wz_is_event`, `wz_self_is_trigger`, `wz_write_add_local_translation`, `wz_write_set_local_translation`, `wz_write_add_world_translation`, `wz_write_set_world_translation`, `wz_write_add_local_scale`, `wz_write_set_local_scale`, `wz_write_set_local_rotation`, `wz_write_set_linear_velocity`, `wz_write_set_angular_velocity`, `wz_write_set_motion_space`, `wz_self_add_local_translation`, `wz_self_set_local_translation`, `wz_self_add_world_translation`, `wz_self_set_world_translation`, `wz_self_add_local_scale`, `wz_self_set_local_scale`, `wz_self_set_local_rotation`, `wz_self_set_linear_velocity`, `wz_self_set_angular_velocity`, `wz_self_set_motion_space`, `wz_other_add_world_translation`, `wz_other_set_world_translation`, `wz_other_set_linear_velocity`, `wz_other_set_angular_velocity`, `wz_other_set_motion_space`, `wz_read_local_transform`, `wz_read_world_transform`, `wz_read_local_position`, `wz_read_world_position`, `wz_self_local_transform`, `wz_self_world_transform`, `wz_self_local_position`, `wz_self_world_position`, `wz_other_local_transform`, `wz_other_world_transform`, `wz_other_local_position`, `wz_other_world_position`, `wz_vector_between_world_positions`, `wz_vector_self_to_other`, `wz_distance_between_world_positions`, `wz_distance_self_to_other`, `wz_direction_between_world_positions`, `wz_direction_self_to_other`, `wz_query_collision_surface_ray`, `wz_find_entity_by_name`, `wz_find_entity_by_authored_id`, `wz_config_bool`, `wz_config_number`, `wz_config_float`, `wz_config_string` |
-| `int32_t` | `wz_mouse_x`, `wz_mouse_y`, `wz_mouse_dx`, `wz_mouse_dy`, `wz_window_width`, `wz_window_height` |
-| `uint32_t` | `wz_input_event_key`, `wz_input_event_mouse_button`, `wz_input_event_controller`, `wz_input_event_controller_button`, `wz_input_event_controller_axis` |
-| `uint64_t` | `wz_frame_index` |
-| `float` | `wz_controller_axis`, `wz_delta_seconds`, `wz_input_event_controller_axis_value` |
-| `WzBehaviorEntityId` | `wz_self`, `wz_other` |
-| `WzBehaviorEventKind` | `wz_event_kind` |
-| `const char*` | `wz_event_name` |
-| `void` | `wz_log_info`, `wz_log_infof` |
+- Config helper signatures are in
+  [Scene Lookup And Config](#scene-lookup-and-config).
+- Frame timing helper signatures are in [Frame Timing](#frame-timing).
+- Logging helper signatures are in [Logging](#logging).
 
 ## Event Routing
 
@@ -359,15 +268,17 @@ WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED
 `WZ_EVENT_SCENE_LOADED` is reserved in the ABI and channel table; current
 runtime dispatch sends frame, collision, proximity, and input events.
 
-Helper functions:
+Event helper signatures:
 
 ```cpp
-WzBehaviorEventKind kind = wz_event_kind(event);
-uint8_t is_update = wz_is_event(event, WZ_EVENT_FRAME_UPDATE);
-const char* name = wz_event_name(kind);
-WzBehaviorEntityId self = wz_self(event);
-WzBehaviorEntityId other = wz_other(event);
-uint8_t trigger = wz_self_is_trigger(event);
+WzBehaviorEventKind wz_event_kind(const WzBehaviorEvent* event);
+uint8_t wz_is_event(
+    const WzBehaviorEvent* event,
+    WzBehaviorEventKind kind);
+const char* wz_event_name(WzBehaviorEventKind kind);
+WzBehaviorEntityId wz_self(const WzBehaviorEvent* event);
+WzBehaviorEntityId wz_other(const WzBehaviorEvent* event);
+uint8_t wz_self_is_trigger(const WzBehaviorEvent* event);
 ```
 
 `wz_self(event)` is the scene node whose Behavior component is handling the
