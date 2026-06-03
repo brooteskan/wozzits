@@ -32,6 +32,30 @@
 
 namespace wz::input
 {
+    inline constexpr uint32_t kMaxControllers = 4;
+    inline constexpr uint32_t kControllerAxisCount = 8;
+    inline constexpr uint32_t kControllerButtonCount = 16;
+    inline constexpr uint32_t kControllerAxisLeftX = 0;
+    inline constexpr uint32_t kControllerAxisLeftY = 1;
+    inline constexpr uint32_t kControllerAxisRightX = 2;
+    inline constexpr uint32_t kControllerAxisRightY = 3;
+    inline constexpr uint32_t kControllerAxisLeftTrigger = 4;
+    inline constexpr uint32_t kControllerAxisRightTrigger = 5;
+    inline constexpr uint32_t kControllerButtonDpadUp = 0;
+    inline constexpr uint32_t kControllerButtonDpadDown = 1;
+    inline constexpr uint32_t kControllerButtonDpadLeft = 2;
+    inline constexpr uint32_t kControllerButtonDpadRight = 3;
+    inline constexpr uint32_t kControllerButtonStart = 4;
+    inline constexpr uint32_t kControllerButtonBack = 5;
+    inline constexpr uint32_t kControllerButtonLeftThumb = 6;
+    inline constexpr uint32_t kControllerButtonRightThumb = 7;
+    inline constexpr uint32_t kControllerButtonLeftShoulder = 8;
+    inline constexpr uint32_t kControllerButtonRightShoulder = 9;
+    inline constexpr uint32_t kControllerButtonA = 10;
+    inline constexpr uint32_t kControllerButtonB = 11;
+    inline constexpr uint32_t kControllerButtonX = 12;
+    inline constexpr uint32_t kControllerButtonY = 13;
+
     void init_raw_input();   // calls into os platform
     void shutdown_raw_input();
 
@@ -93,9 +117,47 @@ namespace wz::input
     struct ControllerState
     {
         bool connected = false; ///< Controller connection state
+        bool connected_pressed = false;  ///< Connected this frame
+        bool connected_released = false; ///< Disconnected this frame
 
-        float axes[8]{};    ///< Analog axis values (smoothed signal)
-        bool buttons[16]{}; ///< Digital button state
+        float axes[kControllerAxisCount]{};
+        bool buttons[kControllerButtonCount]{};
+        bool buttons_pressed[kControllerButtonCount]{};
+        bool buttons_released[kControllerButtonCount]{};
+    };
+
+    /**
+     * @brief Platform-neutral controller sample captured before input build.
+     */
+    struct ControllerSample
+    {
+        bool connected = false;
+        float axes[kControllerAxisCount]{};
+        bool buttons[kControllerButtonCount]{};
+    };
+
+    /**
+     * @brief Multi-controller sample captured for the current frame.
+     *
+     * count is the number of controller slots sampled this frame, not the
+     * number of connected controllers. Check each slot's connected flag.
+     */
+    struct ControllerInputSample
+    {
+        ControllerSample controllers[kMaxControllers]{};
+        uint8_t count = 0;
+    };
+
+    /**
+     * @brief Multi-controller state reconstructed per frame.
+     *
+     * count is the number of controller slots sampled this frame, not the
+     * number of connected controllers. Check each slot's connected flag.
+     */
+    struct ControllerInputState
+    {
+        ControllerState controllers[kMaxControllers]{};
+        uint8_t count = 0;
     };
 
     /**
@@ -113,7 +175,7 @@ namespace wz::input
         KeyboardState keyboard;
         MouseState mouse;
         WindowState window;
-        ControllerState controller;
+        ControllerInputState controllers;
     };
 
     /**
@@ -147,5 +209,6 @@ namespace wz::input
                      const InputState& prev,
                      const wz::event::Event *events,
                      size_t count,
-                     wz::time::Frame frame_startframe);
+                     wz::time::Frame frame_startframe,
+                     const ControllerInputSample& controller_sample = {});
 }

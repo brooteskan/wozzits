@@ -121,27 +121,87 @@ static inline int32_t wz_window_height(const WzBehaviorFrameFacts* facts)
     return facts && facts->input ? facts->input->window_height : 0;
 }
 
-static inline uint8_t wz_controller_connected(
+static inline uint8_t wz_controller_count(
     const WzBehaviorFrameFacts* facts)
 {
-    return facts && facts->input ? facts->input->controller_connected : 0u;
+    return facts && facts->input ? facts->input->controller_count : 0u;
+}
+
+static inline uint8_t wz_controller_connected(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller)
+{
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        ? facts->input->controller_connected[controller]
+        : 0u;
+}
+
+static inline uint8_t wz_controller_connected_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller)
+{
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        ? facts->input->controller_connected_pressed[controller]
+        : 0u;
+}
+
+static inline uint8_t wz_controller_connected_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller)
+{
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        ? facts->input->controller_connected_released[controller]
+        : 0u;
 }
 
 static inline float wz_controller_axis(
     const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
     uint32_t axis)
 {
-    return facts && facts->input && axis < 8u
-        ? facts->input->controller_axes[axis]
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        && axis < WZ_CONTROLLER_AXIS_COUNT
+        ? facts->input->controller_axes[controller][axis]
         : 0.0f;
 }
 
 static inline uint8_t wz_controller_button_down(
     const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
     uint32_t button)
 {
-    return facts && facts->input && button < 16u
-        ? facts->input->controller_buttons[button]
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        && button < WZ_CONTROLLER_BUTTON_COUNT
+        ? facts->input->controller_buttons[controller][button]
+        : 0u;
+}
+
+static inline uint8_t wz_controller_button_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t button)
+{
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        && button < WZ_CONTROLLER_BUTTON_COUNT
+        ? facts->input->controller_buttons_pressed[controller][button]
+        : 0u;
+}
+
+static inline uint8_t wz_controller_button_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t button)
+{
+    return facts && facts->input && controller < facts->input->controller_count
+        && controller < WZ_MAX_CONTROLLERS
+        && button < WZ_CONTROLLER_BUTTON_COUNT
+        ? facts->input->controller_buttons_released[controller][button]
         : 0u;
 }
 

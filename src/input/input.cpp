@@ -1,15 +1,18 @@
 #include <input/input.h>
 
+#include <algorithm>
+
 namespace wz::input
 {
     void build_input(InputState &input,
                      const InputState& prev,
                      const wz::event::Event *events,
                      size_t count,
-                     wz::time::Frame frame)
+                     wz::time::Frame frame,
+                     const ControllerInputSample& controller_sample)
     {
 
-        //  phase 1 Reset input state
+        // Phase 1: carry held state forward and clear per-frame edges.
         input = prev;
 
         memset(input.keyboard.pressed, 0, sizeof(input.keyboard.pressed));
@@ -21,7 +24,47 @@ namespace wz::input
         input.mouse.dx = 0;
         input.mouse.dy = 0;
 
-        // phase 2 Iterate events
+        // Phase 2: integrate sampled controller signal state.
+        input.controllers = {};
+        input.controllers.count =
+            static_cast<uint8_t>(
+                std::min<uint32_t>(
+                    controller_sample.count,
+                    kMaxControllers));
+        for (uint32_t controller_index = 0;
+             controller_index < input.controllers.count;
+             ++controller_index)
+        {
+            const ControllerSample& sample =
+                controller_sample.controllers[controller_index];
+            const ControllerState& previous =
+                prev.controllers.controllers[controller_index];
+            ControllerState& controller =
+                input.controllers.controllers[controller_index];
+
+            controller.connected = sample.connected;
+            controller.connected_pressed =
+                sample.connected && !previous.connected;
+            controller.connected_released =
+                !sample.connected && previous.connected;
+
+            for (uint32_t axis = 0; axis < kControllerAxisCount; ++axis) {
+                controller.axes[axis] = sample.axes[axis];
+            }
+
+            for (uint32_t button = 0;
+                 button < kControllerButtonCount;
+                 ++button)
+            {
+                controller.buttons[button] = sample.buttons[button];
+                controller.buttons_pressed[button] =
+                    sample.buttons[button] && !previous.buttons[button];
+                controller.buttons_released[button] =
+                    !sample.buttons[button] && previous.buttons[button];
+            }
+        }
+
+        // Phase 3: apply discrete input/window events.
         for (size_t i = 0; i < count; ++i)
         {
             const auto &e = events[i];

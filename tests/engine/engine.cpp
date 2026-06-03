@@ -302,6 +302,57 @@ TEST(InputIntegrationTest, EventsAreFrameIsolated)
     EXPECT_EQ(frame1_pressed, 0);     // ✔ frame-isolated
 }
 
+TEST(InputIntegrationTest, ControllerSampleBuildsIndexedFrameState)
+{
+    wz::input::InputState prev{};
+    prev.controllers.count = 4u;
+    prev.controllers.controllers[1].connected = true;
+    prev.controllers.controllers[1]
+        .buttons[wz::input::kControllerButtonDpadLeft] = true;
+    prev.controllers.controllers[2].connected = true;
+
+    wz::input::ControllerInputSample sample{};
+    sample.count = 4u;
+    sample.controllers[1].connected = true;
+    sample.controllers[1].axes[wz::input::kControllerAxisLeftX] = 0.5f;
+    sample.controllers[1]
+        .buttons[wz::input::kControllerButtonDpadLeft] = true;
+    sample.controllers[1]
+        .buttons[wz::input::kControllerButtonDpadRight] = true;
+
+    wz::input::InputState input{};
+    wz::input::build_input(
+        input,
+        prev,
+        nullptr,
+        0,
+        wz::time::Frame{},
+        sample);
+
+    EXPECT_EQ(input.controllers.count, 4u);
+
+    const auto& controller1 = input.controllers.controllers[1];
+    EXPECT_TRUE(controller1.connected);
+    EXPECT_FALSE(controller1.connected_pressed);
+    EXPECT_FALSE(controller1.connected_released);
+    EXPECT_FLOAT_EQ(controller1.axes[wz::input::kControllerAxisLeftX], 0.5f);
+    EXPECT_TRUE(controller1.buttons[wz::input::kControllerButtonDpadLeft]);
+    EXPECT_FALSE(
+        controller1.buttons_pressed[wz::input::kControllerButtonDpadLeft]);
+    EXPECT_FALSE(
+        controller1.buttons_released[wz::input::kControllerButtonDpadLeft]);
+    EXPECT_TRUE(controller1.buttons[wz::input::kControllerButtonDpadRight]);
+    EXPECT_TRUE(
+        controller1.buttons_pressed[wz::input::kControllerButtonDpadRight]);
+    EXPECT_FALSE(
+        controller1.buttons_released[wz::input::kControllerButtonDpadRight]);
+
+    const auto& controller2 = input.controllers.controllers[2];
+    EXPECT_FALSE(controller2.connected);
+    EXPECT_FALSE(controller2.connected_pressed);
+    EXPECT_TRUE(controller2.connected_released);
+}
+
 TEST(SimulationTest, MovesWhenKeyHeld)
 {
     EngineTest::EngineTestHarness h;

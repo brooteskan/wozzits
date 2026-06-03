@@ -207,13 +207,23 @@ wz_window_width(facts);
 wz_window_height(facts);
 ```
 
-Controller helper stubs are present for the current ABI fields:
+Controller helpers read indexed controller slots:
 
 ```cpp
-wz_controller_connected(facts);
-wz_controller_axis(facts, WZ_CONTROLLER_AXIS_LEFT_X);
-wz_controller_button_down(facts, 0);
+wz_controller_count(facts);
+wz_controller_connected(facts, 0);
+wz_controller_connected_pressed(facts, 0);
+wz_controller_connected_released(facts, 0);
+wz_controller_axis(facts, 0, WZ_CONTROLLER_AXIS_LEFT_X);
+wz_controller_button_down(facts, 0, WZ_CONTROLLER_BUTTON_A);
+wz_controller_button_pressed(facts, 0, WZ_CONTROLLER_BUTTON_A);
+wz_controller_button_released(facts, 0, WZ_CONTROLLER_BUTTON_A);
 ```
+
+Controller slots are indexed from `0` to `wz_controller_count(facts) - 1`.
+Axes use `LEFT_X`, `LEFT_Y`, `RIGHT_X`, `RIGHT_Y`, `LEFT_TRIGGER`, and
+`RIGHT_TRIGGER`. Button constants map to the XInput layout: d-pad directions,
+start, back, left/right thumb, left/right shoulder, A, B, X, Y.
 
 `wz_input_wasd_axis` returns a world-style horizontal axis where A/D map to X
 and W/S map to Z. Diagonal input is normalized. It returns `1` when input facts

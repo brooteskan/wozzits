@@ -208,7 +208,8 @@ PRIVATE
     dwmapi
     d3d12
     dxgi
-    dxguid)
+    dxguid
+    xinput)
 
 add_subdirectory(src)
 

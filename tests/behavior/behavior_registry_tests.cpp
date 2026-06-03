@@ -507,12 +507,17 @@ namespace
         uint8_t focused = 0;
         int32_t window_width = 0;
         int32_t window_height = 0;
+        uint8_t controller_count = 0;
         uint8_t controller_connected = 0;
+        uint8_t controller_connected_pressed = 0;
         float left_axis_x = 0.0f;
         uint8_t controller_button = 0;
+        uint8_t controller_button_pressed = 0;
+        uint8_t controller_button_released = 0;
         uint8_t invalid_key = 1;
         uint8_t invalid_mouse = 1;
         float invalid_axis = 1.0f;
+        uint8_t invalid_controller = 1;
         uint8_t wasd_result = 0;
         WzVec3 wasd_axis{};
         uint8_t wrote_velocity = 0;
@@ -551,13 +556,31 @@ namespace
         probe->focused = wz_window_focused(facts);
         probe->window_width = wz_window_width(facts);
         probe->window_height = wz_window_height(facts);
-        probe->controller_connected = wz_controller_connected(facts);
+        probe->controller_count = wz_controller_count(facts);
+        probe->controller_connected = wz_controller_connected(facts, 1u);
+        probe->controller_connected_pressed =
+            wz_controller_connected_pressed(facts, 1u);
         probe->left_axis_x =
-            wz_controller_axis(facts, WZ_CONTROLLER_AXIS_LEFT_X);
-        probe->controller_button = wz_controller_button_down(facts, 2u);
+            wz_controller_axis(facts, 1u, WZ_CONTROLLER_AXIS_LEFT_X);
+        probe->controller_button =
+            wz_controller_button_down(
+                facts,
+                1u,
+                WZ_CONTROLLER_BUTTON_DPAD_LEFT);
+        probe->controller_button_pressed =
+            wz_controller_button_pressed(
+                facts,
+                1u,
+                WZ_CONTROLLER_BUTTON_DPAD_RIGHT);
+        probe->controller_button_released =
+            wz_controller_button_released(
+                facts,
+                1u,
+                WZ_CONTROLLER_BUTTON_START);
         probe->invalid_key = wz_key_down(facts, 999u);
         probe->invalid_mouse = wz_mouse_button_down(facts, 9u);
-        probe->invalid_axis = wz_controller_axis(facts, 99u);
+        probe->invalid_axis = wz_controller_axis(facts, 1u, 99u);
+        probe->invalid_controller = wz_controller_connected(facts, 99u);
         probe->wasd_result = wz_input_wasd_axis(facts, &probe->wasd_axis);
         probe->wrote_velocity =
             wz_self_set_linear_velocity(
@@ -1426,9 +1449,15 @@ TEST(BehaviorModuleApi, InputHelpersReadFrameSnapshotAndWriteVelocity)
     frame_context.input.window.focused = true;
     frame_context.input.window.width = 1280;
     frame_context.input.window.height = 720;
-    frame_context.input.controller.connected = true;
-    frame_context.input.controller.axes[WZ_CONTROLLER_AXIS_LEFT_X] = 0.25f;
-    frame_context.input.controller.buttons[2] = true;
+    frame_context.input.controllers.count = 4u;
+    auto& controller =
+        frame_context.input.controllers.controllers[1];
+    controller.connected = true;
+    controller.connected_pressed = true;
+    controller.axes[WZ_CONTROLLER_AXIS_LEFT_X] = 0.25f;
+    controller.buttons[WZ_CONTROLLER_BUTTON_DPAD_LEFT] = true;
+    controller.buttons_pressed[WZ_CONTROLLER_BUTTON_DPAD_RIGHT] = true;
+    controller.buttons_released[WZ_CONTROLLER_BUTTON_START] = true;
 
     wz::engine::FrameStorage frame_storage{};
     BehaviorFrameContext context{
@@ -1454,12 +1483,17 @@ TEST(BehaviorModuleApi, InputHelpersReadFrameSnapshotAndWriteVelocity)
     EXPECT_EQ(probe.focused, 1u);
     EXPECT_EQ(probe.window_width, 1280);
     EXPECT_EQ(probe.window_height, 720);
+    EXPECT_EQ(probe.controller_count, 4u);
     EXPECT_EQ(probe.controller_connected, 1u);
+    EXPECT_EQ(probe.controller_connected_pressed, 1u);
     EXPECT_FLOAT_EQ(probe.left_axis_x, 0.25f);
     EXPECT_EQ(probe.controller_button, 1u);
+    EXPECT_EQ(probe.controller_button_pressed, 1u);
+    EXPECT_EQ(probe.controller_button_released, 1u);
     EXPECT_EQ(probe.invalid_key, 0u);
     EXPECT_EQ(probe.invalid_mouse, 0u);
     EXPECT_FLOAT_EQ(probe.invalid_axis, 0.0f);
+    EXPECT_EQ(probe.invalid_controller, 0u);
     EXPECT_EQ(probe.wasd_result, 1u);
     EXPECT_NEAR(probe.wasd_axis.x, 0.70710677f, 1e-6f);
     EXPECT_FLOAT_EQ(probe.wasd_axis.y, 0.0f);

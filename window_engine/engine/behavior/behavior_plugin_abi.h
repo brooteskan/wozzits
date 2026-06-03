@@ -12,8 +12,12 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 5u
+#define WZ_BEHAVIOR_ABI_VERSION 6u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
+
+#define WZ_MAX_CONTROLLERS 4u
+#define WZ_CONTROLLER_AXIS_COUNT 8u
+#define WZ_CONTROLLER_BUTTON_COUNT 16u
 
 typedef uint32_t WzBehaviorEntityId;
 
@@ -118,9 +122,16 @@ typedef struct WzInputStateView
     int32_t window_width;
     int32_t window_height;
 
-    uint8_t controller_connected;
-    float controller_axes[8];
-    uint8_t controller_buttons[16];
+    uint8_t controller_count;
+    uint8_t controller_connected[WZ_MAX_CONTROLLERS];
+    uint8_t controller_connected_pressed[WZ_MAX_CONTROLLERS];
+    uint8_t controller_connected_released[WZ_MAX_CONTROLLERS];
+    float controller_axes[WZ_MAX_CONTROLLERS][WZ_CONTROLLER_AXIS_COUNT];
+    uint8_t controller_buttons[WZ_MAX_CONTROLLERS][WZ_CONTROLLER_BUTTON_COUNT];
+    uint8_t controller_buttons_pressed
+        [WZ_MAX_CONTROLLERS][WZ_CONTROLLER_BUTTON_COUNT];
+    uint8_t controller_buttons_released
+        [WZ_MAX_CONTROLLERS][WZ_CONTROLLER_BUTTON_COUNT];
 } WzInputStateView;
 
 /* Keyboard indices match Windows virtual-key codes for now. */
@@ -149,6 +160,26 @@ enum
     WZ_CONTROLLER_AXIS_LEFT_Y = 1u,
     WZ_CONTROLLER_AXIS_RIGHT_X = 2u,
     WZ_CONTROLLER_AXIS_RIGHT_Y = 3u,
+    WZ_CONTROLLER_AXIS_LEFT_TRIGGER = 4u,
+    WZ_CONTROLLER_AXIS_RIGHT_TRIGGER = 5u,
+};
+
+enum
+{
+    WZ_CONTROLLER_BUTTON_DPAD_UP = 0u,
+    WZ_CONTROLLER_BUTTON_DPAD_DOWN = 1u,
+    WZ_CONTROLLER_BUTTON_DPAD_LEFT = 2u,
+    WZ_CONTROLLER_BUTTON_DPAD_RIGHT = 3u,
+    WZ_CONTROLLER_BUTTON_START = 4u,
+    WZ_CONTROLLER_BUTTON_BACK = 5u,
+    WZ_CONTROLLER_BUTTON_LEFT_THUMB = 6u,
+    WZ_CONTROLLER_BUTTON_RIGHT_THUMB = 7u,
+    WZ_CONTROLLER_BUTTON_LEFT_SHOULDER = 8u,
+    WZ_CONTROLLER_BUTTON_RIGHT_SHOULDER = 9u,
+    WZ_CONTROLLER_BUTTON_A = 10u,
+    WZ_CONTROLLER_BUTTON_B = 11u,
+    WZ_CONTROLLER_BUTTON_X = 12u,
+    WZ_CONTROLLER_BUTTON_Y = 13u,
 };
 
 typedef uint32_t WzBehaviorCommandKind;

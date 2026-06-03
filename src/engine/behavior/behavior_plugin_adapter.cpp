@@ -259,14 +259,45 @@ namespace wz::engine::behavior
             out.window_width = input.window.width;
             out.window_height = input.window.height;
 
-            out.controller_connected =
-                input.controller.connected ? uint8_t{ 1 } : uint8_t{ 0 };
-            for (uint32_t i = 0; i < 8; ++i) {
-                out.controller_axes[i] = input.controller.axes[i];
-            }
-            for (uint32_t i = 0; i < 16; ++i) {
-                out.controller_buttons[i] =
-                    input.controller.buttons[i] ? uint8_t{ 1 } : uint8_t{ 0 };
+            out.controller_count = input.controllers.count;
+            for (uint32_t controller_index = 0;
+                 controller_index < input.controllers.count
+                     && controller_index < wz::input::kMaxControllers;
+                 ++controller_index)
+            {
+                const auto& controller =
+                    input.controllers.controllers[controller_index];
+                out.controller_connected[controller_index] =
+                    controller.connected ? uint8_t{ 1 } : uint8_t{ 0 };
+                out.controller_connected_pressed[controller_index] =
+                    controller.connected_pressed ? uint8_t{ 1 } : uint8_t{ 0 };
+                out.controller_connected_released[controller_index] =
+                    controller.connected_released ? uint8_t{ 1 } : uint8_t{ 0 };
+
+                for (uint32_t axis = 0;
+                     axis < wz::input::kControllerAxisCount;
+                     ++axis)
+                {
+                    out.controller_axes[controller_index][axis] =
+                        controller.axes[axis];
+                }
+                for (uint32_t button = 0;
+                     button < wz::input::kControllerButtonCount;
+                     ++button)
+                {
+                    out.controller_buttons[controller_index][button] =
+                        controller.buttons[button]
+                            ? uint8_t{ 1 }
+                            : uint8_t{ 0 };
+                    out.controller_buttons_pressed[controller_index][button] =
+                        controller.buttons_pressed[button]
+                            ? uint8_t{ 1 }
+                            : uint8_t{ 0 };
+                    out.controller_buttons_released[controller_index][button] =
+                        controller.buttons_released[button]
+                            ? uint8_t{ 1 }
+                            : uint8_t{ 0 };
+                }
             }
         }
 

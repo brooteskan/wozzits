@@ -1,5 +1,6 @@
 #include <engine/engine.h>
 
+#include <platform/win32/controller_win32.h>
 #include <platform/win32/win32.h> // we should probably add a pump_messages in the wozzits api to call into win32
 
 #include <time/w_time.h>
@@ -31,6 +32,7 @@ namespace wz::engine
         Context &ctx = context();
         ctx.running = true;
 
+        wz::platform::win32::controller_init();
 
         Tick last = TimeSource::now_ticks();
         uint64_t frame_index = 0;
@@ -67,18 +69,23 @@ namespace wz::engine
 
 
             prev_input = input;
-            
+
+            wz::input::ControllerInputSample controller_sample{};
+            wz::platform::win32::controller_sample(controller_sample);
 
             wz::input::build_input(fctx.input,
                 prev_input,
                 frame_events.data(),
                 frame_events.size(),
-                fctx.frame);
+                fctx.frame,
+                controller_sample);
 
             input = fctx.input;
 
 
             update(ctx, fctx, user_data);
         }
+
+        wz::platform::win32::controller_shutdown();
     }
 }
