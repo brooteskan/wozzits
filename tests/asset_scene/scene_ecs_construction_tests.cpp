@@ -81,6 +81,11 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     attach_editor_handle(node, SceneEditorHandleAsset{
         .kind = SceneEditorHandleKind::Translate,
     });
+    attach_scene_import_source(node, SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "models/entity.glb",
+        .import_prefix = "entity",
+    });
 
     const auto components = authored_components_for_node(node);
     EXPECT_NE(std::find(components.begin(), components.end(), Kind::Transform),
@@ -97,6 +102,9 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     EXPECT_NE(std::find(
             components.begin(), components.end(), Kind::EditorHandle),
         components.end());
+    EXPECT_NE(std::find(
+            components.begin(), components.end(), Kind::SceneImportSource),
+        components.end());
 
     add_scene_node(scene, std::move(node));
 
@@ -108,6 +116,7 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     EXPECT_EQ(summary.cameras, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
+    EXPECT_EQ(summary.scene_import_sources, 1u);
 
     const auto& stored = scene.nodes.front();
     EXPECT_EQ(stored.local.translation[0], 1.0f);
@@ -121,6 +130,8 @@ TEST(SceneECSConstruction, AttachHelpersSetAuthoredComponentsAndSummary)
     EXPECT_FLOAT_EQ(stored.debug_visual->scale, 2.0f);
     ASSERT_TRUE(stored.editor_handle.has_value());
     EXPECT_EQ(stored.editor_handle->kind, SceneEditorHandleKind::Translate);
+    ASSERT_TRUE(stored.scene_import_source.has_value());
+    EXPECT_EQ(stored.scene_import_source->path, "models/entity.glb");
 }
 
 TEST(SceneECSConstruction, HelperCreatedParentLinksInstantiate)

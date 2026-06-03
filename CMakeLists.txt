@@ -402,6 +402,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset scalar_field_texture_test)
     rs_add_test_group(asset scalar_field_set_tests)
     rs_add_test_group(asset foundational_assets)
+    rs_add_test_group(asset key_utils)
     rs_add_test_group(asset csv_tests)
 
     rs_add_test_group(asset_json yyjson_wrapper)

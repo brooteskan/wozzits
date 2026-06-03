@@ -216,6 +216,41 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
         .kind = SceneDebugVisualKind::Axes,
     };
     camera_node.editor_handle = SceneEditorHandleAsset{};
+    camera_node.scene_import_source = SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "models/editor.glb",
+        .import_prefix = "editor",
+    };
+    camera_node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    camera_node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+    };
+    camera_node.scalar_field_source = SceneScalarFieldSourceAsset{
+        .kind = SceneScalarFieldSourceKind::ProceduralCheckerboard,
+    };
+    camera_node.vector_field_source = SceneVectorFieldSourceAsset{
+        .kind = SceneVectorFieldSourceKind::RawF32,
+        .path = "fields/normal.raw",
+    };
+    camera_node.ambient_lighting = SceneAmbientLightingAsset{};
+    camera_node.hdri_environment = SceneHDRIEnvironmentAsset{};
+    camera_node.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::SolidColor,
+    };
+    camera_node.sky_surface = SceneSkySurfaceAsset{};
+    camera_node.terrain = SceneTerrainAsset{};
+    camera_node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::Surface,
+    };
+    camera_node.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+    };
+    camera_node.terrain_height_field_source =
+        SceneTerrainHeightFieldSourceAsset{
+            .mode = SceneTerrainHeightFieldSourceMode::ScalarFieldAsset,
+        };
 
     EXPECT_TRUE(has_authored_camera_component(camera_node));
     EXPECT_TRUE(has_authored_editor_only_components(camera_node));
@@ -252,13 +287,26 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.motion_types, 2u);
     EXPECT_EQ(summary.parent_links, 1u);
     EXPECT_EQ(summary.renderables, 1u);
+    EXPECT_EQ(summary.scene_import_sources, 1u);
+    EXPECT_EQ(summary.mesh_sources, 1u);
+    EXPECT_EQ(summary.mesh_render_styles, 1u);
+    EXPECT_EQ(summary.scalar_field_sources, 1u);
+    EXPECT_EQ(summary.vector_field_sources, 1u);
     EXPECT_EQ(summary.cameras, 1u);
     EXPECT_EQ(summary.lights, 1u);
+    EXPECT_EQ(summary.ambient_lighting, 1u);
+    EXPECT_EQ(summary.hdri_environments, 1u);
+    EXPECT_EQ(summary.sky_visuals, 1u);
+    EXPECT_EQ(summary.sky_surfaces, 1u);
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
     EXPECT_EQ(summary.ground_boundaries, 1u);
     EXPECT_EQ(summary.collisions, 1u);
+    EXPECT_EQ(summary.terrains, 1u);
+    EXPECT_EQ(summary.terrain_render_styles, 1u);
+    EXPECT_EQ(summary.terrain_mesh_sources, 1u);
+    EXPECT_EQ(summary.terrain_height_field_sources, 1u);
     EXPECT_EQ(summary.proximities, 1u);
     EXPECT_EQ(summary.motions, 1u);
     EXPECT_EQ(summary.behaviors, 1u);
@@ -266,6 +314,23 @@ TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
     EXPECT_EQ(summary.editor_handles, 1u);
+}
+
+TEST(SceneECSBoundary, AuthoredComponentsIncludeTerrainRenderStyle)
+{
+    using namespace wz::engine::assets;
+
+    SceneNodeAsset node{};
+    node.id = "terrain_style";
+    node.terrain_render_style = SceneTerrainRenderStyleAsset{
+        .path = SceneTerrainRenderPath::DebugWireframe,
+    };
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::TerrainRenderStyle), 1);
 }
 
 TEST(SceneECSBoundary, CountsLegacyAndAssetBackedRenderableComponents)
@@ -918,6 +983,43 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_TRUE(result.instance.input_receivers.empty());
     EXPECT_TRUE(result.instance.ground_boundaries.empty());
     EXPECT_TRUE(result.instance.auxiliary_visuals.empty());
+}
+
+TEST(SceneECSBoundary, SummarizesAuthoringRecipesAcrossMultipleNodes)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "multi_node_recipes";
+
+    SceneNodeAsset first{};
+    first.id = "first";
+    first.scene_import_source = SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "models/first.glb",
+    };
+    first.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    scene.nodes.push_back(std::move(first));
+
+    SceneNodeAsset second{};
+    second.id = "second";
+    scene.nodes.push_back(std::move(second));
+
+    SceneNodeAsset third{};
+    third.id = "third";
+    third.scalar_field_source = SceneScalarFieldSourceAsset{
+        .kind = SceneScalarFieldSourceKind::ProceduralCheckerboard,
+    };
+    scene.nodes.push_back(std::move(third));
+
+    const auto summary = summarize_scene_asset_authoring_recipes(scene);
+    EXPECT_EQ(summary.nodes_with_recipes, 2u);
+    EXPECT_EQ(summary.total_recipes, 3u);
+    EXPECT_EQ(summary.scene_import_sources, 1u);
+    EXPECT_EQ(summary.mesh_sources, 1u);
+    EXPECT_EQ(summary.scalar_field_sources, 1u);
 }
 
 TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
