@@ -165,6 +165,9 @@ This is the current authoring surface exposed by
 `engine/behavior/behavior_module_api.h`, grouped by what a behavior author is
 usually trying to do.
 
+Helpers that return `uint8_t` use `1` for success/true and `0` for
+failure/false unless that helper's section says otherwise.
+
 ### Registration And Scene Binding
 
 - Register one module with no default subscriptions:
@@ -315,24 +318,24 @@ Scene behavior bindings and plugin defaults use the same channel tokens:
 
 | Token | Event kind | How to inspect it |
 | --- | --- | --- |
-| [`frame.update`](#frame-update-events) | `WZ_EVENT_FRAME_UPDATE` | Use [`wz_is_event`](#event-routing), [`wz_delta_seconds`](#frame-timing), and [`wz_frame_index`](#frame-timing). |
+| [`frame.update`](#frame-update-events) | `WZ_EVENT_FRAME_UPDATE` | See [Event Routing](#event-routing) and [Frame Timing](#frame-timing). |
 | [`scene.loaded`](#event-routing) | `WZ_EVENT_SCENE_LOADED` | Reserved in the ABI and channel table; current runtime dispatch does not send it yet. |
-| [`collision.enter`](#collision-events) | `WZ_EVENT_COLLISION_ENTER` | Use [`wz_self`](#event-routing), [`wz_other`](#event-routing), transform reads, and spatial helpers. |
+| [`collision.enter`](#collision-events) | `WZ_EVENT_COLLISION_ENTER` | See [Event Routing](#event-routing), [Reading Transforms](#reading-transforms), and [Direction And Distance Helpers](#direction-and-distance-helpers). |
 | [`collision.stay`](#collision-events) | `WZ_EVENT_COLLISION_STAY` | Same inspection pattern as collision enter. |
 | [`collision.exit`](#collision-events) | `WZ_EVENT_COLLISION_EXIT` | Same inspection pattern as collision enter. |
-| [`collision.*`](#collision-events) | All collision events | Filter with [`wz_is_event`](#event-routing) inside the handler. |
-| [`proximity.enter`](#proximity-events) | `WZ_EVENT_PROXIMITY_ENTER` | Use [`wz_self`](#event-routing), [`wz_other`](#event-routing), transform reads, and spatial helpers. |
+| [`collision.*`](#collision-events) | All collision events | See [Event Routing](#event-routing) for filtering inside the handler. |
+| [`proximity.enter`](#proximity-events) | `WZ_EVENT_PROXIMITY_ENTER` | See [Event Routing](#event-routing), [Reading Transforms](#reading-transforms), and [Direction And Distance Helpers](#direction-and-distance-helpers). |
 | [`proximity.stay`](#proximity-events) | `WZ_EVENT_PROXIMITY_STAY` | Same inspection pattern as proximity enter. |
 | [`proximity.exit`](#proximity-events) | `WZ_EVENT_PROXIMITY_EXIT` | Same inspection pattern as proximity enter. |
-| [`proximity.*`](#proximity-events) | All proximity events | Filter with [`wz_is_event`](#event-routing) inside the handler. |
-| [`input.key.pressed`](#input-events) | `WZ_EVENT_INPUT_KEY_PRESSED` | Use [`wz_input_event_key`](#input-events). |
-| [`input.key.released`](#input-events) | `WZ_EVENT_INPUT_KEY_RELEASED` | Use [`wz_input_event_key`](#input-events). |
-| [`input.mouse_button.pressed`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED` | Use [`wz_input_event_mouse_button`](#input-events). |
-| [`input.mouse_button.released`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED` | Use [`wz_input_event_mouse_button`](#input-events). |
-| [`input.controller_button.pressed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED` | Use [`wz_input_event_controller`](#input-events) and [`wz_input_event_controller_button`](#input-events). |
-| [`input.controller_button.released`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED` | Use [`wz_input_event_controller`](#input-events) and [`wz_input_event_controller_button`](#input-events). |
-| [`input.controller_axis.changed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED` | Use [`wz_input_event_controller`](#input-events), [`wz_input_event_controller_axis`](#input-events), and [`wz_input_event_controller_axis_value`](#input-events). |
-| [`input.*`](#input-events) | All input events | Filter with [`wz_is_event`](#event-routing), then read the matching input payload helper. |
+| [`proximity.*`](#proximity-events) | All proximity events | See [Event Routing](#event-routing) for filtering inside the handler. |
+| [`input.key.pressed`](#input-events) | `WZ_EVENT_INPUT_KEY_PRESSED` | See [Input Events](#input-events). |
+| [`input.key.released`](#input-events) | `WZ_EVENT_INPUT_KEY_RELEASED` | See [Input Events](#input-events). |
+| [`input.mouse_button.pressed`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED` | See [Input Events](#input-events). |
+| [`input.mouse_button.released`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED` | See [Input Events](#input-events). |
+| [`input.controller_button.pressed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED` | See [Input Events](#input-events). |
+| [`input.controller_button.released`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED` | See [Input Events](#input-events). |
+| [`input.controller_axis.changed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED` | See [Input Events](#input-events). |
+| [`input.*`](#input-events) | All input events | See [Event Routing](#event-routing) and [Input Events](#input-events). |
 
 `collision.*`, `proximity.*`, and `input.*` are hardcoded group tokens, not a
 general glob system.
@@ -435,6 +438,25 @@ pressed or released edge is delivered for the frame in which it appears.
 Input event payload helpers read the active routed input event:
 
 ```cpp
+uint32_t wz_input_event_key(const WzBehaviorFrameFacts* facts);
+uint32_t wz_input_event_mouse_button(const WzBehaviorFrameFacts* facts);
+uint32_t wz_input_event_controller(const WzBehaviorFrameFacts* facts);
+uint32_t wz_input_event_controller_button(
+    const WzBehaviorFrameFacts* facts);
+uint32_t wz_input_event_controller_axis(
+    const WzBehaviorFrameFacts* facts);
+float wz_input_event_controller_axis_value(
+    const WzBehaviorFrameFacts* facts);
+```
+
+Payload helpers return `WZ_INPUT_EVENT_INVALID_VALUE` when the current dispatch
+is not an input event or when that field does not apply. During an input event,
+the normal frame snapshot helpers still read `facts->input`, so a behavior can
+combine the routed edge with held-state or axis checks.
+
+Example input event filters:
+
+```cpp
 if (wz_is_event(event, WZ_EVENT_INPUT_KEY_PRESSED)) {
     uint32_t key = wz_input_event_key(facts);
 }
@@ -455,11 +477,6 @@ if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)) {
 }
 ```
 
-Payload helpers return `WZ_INPUT_EVENT_INVALID_VALUE` when the current dispatch
-is not an input event or when that field does not apply. During an input event,
-the normal frame snapshot helpers still read `facts->input`, so a behavior can
-combine the routed edge with held-state or axis checks.
-
 ## Reading Input
 
 [Back to Behavior API Inventory](#behavior-api-inventory)
@@ -478,9 +495,9 @@ analog axes, timers, or per-frame motion.
 Keyboard helpers:
 
 ```cpp
-wz_key_down(facts, WZ_KEY_W);
-wz_key_pressed(facts, WZ_KEY_SPACE);
-wz_key_released(facts, WZ_KEY_ESCAPE);
+uint8_t wz_key_down(const WzBehaviorFrameFacts* facts, uint32_t key);
+uint8_t wz_key_pressed(const WzBehaviorFrameFacts* facts, uint32_t key);
+uint8_t wz_key_released(const WzBehaviorFrameFacts* facts, uint32_t key);
 ```
 
 Defined key constants:
@@ -502,16 +519,22 @@ read by numeric code until the named key set is expanded.
 Mouse and window helpers:
 
 ```cpp
-wz_mouse_button_down(facts, WZ_MOUSE_BUTTON_LEFT);
-wz_mouse_button_pressed(facts, WZ_MOUSE_BUTTON_RIGHT);
-wz_mouse_button_released(facts, WZ_MOUSE_BUTTON_MIDDLE);
-wz_mouse_x(facts);
-wz_mouse_y(facts);
-wz_mouse_dx(facts);
-wz_mouse_dy(facts);
-wz_window_focused(facts);
-wz_window_width(facts);
-wz_window_height(facts);
+uint8_t wz_mouse_button_down(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button);
+uint8_t wz_mouse_button_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button);
+uint8_t wz_mouse_button_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t button);
+int32_t wz_mouse_x(const WzBehaviorFrameFacts* facts);
+int32_t wz_mouse_y(const WzBehaviorFrameFacts* facts);
+int32_t wz_mouse_dx(const WzBehaviorFrameFacts* facts);
+int32_t wz_mouse_dy(const WzBehaviorFrameFacts* facts);
+uint8_t wz_window_focused(const WzBehaviorFrameFacts* facts);
+int32_t wz_window_width(const WzBehaviorFrameFacts* facts);
+int32_t wz_window_height(const WzBehaviorFrameFacts* facts);
 ```
 
 Mouse button constants:
@@ -525,14 +548,32 @@ WZ_MOUSE_BUTTON_MIDDLE
 Controller helpers:
 
 ```cpp
-wz_controller_count(facts);
-wz_controller_connected(facts, 0);
-wz_controller_connected_pressed(facts, 0);
-wz_controller_connected_released(facts, 0);
-wz_controller_axis(facts, 0, WZ_CONTROLLER_AXIS_LEFT_X);
-wz_controller_button_down(facts, 0, WZ_CONTROLLER_BUTTON_A);
-wz_controller_button_pressed(facts, 0, WZ_CONTROLLER_BUTTON_A);
-wz_controller_button_released(facts, 0, WZ_CONTROLLER_BUTTON_A);
+uint8_t wz_controller_count(const WzBehaviorFrameFacts* facts);
+uint8_t wz_controller_connected(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller);
+uint8_t wz_controller_connected_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller);
+uint8_t wz_controller_connected_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller);
+float wz_controller_axis(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t axis);
+uint8_t wz_controller_button_down(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t button);
+uint8_t wz_controller_button_pressed(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t button);
+uint8_t wz_controller_button_released(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t controller,
+    uint32_t button);
 ```
 
 Controller slots are indexed from `0` to `wz_controller_count(facts) - 1`.
@@ -574,9 +615,13 @@ WZ_CONTROLLER_BUTTON_X
 WZ_CONTROLLER_BUTTON_Y
 ```
 
-`wz_input_wasd_axis` returns a horizontal movement axis:
+`wz_input_wasd_axis` writes a horizontal movement axis:
 
 ```cpp
+uint8_t wz_input_wasd_axis(
+    const WzBehaviorFrameFacts* facts,
+    WzVec3* out_axis);
+
 WzVec3 axis{};
 if (wz_input_wasd_axis(facts, &axis)) {
     // A/D map to axis.x. W/S map to axis.z. axis.y is always 0.
@@ -598,28 +643,59 @@ command buffer after dispatch.
 Self and other transform queries:
 
 ```cpp
-WzMat4 local{};
-WzMat4 world{};
-WzVec3 position{};
-
-wz_self_local_transform(facts, event, &local);
-wz_self_world_transform(facts, event, &world);
-wz_self_local_position(facts, event, &position);
-wz_self_world_position(facts, event, &position);
-
-wz_other_local_transform(facts, event, &local);
-wz_other_world_transform(facts, event, &world);
-wz_other_local_position(facts, event, &position);
-wz_other_world_position(facts, event, &position);
+uint8_t wz_self_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform);
+uint8_t wz_self_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform);
+uint8_t wz_self_local_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position);
+uint8_t wz_self_world_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position);
+uint8_t wz_other_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform);
+uint8_t wz_other_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzMat4* out_transform);
+uint8_t wz_other_local_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position);
+uint8_t wz_other_world_position(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_position);
 ```
 
 Generic entity queries:
 
 ```cpp
-wz_read_local_transform(facts, entity, &local);
-wz_read_world_transform(facts, entity, &world);
-wz_read_local_position(facts, entity, &position);
-wz_read_world_position(facts, entity, &position);
+uint8_t wz_read_local_transform(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform);
+uint8_t wz_read_world_transform(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform);
+uint8_t wz_read_local_position(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position);
+uint8_t wz_read_world_position(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position);
 ```
 
 All query helpers return `1` on success and `0` on failure. Failure is normal
@@ -637,17 +713,33 @@ turn any two entities into a world-space vector, distance, or normalized
 direction:
 
 ```cpp
-WzVec3 vector{};
-WzVec3 direction{};
-float distance = 0.0f;
-
-wz_vector_between_world_positions(facts, from_entity, to_entity, &vector);
-wz_distance_between_world_positions(facts, from_entity, to_entity, &distance);
-wz_direction_between_world_positions(facts, from_entity, to_entity, &direction);
-
-wz_vector_self_to_other(facts, event, &vector);
-wz_distance_self_to_other(facts, event, &distance);
-wz_direction_self_to_other(facts, event, &direction);
+uint8_t wz_vector_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    WzVec3* out_vector);
+uint8_t wz_distance_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    float* out_distance);
+uint8_t wz_direction_between_world_positions(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId from_entity,
+    WzBehaviorEntityId to_entity,
+    WzVec3* out_direction);
+uint8_t wz_vector_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_vector);
+uint8_t wz_distance_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float* out_distance);
+uint8_t wz_direction_self_to_other(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzVec3* out_direction);
 ```
 
 The vector convention is `to_world_position - from_world_position`.
@@ -686,13 +778,13 @@ if (wz_self_world_position(facts, event, &self_world)
 The query form is:
 
 ```cpp
-wz_query_collision_surface_ray(
-    facts,
-    surface_entity,
-    origin,
-    direction,
-    max_distance,
-    &surface);
+uint8_t wz_query_collision_surface_ray(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId surface_entity,
+    WzVec3 origin,
+    WzVec3 direction,
+    float max_distance,
+    WzSurfaceSample* out_sample);
 ```
 
 The ray uses world-space `origin` and `direction` and returns the nearest hit
@@ -722,6 +814,29 @@ Scene-authored behaviors can carry a small primitive config object:
 ```
 
 Read authored config during dispatch:
+
+```cpp
+uint8_t wz_config_bool(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    uint8_t* out_value);
+uint8_t wz_config_number(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    double* out_value);
+uint8_t wz_config_float(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    float* out_value);
+uint8_t wz_config_string(
+    const WzBehaviorFrameFacts* facts,
+    const char* key,
+    char* out_buffer,
+    uint32_t buffer_size,
+    uint32_t* out_required_size);
+```
+
+Example:
 
 ```cpp
 double speed_number = 0.0;
@@ -757,8 +872,14 @@ helper returns `0` if the value had to be truncated.
 Scene lookup helpers:
 
 ```cpp
-wz_find_entity_by_authored_id(facts, "terrain", &entity);
-wz_find_entity_by_name(facts, "Terrain Display Name", &entity);
+uint8_t wz_find_entity_by_authored_id(
+    const WzBehaviorFrameFacts* facts,
+    const char* authored_id,
+    WzBehaviorEntityId* out_entity);
+uint8_t wz_find_entity_by_name(
+    const WzBehaviorFrameFacts* facts,
+    const char* name,
+    WzBehaviorEntityId* out_entity);
 ```
 
 `wz_find_entity_by_authored_id` resolves stable scene node ids. Prefer authored
@@ -779,41 +900,156 @@ writer and `0` if there was no writer or the target entity was invalid.
 Self command helpers:
 
 ```cpp
-wz_self_add_local_translation(facts, event, x, y, z);
-wz_self_set_local_translation(facts, event, x, y, z);
-wz_self_add_world_translation(facts, event, x, y, z);
-wz_self_set_world_translation(facts, event, x, y, z);
-wz_self_add_local_scale(facts, event, x, y, z);
-wz_self_set_local_scale(facts, event, x, y, z);
-wz_self_set_local_rotation(facts, event, rotation);
-wz_self_set_linear_velocity(facts, event, x, y, z);
-wz_self_set_angular_velocity(facts, event, x, y, z);
-wz_self_set_motion_space(facts, event, WZ_BEHAVIOR_MOTION_SPACE_WORLD);
+uint8_t wz_self_add_local_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_local_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_add_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_local_rotation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzQuaternion rotation);
+uint8_t wz_self_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_self_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorMotionSpace space);
 ```
 
 Other command helpers are useful in pair events:
 
 ```cpp
-wz_other_add_world_translation(facts, event, x, y, z);
-wz_other_set_world_translation(facts, event, x, y, z);
-wz_other_set_linear_velocity(facts, event, x, y, z);
-wz_other_set_angular_velocity(facts, event, x, y, z);
-wz_other_set_motion_space(facts, event, WZ_BEHAVIOR_MOTION_SPACE_LOCAL);
+uint8_t wz_other_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_other_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_other_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_other_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float x,
+    float y,
+    float z);
+uint8_t wz_other_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorMotionSpace space);
 ```
 
 Generic entity command helpers:
 
 ```cpp
-wz_write_add_local_translation(facts, entity, x, y, z);
-wz_write_set_local_translation(facts, entity, x, y, z);
-wz_write_add_world_translation(facts, entity, x, y, z);
-wz_write_set_world_translation(facts, entity, x, y, z);
-wz_write_add_local_scale(facts, entity, x, y, z);
-wz_write_set_local_scale(facts, entity, x, y, z);
-wz_write_set_local_rotation(facts, entity, rotation);
-wz_write_set_linear_velocity(facts, entity, x, y, z);
-wz_write_set_angular_velocity(facts, entity, x, y, z);
-wz_write_set_motion_space(facts, entity, WZ_BEHAVIOR_MOTION_SPACE_WORLD);
+uint8_t wz_write_add_local_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_local_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_add_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_world_translation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_add_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_local_scale(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_local_rotation(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzQuaternion rotation);
+uint8_t wz_write_set_linear_velocity(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_angular_velocity(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float x,
+    float y,
+    float z);
+uint8_t wz_write_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzBehaviorMotionSpace space);
 ```
 
 Command order is deterministic. Multiple commands targeting the same entity are
@@ -850,7 +1086,10 @@ radians per second. Motion defaults to world space. Switch to local-space
 motion with:
 
 ```cpp
-wz_self_set_motion_space(facts, event, WZ_BEHAVIOR_MOTION_SPACE_LOCAL);
+uint8_t wz_self_set_motion_space(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorMotionSpace space);
 ```
 
 Motion space constants:
@@ -878,8 +1117,8 @@ TRS, angular integration for that node is skipped for the frame.
 Frame timing helpers:
 
 ```cpp
-float dt = wz_delta_seconds(facts);
-uint64_t frame = wz_frame_index(facts);
+float wz_delta_seconds(const WzBehaviorFrameFacts* facts);
+uint64_t wz_frame_index(const WzBehaviorFrameFacts* facts);
 ```
 
 `delta_seconds` is the current frame interval.
@@ -893,6 +1132,18 @@ reset per scene or per behavior module.
 [Back to Behavior API Inventory](#behavior-api-inventory)
 
 Use the frame facts logger callback through the helper:
+
+```cpp
+void wz_log_info(
+    const WzBehaviorFrameFacts* facts,
+    const char* message);
+void wz_log_infof(
+    const WzBehaviorFrameFacts* facts,
+    const char* format,
+    ...);
+```
+
+Example:
 
 ```cpp
 wz_log_info(facts, "hello from behavior");
