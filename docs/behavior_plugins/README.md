@@ -311,6 +311,24 @@ usually trying to do.
 - Write editor/runtime diagnostics: [`wz_log_info`](#logging) and
   [`wz_log_infof`](#logging).
 
+### Helper Return Types
+
+All `wz_` behavior helpers are C-compatible functions. Helpers that return
+`uint8_t` use `1` for success/true and `0` for failure/false unless the section
+for that helper says otherwise.
+
+| Return type | Helpers |
+| --- | --- |
+| `uint8_t` | `wz_key_down`, `wz_key_pressed`, `wz_key_released`, `wz_mouse_button_down`, `wz_mouse_button_pressed`, `wz_mouse_button_released`, `wz_window_focused`, `wz_controller_count`, `wz_controller_connected`, `wz_controller_connected_pressed`, `wz_controller_connected_released`, `wz_controller_button_down`, `wz_controller_button_pressed`, `wz_controller_button_released`, `wz_input_wasd_axis`, `wz_is_event`, `wz_self_is_trigger`, `wz_write_add_local_translation`, `wz_write_set_local_translation`, `wz_write_add_world_translation`, `wz_write_set_world_translation`, `wz_write_add_local_scale`, `wz_write_set_local_scale`, `wz_write_set_local_rotation`, `wz_write_set_linear_velocity`, `wz_write_set_angular_velocity`, `wz_write_set_motion_space`, `wz_self_add_local_translation`, `wz_self_set_local_translation`, `wz_self_add_world_translation`, `wz_self_set_world_translation`, `wz_self_add_local_scale`, `wz_self_set_local_scale`, `wz_self_set_local_rotation`, `wz_self_set_linear_velocity`, `wz_self_set_angular_velocity`, `wz_self_set_motion_space`, `wz_other_add_world_translation`, `wz_other_set_world_translation`, `wz_other_set_linear_velocity`, `wz_other_set_angular_velocity`, `wz_other_set_motion_space`, `wz_read_local_transform`, `wz_read_world_transform`, `wz_read_local_position`, `wz_read_world_position`, `wz_self_local_transform`, `wz_self_world_transform`, `wz_self_local_position`, `wz_self_world_position`, `wz_other_local_transform`, `wz_other_world_transform`, `wz_other_local_position`, `wz_other_world_position`, `wz_vector_between_world_positions`, `wz_vector_self_to_other`, `wz_distance_between_world_positions`, `wz_distance_self_to_other`, `wz_direction_between_world_positions`, `wz_direction_self_to_other`, `wz_query_collision_surface_ray`, `wz_find_entity_by_name`, `wz_find_entity_by_authored_id`, `wz_config_bool`, `wz_config_number`, `wz_config_float`, `wz_config_string` |
+| `int32_t` | `wz_mouse_x`, `wz_mouse_y`, `wz_mouse_dx`, `wz_mouse_dy`, `wz_window_width`, `wz_window_height` |
+| `uint32_t` | `wz_input_event_key`, `wz_input_event_mouse_button`, `wz_input_event_controller`, `wz_input_event_controller_button`, `wz_input_event_controller_axis` |
+| `uint64_t` | `wz_frame_index` |
+| `float` | `wz_controller_axis`, `wz_delta_seconds`, `wz_input_event_controller_axis_value` |
+| `WzBehaviorEntityId` | `wz_self`, `wz_other` |
+| `WzBehaviorEventKind` | `wz_event_kind` |
+| `const char*` | `wz_event_name` |
+| `void` | `wz_log_info`, `wz_log_infof` |
+
 ## Event Routing
 
 [Back to Behavior API Inventory](#behavior-api-inventory)
@@ -973,6 +991,21 @@ wz_log_infof(facts, "axis %u value %.2f", axis, value);
 `wz_log_info` ignores null facts, missing logger callbacks, and null messages.
 `wz_log_infof` formats into a fixed local buffer, then forwards the result to
 `wz_log_info`.
+
+Common `wz_log_infof` format codes:
+
+| Code | Use for | Example |
+| --- | --- | --- |
+| `%s` | Null-terminated text | `wz_log_infof(facts, "node=%s", name);` |
+| `%d` or `%i` | Signed integers | `wz_log_infof(facts, "count=%d", count);` |
+| `%u` | Unsigned integers, including most behavior ids and constants | `wz_log_infof(facts, "entity=%u", wz_self(event));` |
+| `%f` | Floating-point values | `wz_log_infof(facts, "speed=%f", speed);` |
+| `%.2f` | Floating-point values with two digits after the decimal | `wz_log_infof(facts, "axis=%.2f", value);` |
+| `%c` | A single character | `wz_log_infof(facts, "key=%c", 'W');` |
+| `%%` | A literal percent sign | `wz_log_infof(facts, "progress=50%%");` |
+
+The value type must match the format code. For example, use `%u` for
+`uint32_t`, `%d` for `int32_t`, and `%f` for `float` or `double`.
 
 ## Raw ABI Registration
 
