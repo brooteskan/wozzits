@@ -358,32 +358,51 @@ For frame and scene-loaded events, `other` is `WZ_INVALID_BEHAVIOR_ENTITY`.
 `wz_self_is_trigger(event)` is set for collision/proximity events when the
 receiving side is a trigger participant.
 
+Filter inside one handler by checking the event kind:
+
+```cpp
+if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)) {
+    uint32_t controller = wz_input_event_controller(facts);
+    uint32_t axis = wz_input_event_controller_axis(facts);
+    float value = wz_input_event_controller_axis_value(facts);
+}
+else if (wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
+    WzVec3 direction{};
+    if (wz_direction_self_to_other(facts, event, &direction)) {
+        // React to the collision partner.
+    }
+}
+else if (wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+    float dt = wz_delta_seconds(facts);
+}
+```
+
 ## Event Channel Tokens
 
 [Back to Behavior API Inventory](#behavior-api-inventory)
 
 Scene behavior bindings and plugin defaults use the same channel tokens:
 
-```text
-frame.update
-scene.loaded
-collision.enter
-collision.stay
-collision.exit
-collision.*
-proximity.enter
-proximity.stay
-proximity.exit
-proximity.*
-input.key.pressed
-input.key.released
-input.mouse_button.pressed
-input.mouse_button.released
-input.controller_button.pressed
-input.controller_button.released
-input.controller_axis.changed
-input.*
-```
+| Token | Event kind | How to inspect it |
+| --- | --- | --- |
+| [`frame.update`](#frame-update-events) | `WZ_EVENT_FRAME_UPDATE` | Use [`wz_is_event`](#event-routing), [`wz_delta_seconds`](#frame-timing), and [`wz_frame_index`](#frame-timing). |
+| [`scene.loaded`](#event-routing) | `WZ_EVENT_SCENE_LOADED` | Reserved in the ABI and channel table; current runtime dispatch does not send it yet. |
+| [`collision.enter`](#collision-events) | `WZ_EVENT_COLLISION_ENTER` | Use [`wz_self`](#event-routing), [`wz_other`](#event-routing), transform reads, and spatial helpers. |
+| [`collision.stay`](#collision-events) | `WZ_EVENT_COLLISION_STAY` | Same inspection pattern as collision enter. |
+| [`collision.exit`](#collision-events) | `WZ_EVENT_COLLISION_EXIT` | Same inspection pattern as collision enter. |
+| [`collision.*`](#collision-events) | All collision events | Filter with [`wz_is_event`](#event-routing) inside the handler. |
+| [`proximity.enter`](#proximity-events) | `WZ_EVENT_PROXIMITY_ENTER` | Use [`wz_self`](#event-routing), [`wz_other`](#event-routing), transform reads, and spatial helpers. |
+| [`proximity.stay`](#proximity-events) | `WZ_EVENT_PROXIMITY_STAY` | Same inspection pattern as proximity enter. |
+| [`proximity.exit`](#proximity-events) | `WZ_EVENT_PROXIMITY_EXIT` | Same inspection pattern as proximity enter. |
+| [`proximity.*`](#proximity-events) | All proximity events | Filter with [`wz_is_event`](#event-routing) inside the handler. |
+| [`input.key.pressed`](#input-events) | `WZ_EVENT_INPUT_KEY_PRESSED` | Use [`wz_input_event_key`](#input-events). |
+| [`input.key.released`](#input-events) | `WZ_EVENT_INPUT_KEY_RELEASED` | Use [`wz_input_event_key`](#input-events). |
+| [`input.mouse_button.pressed`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED` | Use [`wz_input_event_mouse_button`](#input-events). |
+| [`input.mouse_button.released`](#input-events) | `WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED` | Use [`wz_input_event_mouse_button`](#input-events). |
+| [`input.controller_button.pressed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED` | Use [`wz_input_event_controller`](#input-events) and [`wz_input_event_controller_button`](#input-events). |
+| [`input.controller_button.released`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED` | Use [`wz_input_event_controller`](#input-events) and [`wz_input_event_controller_button`](#input-events). |
+| [`input.controller_axis.changed`](#input-events) | `WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED` | Use [`wz_input_event_controller`](#input-events), [`wz_input_event_controller_axis`](#input-events), and [`wz_input_event_controller_axis_value`](#input-events). |
+| [`input.*`](#input-events) | All input events | Filter with [`wz_is_event`](#event-routing), then read the matching input payload helper. |
 
 `collision.*`, `proximity.*`, and `input.*` are hardcoded group tokens, not a
 general glob system.
