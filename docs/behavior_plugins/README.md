@@ -51,6 +51,8 @@ to the module names those DLLs register.
 
 ## Minimal Module
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 For the common case, define one event handler and register it with
 `WZ_BEHAVIOR_MODULE`:
 
@@ -88,6 +90,8 @@ This registers a module named `proximity_boost`. A scene node's Behavior
 component can select `proximity_boost` after the DLL is loaded.
 
 ## Attaching Behavior To A Scene Node
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 In authored scene JSON, a node selects a behavior module by name:
 
@@ -164,15 +168,17 @@ usually trying to do.
 ### Registration And Scene Binding
 
 - Register one module with no default subscriptions:
-  `WZ_BEHAVIOR_MODULE(module_name, handler_fn)`.
+  [`WZ_BEHAVIOR_MODULE(module_name, handler_fn)`](#minimal-module).
 - Register one module with default event subscriptions:
-  `WZ_BEHAVIOR_MODULE_EVENTS(module_name, handler_fn, event_channel_array)`.
-- Register multiple modules manually with `wz_register_behaviors` and
-  `api->register_module_desc`.
-- Bind modules in scene data with `behavior` or plural `behaviors`.
+  [`WZ_BEHAVIOR_MODULE_EVENTS(module_name, handler_fn, event_channel_array)`](#raw-abi-registration).
+- Register multiple modules manually with
+  [`wz_register_behaviors`](#raw-abi-registration) and
+  [`api->register_module_desc`](#raw-abi-registration).
+- Bind modules in scene data with
+  [`behavior` or plural `behaviors`](#attaching-behavior-to-a-scene-node).
 - Give each binding a human-readable `label`, an engine-facing `module`, an
   optional legacy `name`, an `enabled` flag, an `events` list, and primitive
-  `config`.
+  [`config`](#scene-lookup-and-config).
 
 ### Event Dispatch
 
@@ -185,88 +191,124 @@ usually trying to do.
   `WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED`,
   `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED`, and
   `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED`.
-- Event helpers: `wz_event_kind`, `wz_is_event`, `wz_event_name`, `wz_self`,
-  `wz_other`, and `wz_self_is_trigger`.
+- Event helpers: [`wz_event_kind`](#event-routing),
+  [`wz_is_event`](#event-routing), [`wz_event_name`](#event-routing),
+  [`wz_self`](#event-routing), [`wz_other`](#event-routing), and
+  [`wz_self_is_trigger`](#event-routing).
 - Event channel tokens: `frame.update`, `scene.loaded`, `collision.enter`,
   `collision.stay`, `collision.exit`, `collision.*`, `proximity.enter`,
   `proximity.stay`, `proximity.exit`, `proximity.*`,
   `input.key.pressed`, `input.key.released`,
   `input.mouse_button.pressed`, `input.mouse_button.released`,
   `input.controller_button.pressed`, `input.controller_button.released`, and
-  `input.*`.
+  [`input.*`](#event-channel-tokens).
 
 ### Input Dispatch And Snapshot Reads
 
-- Edge-event payload helpers: `wz_input_event_key`,
-  `wz_input_event_mouse_button`, `wz_input_event_controller`, and
-  `wz_input_event_controller_button`.
-- Keyboard snapshot helpers: `wz_key_down`, `wz_key_pressed`, and
-  `wz_key_released`.
-- Mouse snapshot helpers: `wz_mouse_button_down`,
-  `wz_mouse_button_pressed`, `wz_mouse_button_released`, `wz_mouse_x`,
-  `wz_mouse_y`, `wz_mouse_dx`, and `wz_mouse_dy`.
-- Window snapshot helpers: `wz_window_focused`, `wz_window_width`, and
-  `wz_window_height`.
-- Controller snapshot helpers: `wz_controller_count`,
-  `wz_controller_connected`, `wz_controller_connected_pressed`,
-  `wz_controller_connected_released`, `wz_controller_axis`,
-  `wz_controller_button_down`, `wz_controller_button_pressed`, and
-  `wz_controller_button_released`.
-- Convenience axis helper: `wz_input_wasd_axis`.
+- Edge-event payload helpers: [`wz_input_event_key`](#input-events),
+  [`wz_input_event_mouse_button`](#input-events),
+  [`wz_input_event_controller`](#input-events), and
+  [`wz_input_event_controller_button`](#input-events).
+- Keyboard snapshot helpers: [`wz_key_down`](#reading-input),
+  [`wz_key_pressed`](#reading-input), and
+  [`wz_key_released`](#reading-input).
+- Mouse snapshot helpers: [`wz_mouse_button_down`](#reading-input),
+  [`wz_mouse_button_pressed`](#reading-input),
+  [`wz_mouse_button_released`](#reading-input),
+  [`wz_mouse_x`](#reading-input), [`wz_mouse_y`](#reading-input),
+  [`wz_mouse_dx`](#reading-input), and [`wz_mouse_dy`](#reading-input).
+- Window snapshot helpers: [`wz_window_focused`](#reading-input),
+  [`wz_window_width`](#reading-input), and
+  [`wz_window_height`](#reading-input).
+- Controller snapshot helpers: [`wz_controller_count`](#reading-input),
+  [`wz_controller_connected`](#reading-input),
+  [`wz_controller_connected_pressed`](#reading-input),
+  [`wz_controller_connected_released`](#reading-input),
+  [`wz_controller_axis`](#reading-input),
+  [`wz_controller_button_down`](#reading-input),
+  [`wz_controller_button_pressed`](#reading-input), and
+  [`wz_controller_button_released`](#reading-input).
+- Convenience axis helper: [`wz_input_wasd_axis`](#reading-input).
 
 ### Things To Do With Motion And Transforms
 
-- Move or scale self: `wz_self_add_local_translation`,
-  `wz_self_set_local_translation`, `wz_self_add_world_translation`,
-  `wz_self_set_world_translation`, `wz_self_add_local_scale`, and
-  `wz_self_set_local_scale`.
-- Rotate self: `wz_self_set_local_rotation`.
-- Set runtime motion for self: `wz_self_set_linear_velocity`,
-  `wz_self_set_angular_velocity`, and `wz_self_set_motion_space`.
+- Move or scale self: [`wz_self_add_local_translation`](#writing-commands),
+  [`wz_self_set_local_translation`](#writing-commands),
+  [`wz_self_add_world_translation`](#writing-commands),
+  [`wz_self_set_world_translation`](#writing-commands),
+  [`wz_self_add_local_scale`](#writing-commands), and
+  [`wz_self_set_local_scale`](#writing-commands).
+- Rotate self: [`wz_self_set_local_rotation`](#writing-commands).
+- Set runtime motion for self:
+  [`wz_self_set_linear_velocity`](#writing-commands),
+  [`wz_self_set_angular_velocity`](#writing-commands), and
+  [`wz_self_set_motion_space`](#writing-commands).
 - Affect the paired entity in collision/proximity events:
-  `wz_other_add_world_translation`, `wz_other_set_world_translation`,
-  `wz_other_set_linear_velocity`, `wz_other_set_angular_velocity`, and
-  `wz_other_set_motion_space`.
-- Write commands to any entity id: `wz_write_add_local_translation`,
-  `wz_write_set_local_translation`, `wz_write_add_world_translation`,
-  `wz_write_set_world_translation`, `wz_write_add_local_scale`,
-  `wz_write_set_local_scale`, `wz_write_set_local_rotation`,
-  `wz_write_set_linear_velocity`, `wz_write_set_angular_velocity`, and
-  `wz_write_set_motion_space`.
+  [`wz_other_add_world_translation`](#writing-commands),
+  [`wz_other_set_world_translation`](#writing-commands),
+  [`wz_other_set_linear_velocity`](#writing-commands),
+  [`wz_other_set_angular_velocity`](#writing-commands), and
+  [`wz_other_set_motion_space`](#writing-commands).
+- Write commands to any entity id:
+  [`wz_write_add_local_translation`](#writing-commands),
+  [`wz_write_set_local_translation`](#writing-commands),
+  [`wz_write_add_world_translation`](#writing-commands),
+  [`wz_write_set_world_translation`](#writing-commands),
+  [`wz_write_add_local_scale`](#writing-commands),
+  [`wz_write_set_local_scale`](#writing-commands),
+  [`wz_write_set_local_rotation`](#writing-commands),
+  [`wz_write_set_linear_velocity`](#writing-commands),
+  [`wz_write_set_angular_velocity`](#writing-commands), and
+  [`wz_write_set_motion_space`](#writing-commands).
 - Motion spaces: `WZ_BEHAVIOR_MOTION_SPACE_WORLD` and
-  `WZ_BEHAVIOR_MOTION_SPACE_LOCAL`.
+  [`WZ_BEHAVIOR_MOTION_SPACE_LOCAL`](#motion-rotation-and-scale-semantics).
 
 ### Reading Scene State
 
-- Read self transforms and positions: `wz_self_local_transform`,
-  `wz_self_world_transform`, `wz_self_local_position`, and
-  `wz_self_world_position`.
-- Read paired-entity transforms and positions: `wz_other_local_transform`,
-  `wz_other_world_transform`, `wz_other_local_position`, and
-  `wz_other_world_position`.
-- Read any entity by id: `wz_read_local_transform`,
-  `wz_read_world_transform`, `wz_read_local_position`, and
-  `wz_read_world_position`.
-- Find entities by authored scene data: `wz_find_entity_by_authored_id` and
-  `wz_find_entity_by_name`.
+- Read self transforms and positions:
+  [`wz_self_local_transform`](#reading-transforms),
+  [`wz_self_world_transform`](#reading-transforms),
+  [`wz_self_local_position`](#reading-transforms), and
+  [`wz_self_world_position`](#reading-transforms).
+- Read paired-entity transforms and positions:
+  [`wz_other_local_transform`](#reading-transforms),
+  [`wz_other_world_transform`](#reading-transforms),
+  [`wz_other_local_position`](#reading-transforms), and
+  [`wz_other_world_position`](#reading-transforms).
+- Read any entity by id: [`wz_read_local_transform`](#reading-transforms),
+  [`wz_read_world_transform`](#reading-transforms),
+  [`wz_read_local_position`](#reading-transforms), and
+  [`wz_read_world_position`](#reading-transforms).
+- Find entities by authored scene data:
+  [`wz_find_entity_by_authored_id`](#scene-lookup-and-config) and
+  [`wz_find_entity_by_name`](#scene-lookup-and-config).
 
 ### Spatial Relationship And Collision Surface Queries
 
 - Compute vectors, distances, and normalized directions between entities:
-  `wz_vector_between_world_positions`,
-  `wz_distance_between_world_positions`,
-  `wz_direction_between_world_positions`, `wz_vector_self_to_other`,
-  `wz_distance_self_to_other`, and `wz_direction_self_to_other`.
-- Query a collision surface ray: `wz_query_collision_surface_ray`.
+  [`wz_vector_between_world_positions`](#direction-and-distance-helpers),
+  [`wz_distance_between_world_positions`](#direction-and-distance-helpers),
+  [`wz_direction_between_world_positions`](#direction-and-distance-helpers),
+  [`wz_vector_self_to_other`](#direction-and-distance-helpers),
+  [`wz_distance_self_to_other`](#direction-and-distance-helpers), and
+  [`wz_direction_self_to_other`](#direction-and-distance-helpers).
+- Query a collision surface ray:
+  [`wz_query_collision_surface_ray`](#querying-collision-surfaces).
 
 ### Authored Config, Timing, And Diagnostics
 
-- Read primitive behavior config: `wz_config_bool`, `wz_config_number`,
-  `wz_config_float`, and `wz_config_string`.
-- Read frame timing: `wz_delta_seconds` and `wz_frame_index`.
-- Write editor/runtime diagnostics: `wz_log_info`.
+- Read primitive behavior config:
+  [`wz_config_bool`](#scene-lookup-and-config),
+  [`wz_config_number`](#scene-lookup-and-config),
+  [`wz_config_float`](#scene-lookup-and-config), and
+  [`wz_config_string`](#scene-lookup-and-config).
+- Read frame timing: [`wz_delta_seconds`](#frame-timing) and
+  [`wz_frame_index`](#frame-timing).
+- Write editor/runtime diagnostics: [`wz_log_info`](#logging).
 
 ## Event Routing
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 The event handler is called once per routed event for each enabled behavior
 component whose module is registered.
@@ -313,6 +355,8 @@ receiving side is a trigger participant.
 
 ## Event Channel Tokens
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Scene behavior bindings and plugin defaults use the same channel tokens:
 
 ```text
@@ -346,6 +390,8 @@ behavior should put subscriptions on the behavior binding instead.
 
 ## Frame Update Events
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 `WZ_EVENT_FRAME_UPDATE` is sent only to behavior bindings whose `events` list,
 or plugin default event list, includes:
 
@@ -361,6 +407,8 @@ unconditionally. Add `frame.update` to the behavior binding's `events` list for
 any behavior that still needs a per-frame callback.
 
 ## Collision Events
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 To receive collision events, add one or more collision channels to the behavior
 binding's `events` list:
@@ -389,6 +437,8 @@ if (wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
 
 ## Proximity Events
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Add a Proximity component to define radius and masks, then subscribe the
 behavior binding with:
 
@@ -406,6 +456,8 @@ terrain snap/orient query before actual collision. Proximity radius is authored
 in world units and does not inherit scale from the node's transform hierarchy.
 
 ## Input Events
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 Input edge events are routed to behavior bindings that subscribe with one or
 more of:
@@ -447,6 +499,8 @@ the normal frame snapshot helpers still read `facts->input`, so a behavior can
 combine the routed edge with held-state or axis checks.
 
 ## Reading Input
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 Input is exposed in two forms:
 
@@ -567,6 +621,8 @@ available even if no WASD keys are pressed, in which case the output axis is
 
 ## Reading Transforms
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Behavior code reads stable frame state during dispatch. Commands written by one
 behavior are not visible to transform queries until the engine applies the
 command buffer after dispatch.
@@ -606,6 +662,8 @@ for invalid entities, missing scene context, or null output pointers.
 
 ## Direction And Distance Helpers
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Collision and proximity events provide `self` and `other`. The helper layer can
 turn any two entities into a world-space vector, distance, or normalized
 direction:
@@ -630,6 +688,8 @@ Direction helpers return `0` when either entity cannot be read or the two
 positions are effectively the same.
 
 ## Querying Collision Surfaces
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 Behavior code can ray-query a specific queryable collision surface entity.
 Collision events tell you `self` and `other`; your behavior decides whether
@@ -674,6 +734,8 @@ uses collision assets already resolved for the frame. V1 supports queryable
 intentionally not sampled by this helper yet.
 
 ## Scene Lookup And Config
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 Scene-authored behaviors can carry a small primitive config object:
 
@@ -737,6 +799,8 @@ is useful for prototypes, but names are easier to change accidentally.
 
 ## Writing Commands
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Behaviors do not mutate the scene graph directly. They write commands into the
 frame command buffer. The engine applies those commands after behavior dispatch
 and then propagates scene transforms.
@@ -799,6 +863,8 @@ transform are not visible to that world-space add until the next propagation.
 
 ## Motion, Rotation, And Scale Semantics
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 The scene graph stores local transforms as matrices. The V1 behavior API uses
 these rules:
 
@@ -839,6 +905,8 @@ TRS, angular integration for that node is skipped for the frame.
 
 ## Frame Timing
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Frame timing helpers:
 
 ```cpp
@@ -854,6 +922,8 @@ reset per scene or per behavior module.
 
 ## Logging
 
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
 Use the frame facts logger callback through the helper:
 
 ```cpp
@@ -863,6 +933,8 @@ wz_log_info(facts, "hello from behavior");
 `wz_log_info` ignores null facts, missing logger callbacks, and null messages.
 
 ## Raw ABI Registration
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
 
 Most modules should use `WZ_BEHAVIOR_MODULE` or
 `WZ_BEHAVIOR_MODULE_EVENTS`. The `_EVENTS` form declares default channel
