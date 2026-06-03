@@ -88,6 +88,9 @@ namespace wz::engine::assets
                 node.hdri_environment.has_value();
             const bool has_sky_visual = node.sky_visual.has_value();
             const bool has_sky_surface = node.sky_surface.has_value();
+            const bool has_scene_import_source =
+                node.scene_import_source.has_value();
+            const bool has_imported_node = node.imported_node.has_value();
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
@@ -116,6 +119,8 @@ namespace wz::engine::assets
             fp.mix_value(has_hdri_environment);
             fp.mix_value(has_sky_visual);
             fp.mix_value(has_sky_surface);
+            fp.mix_value(has_scene_import_source);
+            fp.mix_value(has_imported_node);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
@@ -233,6 +238,26 @@ namespace wz::engine::assets
                 fp.mix_value(surface.projection);
                 fp.mix_value(surface.radius);
                 fp.mix_value(surface.visible_to_camera);
+            }
+
+            if (node.scene_import_source) {
+                const auto& source = *node.scene_import_source;
+                fp.mix_value(source.kind);
+                fp.mix_string(source.path);
+                fp.mix_string(source.import_prefix);
+                const bool has_scene_index = source.scene_index.has_value();
+                fp.mix_value(has_scene_index);
+                if (source.scene_index) {
+                    fp.mix_value(*source.scene_index);
+                }
+            }
+
+            if (node.imported_node) {
+                const auto& imported = *node.imported_node;
+                fp.mix_string(imported.anchor_node);
+                fp.mix_string(imported.import_prefix);
+                fp.mix_string(imported.source_node_id);
+                fp.mix_value(imported.missing_source);
             }
 
             if (node.mesh_source) {

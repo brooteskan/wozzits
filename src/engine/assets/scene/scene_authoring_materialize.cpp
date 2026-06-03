@@ -1,6 +1,7 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/assets/hdri/hdri_image_loader.h>
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
 #include <engine/assets/schema_ids.h>
@@ -8,6 +9,7 @@
 #include <file/filesystem.h>
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -437,6 +439,202 @@ namespace wz::engine::assets
         std::string node_log_name(const SceneNodeAsset& node)
         {
             return "node id='" + node.id + "' name='" + node.name + "'";
+        }
+
+        std::string sanitize_import_segment(std::string text)
+        {
+            for (char& ch : text) {
+                const auto byte = static_cast<unsigned char>(ch);
+                if (!std::isalnum(byte) && ch != '_' && ch != '-') {
+                    ch = '_';
+                }
+            }
+            while (!text.empty() && text.front() == '_') {
+                text.erase(text.begin());
+            }
+            while (!text.empty() && text.back() == '_') {
+                text.pop_back();
+            }
+            return text.empty() ? "glb_scene" : text;
+        }
+
+        std::string scene_import_prefix_for_node(
+            const SceneNodeAsset& anchor,
+            const SceneImportSourceAsset& source)
+        {
+            if (!source.import_prefix.empty()) {
+                return source.import_prefix;
+            }
+
+            return anchor.id + "/"
+                + sanitize_import_segment(wz::fs::stem(source.path));
+        }
+
+        std::string imported_scene_node_id(
+            const std::string& import_prefix,
+            const std::string& imported_id)
+        {
+            return import_prefix + "/" + imported_id;
+        }
+
+        bool node_belongs_to_import(
+            const SceneNodeAsset& node,
+            const std::string& anchor_id,
+            const std::string& import_prefix)
+        {
+            return node.imported_node
+                && node.imported_node->anchor_node == anchor_id
+                && node.imported_node->import_prefix == import_prefix;
+        }
+
+        bool materialize_scene_import_source(
+            SceneAssetData& scene,
+            EngineAssetLibrary& assets,
+            const std::string& anchor_id,
+            const SceneImportSourceAsset& source,
+            std::string& error)
+        {
+            if (source.kind != SceneImportSourceKind::GLB) {
+                error = "unsupported scene import source on node " + anchor_id;
+                return false;
+            }
+            if (source.path.empty()) {
+                error = "GLB scene import has empty path on node " + anchor_id;
+                return false;
+            }
+
+            SceneNodeAsset* anchor = find_scene_node(scene, anchor_id);
+            if (!anchor) {
+                error = "scene import anchor not found: " + anchor_id;
+                return false;
+            }
+            const std::optional<SceneMeshRenderStyleAsset>
+                inherited_render_style = anchor->mesh_render_style;
+
+            const std::string import_prefix =
+                scene_import_prefix_for_node(*anchor, source);
+
+            const auto bytes = wz::fs::read_file(
+                assets.files().resolve_path(source.path));
+            if (!bytes) {
+                error = "failed to read GLB scene import: " + source.path;
+                return false;
+            }
+
+            ImportedGLTFScene imported{};
+            std::string import_error;
+            if (!import_gltf_scene(
+                    bytes.value.data(),
+                    bytes.value.size(),
+                    GLTFSceneImportOptions{ .scene_index = source.scene_index },
+                    imported,
+                    &import_error))
+            {
+                error = "failed to import GLB scene hierarchy: "
+                    + source.path + ": " + import_error;
+                return false;
+            }
+
+            for (auto& node : scene.nodes) {
+                if (node_belongs_to_import(node, anchor_id, import_prefix)) {
+                    node.imported_node->missing_source = true;
+                }
+            }
+
+            for (const auto& imported_node : imported.nodes) {
+                const std::string authored_id =
+                    imported_scene_node_id(import_prefix, imported_node.id);
+
+                SceneNodeAsset* node = find_scene_node(scene, authored_id);
+                const bool existed = node != nullptr;
+                if (node
+                    && !node_belongs_to_import(*node, anchor_id, import_prefix))
+                {
+                    error = "GLB scene import node id collides with existing "
+                        "authored node: " + authored_id;
+                    return false;
+                }
+
+                if (!node) {
+                    SceneNodeAsset created =
+                        make_scene_node(authored_id, imported_node.name);
+                    scene.nodes.push_back(std::move(created));
+                    node = &scene.nodes.back();
+                }
+
+                node->name = imported_node.name.empty()
+                    ? imported_node.id
+                    : imported_node.name;
+                node->local = imported_node.local;
+                node->imported_node = SceneImportedNodeAsset{
+                    .anchor_node = anchor_id,
+                    .import_prefix = import_prefix,
+                    .source_node_id = imported_node.id,
+                    .missing_source = false,
+                };
+
+                if (imported_node.parent_id) {
+                    node->parent_id = imported_scene_node_id(
+                        import_prefix,
+                        *imported_node.parent_id);
+                }
+                else {
+                    node->parent_id = anchor_id;
+                }
+
+                if (imported_node.mesh_index) {
+                    node->mesh_source = SceneMeshSourceAsset{
+                        .kind = SceneMeshSourceKind::GLB,
+                        .path = source.path,
+                        .mesh_index = *imported_node.mesh_index,
+                    };
+                    if (!existed && inherited_render_style) {
+                        node->mesh_render_style = *inherited_render_style;
+                    }
+                }
+                else {
+                    node->mesh_source.reset();
+                    node->renderable_asset.reset();
+                }
+            }
+
+            return true;
+        }
+
+        bool materialize_scene_import_sources(
+            SceneAssetData& scene,
+            EngineAssetLibrary& assets,
+            std::string& error)
+        {
+            struct PendingImport
+            {
+                std::string anchor_id;
+                SceneImportSourceAsset source;
+            };
+
+            std::vector<PendingImport> imports;
+            for (const auto& node : scene.nodes) {
+                if (node.scene_import_source) {
+                    imports.push_back(PendingImport{
+                        .anchor_id = node.id,
+                        .source = *node.scene_import_source,
+                    });
+                }
+            }
+
+            for (const auto& import : imports) {
+                if (!materialize_scene_import_source(
+                        scene,
+                        assets,
+                        import.anchor_id,
+                        import.source,
+                        error))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         void prioritize_terrain_render_style_lights(SceneAssetData& scene)
@@ -1054,6 +1252,13 @@ namespace wz::engine::assets
             vector_field_assets_by_node;
         const SceneMeshRenderStyleAsset default_render_style{};
         scene.sky_draws.clear();
+
+        if (!materialize_scene_import_sources(scene, assets, report.error)) {
+            if (report.error.empty()) {
+                report.error = "scene import source materialization failed";
+            }
+            return report;
+        }
 
         for (auto& node : scene.nodes) {
             if (!node.scalar_field_source) {

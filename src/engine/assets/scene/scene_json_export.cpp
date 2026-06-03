@@ -132,6 +132,16 @@ namespace wz::engine::assets
             return "placeholder";
         }
 
+        const char* scene_import_source_kind_name(
+            SceneImportSourceKind kind)
+        {
+            switch (kind) {
+            case SceneImportSourceKind::GLB:
+                return "glb";
+            }
+            return "unknown";
+        }
+
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
         {
             switch (path) {
@@ -612,6 +622,37 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr scene_import_source_value(
+            const SceneImportSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kind",
+                string_value(scene_import_source_kind_name(source.kind)));
+            add_member(*obj, "path", string_value(source.path));
+            add_member(*obj, "import_prefix",
+                string_value(source.import_prefix));
+            if (source.scene_index) {
+                add_member(*obj, "scene_index",
+                    number_value(*source.scene_index));
+            }
+            return obj;
+        }
+
+        JSONValuePtr imported_node_value(
+            const SceneImportedNodeAsset& imported)
+        {
+            auto obj = object_value();
+            add_member(*obj, "anchor_node",
+                string_value(imported.anchor_node));
+            add_member(*obj, "import_prefix",
+                string_value(imported.import_prefix));
+            add_member(*obj, "source_node",
+                string_value(imported.source_node_id));
+            add_member(*obj, "missing_source",
+                bool_value(imported.missing_source));
+            return obj;
+        }
+
         JSONValuePtr mesh_render_layer_value(
             const SceneMeshRenderLayerAsset& layer)
         {
@@ -969,6 +1010,14 @@ namespace wz::engine::assets
             if (node.ground_boundary) {
                 add_member(*obj, "ground_boundary",
                     ground_boundary_value(*node.ground_boundary));
+            }
+            if (node.scene_import_source) {
+                add_member(*obj, "scene_import_source",
+                    scene_import_source_value(*node.scene_import_source));
+            }
+            if (node.imported_node) {
+                add_member(*obj, "imported_node",
+                    imported_node_value(*node.imported_node));
             }
             if (node.mesh_source) {
                 add_member(*obj, "mesh_source",

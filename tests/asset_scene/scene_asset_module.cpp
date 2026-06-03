@@ -6029,6 +6029,95 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
 }
 
+TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_import_source_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "scene_import_source_roundtrip";
+
+    SceneNodeAsset anchor = make_scene_node("tank_anchor");
+    anchor.scene_import_source = SceneImportSourceAsset{
+        .kind = SceneImportSourceKind::GLB,
+        .path = "gltf/tank1.glb",
+        .import_prefix = "tank_anchor/tank1",
+        .scene_index = 0u,
+    };
+    authored.nodes.push_back(std::move(anchor));
+
+    SceneNodeAsset turret = make_scene_node(
+        "tank_anchor/tank1/turret",
+        "turret");
+    turret.parent_id = "tank_anchor/tank1/body";
+    turret.imported_node = SceneImportedNodeAsset{
+        .anchor_node = "tank_anchor",
+        .import_prefix = "tank_anchor/tank1",
+        .source_node_id = "turret",
+        .missing_source = false,
+    };
+    turret.behavior = SceneBehaviorAsset{
+        .module = "tank",
+        .name = "rotate_turret",
+    };
+    authored.nodes.push_back(std::move(turret));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"scene_import_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"imported_node\""), std::string::npos);
+    EXPECT_NE(exported.find("\"tank_anchor/tank1\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "scene_import_source.scene.json",
+        exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "scene_import_source",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+    ASSERT_EQ(data->nodes.size(), 2u);
+
+    const auto* parsed_anchor = find_scene_node(*data, "tank_anchor");
+    ASSERT_NE(parsed_anchor, nullptr);
+    ASSERT_TRUE(parsed_anchor->scene_import_source.has_value());
+    EXPECT_EQ(parsed_anchor->scene_import_source->kind,
+        SceneImportSourceKind::GLB);
+    EXPECT_EQ(parsed_anchor->scene_import_source->path, "gltf/tank1.glb");
+    EXPECT_EQ(
+        parsed_anchor->scene_import_source->import_prefix,
+        "tank_anchor/tank1");
+    ASSERT_TRUE(parsed_anchor->scene_import_source->scene_index.has_value());
+    EXPECT_EQ(*parsed_anchor->scene_import_source->scene_index, 0u);
+
+    const auto* parsed_turret =
+        find_scene_node(*data, "tank_anchor/tank1/turret");
+    ASSERT_NE(parsed_turret, nullptr);
+    ASSERT_TRUE(parsed_turret->imported_node.has_value());
+    EXPECT_EQ(parsed_turret->imported_node->anchor_node, "tank_anchor");
+    EXPECT_EQ(parsed_turret->imported_node->source_node_id, "turret");
+    EXPECT_FALSE(parsed_turret->imported_node->missing_source);
+    ASSERT_TRUE(parsed_turret->behavior.has_value());
+    EXPECT_EQ(parsed_turret->behavior->module, "tank");
+}
+
 TEST(SceneAssetModule, ParsesExportsAndSummarizesScalarFieldSource)
 {
     const wz::fs::Path root =

@@ -205,6 +205,15 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneImportSourceKind> parse_scene_import_source_kind(
+            std::string_view text)
+        {
+            if (text == "glb") {
+                return SceneImportSourceKind::GLB;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -1140,6 +1149,92 @@ namespace wz::engine::assets::internal
                 }
 
                 node.ground_boundary = boundary;
+            }
+
+            const auto* import_source =
+                find_member(node_val, "scene_import_source");
+            if (import_source
+                && import_source->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneImportSourceAsset source{};
+
+                if (auto kind_str = read_string(*import_source, "kind")) {
+                    auto kind = parse_scene_import_source_kind(*kind_str);
+                    if (!kind) {
+                        logger.error("scene_import_source on node '"
+                            + node.id + "' has unknown kind '"
+                            + std::string(*kind_str) + "'");
+                        return std::nullopt;
+                    }
+                    source.kind = *kind;
+                }
+
+                if (auto path = read_string(*import_source, "path")) {
+                    source.path = std::string(*path);
+                }
+                if (auto prefix =
+                        read_string(*import_source, "import_prefix"))
+                {
+                    source.import_prefix = std::string(*prefix);
+                }
+                if (auto scene_index =
+                        read_number(*import_source, "scene_index"))
+                {
+                    if (*scene_index < 0.0 || !std::isfinite(*scene_index)) {
+                        logger.error("scene_import_source on node '"
+                            + node.id + "' has invalid scene_index");
+                        return std::nullopt;
+                    }
+                    source.scene_index =
+                        static_cast<uint32_t>(*scene_index);
+                }
+
+                if (source.kind == SceneImportSourceKind::GLB
+                    && source.path.empty())
+                {
+                    logger.error("scene_import_source on node '" + node.id
+                        + "' with kind 'glb' missing 'path'");
+                    return std::nullopt;
+                }
+
+                node.scene_import_source = std::move(source);
+            }
+
+            const auto* imported_node =
+                find_member(node_val, "imported_node");
+            if (imported_node
+                && imported_node->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneImportedNodeAsset imported{};
+                if (auto anchor = read_string(*imported_node, "anchor_node")) {
+                    imported.anchor_node = std::string(*anchor);
+                }
+                if (auto prefix =
+                        read_string(*imported_node, "import_prefix"))
+                {
+                    imported.import_prefix = std::string(*prefix);
+                }
+                if (auto source_node =
+                        read_string(*imported_node, "source_node"))
+                {
+                    imported.source_node_id = std::string(*source_node);
+                }
+                if (auto missing =
+                        read_bool(*imported_node, "missing_source"))
+                {
+                    imported.missing_source = *missing;
+                }
+
+                if (imported.anchor_node.empty()
+                    || imported.import_prefix.empty()
+                    || imported.source_node_id.empty())
+                {
+                    logger.error("imported_node on node '" + node.id
+                        + "' missing anchor_node, import_prefix, or source_node");
+                    return std::nullopt;
+                }
+
+                node.imported_node = std::move(imported);
             }
 
             const auto* ms = find_member(node_val, "mesh_source");
