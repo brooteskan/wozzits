@@ -149,12 +149,16 @@ namespace
         SceneInstance& scene,
         RuntimeEntityId entity)
     {
+        std::vector<std::string> channels{ "frame.update" };
+        const auto compiled =
+            wz::engine::behavior::compile_channel_mask(channels);
         scene.event_listeners.push_back(
             SceneComponentRecord<
                 wz::engine::assets::EventListenerComponent>{
                 .node = entity,
                 .component = wz::engine::assets::EventListenerComponent{
-                    .channels = { "frame.update" },
+                    .channels = std::move(channels),
+                    .channel_mask = compiled.mask,
                 },
             });
     }

@@ -4,6 +4,7 @@
 
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/renderable/renderable.h>
+#include <engine/behavior/event_channels.h>
 
 #include <logging/logger.h>
 
@@ -77,7 +78,17 @@ namespace wz::engine::assets
     struct EventListenerComponent
     {
         std::vector<std::string> channels;
+        wz::engine::behavior::EventChannelMask channel_mask = 0u;
     };
+
+    inline bool listener_accepts_event(
+        const EventListenerComponent& listener,
+        WzBehaviorEventKind kind) noexcept
+    {
+        return wz::engine::behavior::channel_mask_accepts_event(
+            listener.channel_mask,
+            kind);
+    }
 
     struct ProximityComponent
     {

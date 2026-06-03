@@ -12,10 +12,13 @@ namespace
         wz::scene::RuntimeEntityId entity,
         std::vector<std::string> channels)
     {
+        const auto compiled =
+            wz::engine::behavior::compile_channel_mask(channels);
         return {
             .node = entity,
             .component = {
                 .channels = std::move(channels),
+                .channel_mask = compiled.mask,
             },
         };
     }

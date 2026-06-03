@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <string>
 
 namespace wz::engine::input_events
 {
@@ -21,12 +20,9 @@ namespace wz::engine::input_events
             const wz::engine::assets::EventListenerComponent& listener,
             const InputEvent& event) noexcept
         {
-            for (const std::string& channel : listener.channels) {
-                if (input_channel_matches(channel, event.kind)) {
-                    return true;
-                }
-            }
-            return false;
+            return wz::engine::assets::listener_accepts_event(
+                listener,
+                event.kind);
         }
     }
 
@@ -34,36 +30,9 @@ namespace wz::engine::input_events
         std::string_view channel,
         WzBehaviorEventKind kind) noexcept
     {
-        if (channel == "input.*") {
-            switch (kind) {
-            case WZ_EVENT_INPUT_KEY_PRESSED:
-            case WZ_EVENT_INPUT_KEY_RELEASED:
-            case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
-            case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
-            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
-            case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
-                return true;
-            default:
-                return false;
-            }
-        }
-
-        switch (kind) {
-        case WZ_EVENT_INPUT_KEY_PRESSED:
-            return channel == "input.key.pressed";
-        case WZ_EVENT_INPUT_KEY_RELEASED:
-            return channel == "input.key.released";
-        case WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED:
-            return channel == "input.mouse_button.pressed";
-        case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
-            return channel == "input.mouse_button.released";
-        case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
-            return channel == "input.controller_button.pressed";
-        case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
-            return channel == "input.controller_button.released";
-        default:
-            return false;
-        }
+        return wz::engine::behavior::channel_mask_accepts_event(
+            wz::engine::behavior::channel_mask_for_token(channel),
+            kind);
     }
 
     void generate_input_events(

@@ -155,6 +155,34 @@ namespace wz::engine::assets
             context.logger->info(msg.str());
         }
 
+        void log_event_listener_channel_warnings(
+            const SceneNodeAsset& node,
+            const SceneInstantiateContext& context,
+            const wz::engine::behavior::EventChannelCompileResult& compiled)
+        {
+            if (!context.logger) {
+                return;
+            }
+
+            if (compiled.unknown_count > 0u) {
+                std::ostringstream msg;
+                msg << "[" << log_owner(context) << "] "
+                    << node_log_name(node)
+                    << " event_listener has " << compiled.unknown_count
+                    << " unknown channel token(s)";
+                context.logger->warn(msg.str());
+            }
+
+            if (compiled.redundant_count > 0u) {
+                std::ostringstream msg;
+                msg << "[" << log_owner(context) << "] "
+                    << node_log_name(node)
+                    << " event_listener has " << compiled.redundant_count
+                    << " redundant channel token(s)";
+                context.logger->warn(msg.str());
+            }
+        }
+
         void log_instantiate_failure(
             const SceneInstantiateResult& result,
             const SceneInstantiateContext& context)
@@ -545,10 +573,18 @@ namespace wz::engine::assets
             }
 
             if (node.event_listener) {
+                const auto compiled =
+                    wz::engine::behavior::compile_channel_mask(
+                        node.event_listener->channels);
+                log_event_listener_channel_warnings(
+                    node,
+                    context,
+                    compiled);
                 inst.event_listeners.push_back({
                     .node = h,
                     .component = EventListenerComponent{
                         .channels = node.event_listener->channels,
+                        .channel_mask = compiled.mask,
                     },
                 });
             }

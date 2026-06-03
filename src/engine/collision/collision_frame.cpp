@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cfloat>
 #include <math/mat4.h>
-#include <string_view>
 
 namespace wz::engine::collision
 {
@@ -37,68 +36,52 @@ namespace wz::engine::collision
             return entry ? entry->is_trigger : false;
         }
 
-        bool collision_channel_matches(
-            std::string_view channel,
+        WzBehaviorEventKind collision_behavior_event_kind(
             CollisionEventKind kind) noexcept
         {
-            if (channel == "collision.*") {
-                return true;
-            }
-
             switch (kind) {
             case CollisionEventKind::Enter:
-                return channel == "collision.enter";
+                return WZ_EVENT_COLLISION_ENTER;
             case CollisionEventKind::Stay:
-                return channel == "collision.stay";
+                return WZ_EVENT_COLLISION_STAY;
             case CollisionEventKind::Exit:
-                return channel == "collision.exit";
+                return WZ_EVENT_COLLISION_EXIT;
             }
 
-            return false;
+            return WZ_EVENT_NONE;
         }
 
-        bool proximity_channel_matches(
-            std::string_view channel,
+        WzBehaviorEventKind proximity_behavior_event_kind(
             ProximityEventKind kind) noexcept
         {
-            if (channel == "proximity.*") {
-                return true;
-            }
-
             switch (kind) {
             case ProximityEventKind::Enter:
-                return channel == "proximity.enter";
+                return WZ_EVENT_PROXIMITY_ENTER;
             case ProximityEventKind::Stay:
-                return channel == "proximity.stay";
+                return WZ_EVENT_PROXIMITY_STAY;
             case ProximityEventKind::Exit:
-                return channel == "proximity.exit";
+                return WZ_EVENT_PROXIMITY_EXIT;
             }
 
-            return false;
+            return WZ_EVENT_NONE;
         }
 
         bool listener_matches_collision_event(
             const wz::engine::assets::EventListenerComponent& listener,
             const CollisionEntityEvent& event) noexcept
         {
-            for (const std::string& channel : listener.channels) {
-                if (collision_channel_matches(channel, event.kind)) {
-                    return true;
-                }
-            }
-            return false;
+            return wz::engine::assets::listener_accepts_event(
+                listener,
+                collision_behavior_event_kind(event.kind));
         }
 
         bool listener_matches_proximity_event(
             const wz::engine::assets::EventListenerComponent& listener,
             const ProximityEntityEvent& event) noexcept
         {
-            for (const std::string& channel : listener.channels) {
-                if (proximity_channel_matches(channel, event.kind)) {
-                    return true;
-                }
-            }
-            return false;
+            return wz::engine::assets::listener_accepts_event(
+                listener,
+                proximity_behavior_event_kind(event.kind));
         }
 
         bool proximity_overlap(

@@ -2,8 +2,6 @@
 
 #include <engine/frame_storage.h>
 
-#include <string>
-
 namespace wz::engine::behavior
 {
     namespace
@@ -64,25 +62,6 @@ namespace wz::engine::behavior
                 }
             }
             return nullptr;
-        }
-
-        bool has_frame_update_listener(
-            const wz::engine::assets::SceneInstance& scene,
-            wz::scene::RuntimeEntityId entity)
-        {
-            for (const auto& listener : scene.event_listeners) {
-                if (listener.node != entity) {
-                    continue;
-                }
-                for (const std::string& channel :
-                     listener.component.channels)
-                {
-                    if (channel == "frame.update") {
-                        return true;
-                    }
-                }
-            }
-            return false;
         }
 
         struct ActiveBehaviorScope
@@ -156,9 +135,21 @@ namespace wz::engine::behavior
             BehaviorFrameContext& context)
         {
             for (const auto& record : scene.behaviors) {
-                if (!has_frame_update_listener(scene, record.node)) {
+                bool subscribed = false;
+                for (const auto& listener : scene.event_listeners) {
+                    if (listener.node == record.node
+                        && wz::engine::assets::listener_accepts_event(
+                            listener.component,
+                            WZ_EVENT_FRAME_UPDATE))
+                    {
+                        subscribed = true;
+                        break;
+                    }
+                }
+                if (!subscribed) {
                     continue;
                 }
+
                 const BehaviorEvent event{
                     .kind = WZ_EVENT_FRAME_UPDATE,
                     .entity = record.node,

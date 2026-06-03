@@ -174,6 +174,7 @@ TEST(SceneAssetModule, ListenerOnlyNodeDescriptors)
     ASSERT_EQ(inst.event_listeners[0].component.channels.size(), 2u);
     EXPECT_EQ(inst.event_listeners[0].component.channels[0], "gameplay");
     EXPECT_EQ(inst.event_listeners[0].component.channels[1], "ui");
+    EXPECT_EQ(inst.event_listeners[0].component.channel_mask, 0u);
 
     // No input/controller records
     EXPECT_TRUE(inst.input_receivers.empty());
@@ -194,6 +195,30 @@ TEST(SceneAssetModule, ListenerOnlyNodeDescriptors)
         view);
 
     EXPECT_EQ(compiled.scene.opaque.size(), 0u);
+}
+
+TEST(SceneAssetModule, EventListenerInstantiationCompilesKnownChannelMask)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::behavior;
+
+    SceneAssetData asset{};
+    asset.name = "event_listener_channel_mask";
+    asset.nodes.push_back(SceneNodeAsset{
+        .id = "listener",
+        .event_listener = SceneEventListenerAsset{
+            .channels = { "frame.update", "collision.*", "input.*" },
+        },
+    });
+
+    auto result = instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.event_listeners.size(), 1u);
+    EXPECT_EQ(
+        result.instance.event_listeners[0].component.channel_mask,
+        EventChannelFrameUpdate
+            | kCollisionEventChannels
+            | kInputEventChannels);
 }
 
 TEST(SceneAssetModule, ActorMovementComponentDescriptorsRoundTrip)
