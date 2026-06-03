@@ -62,6 +62,10 @@ TEST(InputEvents, GenerateInputEventsFromPressedAndReleasedEdges)
         true;
     input.controllers.controllers[0].buttons_released[WZ_CONTROLLER_BUTTON_B] =
         true;
+    input.controllers.controllers[0].connected = true;
+    input.controllers.controllers[0].axes[WZ_CONTROLLER_AXIS_LEFT_X] = 0.5f;
+    input.controllers.controllers[0].axes_changed
+        [WZ_CONTROLLER_AXIS_LEFT_X] = true;
 
     std::vector<InputEvent> events;
     generate_input_events(input, events);
@@ -71,7 +75,9 @@ TEST(InputEvents, GenerateInputEventsFromPressedAndReleasedEdges)
             WzBehaviorEventKind kind,
             uint32_t key,
             uint32_t controller,
-            uint32_t button)
+            uint32_t button,
+            uint32_t axis = WZ_INPUT_EVENT_INVALID_VALUE,
+            float value = 0.0f)
         {
             return std::any_of(
                 events.begin(),
@@ -81,11 +87,13 @@ TEST(InputEvents, GenerateInputEventsFromPressedAndReleasedEdges)
                     return event.kind == kind
                         && event.payload.key == key
                         && event.payload.controller == controller
-                        && event.payload.button == button;
+                        && event.payload.button == button
+                        && event.payload.axis == axis
+                        && event.payload.value == value;
                 });
         };
 
-    ASSERT_EQ(events.size(), 6u);
+    ASSERT_EQ(events.size(), 7u);
     EXPECT_TRUE(has_event(
         WZ_EVENT_INPUT_KEY_PRESSED,
         WZ_KEY_SPACE,
@@ -116,6 +124,13 @@ TEST(InputEvents, GenerateInputEventsFromPressedAndReleasedEdges)
         WZ_INPUT_EVENT_INVALID_VALUE,
         0u,
         WZ_CONTROLLER_BUTTON_B));
+    EXPECT_TRUE(has_event(
+        WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED,
+        WZ_INPUT_EVENT_INVALID_VALUE,
+        0u,
+        WZ_INPUT_EVENT_INVALID_VALUE,
+        WZ_CONTROLLER_AXIS_LEFT_X,
+        0.5f));
 }
 
 TEST(InputEvents, RouteInputEventsRequiresListener)
@@ -125,8 +140,13 @@ TEST(InputEvents, RouteInputEventsRequiresListener)
     std::vector<InputEvent> events{
         InputEvent{
             .kind = WZ_EVENT_INPUT_KEY_PRESSED,
-            .payload = { WZ_KEY_SPACE, WZ_INPUT_EVENT_INVALID_VALUE,
-                WZ_INPUT_EVENT_INVALID_VALUE },
+            .payload = {
+                WZ_KEY_SPACE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
+            },
         },
     };
     std::vector<wz::engine::assets::SceneComponentRecord<
@@ -145,13 +165,23 @@ TEST(InputEvents, RouteInputEventsFiltersByChannel)
     std::vector<InputEvent> events{
         InputEvent{
             .kind = WZ_EVENT_INPUT_KEY_PRESSED,
-            .payload = { WZ_KEY_SPACE, WZ_INPUT_EVENT_INVALID_VALUE,
-                WZ_INPUT_EVENT_INVALID_VALUE },
+            .payload = {
+                WZ_KEY_SPACE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
+            },
         },
         InputEvent{
             .kind = WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED,
-            .payload = { WZ_INPUT_EVENT_INVALID_VALUE,
-                WZ_INPUT_EVENT_INVALID_VALUE, WZ_MOUSE_BUTTON_LEFT },
+            .payload = {
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_MOUSE_BUTTON_LEFT,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
+            },
         },
     };
     std::vector listeners{

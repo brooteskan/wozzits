@@ -27,6 +27,7 @@ namespace wz::engine::behavior
         EventChannelInputMouseButtonReleased = 1u << 11,
         EventChannelInputControllerButtonPressed = 1u << 12,
         EventChannelInputControllerButtonReleased = 1u << 13,
+        EventChannelInputControllerAxisChanged = 1u << 14,
     };
 
     constexpr EventChannelMask kCollisionEventChannels =
@@ -45,7 +46,8 @@ namespace wz::engine::behavior
         | EventChannelInputMouseButtonPressed
         | EventChannelInputMouseButtonReleased
         | EventChannelInputControllerButtonPressed
-        | EventChannelInputControllerButtonReleased;
+        | EventChannelInputControllerButtonReleased
+        | EventChannelInputControllerAxisChanged;
 
     struct EventChannelCompileResult
     {
@@ -105,6 +107,9 @@ namespace wz::engine::behavior
         if (channel == "input.controller_button.released") {
             return EventChannelInputControllerButtonReleased;
         }
+        if (channel == "input.controller_axis.changed") {
+            return EventChannelInputControllerAxisChanged;
+        }
         if (channel == "input.*") {
             return kInputEventChannels;
         }
@@ -143,6 +148,8 @@ namespace wz::engine::behavior
             return EventChannelInputControllerButtonPressed;
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
             return EventChannelInputControllerButtonReleased;
+        case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
+            return EventChannelInputControllerAxisChanged;
         default:
             return 0u;
         }

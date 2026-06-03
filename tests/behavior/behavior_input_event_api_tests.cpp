@@ -15,6 +15,8 @@ namespace
         uint32_t mouse_button = 0u;
         uint32_t controller = 0u;
         uint32_t controller_button = 0u;
+        uint32_t controller_axis = 0u;
+        float controller_axis_value = 0.0f;
         uint32_t collision_key = 0u;
         uint8_t snapshot_w_down_during_input = 0u;
     };
@@ -52,6 +54,15 @@ namespace
             probe->controller = wz_input_event_controller(facts);
             probe->controller_button =
                 wz_input_event_controller_button(facts);
+        }
+        else if (
+            wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED))
+        {
+            probe->controller = wz_input_event_controller(facts);
+            probe->controller_axis =
+                wz_input_event_controller_axis(facts);
+            probe->controller_axis_value =
+                wz_input_event_controller_axis_value(facts);
         }
         else if (wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
             probe->collision_key = wz_input_event_key(facts);
@@ -92,6 +103,9 @@ TEST(BehaviorInputEventApi, EventNamesIncludeInputEvents)
     EXPECT_EQ(
         std::string(wz_event_name(WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED)),
         "input.controller_button.released");
+    EXPECT_EQ(
+        std::string(wz_event_name(WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)),
+        "input.controller_axis.changed");
 }
 
 TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
@@ -120,6 +134,8 @@ TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
                 WZ_KEY_SPACE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
             },
         },
         wz::engine::input_events::InputEntityEvent{
@@ -129,6 +145,8 @@ TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_MOUSE_BUTTON_RIGHT,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
             },
         },
         wz::engine::input_events::InputEntityEvent{
@@ -138,6 +156,19 @@ TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 1u,
                 WZ_CONTROLLER_BUTTON_A,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
+            },
+        },
+        wz::engine::input_events::InputEntityEvent{
+            .entity = 4u,
+            .kind = WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED,
+            .payload = {
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                1u,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_CONTROLLER_AXIS_RIGHT_TRIGGER,
+                0.75f,
             },
         },
     };
@@ -158,13 +189,14 @@ TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
 
     dispatch_behaviors(scene, registry, context);
 
-    ASSERT_EQ(probe.calls, 5u);
-    ASSERT_EQ(probe.kinds.size(), 5u);
+    ASSERT_EQ(probe.calls, 6u);
+    ASSERT_EQ(probe.kinds.size(), 6u);
     EXPECT_EQ(probe.kinds[0], WZ_EVENT_FRAME_UPDATE);
     EXPECT_EQ(probe.kinds[1], WZ_EVENT_INPUT_KEY_PRESSED);
     EXPECT_EQ(probe.kinds[2], WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED);
     EXPECT_EQ(probe.kinds[3], WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED);
-    EXPECT_EQ(probe.kinds[4], WZ_EVENT_COLLISION_ENTER);
+    EXPECT_EQ(probe.kinds[4], WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED);
+    EXPECT_EQ(probe.kinds[5], WZ_EVENT_COLLISION_ENTER);
     EXPECT_EQ(probe.frame_key, WZ_INPUT_EVENT_INVALID_VALUE);
     EXPECT_EQ(probe.key, WZ_KEY_SPACE);
     EXPECT_EQ(probe.snapshot_w_down_during_input, 1u);
@@ -172,6 +204,8 @@ TEST(BehaviorInputEventApi, ActivePayloadHelpersAreDispatchScoped)
     EXPECT_EQ(probe.mouse_button, WZ_MOUSE_BUTTON_RIGHT);
     EXPECT_EQ(probe.controller, 1u);
     EXPECT_EQ(probe.controller_button, WZ_CONTROLLER_BUTTON_A);
+    EXPECT_EQ(probe.controller_axis, WZ_CONTROLLER_AXIS_RIGHT_TRIGGER);
+    EXPECT_EQ(probe.controller_axis_value, 0.75f);
     EXPECT_EQ(probe.collision_key, WZ_INPUT_EVENT_INVALID_VALUE);
 
     g_input_event_api_probe = nullptr;

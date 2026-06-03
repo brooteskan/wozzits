@@ -638,6 +638,17 @@
         "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
         "import_prefix": ""
       },
+      "behaviors": [
+        {
+          "label": "Input",
+          "module": "test_behavior",
+          "name": "",
+          "enabled": true,
+          "events": [
+            "collision.*"
+          ]
+        }
+      ],
       "editor_handle": {
         "kind": "transform",
         "enabled": true,

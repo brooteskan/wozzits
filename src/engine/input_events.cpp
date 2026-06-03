@@ -13,6 +13,8 @@ namespace wz::engine::input_events
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
             };
         }
 
@@ -105,6 +107,22 @@ namespace wz::engine::input_events
                     payload.button = button;
                     out_events.push_back({
                         .kind = WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED,
+                        .payload = payload,
+                    });
+                }
+            }
+
+            for (uint32_t axis = 0;
+                 axis < wz::input::kControllerAxisCount;
+                 ++axis)
+            {
+                if (state.connected && state.axes_changed[axis]) {
+                    WzInputEventPayload payload = invalid_payload();
+                    payload.controller = controller;
+                    payload.axis = axis;
+                    payload.value = state.axes[axis];
+                    out_events.push_back({
+                        .kind = WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED,
                         .payload = payload,
                     });
                 }

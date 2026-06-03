@@ -46,6 +46,7 @@ namespace wz::engine::behavior
             case WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED:
             case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
             case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
+            case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
                 return kind;
             default:
                 return WZ_EVENT_NONE;

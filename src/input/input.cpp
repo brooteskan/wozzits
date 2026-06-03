@@ -4,6 +4,18 @@
 
 namespace wz::input
 {
+    namespace
+    {
+        constexpr float kControllerAxisChangeEpsilon = 0.0001f;
+
+        bool axis_changed(float current, float previous) noexcept
+        {
+            const float delta = current - previous;
+            return delta > kControllerAxisChangeEpsilon
+                || delta < -kControllerAxisChangeEpsilon;
+        }
+    }
+
     void build_input(InputState &input,
                      const InputState& prev,
                      const wz::event::Event *events,
@@ -50,6 +62,9 @@ namespace wz::input
 
             for (uint32_t axis = 0; axis < kControllerAxisCount; ++axis) {
                 controller.axes[axis] = sample.axes[axis];
+                controller.axes_changed[axis] =
+                    sample.connected
+                    && axis_changed(sample.axes[axis], previous.axes[axis]);
             }
 
             for (uint32_t button = 0;

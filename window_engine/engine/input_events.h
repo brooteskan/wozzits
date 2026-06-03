@@ -18,6 +18,8 @@ namespace wz::engine::input_events
             WZ_INPUT_EVENT_INVALID_VALUE,
             WZ_INPUT_EVENT_INVALID_VALUE,
             WZ_INPUT_EVENT_INVALID_VALUE,
+            WZ_INPUT_EVENT_INVALID_VALUE,
+            0.0f,
         };
     };
 
@@ -30,6 +32,8 @@ namespace wz::engine::input_events
             WZ_INPUT_EVENT_INVALID_VALUE,
             WZ_INPUT_EVENT_INVALID_VALUE,
             WZ_INPUT_EVENT_INVALID_VALUE,
+            WZ_INPUT_EVENT_INVALID_VALUE,
+            0.0f,
         };
     };
 

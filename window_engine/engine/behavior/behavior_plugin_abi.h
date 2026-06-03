@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 8u
+#define WZ_BEHAVIOR_ABI_VERSION 9u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -67,6 +67,7 @@ enum
     WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED = 303u,
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED = 304u,
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED = 305u,
+    WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED = 306u,
 };
 
 enum
@@ -147,6 +148,8 @@ typedef struct WzInputEventPayload
     uint32_t key;
     uint32_t controller;
     uint32_t button;
+    uint32_t axis;
+    float value;
 } WzInputEventPayload;
 
 /* Keyboard indices match Windows virtual-key codes for now. */

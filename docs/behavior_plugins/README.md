@@ -190,7 +190,8 @@ usually trying to do.
   `WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED`,
   `WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED`,
   `WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED`, and
-  `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED`.
+  `WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED`, and
+  `WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED`.
 - Event helpers: [`wz_event_kind`](#event-routing),
   [`wz_is_event`](#event-routing), [`wz_event_name`](#event-routing),
   [`wz_self`](#event-routing), [`wz_other`](#event-routing), and
@@ -200,7 +201,8 @@ usually trying to do.
   `proximity.stay`, `proximity.exit`, `proximity.*`,
   `input.key.pressed`, `input.key.released`,
   `input.mouse_button.pressed`, `input.mouse_button.released`,
-  `input.controller_button.pressed`, `input.controller_button.released`, and
+  `input.controller_button.pressed`, `input.controller_button.released`,
+  `input.controller_axis.changed`, and
   [`input.*`](#event-channel-tokens).
 
 ### Input Dispatch And Snapshot Reads
@@ -208,7 +210,9 @@ usually trying to do.
 - Edge-event payload helpers: [`wz_input_event_key`](#input-events),
   [`wz_input_event_mouse_button`](#input-events),
   [`wz_input_event_controller`](#input-events), and
-  [`wz_input_event_controller_button`](#input-events).
+  [`wz_input_event_controller_button`](#input-events),
+  [`wz_input_event_controller_axis`](#input-events), and
+  [`wz_input_event_controller_axis_value`](#input-events).
 - Keyboard snapshot helpers: [`wz_key_down`](#reading-input),
   [`wz_key_pressed`](#reading-input), and
   [`wz_key_released`](#reading-input).
@@ -330,6 +334,7 @@ WZ_EVENT_INPUT_MOUSE_BUTTON_PRESSED
 WZ_EVENT_INPUT_MOUSE_BUTTON_RELEASED
 WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED
 WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED
+WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED
 ```
 
 `WZ_EVENT_SCENE_LOADED` is reserved in the ABI and channel table; current
@@ -376,6 +381,7 @@ input.mouse_button.pressed
 input.mouse_button.released
 input.controller_button.pressed
 input.controller_button.released
+input.controller_axis.changed
 input.*
 ```
 
@@ -469,6 +475,7 @@ input.mouse_button.pressed
 input.mouse_button.released
 input.controller_button.pressed
 input.controller_button.released
+input.controller_axis.changed
 input.*
 ```
 
@@ -491,6 +498,12 @@ if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED)) {
     uint32_t controller = wz_input_event_controller(facts);
     uint32_t button = wz_input_event_controller_button(facts);
 }
+
+if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)) {
+    uint32_t controller = wz_input_event_controller(facts);
+    uint32_t axis = wz_input_event_controller_axis(facts);
+    float value = wz_input_event_controller_axis_value(facts);
+}
 ```
 
 Payload helpers return `WZ_INPUT_EVENT_INVALID_VALUE` when the current dispatch
@@ -505,7 +518,7 @@ combine the routed edge with held-state or axis checks.
 Input is exposed in two forms:
 
 - Edge events for key, mouse button, and controller button pressed/released
-  transitions.
+  transitions, plus controller axis changed events.
 - A frame snapshot through `facts->input` for held state, mouse position/delta,
   window state, controller connection state, and controller axes.
 
@@ -586,6 +599,12 @@ WZ_CONTROLLER_AXIS_RIGHT_Y
 WZ_CONTROLLER_AXIS_LEFT_TRIGGER
 WZ_CONTROLLER_AXIS_RIGHT_TRIGGER
 ```
+
+Controller axis changed events are generated when a sampled axis value changes
+from the previous frame by more than a small epsilon. They are useful for
+event-driven analog input, including sticks and analog triggers. For continuous
+movement, the frame snapshot helpers remain the most direct way to read the
+current axis value.
 
 Button constants:
 

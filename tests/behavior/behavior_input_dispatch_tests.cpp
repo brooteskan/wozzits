@@ -24,6 +24,8 @@ TEST(BehaviorInputDispatch, DispatchesInputBeforeCollisionAndProximity)
                 WZ_KEY_SPACE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
             },
         },
     };
@@ -92,6 +94,8 @@ TEST(BehaviorInputDispatch, InputEventsAreFrameLocal)
                 WZ_KEY_SPACE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
                 WZ_INPUT_EVENT_INVALID_VALUE,
+                WZ_INPUT_EVENT_INVALID_VALUE,
+                0.0f,
             },
         },
     };

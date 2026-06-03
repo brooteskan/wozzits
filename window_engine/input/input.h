@@ -121,6 +121,7 @@ namespace wz::input
         bool connected_released = false; ///< Disconnected this frame
 
         float axes[kControllerAxisCount]{};
+        bool axes_changed[kControllerAxisCount]{};
         bool buttons[kControllerButtonCount]{};
         bool buttons_pressed[kControllerButtonCount]{};
         bool buttons_released[kControllerButtonCount]{};

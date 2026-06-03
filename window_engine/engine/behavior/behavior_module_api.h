@@ -523,6 +523,22 @@ static inline uint32_t wz_input_event_controller_button(
         : WZ_INPUT_EVENT_INVALID_VALUE;
 }
 
+static inline uint32_t wz_input_event_controller_axis(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->axis
+        : WZ_INPUT_EVENT_INVALID_VALUE;
+}
+
+static inline float wz_input_event_controller_axis_value(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_input_event
+        ? facts->active_input_event->value
+        : 0.0f;
+}
+
 static inline uint8_t wz_self_is_trigger(const WzBehaviorEvent* event)
 {
     return event ? event->self_is_trigger : 0u;
@@ -1060,6 +1076,8 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "input.controller_button.pressed";
     case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
         return "input.controller_button.released";
+    case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
+        return "input.controller_axis.changed";
     default:
         return "unknown";
     }
