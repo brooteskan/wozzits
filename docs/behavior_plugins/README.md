@@ -291,7 +291,7 @@ For frame and scene-loaded events, `other` is `WZ_INVALID_BEHAVIOR_ENTITY`.
 `wz_self_is_trigger(event)` is set for collision/proximity events when the
 receiving side is a trigger participant.
 
-Filter inside one handler by checking the event kind:
+For a single event check, `wz_is_event` is the shortest guard:
 
 ```cpp
 if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)) {
@@ -299,14 +299,32 @@ if (wz_is_event(event, WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED)) {
     uint32_t axis = wz_input_event_controller_axis(facts);
     float value = wz_input_event_controller_axis_value(facts);
 }
-else if (wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
+```
+
+For a behavior that handles several event kinds, switch on
+`wz_event_kind(event)`:
+
+```cpp
+switch (wz_event_kind(event)) {
+case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED: {
+    uint32_t controller = wz_input_event_controller(facts);
+    uint32_t axis = wz_input_event_controller_axis(facts);
+    float value = wz_input_event_controller_axis_value(facts);
+    break;
+}
+case WZ_EVENT_COLLISION_ENTER: {
     WzVec3 direction{};
     if (wz_direction_self_to_other(facts, event, &direction)) {
         // React to the collision partner.
     }
+    break;
 }
-else if (wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+case WZ_EVENT_FRAME_UPDATE: {
     float dt = wz_delta_seconds(facts);
+    break;
+}
+default:
+    break;
 }
 ```
 
