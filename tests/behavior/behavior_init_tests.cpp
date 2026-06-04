@@ -12,6 +12,7 @@ namespace
     {
         uint32_t init_count = 0;
         uint32_t event_count = 0;
+        uint32_t sentinel = 0;
         WzBehaviorEntityId entity = WZ_INVALID_BEHAVIOR_ENTITY;
     };
 
@@ -21,6 +22,8 @@ namespace
     };
 
     InitProbe* g_init_probe = nullptr;
+    uint32_t* g_event_only_count = nullptr;
+    uint32_t* g_init_only_count = nullptr;
 
     void on_stateful_init(
         const WzBehaviorInitFacts* facts,
@@ -67,6 +70,58 @@ namespace
             .event_channels = events,
             .event_channel_count = 1u,
             .module_user_data = nullptr,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_event_only_event(
+        const WzBehaviorFrameFacts*,
+        const WzBehaviorEvent*,
+        void*)
+    {
+        if (g_event_only_count) {
+            ++*g_event_only_count;
+        }
+    }
+
+    uint8_t register_event_only_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "event_only",
+            .on_event = on_event_only_event,
+            .on_init = nullptr,
+            .event_channels = events,
+            .event_channel_count = 1u,
+            .module_user_data = nullptr,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_init_only_init(
+        const WzBehaviorInitFacts*,
+        WzBehaviorEntityId,
+        void*)
+    {
+        if (g_init_only_count) {
+            ++*g_init_only_count;
+        }
+    }
+
+    uint8_t register_init_only_pack(WzBehaviorPluginApi* api)
+    {
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "init_only",
+            .on_event = nullptr,
+            .on_init = on_init_only_init,
         };
         return api && api->version == WZ_BEHAVIOR_ABI_VERSION
             && api->register_module_desc
@@ -251,6 +306,7 @@ TEST(BehaviorInit, CompatibleInstanceStateSurvivesRepeatedInit)
     };
     dispatch_behaviors(scene, registry, context);
     EXPECT_EQ(state->event_count, 1u);
+    state->sentinel = 0xc0ffeeu;
 
     initialize_behaviors(scene, registry);
 
@@ -260,6 +316,88 @@ TEST(BehaviorInit, CompatibleInstanceStateSurvivesRepeatedInit)
     EXPECT_EQ(second_block->data, first_block->data);
     EXPECT_EQ(state->init_count, 2u);
     EXPECT_EQ(state->event_count, 1u);
+    EXPECT_EQ(state->sentinel, 0xc0ffeeu);
+}
+
+TEST(BehaviorInit, ModuleWithoutInitStillDispatchesEvents)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_event_only";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "actor_event_only",
+        .module = "event_only",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    uint32_t event_count = 0;
+    g_event_only_count = &event_count;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_event_only_pack));
+
+    initialize_behaviors(scene, registry);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(event_count, 1u);
+    EXPECT_EQ(scene.behavior_state.find_instance_state("actor_event_only"),
+        nullptr);
+
+    g_event_only_count = nullptr;
+}
+
+TEST(BehaviorInit, InitOnlyModuleRunsInitAndDispatchSkipsCleanly)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_init_only";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "actor_init_only",
+        .module = "init_only",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    uint32_t init_count = 0;
+    g_init_only_count = &init_count;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_init_only_pack));
+
+    initialize_behaviors(scene, registry);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(init_count, 1u);
+    EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
+
+    g_init_only_count = nullptr;
 }
 
 TEST(BehaviorInit, DescriptorRangeValidationAllowsMissingInitField)
