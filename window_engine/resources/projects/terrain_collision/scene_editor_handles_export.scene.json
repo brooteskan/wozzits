@@ -641,12 +641,15 @@
       "behaviors": [
         {
           "label": "Input",
-          "module": "test_behavior",
+          "module": "tank_controller",
           "name": "",
           "enabled": true,
           "events": [
             "input.*"
-          ]
+          ],
+          "config": {
+            "shared_state_key": "tank_group.main"
+          }
         }
       ],
       "editor_handle": {
@@ -981,15 +984,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -81.141288757324219,
-        103.64878082275391,
-        89.676536560058594
+        0.89223682880401611,
+        117.31732940673828,
+        26.313386917114258
       ],
       "orientation": [
-        -0.080930337309837341,
-        0.91880941390991211,
-        0.016063723713159561,
-        -0.38598141074180603
+        0.021673215553164482,
+        0.85017770528793335,
+        -0.36739060282707214,
+        0.37650027871131897
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
