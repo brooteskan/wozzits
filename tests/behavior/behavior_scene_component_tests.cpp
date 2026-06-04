@@ -48,7 +48,7 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     {
       "id": "actor",
       "behavior": {
-        "id": "bounce_behavior",
+        "id": "actor_behavior_0",
         "module": "gameplay",
         "name": "bounce_on_collision",
         "enabled": true,
@@ -83,7 +83,7 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     ASSERT_NE(scene_data, nullptr);
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     ASSERT_TRUE(scene_data->nodes[0].behavior.has_value());
-    EXPECT_EQ(scene_data->nodes[0].behavior->id, "bounce_behavior");
+    EXPECT_EQ(scene_data->nodes[0].behavior->id, "actor_behavior_0");
     EXPECT_EQ(scene_data->nodes[0].behavior->module, "gameplay");
     EXPECT_EQ(scene_data->nodes[0].behavior->name, "bounce_on_collision");
     EXPECT_TRUE(scene_data->nodes[0].behavior->enabled);
@@ -113,14 +113,14 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     ASSERT_EQ(result.instance.behaviors.size(), 1u);
     EXPECT_EQ(
         result.instance.behaviors[0].component.binding_id,
-        "bounce_behavior");
+        "actor_behavior_0");
     ASSERT_EQ(result.instance.behaviors[0].component.config.size(), 3u);
 
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"behavior\""), std::string::npos);
     EXPECT_NE(exported.find("\"id\""), std::string::npos);
-    EXPECT_NE(exported.find("\"bounce_behavior\""), std::string::npos);
+    EXPECT_NE(exported.find("\"actor_behavior_0\""), std::string::npos);
     EXPECT_NE(exported.find("\"config\""), std::string::npos);
     EXPECT_NE(exported.find("\"module\""), std::string::npos);
     EXPECT_NE(exported.find("\"bounce_on_collision\""), std::string::npos);
@@ -310,6 +310,28 @@ TEST(BehaviorDispatch, BehaviorBindingIdAffectsSceneFingerprint)
     wz::engine::assets::SceneAssetData b = a;
     ASSERT_TRUE(b.nodes[0].behavior.has_value());
     b.nodes[0].behavior->id = "binding_b";
+
+    EXPECT_NE(
+        wz::engine::assets::scene_asset_fingerprint(a),
+        wz::engine::assets::scene_asset_fingerprint(b));
+}
+
+TEST(BehaviorDispatch, BehaviorLabelAffectsSceneFingerprintAsAuthoredMetadata)
+{
+    wz::engine::assets::SceneAssetData a{};
+    a.name = "behavior_label_fingerprint";
+    wz::engine::assets::SceneNodeAsset node_a{};
+    node_a.id = "actor";
+    node_a.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "binding_a",
+        .label = "Tank input",
+        .module = "tank",
+    };
+    a.nodes.push_back(std::move(node_a));
+
+    wz::engine::assets::SceneAssetData b = a;
+    ASSERT_TRUE(b.nodes[0].behavior.has_value());
+    b.nodes[0].behavior->label = "Renamed tank input";
 
     EXPECT_NE(
         wz::engine::assets::scene_asset_fingerprint(a),

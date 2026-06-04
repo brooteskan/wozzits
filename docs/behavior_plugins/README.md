@@ -846,7 +846,7 @@ Scene-authored behaviors can carry a small primitive config object:
 }
 ```
 
-Read authored config during dispatch:
+Read authored config during dispatch or init:
 
 ```cpp
 uint8_t wz_config_bool(
@@ -868,6 +868,9 @@ uint8_t wz_config_string(
     uint32_t buffer_size,
     uint32_t* out_required_size);
 ```
+
+The same helpers are overloaded for `const WzBehaviorInitFacts*`, so init
+callbacks can read authored config before creating or joining state.
 
 Example:
 
@@ -927,6 +930,23 @@ Use an init callback when a behavior needs state that should live with the
 scene instance instead of in a C++ `static`. Init runs after scene
 materialization and before event dispatch. Parent/root node bindings initialize
 before child bindings.
+
+There are three practical state scopes:
+
+- Module/global state is ordinary C or C++ data in the plugin DLL. It is useful
+  for constants and caches, but it is lost on hot reload and is shared by every
+  scene and every node using that DLL.
+- Per-binding state belongs to one authored behavior binding. Use it for data
+  such as a tank's local throttle smoothing, cooldowns, counters, or cached
+  target entity IDs. The scene editor gives each binding a durable `id`; the
+  human-facing `label` can change without changing the state identity.
+- Shared state is created with an authored key such as `"tank_group.main"` and
+  then found by any behavior that knows that key. Use it for coordinator /
+  participant patterns where several entities intentionally share one object.
+
+The scene editor exposes behavior `config` rows. A common pattern is to add a
+string config key such as `shared_state_key` and read it in init before calling
+`wz_create_shared_state` or `wz_find_shared_state`.
 
 Register a module with both init and event callbacks:
 
@@ -1039,15 +1059,30 @@ struct TankGroup
     uint32_t members;
 };
 
+void read_group_key(
+    const WzBehaviorInitFacts* facts,
+    char (&out_key)[64])
+{
+    std::snprintf(out_key, sizeof(out_key), "%s", "tank_group.main");
+    wz_config_string(
+        facts,
+        "shared_state_key",
+        out_key,
+        sizeof(out_key),
+        nullptr);
+}
+
 void group_init(
     const WzBehaviorInitFacts* facts,
     WzBehaviorEntityId,
     void*)
 {
+    char group_key[64]{};
+    read_group_key(facts, group_key);
     auto* group = static_cast<TankGroup*>(
         wz_create_shared_state(
             facts,
-            "tank_group.main",
+            group_key,
             sizeof(TankGroup),
             alignof(TankGroup)));
     if (group && group->members == 0) {
@@ -1060,8 +1095,10 @@ void tank_init(
     WzBehaviorEntityId,
     void*)
 {
+    char group_key[64]{};
+    read_group_key(facts, group_key);
     auto* group = static_cast<TankGroup*>(
-        wz_find_shared_state(facts, "tank_group.main"));
+        wz_find_shared_state(facts, group_key));
     if (group) {
         ++group->members;
     }

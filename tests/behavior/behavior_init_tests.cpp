@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace
@@ -29,6 +30,12 @@ namespace
         uint32_t participant_events = 0;
         uint32_t sentinel = 0;
         WzBehaviorEntityId coordinator = WZ_INVALID_BEHAVIOR_ENTITY;
+    };
+
+    struct ConfigKeySharedState
+    {
+        uint32_t init_count = 0;
+        uint32_t sentinel = 0;
     };
 
     struct CombinedInstanceState
@@ -264,6 +271,44 @@ namespace
             && api->register_module_desc(api->user, &participant)
             ? uint8_t{ 1 }
             : uint8_t{ 0 };
+    }
+
+    void on_config_key_shared_state_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        char key[64] = "default_group";
+        wz_config_string(
+            facts,
+            "shared_state_key",
+            key,
+            sizeof(key),
+            nullptr);
+
+        auto* state = static_cast<ConfigKeySharedState*>(
+            wz_create_shared_state(
+                facts,
+                key,
+                sizeof(ConfigKeySharedState),
+                alignof(ConfigKeySharedState)));
+        if (state) {
+            ++state->init_count;
+        }
+    }
+
+    uint8_t register_config_key_shared_state_pack(WzBehaviorPluginApi* api)
+    {
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "config_key_shared_state",
+            .on_event = nullptr,
+            .on_init = on_config_key_shared_state_init,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
     }
 
     void on_combined_state_init(
@@ -935,6 +980,139 @@ TEST(BehaviorInit, CompatibleInstanceStateSurvivesRepeatedInit)
     EXPECT_EQ(state->sentinel, 0xc0ffeeu);
 }
 
+TEST(BehaviorInit, LabelOnlyAuthoringRebuildPreservesBindingState)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_label_preserves_state";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "actor_state",
+        .label = "Tank input",
+        .module = "stateful",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_stateful_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* first_block =
+        scene.behavior_state.find_instance_state("actor_state");
+    ASSERT_NE(first_block, nullptr);
+    auto* state = static_cast<TestState*>(first_block->data);
+    ASSERT_NE(state, nullptr);
+    state->sentinel = 0xc0ffeeu;
+    void* first_data = first_block->data;
+
+    ASSERT_TRUE(asset.nodes[0].behavior.has_value());
+    asset.nodes[0].behavior->label = "Renamed tank input";
+
+    auto next_result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(next_result.ok()) << next_result.error_detail;
+    auto& next_scene = next_result.instance;
+    ASSERT_EQ(next_scene.behaviors.size(), 1u);
+    EXPECT_EQ(next_scene.behaviors[0].component.binding_id, "actor_state");
+    next_scene.behavior_state = std::move(scene.behavior_state);
+
+    initialize_behaviors(next_scene, registry);
+
+    auto* second_block =
+        next_scene.behavior_state.find_instance_state("actor_state");
+    ASSERT_NE(second_block, nullptr);
+    EXPECT_EQ(second_block->data, first_data);
+    auto* next_state = static_cast<TestState*>(second_block->data);
+    ASSERT_NE(next_state, nullptr);
+    EXPECT_EQ(next_state->init_count, 2u);
+    EXPECT_EQ(next_state->sentinel, 0xc0ffeeu);
+}
+
+TEST(BehaviorInit, ReorderedAuthoredBindingsPreserveStateById)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_reorder_preserves_state";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "drive_state",
+        .label = "Drive",
+        .module = "stateful",
+    });
+    actor.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "turret_state",
+        .label = "Turret",
+        .module = "stateful",
+    });
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_stateful_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* drive_block =
+        scene.behavior_state.find_instance_state("drive_state");
+    auto* turret_block =
+        scene.behavior_state.find_instance_state("turret_state");
+    ASSERT_NE(drive_block, nullptr);
+    ASSERT_NE(turret_block, nullptr);
+    auto* drive = static_cast<TestState*>(drive_block->data);
+    auto* turret = static_cast<TestState*>(turret_block->data);
+    ASSERT_NE(drive, nullptr);
+    ASSERT_NE(turret, nullptr);
+    drive->sentinel = 0xd1u;
+    turret->sentinel = 0x7u;
+    void* drive_data = drive_block->data;
+    void* turret_data = turret_block->data;
+
+    std::swap(asset.nodes[0].behaviors[0], asset.nodes[0].behaviors[1]);
+
+    auto next_result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(next_result.ok()) << next_result.error_detail;
+    auto& next_scene = next_result.instance;
+    ASSERT_EQ(next_scene.behaviors.size(), 2u);
+    EXPECT_EQ(next_scene.behaviors[0].component.binding_id, "turret_state");
+    EXPECT_EQ(next_scene.behaviors[1].component.binding_id, "drive_state");
+    next_scene.behavior_state = std::move(scene.behavior_state);
+
+    initialize_behaviors(next_scene, registry);
+
+    auto* next_drive_block =
+        next_scene.behavior_state.find_instance_state("drive_state");
+    auto* next_turret_block =
+        next_scene.behavior_state.find_instance_state("turret_state");
+    ASSERT_NE(next_drive_block, nullptr);
+    ASSERT_NE(next_turret_block, nullptr);
+    EXPECT_EQ(next_drive_block->data, drive_data);
+    EXPECT_EQ(next_turret_block->data, turret_data);
+
+    auto* next_drive = static_cast<TestState*>(next_drive_block->data);
+    auto* next_turret = static_cast<TestState*>(next_turret_block->data);
+    ASSERT_NE(next_drive, nullptr);
+    ASSERT_NE(next_turret, nullptr);
+    EXPECT_EQ(next_drive->init_count, 2u);
+    EXPECT_EQ(next_turret->init_count, 2u);
+    EXPECT_EQ(next_drive->sentinel, 0xd1u);
+    EXPECT_EQ(next_turret->sentinel, 0x7u);
+}
+
 TEST(BehaviorInit, ModuleWithoutInitStillDispatchesEvents)
 {
     wz::engine::assets::SceneAssetData asset{};
@@ -1084,6 +1262,77 @@ TEST(BehaviorInit, SharedStateCreatedInInitAndFoundDuringDispatch)
     EXPECT_EQ(unknown_shared_state_count, 2u);
 
     g_unknown_shared_state_count = nullptr;
+}
+
+TEST(BehaviorInit, ConfigDrivenSharedStateKeyControlsSharing)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_config_shared_state";
+
+    wz::engine::assets::SceneBehaviorConfigValue group_a{};
+    group_a.key = "shared_state_key";
+    group_a.kind = wz::engine::assets::SceneBehaviorConfigValueKind::String;
+    group_a.string_value = "tank_group.alpha";
+
+    wz::engine::assets::SceneBehaviorConfigValue group_b = group_a;
+    group_b.string_value = "tank_group.beta";
+
+    wz::engine::assets::SceneNodeAsset tank_a{};
+    tank_a.id = "tank_a";
+    tank_a.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_a_state",
+        .module = "config_key_shared_state",
+        .config = { group_a },
+    };
+
+    wz::engine::assets::SceneNodeAsset tank_b{};
+    tank_b.id = "tank_b";
+    tank_b.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_b_state",
+        .module = "config_key_shared_state",
+        .config = { group_a },
+    };
+
+    wz::engine::assets::SceneNodeAsset tank_c{};
+    tank_c.id = "tank_c";
+    tank_c.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_c_state",
+        .module = "config_key_shared_state",
+        .config = { group_b },
+    };
+
+    asset.nodes.push_back(std::move(tank_a));
+    asset.nodes.push_back(std::move(tank_b));
+    asset.nodes.push_back(std::move(tank_c));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_config_key_shared_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* alpha_block =
+        scene.behavior_state.find_shared_state("tank_group.alpha");
+    auto* beta_block =
+        scene.behavior_state.find_shared_state("tank_group.beta");
+    ASSERT_NE(alpha_block, nullptr);
+    ASSERT_NE(beta_block, nullptr);
+    EXPECT_NE(alpha_block->data, beta_block->data);
+
+    auto* alpha = static_cast<ConfigKeySharedState*>(alpha_block->data);
+    auto* beta = static_cast<ConfigKeySharedState*>(beta_block->data);
+    ASSERT_NE(alpha, nullptr);
+    ASSERT_NE(beta, nullptr);
+    EXPECT_EQ(alpha->init_count, 2u);
+    EXPECT_EQ(beta->init_count, 1u);
+    EXPECT_EQ(scene.behavior_state.find_shared_state("default_group"),
+        nullptr);
 }
 
 TEST(BehaviorInit, CompatibleSharedStateSurvivesRepeatedInit)
