@@ -1474,7 +1474,10 @@ Scene-authored Motion can opt into runtime terrain height ownership with:
 "motion": {
   "linear_velocity": [0.0, 0.0, 0.0],
   "terrain_constrained": true,
-  "terrain_ride_height": 0.35
+  "terrain_ride_height": 0.35,
+  "terrain_footprint_radius": 0.0,
+  "terrain_align_to_surface": true,
+  "terrain_alignment_strength": 1.0
 }
 ```
 
@@ -1489,11 +1492,30 @@ The terrain node must also opt in:
 
 When both sides opt in, the runtime samples every eligible terrain surface at
 the actor's current world X/Z, chooses the highest hit, and writes world Y to
-`surface_height + terrain_ride_height`. X/Z are preserved. The step runs after
-behavior commands and motion integration, before render prep. V1 leaves
-vertical velocity unchanged, so terrain-constrained behaviors should set
-horizontal velocity and let the runtime constraint own the actor's ground
-height.
+`surface_height + terrain_ride_height`. X/Z are preserved. If exact mesh
+sampling misses a small gap in an accepted terrain surface, the movement
+constraint can use nearby terrain triangle planes to estimate height at the
+actor's X/Z.
+
+`terrain_footprint_radius` is optional and defaults to `0`, which means the
+actor is constrained as a point at its pivot. When it is positive, the runtime
+also samples a fixed ring around the actor and uses the highest support height.
+Use this for vehicle-sized actors that should ride over terrain detail under
+their body instead of letting small raised areas clip through the mesh.
+
+`terrain_align_to_surface` is optional. When it is true, the runtime also
+orients the actor so its local Y axis follows the sampled terrain normal. The
+actor's current local Z/forward direction is projected onto the terrain tangent
+plane, so heading is preserved as much as the surface allows.
+`terrain_alignment_strength` is clamped to `[0, 1]`; `1` snaps to the surface
+orientation this frame, and values below `1` blend from the current rotation
+toward the terrain orientation. This is a first smoothing control, not a full
+temporal smoothing policy.
+
+The step runs after behavior commands and motion integration, before render
+prep. V1 leaves vertical velocity unchanged, so terrain-constrained behaviors
+should set horizontal velocity and let the runtime constraint own the actor's
+ground height.
 
 Local-space angular velocity composes in the node's local frame. World-space
 angular velocity composes in the world frame. For parented nodes, the runtime

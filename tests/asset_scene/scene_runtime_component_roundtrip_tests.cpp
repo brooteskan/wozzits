@@ -827,6 +827,9 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
         "space": "local",
         "terrain_constrained": true,
         "terrain_ride_height": 0.35,
+        "terrain_footprint_radius": 1.25,
+        "terrain_align_to_surface": true,
+        "terrain_alignment_strength": 0.5,
         "enabled": true
       }
     }
@@ -865,6 +868,13 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
         wz::engine::assets::SceneMotionSpace::Local);
     EXPECT_TRUE(scene_data->nodes[0].motion->terrain_constrained);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_ride_height, 0.35f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].motion->terrain_footprint_radius,
+        1.25f);
+    EXPECT_TRUE(scene_data->nodes[0].motion->terrain_align_to_surface);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].motion->terrain_alignment_strength,
+        0.5f);
     EXPECT_TRUE(scene_data->nodes[0].motion->enabled);
 
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
@@ -895,6 +905,14 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.terrain_ride_height,
         0.35f);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.terrain_footprint_radius,
+        1.25f);
+    EXPECT_TRUE(
+        result.instance.motions[0].component.terrain_align_to_surface);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.terrain_alignment_strength,
+        0.5f);
     EXPECT_TRUE(result.instance.motions[0].component.enabled);
 
     const std::string exported = wz::json::serialize_json(
@@ -905,6 +923,15 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"space\""), std::string::npos);
     EXPECT_NE(exported.find("\"terrain_constrained\""), std::string::npos);
     EXPECT_NE(exported.find("\"terrain_ride_height\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"terrain_footprint_radius\""),
+        std::string::npos);
+    EXPECT_NE(
+        exported.find("\"terrain_align_to_surface\""),
+        std::string::npos);
+    EXPECT_NE(
+        exported.find("\"terrain_alignment_strength\""),
+        std::string::npos);
 }
 
 TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
@@ -959,6 +986,11 @@ TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
         wz::engine::assets::SceneMotionSpace::World);
     EXPECT_FALSE(scene_data->nodes[0].motion->terrain_constrained);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_ride_height, 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_footprint_radius, 0.0f);
+    EXPECT_FALSE(scene_data->nodes[0].motion->terrain_align_to_surface);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].motion->terrain_alignment_strength,
+        1.0f);
     EXPECT_FALSE(scene_data->nodes[0].motion->enabled);
 }
 

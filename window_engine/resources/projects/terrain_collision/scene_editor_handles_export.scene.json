@@ -651,7 +651,10 @@
         ],
         "space": "world",
         "terrain_constrained": true,
-        "terrain_ride_height": 0,
+        "terrain_ride_height": 0.20000000298023224,
+        "terrain_footprint_radius": 1,
+        "terrain_align_to_surface": true,
+        "terrain_alignment_strength": 1,
         "enabled": true
       },
       "behaviors": [
@@ -998,15 +1001,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -60.948509216308594,
-        107.65726470947266,
-        99.654403686523438
+        129.51702880859375,
+        73.734405517578125,
+        65.075393676757812
       ],
       "orientation": [
-        0.086144499480724335,
-        0.8814207911491394,
-        -0.2690868079662323,
-        0.37850883603096008
+        -0.29889264702796936,
+        -0.22742126882076263,
+        0.087735563516616821,
+        -0.92262953519821167
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

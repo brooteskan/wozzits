@@ -121,6 +121,118 @@ namespace wz::engine::behavior
             return { -n.x, -n.y, -n.z, n.w };
         }
 
+        bool normalize_vec3_checked(
+            wz::math::Vec3& v,
+            float epsilon = 1e-6f) noexcept
+        {
+            const float len_sq = v.x * v.x + v.y * v.y + v.z * v.z;
+            if (len_sq <= epsilon * epsilon || !std::isfinite(len_sq)) {
+                return false;
+            }
+            v = wz::math::normalize(v);
+            return true;
+        }
+
+        wz::math::Quaternion nlerp_shortest(
+            wz::math::Quaternion from,
+            wz::math::Quaternion to,
+            float t) noexcept
+        {
+            from = wz::math::normalize(from);
+            to = wz::math::normalize(to);
+            if (wz::math::dot(from, to) < 0.0f) {
+                to.x = -to.x;
+                to.y = -to.y;
+                to.z = -to.z;
+                to.w = -to.w;
+            }
+
+            return wz::math::normalize(wz::math::Quaternion{
+                .x = from.x + (to.x - from.x) * t,
+                .y = from.y + (to.y - from.y) * t,
+                .z = from.z + (to.z - from.z) * t,
+                .w = from.w + (to.w - from.w) * t,
+            });
+        }
+
+        bool terrain_aligned_world_rotation(
+            const wz::math::Quaternion& current_world_rotation,
+            const wz::math::Vec3& surface_normal,
+            float strength,
+            wz::math::Quaternion& out_rotation) noexcept
+        {
+            wz::math::Vec3 up = surface_normal;
+            if (!normalize_vec3_checked(up)) {
+                return false;
+            }
+            if (up.y < 0.0f) {
+                up.x = -up.x;
+                up.y = -up.y;
+                up.z = -up.z;
+            }
+
+            const wz::math::Quaternion current =
+                wz::math::normalize(current_world_rotation);
+            wz::math::Vec3 forward = wz::math::quat_axis_z(current);
+            const float forward_dot_up = wz::math::dot(forward, up);
+            forward = {
+                .x = forward.x - up.x * forward_dot_up,
+                .y = forward.y - up.y * forward_dot_up,
+                .z = forward.z - up.z * forward_dot_up,
+            };
+            if (!normalize_vec3_checked(forward)) {
+                wz::math::Vec3 right = wz::math::quat_axis_x(current);
+                const float right_dot_up = wz::math::dot(right, up);
+                right = {
+                    .x = right.x - up.x * right_dot_up,
+                    .y = right.y - up.y * right_dot_up,
+                    .z = right.z - up.z * right_dot_up,
+                };
+                if (!normalize_vec3_checked(right)) {
+                    right = std::abs(up.y) < 0.95f
+                        ? wz::math::Vec3{ .x = 0.0f, .y = 1.0f, .z = 0.0f }
+                        : wz::math::Vec3{ .x = 1.0f, .y = 0.0f, .z = 0.0f };
+                    right = wz::math::cross(right, up);
+                    if (!normalize_vec3_checked(right)) {
+                        return false;
+                    }
+                }
+                forward = wz::math::cross(right, up);
+                if (!normalize_vec3_checked(forward)) {
+                    return false;
+                }
+            }
+
+            wz::math::Vec3 right = wz::math::cross(up, forward);
+            if (!normalize_vec3_checked(right)) {
+                return false;
+            }
+            forward = wz::math::cross(right, up);
+            if (!normalize_vec3_checked(forward)) {
+                return false;
+            }
+
+            wz::math::Mat4 basis = wz::math::Mat4::identity();
+            basis.m[0] = right.x;
+            basis.m[1] = right.y;
+            basis.m[2] = right.z;
+            basis.m[4] = up.x;
+            basis.m[5] = up.y;
+            basis.m[6] = up.z;
+            basis.m[8] = forward.x;
+            basis.m[9] = forward.y;
+            basis.m[10] = forward.z;
+
+            const wz::math::Quaternion desired =
+                wz::math::from_rotation_matrix(basis);
+            const float clamped_strength =
+                (std::clamp)(strength, 0.0f, 1.0f);
+            out_rotation = clamped_strength >= 1.0f
+                ? desired
+                : nlerp_shortest(current, desired, clamped_strength);
+            return true;
+        }
+
         bool integrate_angular_velocity(
             wz::scene::SceneGraph& graph,
             wz::scene::TransformNode& node,
@@ -284,6 +396,39 @@ namespace wz::engine::behavior
             return true;
         }
 
+        bool set_world_rotation(
+            wz::scene::SceneGraph& graph,
+            wz::scene::TransformNode& node,
+            wz::scene::RuntimeEntityId entity,
+            const wz::math::Quaternion& world_rotation) noexcept
+        {
+            wz::math::Transform local_trs{};
+            if (!wz::math::decompose_trs(node.local, local_trs)) {
+                return false;
+            }
+
+            const auto parent = wz::core::graph::parent(graph, entity);
+            if (parent == wz::core::graph::INVALID_NODE) {
+                local_trs.rotation = wz::math::normalize(world_rotation);
+                node.local = wz::math::transform(local_trs);
+                return true;
+            }
+
+            wz::math::Transform parent_world_trs{};
+            if (!wz::math::decompose_trs(
+                    wz::core::graph::node_data(graph, parent).world,
+                    parent_world_trs))
+            {
+                return false;
+            }
+
+            local_trs.rotation = wz::math::normalize(wz::math::mul(
+                inverse_unit_quaternion(parent_world_trs.rotation),
+                world_rotation));
+            node.local = wz::math::transform(local_trs);
+            return true;
+        }
+
         wz::engine::assets::MotionComponent* find_motion(
             wz::engine::assets::SceneInstance& scene,
             wz::scene::RuntimeEntityId entity) noexcept
@@ -353,6 +498,159 @@ namespace wz::engine::behavior
                 }
             }
             return false;
+        }
+
+        struct TerrainConstraintSurface
+        {
+            bool found = false;
+            wz::engine::collision::CollisionSurfaceSample sample{};
+        };
+
+        struct TerrainConstraintSupport
+        {
+            bool found = false;
+            wz::engine::collision::CollisionSurfaceSample highest{};
+            wz::math::Vec3 normal_sum{};
+            uint32_t sample_count = 0u;
+        };
+
+        TerrainConstraintSurface sample_constraint_surface(
+            const wz::engine::assets::SceneInstance& scene,
+            const wz::engine::collision::CollisionFrameStorage& collision,
+            float world_x,
+            float world_z) noexcept
+        {
+            bool found_surface = false;
+            bool found_nearest_surface = false;
+            wz::engine::collision::CollisionSurfaceSample best_sample{};
+            wz::engine::collision::CollisionSurfaceSample best_nearest_sample{};
+
+            for (const auto& entry : collision.world) {
+                if (!entity_has_constraining_terrain(scene, entry.entity)) {
+                    continue;
+                }
+
+                wz::engine::collision::CollisionSurfaceSample sample{};
+                if (wz::engine::collision::sample_terrain_surface(
+                        entry,
+                        world_x,
+                        world_z,
+                        sample)
+                    && sample.hit)
+                {
+                    if (!found_surface
+                        || sample.position.y > best_sample.position.y)
+                    {
+                        best_sample = sample;
+                        found_surface = true;
+                    }
+                    continue;
+                }
+
+                if (found_surface) {
+                    continue;
+                }
+
+                wz::engine::collision::CollisionSurfaceSample nearest_sample{};
+                if (!wz::engine::collision::sample_nearest_terrain_surface(
+                        entry,
+                        world_x,
+                        world_z,
+                        nearest_sample)
+                    || !nearest_sample.hit)
+                {
+                    continue;
+                }
+
+                if (!found_nearest_surface
+                    || nearest_sample.position.y
+                        > best_nearest_sample.position.y)
+                {
+                    best_nearest_sample = nearest_sample;
+                    found_nearest_surface = true;
+                }
+            }
+
+            if (found_surface) {
+                return TerrainConstraintSurface{
+                    .found = true,
+                    .sample = best_sample,
+                };
+            }
+            if (found_nearest_surface) {
+                return TerrainConstraintSurface{
+                    .found = true,
+                    .sample = best_nearest_sample,
+                };
+            }
+            return {};
+        }
+
+        void add_support_sample(
+            TerrainConstraintSupport& support,
+            const wz::engine::collision::CollisionSurfaceSample& sample)
+                noexcept
+        {
+            if (!sample.hit) {
+                return;
+            }
+            if (!support.found
+                || sample.position.y > support.highest.position.y)
+            {
+                support.highest = sample;
+                support.found = true;
+            }
+            support.normal_sum.x += sample.normal.x;
+            support.normal_sum.y += sample.normal.y;
+            support.normal_sum.z += sample.normal.z;
+            ++support.sample_count;
+        }
+
+        TerrainConstraintSupport sample_constraint_support(
+            const wz::engine::assets::SceneInstance& scene,
+            const wz::engine::collision::CollisionFrameStorage& collision,
+            const wz::math::Vec3& actor_world_position,
+            float footprint_radius) noexcept
+        {
+            TerrainConstraintSupport support{};
+            const auto center = sample_constraint_surface(
+                scene,
+                collision,
+                actor_world_position.x,
+                actor_world_position.z);
+            if (center.found) {
+                add_support_sample(support, center.sample);
+            }
+
+            if (footprint_radius <= 0.0f
+                || !std::isfinite(footprint_radius))
+            {
+                return support;
+            }
+
+            constexpr wz::math::Vec3 kRingOffsets[] = {
+                { 1.0f, 0.0f, 0.0f },
+                { 0.70710677f, 0.0f, 0.70710677f },
+                { 0.0f, 0.0f, 1.0f },
+                { -0.70710677f, 0.0f, 0.70710677f },
+                { -1.0f, 0.0f, 0.0f },
+                { -0.70710677f, 0.0f, -0.70710677f },
+                { 0.0f, 0.0f, -1.0f },
+                { 0.70710677f, 0.0f, -0.70710677f },
+            };
+
+            for (const auto& offset : kRingOffsets) {
+                const auto sample = sample_constraint_surface(
+                    scene,
+                    collision,
+                    actor_world_position.x + offset.x * footprint_radius,
+                    actor_world_position.z + offset.z * footprint_radius);
+                if (sample.found) {
+                    add_support_sample(support, sample.sample);
+                }
+            }
+
+            return support;
         }
     }
 
@@ -657,54 +955,63 @@ namespace wz::engine::behavior
                 .z = node.world.m[14],
             };
 
-            bool found_surface = false;
-            wz::engine::collision::CollisionSurfaceSample best_sample{};
-            for (const auto& entry : collision.world) {
-                if (!entity_has_constraining_terrain(scene, entry.entity)) {
-                    continue;
-                }
-
-                wz::engine::collision::CollisionSurfaceSample sample{};
-                if (!wz::engine::collision::sample_terrain_surface(
-                        entry,
-                        actor_world_position.x,
-                        actor_world_position.z,
-                        sample)
-                    || !sample.hit)
-                {
-                    continue;
-                }
-
-                if (!found_surface
-                    || sample.position.y > best_sample.position.y)
-                {
-                    best_sample = sample;
-                    found_surface = true;
-                }
+            auto support = sample_constraint_support(
+                scene,
+                collision,
+                actor_world_position,
+                motion.terrain_footprint_radius);
+            if (!support.found) {
+                continue;
             }
 
-            if (!found_surface) {
-                continue;
+            wz::math::Vec3 support_normal = support.highest.normal;
+            if (support.sample_count > 1u
+                && normalize_vec3_checked(support.normal_sum))
+            {
+                support_normal = support.normal_sum;
             }
 
             const wz::math::Vec3 constrained_world_position{
                 .x = actor_world_position.x,
-                .y = best_sample.position.y + motion.terrain_ride_height,
+                .y = support.highest.position.y + motion.terrain_ride_height,
                 .z = actor_world_position.z,
             };
-            if (std::abs(
-                    constrained_world_position.y - actor_world_position.y)
-                <= 1e-6f)
-            {
-                continue;
-            }
-
+            bool changed = false;
             if (set_world_translation(
                     scene.storage.polytree,
                     node,
                     record.node,
-                    constrained_world_position))
+                    constrained_world_position)
+                && std::abs(
+                    constrained_world_position.y - actor_world_position.y)
+                    > 1e-6f)
             {
+                changed = true;
+            }
+
+            if (motion.terrain_align_to_surface
+                && std::isfinite(motion.terrain_alignment_strength)
+                && motion.terrain_alignment_strength > 0.0f)
+            {
+                wz::math::Transform world_trs{};
+                wz::math::Quaternion aligned_world_rotation{};
+                if (wz::math::decompose_trs(node.world, world_trs)
+                    && terrain_aligned_world_rotation(
+                        world_trs.rotation,
+                        support_normal,
+                        motion.terrain_alignment_strength,
+                        aligned_world_rotation)
+                    && set_world_rotation(
+                        scene.storage.polytree,
+                        node,
+                        record.node,
+                        aligned_world_rotation))
+                {
+                    changed = true;
+                }
+            }
+
+            if (changed) {
                 ++applied;
                 if (out_changed_entities) {
                     out_changed_entities->push_back(record.node);

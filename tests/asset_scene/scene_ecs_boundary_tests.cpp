@@ -793,6 +793,22 @@ TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
     scene.nodes[0].motion->terrain_ride_height = 0.5f;
     const uint64_t ride_height_changed = scene_asset_fingerprint(scene);
     EXPECT_NE(original, ride_height_changed);
+
+    scene.nodes[0].motion->terrain_ride_height = 0.0f;
+    scene.nodes[0].motion->terrain_footprint_radius = 0.5f;
+    const uint64_t footprint_radius_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, footprint_radius_changed);
+
+    scene.nodes[0].motion->terrain_footprint_radius = 0.0f;
+    scene.nodes[0].motion->terrain_ride_height = 0.0f;
+    scene.nodes[0].motion->terrain_align_to_surface = true;
+    const uint64_t align_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, align_changed);
+
+    scene.nodes[0].motion->terrain_align_to_surface = false;
+    scene.nodes[0].motion->terrain_alignment_strength = 0.5f;
+    const uint64_t align_strength_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, align_strength_changed);
 }
 
 TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)

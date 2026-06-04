@@ -661,6 +661,12 @@ namespace wz::engine::assets
                 component.space = motion.space;
                 component.terrain_constrained = motion.terrain_constrained;
                 component.terrain_ride_height = motion.terrain_ride_height;
+                component.terrain_footprint_radius =
+                    motion.terrain_footprint_radius;
+                component.terrain_align_to_surface =
+                    motion.terrain_align_to_surface;
+                component.terrain_alignment_strength =
+                    motion.terrain_alignment_strength;
                 component.enabled = motion.enabled;
                 inst.motions.push_back({
                     .node = h,

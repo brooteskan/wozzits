@@ -849,7 +849,9 @@ namespace
     wz::engine::assets::CollisionAssetData flat_height_field_surface(
         float height,
         float size = 10.0f,
-        bool queryable = false)
+        bool queryable = false,
+        float origin_x = 0.0f,
+        float origin_z = 0.0f)
     {
         wz::engine::assets::CollisionAssetData surface{};
         surface.shape_kind =
@@ -857,8 +859,8 @@ namespace
         surface.occupancy.kind =
             wz::engine::assets::CollisionOccupancyKind::WalkableSurface;
         surface.occupancy.queryable = queryable;
-        surface.origin[0] = 0.0f;
-        surface.origin[1] = 0.0f;
+        surface.origin[0] = origin_x;
+        surface.origin[1] = origin_z;
         surface.size[0] = size;
         surface.size[1] = size;
         surface.resolution_x = 2u;
@@ -868,6 +870,67 @@ namespace
         surface.min_height = height;
         surface.max_height = height;
         surface.supports_height_query = true;
+        return surface;
+    }
+
+    wz::engine::assets::CollisionAssetData sparse_mesh_surface()
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainMeshSurface;
+        surface.occupancy.kind =
+            wz::engine::assets::CollisionOccupancyKind::WalkableSurface;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 5.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = 2.0f;
+        surface.bounds_max[1] = 5.0f;
+        surface.bounds_max[2] = 2.0f;
+        surface.points = {
+            wz::engine::assets::CollisionPoint{
+                .position = { 0.25f, 5.0f, 0.25f },
+            },
+            wz::engine::assets::CollisionPoint{
+                .position = { 1.75f, 5.0f, 0.25f },
+            },
+            wz::engine::assets::CollisionPoint{
+                .position = { 0.25f, 5.0f, 1.75f },
+            },
+        };
+        surface.indices = { 0u, 1u, 2u };
+        surface.triangle_bounds.resize(1u);
+        surface.triangle_bounds[0].min[0] = 0.25f;
+        surface.triangle_bounds[0].min[1] = 5.0f;
+        surface.triangle_bounds[0].min[2] = 0.25f;
+        surface.triangle_bounds[0].max[0] = 1.75f;
+        surface.triangle_bounds[0].max[1] = 5.0f;
+        surface.triangle_bounds[0].max[2] = 1.75f;
+
+        auto& grid = surface.surface_grid;
+        grid.origin_x = 0.0f;
+        grid.origin_z = 0.0f;
+        grid.cell_size_x = 1.0f;
+        grid.cell_size_z = 1.0f;
+        grid.cells_x = 2u;
+        grid.cells_z = 2u;
+        grid.cell_bounds = surface.triangle_bounds;
+        grid.cell_bounds.resize(4u);
+        grid.cell_offsets = { 0u, 1u, 1u, 1u, 1u };
+        grid.cell_triangle_indices = { 0u };
+        return surface;
+    }
+
+    wz::engine::assets::CollisionAssetData sloped_mesh_surface()
+    {
+        auto surface = sparse_mesh_surface();
+        surface.points[0].position[1] = 4.0f;
+        surface.points[1].position[1] = 6.0f;
+        surface.points[2].position[1] = 4.0f;
+        surface.bounds_min[1] = 4.0f;
+        surface.bounds_max[1] = 6.0f;
+        surface.triangle_bounds[0].min[1] = 4.0f;
+        surface.triangle_bounds[0].max[1] = 6.0f;
+        surface.surface_grid.cell_bounds[0] = surface.triangle_bounds[0];
         return surface;
     }
 
@@ -944,6 +1007,149 @@ TEST(BehaviorCommands, TerrainConstraintSetsActorHeightAndRideOffset)
     EXPECT_FLOAT_EQ(actor_node.world.m[12], 2.0f);
     EXPECT_FLOAT_EQ(actor_node.world.m[13], 4.75f);
     EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintUsesNearestMeshSurfaceOnExactMiss)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.25f,
+        1.45f,
+        12.0f,
+        1.45f);
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = sparse_mesh_surface();
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 1.45f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 5.25f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 1.45f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintFootprintUsesHighestSupportSample)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        2.0f,
+        12.0f,
+        3.0f);
+    asset.nodes[1].motion->terrain_footprint_radius = 1.0f;
+    wz::engine::assets::SceneNodeAsset high_patch{};
+    high_patch.id = "high_patch";
+    high_patch.terrain = wz::engine::assets::SceneTerrainAsset{
+        .constrain_movement = true,
+    };
+    asset.nodes.push_back(std::move(high_patch));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const RuntimeEntityId high_patch_id =
+        result.instance.authored_to_runtime["high_patch"];
+    const auto low_surface = flat_height_field_surface(1.0f);
+    const auto high_surface = flat_height_field_surface(
+        5.0f,
+        0.5f,
+        false,
+        2.75f,
+        2.75f);
+    wz::engine::collision::CollisionFrameStorage collision{};
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = terrain,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &low_surface,
+    });
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = high_patch_id,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &high_surface,
+    });
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 2.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 5.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintAlignsActorUpToSurfaceNormal)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        0.75f,
+        12.0f,
+        0.75f);
+    asset.nodes[1].motion->terrain_align_to_surface = true;
+    asset.nodes[1].motion->terrain_alignment_strength = 1.0f;
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = sloped_mesh_surface();
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    wz::math::Transform world_trs{};
+    ASSERT_TRUE(wz::math::decompose_trs(actor_node.world, world_trs));
+    const wz::math::Vec3 up =
+        wz::math::quat_axis_y(wz::math::normalize(world_trs.rotation));
+    const wz::math::Vec3 forward =
+        wz::math::quat_axis_z(wz::math::normalize(world_trs.rotation));
+
+    EXPECT_NEAR(up.x, -0.8f, 1e-5f);
+    EXPECT_NEAR(up.y, 0.6f, 1e-5f);
+    EXPECT_NEAR(up.z, 0.0f, 1e-5f);
+    EXPECT_NEAR(
+        forward.x * up.x + forward.y * up.y + forward.z * up.z,
+        0.0f,
+        1e-5f);
+    EXPECT_NEAR(forward.x, 0.0f, 1e-5f);
+    EXPECT_NEAR(forward.y, 0.0f, 1e-5f);
+    EXPECT_NEAR(forward.z, 1.0f, 1e-5f);
 }
 
 TEST(BehaviorCommands, TerrainConstraintPreservesIntegratedHorizontalMotion)

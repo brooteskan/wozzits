@@ -1849,6 +1849,28 @@ namespace wz::engine::assets::internal
                     component.terrain_ride_height =
                         static_cast<float>(*terrain_ride_height);
                 }
+                auto terrain_footprint_radius =
+                    read_number(
+                        *motion_component,
+                        "terrain_footprint_radius");
+                if (terrain_footprint_radius) {
+                    component.terrain_footprint_radius =
+                        static_cast<float>(*terrain_footprint_radius);
+                }
+                auto terrain_align_to_surface =
+                    read_bool(*motion_component, "terrain_align_to_surface");
+                if (terrain_align_to_surface) {
+                    component.terrain_align_to_surface =
+                        *terrain_align_to_surface;
+                }
+                auto terrain_alignment_strength =
+                    read_number(
+                        *motion_component,
+                        "terrain_alignment_strength");
+                if (terrain_alignment_strength) {
+                    component.terrain_alignment_strength =
+                        static_cast<float>(*terrain_alignment_strength);
+                }
                 auto enabled = read_bool(*motion_component, "enabled");
                 if (enabled) {
                     component.enabled = *enabled;

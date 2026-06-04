@@ -884,6 +884,18 @@ namespace wz::engine::assets
                 *obj,
                 "terrain_ride_height",
                 number_value(motion.terrain_ride_height));
+            add_member(
+                *obj,
+                "terrain_footprint_radius",
+                number_value(motion.terrain_footprint_radius));
+            add_member(
+                *obj,
+                "terrain_align_to_surface",
+                bool_value(motion.terrain_align_to_surface));
+            add_member(
+                *obj,
+                "terrain_alignment_strength",
+                number_value(motion.terrain_alignment_strength));
             add_member(*obj, "enabled", bool_value(motion.enabled));
             return obj;
         }

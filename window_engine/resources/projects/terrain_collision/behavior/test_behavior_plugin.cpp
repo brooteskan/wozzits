@@ -15,6 +15,32 @@ namespace
 
     static constexpr float movement_factor = 0.1;
 
+    static void drive_heading_speed(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        float heading,
+        float speed)
+    {
+        wz_self_set_motion_space(
+            facts,
+            event,
+            WZ_BEHAVIOR_MOTION_SPACE_LOCAL);
+
+        wz_self_set_linear_velocity(
+            facts,
+            event,
+            speed,
+            0.0f,
+            0.0f);
+
+        wz_self_set_angular_velocity(
+            facts,
+            event,
+            0.0f,
+            heading,
+            0.0f);
+    }
+
     void tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId,
@@ -34,52 +60,7 @@ namespace
         }
     }
 
-    //static void stick_to_terrain(
-    //    const WzBehaviorFrameFacts* facts,
-    //    const WzBehaviorEvent* event,
-    //    const TankState* state)
-    //{
-    //    if (!state || state->terrain == WZ_INVALID_BEHAVIOR_ENTITY) {
-    //        return;
-    //    }
 
-    //    WzSurfaceSample sample{};
-
-    //    WzVec3 p{};
-    //    if (!wz_self_world_position(facts, event, &p)) {
-    //        return;
-    //    }
-
-    //    const float start_y = p.y + 20.0f;
-    //    const float max_distance = 80.0f;
-
-    //    const WzVec3 origin{ p.x, start_y, p.z };
-    //    const WzVec3 down{ 0.0f, -1.0f, 0.0f };
-
-    //    
-    //    const WzVec3 self_world{ p.x, start_y, p.z };
-
-    //    if (!wz_query_collision_surface_ray(
-    //        facts,
-    //        state->terrain,
-    //        origin,
-    //        down,
-    //        max_distance,
-    //        &sample)
-    //        || !sample.hit)
-    //    {
-    //        return;
-    //    }
-
-    //    const float ride_height = 0.6f;
-    //    wz_self_set_world_translation(
-    //        facts,
-    //        event,
-    //        p.x,
-    //        sample.position.y + ride_height,
-    //        p.z);
-
-    //}
 
     static void apply_tank_motion(
         const WzBehaviorFrameFacts* facts,
@@ -89,27 +70,11 @@ namespace
         constexpr float kMoveSpeed = 6.0f;
         constexpr float kTurnSpeed = 1.8f;
 
-        wz_self_set_motion_space(
+        drive_heading_speed(
             facts,
             event,
-            WZ_BEHAVIOR_MOTION_SPACE_LOCAL);
-
-        wz_self_set_linear_velocity(
-            facts,
-            event,
-            state->throttle * kMoveSpeed,
-            0.0f,
-            0.0f
-            );
-
-        //wz_self_set_angular_velocity(
-        //    facts,
-        //    event,
-        //    0.0f,
-        //    state->turn * kTurnSpeed,
-        //    0.0f);
-
-
+            state->turn * kTurnSpeed,
+            state->throttle * kMoveSpeed);
     }
 
     void on_event(
@@ -163,9 +128,6 @@ namespace
             break;
         }
         
-        //case WZ_EVENT_FRAME_UPDATE:
-        //    stick_to_terrain(facts, event, state);
-        //    break;
         
         default:
             break;

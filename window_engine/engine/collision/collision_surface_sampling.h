@@ -20,4 +20,10 @@ namespace wz::engine::collision
         float world_x,
         float world_z,
         CollisionSurfaceSample& out_sample) noexcept;
+
+    bool sample_nearest_terrain_surface(
+        const CollisionWorldEntry& entry,
+        float world_x,
+        float world_z,
+        CollisionSurfaceSample& out_sample) noexcept;
 }

@@ -599,6 +599,9 @@ Fields:
 - `space`
 - `terrain_constrained`
 - `terrain_ride_height`
+- `terrain_footprint_radius`
+- `terrain_align_to_surface`
+- `terrain_alignment_strength`
 - `enabled`
 
 `Motion` stores velocity state that the runtime integrates once per frame.
@@ -611,6 +614,17 @@ Y to `surface_height + terrain_ride_height`. The step runs after behavior
 commands and velocity integration, before render prep. It preserves X/Z and
 does not currently modify vertical velocity, so constrained actors should drive
 horizontal velocity and let the runtime constraint own ground height.
+
+`terrain_footprint_radius` defaults to `0`, meaning point support at the actor
+pivot. When positive, the runtime samples a fixed ring around the actor and uses
+the highest support height, which is useful for vehicle-sized actors moving over
+terrain detail smaller than the actor.
+
+When `terrain_align_to_surface` is true, the same step also rotates the actor so
+its local Y axis follows the sampled terrain normal. The actor's local Z axis is
+projected onto the terrain tangent plane to preserve heading as much as possible.
+`terrain_alignment_strength` is clamped to `[0, 1]`; values below `1` blend
+toward the surface orientation instead of snapping fully in one frame.
 
 ### SceneImportSource
 

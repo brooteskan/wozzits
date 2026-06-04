@@ -510,6 +510,9 @@ namespace wz::engine::assets
         SceneMotionSpace space = SceneMotionSpace::World;
         bool terrain_constrained = false;
         float terrain_ride_height = 0.0f;
+        float terrain_footprint_radius = 0.0f;
+        bool terrain_align_to_surface = false;
+        float terrain_alignment_strength = 1.0f;
         bool enabled = true;
     };
 

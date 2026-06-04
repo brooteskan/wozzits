@@ -403,6 +403,9 @@ namespace wz::engine::assets
                 fp.mix_value(static_cast<uint8_t>(motion.space));
                 fp.mix_value(motion.terrain_constrained);
                 fp.mix_value(motion.terrain_ride_height);
+                fp.mix_value(motion.terrain_footprint_radius);
+                fp.mix_value(motion.terrain_align_to_surface);
+                fp.mix_value(motion.terrain_alignment_strength);
                 fp.mix_value(motion.enabled);
             }
 
