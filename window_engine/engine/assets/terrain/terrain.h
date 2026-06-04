@@ -81,6 +81,8 @@ namespace wz::engine::assets
         float min_height = 0.0f;
         float max_height = 0.0f;
 
+        std::vector<float> height_samples;
+
         float bounds_min[3]{ 0.0f, 0.0f, 0.0f };
         float bounds_max[3]{ 0.0f, 0.0f, 0.0f };
 

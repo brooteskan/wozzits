@@ -248,6 +248,8 @@ failure/false unless that helper's section says otherwise.
   [Direction And Distance Helpers](#direction-and-distance-helpers).
 - Collision surface query signatures are in
   [Querying Collision Surfaces](#querying-collision-surfaces).
+- Terrain height/normal sample signatures and terrain-following examples are in
+  [Sampling Terrain Surfaces](#sampling-terrain-surfaces).
 
 ### Authored Config, Timing, And Diagnostics
 
@@ -823,15 +825,118 @@ uint8_t wz_query_collision_surface_ray(
 The ray uses world-space `origin` and `direction` and returns the nearest hit
 within `max_distance`. It reads from `FrameStorage::collision.world`, so it
 uses collision assets already resolved for the frame. V1 supports queryable
-`TerrainMeshSurface` collision assets. Height-field collision assets are
-intentionally not sampled by this helper yet.
+`TerrainMeshSurface` collision assets. Use
+[`wz_sample_terrain_surface`](#sampling-terrain-surfaces) for routine terrain
+height/normal reads, including height-field terrain.
 
 For `TerrainMeshSurface` collision assets with a compiled surface grid, the
 engine restricts ray tests to nearby grid cells and triangle bounds before
 testing triangles. Ungridded surface data falls back to a full triangle scan.
-For routine ground-following movement, prefer the terrain sampling API once it
-exists; ray queries are still a collision-surface query, not a dedicated terrain
-height API.
+For routine ground-following movement, prefer the terrain sampling API; ray
+queries are still a collision-surface query, not a dedicated terrain height API.
+
+## Sampling Terrain Surfaces
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
+Behavior code can sample a specific queryable terrain entity at a world-space
+horizontal location:
+
+```cpp
+uint8_t wz_sample_terrain_surface(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId terrain_entity,
+    float world_x,
+    float world_z,
+    WzSurfaceSample* out_sample);
+```
+
+`world_x` and `world_z` are the location to sample. On success, the helper
+returns `1`, sets `out_sample->hit` to `1`, and writes:
+
+- `out_sample->surface_entity`: the terrain entity that was sampled.
+- `out_sample->position`: the sampled world-space surface point.
+- `out_sample->normal`: the sampled world-space surface normal.
+
+The helper returns `0` and leaves `out_sample->hit` as `0` when the entity is
+missing, disabled, not queryable, not terrain, outside the terrain extent, or
+when `out_sample` is null.
+
+Height-field terrain uses the compiled height samples directly and bilinearly
+interpolates height. Mesh-surface terrain uses the compiled surface grid when
+available and falls back to a local triangle scan only for ungridded data.
+
+For a tank or character, resolve the terrain entity once during init, store it
+in per-binding state, and sample during `frame.update`:
+
+```cpp
+struct TankState
+{
+    WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
+    float ride_height = 0.35f;
+};
+
+void tank_init(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId,
+    void*)
+{
+    auto* state = static_cast<TankState*>(
+        wz_alloc_instance_state(facts, sizeof(TankState), alignof(TankState)));
+    if (!state) {
+        return;
+    }
+
+    *state = TankState{};
+    wz_find_entity_by_authored_id(facts, "terrain", &state->terrain);
+    wz_config_float(facts, "ride_height", &state->ride_height);
+}
+
+void tank_on_event(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    void*)
+{
+    if (!wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+        return;
+    }
+
+    auto* state = static_cast<TankState*>(wz_get_instance_state(facts));
+    if (!state || state->terrain == WZ_INVALID_BEHAVIOR_ENTITY) {
+        return;
+    }
+
+    WzVec3 tank_position{};
+    WzSurfaceSample terrain{};
+    if (wz_self_world_position(facts, event, &tank_position)
+        && wz_sample_terrain_surface(
+            facts,
+            state->terrain,
+            tank_position.x,
+            tank_position.z,
+            &terrain)
+        && terrain.hit)
+    {
+        wz_self_set_world_translation(
+            facts,
+            event,
+            tank_position.x,
+            terrain.position.y + state->ride_height,
+            tank_position.z);
+    }
+}
+
+const char* tank_events[] = { "frame.update" };
+
+WZ_BEHAVIOR_MODULE_INIT(
+    "tank_terrain_follow",
+    tank_init,
+    tank_on_event,
+    tank_events)
+```
+
+The example writes the actor's world Y while preserving its current world X/Z.
+The returned normal is available for later pitch/roll alignment.
 
 ## Scene Lookup And Config
 

@@ -92,8 +92,11 @@ namespace wz::engine::assets
         float size[2]{};
         uint32_t resolution_x = 0;
         uint32_t resolution_y = 0;
+        float vertical_scale = 1.0f;
+        float base_height = 0.0f;
         float min_height = 0.0f;
         float max_height = 0.0f;
+        std::vector<float> height_samples;
 
         uint32_t source_triangle_count = 0;
         uint32_t accepted_triangle_count = 0;

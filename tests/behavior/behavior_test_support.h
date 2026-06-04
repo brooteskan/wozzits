@@ -890,6 +890,76 @@ namespace
             g_surface_query_probe);
     }
 
+    struct TerrainSampleProbe
+    {
+        uint32_t calls = 0;
+        uint8_t sample_result = 0;
+        uint8_t null_out_result = 1;
+        uint8_t wrong_entity_result = 1;
+        uint8_t out_of_bounds_result = 1;
+        WzSurfaceSample sample{};
+        WzSurfaceSample out_of_bounds_sample{};
+    };
+
+    TerrainSampleProbe* g_terrain_sample_probe = nullptr;
+
+    void terrain_sample_event_handler(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<TerrainSampleProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+        ASSERT_NE(event, nullptr);
+
+        ++probe->calls;
+        if (!wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
+            return;
+        }
+
+        WzVec3 position{};
+        ASSERT_EQ(wz_self_world_position(facts, event, &position), 1u);
+        probe->sample_result = wz_sample_terrain_surface(
+            facts,
+            wz_other(event),
+            position.x,
+            position.z,
+            &probe->sample);
+        probe->null_out_result = wz_sample_terrain_surface(
+            facts,
+            wz_other(event),
+            position.x,
+            position.z,
+            nullptr);
+        WzSurfaceSample wrong_entity_sample{};
+        probe->wrong_entity_result = wz_sample_terrain_surface(
+            facts,
+            WZ_INVALID_BEHAVIOR_ENTITY,
+            position.x,
+            position.z,
+            &wrong_entity_sample);
+        probe->out_of_bounds_result = wz_sample_terrain_surface(
+            facts,
+            wz_other(event),
+            position.x + 1000.0f,
+            position.z + 1000.0f,
+            &probe->out_of_bounds_sample);
+    }
+
+    uint8_t register_terrain_sample_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_module || !g_terrain_sample_probe) {
+            return 0;
+        }
+
+        return api->register_module(
+            api->user,
+            "terrain_sample_test",
+            terrain_sample_event_handler,
+            g_terrain_sample_probe);
+    }
+
     uint8_t register_invalid_registration_pack(WzBehaviorPluginApi* api)
     {
         if (!api || !api->register_behavior

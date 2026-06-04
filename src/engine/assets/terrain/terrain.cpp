@@ -9,10 +9,20 @@ namespace wz::engine::assets
 {
     bool TerrainAssetData::valid() const noexcept
     {
-        return !(source_asset == wz::asset::AssetKey{})
-            && bounds_min[0] <= bounds_max[0]
-            && bounds_min[1] <= bounds_max[1]
-            && bounds_min[2] <= bounds_max[2];
+        if (source_asset == wz::asset::AssetKey{}
+            || bounds_min[0] > bounds_max[0]
+            || bounds_min[1] > bounds_max[1]
+            || bounds_min[2] > bounds_max[2])
+        {
+            return false;
+        }
+
+        if (representation == TerrainRepresentationKind::HeightField) {
+            return height_samples.size()
+                == static_cast<size_t>(resolution_x) * resolution_y;
+        }
+
+        return true;
     }
 
     TerrainAssetTable::TerrainAssetTable()

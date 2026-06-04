@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 12u
+#define WZ_BEHAVIOR_ABI_VERSION 13u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -257,6 +257,13 @@ typedef uint8_t (*WzQueryBehaviorCollisionSurfaceRayFn)(
     float max_distance,
     WzSurfaceSample* out_sample);
 
+typedef uint8_t (*WzSampleTerrainSurfaceFn)(
+    void* user,
+    WzBehaviorEntityId terrain_entity,
+    float world_x,
+    float world_z,
+    WzSurfaceSample* out_sample);
+
 typedef uint8_t (*WzFindBehaviorEntityByNameFn)(
     void* user,
     const char* name,
@@ -343,6 +350,7 @@ typedef struct WzBehaviorFrameFacts
 
     void* collision_query_user;
     WzQueryBehaviorCollisionSurfaceRayFn query_collision_surface_ray;
+    WzSampleTerrainSurfaceFn sample_terrain_surface;
 
     const WzFrameTiming* timing;
 

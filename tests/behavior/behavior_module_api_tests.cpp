@@ -916,6 +916,257 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQueryUsesGridCandidateRejection)
     g_surface_query_probe = nullptr;
 }
 
+TEST(BehaviorModuleApi, TerrainSurfaceSampleSamplesHeightField)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_terrain_height_sample_scene";
+
+    wz::engine::assets::SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    asset.nodes.push_back(std::move(terrain));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 5.0f;
+    actor.local.translation[1] = 10.0f;
+    actor.local.translation[2] = 5.0f;
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "terrain_sample_test",
+        .name = "",
+        .enabled = true,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+    const RuntimeEntityId terrain_id =
+        scene.authored_to_runtime["terrain"];
+    const RuntimeEntityId actor_id =
+        scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
+
+    wz::engine::assets::CollisionAssetData surface{};
+    surface.shape_kind =
+        wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+    surface.occupancy.queryable = true;
+    surface.origin[0] = 0.0f;
+    surface.origin[1] = 0.0f;
+    surface.size[0] = 10.0f;
+    surface.size[1] = 10.0f;
+    surface.resolution_x = 2u;
+    surface.resolution_y = 2u;
+    surface.base_height = -1.0f;
+    surface.vertical_scale = 2.0f;
+    surface.height_samples = {
+        0.0f, 1.0f,
+        2.0f, 3.0f,
+    };
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    TerrainSampleProbe probe{};
+    g_terrain_sample_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_terrain_sample_pack));
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.world.push_back(
+        wz::engine::collision::CollisionWorldEntry{
+            .entity = terrain_id,
+            .world_from_local = wz::math::Mat4::identity(),
+            .enabled = true,
+            .resolved = &surface,
+        });
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = actor_id,
+            .other = terrain_id,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.sample_result, 1u);
+    EXPECT_EQ(probe.null_out_result, 0u);
+    EXPECT_EQ(probe.wrong_entity_result, 0u);
+    EXPECT_EQ(probe.out_of_bounds_result, 0u);
+    EXPECT_EQ(probe.out_of_bounds_sample.hit, 0u);
+    EXPECT_EQ(probe.sample.hit, 1u);
+    EXPECT_EQ(probe.sample.surface_entity, terrain_id);
+    EXPECT_NEAR(probe.sample.position.x, 5.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.y, 2.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.z, 5.0f, 1e-5f);
+
+    const float normal_scale =
+        1.0f / std::sqrt(0.2f * 0.2f + 1.0f + 0.4f * 0.4f);
+    EXPECT_NEAR(probe.sample.normal.x, -0.2f * normal_scale, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.y, normal_scale, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.z, -0.4f * normal_scale, 1e-5f);
+
+    g_terrain_sample_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, TerrainSurfaceSampleSamplesMeshSurfaceCell)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_terrain_mesh_sample_scene";
+
+    wz::engine::assets::SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    asset.nodes.push_back(std::move(terrain));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 4.0f;
+    actor.local.translation[1] = 10.0f;
+    actor.local.translation[2] = 4.0f;
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "terrain_sample_test",
+        .name = "",
+        .enabled = true,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+    const RuntimeEntityId terrain_id =
+        scene.authored_to_runtime["terrain"];
+    const RuntimeEntityId actor_id =
+        scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
+
+    wz::engine::assets::CollisionAssetData surface =
+        gridded_flat_surface(4u, 8.0f);
+    surface.bounds_min[1] = 0.0f;
+    surface.bounds_max[1] = 0.0f;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    TerrainSampleProbe probe{};
+    g_terrain_sample_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_terrain_sample_pack));
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.world.push_back(
+        wz::engine::collision::CollisionWorldEntry{
+            .entity = terrain_id,
+            .world_from_local = wz::math::Mat4::identity(),
+            .enabled = true,
+            .resolved = &surface,
+        });
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = actor_id,
+            .other = terrain_id,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.sample_result, 1u);
+    EXPECT_EQ(probe.sample.hit, 1u);
+    EXPECT_EQ(probe.sample.surface_entity, terrain_id);
+    EXPECT_NEAR(probe.sample.position.x, 4.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.y, 0.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.z, 4.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.x, 0.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.y, 1.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.z, 0.0f, 1e-5f);
+
+    g_terrain_sample_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, TerrainSurfaceSampleIgnoresNonTerrainShapes)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_terrain_sample_non_terrain_scene";
+
+    wz::engine::assets::SceneNodeAsset bounds_node{};
+    bounds_node.id = "bounds";
+    asset.nodes.push_back(std::move(bounds_node));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 1.0f;
+    actor.local.translation[1] = 10.0f;
+    actor.local.translation[2] = 1.0f;
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "terrain_sample_test",
+        .name = "",
+        .enabled = true,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+    const RuntimeEntityId bounds_id =
+        scene.authored_to_runtime["bounds"];
+    const RuntimeEntityId actor_id =
+        scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
+
+    wz::engine::assets::CollisionAssetData surface{};
+    surface.shape_kind = wz::engine::assets::CollisionShapeKind::Bounds;
+    surface.occupancy.queryable = true;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    TerrainSampleProbe probe{};
+    g_terrain_sample_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_terrain_sample_pack));
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.world.push_back(
+        wz::engine::collision::CollisionWorldEntry{
+            .entity = bounds_id,
+            .world_from_local = wz::math::Mat4::identity(),
+            .enabled = true,
+            .resolved = &surface,
+        });
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = actor_id,
+            .other = bounds_id,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.sample_result, 0u);
+    EXPECT_EQ(probe.sample.hit, 0u);
+
+    g_terrain_sample_probe = nullptr;
+}
+
 TEST(BehaviorModuleApi, SelfTransformCommandHelpersWriteCommandsForEventEntity)
 {
     BehaviorRegistry registry;

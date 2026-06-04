@@ -224,6 +224,7 @@ namespace wz::engine::assets::internal
                 data.base_height = desc->base_height;
                 data.min_height = std::min(min_h, max_h);
                 data.max_height = std::max(min_h, max_h);
+                data.height_samples = field->values;
                 data.bounds_min[0] = desc->origin[0];
                 data.bounds_min[1] = data.min_height;
                 data.bounds_min[2] = desc->origin[1];

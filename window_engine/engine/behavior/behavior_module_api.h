@@ -1187,6 +1187,24 @@ static inline uint8_t wz_query_collision_surface_ray(
         out_sample);
 }
 
+static inline uint8_t wz_sample_terrain_surface(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId terrain_entity,
+    float world_x,
+    float world_z,
+    WzSurfaceSample* out_sample)
+{
+    if (!facts || !facts->sample_terrain_surface) {
+        return 0;
+    }
+    return facts->sample_terrain_surface(
+        facts->collision_query_user,
+        terrain_entity,
+        world_x,
+        world_z,
+        out_sample);
+}
+
 static inline uint8_t wz_find_entity_by_name(
     const WzBehaviorFrameFacts* facts,
     const char* name,

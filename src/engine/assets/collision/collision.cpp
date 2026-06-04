@@ -39,7 +39,9 @@ namespace wz::engine::assets
                 && resolution_x > 0
                 && resolution_y > 0
                 && size[0] > 0.0f
-                && size[1] > 0.0f;
+                && size[1] > 0.0f
+                && height_samples.size()
+                    == static_cast<size_t>(resolution_x) * resolution_y;
 
         case CollisionShapeKind::TerrainMeshSurface:
             if (mesh == wz::asset::AssetKey{} || source_triangle_count == 0) {

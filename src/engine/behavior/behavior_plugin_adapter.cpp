@@ -628,6 +628,427 @@ namespace wz::engine::behavior
                 : SurfaceRayGridResult::Miss;
         }
 
+        void clear_surface_sample(WzSurfaceSample* out_sample) noexcept
+        {
+            if (!out_sample) {
+                return;
+            }
+            *out_sample = WzSurfaceSample{
+                .hit = 0u,
+                .surface_entity =
+                    static_cast<WzBehaviorEntityId>(
+                        WZ_INVALID_BEHAVIOR_ENTITY),
+                .position = WzVec3{},
+                .normal = WzVec3{ .x = 0.0f, .y = 1.0f, .z = 0.0f },
+            };
+        }
+
+        void fill_surface_sample(
+            WzSurfaceSample* out_sample,
+            WzBehaviorEntityId entity,
+            const wz::math::Vec3& position,
+            const wz::math::Vec3& normal) noexcept
+        {
+            *out_sample = WzSurfaceSample{
+                .hit = 1u,
+                .surface_entity = entity,
+                .position = WzVec3{
+                    .x = position.x,
+                    .y = position.y,
+                    .z = position.z,
+                },
+                .normal = WzVec3{
+                    .x = normal.x,
+                    .y = normal.y,
+                    .z = normal.z,
+                },
+            };
+        }
+
+        float height_sample_at(
+            const wz::engine::assets::CollisionAssetData& data,
+            uint32_t x,
+            uint32_t z) noexcept
+        {
+            const size_t index =
+                static_cast<size_t>(z) * data.resolution_x + x;
+            return index < data.height_samples.size()
+                ? data.base_height
+                    + data.height_samples[index] * data.vertical_scale
+                : data.base_height;
+        }
+
+        float bilinear_height_sample(
+            const wz::engine::assets::CollisionAssetData& data,
+            float sample_x,
+            float sample_z) noexcept
+        {
+            const uint32_t x0 =
+                static_cast<uint32_t>(std::floor(sample_x));
+            const uint32_t z0 =
+                static_cast<uint32_t>(std::floor(sample_z));
+            const uint32_t x1 =
+                (std::min)(x0 + 1u, data.resolution_x - 1u);
+            const uint32_t z1 =
+                (std::min)(z0 + 1u, data.resolution_y - 1u);
+            const float tx = sample_x - static_cast<float>(x0);
+            const float tz = sample_z - static_cast<float>(z0);
+
+            const float h00 = height_sample_at(data, x0, z0);
+            const float h10 = height_sample_at(data, x1, z0);
+            const float h01 = height_sample_at(data, x0, z1);
+            const float h11 = height_sample_at(data, x1, z1);
+            const float h0 = h00 + (h10 - h00) * tx;
+            const float h1 = h01 + (h11 - h01) * tx;
+            return h0 + (h1 - h0) * tz;
+        }
+
+        bool sample_height_field_surface(
+            const wz::engine::collision::CollisionWorldEntry& entry,
+            float world_x,
+            float world_z,
+            WzSurfaceSample* out_sample) noexcept
+        {
+            const auto& data = *entry.resolved;
+            if (data.resolution_x == 0u
+                || data.resolution_y == 0u
+                || data.size[0] <= 0.0f
+                || data.size[1] <= 0.0f
+                || data.height_samples.size()
+                    != static_cast<size_t>(data.resolution_x)
+                        * data.resolution_y)
+            {
+                return false;
+            }
+
+            wz::math::Vec3 local_probe{};
+            if (!inverse_affine_point(
+                    entry.world_from_local,
+                    wz::math::Vec3{
+                        .x = world_x,
+                        .y = entry.world_from_local.m[13],
+                        .z = world_z,
+                    },
+                    local_probe))
+            {
+                return false;
+            }
+
+            const float u = (local_probe.x - data.origin[0]) / data.size[0];
+            const float v = (local_probe.z - data.origin[1]) / data.size[1];
+            constexpr float k_bounds_epsilon = 1e-5f;
+            if (u < -k_bounds_epsilon
+                || u > 1.0f + k_bounds_epsilon
+                || v < -k_bounds_epsilon
+                || v > 1.0f + k_bounds_epsilon)
+            {
+                return false;
+            }
+
+            const float clamped_u = (std::clamp)(u, 0.0f, 1.0f);
+            const float clamped_v = (std::clamp)(v, 0.0f, 1.0f);
+            const float sample_x =
+                data.resolution_x > 1u
+                    ? clamped_u * static_cast<float>(data.resolution_x - 1u)
+                    : 0.0f;
+            const float sample_z =
+                data.resolution_y > 1u
+                    ? clamped_v * static_cast<float>(data.resolution_y - 1u)
+                    : 0.0f;
+            const float local_y =
+                bilinear_height_sample(data, sample_x, sample_z);
+            const wz::math::Vec3 local_position{
+                .x = local_probe.x,
+                .y = local_y,
+                .z = local_probe.z,
+            };
+
+            const uint32_t nearest_x =
+                static_cast<uint32_t>(
+                    (std::clamp)(
+                        static_cast<int>(std::round(sample_x)),
+                        0,
+                        static_cast<int>(data.resolution_x) - 1));
+            const uint32_t nearest_z =
+                static_cast<uint32_t>(
+                    (std::clamp)(
+                        static_cast<int>(std::round(sample_z)),
+                        0,
+                        static_cast<int>(data.resolution_y) - 1));
+            const uint32_t left_x = nearest_x == 0u ? 0u : nearest_x - 1u;
+            const uint32_t right_x =
+                (std::min)(nearest_x + 1u, data.resolution_x - 1u);
+            const uint32_t near_z = nearest_z == 0u ? 0u : nearest_z - 1u;
+            const uint32_t far_z =
+                (std::min)(nearest_z + 1u, data.resolution_y - 1u);
+            const float step_x =
+                data.resolution_x > 1u
+                    ? data.size[0]
+                        / static_cast<float>(data.resolution_x - 1u)
+                    : data.size[0];
+            const float step_z =
+                data.resolution_y > 1u
+                    ? data.size[1]
+                        / static_cast<float>(data.resolution_y - 1u)
+                    : data.size[1];
+            const float denom_x =
+                (std::max)(
+                    step_x * static_cast<float>(right_x - left_x),
+                    1e-6f);
+            const float denom_z =
+                (std::max)(
+                    step_z * static_cast<float>(far_z - near_z),
+                    1e-6f);
+            const float d_height_dx =
+                (height_sample_at(data, right_x, nearest_z)
+                    - height_sample_at(data, left_x, nearest_z))
+                / denom_x;
+            const float d_height_dz =
+                (height_sample_at(data, nearest_x, far_z)
+                    - height_sample_at(data, nearest_x, near_z))
+                / denom_z;
+
+            const wz::math::Vec3 world_position =
+                wz::math::mul_point(entry.world_from_local, local_position);
+            const wz::math::Vec3 world_tangent_x =
+                wz::math::mul_point(
+                    entry.world_from_local,
+                    local_position
+                        + wz::math::Vec3{
+                            .x = 1.0f,
+                            .y = d_height_dx,
+                            .z = 0.0f,
+                        })
+                - world_position;
+            const wz::math::Vec3 world_tangent_z =
+                wz::math::mul_point(
+                    entry.world_from_local,
+                    local_position
+                        + wz::math::Vec3{
+                            .x = 0.0f,
+                            .y = d_height_dz,
+                            .z = 1.0f,
+                        })
+                - world_position;
+            wz::math::Vec3 world_normal =
+                wz::math::cross(world_tangent_z, world_tangent_x);
+            if (!normalize_checked(world_normal)) {
+                world_normal = wz::math::Vec3{
+                    .x = 0.0f,
+                    .y = 1.0f,
+                    .z = 0.0f,
+                };
+            }
+            if (world_normal.y < 0.0f) {
+                world_normal.x = -world_normal.x;
+                world_normal.y = -world_normal.y;
+                world_normal.z = -world_normal.z;
+            }
+
+            fill_surface_sample(
+                out_sample,
+                entry.entity,
+                world_position,
+                world_normal);
+            return true;
+        }
+
+        bool test_mesh_surface_triangle(
+            const wz::engine::collision::CollisionWorldEntry& entry,
+            uint32_t tri,
+            const wz::math::Vec3& local_origin,
+            const wz::math::Vec3& local_direction,
+            float local_max_distance,
+            float& best_distance,
+            wz::math::Vec3& best_position,
+            wz::math::Vec3& best_normal) noexcept
+        {
+            const auto& data = *entry.resolved;
+            const uint32_t triangle_count =
+                static_cast<uint32_t>(data.indices.size() / 3u);
+            if (tri >= triangle_count) {
+                return false;
+            }
+
+            const size_t index = static_cast<size_t>(tri) * 3u;
+            const uint32_t ia = data.indices[index + 0u];
+            const uint32_t ib = data.indices[index + 1u];
+            const uint32_t ic = data.indices[index + 2u];
+            if (ia >= data.points.size()
+                || ib >= data.points.size()
+                || ic >= data.points.size())
+            {
+                return false;
+            }
+
+            const wz::math::Vec3 a =
+                collision_point_position(data.points[ia]);
+            const wz::math::Vec3 b =
+                collision_point_position(data.points[ib]);
+            const wz::math::Vec3 c =
+                collision_point_position(data.points[ic]);
+            float distance = 0.0f;
+            wz::math::Vec3 position{};
+            wz::math::Vec3 normal{};
+            if (!ray_triangle_hit(
+                    local_origin,
+                    local_direction,
+                    a,
+                    b,
+                    c,
+                    local_max_distance,
+                    distance,
+                    position,
+                    normal)
+                || distance >= best_distance)
+            {
+                return false;
+            }
+
+            const wz::math::Vec3 world_position =
+                wz::math::mul_point(entry.world_from_local, position);
+            const wz::math::Vec3 world_a =
+                wz::math::mul_point(entry.world_from_local, a);
+            const wz::math::Vec3 world_b =
+                wz::math::mul_point(entry.world_from_local, b);
+            const wz::math::Vec3 world_c =
+                wz::math::mul_point(entry.world_from_local, c);
+            wz::math::Vec3 world_normal =
+                wz::math::cross(world_b - world_a, world_c - world_a);
+            if (!normalize_checked(world_normal)) {
+                return false;
+            }
+            if (world_normal.y < 0.0f) {
+                world_normal.x = -world_normal.x;
+                world_normal.y = -world_normal.y;
+                world_normal.z = -world_normal.z;
+            }
+
+            best_distance = distance;
+            best_position = world_position;
+            best_normal = world_normal;
+            return true;
+        }
+
+        bool sample_mesh_surface(
+            const wz::engine::collision::CollisionWorldEntry& entry,
+            float world_x,
+            float world_z,
+            WzSurfaceSample* out_sample) noexcept
+        {
+            const auto& data = *entry.resolved;
+            if (data.points.empty() || data.indices.size() < 3u) {
+                return false;
+            }
+
+            wz::math::Vec3 local_probe{};
+            if (!inverse_affine_point(
+                    entry.world_from_local,
+                    wz::math::Vec3{
+                        .x = world_x,
+                        .y = entry.world_from_local.m[13],
+                        .z = world_z,
+                    },
+                    local_probe))
+            {
+                return false;
+            }
+
+            constexpr float k_margin = 1.0f;
+            const float height_span =
+                (std::max)(
+                    data.bounds_max[1] - data.bounds_min[1],
+                    0.0f);
+            const wz::math::Vec3 local_origin{
+                .x = local_probe.x,
+                .y = data.bounds_max[1] + k_margin,
+                .z = local_probe.z,
+            };
+            const wz::math::Vec3 local_direction{
+                .x = 0.0f,
+                .y = -1.0f,
+                .z = 0.0f,
+            };
+            const float local_max_distance = height_span + k_margin * 2.0f;
+
+            float best_distance = std::numeric_limits<float>::max();
+            wz::math::Vec3 best_position{};
+            wz::math::Vec3 best_normal{ .x = 0.0f, .y = 1.0f, .z = 0.0f };
+            bool hit = false;
+
+            const auto& grid = data.surface_grid;
+            const size_t cell_count =
+                static_cast<size_t>(grid.cells_x) * grid.cells_z;
+            if (grid.cells_x != 0u
+                && grid.cells_z != 0u
+                && grid.cell_offsets.size() == cell_count + 1u
+                && grid.cell_bounds.size() == cell_count
+                && local_probe.x >= grid.origin_x
+                && local_probe.z >= grid.origin_z
+                && local_probe.x <= grid.origin_x
+                    + grid.cell_size_x * grid.cells_x
+                && local_probe.z <= grid.origin_z
+                    + grid.cell_size_z * grid.cells_z)
+            {
+                const uint32_t cell_x = surface_grid_cell_index(
+                    local_probe.x,
+                    grid.origin_x,
+                    grid.cell_size_x,
+                    grid.cells_x);
+                const uint32_t cell_z = surface_grid_cell_index(
+                    local_probe.z,
+                    grid.origin_z,
+                    grid.cell_size_z,
+                    grid.cells_z);
+                const size_t cell =
+                    static_cast<size_t>(cell_z) * grid.cells_x + cell_x;
+                const uint32_t begin = grid.cell_offsets[cell];
+                const uint32_t end = grid.cell_offsets[cell + 1u];
+                for (uint32_t i = begin; i < end; ++i) {
+                    if (i >= grid.cell_triangle_indices.size()) {
+                        continue;
+                    }
+                    hit = test_mesh_surface_triangle(
+                            entry,
+                            grid.cell_triangle_indices[i],
+                            local_origin,
+                            local_direction,
+                            local_max_distance,
+                            best_distance,
+                            best_position,
+                            best_normal)
+                        || hit;
+                }
+            }
+            else {
+                const uint32_t triangle_count =
+                    static_cast<uint32_t>(data.indices.size() / 3u);
+                for (uint32_t tri = 0; tri < triangle_count; ++tri) {
+                    hit = test_mesh_surface_triangle(
+                            entry,
+                            tri,
+                            local_origin,
+                            local_direction,
+                            local_max_distance,
+                            best_distance,
+                            best_position,
+                            best_normal)
+                        || hit;
+                }
+            }
+
+            if (!hit) {
+                return false;
+            }
+
+            fill_surface_sample(
+                out_sample,
+                entry.entity,
+                best_position,
+                best_normal);
+            return true;
+        }
+
         void fill_input_view(
             const wz::input::InputState& input,
             WzInputStateView& out) noexcept
@@ -982,6 +1403,59 @@ namespace wz::engine::behavior
                 },
             };
             return 1;
+        }
+
+        uint8_t sample_terrain_surface(
+            void* user,
+            WzBehaviorEntityId terrain_entity,
+            float world_x,
+            float world_z,
+            WzSurfaceSample* out_sample)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->frame_storage || !out_sample
+                || !std::isfinite(world_x)
+                || !std::isfinite(world_z))
+            {
+                return 0;
+            }
+
+            clear_surface_sample(out_sample);
+
+            for (const auto& entry : context->frame_storage->collision.world) {
+                if (entry.entity != terrain_entity
+                    || !entry.enabled
+                    || !entry.resolved
+                    || !entry.resolved->occupancy.queryable)
+                {
+                    continue;
+                }
+
+                switch (entry.resolved->shape_kind) {
+                case wz::engine::assets::CollisionShapeKind::TerrainHeightField:
+                    return sample_height_field_surface(
+                            entry,
+                            world_x,
+                            world_z,
+                            out_sample)
+                        ? uint8_t{ 1 }
+                        : uint8_t{ 0 };
+
+                case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:
+                    return sample_mesh_surface(
+                            entry,
+                            world_x,
+                            world_z,
+                            out_sample)
+                        ? uint8_t{ 1 }
+                        : uint8_t{ 0 };
+
+                default:
+                    break;
+                }
+            }
+
+            return 0;
         }
 
         uint8_t find_entity_by_authored_id(
@@ -1357,6 +1831,7 @@ namespace wz::engine::behavior
                 .log_info = log_info,
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
+                .sample_terrain_surface = sample_terrain_surface,
                 .timing = timing,
                 .scene_query_user = &context,
                 .find_entity_by_name = find_entity_by_name,
@@ -1418,6 +1893,7 @@ namespace wz::engine::behavior
                 .log_info = log_info,
                 .collision_query_user = &context,
                 .query_collision_surface_ray = query_collision_surface_ray,
+                .sample_terrain_surface = sample_terrain_surface,
                 .timing = timing,
                 .scene_query_user = &context,
                 .find_entity_by_name = find_entity_by_name,

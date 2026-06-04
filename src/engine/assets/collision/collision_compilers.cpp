@@ -260,8 +260,11 @@ namespace wz::engine::assets::internal
                 data.size[1] = terrain.size[1];
                 data.resolution_x = terrain.resolution_x;
                 data.resolution_y = terrain.resolution_y;
+                data.vertical_scale = terrain.vertical_scale;
+                data.base_height = terrain.base_height;
                 data.min_height = terrain.min_height;
                 data.max_height = terrain.max_height;
+                data.height_samples = terrain.height_samples;
                 data.supports_height_query = true;
                 data.supports_ray_query = true;
                 return data;

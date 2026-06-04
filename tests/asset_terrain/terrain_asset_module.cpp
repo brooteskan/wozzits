@@ -68,6 +68,7 @@ TEST(TerrainAssetModule, ResolvesHeightFieldTerrain)
     EXPECT_EQ(data->height_field, field.output);
     EXPECT_EQ(data->resolution_x, 8u);
     EXPECT_EQ(data->resolution_y, 4u);
+    EXPECT_EQ(data->height_samples.size(), 32u);
     EXPECT_FLOAT_EQ(data->size[0], 64.0f);
     EXPECT_FLOAT_EQ(data->size[1], 32.0f);
     EXPECT_FLOAT_EQ(data->min_height, -5.0f);

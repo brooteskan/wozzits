@@ -186,6 +186,7 @@ TEST(CollisionAssetModule, HeightfieldTerrainProducesHeightCollisionAsset)
     EXPECT_FLOAT_EQ(data->size[1], 12.0f);
     EXPECT_EQ(data->resolution_x, 4u);
     EXPECT_EQ(data->resolution_y, 4u);
+    EXPECT_EQ(data->height_samples.size(), 16u);
 }
 
 TEST(CollisionAssetModule, MeshTerrainProducesTerrainMeshSurfaceAsset)
