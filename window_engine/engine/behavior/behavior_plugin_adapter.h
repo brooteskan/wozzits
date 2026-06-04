@@ -73,6 +73,13 @@ namespace wz::engine::behavior
             const char* register_symbol =
                 WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL);
 
+        DynamicLoadResult reload_dynamic_module(
+            BehaviorRegistry& registry,
+            const std::filesystem::path& path,
+            wz::Logger* logger = nullptr,
+            const char* register_symbol =
+                WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL);
+
         uint32_t load_dynamic_modules_from_directory(
             BehaviorRegistry& registry,
             const std::filesystem::path& directory,

@@ -94,6 +94,23 @@ namespace wz::engine::behavior
             std::error_code ec;
             std::filesystem::remove(std::filesystem::path{ path }, ec);
         }
+
+        bool same_dynamic_module_path(
+            const BehaviorPluginHost::DynamicModule& module,
+            const std::filesystem::path& path)
+        {
+            return std::filesystem::path{ module.path } == path;
+        }
+
+        void unload_dynamic_module_copy(
+            BehaviorPluginHost::DynamicModule& module)
+        {
+            if (module.handle) {
+                FreeLibrary(static_cast<HMODULE>(module.handle));
+                module.handle = nullptr;
+            }
+            remove_behavior_load_copy(module.loaded_path);
+        }
 #endif
 
         WzCollisionEventKind to_abi_collision_kind(
@@ -1278,6 +1295,38 @@ namespace wz::engine::behavior
 #endif
     }
 
+    BehaviorPluginHost::DynamicLoadResult
+    BehaviorPluginHost::reload_dynamic_module(
+        BehaviorRegistry& registry,
+        const std::filesystem::path& path,
+        wz::Logger* logger,
+        const char* register_symbol)
+    {
+#if defined(_WIN32)
+        std::vector<std::size_t> old_indices;
+        for (std::size_t i = 0; i < dynamic_modules_.size(); ++i) {
+            if (same_dynamic_module_path(dynamic_modules_[i], path)) {
+                old_indices.push_back(i);
+            }
+        }
+
+        DynamicLoadResult result =
+            load_dynamic_module(registry, path, logger, register_symbol);
+        if (!result.ok()) {
+            return result;
+        }
+
+        for (std::size_t i = old_indices.size(); i > 0u; --i) {
+            const std::size_t index = old_indices[i - 1u];
+            unload_dynamic_module_copy(dynamic_modules_[index]);
+            dynamic_modules_.erase(dynamic_modules_.begin() + index);
+        }
+        return result;
+#else
+        return load_dynamic_module(registry, path, logger, register_symbol);
+#endif
+    }
+
     uint32_t BehaviorPluginHost::load_dynamic_modules_from_directory(
         BehaviorRegistry& registry,
         const std::filesystem::path& directory,
@@ -1343,7 +1392,7 @@ namespace wz::engine::behavior
 #endif
 
             const DynamicLoadResult result =
-                load_dynamic_module(registry, path, logger);
+                reload_dynamic_module(registry, path, logger);
             if (result.ok()) {
                 ++loaded;
             }
@@ -1362,11 +1411,8 @@ namespace wz::engine::behavior
     {
         bindings_.clear();
 #if defined(_WIN32)
-        for (const DynamicModule& module : dynamic_modules_) {
-            if (module.handle) {
-                FreeLibrary(static_cast<HMODULE>(module.handle));
-            }
-            remove_behavior_load_copy(module.loaded_path);
+        for (DynamicModule& module : dynamic_modules_) {
+            unload_dynamic_module_copy(module);
         }
 #endif
         dynamic_modules_.clear();

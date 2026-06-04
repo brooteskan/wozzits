@@ -53,9 +53,24 @@ namespace
         uint32_t empty_find_event = 0;
     };
 
+    struct ReloadInstanceState
+    {
+        uint32_t init_count = 0;
+        uint32_t event_count = 0;
+        uint32_t sentinel = 0;
+    };
+
+    struct ReloadSharedState
+    {
+        uint32_t init_count = 0;
+        uint32_t event_count = 0;
+        uint32_t sentinel = 0;
+    };
+
     constexpr const char* kSharedGroupKey = "tank_group";
     constexpr const char* kCombinedSharedKey = "combined_state";
     constexpr const char* kResizedSharedKey = "resized_group";
+    constexpr const char* kReloadSharedKey = "reload_group";
 
     InitProbe* g_init_probe = nullptr;
     uint32_t* g_event_only_count = nullptr;
@@ -63,6 +78,8 @@ namespace
     uint32_t* g_unknown_shared_state_count = nullptr;
     SharedKeyEdgeProbe* g_shared_key_edge_probe = nullptr;
     uint32_t g_resized_shared_state_size = 0;
+    uint32_t g_reload_instance_state_size = 0;
+    uint32_t g_reload_shared_state_size = 0;
 
     void on_stateful_init(
         const WzBehaviorInitFacts* facts,
@@ -395,6 +412,121 @@ namespace
             && api->register_module_desc
             ? api->register_module_desc(api->user, &desc)
             : 0u;
+    }
+
+    void on_reloadable_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        const uint32_t instance_size =
+            g_reload_instance_state_size > 0u
+            ? g_reload_instance_state_size
+            : sizeof(ReloadInstanceState);
+        const uint32_t shared_size =
+            g_reload_shared_state_size > 0u
+            ? g_reload_shared_state_size
+            : sizeof(ReloadSharedState);
+
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_alloc_instance_state(
+                facts,
+                instance_size,
+                alignof(ReloadInstanceState)));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_create_shared_state(
+                facts,
+                kReloadSharedKey,
+                shared_size,
+                alignof(ReloadSharedState)));
+        if (instance && instance_size >= sizeof(ReloadInstanceState)) {
+            ++instance->init_count;
+        }
+        if (shared && shared_size >= sizeof(ReloadSharedState)) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_reloadable_event_v1(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_get_instance_state(facts));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_find_shared_state(facts, kReloadSharedKey));
+        if (instance) {
+            ++instance->event_count;
+        }
+        if (shared) {
+            ++shared->event_count;
+        }
+        wz_self_add_local_translation(facts, event, 0.0f, 1.0f, 0.0f);
+    }
+
+    void on_reloadable_event_v2(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_get_instance_state(facts));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_find_shared_state(facts, kReloadSharedKey));
+        if (instance) {
+            ++instance->event_count;
+        }
+        if (shared) {
+            ++shared->event_count;
+        }
+        wz_self_add_local_translation(facts, event, 0.0f, 2.0f, 0.0f);
+    }
+
+    uint8_t register_reloadable_pack(
+        WzBehaviorPluginApi* api,
+        WzBehaviorModuleEventFn on_event)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "reloadable",
+            .on_event = on_event,
+            .on_init = on_reloadable_init,
+            .event_channels = events,
+            .event_channel_count = 1u,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    uint8_t register_reloadable_pack_without_init(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "reloadable",
+            .on_event = on_reloadable_event_v2,
+            .on_init = nullptr,
+            .event_channels = events,
+            .event_channel_count = 1u,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    uint8_t register_reloadable_pack_v1(WzBehaviorPluginApi* api)
+    {
+        return register_reloadable_pack(api, on_reloadable_event_v1);
+    }
+
+    uint8_t register_reloadable_pack_v2(WzBehaviorPluginApi* api)
+    {
+        return register_reloadable_pack(api, on_reloadable_event_v2);
     }
 
     void on_legacy_desc_event(
@@ -980,6 +1112,285 @@ TEST(BehaviorInit, ParticipantBeforeCoordinatorDoesNotFindSharedStateInInit)
     dispatch_behaviors(scene, registry, context);
 
     EXPECT_EQ(state->participant_events, 1u);
+}
+
+TEST(BehaviorInit, ReRegistrationRerunsInitPreservesStateAndUpdatesEvent)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_reload_compatible";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "reload_binding",
+        .module = "reloadable",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    g_reload_instance_state_size = sizeof(ReloadInstanceState);
+    g_reload_shared_state_size = sizeof(ReloadSharedState);
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_v1));
+    const auto first_handle = registry.find_module("reloadable");
+    ASSERT_TRUE(first_handle.has_value());
+
+    initialize_behaviors(scene, registry);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(instance->init_count, 1u);
+    EXPECT_EQ(shared->init_count, 1u);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    wz::engine::FrameStorage first_frame{};
+    BehaviorFrameContext first_context{
+        .frame_storage = &first_frame,
+        .commands = &first_frame.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, first_context);
+    ASSERT_EQ(first_frame.behavior_commands.commands.size(), 1u);
+    EXPECT_FLOAT_EQ(first_frame.behavior_commands.commands[0].values[1], 1.0f);
+
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_v2));
+    EXPECT_EQ(registry.modules().size(), 1u);
+    const auto second_handle = registry.find_module("reloadable");
+    ASSERT_TRUE(second_handle.has_value());
+    EXPECT_EQ(second_handle->index, first_handle->index);
+
+    initialize_behaviors(scene, registry);
+
+    auto* second_instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* second_shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(second_instance_block, nullptr);
+    ASSERT_NE(second_shared_block, nullptr);
+    EXPECT_EQ(second_instance_block->data, instance_block->data);
+    EXPECT_EQ(second_shared_block->data, shared_block->data);
+    EXPECT_EQ(instance->init_count, 2u);
+    EXPECT_EQ(shared->init_count, 2u);
+    EXPECT_EQ(instance->sentinel, 0xc0ffeeu);
+    EXPECT_EQ(shared->sentinel, 0xbeefu);
+
+    wz::engine::FrameStorage second_frame{};
+    BehaviorFrameContext second_context{
+        .frame_storage = &second_frame,
+        .commands = &second_frame.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, second_context);
+    ASSERT_EQ(second_frame.behavior_commands.commands.size(), 1u);
+    EXPECT_FLOAT_EQ(
+        second_frame.behavior_commands.commands[0].values[1],
+        2.0f);
+    EXPECT_EQ(instance->event_count, 2u);
+    EXPECT_EQ(shared->event_count, 2u);
+
+    g_reload_instance_state_size = 0u;
+    g_reload_shared_state_size = 0u;
+}
+
+TEST(BehaviorInit, StateAllocatedByOldInitSurvivesWhenReloadRemovesInit)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_reload_removes_init";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "reload_binding",
+        .module = "reloadable",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    g_reload_instance_state_size = sizeof(ReloadInstanceState);
+    g_reload_shared_state_size = sizeof(ReloadSharedState);
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_v1));
+
+    initialize_behaviors(scene, registry);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(instance->init_count, 1u);
+    EXPECT_EQ(shared->init_count, 1u);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_without_init));
+    const auto handle = registry.find_module("reloadable");
+    ASSERT_TRUE(handle.has_value());
+    const auto* module = registry.get_module(*handle);
+    ASSERT_NE(module, nullptr);
+    EXPECT_EQ(module->on_init, nullptr);
+
+    initialize_behaviors(scene, registry);
+
+    auto* second_instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* second_shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(second_instance_block, nullptr);
+    ASSERT_NE(second_shared_block, nullptr);
+    EXPECT_EQ(second_instance_block->data, instance_block->data);
+    EXPECT_EQ(second_shared_block->data, shared_block->data);
+    EXPECT_EQ(instance->init_count, 1u);
+    EXPECT_EQ(shared->init_count, 1u);
+    EXPECT_EQ(instance->sentinel, 0xc0ffeeu);
+    EXPECT_EQ(shared->sentinel, 0xbeefu);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
+    EXPECT_FLOAT_EQ(
+        frame_storage.behavior_commands.commands[0].values[1],
+        2.0f);
+    EXPECT_EQ(instance->event_count, 1u);
+    EXPECT_EQ(shared->event_count, 1u);
+
+    g_reload_instance_state_size = 0u;
+    g_reload_shared_state_size = 0u;
+}
+
+TEST(BehaviorInit, ReRegistrationResetsIncompatibleStateAndLogs)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_reload_incompatible";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "reload_binding",
+        .module = "reloadable",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(
+        logger,
+        { wz::LogLevel::Debug, false, &sink }));
+
+    g_reload_instance_state_size = sizeof(ReloadInstanceState);
+    g_reload_shared_state_size = sizeof(ReloadSharedState);
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_v1,
+        &logger));
+
+    initialize_behaviors(scene, registry, &logger);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    g_reload_instance_state_size =
+        sizeof(ReloadInstanceState) + sizeof(uint32_t);
+    g_reload_shared_state_size =
+        sizeof(ReloadSharedState) + sizeof(uint32_t);
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_reloadable_pack_v2,
+        &logger));
+
+    initialize_behaviors(scene, registry, &logger);
+    wz::logging::wait_until_idle(logger);
+
+    const auto messages = sink.snapshot();
+    ASSERT_EQ(messages.size(), 2u);
+    EXPECT_EQ(messages[0].level, wz::LogLevel::Warning);
+    EXPECT_EQ(messages[1].level, wz::LogLevel::Warning);
+    EXPECT_NE(
+        std::string(messages[0].text).find(
+            "behavior instance state reset for binding 'reload_binding'"),
+        std::string::npos);
+    EXPECT_NE(
+        std::string(messages[1].text).find(
+            "behavior shared state reset for key 'reload_group'"),
+        std::string::npos);
+
+    auto* reset_instance_block =
+        scene.behavior_state.find_instance_state("reload_binding");
+    auto* reset_shared_block =
+        scene.behavior_state.find_shared_state(kReloadSharedKey);
+    ASSERT_NE(reset_instance_block, nullptr);
+    ASSERT_NE(reset_shared_block, nullptr);
+    auto* reset_instance =
+        static_cast<ReloadInstanceState*>(reset_instance_block->data);
+    auto* reset_shared =
+        static_cast<ReloadSharedState*>(reset_shared_block->data);
+    ASSERT_NE(reset_instance, nullptr);
+    ASSERT_NE(reset_shared, nullptr);
+    EXPECT_EQ(reset_instance_block->size, g_reload_instance_state_size);
+    EXPECT_EQ(reset_shared_block->size, g_reload_shared_state_size);
+    EXPECT_EQ(reset_instance->init_count, 1u);
+    EXPECT_EQ(reset_shared->init_count, 1u);
+    EXPECT_EQ(reset_instance->sentinel, 0u);
+    EXPECT_EQ(reset_shared->sentinel, 0u);
+
+    g_reload_instance_state_size = 0u;
+    g_reload_shared_state_size = 0u;
+    wz::logging::shutdown_logger(logger);
 }
 
 TEST(BehaviorInit, DescriptorRangeValidationAllowsMissingInitField)

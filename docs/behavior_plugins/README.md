@@ -1038,6 +1038,13 @@ Init facts intentionally do not expose command writing, input state, or active
 events. Use init for state setup, config checks, entity lookup, transform reads,
 and logging. Use event callbacks for frame/input/collision behavior.
 
+When a behavior DLL is reloaded, the host re-registers modules into the same
+registry. Call `initialize_behaviors` again after a successful reload. Compatible
+per-binding and shared state blocks are reused; incompatible size/alignment
+requests reset the block and log a warning. Avoid storing DLL-owned pointers,
+function pointers, vtables, or plugin-allocated STL objects in engine-owned
+state.
+
 ## Writing Commands
 
 [Back to Behavior API Inventory](#behavior-api-inventory)

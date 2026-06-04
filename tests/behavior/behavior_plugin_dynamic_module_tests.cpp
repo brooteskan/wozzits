@@ -1,5 +1,17 @@
 ﻿#include "behavior_test_support.h"
 
+namespace
+{
+    std::string loaded_copy_from_detail(const std::string& detail)
+    {
+        const std::string separator = " -> ";
+        const size_t separator_pos = detail.find(separator);
+        return separator_pos == std::string::npos
+            ? std::string{}
+            : detail.substr(separator_pos + separator.size());
+    }
+}
+
 TEST(BehaviorPluginAbi, RejectsVersionMismatch)
 {
     BehaviorRegistry registry;
@@ -99,11 +111,9 @@ TEST(BehaviorPluginDynamicModule, LoadsFromCopyAndCleansUpCopy)
     ASSERT_TRUE(result.ok()) << result.detail;
 
 #if defined(_WIN32)
-    const std::string separator = " -> ";
-    const size_t separator_pos = result.detail.find(separator);
-    ASSERT_NE(separator_pos, std::string::npos) << result.detail;
     const std::string loaded_path =
-        result.detail.substr(separator_pos + separator.size());
+        loaded_copy_from_detail(result.detail);
+    ASSERT_FALSE(loaded_path.empty()) << result.detail;
     EXPECT_NE(loaded_path.find(".wzload."), std::string::npos);
     EXPECT_TRUE(std::filesystem::exists(loaded_path));
 
@@ -111,6 +121,118 @@ TEST(BehaviorPluginDynamicModule, LoadsFromCopyAndCleansUpCopy)
 
     EXPECT_FALSE(std::filesystem::exists(loaded_path));
 #else
+    plugins.clear();
+#endif
+}
+
+TEST(BehaviorPluginDynamicModule, ReloadReplacesLoadedCopy)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto first = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+
+    ASSERT_TRUE(first.ok()) << first.detail;
+
+#if defined(_WIN32)
+    const std::string first_loaded_path =
+        loaded_copy_from_detail(first.detail);
+    ASSERT_FALSE(first_loaded_path.empty()) << first.detail;
+    ASSERT_TRUE(std::filesystem::exists(first_loaded_path));
+
+    const auto reloaded = plugins.reload_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+
+    ASSERT_TRUE(reloaded.ok()) << reloaded.detail;
+
+    const std::string second_loaded_path =
+        loaded_copy_from_detail(reloaded.detail);
+    ASSERT_FALSE(second_loaded_path.empty()) << reloaded.detail;
+    EXPECT_NE(second_loaded_path, first_loaded_path);
+    EXPECT_FALSE(std::filesystem::exists(first_loaded_path));
+    EXPECT_TRUE(std::filesystem::exists(second_loaded_path));
+
+    ASSERT_TRUE(registry.find(
+        "dynamic_test",
+        "always_add_local_y").has_value());
+    EXPECT_EQ(registry.registrations().size(), 1u);
+
+    plugins.clear();
+
+    EXPECT_FALSE(std::filesystem::exists(second_loaded_path));
+#else
+    const auto reloaded = plugins.reload_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+    EXPECT_EQ(
+        reloaded.status,
+        BehaviorPluginHost::DynamicLoadStatus::UnsupportedPlatform);
+    plugins.clear();
+#endif
+}
+
+TEST(BehaviorPluginDynamicModule, FailedReloadKeepsExistingModuleUsable)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+
+    const auto first = plugins.load_dynamic_module(
+        registry,
+        std::filesystem::path{ WZ_TEST_BEHAVIOR_PLUGIN_DLL });
+
+    ASSERT_TRUE(first.ok()) << first.detail;
+
+#if defined(_WIN32)
+    const std::string first_loaded_path =
+        loaded_copy_from_detail(first.detail);
+    ASSERT_FALSE(first_loaded_path.empty()) << first.detail;
+    ASSERT_TRUE(std::filesystem::exists(first_loaded_path));
+
+    const auto failed_reload = plugins.reload_dynamic_module(
+        registry,
+        std::filesystem::path{
+            "definitely_missing_behavior_plugin_reload_test.dll" });
+
+    EXPECT_EQ(
+        failed_reload.status,
+        BehaviorPluginHost::DynamicLoadStatus::InvalidPath);
+    EXPECT_TRUE(std::filesystem::exists(first_loaded_path));
+    EXPECT_EQ(registry.registrations().size(), 1u);
+
+    SceneInstance scene = scene_with_behavior(
+        12u,
+        "dynamic_test",
+        "always_add_local_y");
+    wz::engine::FrameContext frame_context{};
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_context = &frame_context,
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(frame_storage.behavior_commands.commands.size(), 1u);
+    EXPECT_FLOAT_EQ(
+        frame_storage.behavior_commands.commands[0].values[1],
+        2.0f);
+
+    plugins.clear();
+
+    EXPECT_FALSE(std::filesystem::exists(first_loaded_path));
+#else
+    const auto failed_reload = plugins.reload_dynamic_module(
+        registry,
+        std::filesystem::path{
+            "definitely_missing_behavior_plugin_reload_test.dll" });
+    EXPECT_EQ(
+        failed_reload.status,
+        BehaviorPluginHost::DynamicLoadStatus::InvalidPath);
     plugins.clear();
 #endif
 }
