@@ -231,8 +231,8 @@ failure/false unless that helper's section says otherwise.
 
 ### Init And Behavior State
 
-- Init callbacks and state helper signatures are in
-  [Init And Behavior State](#init-and-behavior-state).
+- [Init callbacks and state helper signatures](#init-and-behavior-state) are in
+  the Init And Behavior State section.
 - Per-binding state helpers:
   [`void* wz_alloc_instance_state(...)`](#init-and-behavior-state),
   [`void* wz_alloc_instance_state_desc(...)`](#init-and-behavior-state), and
