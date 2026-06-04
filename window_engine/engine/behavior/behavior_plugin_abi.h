@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 10u
+#define WZ_BEHAVIOR_ABI_VERSION 11u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -291,6 +291,16 @@ typedef void* (*WzAllocBehaviorStateFn)(
 
 typedef void* (*WzGetBehaviorStateFn)(void* user);
 
+typedef void* (*WzCreateSharedBehaviorStateFn)(
+    void* user,
+    const char* key,
+    uint32_t size,
+    uint32_t alignment);
+
+typedef void* (*WzFindSharedBehaviorStateFn)(
+    void* user,
+    const char* key);
+
 typedef struct WzFrameTiming
 {
     float delta_seconds;
@@ -333,6 +343,7 @@ typedef struct WzBehaviorFrameFacts
 
     void* behavior_state_user;
     WzGetBehaviorStateFn get_instance_state;
+    WzFindSharedBehaviorStateFn find_shared_state;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
@@ -358,6 +369,8 @@ typedef struct WzBehaviorInitFacts
     void* behavior_state_user;
     WzAllocBehaviorStateFn alloc_instance_state;
     WzGetBehaviorStateFn get_instance_state;
+    WzCreateSharedBehaviorStateFn create_shared_state;
+    WzFindSharedBehaviorStateFn find_shared_state;
 } WzBehaviorInitFacts;
 
 typedef void (*WzBehaviorFn)(

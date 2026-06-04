@@ -339,6 +339,22 @@ TEST(BehaviorDispatch, BehaviorStateStorageAllocatesAndFindsAlignedBlocks)
     auto* shared = storage.allocate_shared_state("tank_group", 16u, 16u);
     ASSERT_NE(shared, nullptr);
     EXPECT_EQ(storage.find_shared_state("tank_group"), shared);
+    ASSERT_NE(shared->data, nullptr);
+    *static_cast<uint32_t*>(shared->data) = 0xc0ffeeu;
+
+    auto* shared_again =
+        storage.allocate_shared_state("tank_group", 16u, 16u);
+    ASSERT_NE(shared_again, nullptr);
+    EXPECT_EQ(shared_again->data, shared->data);
+    EXPECT_EQ(*static_cast<uint32_t*>(shared_again->data), 0xc0ffeeu);
+
+    auto* resized_shared =
+        storage.allocate_shared_state("tank_group", 32u, 32u);
+    ASSERT_NE(resized_shared, nullptr);
+    ASSERT_NE(resized_shared->data, nullptr);
+    EXPECT_EQ(resized_shared->size, 32u);
+    EXPECT_GE(resized_shared->alignment, 32u);
+    EXPECT_EQ(*static_cast<uint32_t*>(resized_shared->data), 0u);
 
     storage.instance_state.clear();
     EXPECT_EQ(storage.find_instance_state("actor/behavior/0"), nullptr);

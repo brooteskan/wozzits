@@ -1,6 +1,7 @@
 #include "behavior_test_support.h"
 
 #include <engine/behavior/behavior_plugin_adapter.h>
+#include <logging/internal/memory_log_sink.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -21,9 +22,47 @@ namespace
         std::vector<WzBehaviorEntityId> init_order;
     };
 
+    struct SharedGroupState
+    {
+        uint32_t coordinator_inits = 0;
+        uint32_t participant_inits = 0;
+        uint32_t participant_events = 0;
+        uint32_t sentinel = 0;
+        WzBehaviorEntityId coordinator = WZ_INVALID_BEHAVIOR_ENTITY;
+    };
+
+    struct CombinedInstanceState
+    {
+        uint32_t init_count = 0;
+        uint32_t event_count = 0;
+    };
+
+    struct CombinedSharedState
+    {
+        uint32_t init_count = 0;
+        uint32_t event_count = 0;
+    };
+
+    struct SharedKeyEdgeProbe
+    {
+        uint32_t null_create = 0;
+        uint32_t empty_create = 0;
+        uint32_t null_find_init = 0;
+        uint32_t empty_find_init = 0;
+        uint32_t null_find_event = 0;
+        uint32_t empty_find_event = 0;
+    };
+
+    constexpr const char* kSharedGroupKey = "tank_group";
+    constexpr const char* kCombinedSharedKey = "combined_state";
+    constexpr const char* kResizedSharedKey = "resized_group";
+
     InitProbe* g_init_probe = nullptr;
     uint32_t* g_event_only_count = nullptr;
     uint32_t* g_init_only_count = nullptr;
+    uint32_t* g_unknown_shared_state_count = nullptr;
+    SharedKeyEdgeProbe* g_shared_key_edge_probe = nullptr;
+    uint32_t g_resized_shared_state_size = 0;
 
     void on_stateful_init(
         const WzBehaviorInitFacts* facts,
@@ -122,6 +161,235 @@ namespace
             .module = "init_only",
             .on_event = nullptr,
             .on_init = on_init_only_init,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_shared_coordinator_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId entity,
+        void*)
+    {
+        auto* state = static_cast<SharedGroupState*>(
+            wz_create_shared_state(
+                facts,
+                kSharedGroupKey,
+                sizeof(SharedGroupState),
+                alignof(SharedGroupState)));
+        if (!state) {
+            return;
+        }
+
+        ++state->coordinator_inits;
+        state->coordinator = entity;
+        if (state->sentinel == 0u) {
+            state->sentinel = 0x1234u;
+        }
+    }
+
+    void on_shared_participant_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        auto* state = static_cast<SharedGroupState*>(
+            wz_find_shared_state(facts, kSharedGroupKey));
+        if (state) {
+            ++state->participant_inits;
+        }
+    }
+
+    void on_shared_participant_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent*,
+        void*)
+    {
+        auto* state = static_cast<SharedGroupState*>(
+            wz_find_shared_state(facts, kSharedGroupKey));
+        if (state) {
+            ++state->participant_events;
+        }
+        if (!wz_find_shared_state(facts, "missing_group")
+            && g_unknown_shared_state_count)
+        {
+            ++*g_unknown_shared_state_count;
+        }
+    }
+
+    uint8_t register_shared_state_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc coordinator{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "shared_coordinator",
+            .on_event = nullptr,
+            .on_init = on_shared_coordinator_init,
+        };
+        const WzBehaviorModuleDesc participant{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "shared_participant",
+            .on_event = on_shared_participant_event,
+            .on_init = on_shared_participant_init,
+            .event_channels = events,
+            .event_channel_count = 1u,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            && api->register_module_desc(api->user, &coordinator)
+            && api->register_module_desc(api->user, &participant)
+            ? uint8_t{ 1 }
+            : uint8_t{ 0 };
+    }
+
+    void on_combined_state_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        auto* instance = static_cast<CombinedInstanceState*>(
+            wz_alloc_instance_state(
+                facts,
+                sizeof(CombinedInstanceState),
+                alignof(CombinedInstanceState)));
+        auto* shared = static_cast<CombinedSharedState*>(
+            wz_create_shared_state(
+                facts,
+                kCombinedSharedKey,
+                sizeof(CombinedSharedState),
+                alignof(CombinedSharedState)));
+        if (instance) {
+            ++instance->init_count;
+        }
+        if (shared) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_combined_state_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent*,
+        void*)
+    {
+        auto* instance = static_cast<CombinedInstanceState*>(
+            wz_get_instance_state(facts));
+        auto* shared = static_cast<CombinedSharedState*>(
+            wz_find_shared_state(facts, kCombinedSharedKey));
+        if (instance) {
+            ++instance->event_count;
+        }
+        if (shared) {
+            ++shared->event_count;
+        }
+    }
+
+    uint8_t register_combined_state_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "combined_state",
+            .on_event = on_combined_state_event,
+            .on_init = on_combined_state_init,
+            .event_channels = events,
+            .event_channel_count = 1u,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_resized_shared_state_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        const uint32_t size =
+            g_resized_shared_state_size > 0u
+            ? g_resized_shared_state_size
+            : 16u;
+        wz_create_shared_state(
+            facts,
+            kResizedSharedKey,
+            size,
+            alignof(uint32_t));
+    }
+
+    uint8_t register_resized_shared_state_pack(WzBehaviorPluginApi* api)
+    {
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "resized_shared_state",
+            .on_event = nullptr,
+            .on_init = on_resized_shared_state_init,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_shared_key_edges_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        if (!g_shared_key_edge_probe) {
+            return;
+        }
+        if (!wz_create_shared_state(
+                facts,
+                nullptr,
+                sizeof(uint32_t),
+                alignof(uint32_t)))
+        {
+            ++g_shared_key_edge_probe->null_create;
+        }
+        if (!wz_create_shared_state(
+                facts,
+                "",
+                sizeof(uint32_t),
+                alignof(uint32_t)))
+        {
+            ++g_shared_key_edge_probe->empty_create;
+        }
+        if (!wz_find_shared_state(facts, nullptr)) {
+            ++g_shared_key_edge_probe->null_find_init;
+        }
+        if (!wz_find_shared_state(facts, "")) {
+            ++g_shared_key_edge_probe->empty_find_init;
+        }
+    }
+
+    void on_shared_key_edges_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent*,
+        void*)
+    {
+        if (!g_shared_key_edge_probe) {
+            return;
+        }
+        if (!wz_find_shared_state(facts, nullptr)) {
+            ++g_shared_key_edge_probe->null_find_event;
+        }
+        if (!wz_find_shared_state(facts, "")) {
+            ++g_shared_key_edge_probe->empty_find_event;
+        }
+    }
+
+    uint8_t register_shared_key_edge_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "shared_key_edges",
+            .on_event = on_shared_key_edges_event,
+            .on_init = on_shared_key_edges_init,
+            .event_channels = events,
+            .event_channel_count = 1u,
         };
         return api && api->version == WZ_BEHAVIOR_ABI_VERSION
             && api->register_module_desc
@@ -398,6 +666,320 @@ TEST(BehaviorInit, InitOnlyModuleRunsInitAndDispatchSkipsCleanly)
     EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
 
     g_init_only_count = nullptr;
+}
+
+TEST(BehaviorInit, SharedStateCreatedInInitAndFoundDuringDispatch)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_shared_state";
+
+    wz::engine::assets::SceneNodeAsset root{};
+    root.id = "root";
+    root.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "coordinator",
+        .module = "shared_coordinator",
+    };
+
+    wz::engine::assets::SceneNodeAsset tank_a{};
+    tank_a.id = "tank_a";
+    tank_a.parent_id = "root";
+    tank_a.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_a_participant",
+        .module = "shared_participant",
+    };
+
+    wz::engine::assets::SceneNodeAsset tank_b{};
+    tank_b.id = "tank_b";
+    tank_b.parent_id = "root";
+    tank_b.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_b_participant",
+        .module = "shared_participant",
+    };
+
+    asset.nodes.push_back(std::move(root));
+    asset.nodes.push_back(std::move(tank_a));
+    asset.nodes.push_back(std::move(tank_b));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    uint32_t unknown_shared_state_count = 0;
+    g_unknown_shared_state_count = &unknown_shared_state_count;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_shared_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* block =
+        scene.behavior_state.find_shared_state(kSharedGroupKey);
+    ASSERT_NE(block, nullptr);
+    auto* state = static_cast<SharedGroupState*>(block->data);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->coordinator_inits, 1u);
+    EXPECT_EQ(state->participant_inits, 2u);
+    EXPECT_EQ(state->participant_events, 0u);
+    EXPECT_EQ(state->coordinator, scene.authored_to_runtime["root"]);
+    EXPECT_EQ(state->sentinel, 0x1234u);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(state->participant_events, 2u);
+    EXPECT_EQ(unknown_shared_state_count, 2u);
+
+    g_unknown_shared_state_count = nullptr;
+}
+
+TEST(BehaviorInit, CompatibleSharedStateSurvivesRepeatedInit)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_shared_state_repeated";
+
+    wz::engine::assets::SceneNodeAsset root{};
+    root.id = "root";
+    root.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "coordinator",
+        .module = "shared_coordinator",
+    };
+    asset.nodes.push_back(std::move(root));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_shared_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* first_block =
+        scene.behavior_state.find_shared_state(kSharedGroupKey);
+    ASSERT_NE(first_block, nullptr);
+    auto* state = static_cast<SharedGroupState*>(first_block->data);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->coordinator_inits, 1u);
+    state->sentinel = 0xc0ffeeu;
+
+    initialize_behaviors(scene, registry);
+
+    auto* second_block =
+        scene.behavior_state.find_shared_state(kSharedGroupKey);
+    ASSERT_NE(second_block, nullptr);
+    EXPECT_EQ(second_block->data, first_block->data);
+    EXPECT_EQ(state->coordinator_inits, 2u);
+    EXPECT_EQ(state->sentinel, 0xc0ffeeu);
+}
+
+TEST(BehaviorInit, IncompatibleSharedStateResetLogsWarning)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_shared_state_resize";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "resizer",
+        .module = "resized_shared_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_resized_shared_state_pack));
+
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(
+        logger,
+        { wz::LogLevel::Debug, false, &sink }));
+
+    g_resized_shared_state_size = 16u;
+    initialize_behaviors(scene, registry, &logger);
+    EXPECT_EQ(sink.size(), 0u);
+
+    g_resized_shared_state_size = 32u;
+    initialize_behaviors(scene, registry, &logger);
+    wz::logging::wait_until_idle(logger);
+
+    const auto messages = sink.snapshot();
+    ASSERT_EQ(messages.size(), 1u);
+    EXPECT_EQ(messages[0].level, wz::LogLevel::Warning);
+    EXPECT_NE(
+        std::string(messages[0].text).find(
+            "behavior shared state reset for key 'resized_group'"),
+        std::string::npos);
+
+    g_resized_shared_state_size = 0u;
+    wz::logging::shutdown_logger(logger);
+}
+
+TEST(BehaviorInit, SharedStateNullAndEmptyKeysReturnNull)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_shared_key_edges";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "key_edges",
+        .module = "shared_key_edges",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    SharedKeyEdgeProbe probe{};
+    g_shared_key_edge_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_shared_key_edge_pack));
+
+    initialize_behaviors(scene, registry);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.null_create, 1u);
+    EXPECT_EQ(probe.empty_create, 1u);
+    EXPECT_EQ(probe.null_find_init, 1u);
+    EXPECT_EQ(probe.empty_find_init, 1u);
+    EXPECT_EQ(probe.null_find_event, 1u);
+    EXPECT_EQ(probe.empty_find_event, 1u);
+    EXPECT_TRUE(scene.behavior_state.shared_state.empty());
+
+    g_shared_key_edge_probe = nullptr;
+}
+
+TEST(BehaviorInit, OneBindingCanUseInstanceAndSharedState)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_combined_state";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "combined",
+        .module = "combined_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_combined_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("combined");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kCombinedSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    ASSERT_NE(instance_block->data, shared_block->data);
+
+    auto* instance =
+        static_cast<CombinedInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<CombinedSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(instance->init_count, 1u);
+    EXPECT_EQ(shared->init_count, 1u);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(instance->event_count, 1u);
+    EXPECT_EQ(shared->event_count, 1u);
+}
+
+TEST(BehaviorInit, ParticipantBeforeCoordinatorDoesNotFindSharedStateInInit)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_shared_state_reverse_order";
+
+    wz::engine::assets::SceneNodeAsset participant{};
+    participant.id = "participant";
+    participant.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "participant_binding",
+        .module = "shared_participant",
+    };
+
+    wz::engine::assets::SceneNodeAsset coordinator{};
+    coordinator.id = "coordinator";
+    coordinator.parent_id = "participant";
+    coordinator.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "coordinator_binding",
+        .module = "shared_coordinator",
+    };
+
+    asset.nodes.push_back(std::move(participant));
+    asset.nodes.push_back(std::move(coordinator));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_shared_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* block =
+        scene.behavior_state.find_shared_state(kSharedGroupKey);
+    ASSERT_NE(block, nullptr);
+    auto* state = static_cast<SharedGroupState*>(block->data);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->coordinator_inits, 1u);
+    EXPECT_EQ(state->participant_inits, 0u);
+    EXPECT_EQ(state->coordinator, scene.authored_to_runtime["coordinator"]);
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(state->participant_events, 1u);
 }
 
 TEST(BehaviorInit, DescriptorRangeValidationAllowsMissingInitField)

@@ -174,6 +174,8 @@ failure/false unless that helper's section says otherwise.
   [`WZ_BEHAVIOR_MODULE(module_name, handler_fn)`](#minimal-module).
 - Register one module with default event subscriptions:
   [`WZ_BEHAVIOR_MODULE_EVENTS(module_name, handler_fn, event_channel_array)`](#raw-abi-registration).
+- Register one module with an init callback and default event subscriptions:
+  [`WZ_BEHAVIOR_MODULE_INIT(module_name, init_fn, handler_fn, event_channel_array)`](#init-and-behavior-state).
 - Register multiple modules manually with
   [`wz_register_behaviors`](#raw-abi-registration) and
   [`api->register_module_desc`](#raw-abi-registration).
@@ -226,6 +228,17 @@ failure/false unless that helper's section says otherwise.
   [Reading Transforms](#reading-transforms).
 - Entity lookup signatures are in
   [Scene Lookup And Config](#scene-lookup-and-config).
+
+### Init And Behavior State
+
+- Init callbacks and state helper signatures are in
+  [Init And Behavior State](#init-and-behavior-state).
+- Per-binding state helpers:
+  [`void* wz_alloc_instance_state(...)`](#init-and-behavior-state) and
+  [`void* wz_get_instance_state(...)`](#init-and-behavior-state).
+- Shared state helpers:
+  [`void* wz_create_shared_state(...)`](#init-and-behavior-state) and
+  [`void* wz_find_shared_state(...)`](#init-and-behavior-state).
 
 ### Spatial Relationship And Collision Surface Queries
 
@@ -903,6 +916,127 @@ uint8_t wz_find_entity_by_name(
 `wz_find_entity_by_authored_id` resolves stable scene node ids. Prefer authored
 ids for gameplay bindings. `wz_find_entity_by_name` resolves display names and
 is useful for prototypes, but names are easier to change accidentally.
+
+## Init And Behavior State
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
+Use an init callback when a behavior needs state that should live with the
+scene instance instead of in a C++ `static`. Init runs after scene
+materialization and before event dispatch. Parent/root node bindings initialize
+before child bindings.
+
+Register a module with both init and event callbacks:
+
+```cpp
+static const char* kTankEvents[] = { "input.*", "frame.update" };
+
+WZ_BEHAVIOR_MODULE_INIT(
+    "tank_controller",
+    tank_init,
+    tank_event,
+    kTankEvents)
+```
+
+The init callback shape is:
+
+```cpp
+void tank_init(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId entity,
+    void* user_data);
+```
+
+Per-binding state gives each behavior binding its own persistent block:
+
+```cpp
+void* wz_alloc_instance_state(
+    const WzBehaviorInitFacts* facts,
+    uint32_t size,
+    uint32_t alignment);
+void* wz_get_instance_state(const WzBehaviorInitFacts* facts);
+void* wz_get_instance_state(const WzBehaviorFrameFacts* facts);
+```
+
+Call `wz_alloc_instance_state` from init. A later `wz_get_instance_state` in
+init or event dispatch returns the same block for that behavior binding. If
+init runs again and the requested size/alignment still match, the existing
+block is reused.
+
+Shared state lets several behavior bindings deliberately use the same block:
+
+```cpp
+void* wz_create_shared_state(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    uint32_t size,
+    uint32_t alignment);
+void* wz_find_shared_state(
+    const WzBehaviorInitFacts* facts,
+    const char* key);
+void* wz_find_shared_state(
+    const WzBehaviorFrameFacts* facts,
+    const char* key);
+```
+
+`wz_create_shared_state` is init-only. It creates or reuses a block keyed by an
+authored string such as `"tank_group.main"`. `wz_find_shared_state` can be used
+from init and event dispatch; it returns `nullptr` if the key has not been
+created.
+
+Coordinator/participant sketch:
+
+```cpp
+struct TankGroup
+{
+    float throttle;
+    uint32_t members;
+};
+
+void group_init(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId,
+    void*)
+{
+    auto* group = static_cast<TankGroup*>(
+        wz_create_shared_state(
+            facts,
+            "tank_group.main",
+            sizeof(TankGroup),
+            alignof(TankGroup)));
+    if (group && group->members == 0) {
+        group->throttle = 0.0f;
+    }
+}
+
+void tank_init(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId,
+    void*)
+{
+    auto* group = static_cast<TankGroup*>(
+        wz_find_shared_state(facts, "tank_group.main"));
+    if (group) {
+        ++group->members;
+    }
+}
+
+void tank_event(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    void*)
+{
+    auto* group = static_cast<TankGroup*>(
+        wz_find_shared_state(facts, "tank_group.main"));
+    if (group && wz_is_event(event, WZ_EVENT_FRAME_UPDATE)) {
+        // Read or update the shared group state here.
+    }
+}
+```
+
+Init facts intentionally do not expose command writing, input state, or active
+events. Use init for state setup, config checks, entity lookup, transform reads,
+and logging. Use event callbacks for frame/input/collision behavior.
 
 ## Writing Commands
 

@@ -585,6 +585,44 @@ static inline void* wz_get_instance_state(
         : nullptr;
 }
 
+static inline void* wz_create_shared_state(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    uint32_t size,
+    uint32_t alignment)
+{
+    return facts && facts->create_shared_state
+        ? facts->create_shared_state(
+            facts->behavior_state_user,
+            key,
+            size,
+            alignment)
+        : nullptr;
+}
+
+static inline void* wz_find_shared_state(
+    const WzBehaviorInitFacts* facts,
+    const char* key)
+{
+    return facts && facts->find_shared_state
+        ? facts->find_shared_state(facts->behavior_state_user, key)
+        : nullptr;
+}
+
+static inline void* wz_find_shared_state(
+    const WzBehaviorFrameFacts* facts,
+    const char* key)
+{
+    return facts && facts->find_shared_state
+        ? facts->find_shared_state(facts->behavior_state_user, key)
+        : nullptr;
+}
+
+static inline void* wz_find_shared_state(decltype(nullptr), const char*)
+{
+    return nullptr;
+}
+
 static inline WzBehaviorEntityId wz_self(const WzBehaviorEvent* event)
 {
     return event ? event->entity : WZ_INVALID_BEHAVIOR_ENTITY;

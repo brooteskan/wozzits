@@ -725,10 +725,59 @@ namespace wz::engine::behavior
                 return nullptr;
             }
 
+            auto* existing = context->behavior_state->find_instance_state(
+                context->active_behavior->binding_id);
+            if (existing && !existing->compatible(size, alignment)
+                && context->logger)
+            {
+                context->logger->warn(
+                    std::string("behavior instance state reset for binding '")
+                    + context->active_behavior->binding_id
+                    + "' because requested layout changed");
+            }
             auto* block = context->behavior_state->allocate_instance_state(
                 context->active_behavior->binding_id,
                 size,
                 alignment);
+            return block ? block->data : nullptr;
+        }
+
+        void* create_shared_state(
+            void* user,
+            const char* key,
+            uint32_t size,
+            uint32_t alignment)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state || !key || !*key) {
+                return nullptr;
+            }
+
+            auto* existing = context->behavior_state->find_shared_state(key);
+            if (existing && !existing->compatible(size, alignment)
+                && context->logger)
+            {
+                context->logger->warn(
+                    std::string("behavior shared state reset for key '")
+                    + key
+                    + "' because requested layout changed");
+            }
+            auto* block = context->behavior_state->allocate_shared_state(
+                key,
+                size,
+                alignment);
+            return block ? block->data : nullptr;
+        }
+
+        void* find_shared_state(void* user, const char* key)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state || !key || !*key) {
+                return nullptr;
+            }
+
+            auto* block =
+                context->behavior_state->find_shared_state(key);
             return block ? block->data : nullptr;
         }
 
@@ -835,6 +884,7 @@ namespace wz::engine::behavior
                 .active_input_event = context.active_input_payload,
                 .behavior_state_user = &context,
                 .get_instance_state = get_instance_state,
+                .find_shared_state = find_shared_state,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -895,6 +945,7 @@ namespace wz::engine::behavior
                 .active_input_event = context.active_input_payload,
                 .behavior_state_user = &context,
                 .get_instance_state = get_instance_state,
+                .find_shared_state = find_shared_state,
             };
         }
 
@@ -920,6 +971,8 @@ namespace wz::engine::behavior
                 .behavior_state_user = &context,
                 .alloc_instance_state = alloc_instance_state,
                 .get_instance_state = get_instance_state,
+                .create_shared_state = create_shared_state,
+                .find_shared_state = find_shared_state,
             };
         }
 
