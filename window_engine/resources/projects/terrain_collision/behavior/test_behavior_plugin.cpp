@@ -3,13 +3,17 @@
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*"
+    "input.*",
+    "frame.update"
     };
 
     struct TankState {
         float throttle = 0.0f;
         float turn = 0.0f;
+        WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     };
+
+    static constexpr float movement_factor = 0.1;
 
     void tank_init(
         const WzBehaviorInitFacts* facts,
@@ -23,8 +27,58 @@ namespace
                 alignof(TankState)));
 
         if (state) {
+            uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
+            wz_log_infof(state, "find empty_2: %u", result);
+            // wz_find_entity_by_name(facts, "terrain", &state->terrain);
             // First load gives zeroed memory. Re-init/hot reload may preserve it.
         }
+    }
+
+    static void stick_to_terrain(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        const TankState* state)
+    {
+        if (!state || state->terrain == WZ_INVALID_BEHAVIOR_ENTITY) {
+            return;
+        }
+
+        WzSurfaceSample sample{};
+
+        WzVec3 p{};
+        if (!wz_self_world_position(facts, event, &p)) {
+            return;
+        }
+
+        const float start_y = p.y + 20.0f;
+        const float max_distance = 80.0f;
+
+        const WzVec3 origin{ p.x, start_y, p.z };
+        const WzVec3 down{ 0.0f, -1.0f, 0.0f };
+
+        
+        const WzVec3 self_world{ p.x, start_y, p.z };
+
+        if (!wz_query_collision_surface_ray(
+            facts,
+            state->terrain,
+            origin,
+            down,
+            max_distance,
+            &sample)
+            || !sample.hit)
+        {
+            return;
+        }
+
+        const float ride_height = 0.6f;
+        wz_self_set_world_translation(
+            facts,
+            event,
+            p.x,
+            sample.position.y + ride_height,
+            p.z);
+
     }
 
     static void apply_tank_motion(
@@ -43,16 +97,19 @@ namespace
         wz_self_set_linear_velocity(
             facts,
             event,
+            state->throttle * kMoveSpeed,
             0.0f,
-            0.0f,
-            state->throttle * kMoveSpeed);
+            0.0f
+            );
 
-        wz_self_set_angular_velocity(
-            facts,
-            event,
-            0.0f,
-            state->turn * kTurnSpeed,
-            0.0f);
+        //wz_self_set_angular_velocity(
+        //    facts,
+        //    event,
+        //    0.0f,
+        //    state->turn * kTurnSpeed,
+        //    0.0f);
+
+
     }
 
     void on_event(
@@ -81,11 +138,11 @@ namespace
             float value = wz_input_event_controller_axis_value(facts);
 
             if (axis == 1) {
-                state->throttle += value;
+                state->throttle += movement_factor * value;
             }
 
             if (axis == 0) {
-                state->turn += value;
+                state->turn += movement_factor * value;
             }
 
             wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
@@ -105,6 +162,10 @@ namespace
             wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
             break;
         }
+        
+        case WZ_EVENT_FRAME_UPDATE:
+            stick_to_terrain(facts, event, state);
+            break;
         
         default:
             break;

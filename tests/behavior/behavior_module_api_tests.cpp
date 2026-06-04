@@ -38,6 +38,131 @@ TEST(BehaviorModuleApi, LogInfofFormatsThroughLogCallback)
     EXPECT_EQ(message, "unchanged");
 }
 
+namespace
+{
+    wz::engine::assets::CollisionTriangleBounds triangle_bounds(
+        const wz::engine::assets::CollisionPoint& a,
+        const wz::engine::assets::CollisionPoint& b,
+        const wz::engine::assets::CollisionPoint& c)
+    {
+        wz::engine::assets::CollisionTriangleBounds bounds{};
+        for (int axis = 0; axis < 3; ++axis) {
+            bounds.min[axis] =
+                (std::min)({
+                    a.position[axis],
+                    b.position[axis],
+                    c.position[axis],
+                });
+            bounds.max[axis] =
+                (std::max)({
+                    a.position[axis],
+                    b.position[axis],
+                    c.position[axis],
+                });
+        }
+        return bounds;
+    }
+
+    wz::engine::assets::CollisionAssetData gridded_flat_surface(
+        uint32_t cells,
+        float size)
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainMeshSurface;
+        surface.occupancy.queryable = true;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 0.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = size;
+        surface.bounds_max[1] = 0.0f;
+        surface.bounds_max[2] = size;
+
+        const float step = size / static_cast<float>(cells);
+        for (uint32_t z = 0; z <= cells; ++z) {
+            for (uint32_t x = 0; x <= cells; ++x) {
+                surface.points.push_back(
+                    wz::engine::assets::CollisionPoint{
+                        .position = {
+                            static_cast<float>(x) * step,
+                            0.0f,
+                            static_cast<float>(z) * step,
+                        },
+                    });
+            }
+        }
+
+        const size_t cell_count = static_cast<size_t>(cells) * cells;
+        std::vector<std::vector<uint32_t>> cell_triangles(cell_count);
+        surface.surface_grid.origin_x = 0.0f;
+        surface.surface_grid.origin_z = 0.0f;
+        surface.surface_grid.cell_size_x = step;
+        surface.surface_grid.cell_size_z = step;
+        surface.surface_grid.cells_x = cells;
+        surface.surface_grid.cells_z = cells;
+        surface.surface_grid.cell_bounds.resize(cell_count);
+        for (auto& bounds : surface.surface_grid.cell_bounds) {
+            bounds.min[0] = std::numeric_limits<float>::max();
+            bounds.min[1] = std::numeric_limits<float>::max();
+            bounds.min[2] = std::numeric_limits<float>::max();
+            bounds.max[0] = -std::numeric_limits<float>::max();
+            bounds.max[1] = -std::numeric_limits<float>::max();
+            bounds.max[2] = -std::numeric_limits<float>::max();
+        }
+
+        auto point_index = [cells](uint32_t x, uint32_t z)
+        {
+            return z * (cells + 1u) + x;
+        };
+        auto add_triangle_to_cell =
+            [&](uint32_t cell, uint32_t ia, uint32_t ib, uint32_t ic)
+        {
+            const uint32_t tri =
+                static_cast<uint32_t>(surface.indices.size() / 3u);
+            surface.indices.push_back(ia);
+            surface.indices.push_back(ib);
+            surface.indices.push_back(ic);
+            const auto bounds = triangle_bounds(
+                surface.points[ia],
+                surface.points[ib],
+                surface.points[ic]);
+            surface.triangle_bounds.push_back(bounds);
+            cell_triangles[cell].push_back(tri);
+            auto& cell_bounds = surface.surface_grid.cell_bounds[cell];
+            for (int axis = 0; axis < 3; ++axis) {
+                cell_bounds.min[axis] =
+                    (std::min)(cell_bounds.min[axis], bounds.min[axis]);
+                cell_bounds.max[axis] =
+                    (std::max)(cell_bounds.max[axis], bounds.max[axis]);
+            }
+        };
+
+        for (uint32_t z = 0; z < cells; ++z) {
+            for (uint32_t x = 0; x < cells; ++x) {
+                const uint32_t a = point_index(x, z);
+                const uint32_t b = point_index(x + 1u, z);
+                const uint32_t c = point_index(x, z + 1u);
+                const uint32_t d = point_index(x + 1u, z + 1u);
+                const uint32_t cell = z * cells + x;
+                add_triangle_to_cell(cell, a, c, b);
+                add_triangle_to_cell(cell, b, c, d);
+            }
+        }
+
+        surface.surface_grid.cell_offsets.push_back(0u);
+        for (const auto& tris : cell_triangles) {
+            surface.surface_grid.cell_triangle_indices.insert(
+                surface.surface_grid.cell_triangle_indices.end(),
+                tris.begin(),
+                tris.end());
+            surface.surface_grid.cell_offsets.push_back(
+                static_cast<uint32_t>(
+                    surface.surface_grid.cell_triangle_indices.size()));
+        }
+        return surface;
+    }
+}
+
 TEST(BehaviorModuleApi, SelfAddLocalTranslationWritesCommandForEventEntity)
 {
     BehaviorRegistry registry;
@@ -622,6 +747,171 @@ TEST(BehaviorModuleApi, CollisionSurfaceRayQueryReturnsNearestMatchingSurfaceHit
     EXPECT_EQ(probe.sample.surface_entity, terrain_id);
     EXPECT_NEAR(probe.sample.position.y, 6.0f, 1e-5f)
         << "query should return the nearest triangle on the requested entity";
+
+    g_surface_query_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, CollisionSurfaceRayQuerySamplesGriddedTranslatedSurface)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_gridded_surface_query_scene";
+
+    wz::engine::assets::SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    asset.nodes.push_back(std::move(terrain));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 14.0f;
+    actor.local.translation[1] = 15.0f;
+    actor.local.translation[2] = 24.0f;
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "surface_query_test",
+        .name = "",
+        .enabled = true,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+    const RuntimeEntityId terrain_id =
+        scene.authored_to_runtime["terrain"];
+    const RuntimeEntityId actor_id =
+        scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
+
+    wz::engine::assets::CollisionAssetData surface =
+        gridded_flat_surface(10u, 10.0f);
+    wz::math::Mat4 world_from_local = wz::math::Mat4::identity();
+    world_from_local.m[0] = 2.0f;
+    world_from_local.m[5] = 3.0f;
+    world_from_local.m[10] = 2.0f;
+    world_from_local.m[12] = 10.0f;
+    world_from_local.m[13] = 5.0f;
+    world_from_local.m[14] = 20.0f;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    SurfaceQueryProbe probe{};
+    g_surface_query_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_surface_query_pack));
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.world.push_back(
+        wz::engine::collision::CollisionWorldEntry{
+            .entity = terrain_id,
+            .world_from_local = world_from_local,
+            .enabled = true,
+            .resolved = &surface,
+        });
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = actor_id,
+            .other = terrain_id,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorSurfaceRayQueryStats stats{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+        .surface_ray_stats = &stats,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.hit_result, 1u);
+    EXPECT_EQ(probe.sample.surface_entity, terrain_id);
+    EXPECT_NEAR(probe.sample.position.x, 14.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.y, 5.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.position.z, 24.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.x, 0.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.y, 1.0f, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.z, 0.0f, 1e-5f);
+    EXPECT_GT(stats.grid_queries, 0u);
+
+    g_surface_query_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, CollisionSurfaceRayQueryUsesGridCandidateRejection)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_gridded_surface_query_candidate_scene";
+
+    wz::engine::assets::SceneNodeAsset terrain{};
+    terrain.id = "terrain";
+    asset.nodes.push_back(std::move(terrain));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 17.5f;
+    actor.local.translation[1] = 10.0f;
+    actor.local.translation[2] = 17.5f;
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .module = "surface_query_test",
+        .name = "",
+        .enabled = true,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+    const RuntimeEntityId terrain_id =
+        scene.authored_to_runtime["terrain"];
+    const RuntimeEntityId actor_id =
+        scene.authored_to_runtime["actor"];
+    subscribe_frame_update(scene, actor_id);
+
+    wz::engine::assets::CollisionAssetData surface =
+        gridded_flat_surface(32u, 32.0f);
+    const uint32_t total_triangles =
+        static_cast<uint32_t>(surface.indices.size() / 3u);
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    SurfaceQueryProbe probe{};
+    g_surface_query_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_surface_query_pack));
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.world.push_back(
+        wz::engine::collision::CollisionWorldEntry{
+            .entity = terrain_id,
+            .world_from_local = wz::math::Mat4::identity(),
+            .enabled = true,
+            .resolved = &surface,
+        });
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = actor_id,
+            .other = terrain_id,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorSurfaceRayQueryStats stats{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+        .surface_ray_stats = &stats,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.hit_result, 1u);
+    EXPECT_EQ(probe.sample.surface_entity, terrain_id);
+    EXPECT_GT(stats.grid_queries, 0u);
+    EXPECT_LT(stats.triangles_tested, total_triangles / 8u);
+    EXPECT_LT(stats.triangle_bounds_tested, total_triangles / 8u);
 
     g_surface_query_probe = nullptr;
 }

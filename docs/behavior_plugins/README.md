@@ -826,6 +826,13 @@ uses collision assets already resolved for the frame. V1 supports queryable
 `TerrainMeshSurface` collision assets. Height-field collision assets are
 intentionally not sampled by this helper yet.
 
+For `TerrainMeshSurface` collision assets with a compiled surface grid, the
+engine restricts ray tests to nearby grid cells and triangle bounds before
+testing triangles. Ungridded surface data falls back to a full triangle scan.
+For routine ground-following movement, prefer the terrain sampling API once it
+exists; ray queries are still a collision-surface query, not a dedicated terrain
+height API.
+
 ## Scene Lookup And Config
 
 [Back to Behavior API Inventory](#behavior-api-inventory)

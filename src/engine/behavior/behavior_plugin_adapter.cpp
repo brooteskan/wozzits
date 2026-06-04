@@ -193,6 +193,107 @@ namespace wz::engine::behavior
             return true;
         }
 
+        bool inverse_affine_point(
+            const wz::math::Mat4& m,
+            const wz::math::Vec3& p,
+            wz::math::Vec3& out) noexcept
+        {
+            const float a00 = m.m[0];
+            const float a01 = m.m[4];
+            const float a02 = m.m[8];
+            const float a10 = m.m[1];
+            const float a11 = m.m[5];
+            const float a12 = m.m[9];
+            const float a20 = m.m[2];
+            const float a21 = m.m[6];
+            const float a22 = m.m[10];
+
+            const float det =
+                a00 * (a11 * a22 - a12 * a21)
+                - a01 * (a10 * a22 - a12 * a20)
+                + a02 * (a10 * a21 - a11 * a20);
+            if (std::abs(det) <= 1e-8f) {
+                return false;
+            }
+
+            const float inv_det = 1.0f / det;
+            const float x = p.x - m.m[12];
+            const float y = p.y - m.m[13];
+            const float z = p.z - m.m[14];
+
+            out.x =
+                ((a11 * a22 - a12 * a21) * x
+                    + (a02 * a21 - a01 * a22) * y
+                    + (a01 * a12 - a02 * a11) * z)
+                * inv_det;
+            out.y =
+                ((a12 * a20 - a10 * a22) * x
+                    + (a00 * a22 - a02 * a20) * y
+                    + (a02 * a10 - a00 * a12) * z)
+                * inv_det;
+            out.z =
+                ((a10 * a21 - a11 * a20) * x
+                    + (a01 * a20 - a00 * a21) * y
+                    + (a00 * a11 - a01 * a10) * z)
+                * inv_det;
+            return true;
+        }
+
+        bool ray_axis_clip(
+            float origin,
+            float direction,
+            float min_value,
+            float max_value,
+            float& t_min,
+            float& t_max) noexcept
+        {
+            constexpr float k_epsilon = 1e-8f;
+            if (std::abs(direction) <= k_epsilon) {
+                return origin >= min_value && origin <= max_value;
+            }
+
+            float t0 = (min_value - origin) / direction;
+            float t1 = (max_value - origin) / direction;
+            if (t0 > t1) {
+                std::swap(t0, t1);
+            }
+
+            t_min = (std::max)(t_min, t0);
+            t_max = (std::min)(t_max, t1);
+            return t_min <= t_max;
+        }
+
+        bool ray_bounds_hit(
+            const wz::engine::assets::CollisionTriangleBounds& bounds,
+            const wz::math::Vec3& origin,
+            const wz::math::Vec3& direction,
+            float max_distance) noexcept
+        {
+            float t_min = 0.0f;
+            float t_max = max_distance;
+            return ray_axis_clip(
+                    origin.x,
+                    direction.x,
+                    bounds.min[0],
+                    bounds.max[0],
+                    t_min,
+                    t_max)
+                && ray_axis_clip(
+                    origin.y,
+                    direction.y,
+                    bounds.min[1],
+                    bounds.max[1],
+                    t_min,
+                    t_max)
+                && ray_axis_clip(
+                    origin.z,
+                    direction.z,
+                    bounds.min[2],
+                    bounds.max[2],
+                    t_min,
+                    t_max);
+        }
+
         bool ray_triangle_hit(
             const wz::math::Vec3& origin,
             const wz::math::Vec3& direction,
@@ -244,6 +345,287 @@ namespace wz::engine::behavior
             out_position = origin + direction * t;
             out_normal = normal;
             return true;
+        }
+
+        enum class SurfaceRayGridResult
+        {
+            Unavailable,
+            Miss,
+            Hit,
+        };
+
+        uint32_t surface_grid_cell_index(
+            float value,
+            float origin,
+            float size,
+            uint32_t count) noexcept
+        {
+            const float normalized = (value - origin) / size;
+            const int raw = static_cast<int>(std::floor(normalized));
+            return static_cast<uint32_t>(
+                (std::clamp)(raw, 0, static_cast<int>(count) - 1));
+        }
+
+        wz::math::Vec3 collision_point_position(
+            const wz::engine::assets::CollisionPoint& point) noexcept
+        {
+            return wz::math::Vec3{
+                .x = point.position[0],
+                .y = point.position[1],
+                .z = point.position[2],
+            };
+        }
+
+        SurfaceRayGridResult query_grid_surface_ray(
+            const wz::engine::collision::CollisionWorldEntry& entry,
+            const wz::math::Vec3& ray_origin,
+            const wz::math::Vec3& ray_direction,
+            float max_distance,
+            float& best_distance,
+            wz::math::Vec3& best_position,
+            wz::math::Vec3& best_normal,
+            BehaviorSurfaceRayQueryStats* stats) noexcept
+        {
+            const auto& data = *entry.resolved;
+            const auto& grid = data.surface_grid;
+            const size_t cell_count =
+                static_cast<size_t>(grid.cells_x) * grid.cells_z;
+            const uint32_t triangle_count =
+                static_cast<uint32_t>(data.indices.size() / 3u);
+            if (grid.cells_x == 0
+                || grid.cells_z == 0
+                || grid.cell_offsets.size() != cell_count + 1u
+                || grid.cell_bounds.size() != cell_count
+                || data.triangle_bounds.size() < triangle_count)
+            {
+                return SurfaceRayGridResult::Unavailable;
+            }
+            if (stats) {
+                ++stats->grid_queries;
+            }
+
+            const wz::math::Vec3 ray_end =
+                ray_origin + ray_direction * max_distance;
+            wz::math::Vec3 local_origin{};
+            wz::math::Vec3 local_end{};
+            if (!inverse_affine_point(
+                    entry.world_from_local,
+                    ray_origin,
+                    local_origin)
+                || !inverse_affine_point(
+                    entry.world_from_local,
+                    ray_end,
+                    local_end))
+            {
+                return SurfaceRayGridResult::Unavailable;
+            }
+
+            wz::math::Vec3 local_delta = local_end - local_origin;
+            const float local_max_distance = wz::math::length(local_delta);
+            if (local_max_distance <= 0.0f
+                || !std::isfinite(local_max_distance))
+            {
+                return SurfaceRayGridResult::Miss;
+            }
+            wz::math::Vec3 local_direction =
+                local_delta / local_max_distance;
+            if (!normalize_checked(local_direction)) {
+                return SurfaceRayGridResult::Miss;
+            }
+
+            const float grid_min_x = grid.origin_x;
+            const float grid_max_x =
+                grid.origin_x + grid.cell_size_x * grid.cells_x;
+            const float grid_min_z = grid.origin_z;
+            const float grid_max_z =
+                grid.origin_z + grid.cell_size_z * grid.cells_z;
+
+            float t_min = 0.0f;
+            float t_max = local_max_distance;
+            if (!ray_axis_clip(
+                    local_origin.x,
+                    local_direction.x,
+                    grid_min_x,
+                    grid_max_x,
+                    t_min,
+                    t_max)
+                || !ray_axis_clip(
+                    local_origin.z,
+                    local_direction.z,
+                    grid_min_z,
+                    grid_max_z,
+                    t_min,
+                    t_max))
+            {
+                return SurfaceRayGridResult::Miss;
+            }
+
+            t_min = (std::max)(0.0f, t_min);
+            t_max = (std::min)(local_max_distance, t_max);
+            if (t_min > t_max) {
+                return SurfaceRayGridResult::Miss;
+            }
+
+            const wz::math::Vec3 p0 =
+                local_origin + local_direction * t_min;
+            const wz::math::Vec3 p1 =
+                local_origin + local_direction * t_max;
+            const float min_x = (std::min)(p0.x, p1.x);
+            const float max_x = (std::max)(p0.x, p1.x);
+            const float min_z = (std::min)(p0.z, p1.z);
+            const float max_z = (std::max)(p0.z, p1.z);
+
+            const uint32_t cell_min_x = surface_grid_cell_index(
+                min_x,
+                grid.origin_x,
+                grid.cell_size_x,
+                grid.cells_x);
+            const uint32_t cell_max_x = surface_grid_cell_index(
+                max_x,
+                grid.origin_x,
+                grid.cell_size_x,
+                grid.cells_x);
+            const uint32_t cell_min_z = surface_grid_cell_index(
+                min_z,
+                grid.origin_z,
+                grid.cell_size_z,
+                grid.cells_z);
+            const uint32_t cell_max_z = surface_grid_cell_index(
+                max_z,
+                grid.origin_z,
+                grid.cell_size_z,
+                grid.cells_z);
+
+            bool hit = false;
+            for (uint32_t z = cell_min_z; z <= cell_max_z; ++z) {
+                for (uint32_t x = cell_min_x; x <= cell_max_x; ++x) {
+                    if (stats) {
+                        ++stats->grid_cells_visited;
+                    }
+                    const size_t cell =
+                        static_cast<size_t>(z) * grid.cells_x + x;
+                    const uint32_t begin = grid.cell_offsets[cell];
+                    const uint32_t end = grid.cell_offsets[cell + 1u];
+                    if (begin == end) {
+                        continue;
+                    }
+                    if (!ray_bounds_hit(
+                            grid.cell_bounds[cell],
+                            local_origin,
+                            local_direction,
+                            local_max_distance))
+                    {
+                        if (stats) {
+                            ++stats->grid_cells_rejected;
+                        }
+                        continue;
+                    }
+
+                    for (uint32_t i = begin; i < end; ++i) {
+                        if (i >= grid.cell_triangle_indices.size()) {
+                            continue;
+                        }
+                        const uint32_t tri = grid.cell_triangle_indices[i];
+                        if (tri >= triangle_count
+                            || tri >= data.triangle_bounds.size())
+                        {
+                            continue;
+                        }
+                        if (stats) {
+                            ++stats->triangle_bounds_tested;
+                        }
+                        if (!ray_bounds_hit(
+                                data.triangle_bounds[tri],
+                                local_origin,
+                                local_direction,
+                                local_max_distance))
+                        {
+                            if (stats) {
+                                ++stats->triangle_bounds_rejected;
+                            }
+                            continue;
+                        }
+
+                        const size_t index = static_cast<size_t>(tri) * 3u;
+                        const uint32_t ia = data.indices[index + 0u];
+                        const uint32_t ib = data.indices[index + 1u];
+                        const uint32_t ic = data.indices[index + 2u];
+                        if (ia >= data.points.size()
+                            || ib >= data.points.size()
+                            || ic >= data.points.size())
+                        {
+                            continue;
+                        }
+
+                        const wz::math::Vec3 a =
+                            collision_point_position(data.points[ia]);
+                        const wz::math::Vec3 b =
+                            collision_point_position(data.points[ib]);
+                        const wz::math::Vec3 c =
+                            collision_point_position(data.points[ic]);
+
+                        float local_distance = 0.0f;
+                        wz::math::Vec3 local_position{};
+                        wz::math::Vec3 local_normal{};
+                        if (stats) {
+                            ++stats->triangles_tested;
+                        }
+                        if (!ray_triangle_hit(
+                                local_origin,
+                                local_direction,
+                                a,
+                                b,
+                                c,
+                                local_max_distance,
+                                local_distance,
+                                local_position,
+                                local_normal))
+                        {
+                            continue;
+                        }
+
+                        const wz::math::Vec3 world_position =
+                            wz::math::mul_point(
+                                entry.world_from_local,
+                                local_position);
+                        const float world_distance = wz::math::dot(
+                            world_position - ray_origin,
+                            ray_direction);
+                        if (world_distance < 0.0f
+                            || world_distance > max_distance
+                            || world_distance >= best_distance)
+                        {
+                            continue;
+                        }
+
+                        const wz::math::Vec3 world_a =
+                            wz::math::mul_point(entry.world_from_local, a);
+                        const wz::math::Vec3 world_b =
+                            wz::math::mul_point(entry.world_from_local, b);
+                        const wz::math::Vec3 world_c =
+                            wz::math::mul_point(entry.world_from_local, c);
+                        wz::math::Vec3 world_normal =
+                            wz::math::cross(world_b - world_a, world_c - world_a);
+                        if (!normalize_checked(world_normal)) {
+                            continue;
+                        }
+                        if (wz::math::dot(world_normal, ray_direction) >= 0.0f) {
+                            world_normal.x = -world_normal.x;
+                            world_normal.y = -world_normal.y;
+                            world_normal.z = -world_normal.z;
+                        }
+
+                        best_distance = world_distance;
+                        best_position = world_position;
+                        best_normal = world_normal;
+                        hit = true;
+                    }
+                }
+            }
+
+            return hit
+                ? SurfaceRayGridResult::Hit
+                : SurfaceRayGridResult::Miss;
         }
 
         void fill_input_view(
@@ -501,6 +883,23 @@ namespace wz::engine::behavior
 
                 const auto& data = *entry.resolved;
                 if (data.points.empty() || data.indices.size() < 3u) {
+                    continue;
+                }
+
+                const SurfaceRayGridResult grid_result =
+                    query_grid_surface_ray(
+                        entry,
+                        ray_origin,
+                        ray_direction,
+                        max_distance,
+                        best_distance,
+                        best_position,
+                        best_normal,
+                        context->surface_ray_stats);
+                if (grid_result != SurfaceRayGridResult::Unavailable) {
+                    if (grid_result == SurfaceRayGridResult::Hit) {
+                        best_surface = entry.entity;
+                    }
                     continue;
                 }
 

@@ -34,6 +34,16 @@ namespace wz::engine::assets
 
 namespace wz::engine::behavior
 {
+    struct BehaviorSurfaceRayQueryStats
+    {
+        uint32_t grid_queries = 0;
+        uint32_t grid_cells_visited = 0;
+        uint32_t grid_cells_rejected = 0;
+        uint32_t triangle_bounds_tested = 0;
+        uint32_t triangle_bounds_rejected = 0;
+        uint32_t triangles_tested = 0;
+    };
+
     struct BehaviorFrameContext
     {
         const wz::engine::FrameContext* frame_context = nullptr;
@@ -44,6 +54,7 @@ namespace wz::engine::behavior
         const WzInputEventPayload* active_input_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
         wz::Logger* logger = nullptr;
+        BehaviorSurfaceRayQueryStats* surface_ray_stats = nullptr;
     };
 
     using BehaviorFn = void (*)(
