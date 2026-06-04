@@ -137,6 +137,14 @@ namespace wz::app
             wz::app::DebugObjectRuntime* debug_object = nullptr;
         };
 
+        struct TerrainConstraintJobData
+        {
+            wz::engine::FrameStorage* frame = nullptr;
+            wz::engine::FrameDirtyState* frame_dirty = nullptr;
+            wz::engine::assets::SceneInstance* scene = nullptr;
+            wz::app::DebugObjectRuntime* debug_object = nullptr;
+        };
+
         void update_world_for_nodes(
             wz::scene::SceneGraph& g,
             std::span<const wz::core::graph::NodeHandle> nodes)
@@ -971,6 +979,48 @@ namespace wz::app
             }
         }
 
+        void job_apply_terrain_constraints(wz::jobs::JobContext& ctx)
+        {
+            auto* data =
+                static_cast<TerrainConstraintJobData*>(ctx.frame_user);
+            assert(data);
+            assert(data->frame);
+
+            if (!data->scene) {
+                return;
+            }
+
+            std::vector<wz::scene::RuntimeEntityId> changed_entities;
+            (void)wz::engine::behavior::apply_terrain_constraints(
+                *data->scene,
+                data->frame->collision,
+                &changed_entities);
+
+            if (changed_entities.empty()) {
+                return;
+            }
+
+            if (data->debug_object) {
+                data->debug_object->transforms_dirty = false;
+                if (data->debug_object->compiled_scene_valid) {
+                    wz::scene::update_compiled_transforms(
+                        data->frame->compiled_scene,
+                        data->scene->storage.polytree,
+                        data->debug_object->descriptors,
+                        data->frame->view,
+                        changed_entities,
+                        true);
+                }
+            }
+
+            if (data->frame_dirty
+                && data->frame_dirty->render_prep_path()
+                    != wz::engine::RenderPrepPath::FullCompile)
+            {
+                data->frame_dirty->mark_render_transform_and_view();
+            }
+        }
+
         void job_build_render_frame(wz::jobs::JobContext& ctx)
         {
             auto* data = static_cast<RenderPrepJobData*>(ctx.frame_user);
@@ -1121,6 +1171,12 @@ namespace wz::app
                 .run = job_apply_behavior_commands,
                 });
 
+            jobs.apply_terrain_constraints = jobs.graph.add_job({
+                .name = "apply_terrain_constraints",
+                .lane = wz::jobs::ExecutionLane::MainThread,
+                .run = job_apply_terrain_constraints,
+                });
+
             jobs.build_render_ir = jobs.graph.add_job({
                 .name = "build_render_ir",
                 .lane = wz::jobs::ExecutionLane::MainThread,
@@ -1142,14 +1198,19 @@ namespace wz::app
             jobs.graph.add_dependency(jobs.build_collision_frame, jobs.build_input_events);
             jobs.graph.add_dependency(jobs.build_input_events, jobs.dispatch_behaviors);
             jobs.graph.add_dependency(jobs.dispatch_behaviors, jobs.apply_behavior_commands);
-            jobs.graph.add_dependency(jobs.apply_behavior_commands, jobs.build_render_ir);
+            jobs.graph.add_dependency(
+                jobs.apply_behavior_commands,
+                jobs.apply_terrain_constraints);
+            jobs.graph.add_dependency(
+                jobs.apply_terrain_constraints,
+                jobs.build_render_ir);
             jobs.graph.add_dependency(jobs.build_render_ir, jobs.build_render_frame);
             jobs.ready = jobs.graph.commit();
 
             if (jobs.ready)
             {
                 app.ctx.logger.info(
-                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> build_input_events -> dispatch_behaviors -> apply_behavior_commands -> build_render_ir -> build_render_frame"
+                    "app job graph committed: platform_events -> shutdown_input -> camera_update -> build_view -> compile_scene -> build_collision_frame -> build_input_events -> dispatch_behaviors -> apply_behavior_commands -> apply_terrain_constraints -> build_render_ir -> build_render_frame"
                 );
             }
             else
@@ -1336,6 +1397,16 @@ namespace wz::app
             .debug_object = &app.debug_object,
         };
 
+        TerrainConstraintJobData terrain_constraint_data{
+            .frame = &app.frame,
+            .frame_dirty = &app.frame_dirty,
+            .scene =
+                app.debug_object.collision_scene_valid
+                ? &app.debug_object.collision_scene
+                : nullptr,
+            .debug_object = &app.debug_object,
+        };
+
         reset_frame_allocation_counters(app);
 
         app.jobs.exec.reset(app.jobs.graph);
@@ -1352,6 +1423,9 @@ namespace wz::app
         app.jobs.exec.bind(
             app.jobs.apply_behavior_commands,
             &behavior_command_apply_data);
+        app.jobs.exec.bind(
+            app.jobs.apply_terrain_constraints,
+            &terrain_constraint_data);
         app.jobs.exec.bind(app.jobs.build_render_ir, &render_prep_data);
         app.jobs.exec.bind(app.jobs.build_render_frame, &render_prep_data);
 

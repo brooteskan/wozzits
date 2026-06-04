@@ -12,6 +12,7 @@ target_sources(window_engine PRIVATE
     behavior/builtin_behaviors.cpp
     behavior/sample_collision_behaviors.cpp
     collision/collision_frame.cpp
+    collision/collision_surface_sampling.cpp
     input_events.cpp
     render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp

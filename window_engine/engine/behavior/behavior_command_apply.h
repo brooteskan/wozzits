@@ -9,6 +9,11 @@
 #include <span>
 #include <vector>
 
+namespace wz::engine::collision
+{
+    struct CollisionFrameStorage;
+}
+
 namespace wz::engine::behavior
 {
     uint32_t apply_behavior_commands(
@@ -20,6 +25,12 @@ namespace wz::engine::behavior
     uint32_t integrate_motion(
         wz::engine::assets::SceneInstance& scene,
         float delta_seconds,
+        std::vector<wz::scene::RuntimeEntityId>* out_changed_entities =
+            nullptr);
+
+    uint32_t apply_terrain_constraints(
+        wz::engine::assets::SceneInstance& scene,
+        const wz::engine::collision::CollisionFrameStorage& collision,
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities =
             nullptr);
 

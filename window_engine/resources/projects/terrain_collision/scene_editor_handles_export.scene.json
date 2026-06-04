@@ -616,15 +616,15 @@
       "name": "tank",
       "transform": {
         "translation": [
-          -84.400001525878906,
-          104,
+          -42.849998474121094,
+          160.89999389648438,
           84.449996948242188
         ],
         "rotation_quat": [
-          0,
-          0,
-          0,
-          1
+          -7.5497901264043321e-08,
+          1,
+          -7.5497901264043321e-08,
+          5.6999333062442061e-15
         ],
         "scale": [
           1,
@@ -637,6 +637,22 @@
         "kind": "glb",
         "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
         "import_prefix": ""
+      },
+      "motion": {
+        "linear_velocity": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity": [
+          0,
+          0,
+          0
+        ],
+        "space": "world",
+        "terrain_constrained": true,
+        "terrain_ride_height": 0,
+        "enabled": true
       },
       "behaviors": [
         {
@@ -982,15 +998,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -167.53166198730469,
-        105.61170959472656,
-        72.029289245605469
+        -60.948509216308594,
+        107.65726470947266,
+        99.654403686523438
       ],
       "orientation": [
-        -0.65204715728759766,
-        0.63926315307617188,
-        -0.077620655298233032,
-        -0.4001903235912323
+        0.086144499480724335,
+        0.8814207911491394,
+        -0.2690868079662323,
+        0.37850883603096008
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

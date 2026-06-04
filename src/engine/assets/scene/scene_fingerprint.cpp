@@ -401,6 +401,8 @@ namespace wz::engine::assets
                     motion.angular_velocity,
                     sizeof(motion.angular_velocity));
                 fp.mix_value(static_cast<uint8_t>(motion.space));
+                fp.mix_value(motion.terrain_constrained);
+                fp.mix_value(motion.terrain_ride_height);
                 fp.mix_value(motion.enabled);
             }
 

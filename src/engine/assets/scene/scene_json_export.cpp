@@ -876,6 +876,14 @@ namespace wz::engine::assets
                     motion.space == SceneMotionSpace::Local
                         ? "local"
                         : "world"));
+            add_member(
+                *obj,
+                "terrain_constrained",
+                bool_value(motion.terrain_constrained));
+            add_member(
+                *obj,
+                "terrain_ride_height",
+                number_value(motion.terrain_ride_height));
             add_member(*obj, "enabled", bool_value(motion.enabled));
             return obj;
         }

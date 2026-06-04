@@ -844,3 +844,245 @@ TEST(BehaviorCommands, LinearVelocityIgnoresNonPositiveOrInvalidDelta)
     EXPECT_FLOAT_EQ(actor_node.local.m[14], 0.0f);
 }
 
+namespace
+{
+    wz::engine::assets::CollisionAssetData flat_height_field_surface(
+        float height,
+        float size = 10.0f,
+        bool queryable = false)
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.kind =
+            wz::engine::assets::CollisionOccupancyKind::WalkableSurface;
+        surface.occupancy.queryable = queryable;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = size;
+        surface.size[1] = size;
+        surface.resolution_x = 2u;
+        surface.resolution_y = 2u;
+        surface.base_height = height;
+        surface.height_samples = { 0.0f, 0.0f, 0.0f, 0.0f };
+        surface.min_height = height;
+        surface.max_height = height;
+        surface.supports_height_query = true;
+        return surface;
+    }
+
+    wz::engine::assets::SceneAssetData terrain_constraint_scene(
+        bool terrain_constrains,
+        bool actor_constrained,
+        float ride_height = 0.0f,
+        float actor_x = 2.0f,
+        float actor_y = 12.0f,
+        float actor_z = 3.0f)
+    {
+        wz::engine::assets::SceneAssetData asset{};
+        asset.name = "terrain_constraint_scene";
+
+        wz::engine::assets::SceneNodeAsset terrain{};
+        terrain.id = "terrain";
+        terrain.terrain = wz::engine::assets::SceneTerrainAsset{
+            .constrain_movement = terrain_constrains,
+        };
+        asset.nodes.push_back(std::move(terrain));
+
+        wz::engine::assets::SceneNodeAsset actor{};
+        actor.id = "actor";
+        actor.local.translation[0] = actor_x;
+        actor.local.translation[1] = actor_y;
+        actor.local.translation[2] = actor_z;
+        actor.motion = wz::engine::assets::SceneMotionAsset{
+            .terrain_constrained = actor_constrained,
+            .terrain_ride_height = ride_height,
+        };
+        asset.nodes.push_back(std::move(actor));
+
+        return asset;
+    }
+
+    wz::engine::collision::CollisionFrameStorage collision_with_surface(
+        wz::scene::RuntimeEntityId terrain,
+        const wz::engine::assets::CollisionAssetData& surface)
+    {
+        wz::engine::collision::CollisionFrameStorage collision{};
+        collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+            .entity = terrain,
+            .world_from_local = wz::math::Mat4::identity(),
+            .enabled = true,
+            .resolved = &surface,
+        });
+        return collision;
+    }
+}
+
+TEST(BehaviorCommands, TerrainConstraintSetsActorHeightAndRideOffset)
+{
+    auto asset = terrain_constraint_scene(true, true, 0.75f);
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = flat_height_field_surface(4.0f);
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 2.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 4.75f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintPreservesIntegratedHorizontalMotion)
+{
+    auto asset = terrain_constraint_scene(true, true, 0.5f);
+    asset.nodes[1].motion->linear_velocity[0] = 2.0f;
+    asset.nodes[1].motion->linear_velocity[1] = 5.0f;
+    asset.nodes[1].motion->linear_velocity[2] = -4.0f;
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = flat_height_field_surface(1.25f);
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 1u);
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 3.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 1.75f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 1.0f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintRequiresActorAndTerrainOptIn)
+{
+    for (const auto [terrain_constrains, actor_constrained] :
+        { std::pair{ false, true }, std::pair{ true, false } })
+    {
+        auto asset = terrain_constraint_scene(
+            terrain_constrains,
+            actor_constrained,
+            0.0f);
+        auto result = wz::engine::assets::instantiate_scene(asset);
+        ASSERT_TRUE(result.ok()) << result.error_detail;
+
+        const RuntimeEntityId actor =
+            result.instance.authored_to_runtime["actor"];
+        const RuntimeEntityId terrain =
+            result.instance.authored_to_runtime["terrain"];
+        const auto surface = flat_height_field_surface(4.0f);
+        const auto collision = collision_with_surface(terrain, surface);
+        std::vector<RuntimeEntityId> changed;
+
+        EXPECT_EQ(
+            apply_terrain_constraints(result.instance, collision, &changed),
+            0u);
+        EXPECT_TRUE(changed.empty());
+
+        const auto& actor_node = wz::core::graph::node_data(
+            result.instance.storage.polytree,
+            actor);
+        EXPECT_FLOAT_EQ(actor_node.world.m[13], 12.0f);
+    }
+}
+
+TEST(BehaviorCommands, TerrainConstraintIgnoresOutOfBoundsSamples)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        20.0f,
+        12.0f,
+        20.0f);
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = flat_height_field_surface(4.0f);
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        0u);
+    EXPECT_TRUE(changed.empty());
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 12.0f);
+}
+
+TEST(BehaviorCommands, TerrainConstraintUsesHighestSampledSurface)
+{
+    auto asset = terrain_constraint_scene(true, true, 0.25f);
+    wz::engine::assets::SceneNodeAsset upper{};
+    upper.id = "upper_terrain";
+    upper.terrain = wz::engine::assets::SceneTerrainAsset{
+        .constrain_movement = true,
+    };
+    asset.nodes.push_back(std::move(upper));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const RuntimeEntityId upper_terrain =
+        result.instance.authored_to_runtime["upper_terrain"];
+    const auto low_surface = flat_height_field_surface(2.0f);
+    const auto high_surface = flat_height_field_surface(6.0f);
+    wz::engine::collision::CollisionFrameStorage collision{};
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = terrain,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &low_surface,
+    });
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = upper_terrain,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &high_surface,
+    });
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 6.25f);
+}
+

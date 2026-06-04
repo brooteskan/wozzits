@@ -1,5 +1,7 @@
 #include <engine/behavior/behavior_command_apply.h>
 
+#include <engine/collision/collision_surface_sampling.h>
+
 #include <algorithm>
 #include <cmath>
 #include <math/mat4.h>
@@ -338,6 +340,20 @@ namespace wz::engine::behavior
                     out_changed_entities->end()),
                 out_changed_entities->end());
         }
+
+        bool entity_has_constraining_terrain(
+            const wz::engine::assets::SceneInstance& scene,
+            wz::scene::RuntimeEntityId entity) noexcept
+        {
+            for (const auto& record : scene.terrains) {
+                if (record.node == entity
+                    && record.component.constrain_movement)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     uint32_t apply_behavior_commands(
@@ -604,6 +620,99 @@ namespace wz::engine::behavior
         }
 
         if (transform_applied != 0) {
+            sort_unique_changed(out_changed_entities);
+            wz::scene::propagate_all(scene.storage.polytree);
+        }
+
+        return applied;
+    }
+
+    uint32_t apply_terrain_constraints(
+        wz::engine::assets::SceneInstance& scene,
+        const wz::engine::collision::CollisionFrameStorage& collision,
+        std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
+    {
+        uint32_t applied = 0;
+        if (out_changed_entities) {
+            out_changed_entities->clear();
+        }
+
+        for (const auto& record : scene.motions) {
+            const auto& motion = record.component;
+            if (!motion.enabled
+                || !motion.terrain_constrained
+                || !std::isfinite(motion.terrain_ride_height)
+                || !entity_valid(scene, record.node))
+            {
+                continue;
+            }
+
+            auto& node = const_cast<wz::scene::TransformNode&>(
+                wz::core::graph::node_data(
+                    scene.storage.polytree,
+                    record.node));
+            const wz::math::Vec3 actor_world_position{
+                .x = node.world.m[12],
+                .y = node.world.m[13],
+                .z = node.world.m[14],
+            };
+
+            bool found_surface = false;
+            wz::engine::collision::CollisionSurfaceSample best_sample{};
+            for (const auto& entry : collision.world) {
+                if (!entity_has_constraining_terrain(scene, entry.entity)) {
+                    continue;
+                }
+
+                wz::engine::collision::CollisionSurfaceSample sample{};
+                if (!wz::engine::collision::sample_terrain_surface(
+                        entry,
+                        actor_world_position.x,
+                        actor_world_position.z,
+                        sample)
+                    || !sample.hit)
+                {
+                    continue;
+                }
+
+                if (!found_surface
+                    || sample.position.y > best_sample.position.y)
+                {
+                    best_sample = sample;
+                    found_surface = true;
+                }
+            }
+
+            if (!found_surface) {
+                continue;
+            }
+
+            const wz::math::Vec3 constrained_world_position{
+                .x = actor_world_position.x,
+                .y = best_sample.position.y + motion.terrain_ride_height,
+                .z = actor_world_position.z,
+            };
+            if (std::abs(
+                    constrained_world_position.y - actor_world_position.y)
+                <= 1e-6f)
+            {
+                continue;
+            }
+
+            if (set_world_translation(
+                    scene.storage.polytree,
+                    node,
+                    record.node,
+                    constrained_world_position))
+            {
+                ++applied;
+                if (out_changed_entities) {
+                    out_changed_entities->push_back(record.node);
+                }
+            }
+        }
+
+        if (applied != 0u) {
             sort_unique_changed(out_changed_entities);
             wz::scene::propagate_all(scene.storage.polytree);
         }

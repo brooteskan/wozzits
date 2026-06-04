@@ -109,6 +109,8 @@ namespace wz::engine::assets
         float linear_velocity[3]{ 0.0f, 0.0f, 0.0f };
         float angular_velocity[3]{ 0.0f, 0.0f, 0.0f };
         SceneMotionSpace space = SceneMotionSpace::World;
+        bool terrain_constrained = false;
+        float terrain_ride_height = 0.0f;
         bool enabled = true;
     };
 

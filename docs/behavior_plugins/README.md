@@ -221,6 +221,8 @@ failure/false unless that helper's section says otherwise.
   [Writing Commands](#writing-commands).
 - Motion spaces: `WZ_BEHAVIOR_MOTION_SPACE_WORLD` and
   [`WZ_BEHAVIOR_MOTION_SPACE_LOCAL`](#motion-rotation-and-scale-semantics).
+- Engine terrain movement constraints are described in
+  [Motion, Rotation, And Scale Semantics](#motion-rotation-and-scale-semantics).
 
 ### Reading Scene State
 
@@ -866,6 +868,14 @@ Height-field terrain uses the compiled height samples directly and bilinearly
 interpolates height. Mesh-surface terrain uses the compiled surface grid when
 available and falls back to a local triangle scan only for ungridded data.
 
+For routine tank or character ground following, prefer the engine terrain
+movement constraint when the actor can be authored with Motion
+`terrain_constrained = true` and the terrain can be authored with Terrain
+`constrain_movement = true`. That runtime step samples eligible terrain once
+after behavior commands and velocity integration. Use
+`wz_sample_terrain_surface` when the behavior needs explicit surface data, such
+as reading the normal for custom orientation, effects, or gameplay logic.
+
 For a tank or character, resolve the terrain entity once during init, store it
 in per-binding state, and sample during `frame.update`:
 
@@ -1457,6 +1467,33 @@ The engine stores velocities as runtime motion state, then integrates them once
 per frame after behavior commands are applied and before render prep. Setting
 velocity does not immediately move or rotate the entity; the frame integration
 step applies `velocity * delta_seconds`.
+
+Scene-authored Motion can opt into runtime terrain height ownership with:
+
+```json
+"motion": {
+  "linear_velocity": [0.0, 0.0, 0.0],
+  "terrain_constrained": true,
+  "terrain_ride_height": 0.35
+}
+```
+
+The terrain node must also opt in:
+
+```json
+"terrain": {
+  "asset": "asset-key:...",
+  "constrain_movement": true
+}
+```
+
+When both sides opt in, the runtime samples every eligible terrain surface at
+the actor's current world X/Z, chooses the highest hit, and writes world Y to
+`surface_height + terrain_ride_height`. X/Z are preserved. The step runs after
+behavior commands and motion integration, before render prep. V1 leaves
+vertical velocity unchanged, so terrain-constrained behaviors should set
+horizontal velocity and let the runtime constraint own the actor's ground
+height.
 
 Local-space angular velocity composes in the node's local frame. World-space
 angular velocity composes in the world frame. For parented nodes, the runtime

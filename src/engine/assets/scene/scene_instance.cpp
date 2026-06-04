@@ -659,6 +659,8 @@ namespace wz::engine::assets
                 component.angular_velocity[1] = motion.angular_velocity[1];
                 component.angular_velocity[2] = motion.angular_velocity[2];
                 component.space = motion.space;
+                component.terrain_constrained = motion.terrain_constrained;
+                component.terrain_ride_height = motion.terrain_ride_height;
                 component.enabled = motion.enabled;
                 inst.motions.push_back({
                     .node = h,

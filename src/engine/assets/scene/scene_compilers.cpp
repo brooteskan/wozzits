@@ -1838,6 +1838,17 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                 }
+                auto terrain_constrained =
+                    read_bool(*motion_component, "terrain_constrained");
+                if (terrain_constrained) {
+                    component.terrain_constrained = *terrain_constrained;
+                }
+                auto terrain_ride_height =
+                    read_number(*motion_component, "terrain_ride_height");
+                if (terrain_ride_height) {
+                    component.terrain_ride_height =
+                        static_cast<float>(*terrain_ride_height);
+                }
                 auto enabled = read_bool(*motion_component, "enabled");
                 if (enabled) {
                     component.enabled = *enabled;

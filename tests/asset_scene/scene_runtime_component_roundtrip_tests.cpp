@@ -825,6 +825,8 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
         "linear_velocity": [1.5, -2.0, 3.25],
         "angular_velocity": [0.25, 0.5, -0.75],
         "space": "local",
+        "terrain_constrained": true,
+        "terrain_ride_height": 0.35,
         "enabled": true
       }
     }
@@ -861,6 +863,8 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         scene_data->nodes[0].motion->space,
         wz::engine::assets::SceneMotionSpace::Local);
+    EXPECT_TRUE(scene_data->nodes[0].motion->terrain_constrained);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_ride_height, 0.35f);
     EXPECT_TRUE(scene_data->nodes[0].motion->enabled);
 
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
@@ -887,6 +891,10 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         result.instance.motions[0].component.space,
         wz::engine::assets::SceneMotionSpace::Local);
+    EXPECT_TRUE(result.instance.motions[0].component.terrain_constrained);
+    EXPECT_FLOAT_EQ(
+        result.instance.motions[0].component.terrain_ride_height,
+        0.35f);
     EXPECT_TRUE(result.instance.motions[0].component.enabled);
 
     const std::string exported = wz::json::serialize_json(
@@ -895,6 +903,8 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"linear_velocity\""), std::string::npos);
     EXPECT_NE(exported.find("\"angular_velocity\""), std::string::npos);
     EXPECT_NE(exported.find("\"space\""), std::string::npos);
+    EXPECT_NE(exported.find("\"terrain_constrained\""), std::string::npos);
+    EXPECT_NE(exported.find("\"terrain_ride_height\""), std::string::npos);
 }
 
 TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
@@ -947,6 +957,8 @@ TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
     EXPECT_EQ(
         scene_data->nodes[0].motion->space,
         wz::engine::assets::SceneMotionSpace::World);
+    EXPECT_FALSE(scene_data->nodes[0].motion->terrain_constrained);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_ride_height, 0.0f);
     EXPECT_FALSE(scene_data->nodes[0].motion->enabled);
 }
 

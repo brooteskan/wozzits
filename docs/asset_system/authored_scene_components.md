@@ -582,6 +582,36 @@ scene-level systems. Authored scene JSON should reference terrain assets rather
 than embedding heightmap paths, mesh import settings, material graphs, or LOD
 recipes directly.
 
+`queryable` controls whether behavior API terrain sampling can query this
+terrain as an explicit authored target. `constrain_movement` controls whether
+runtime movement constraints may use this terrain to place constrained actors.
+Those flags are intentionally separate so a terrain can constrain movement
+without exposing itself to behavior queries, or vice versa.
+
+### Motion
+
+Runtime-relevant authored motion state for an entity.
+
+Fields:
+
+- `linear_velocity`
+- `angular_velocity`
+- `space`
+- `terrain_constrained`
+- `terrain_ride_height`
+- `enabled`
+
+`Motion` stores velocity state that the runtime integrates once per frame.
+`space` is `world` or `local`.
+
+When `terrain_constrained` is true, the runtime terrain constraint step samples
+all active `Terrain` components with `constrain_movement = true`, picks the
+highest surface at the actor's current world X/Z, and writes the actor's world
+Y to `surface_height + terrain_ride_height`. The step runs after behavior
+commands and velocity integration, before render prep. It preserves X/Z and
+does not currently modify vertical velocity, so constrained actors should drive
+horizontal velocity and let the runtime constraint own ground height.
+
 ### SceneImportSource
 
 Editor/import authoring draft for expanding a source scene file into authored

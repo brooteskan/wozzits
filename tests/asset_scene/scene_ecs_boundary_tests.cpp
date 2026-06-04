@@ -782,6 +782,17 @@ TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
     scene.nodes[0].motion->space = SceneMotionSpace::Local;
     const uint64_t space_changed = scene_asset_fingerprint(scene);
     EXPECT_NE(original, space_changed);
+
+    scene.nodes[0].motion->space = SceneMotionSpace::World;
+    scene.nodes[0].motion->terrain_constrained = true;
+    const uint64_t terrain_constrained_changed =
+        scene_asset_fingerprint(scene);
+    EXPECT_NE(original, terrain_constrained_changed);
+
+    scene.nodes[0].motion->terrain_constrained = false;
+    scene.nodes[0].motion->terrain_ride_height = 0.5f;
+    const uint64_t ride_height_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, ride_height_changed);
 }
 
 TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
