@@ -234,10 +234,12 @@ failure/false unless that helper's section says otherwise.
 - Init callbacks and state helper signatures are in
   [Init And Behavior State](#init-and-behavior-state).
 - Per-binding state helpers:
-  [`void* wz_alloc_instance_state(...)`](#init-and-behavior-state) and
+  [`void* wz_alloc_instance_state(...)`](#init-and-behavior-state),
+  [`void* wz_alloc_instance_state_desc(...)`](#init-and-behavior-state), and
   [`void* wz_get_instance_state(...)`](#init-and-behavior-state).
 - Shared state helpers:
-  [`void* wz_create_shared_state(...)`](#init-and-behavior-state) and
+  [`void* wz_create_shared_state(...)`](#init-and-behavior-state),
+  [`void* wz_create_shared_state_desc(...)`](#init-and-behavior-state), and
   [`void* wz_find_shared_state(...)`](#init-and-behavior-state).
 
 ### Spatial Relationship And Collision Surface Queries
@@ -954,6 +956,9 @@ void* wz_alloc_instance_state(
     const WzBehaviorInitFacts* facts,
     uint32_t size,
     uint32_t alignment);
+void* wz_alloc_instance_state_desc(
+    const WzBehaviorInitFacts* facts,
+    const WzBehaviorStateDesc* desc);
 void* wz_get_instance_state(const WzBehaviorInitFacts* facts);
 void* wz_get_instance_state(const WzBehaviorFrameFacts* facts);
 ```
@@ -963,6 +968,23 @@ init or event dispatch returns the same block for that behavior binding. If
 init runs again and the requested size/alignment still match, the existing
 block is reused.
 
+Use the descriptor form when a state layout changes over time:
+
+```cpp
+typedef struct WzBehaviorStateDesc
+{
+    uint32_t size;
+    uint32_t alignment;
+    uint32_t layout_version;
+} WzBehaviorStateDesc;
+```
+
+`layout_version` is plugin-authored. Matching size, alignment, and
+`layout_version` preserve an existing block across repeated init or hot reload.
+Changing any of them resets the block and logs a warning. Version `0` means
+the simple size/alignment compatibility behavior used by
+`wz_alloc_instance_state`.
+
 Shared state lets several behavior bindings deliberately use the same block:
 
 ```cpp
@@ -971,6 +993,10 @@ void* wz_create_shared_state(
     const char* key,
     uint32_t size,
     uint32_t alignment);
+void* wz_create_shared_state_desc(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    const WzBehaviorStateDesc* desc);
 void* wz_find_shared_state(
     const WzBehaviorInitFacts* facts,
     const char* key);
@@ -982,7 +1008,27 @@ void* wz_find_shared_state(
 `wz_create_shared_state` is init-only. It creates or reuses a block keyed by an
 authored string such as `"tank_group.main"`. `wz_find_shared_state` can be used
 from init and event dispatch; it returns `nullptr` if the key has not been
-created.
+created. Use `wz_create_shared_state_desc` when shared-state layout changes
+should reset by explicit version rather than by size/alignment only.
+
+Descriptor example:
+
+```cpp
+struct TankStateV2
+{
+    float throttle;
+    float turn;
+};
+
+const WzBehaviorStateDesc desc{
+    sizeof(TankStateV2),
+    alignof(TankStateV2),
+    2u,
+};
+
+auto* state = static_cast<TankStateV2*>(
+    wz_alloc_instance_state_desc(facts, &desc));
+```
 
 Coordinator/participant sketch:
 

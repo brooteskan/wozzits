@@ -569,6 +569,17 @@ static inline void* wz_alloc_instance_state(
         : nullptr;
 }
 
+static inline void* wz_alloc_instance_state_desc(
+    const WzBehaviorInitFacts* facts,
+    const WzBehaviorStateDesc* desc)
+{
+    return facts && facts->alloc_instance_state_desc
+        ? facts->alloc_instance_state_desc(
+            facts->behavior_state_user,
+            desc)
+        : nullptr;
+}
+
 static inline void* wz_get_instance_state(
     const WzBehaviorInitFacts* facts)
 {
@@ -597,6 +608,19 @@ static inline void* wz_create_shared_state(
             key,
             size,
             alignment)
+        : nullptr;
+}
+
+static inline void* wz_create_shared_state_desc(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    const WzBehaviorStateDesc* desc)
+{
+    return facts && facts->create_shared_state_desc
+        ? facts->create_shared_state_desc(
+            facts->behavior_state_user,
+            key,
+            desc)
         : nullptr;
 }
 

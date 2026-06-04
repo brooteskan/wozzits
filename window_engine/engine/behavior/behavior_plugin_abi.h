@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 11u
+#define WZ_BEHAVIOR_ABI_VERSION 12u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -289,6 +289,17 @@ typedef void* (*WzAllocBehaviorStateFn)(
     uint32_t size,
     uint32_t alignment);
 
+typedef struct WzBehaviorStateDesc
+{
+    uint32_t size;
+    uint32_t alignment;
+    uint32_t layout_version;
+} WzBehaviorStateDesc;
+
+typedef void* (*WzAllocBehaviorStateDescFn)(
+    void* user,
+    const WzBehaviorStateDesc* desc);
+
 typedef void* (*WzGetBehaviorStateFn)(void* user);
 
 typedef void* (*WzCreateSharedBehaviorStateFn)(
@@ -296,6 +307,11 @@ typedef void* (*WzCreateSharedBehaviorStateFn)(
     const char* key,
     uint32_t size,
     uint32_t alignment);
+
+typedef void* (*WzCreateSharedBehaviorStateDescFn)(
+    void* user,
+    const char* key,
+    const WzBehaviorStateDesc* desc);
 
 typedef void* (*WzFindSharedBehaviorStateFn)(
     void* user,
@@ -371,6 +387,8 @@ typedef struct WzBehaviorInitFacts
     WzGetBehaviorStateFn get_instance_state;
     WzCreateSharedBehaviorStateFn create_shared_state;
     WzFindSharedBehaviorStateFn find_shared_state;
+    WzAllocBehaviorStateDescFn alloc_instance_state_desc;
+    WzCreateSharedBehaviorStateDescFn create_shared_state_desc;
 } WzBehaviorInitFacts;
 
 typedef void (*WzBehaviorFn)(

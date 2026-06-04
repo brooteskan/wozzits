@@ -759,6 +759,41 @@ namespace wz::engine::behavior
             return block ? block->data : nullptr;
         }
 
+        void* alloc_instance_state_desc(
+            void* user,
+            const WzBehaviorStateDesc* desc)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state
+                || !context->active_behavior
+                || context->active_behavior->binding_id.empty()
+                || !desc)
+            {
+                return nullptr;
+            }
+
+            auto* existing = context->behavior_state->find_instance_state(
+                context->active_behavior->binding_id);
+            if (existing
+                && !existing->compatible(
+                    desc->size,
+                    desc->alignment,
+                    desc->layout_version)
+                && context->logger)
+            {
+                context->logger->warn(
+                    std::string("behavior instance state reset for binding '")
+                    + context->active_behavior->binding_id
+                    + "' because requested layout changed");
+            }
+            auto* block = context->behavior_state->allocate_instance_state(
+                context->active_behavior->binding_id,
+                desc->size,
+                desc->alignment,
+                desc->layout_version);
+            return block ? block->data : nullptr;
+        }
+
         void* create_shared_state(
             void* user,
             const char* key,
@@ -783,6 +818,39 @@ namespace wz::engine::behavior
                 key,
                 size,
                 alignment);
+            return block ? block->data : nullptr;
+        }
+
+        void* create_shared_state_desc(
+            void* user,
+            const char* key,
+            const WzBehaviorStateDesc* desc)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state || !key || !*key
+                || !desc)
+            {
+                return nullptr;
+            }
+
+            auto* existing = context->behavior_state->find_shared_state(key);
+            if (existing
+                && !existing->compatible(
+                    desc->size,
+                    desc->alignment,
+                    desc->layout_version)
+                && context->logger)
+            {
+                context->logger->warn(
+                    std::string("behavior shared state reset for key '")
+                    + key
+                    + "' because requested layout changed");
+            }
+            auto* block = context->behavior_state->allocate_shared_state(
+                key,
+                desc->size,
+                desc->alignment,
+                desc->layout_version);
             return block ? block->data : nullptr;
         }
 
@@ -990,6 +1058,8 @@ namespace wz::engine::behavior
                 .get_instance_state = get_instance_state,
                 .create_shared_state = create_shared_state,
                 .find_shared_state = find_shared_state,
+                .alloc_instance_state_desc = alloc_instance_state_desc,
+                .create_shared_state_desc = create_shared_state_desc,
             };
         }
 

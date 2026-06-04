@@ -360,3 +360,54 @@ TEST(BehaviorDispatch, BehaviorStateStorageAllocatesAndFindsAlignedBlocks)
     EXPECT_EQ(storage.find_instance_state("actor/behavior/0"), nullptr);
 }
 
+TEST(BehaviorDispatch, BehaviorStateStorageHonorsLayoutVersion)
+{
+    wz::engine::assets::BehaviorStateStorage storage{};
+
+    auto* versioned = storage.allocate_instance_state(
+        "versioned",
+        16u,
+        16u,
+        1u);
+    ASSERT_NE(versioned, nullptr);
+    ASSERT_NE(versioned->data, nullptr);
+    EXPECT_EQ(versioned->layout_version, 1u);
+    *static_cast<uint32_t*>(versioned->data) = 0xc0ffeeu;
+
+    auto* same_version = storage.allocate_instance_state(
+        "versioned",
+        16u,
+        16u,
+        1u);
+    ASSERT_NE(same_version, nullptr);
+    EXPECT_EQ(same_version->data, versioned->data);
+    EXPECT_EQ(*static_cast<uint32_t*>(same_version->data), 0xc0ffeeu);
+
+    auto* changed_version = storage.allocate_instance_state(
+        "versioned",
+        16u,
+        16u,
+        2u);
+    ASSERT_NE(changed_version, nullptr);
+    ASSERT_NE(changed_version->data, nullptr);
+    EXPECT_EQ(changed_version->layout_version, 2u);
+    EXPECT_EQ(*static_cast<uint32_t*>(changed_version->data), 0u);
+
+    auto* unversioned = storage.allocate_shared_state(
+        "unversioned",
+        16u,
+        16u);
+    ASSERT_NE(unversioned, nullptr);
+    ASSERT_NE(unversioned->data, nullptr);
+    *static_cast<uint32_t*>(unversioned->data) = 0xbeefu;
+
+    auto* unversioned_again = storage.allocate_shared_state(
+        "unversioned",
+        16u,
+        16u,
+        0u);
+    ASSERT_NE(unversioned_again, nullptr);
+    EXPECT_EQ(unversioned_again->data, unversioned->data);
+    EXPECT_EQ(*static_cast<uint32_t*>(unversioned_again->data), 0xbeefu);
+}
+

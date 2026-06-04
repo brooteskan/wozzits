@@ -71,6 +71,8 @@ namespace
     constexpr const char* kCombinedSharedKey = "combined_state";
     constexpr const char* kResizedSharedKey = "resized_group";
     constexpr const char* kReloadSharedKey = "reload_group";
+    constexpr const char* kVersionedSharedKey = "versioned_group";
+    constexpr const char* kInteropSharedKey = "interop_group";
 
     InitProbe* g_init_probe = nullptr;
     uint32_t* g_event_only_count = nullptr;
@@ -80,6 +82,9 @@ namespace
     uint32_t g_resized_shared_state_size = 0;
     uint32_t g_reload_instance_state_size = 0;
     uint32_t g_reload_shared_state_size = 0;
+    uint32_t g_versioned_instance_layout_version = 0;
+    uint32_t g_versioned_shared_layout_version = 0;
+    uint32_t* g_null_descriptor_result_count = nullptr;
 
     void on_stateful_init(
         const WzBehaviorInitFacts* facts,
@@ -527,6 +532,217 @@ namespace
     uint8_t register_reloadable_pack_v2(WzBehaviorPluginApi* api)
     {
         return register_reloadable_pack(api, on_reloadable_event_v2);
+    }
+
+    void on_versioned_state_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        const WzBehaviorStateDesc instance_desc{
+            .size = sizeof(ReloadInstanceState),
+            .alignment = alignof(ReloadInstanceState),
+            .layout_version = g_versioned_instance_layout_version,
+        };
+        const WzBehaviorStateDesc shared_desc{
+            .size = sizeof(ReloadSharedState),
+            .alignment = alignof(ReloadSharedState),
+            .layout_version = g_versioned_shared_layout_version,
+        };
+
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_alloc_instance_state_desc(facts, &instance_desc));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_create_shared_state_desc(
+                facts,
+                kVersionedSharedKey,
+                &shared_desc));
+        if (instance) {
+            ++instance->init_count;
+        }
+        if (shared) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_versioned_state_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent*,
+        void*)
+    {
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_get_instance_state(facts));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_find_shared_state(facts, kVersionedSharedKey));
+        if (instance) {
+            ++instance->event_count;
+        }
+        if (shared) {
+            ++shared->event_count;
+        }
+    }
+
+    uint8_t register_versioned_state_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "versioned_state",
+            .on_event = on_versioned_state_event,
+            .on_init = on_versioned_state_init,
+            .event_channels = events,
+            .event_channel_count = 1u,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    void on_interop_state_init_simple(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_alloc_instance_state(
+                facts,
+                sizeof(ReloadInstanceState),
+                alignof(ReloadInstanceState)));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_create_shared_state(
+                facts,
+                kInteropSharedKey,
+                sizeof(ReloadSharedState),
+                alignof(ReloadSharedState)));
+        if (instance) {
+            ++instance->init_count;
+        }
+        if (shared) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_interop_state_init_desc_v0(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        const WzBehaviorStateDesc instance_desc{
+            .size = sizeof(ReloadInstanceState),
+            .alignment = alignof(ReloadInstanceState),
+            .layout_version = 0u,
+        };
+        const WzBehaviorStateDesc shared_desc{
+            .size = sizeof(ReloadSharedState),
+            .alignment = alignof(ReloadSharedState),
+            .layout_version = 0u,
+        };
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_alloc_instance_state_desc(facts, &instance_desc));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_create_shared_state_desc(
+                facts,
+                kInteropSharedKey,
+                &shared_desc));
+        if (instance) {
+            ++instance->init_count;
+        }
+        if (shared) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_interop_state_init_desc_v1(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        const WzBehaviorStateDesc instance_desc{
+            .size = sizeof(ReloadInstanceState),
+            .alignment = alignof(ReloadInstanceState),
+            .layout_version = 1u,
+        };
+        const WzBehaviorStateDesc shared_desc{
+            .size = sizeof(ReloadSharedState),
+            .alignment = alignof(ReloadSharedState),
+            .layout_version = 1u,
+        };
+        auto* instance = static_cast<ReloadInstanceState*>(
+            wz_alloc_instance_state_desc(facts, &instance_desc));
+        auto* shared = static_cast<ReloadSharedState*>(
+            wz_create_shared_state_desc(
+                facts,
+                kInteropSharedKey,
+                &shared_desc));
+        if (instance) {
+            ++instance->init_count;
+        }
+        if (shared) {
+            ++shared->init_count;
+        }
+    }
+
+    void on_null_descriptor_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        if (!g_null_descriptor_result_count) {
+            return;
+        }
+        if (!wz_alloc_instance_state_desc(facts, nullptr)) {
+            ++*g_null_descriptor_result_count;
+        }
+        if (!wz_create_shared_state_desc(
+                facts,
+                kInteropSharedKey,
+                nullptr))
+        {
+            ++*g_null_descriptor_result_count;
+        }
+    }
+
+    uint8_t register_interop_state_pack(
+        WzBehaviorPluginApi* api,
+        WzBehaviorInitFn on_init)
+    {
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "interop_state",
+            .on_event = nullptr,
+            .on_init = on_init,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
+    uint8_t register_interop_state_pack_simple(WzBehaviorPluginApi* api)
+    {
+        return register_interop_state_pack(
+            api,
+            on_interop_state_init_simple);
+    }
+
+    uint8_t register_interop_state_pack_desc_v0(WzBehaviorPluginApi* api)
+    {
+        return register_interop_state_pack(
+            api,
+            on_interop_state_init_desc_v0);
+    }
+
+    uint8_t register_interop_state_pack_desc_v1(WzBehaviorPluginApi* api)
+    {
+        return register_interop_state_pack(
+            api,
+            on_interop_state_init_desc_v1);
+    }
+
+    uint8_t register_null_descriptor_pack(WzBehaviorPluginApi* api)
+    {
+        return register_interop_state_pack(api, on_null_descriptor_init);
     }
 
     void on_legacy_desc_event(
@@ -1391,6 +1607,344 @@ TEST(BehaviorInit, ReRegistrationResetsIncompatibleStateAndLogs)
     g_reload_instance_state_size = 0u;
     g_reload_shared_state_size = 0u;
     wz::logging::shutdown_logger(logger);
+}
+
+TEST(BehaviorInit, StateDescriptorPreservesMatchingLayoutVersion)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_state_desc_preserve";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "versioned_binding",
+        .module = "versioned_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    g_versioned_instance_layout_version = 7u;
+    g_versioned_shared_layout_version = 11u;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_versioned_state_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("versioned_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kVersionedSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    EXPECT_EQ(instance_block->layout_version, 7u);
+    EXPECT_EQ(shared_block->layout_version, 11u);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(instance->init_count, 1u);
+    EXPECT_EQ(shared->init_count, 1u);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    initialize_behaviors(scene, registry);
+
+    auto* same_instance_block =
+        scene.behavior_state.find_instance_state("versioned_binding");
+    auto* same_shared_block =
+        scene.behavior_state.find_shared_state(kVersionedSharedKey);
+    ASSERT_NE(same_instance_block, nullptr);
+    ASSERT_NE(same_shared_block, nullptr);
+    EXPECT_EQ(same_instance_block->data, instance_block->data);
+    EXPECT_EQ(same_shared_block->data, shared_block->data);
+    EXPECT_EQ(instance->init_count, 2u);
+    EXPECT_EQ(shared->init_count, 2u);
+    EXPECT_EQ(instance->sentinel, 0xc0ffeeu);
+    EXPECT_EQ(shared->sentinel, 0xbeefu);
+
+    g_versioned_instance_layout_version = 0u;
+    g_versioned_shared_layout_version = 0u;
+}
+
+TEST(BehaviorInit, StateDescriptorVersionMismatchResetsAndLogs)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_state_desc_reset";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "versioned_binding",
+        .module = "versioned_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(
+        logger,
+        { wz::LogLevel::Debug, false, &sink }));
+
+    g_versioned_instance_layout_version = 7u;
+    g_versioned_shared_layout_version = 11u;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_versioned_state_pack,
+        &logger));
+
+    initialize_behaviors(scene, registry, &logger);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("versioned_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kVersionedSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    g_versioned_instance_layout_version = 8u;
+    g_versioned_shared_layout_version = 12u;
+    initialize_behaviors(scene, registry, &logger);
+    wz::logging::wait_until_idle(logger);
+
+    const auto messages = sink.snapshot();
+    ASSERT_EQ(messages.size(), 2u);
+    EXPECT_NE(
+        std::string(messages[0].text).find(
+            "behavior instance state reset for binding 'versioned_binding'"),
+        std::string::npos);
+    EXPECT_NE(
+        std::string(messages[1].text).find(
+            "behavior shared state reset for key 'versioned_group'"),
+        std::string::npos);
+
+    auto* reset_instance_block =
+        scene.behavior_state.find_instance_state("versioned_binding");
+    auto* reset_shared_block =
+        scene.behavior_state.find_shared_state(kVersionedSharedKey);
+    ASSERT_NE(reset_instance_block, nullptr);
+    ASSERT_NE(reset_shared_block, nullptr);
+    EXPECT_EQ(reset_instance_block->layout_version, 8u);
+    EXPECT_EQ(reset_shared_block->layout_version, 12u);
+    auto* reset_instance =
+        static_cast<ReloadInstanceState*>(reset_instance_block->data);
+    auto* reset_shared =
+        static_cast<ReloadSharedState*>(reset_shared_block->data);
+    ASSERT_NE(reset_instance, nullptr);
+    ASSERT_NE(reset_shared, nullptr);
+    EXPECT_EQ(reset_instance->init_count, 1u);
+    EXPECT_EQ(reset_shared->init_count, 1u);
+    EXPECT_EQ(reset_instance->sentinel, 0u);
+    EXPECT_EQ(reset_shared->sentinel, 0u);
+
+    g_versioned_instance_layout_version = 0u;
+    g_versioned_shared_layout_version = 0u;
+    wz::logging::shutdown_logger(logger);
+}
+
+TEST(BehaviorInit, DescriptorVersionZeroIsCompatibleWithSimpleStateApi)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_state_desc_v0_interop";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "interop_binding",
+        .module = "interop_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_interop_state_pack_simple));
+
+    initialize_behaviors(scene, registry);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("interop_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kInteropSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    EXPECT_EQ(instance_block->layout_version, 0u);
+    EXPECT_EQ(shared_block->layout_version, 0u);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_interop_state_pack_desc_v0));
+
+    initialize_behaviors(scene, registry);
+
+    auto* second_instance_block =
+        scene.behavior_state.find_instance_state("interop_binding");
+    auto* second_shared_block =
+        scene.behavior_state.find_shared_state(kInteropSharedKey);
+    ASSERT_NE(second_instance_block, nullptr);
+    ASSERT_NE(second_shared_block, nullptr);
+    EXPECT_EQ(second_instance_block->data, instance_block->data);
+    EXPECT_EQ(second_shared_block->data, shared_block->data);
+    EXPECT_EQ(instance->init_count, 2u);
+    EXPECT_EQ(shared->init_count, 2u);
+    EXPECT_EQ(instance->sentinel, 0xc0ffeeu);
+    EXPECT_EQ(shared->sentinel, 0xbeefu);
+}
+
+TEST(BehaviorInit, UpgradingSimpleStateApiToVersionedDescriptorResets)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_state_desc_upgrade";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "interop_binding",
+        .module = "interop_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(
+        logger,
+        { wz::LogLevel::Debug, false, &sink }));
+
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_interop_state_pack_simple,
+        &logger));
+
+    initialize_behaviors(scene, registry, &logger);
+
+    auto* instance_block =
+        scene.behavior_state.find_instance_state("interop_binding");
+    auto* shared_block =
+        scene.behavior_state.find_shared_state(kInteropSharedKey);
+    ASSERT_NE(instance_block, nullptr);
+    ASSERT_NE(shared_block, nullptr);
+    auto* instance =
+        static_cast<ReloadInstanceState*>(instance_block->data);
+    auto* shared =
+        static_cast<ReloadSharedState*>(shared_block->data);
+    ASSERT_NE(instance, nullptr);
+    ASSERT_NE(shared, nullptr);
+    instance->sentinel = 0xc0ffeeu;
+    shared->sentinel = 0xbeefu;
+
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_interop_state_pack_desc_v1,
+        &logger));
+
+    initialize_behaviors(scene, registry, &logger);
+    wz::logging::wait_until_idle(logger);
+
+    const auto messages = sink.snapshot();
+    ASSERT_EQ(messages.size(), 2u);
+    EXPECT_NE(
+        std::string(messages[0].text).find(
+            "behavior instance state reset for binding 'interop_binding'"),
+        std::string::npos);
+    EXPECT_NE(
+        std::string(messages[1].text).find(
+            "behavior shared state reset for key 'interop_group'"),
+        std::string::npos);
+
+    auto* reset_instance_block =
+        scene.behavior_state.find_instance_state("interop_binding");
+    auto* reset_shared_block =
+        scene.behavior_state.find_shared_state(kInteropSharedKey);
+    ASSERT_NE(reset_instance_block, nullptr);
+    ASSERT_NE(reset_shared_block, nullptr);
+    EXPECT_EQ(reset_instance_block->layout_version, 1u);
+    EXPECT_EQ(reset_shared_block->layout_version, 1u);
+    auto* reset_instance =
+        static_cast<ReloadInstanceState*>(reset_instance_block->data);
+    auto* reset_shared =
+        static_cast<ReloadSharedState*>(reset_shared_block->data);
+    ASSERT_NE(reset_instance, nullptr);
+    ASSERT_NE(reset_shared, nullptr);
+    EXPECT_EQ(reset_instance->init_count, 1u);
+    EXPECT_EQ(reset_shared->init_count, 1u);
+    EXPECT_EQ(reset_instance->sentinel, 0u);
+    EXPECT_EQ(reset_shared->sentinel, 0u);
+
+    wz::logging::shutdown_logger(logger);
+}
+
+TEST(BehaviorInit, NullStateDescriptorReturnsNull)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_state_desc_null";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "null_desc_binding",
+        .module = "interop_state",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    uint32_t null_result_count = 0;
+    g_null_descriptor_result_count = &null_result_count;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_null_descriptor_pack));
+
+    initialize_behaviors(scene, registry);
+
+    EXPECT_EQ(null_result_count, 2u);
+    EXPECT_TRUE(scene.behavior_state.instance_state.empty());
+    EXPECT_TRUE(scene.behavior_state.shared_state.empty());
+
+    g_null_descriptor_result_count = nullptr;
 }
 
 TEST(BehaviorInit, DescriptorRangeValidationAllowsMissingInitField)
