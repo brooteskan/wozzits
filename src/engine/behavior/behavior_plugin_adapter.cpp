@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -696,6 +697,41 @@ namespace wz::engine::behavior
             return required_size <= buffer_size ? uint8_t{ 1 } : uint8_t{ 0 };
         }
 
+        void* get_instance_state(void* user)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state
+                || !context->active_behavior
+                || context->active_behavior->binding_id.empty())
+            {
+                return nullptr;
+            }
+
+            auto* block = context->behavior_state->find_instance_state(
+                context->active_behavior->binding_id);
+            return block ? block->data : nullptr;
+        }
+
+        void* alloc_instance_state(
+            void* user,
+            uint32_t size,
+            uint32_t alignment)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state
+                || !context->active_behavior
+                || context->active_behavior->binding_id.empty())
+            {
+                return nullptr;
+            }
+
+            auto* block = context->behavior_state->allocate_instance_state(
+                context->active_behavior->binding_id,
+                size,
+                alignment);
+            return block ? block->data : nullptr;
+        }
+
         uint8_t write_behavior_command(
             void* user,
             const WzBehaviorCommand* command)
@@ -797,6 +833,8 @@ namespace wz::engine::behavior
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
                 .active_input_event = context.active_input_payload,
+                .behavior_state_user = &context,
+                .get_instance_state = get_instance_state,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -855,6 +893,33 @@ namespace wz::engine::behavior
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
                 .active_input_event = context.active_input_payload,
+                .behavior_state_user = &context,
+                .get_instance_state = get_instance_state,
+            };
+        }
+
+        WzBehaviorInitFacts make_init_facts(
+            BehaviorFrameContext& context,
+            wz::Logger* logger)
+        {
+            return WzBehaviorInitFacts{
+                .transform_query_user = &context,
+                .get_local_transform = get_local_transform,
+                .get_world_transform = get_world_transform,
+                .get_local_position = get_local_position,
+                .get_world_position = get_world_position,
+                .log_user = logger,
+                .log_info = log_info,
+                .scene_query_user = &context,
+                .find_entity_by_name = find_entity_by_name,
+                .find_entity_by_authored_id = find_entity_by_authored_id,
+                .behavior_config_user = &context,
+                .get_config_bool = get_config_bool,
+                .get_config_number = get_config_number,
+                .get_config_string = get_config_string,
+                .behavior_state_user = &context,
+                .alloc_instance_state = alloc_instance_state,
+                .get_instance_state = get_instance_state,
             };
         }
 
@@ -886,6 +951,22 @@ namespace wz::engine::behavior
             };
 
             binding->on_event(&facts, &abi_event, binding->user_data);
+        }
+
+        void dispatch_abi_module_init(
+            BehaviorFrameContext& context,
+            wz::scene::RuntimeEntityId entity,
+            void* user_data)
+        {
+            auto* binding =
+                static_cast<BehaviorPluginHost::Binding*>(user_data);
+            if (!binding || !binding->on_init) {
+                return;
+            }
+
+            WzBehaviorInitFacts facts =
+                make_init_facts(context, binding->logger);
+            binding->on_init(&facts, entity, binding->user_data);
         }
 
         uint8_t register_behavior(
@@ -930,6 +1011,7 @@ namespace wz::engine::behavior
 
             auto* binding_ptr = context->host->add_module_binding(
                 on_event,
+                nullptr,
                 module_user_data,
                 context->logger);
             const BehaviorModuleHandle handle =
@@ -944,18 +1026,46 @@ namespace wz::engine::behavior
             void* user,
             const WzBehaviorModuleDesc* desc)
         {
+            const uint32_t required_size =
+                static_cast<uint32_t>(
+                    offsetof(WzBehaviorModuleDesc, on_init));
+            const bool has_on_init =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorModuleDesc, event_channels);
+            const bool has_event_channels =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorModuleDesc, event_channels)
+                        + sizeof(desc->event_channels);
+            const bool has_event_channel_count =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorModuleDesc, event_channel_count)
+                        + sizeof(desc->event_channel_count);
+            const bool has_module_user_data =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorModuleDesc, module_user_data)
+                        + sizeof(desc->module_user_data);
             auto* context = static_cast<RegisterContext*>(user);
+            const WzBehaviorInitFn on_init =
+                has_on_init ? desc->on_init : nullptr;
             if (!context || !context->registry || !context->host
-                || !desc || desc->size < sizeof(WzBehaviorModuleDesc)
-                || !desc->module || !desc->on_event)
+                || !desc || desc->size < required_size
+                || !desc->module || (!desc->on_event && !on_init))
             {
                 return 0;
             }
 
             std::vector<std::string> default_events;
-            default_events.reserve(desc->event_channel_count);
-            for (uint32_t i = 0; i < desc->event_channel_count; ++i) {
-                if (!desc->event_channels || !desc->event_channels[i]
+            const uint32_t event_channel_count =
+                has_event_channel_count ? desc->event_channel_count : 0u;
+            default_events.reserve(event_channel_count);
+            for (uint32_t i = 0; i < event_channel_count; ++i) {
+                if (!has_event_channels
+                    || !desc->event_channels
+                    || !desc->event_channels[i]
                     || desc->event_channels[i][0] == '\0')
                 {
                     continue;
@@ -982,12 +1092,14 @@ namespace wz::engine::behavior
             }
             auto* binding_ptr = context->host->add_module_binding(
                 desc->on_event,
-                desc->module_user_data,
+                on_init,
+                has_module_user_data ? desc->module_user_data : nullptr,
                 context->logger);
             const BehaviorModuleHandle handle =
                 context->registry->register_module(
                     desc->module,
-                    dispatch_abi_module_event,
+                    desc->on_event ? dispatch_abi_module_event : nullptr,
+                    on_init ? dispatch_abi_module_init : nullptr,
                     std::move(default_events),
                     compiled.mask,
                     binding_ptr);
@@ -1224,11 +1336,13 @@ namespace wz::engine::behavior
 
     BehaviorPluginHost::Binding* BehaviorPluginHost::add_module_binding(
         WzBehaviorModuleEventFn on_event,
+        WzBehaviorInitFn on_init,
         void* user_data,
         wz::Logger* logger)
     {
         auto binding = std::make_unique<Binding>(Binding{
             .on_event = on_event,
+            .on_init = on_init,
             .user_data = user_data,
             .logger = logger,
         });

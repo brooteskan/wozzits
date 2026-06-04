@@ -2,6 +2,8 @@
 
 #include <engine/frame_storage.h>
 
+#include <scene/scene_graph.h>
+
 namespace wz::engine::behavior
 {
     namespace
@@ -327,13 +329,61 @@ namespace wz::engine::behavior
         }
     }
 
+    void initialize_behaviors(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        wz::Logger* logger)
+    {
+        BehaviorFrameContext context{
+            .scene = &scene,
+            .behavior_state = &scene.behavior_state,
+            .logger = logger,
+        };
+
+        for (const auto node : wz::core::graph::topo_order(
+                 scene.storage.polytree))
+        {
+            for (const auto& record : scene.behaviors) {
+                const auto& component = record.component;
+                if (record.node != node
+                    || !component.enabled
+                    || component.module.empty())
+                {
+                    continue;
+                }
+
+                const auto module_handle =
+                    registry.find_module(component.module);
+                if (!module_handle) {
+                    continue;
+                }
+
+                const BehaviorModuleRegistration* module =
+                    registry.get_module(*module_handle);
+                if (!module || !module->on_init) {
+                    continue;
+                }
+
+                ActiveBehaviorScope active_behavior(context, component);
+                module->on_init(context, record.node, module->user_data);
+            }
+        }
+    }
+
     void dispatch_behaviors(
-        const wz::engine::assets::SceneInstance& scene,
+        wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context)
     {
         if (!context.commands) {
             return;
+        }
+
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
         }
 
         context.commands->clear();

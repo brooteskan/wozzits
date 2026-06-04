@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 9u
+#define WZ_BEHAVIOR_ABI_VERSION 10u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -284,6 +284,13 @@ typedef uint8_t (*WzGetBehaviorConfigStringFn)(
     uint32_t buffer_size,
     uint32_t* out_required_size);
 
+typedef void* (*WzAllocBehaviorStateFn)(
+    void* user,
+    uint32_t size,
+    uint32_t alignment);
+
+typedef void* (*WzGetBehaviorStateFn)(void* user);
+
 typedef struct WzFrameTiming
 {
     float delta_seconds;
@@ -323,7 +330,35 @@ typedef struct WzBehaviorFrameFacts
     WzGetBehaviorConfigStringFn get_config_string;
 
     const WzInputEventPayload* active_input_event;
+
+    void* behavior_state_user;
+    WzGetBehaviorStateFn get_instance_state;
 } WzBehaviorFrameFacts;
+
+typedef struct WzBehaviorInitFacts
+{
+    void* transform_query_user;
+    WzGetBehaviorTransformFn get_local_transform;
+    WzGetBehaviorTransformFn get_world_transform;
+    WzGetBehaviorPositionFn get_local_position;
+    WzGetBehaviorPositionFn get_world_position;
+
+    void* log_user;
+    WzBehaviorLogFn log_info;
+
+    void* scene_query_user;
+    WzFindBehaviorEntityByNameFn find_entity_by_name;
+    WzFindBehaviorEntityByAuthoredIdFn find_entity_by_authored_id;
+
+    void* behavior_config_user;
+    WzGetBehaviorConfigBoolFn get_config_bool;
+    WzGetBehaviorConfigNumberFn get_config_number;
+    WzGetBehaviorConfigStringFn get_config_string;
+
+    void* behavior_state_user;
+    WzAllocBehaviorStateFn alloc_instance_state;
+    WzGetBehaviorStateFn get_instance_state;
+} WzBehaviorInitFacts;
 
 typedef void (*WzBehaviorFn)(
     const WzBehaviorFrameFacts* facts,
@@ -333,6 +368,11 @@ typedef void (*WzBehaviorFn)(
 typedef void (*WzBehaviorModuleEventFn)(
     const WzBehaviorFrameFacts* facts,
     const WzBehaviorEvent* event,
+    void* user_data);
+
+typedef void (*WzBehaviorInitFn)(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId entity,
     void* user_data);
 
 typedef uint8_t (*WzRegisterBehaviorFn)(
@@ -353,6 +393,7 @@ typedef struct WzBehaviorModuleDesc
     uint32_t size;
     const char* module;
     WzBehaviorModuleEventFn on_event;
+    WzBehaviorInitFn on_init;
     const char* const* event_channels;
     uint32_t event_channel_count;
     void* module_user_data;

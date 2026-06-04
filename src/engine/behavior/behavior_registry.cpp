@@ -47,12 +47,30 @@ namespace wz::engine::behavior
         EventChannelMask default_channel_mask,
         void* user_data)
     {
-        if (module.empty() || !on_event) {
+        return register_module(
+            std::move(module),
+            on_event,
+            nullptr,
+            std::move(default_events),
+            default_channel_mask,
+            user_data);
+    }
+
+    BehaviorModuleHandle BehaviorRegistry::register_module(
+        std::string module,
+        BehaviorModuleEventFn on_event,
+        BehaviorModuleInitFn on_init,
+        std::vector<std::string> default_events,
+        EventChannelMask default_channel_mask,
+        void* user_data)
+    {
+        if (module.empty() || (!on_event && !on_init)) {
             return {};
         }
 
         if (auto existing = find_module(module)) {
             modules_[existing->index].on_event = on_event;
+            modules_[existing->index].on_init = on_init;
             modules_[existing->index].default_events =
                 std::move(default_events);
             modules_[existing->index].default_channel_mask =
@@ -67,6 +85,7 @@ namespace wz::engine::behavior
         modules_.push_back({
             .module = std::move(module),
             .on_event = on_event,
+            .on_init = on_init,
             .default_events = std::move(default_events),
             .default_channel_mask = default_channel_mask,
             .user_data = user_data,
@@ -82,6 +101,7 @@ namespace wz::engine::behavior
         return register_module(
             std::move(module),
             on_event,
+            nullptr,
             {},
             0u,
             user_data);

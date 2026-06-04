@@ -123,8 +123,9 @@ namespace wz::app
         {
             wz::engine::FrameStorage* frame = nullptr;
             const wz::engine::FrameContext* fctx = nullptr;
-            const wz::engine::assets::SceneInstance* scene = nullptr;
+            wz::engine::assets::SceneInstance* scene = nullptr;
             const wz::engine::behavior::BehaviorRegistry* registry = nullptr;
+            wz::Logger* logger = nullptr;
         };
 
         struct BehaviorCommandApplyJobData
@@ -460,6 +461,10 @@ namespace wz::app
             app.debug_object.ready = true;
             app.debug_object.collision_scene_valid = true;
             app.debug_object.transforms_dirty = false;
+            wz::engine::behavior::initialize_behaviors(
+                app.debug_object.collision_scene,
+                app.behavior_registry,
+                &app.ctx.logger);
 
             return true;
         }
@@ -892,7 +897,9 @@ namespace wz::app
                 .frame_context = data->fctx,
                 .frame_storage = data->frame,
                 .scene = data->scene,
+                .behavior_state = &data->scene->behavior_state,
                 .commands = &data->frame->behavior_commands,
+                .logger = data->logger,
             };
             wz::engine::behavior::dispatch_behaviors(
                 *data->scene,
@@ -1315,6 +1322,7 @@ namespace wz::app
                 ? &app.debug_object.collision_scene
                 : nullptr,
             .registry = &app.behavior_registry,
+            .logger = &app.ctx.logger,
         };
 
         BehaviorCommandApplyJobData behavior_command_apply_data{

@@ -7,8 +7,13 @@
 
 namespace wz::engine::behavior
 {
+    void initialize_behaviors(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        wz::Logger* logger = nullptr);
+
     void dispatch_behaviors(
-        const wz::engine::assets::SceneInstance& scene,
+        wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context);
 }

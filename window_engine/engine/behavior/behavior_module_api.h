@@ -48,6 +48,30 @@
             sizeof(WzBehaviorModuleDesc),                                   \
             module_name,                                                    \
             handler_fn,                                                     \
+            nullptr,                                                        \
+            event_channel_array,                                            \
+            (uint32_t)(sizeof(event_channel_array)                          \
+                / sizeof((event_channel_array)[0])),                        \
+            nullptr,                                                        \
+        };                                                                  \
+        return api->register_module_desc(api->user, &desc);                 \
+    }
+
+#define WZ_BEHAVIOR_MODULE_INIT(                                            \
+    module_name, init_fn, handler_fn, event_channel_array)                   \
+    extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(     \
+        WzBehaviorPluginApi* api)                                           \
+    {                                                                       \
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION                 \
+            || !api->register_module_desc)                                  \
+        {                                                                   \
+            return 0;                                                       \
+        }                                                                   \
+        const WzBehaviorModuleDesc desc = {                                 \
+            sizeof(WzBehaviorModuleDesc),                                   \
+            module_name,                                                    \
+            handler_fn,                                                     \
+            init_fn,                                                        \
             event_channel_array,                                            \
             (uint32_t)(sizeof(event_channel_array)                          \
                 / sizeof((event_channel_array)[0])),                        \
@@ -493,6 +517,74 @@ static inline void wz_log_infof(
     wz_log_info(facts, message);
 }
 
+static inline void wz_log_info(
+    const WzBehaviorInitFacts* facts,
+    const char* message)
+{
+    if (facts && facts->log_info && message) {
+        facts->log_info(facts->log_user, message);
+    }
+}
+
+static inline void wz_log_infof(
+    const WzBehaviorInitFacts* facts,
+    const char* format,
+    ...)
+{
+    if (!facts || !facts->log_info || !format) {
+        return;
+    }
+
+    char message[512];
+    va_list args;
+    va_start(args, format);
+    const int written = vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+
+    if (written < 0) {
+        return;
+    }
+    message[sizeof(message) - 1u] = '\0';
+    wz_log_info(facts, message);
+}
+
+static inline void wz_log_info(decltype(nullptr), const char*)
+{
+}
+
+static inline void wz_log_infof(decltype(nullptr), const char*, ...)
+{
+}
+
+static inline void* wz_alloc_instance_state(
+    const WzBehaviorInitFacts* facts,
+    uint32_t size,
+    uint32_t alignment)
+{
+    return facts && facts->alloc_instance_state
+        ? facts->alloc_instance_state(
+            facts->behavior_state_user,
+            size,
+            alignment)
+        : nullptr;
+}
+
+static inline void* wz_get_instance_state(
+    const WzBehaviorInitFacts* facts)
+{
+    return facts && facts->get_instance_state
+        ? facts->get_instance_state(facts->behavior_state_user)
+        : nullptr;
+}
+
+static inline void* wz_get_instance_state(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->get_instance_state
+        ? facts->get_instance_state(facts->behavior_state_user)
+        : nullptr;
+}
+
 static inline WzBehaviorEntityId wz_self(const WzBehaviorEvent* event)
 {
     return event ? event->entity : WZ_INVALID_BEHAVIOR_ENTITY;
@@ -756,6 +848,62 @@ static inline uint8_t wz_read_local_position(
 
 static inline uint8_t wz_read_world_position(
     const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position)
+{
+    if (!facts || !facts->get_world_position) {
+        return 0;
+    }
+    return facts->get_world_position(
+        facts->transform_query_user,
+        entity,
+        out_position);
+}
+
+static inline uint8_t wz_read_local_transform(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform)
+{
+    if (!facts || !facts->get_local_transform) {
+        return 0;
+    }
+    return facts->get_local_transform(
+        facts->transform_query_user,
+        entity,
+        out_transform);
+}
+
+static inline uint8_t wz_read_world_transform(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId entity,
+    WzMat4* out_transform)
+{
+    if (!facts || !facts->get_world_transform) {
+        return 0;
+    }
+    return facts->get_world_transform(
+        facts->transform_query_user,
+        entity,
+        out_transform);
+}
+
+static inline uint8_t wz_read_local_position(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId entity,
+    WzVec3* out_position)
+{
+    if (!facts || !facts->get_local_position) {
+        return 0;
+    }
+    return facts->get_local_position(
+        facts->transform_query_user,
+        entity,
+        out_position);
+}
+
+static inline uint8_t wz_read_world_position(
+    const WzBehaviorInitFacts* facts,
     WzBehaviorEntityId entity,
     WzVec3* out_position)
 {
@@ -1053,6 +1201,98 @@ static inline uint8_t wz_config_float(
 
 static inline uint8_t wz_config_string(
     const WzBehaviorFrameFacts* facts,
+    const char* key,
+    char* out_buffer,
+    uint32_t buffer_size,
+    uint32_t* out_required_size)
+{
+    if (!facts || !facts->get_config_string) {
+        return 0;
+    }
+    return facts->get_config_string(
+        facts->behavior_config_user,
+        key,
+        out_buffer,
+        buffer_size,
+        out_required_size);
+}
+
+static inline uint8_t wz_find_entity_by_name(
+    const WzBehaviorInitFacts* facts,
+    const char* name,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_entity_by_name) {
+        return 0;
+    }
+    return facts->find_entity_by_name(
+        facts->scene_query_user,
+        name,
+        out_entity);
+}
+
+static inline uint8_t wz_find_entity_by_authored_id(
+    const WzBehaviorInitFacts* facts,
+    const char* authored_id,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_entity_by_authored_id) {
+        return 0;
+    }
+    return facts->find_entity_by_authored_id(
+        facts->scene_query_user,
+        authored_id,
+        out_entity);
+}
+
+static inline uint8_t wz_config_bool(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    uint8_t* out_value)
+{
+    if (!facts || !facts->get_config_bool) {
+        return 0;
+    }
+    return facts->get_config_bool(
+        facts->behavior_config_user,
+        key,
+        out_value);
+}
+
+static inline uint8_t wz_config_number(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    double* out_value)
+{
+    if (!facts || !facts->get_config_number) {
+        return 0;
+    }
+    return facts->get_config_number(
+        facts->behavior_config_user,
+        key,
+        out_value);
+}
+
+static inline uint8_t wz_config_float(
+    const WzBehaviorInitFacts* facts,
+    const char* key,
+    float* out_value)
+{
+    if (!out_value) {
+        return 0;
+    }
+
+    double value = 0.0;
+    if (!wz_config_number(facts, key, &value)) {
+        return 0;
+    }
+
+    *out_value = (float)value;
+    return 1;
+}
+
+static inline uint8_t wz_config_string(
+    const WzBehaviorInitFacts* facts,
     const char* key,
     char* out_buffer,
     uint32_t buffer_size,

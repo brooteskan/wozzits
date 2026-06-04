@@ -11,7 +11,13 @@
 #include <scene/scene_graph.h>
 #include <scene/compile/compiled_scene.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <limits>
+#include <new>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -108,12 +114,204 @@ namespace wz::engine::assets
 
     struct BehaviorComponent
     {
+        std::string binding_id;
         std::string module;
         std::string name;
         bool enabled = true;
         std::vector<std::string> events;
         wz::engine::behavior::EventChannelMask channel_mask = 0u;
         std::vector<SceneBehaviorConfigValue> config;
+    };
+
+    inline uint32_t normalize_behavior_state_alignment(
+        uint32_t alignment) noexcept
+    {
+        uint32_t normalized =
+            alignment == 0u
+            ? static_cast<uint32_t>(alignof(std::max_align_t))
+            : alignment;
+        normalized = std::max<uint32_t>(
+            normalized,
+            static_cast<uint32_t>(alignof(void*)));
+
+        if ((normalized & (normalized - 1u)) == 0u) {
+            return normalized;
+        }
+
+        uint32_t rounded = static_cast<uint32_t>(alignof(void*));
+        while (rounded < normalized
+            && rounded <= std::numeric_limits<uint32_t>::max() / 2u)
+        {
+            rounded *= 2u;
+        }
+        return rounded < normalized ? normalized : rounded;
+    }
+
+    struct BehaviorStateBlock
+    {
+        uint32_t size = 0;
+        uint32_t alignment = 0;
+        uint32_t layout_version = 0;
+        void* data = nullptr;
+
+        BehaviorStateBlock() = default;
+
+        BehaviorStateBlock(const BehaviorStateBlock&) = delete;
+        BehaviorStateBlock& operator=(const BehaviorStateBlock&) = delete;
+
+        BehaviorStateBlock(BehaviorStateBlock&& other) noexcept
+            : size(other.size)
+            , alignment(other.alignment)
+            , layout_version(other.layout_version)
+            , data(other.data)
+        {
+            other.size = 0;
+            other.alignment = 0;
+            other.layout_version = 0;
+            other.data = nullptr;
+        }
+
+        BehaviorStateBlock& operator=(BehaviorStateBlock&& other) noexcept
+        {
+            if (this != &other) {
+                reset();
+                size = other.size;
+                alignment = other.alignment;
+                layout_version = other.layout_version;
+                data = other.data;
+                other.size = 0;
+                other.alignment = 0;
+                other.layout_version = 0;
+                other.data = nullptr;
+            }
+            return *this;
+        }
+
+        ~BehaviorStateBlock()
+        {
+            reset();
+        }
+
+        void reset() noexcept
+        {
+            if (data) {
+                ::operator delete(
+                    data,
+                    std::align_val_t{
+                        normalize_behavior_state_alignment(alignment),
+                    });
+            }
+            size = 0;
+            alignment = 0;
+            layout_version = 0;
+            data = nullptr;
+        }
+
+        bool allocate(
+            uint32_t block_size,
+            uint32_t block_alignment,
+            uint32_t block_layout_version = 0)
+        {
+            reset();
+            size = block_size;
+            alignment =
+                normalize_behavior_state_alignment(block_alignment);
+            layout_version = block_layout_version;
+
+            if (size == 0u) {
+                return true;
+            }
+
+            data = ::operator new(
+                size,
+                std::align_val_t{ alignment },
+                std::nothrow);
+            if (!data) {
+                reset();
+                return false;
+            }
+            std::memset(data, 0, size);
+            return true;
+        }
+
+        [[nodiscard]] bool compatible(
+            uint32_t expected_size,
+            uint32_t expected_alignment,
+            uint32_t expected_layout_version = 0) const noexcept
+        {
+            return size == expected_size
+                && alignment
+                    == normalize_behavior_state_alignment(expected_alignment)
+                && layout_version == expected_layout_version;
+        }
+    };
+
+    struct BehaviorStateStorage
+    {
+        std::unordered_map<std::string, BehaviorStateBlock> instance_state;
+        std::unordered_map<std::string, BehaviorStateBlock> shared_state;
+
+        BehaviorStateBlock* find_instance_state(std::string_view binding_id)
+        {
+            const auto it = instance_state.find(std::string(binding_id));
+            return it == instance_state.end() ? nullptr : &it->second;
+        }
+
+        const BehaviorStateBlock* find_instance_state(
+            std::string_view binding_id) const
+        {
+            const auto it = instance_state.find(std::string(binding_id));
+            return it == instance_state.end() ? nullptr : &it->second;
+        }
+
+        BehaviorStateBlock* find_shared_state(std::string_view key)
+        {
+            const auto it = shared_state.find(std::string(key));
+            return it == shared_state.end() ? nullptr : &it->second;
+        }
+
+        const BehaviorStateBlock* find_shared_state(
+            std::string_view key) const
+        {
+            const auto it = shared_state.find(std::string(key));
+            return it == shared_state.end() ? nullptr : &it->second;
+        }
+
+        BehaviorStateBlock* allocate_instance_state(
+            std::string binding_id,
+            uint32_t size,
+            uint32_t alignment,
+            uint32_t layout_version = 0)
+        {
+            if (binding_id.empty()) {
+                return nullptr;
+            }
+            auto& block = instance_state[std::move(binding_id)];
+            if (block.compatible(size, alignment, layout_version)) {
+                return &block;
+            }
+            return block.allocate(size, alignment, layout_version)
+                ? &block
+                : nullptr;
+        }
+
+        BehaviorStateBlock* allocate_shared_state(
+            std::string key,
+            uint32_t size,
+            uint32_t alignment,
+            uint32_t layout_version = 0)
+        {
+            if (key.empty()) {
+                return nullptr;
+            }
+            auto& block = shared_state[std::move(key)];
+            if (block.compatible(size, alignment, layout_version)) {
+                return &block;
+            }
+            return block.allocate(size, alignment, layout_version)
+                ? &block
+                : nullptr;
+        }
     };
 
     struct AuxiliaryVisualComponent
@@ -157,6 +355,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<ProximityComponent>> proximities;
         std::vector<SceneComponentRecord<MotionComponent>> motions;
         std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
+        BehaviorStateStorage behavior_state;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
 
@@ -205,6 +404,7 @@ namespace wz::engine::assets
         PolytreeBuildFailed,
         RenderableResolveFailed,
         RenderableRealizeFailed,
+        DuplicateBehaviorBindingId,
     };
 
     struct SceneInstantiateResult

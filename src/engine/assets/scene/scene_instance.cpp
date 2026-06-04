@@ -198,15 +198,28 @@ namespace wz::engine::assets
                 compiled);
         }
 
+        std::string effective_behavior_binding_id(
+            const SceneNodeAsset& node,
+            const SceneBehaviorAsset& behavior,
+            uint32_t binding_ordinal)
+        {
+            if (!behavior.id.empty()) {
+                return behavior.id;
+            }
+            return node.id + "/behavior/" + std::to_string(binding_ordinal);
+        }
+
         BehaviorComponent instantiate_behavior_component(
             const SceneNodeAsset& node,
             const SceneInstantiateContext& context,
-            const SceneBehaviorAsset& behavior)
+            const SceneBehaviorAsset& behavior,
+            std::string binding_id)
         {
             const auto compiled =
                 wz::engine::behavior::compile_channel_mask(behavior.events);
             log_channel_warnings(node, context, "behavior", compiled);
             return BehaviorComponent{
+                .binding_id = std::move(binding_id),
                 .module = behavior.module,
                 .name = behavior.name,
                 .enabled = behavior.enabled,
@@ -513,6 +526,7 @@ namespace wz::engine::assets
         }
 
         // Build non-render component tables
+        std::unordered_set<std::string> behavior_binding_ids;
         for (const auto& node : scene.nodes) {
             NodeHandle h = id_to_handle[node.id];
 
@@ -653,21 +667,55 @@ namespace wz::engine::assets
             }
 
             if (node.behavior) {
+                const std::string binding_id =
+                    effective_behavior_binding_id(
+                        node,
+                        *node.behavior,
+                        0u);
+                if (!behavior_binding_ids.insert(binding_id).second) {
+                    result.error =
+                        SceneInstantiateError::DuplicateBehaviorBindingId;
+                    result.error_detail =
+                        node_log_name(node)
+                        + " has duplicate behavior binding id='"
+                        + binding_id + "'";
+                    log_instantiate_failure(result, context);
+                    return result;
+                }
                 inst.behaviors.push_back({
                     .node = h,
                     .component = instantiate_behavior_component(
                         node,
                         context,
-                        *node.behavior),
+                        *node.behavior,
+                        binding_id),
                 });
             }
+            uint32_t behavior_ordinal = node.behavior ? 1u : 0u;
             for (const auto& behavior : node.behaviors) {
+                const std::string binding_id =
+                    effective_behavior_binding_id(
+                        node,
+                        behavior,
+                        behavior_ordinal);
+                ++behavior_ordinal;
+                if (!behavior_binding_ids.insert(binding_id).second) {
+                    result.error =
+                        SceneInstantiateError::DuplicateBehaviorBindingId;
+                    result.error_detail =
+                        node_log_name(node)
+                        + " has duplicate behavior binding id='"
+                        + binding_id + "'";
+                    log_instantiate_failure(result, context);
+                    return result;
+                }
                 inst.behaviors.push_back({
                     .node = h,
                     .component = instantiate_behavior_component(
                         node,
                         context,
-                        behavior),
+                        behavior,
+                        binding_id),
                 });
             }
 

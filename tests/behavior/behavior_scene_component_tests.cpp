@@ -1,5 +1,9 @@
 ﻿#include "behavior_test_support.h"
 
+#include <engine/assets/scene/scene_fingerprint.h>
+
+#include <cstdint>
+
 TEST(BehaviorDispatch, SceneBehaviorComponentInstantiates)
 {
     wz::engine::assets::SceneAssetData asset{};
@@ -24,6 +28,9 @@ TEST(BehaviorDispatch, SceneBehaviorComponentInstantiates)
     EXPECT_EQ(
         result.instance.behaviors[0].component.name,
         "bounce_on_collision");
+    EXPECT_EQ(
+        result.instance.behaviors[0].component.binding_id,
+        "actor/behavior/0");
     EXPECT_TRUE(result.instance.behaviors[0].component.enabled);
 }
 
@@ -41,6 +48,7 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     {
       "id": "actor",
       "behavior": {
+        "id": "bounce_behavior",
         "module": "gameplay",
         "name": "bounce_on_collision",
         "enabled": true,
@@ -75,6 +83,7 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     ASSERT_NE(scene_data, nullptr);
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     ASSERT_TRUE(scene_data->nodes[0].behavior.has_value());
+    EXPECT_EQ(scene_data->nodes[0].behavior->id, "bounce_behavior");
     EXPECT_EQ(scene_data->nodes[0].behavior->module, "gameplay");
     EXPECT_EQ(scene_data->nodes[0].behavior->name, "bounce_on_collision");
     EXPECT_TRUE(scene_data->nodes[0].behavior->enabled);
@@ -102,11 +111,16 @@ TEST(BehaviorDispatch, SceneBehaviorJsonRoundTrips)
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
     ASSERT_EQ(result.instance.behaviors.size(), 1u);
+    EXPECT_EQ(
+        result.instance.behaviors[0].component.binding_id,
+        "bounce_behavior");
     ASSERT_EQ(result.instance.behaviors[0].component.config.size(), 3u);
 
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"behavior\""), std::string::npos);
+    EXPECT_NE(exported.find("\"id\""), std::string::npos);
+    EXPECT_NE(exported.find("\"bounce_behavior\""), std::string::npos);
     EXPECT_NE(exported.find("\"config\""), std::string::npos);
     EXPECT_NE(exported.find("\"module\""), std::string::npos);
     EXPECT_NE(exported.find("\"bounce_on_collision\""), std::string::npos);
@@ -230,6 +244,12 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
     ASSERT_TRUE(result.ok()) << result.error_detail;
     ASSERT_EQ(result.instance.behaviors.size(), 2u);
     EXPECT_EQ(
+        result.instance.behaviors[0].component.binding_id,
+        "actor/behavior/0");
+    EXPECT_EQ(
+        result.instance.behaviors[1].component.binding_id,
+        "actor/behavior/1");
+    EXPECT_EQ(
         result.instance.behaviors[0].component.channel_mask,
         wz::engine::behavior::kInputEventChannels
             | wz::engine::behavior::EventChannelFrameUpdate);
@@ -245,5 +265,82 @@ TEST(BehaviorDispatch, SceneBehaviorJsonAcceptsPluralBehaviorBindingsWithEvents)
     EXPECT_NE(exported.find("\"events\""), std::string::npos);
     EXPECT_NE(exported.find("\"player_move\""), std::string::npos);
     EXPECT_NE(exported.find("\"footstep_audio\""), std::string::npos);
+}
+
+TEST(BehaviorDispatch, DuplicateBehaviorBindingIdsAreRejected)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "duplicate_behavior_binding_ids";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_control",
+        .module = "tank",
+    });
+    node.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "tank_control",
+        .module = "turret",
+    });
+    asset.nodes.push_back(std::move(node));
+
+    const auto result = wz::engine::assets::instantiate_scene(asset);
+
+    EXPECT_EQ(
+        result.error,
+        wz::engine::assets::SceneInstantiateError::
+            DuplicateBehaviorBindingId);
+    EXPECT_NE(
+        result.error_detail.find("tank_control"),
+        std::string::npos);
+}
+
+TEST(BehaviorDispatch, BehaviorBindingIdAffectsSceneFingerprint)
+{
+    wz::engine::assets::SceneAssetData a{};
+    a.name = "behavior_fingerprint";
+    wz::engine::assets::SceneNodeAsset node_a{};
+    node_a.id = "actor";
+    node_a.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "binding_a",
+        .module = "tank",
+    };
+    a.nodes.push_back(std::move(node_a));
+
+    wz::engine::assets::SceneAssetData b = a;
+    ASSERT_TRUE(b.nodes[0].behavior.has_value());
+    b.nodes[0].behavior->id = "binding_b";
+
+    EXPECT_NE(
+        wz::engine::assets::scene_asset_fingerprint(a),
+        wz::engine::assets::scene_asset_fingerprint(b));
+}
+
+TEST(BehaviorDispatch, BehaviorStateStorageAllocatesAndFindsAlignedBlocks)
+{
+    wz::engine::assets::BehaviorStateStorage storage{};
+
+    auto* block = storage.allocate_instance_state(
+        "actor/behavior/0",
+        64u,
+        32u);
+
+    ASSERT_NE(block, nullptr);
+    ASSERT_NE(block->data, nullptr);
+    EXPECT_EQ(block->size, 64u);
+    EXPECT_GE(block->alignment, 32u);
+    EXPECT_EQ(
+        reinterpret_cast<std::uintptr_t>(block->data) % block->alignment,
+        0u);
+
+    auto* found = storage.find_instance_state("actor/behavior/0");
+    EXPECT_EQ(found, block);
+
+    auto* shared = storage.allocate_shared_state("tank_group", 16u, 16u);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(storage.find_shared_state("tank_group"), shared);
+
+    storage.instance_state.clear();
+    EXPECT_EQ(storage.find_instance_state("actor/behavior/0"), nullptr);
 }
 

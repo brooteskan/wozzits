@@ -15,6 +15,11 @@
 #include <string>
 #include <vector>
 
+namespace wz
+{
+    struct Logger;
+}
+
 namespace wz::engine
 {
     struct FrameStorage;
@@ -23,6 +28,7 @@ namespace wz::engine
 namespace wz::engine::assets
 {
     struct BehaviorComponent;
+    struct BehaviorStateStorage;
     struct SceneInstance;
 }
 
@@ -32,10 +38,12 @@ namespace wz::engine::behavior
     {
         const wz::engine::FrameContext* frame_context = nullptr;
         const wz::engine::FrameStorage* frame_storage = nullptr;
-        const wz::engine::assets::SceneInstance* scene = nullptr;
+        wz::engine::assets::SceneInstance* scene = nullptr;
+        wz::engine::assets::BehaviorStateStorage* behavior_state = nullptr;
         const wz::engine::assets::BehaviorComponent* active_behavior = nullptr;
         const WzInputEventPayload* active_input_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
+        wz::Logger* logger = nullptr;
     };
 
     using BehaviorFn = void (*)(
@@ -56,6 +64,11 @@ namespace wz::engine::behavior
     using BehaviorModuleEventFn = void (*)(
         BehaviorFrameContext& context,
         const BehaviorEvent& event,
+        void* user_data);
+
+    using BehaviorModuleInitFn = void (*)(
+        BehaviorFrameContext& context,
+        wz::scene::RuntimeEntityId entity,
         void* user_data);
 
     struct BehaviorHandle
@@ -84,6 +97,7 @@ namespace wz::engine::behavior
     {
         std::string module;
         BehaviorModuleEventFn on_event = nullptr;
+        BehaviorModuleInitFn on_init = nullptr;
         std::vector<std::string> default_events;
         EventChannelMask default_channel_mask = 0u;
         void* user_data = nullptr;
@@ -106,6 +120,14 @@ namespace wz::engine::behavior
         BehaviorModuleHandle register_module(
             std::string module,
             BehaviorModuleEventFn on_event,
+            std::vector<std::string> default_events,
+            EventChannelMask default_channel_mask,
+            void* user_data = nullptr);
+
+        BehaviorModuleHandle register_module(
+            std::string module,
+            BehaviorModuleEventFn on_event,
+            BehaviorModuleInitFn on_init,
             std::vector<std::string> default_events,
             EventChannelMask default_channel_mask,
             void* user_data = nullptr);
