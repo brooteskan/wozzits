@@ -24,6 +24,17 @@ namespace wz::gpu
             desc.color_lod);
     }
 
+    bool release_gaussian_splat_cloud(
+        Device& device,
+        GPUHandle handle)
+    {
+        if (!device.valid() || !handle.valid())
+            return false;
+
+        return dx12::internal::release_gaussian_splat_cloud_dx12(
+            device, handle);
+    }
+
     void set_splat_color_lod_settings(
         Device& device,
         const SplatColorLODSettings& settings)

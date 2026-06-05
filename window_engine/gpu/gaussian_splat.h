@@ -56,4 +56,8 @@ namespace wz::gpu
             .color_lod = &color_lod,
             });
     }
+
+    bool release_gaussian_splat_cloud(
+        Device& device,
+        GPUHandle handle);
 }

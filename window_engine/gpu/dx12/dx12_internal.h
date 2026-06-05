@@ -279,6 +279,7 @@ namespace wz::gpu::dx12::internal {
 
         GPUHandle add(DX12GaussianSplatCloudResource cloud);
         const DX12GaussianSplatCloudResource* get(GPUHandle handle) const;
+        bool release(GPUHandle handle);
         void destroy();
 
     private:
@@ -298,6 +299,10 @@ namespace wz::gpu::dx12::internal {
         const wz::engine::assets::GaussianSplatColorLODData* lod = nullptr);
 
     const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
+        Device& device,
+        GPUHandle handle);
+
+    bool release_gaussian_splat_cloud_dx12(
         Device& device,
         GPUHandle handle);
 

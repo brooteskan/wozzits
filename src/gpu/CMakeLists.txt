@@ -4,7 +4,8 @@ target_sources(window_engine PRIVATE
     vector_field_texture.cpp
     hdr_image_texture.cpp
     mesh.cpp
-    gaussian_splat.cpp 
+    gaussian_splat.cpp
+    gpu_resource_lifecycle.cpp
 
     dx12/dx12_device.cpp
     dx12/dx12_shader.cpp

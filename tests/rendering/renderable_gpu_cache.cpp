@@ -8,7 +8,8 @@
 
 TEST(RenderableGpuCache, RejectsInvalidDeviceAndHandle)
 {
-    wz::engine::rendering::RenderableGpuCache cache;
+    wz::gpu::DeferredReleaseQueue release_queue;
+    wz::engine::rendering::RenderableGpuCache cache(release_queue);
 
     wz::gpu::Device device{};
     wz::engine::assets::RenderableHandle handle{};

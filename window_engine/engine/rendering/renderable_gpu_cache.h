@@ -3,6 +3,7 @@
 
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
+#include <gpu/scoped_gpu_handle.h>
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/renderable/renderable.h>
@@ -36,12 +37,18 @@ namespace wz::engine::rendering
 
     // Runtime helper that realizes RenderableAssetData into backend GPU handles.
     //
-    // Backend/device resource tables own realized GPU resources. clear() only
-    // forgets cached mappings; clear(device) also releases cache-owned mesh
-    // handles from the backend table.
+    // All GPU resources created by the cache are RAII-managed via
+    // ScopedGPUHandle and a DeferredReleaseQueue. Clearing or destroying the
+    // cache automatically queues resources for deferred release — there is no
+    // separate "release" overload to forget to call.
     class RenderableGpuCache
     {
     public:
+        // The cache requires a deferred release queue for GPU resource
+        // lifecycle management. The queue must outlive the cache.
+        explicit RenderableGpuCache(
+            wz::gpu::DeferredReleaseQueue& release_queue);
+
         PreparedRenderable realize(
             wz::gpu::Device& device,
             wz::engine::assets::EngineAssetLibrary& assets,
@@ -68,15 +75,16 @@ namespace wz::engine::rendering
             wz::asset::AssetKey terrain_asset,
             std::vector<TerrainFarSplatChunk> chunks);
 
+        // Forget all cached entries. RAII handles automatically queue their
+        // GPU resources for deferred release — no manual release needed.
         void clear();
-        void clear(wz::gpu::Device& device);
 
     private:
         struct Entry
         {
             wz::asset::AssetKey source_asset{};
             wz::engine::assets::RenderableKind kind{};
-            wz::gpu::GPUHandle gpu_resource{};
+            wz::gpu::ScopedGPUHandle gpu_resource{};
         };
 
         const Entry* find(
@@ -86,11 +94,17 @@ namespace wz::engine::rendering
         void add(
             wz::asset::AssetKey source_asset,
             wz::engine::assets::RenderableKind kind,
-            wz::gpu::GPUHandle gpu_resource);
+            wz::gpu::ScopedGPUHandle gpu_resource);
 
+        wz::gpu::DeferredReleaseQueue& release_queue_;
         std::vector<Entry> entries_;
-        std::vector<std::pair<
-            wz::asset::AssetKey,
-            std::vector<TerrainFarSplatChunk>>> terrain_far_splat_entries_;
+
+        struct TerrainFarSplatEntry
+        {
+            wz::asset::AssetKey terrain_asset{};
+            std::vector<wz::gpu::ScopedGPUHandle> gpu_resources;
+            std::vector<TerrainFarSplatChunk> chunks;
+        };
+        std::vector<TerrainFarSplatEntry> terrain_far_splat_entries_;
     };
 }

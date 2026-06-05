@@ -229,23 +229,58 @@ namespace wz::gpu::dx12::internal
         return &slot.cloud;
     }
 
+    namespace
+    {
+        void release_splat_cloud_resource(DX12GaussianSplatCloudResource& cloud)
+        {
+            if (cloud.vertex_buffer) {
+                cloud.vertex_buffer->Release();
+                cloud.vertex_buffer = nullptr;
+            }
+            if (cloud.sorted_index_buffer) {
+                cloud.sorted_index_buffer->Unmap(0, nullptr);
+                cloud.sorted_index_buffer->Release();
+                cloud.sorted_index_buffer = nullptr;
+                cloud.sorted_index_map    = nullptr;
+            }
+            cloud.vertex_view = {};
+            cloud.splat_count = 0;
+        }
+    }
+
+    bool DX12GaussianSplatCloudTable::release(GPUHandle handle)
+    {
+        if (!handle.valid())
+            return false;
+
+        if (handle.type != GPUResourceType::GaussianSplatCloud)
+            return false;
+
+        if (handle.id == 0 || handle.id >= slots_.size())
+            return false;
+
+        Slot& slot = slots_[handle.id];
+
+        if (!slot.occupied || slot.epoch != handle.epoch)
+            return false;
+
+        release_splat_cloud_resource(slot.cloud);
+        slot.occupied = false;
+        ++slot.epoch;
+        if (slot.epoch == 0)
+            slot.epoch = 1;
+        return true;
+    }
+
     void DX12GaussianSplatCloudTable::destroy()
     {
         for (Slot& slot : slots_) {
-            if (slot.cloud.vertex_buffer) {
-                slot.cloud.vertex_buffer->Release();
-                slot.cloud.vertex_buffer = nullptr;
-            }
-            if (slot.cloud.sorted_index_buffer) {
-                slot.cloud.sorted_index_buffer->Unmap(0, nullptr);
-                slot.cloud.sorted_index_buffer->Release();
-                slot.cloud.sorted_index_buffer = nullptr;
-                slot.cloud.sorted_index_map    = nullptr;
-            }
+            if (!slot.occupied)
+                continue;
 
+            release_splat_cloud_resource(slot.cloud);
             slot.occupied = false;
-            slot.epoch = 0;
-            slot.cloud = {};
+            ++slot.epoch;
         }
 
         slots_.clear();
@@ -395,6 +430,17 @@ namespace wz::gpu::dx12::internal
         assert(impl);
 
         return impl->gaussian_splat_clouds.get(handle);
+    }
+
+    bool release_gaussian_splat_cloud_dx12(
+        Device& device,
+        GPUHandle handle)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return false;
+
+        return impl->gaussian_splat_clouds.release(handle);
     }
 
     const wz::gpu::SplatColorLODSettings& get_lod_settings(Device& device)

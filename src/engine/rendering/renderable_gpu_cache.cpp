@@ -15,6 +15,12 @@
 
 namespace wz::engine::rendering
 {
+    RenderableGpuCache::RenderableGpuCache(
+        wz::gpu::DeferredReleaseQueue& release_queue)
+        : release_queue_(release_queue)
+    {
+    }
+
     const RenderableGpuCache::Entry* RenderableGpuCache::find(
         wz::asset::AssetKey source_asset,
         wz::engine::assets::RenderableKind kind) const
@@ -30,7 +36,7 @@ namespace wz::engine::rendering
     void RenderableGpuCache::add(
         wz::asset::AssetKey source_asset,
         wz::engine::assets::RenderableKind kind,
-        wz::gpu::GPUHandle gpu_resource)
+        wz::gpu::ScopedGPUHandle gpu_resource)
     {
         if (!gpu_resource.valid())
             return;
@@ -38,29 +44,16 @@ namespace wz::engine::rendering
         entries_.push_back(Entry{
             .source_asset = source_asset,
             .kind = kind,
-            .gpu_resource = gpu_resource,
+            .gpu_resource = std::move(gpu_resource),
             });
     }
 
     void RenderableGpuCache::clear()
     {
+        // ScopedGPUHandle destructors automatically queue deferred release
+        // for all GPU resources — no manual release logic needed here.
         entries_.clear();
         terrain_far_splat_entries_.clear();
-    }
-
-    void RenderableGpuCache::clear(wz::gpu::Device& device)
-    {
-        if (device.valid()) {
-            wz::gpu::wait_idle(device);
-
-            for (const Entry& entry : entries_) {
-                if (entry.kind == wz::engine::assets::RenderableKind::Mesh) {
-                    (void)wz::gpu::release_mesh(device, entry.gpu_resource);
-                }
-            }
-        }
-
-        clear();
     }
 
     const std::vector<TerrainFarSplatChunk>*
@@ -68,8 +61,8 @@ namespace wz::engine::rendering
         wz::asset::AssetKey terrain_asset) const
     {
         for (const auto& entry : terrain_far_splat_entries_) {
-            if (entry.first == terrain_asset) {
-                return &entry.second;
+            if (entry.terrain_asset == terrain_asset) {
+                return &entry.chunks;
             }
         }
         return nullptr;
@@ -83,10 +76,13 @@ namespace wz::engine::rendering
             return;
         }
 
-        terrain_far_splat_entries_.push_back({
-            terrain_asset,
-            std::move(chunks),
-        });
+        TerrainFarSplatEntry entry{};
+        entry.terrain_asset = terrain_asset;
+        entry.chunks = std::move(chunks);
+        // Note: gpu_resources for splat chunks are managed separately by
+        // the gpu_scene_render_resource_resolver which stores ScopedGPUHandles
+        // for any uploaded splat cloud resources.
+        terrain_far_splat_entries_.push_back(std::move(entry));
     }
 
     PreparedRenderable RenderableGpuCache::realize(
@@ -129,7 +125,7 @@ namespace wz::engine::rendering
         out.policy_flags   = renderable.policy_flags;
 
         if (const Entry* cached = find(renderable.source_asset, renderable.kind)) {
-            out.gpu_resource = cached->gpu_resource;
+            out.gpu_resource = cached->gpu_resource.get();
             return out;
         }
 
@@ -153,15 +149,15 @@ namespace wz::engine::rendering
             if (!mesh_data || !mesh_data->valid())
                 return {};
 
-            const wz::gpu::GPUHandle gpu_mesh =
-                wz::gpu::upload_mesh(device, *mesh_data);
+            wz::gpu::ScopedGPUHandle gpu_mesh(
+                release_queue_,
+                wz::gpu::upload_mesh(device, *mesh_data));
 
             if (!gpu_mesh.valid())
                 return {};
 
-            add(renderable.source_asset, renderable.kind, gpu_mesh);
-
-            out.gpu_resource = gpu_mesh;
+            out.gpu_resource = gpu_mesh.get();
+            add(renderable.source_asset, renderable.kind, std::move(gpu_mesh));
             return out;
         }
 
@@ -183,20 +179,20 @@ namespace wz::engine::rendering
             if (!scalar_field_data || !scalar_field_data->valid())
                 return {};
 
-            const wz::gpu::GPUHandle gpu_scalar_field_texture =
+            wz::gpu::ScopedGPUHandle gpu_scalar_field(
+                release_queue_,
                 wz::gpu::upload_scalar_field_texture(
                     device,
-                    *scalar_field_data);
+                    *scalar_field_data));
 
-            if (!gpu_scalar_field_texture.valid())
+            if (!gpu_scalar_field.valid())
                 return {};
 
+            out.gpu_resource = gpu_scalar_field.get();
             add(
                 renderable.source_asset,
                 renderable.kind,
-                gpu_scalar_field_texture);
-
-            out.gpu_resource = gpu_scalar_field_texture;
+                std::move(gpu_scalar_field));
             return out;
         }
 
@@ -219,20 +215,20 @@ namespace wz::engine::rendering
             if (!vector_field_data || !vector_field_data->valid())
                 return {};
 
-            const wz::gpu::GPUHandle gpu_vector_field_texture =
+            wz::gpu::ScopedGPUHandle gpu_vector_field(
+                release_queue_,
                 wz::gpu::upload_vector_field_texture(
                     device,
-                    *vector_field_data);
+                    *vector_field_data));
 
-            if (!gpu_vector_field_texture.valid())
+            if (!gpu_vector_field.valid())
                 return {};
 
+            out.gpu_resource = gpu_vector_field.get();
             add(
                 renderable.source_asset,
                 renderable.kind,
-                gpu_vector_field_texture);
-
-            out.gpu_resource = gpu_vector_field_texture;
+                std::move(gpu_vector_field));
             return out;
         }
 
@@ -274,16 +270,18 @@ namespace wz::engine::rendering
                 }
             }
 
-            const wz::gpu::GPUHandle gpu_splat_cloud = lod_data
-                ? wz::gpu::upload_gaussian_splat_cloud(device, *splat_data, *lod_data)
-                : wz::gpu::upload_gaussian_splat_cloud(device, *splat_data);
+            wz::gpu::ScopedGPUHandle gpu_splat_cloud(
+                release_queue_,
+                lod_data
+                    ? wz::gpu::upload_gaussian_splat_cloud(device, *splat_data, *lod_data)
+                    : wz::gpu::upload_gaussian_splat_cloud(device, *splat_data));
 
             if (!gpu_splat_cloud.valid())
                 return {};
 
-            add(renderable.source_asset, renderable.kind, gpu_splat_cloud);
-
-            out.gpu_resource = gpu_splat_cloud;
+            out.gpu_resource = gpu_splat_cloud.get();
+            add(renderable.source_asset, renderable.kind,
+                std::move(gpu_splat_cloud));
             return out;
         }
         }
@@ -315,18 +313,21 @@ namespace wz::engine::rendering
         if (const Entry* cached =
                 find(cache_key, wz::engine::assets::RenderableKind::Mesh))
         {
-            out.gpu_resource = cached->gpu_resource;
+            out.gpu_resource = cached->gpu_resource.get();
             return out;
         }
 
-        const wz::gpu::GPUHandle gpu_mesh =
-            wz::gpu::upload_mesh(device, mesh);
+        wz::gpu::ScopedGPUHandle gpu_mesh(
+            release_queue_,
+            wz::gpu::upload_mesh(device, mesh));
+
         if (!gpu_mesh.valid()) {
             return {};
         }
 
-        add(cache_key, wz::engine::assets::RenderableKind::Mesh, gpu_mesh);
-        out.gpu_resource = gpu_mesh;
+        out.gpu_resource = gpu_mesh.get();
+        add(cache_key, wz::engine::assets::RenderableKind::Mesh,
+            std::move(gpu_mesh));
         return out;
     }
 }
