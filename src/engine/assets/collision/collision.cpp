@@ -35,8 +35,7 @@ namespace wz::engine::assets
                 && (indices.size() % 3u) == 0u;
 
         case CollisionShapeKind::TerrainHeightField:
-            return height_field != wz::asset::AssetKey{}
-                && resolution_x > 0
+            return resolution_x > 0
                 && resolution_y > 0
                 && size[0] > 0.0f
                 && size[1] > 0.0f

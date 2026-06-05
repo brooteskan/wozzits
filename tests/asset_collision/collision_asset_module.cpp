@@ -242,3 +242,72 @@ TEST(CollisionAssetModule, MeshTerrainProducesTerrainMeshSurfaceAsset)
     EXPECT_GT(data->source_triangle_count, 0u);
     EXPECT_GT(data->accepted_triangle_count, 0u);
 }
+
+TEST(CollisionAssetModule, MeshTerrainProducesRegularProjectionHeightField)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_mesh_terrain_projection_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "collision/source_projection_cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto terrain = assets.terrains().create_from_mesh({
+        .name = "collision/projection_mesh_terrain",
+        .mesh = mesh,
+        .min_surface_normal_y = 0.0f,
+        .include_backfaces = true,
+    });
+    ASSERT_TRUE(terrain.valid());
+
+    const auto collision = assets.collisions().create_from_terrain({
+        .name = "collision/mesh_terrain_projection",
+        .terrain = terrain,
+        .build_method = CollisionBuildMethod::TerrainProjectionHeightField,
+        .projection_resolution_x = 17u,
+        .projection_resolution_y = 9u,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    if (!report.ok()) {
+        ADD_FAILURE() << "resolve_all failed with "
+                      << report.failures.size() << " failure(s)";
+        for (const auto& failure : report.failures) {
+            ADD_FAILURE() << "  error=" << static_cast<int>(failure.error);
+        }
+    }
+    ASSERT_TRUE(report.ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(collision));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->source_kind, CollisionSourceKind::Terrain);
+    EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
+    EXPECT_EQ(data->source_asset, terrain.output);
+    EXPECT_EQ(data->geometry_asset, mesh.output);
+    EXPECT_EQ(data->mesh, mesh.output);
+    EXPECT_EQ(data->resolution_x, 17u);
+    EXPECT_EQ(data->resolution_y, 9u);
+    EXPECT_EQ(data->height_samples.size(), 17u * 9u);
+    EXPECT_TRUE(data->supports_height_query);
+    EXPECT_TRUE(data->supports_ray_query);
+    EXPECT_GT(data->source_triangle_count, 0u);
+    EXPECT_GT(data->accepted_triangle_count, 0u);
+}

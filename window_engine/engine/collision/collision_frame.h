@@ -80,6 +80,19 @@ namespace wz::engine::collision
         bool enabled = true;
     };
 
+    struct TerrainConstraintSurfaceEntry
+    {
+        wz::scene::RuntimeEntityId entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::asset::AssetKey collision_asset{};
+        wz::math::Mat4 world_from_local{ wz::math::Mat4::identity() };
+        bool enabled = true;
+
+        // Resolved frame-local pointer for movement-constraint terrain
+        // sampling only. These entries do not participate in collision events.
+        const wz::engine::assets::CollisionAssetData* resolved = nullptr;
+    };
+
     enum class ProximityEventKind : uint8_t
     {
         Enter,
@@ -106,6 +119,8 @@ namespace wz::engine::collision
     struct CollisionFrameStorage
     {
         std::vector<CollisionWorldEntry> world;
+        std::vector<TerrainConstraintSurfaceEntry>
+            terrain_constraint_surfaces;
         std::vector<CollisionPair> broadphase_pairs;
         std::vector<CollisionPair> current_pairs;
         std::vector<CollisionPair> prev_pairs;

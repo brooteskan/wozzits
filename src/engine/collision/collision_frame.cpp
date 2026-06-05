@@ -877,6 +877,7 @@ namespace wz::engine::collision
         CollisionFrameStorage& storage)
     {
         storage.world.clear();
+        storage.terrain_constraint_surfaces.clear();
 
         const uint32_t node_count = static_cast<uint32_t>(
             wz::core::graph::node_count(scene.storage.polytree));
@@ -929,6 +930,39 @@ namespace wz::engine::collision
                 .enabled = component.enabled,
                 .resolved = data,
             });
+        }
+
+        for (const auto& record : scene.terrains) {
+            const auto& component = record.component;
+            if (!component.constrain_movement
+                || component.constraint_surface_asset == wz::asset::AssetKey{}
+                || record.node == wz::scene::INVALID_RUNTIME_ENTITY
+                || record.node >= node_count)
+            {
+                continue;
+            }
+
+            const auto handle = collisions.find_collision(
+                wz::engine::assets::CollisionAsset{
+                    .output = component.constraint_surface_asset,
+                });
+            const auto* data = collisions.get_collision_data(handle);
+            if (!data) {
+                continue;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                scene.storage.polytree,
+                record.node);
+            storage.terrain_constraint_surfaces.push_back(
+                TerrainConstraintSurfaceEntry{
+                    .entity = record.node,
+                    .collision_asset =
+                        component.constraint_surface_asset,
+                    .world_from_local = node.world,
+                    .enabled = true,
+                    .resolved = data,
+                });
         }
     }
 

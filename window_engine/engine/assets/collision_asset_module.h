@@ -33,6 +33,8 @@ namespace wz::engine::assets
             true,
             true,
         };
+        uint32_t projection_resolution_x = 0;
+        uint32_t projection_resolution_y = 0;
     };
 
     struct CollisionAsset

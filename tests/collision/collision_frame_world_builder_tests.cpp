@@ -95,6 +95,96 @@ TEST(CollisionFrameWorldBuilder, ResolvesAssetsAndTransformsLocalBounds)
         wz::scene::transform_aabb(local_bounds, runtime_node.world));
 }
 
+TEST(CollisionFrameWorldBuilder, ResolvesTerrainConstraintSurfaceProxy)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        test_root("wz_collision_world_terrain_constraint_proxy");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "terrain/proxy_height",
+            .width = 4,
+            .height = 4,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+            .frequency = 1.0f,
+            .amplitude = 1.0f,
+            .format = ScalarFieldFormat::Float32,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        });
+    ASSERT_TRUE(field.valid());
+
+    TerrainFromHeightFieldDesc terrain_desc{};
+    terrain_desc.name = "terrain/proxy_terrain";
+    terrain_desc.height_field = field;
+    terrain_desc.size[0] = 16.0f;
+    terrain_desc.size[1] = 16.0f;
+    const auto terrain =
+        assets.terrains().create_from_height_field(terrain_desc);
+    ASSERT_TRUE(terrain.valid());
+
+    const auto constraint_surface =
+        assets.collisions().create_from_terrain({
+            .name = "collision/proxy_constraint_surface",
+            .terrain = terrain,
+        });
+    ASSERT_TRUE(constraint_surface.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto collision_handle =
+        assets.collisions().get_collision(constraint_surface);
+    ASSERT_TRUE(collision_handle.valid());
+    const auto* collision_data =
+        assets.collisions().get_collision_data(collision_handle);
+    ASSERT_NE(collision_data, nullptr);
+
+    SceneAssetData scene{};
+    scene.name = "terrain_constraint_proxy_scene";
+    SceneNodeAsset terrain_node{};
+    terrain_node.id = "terrain";
+    terrain_node.local.translation[0] = 3.0f;
+    terrain_node.local.translation[2] = 4.0f;
+    terrain_node.terrain = SceneTerrainAsset{
+        .terrain_asset = terrain.output,
+        .constraint_surface_asset = constraint_surface.output,
+        .constrain_movement = true,
+    };
+    scene.nodes.push_back(std::move(terrain_node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("terrain"));
+    const auto terrain_h = result.instance.authored_to_runtime["terrain"];
+
+    CollisionFrameStorage frame{};
+    build_collision_world(result.instance, assets.collisions(), frame);
+
+    EXPECT_TRUE(frame.world.empty())
+        << "constraint proxies must not become collision event participants";
+    ASSERT_EQ(frame.terrain_constraint_surfaces.size(), 1u);
+    EXPECT_EQ(frame.terrain_constraint_surfaces[0].entity, terrain_h);
+    EXPECT_EQ(
+        frame.terrain_constraint_surfaces[0].collision_asset,
+        constraint_surface.output);
+    EXPECT_EQ(frame.terrain_constraint_surfaces[0].resolved, collision_data);
+    EXPECT_TRUE(frame.terrain_constraint_surfaces[0].enabled);
+    EXPECT_FLOAT_EQ(
+        frame.terrain_constraint_surfaces[0].world_from_local.m[12],
+        3.0f);
+    EXPECT_FLOAT_EQ(
+        frame.terrain_constraint_surfaces[0].world_from_local.m[14],
+        4.0f);
+}
+
 TEST(CollisionFrameWorldBuilder, DisabledEntryEmitsExitWhenItDisappears)
 {
     using namespace wz::engine::assets;

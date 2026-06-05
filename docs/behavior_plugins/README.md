@@ -1486,6 +1486,9 @@ The terrain node must also opt in:
 ```json
 "terrain": {
   "asset": "asset-key:...",
+  "constraint_surface": {
+    "asset": "asset-key:..."
+  },
   "constrain_movement": true
 }
 ```
@@ -1496,6 +1499,22 @@ the actor's current world X/Z, chooses the highest hit, and writes world Y to
 sampling misses a small gap in an accepted terrain surface, the movement
 constraint can use nearby terrain triangle planes to estimate height at the
 actor's X/Z.
+
+`constraint_surface` is optional. Use it when the visual terrain is dense or
+adaptive and movement only needs a cheaper projection surface. It references a
+regular collision asset in the terrain node's local space. The movement
+constraint samples that proxy instead of the terrain node's ordinary collision
+entry, and the proxy does not create broadphase collision pairs or collision
+events.
+
+For adaptive mesh terrain, build the constraint surface as a regular terrain
+projection heightfield. The projection resolution is authored separately from
+the visual mesh density, so the render terrain can keep millions of adaptive
+triangles while movement samples a predictable X/Z grid. Higher resolutions
+preserve more surface detail but cost more memory and longer build time; query
+cost stays independent of the visual mesh triangle count. Heightfield sampling
+uses smooth interpolation for both height and normal so actors do not inherit
+the adaptive mesh's triangle-density steps or flat face-normal jumps.
 
 `terrain_footprint_radius` is optional and defaults to `0`, which means the
 actor is constrained as a point at its pivot. When it is positive, the runtime

@@ -334,6 +334,127 @@ namespace wz::engine::collision
             return h0 + (h1 - h0) * tz;
         }
 
+        struct HeightFieldEvaluation
+        {
+            float height = 0.0f;
+            float d_height_dx = 0.0f;
+            float d_height_dz = 0.0f;
+        };
+
+        float cubic_interp(
+            float p0,
+            float p1,
+            float p2,
+            float p3,
+            float t) noexcept
+        {
+            return 0.5f
+                * ((2.0f * p1)
+                    + (-p0 + p2) * t
+                    + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3)
+                        * t * t
+                    + (-p0 + 3.0f * p1 - 3.0f * p2 + p3)
+                        * t * t * t);
+        }
+
+        float cubic_derivative(
+            float p0,
+            float p1,
+            float p2,
+            float p3,
+            float t) noexcept
+        {
+            return 0.5f
+                * ((-p0 + p2)
+                    + 2.0f
+                        * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3)
+                        * t
+                    + 3.0f
+                        * (-p0 + 3.0f * p1 - 3.0f * p2 + p3)
+                        * t * t);
+        }
+
+        uint32_t clamped_height_index(int value, uint32_t count) noexcept
+        {
+            return static_cast<uint32_t>(
+                (std::clamp)(value, 0, static_cast<int>(count) - 1));
+        }
+
+        HeightFieldEvaluation smooth_height_field_evaluation(
+            const wz::engine::assets::CollisionAssetData& data,
+            float sample_x,
+            float sample_z,
+            float step_x,
+            float step_z) noexcept
+        {
+            if (data.resolution_x < 2u || data.resolution_y < 2u) {
+                return HeightFieldEvaluation{
+                    .height = bilinear_height_sample(data, sample_x, sample_z),
+                };
+            }
+
+            int x1 = static_cast<int>(std::floor(sample_x));
+            int z1 = static_cast<int>(std::floor(sample_z));
+            if (x1 >= static_cast<int>(data.resolution_x) - 1) {
+                x1 = static_cast<int>(data.resolution_x) - 2;
+            }
+            if (z1 >= static_cast<int>(data.resolution_y) - 1) {
+                z1 = static_cast<int>(data.resolution_y) - 2;
+            }
+            const float tx = sample_x - static_cast<float>(x1);
+            const float tz = sample_z - static_cast<float>(z1);
+
+            float row_values[4]{};
+            float row_dx[4]{};
+            for (int row = 0; row < 4; ++row) {
+                const uint32_t z =
+                    clamped_height_index(z1 + row - 1, data.resolution_y);
+                const float p0 = height_sample_at(
+                    data,
+                    clamped_height_index(x1 - 1, data.resolution_x),
+                    z);
+                const float p1 = height_sample_at(
+                    data,
+                    clamped_height_index(x1, data.resolution_x),
+                    z);
+                const float p2 = height_sample_at(
+                    data,
+                    clamped_height_index(x1 + 1, data.resolution_x),
+                    z);
+                const float p3 = height_sample_at(
+                    data,
+                    clamped_height_index(x1 + 2, data.resolution_x),
+                    z);
+                row_values[row] = cubic_interp(p0, p1, p2, p3, tx);
+                row_dx[row] =
+                    cubic_derivative(p0, p1, p2, p3, tx)
+                    / (std::max)(step_x, 1e-6f);
+            }
+
+            return HeightFieldEvaluation{
+                .height = cubic_interp(
+                    row_values[0],
+                    row_values[1],
+                    row_values[2],
+                    row_values[3],
+                    tz),
+                .d_height_dx = cubic_interp(
+                    row_dx[0],
+                    row_dx[1],
+                    row_dx[2],
+                    row_dx[3],
+                    tz),
+                .d_height_dz =
+                    cubic_derivative(
+                        row_values[0],
+                        row_values[1],
+                        row_values[2],
+                        row_values[3],
+                        tz)
+                    / (std::max)(step_z, 1e-6f),
+            };
+        }
+
         bool sample_height_field_surface(
             const CollisionWorldEntry& entry,
             float world_x,
@@ -386,32 +507,6 @@ namespace wz::engine::collision
                 data.resolution_y > 1u
                     ? clamped_v * static_cast<float>(data.resolution_y - 1u)
                     : 0.0f;
-            const float local_y =
-                bilinear_height_sample(data, sample_x, sample_z);
-            const wz::math::Vec3 local_position{
-                .x = local_probe.x,
-                .y = local_y,
-                .z = local_probe.z,
-            };
-
-            const uint32_t nearest_x =
-                static_cast<uint32_t>(
-                    (std::clamp)(
-                        static_cast<int>(std::round(sample_x)),
-                        0,
-                        static_cast<int>(data.resolution_x) - 1));
-            const uint32_t nearest_z =
-                static_cast<uint32_t>(
-                    (std::clamp)(
-                        static_cast<int>(std::round(sample_z)),
-                        0,
-                        static_cast<int>(data.resolution_y) - 1));
-            const uint32_t left_x = nearest_x == 0u ? 0u : nearest_x - 1u;
-            const uint32_t right_x =
-                (std::min)(nearest_x + 1u, data.resolution_x - 1u);
-            const uint32_t near_z = nearest_z == 0u ? 0u : nearest_z - 1u;
-            const uint32_t far_z =
-                (std::min)(nearest_z + 1u, data.resolution_y - 1u);
             const float step_x =
                 data.resolution_x > 1u
                     ? data.size[0]
@@ -422,22 +517,18 @@ namespace wz::engine::collision
                     ? data.size[1]
                         / static_cast<float>(data.resolution_y - 1u)
                     : data.size[1];
-            const float denom_x =
-                (std::max)(
-                    step_x * static_cast<float>(right_x - left_x),
-                    1e-6f);
-            const float denom_z =
-                (std::max)(
-                    step_z * static_cast<float>(far_z - near_z),
-                    1e-6f);
-            const float d_height_dx =
-                (height_sample_at(data, right_x, nearest_z)
-                    - height_sample_at(data, left_x, nearest_z))
-                / denom_x;
-            const float d_height_dz =
-                (height_sample_at(data, nearest_x, far_z)
-                    - height_sample_at(data, nearest_x, near_z))
-                / denom_z;
+            const HeightFieldEvaluation eval =
+                smooth_height_field_evaluation(
+                    data,
+                    sample_x,
+                    sample_z,
+                    step_x,
+                    step_z);
+            const wz::math::Vec3 local_position{
+                .x = local_probe.x,
+                .y = eval.height,
+                .z = local_probe.z,
+            };
 
             const wz::math::Vec3 world_position =
                 wz::math::mul_point(entry.world_from_local, local_position);
@@ -447,7 +538,7 @@ namespace wz::engine::collision
                     local_position
                         + wz::math::Vec3{
                             .x = 1.0f,
-                            .y = d_height_dx,
+                            .y = eval.d_height_dx,
                             .z = 0.0f,
                         })
                 - world_position;
@@ -457,7 +548,7 @@ namespace wz::engine::collision
                     local_position
                         + wz::math::Vec3{
                             .x = 0.0f,
-                            .y = d_height_dz,
+                            .y = eval.d_height_dz,
                             .z = 1.0f,
                         })
                 - world_position;

@@ -26,35 +26,6 @@
       "visible": true
     },
     {
-      "id": "camera_01",
-      "parent": "root",
-      "transform": {
-        "translation": [
-          0,
-          2,
-          -8
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "camera": {
-        "fov_y": 1.0471999645233154,
-        "near": 0.10000000149011612,
-        "far": 1000,
-        "aspect": 1.7777777910232544
-      }
-    },
-    {
       "id": "mesh_1",
       "parent": "root",
       "name": "rock mesh",
@@ -208,15 +179,11 @@
       "renderable": {
         "asset": "asset-key:e37df32d8895750f:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
       },
-      "collision": {
-        "asset": "asset-key:ab288a27d7afca7a:0000000000000000:f11eca55e7000b01:0000000000000000:0000000000000001:0000000000000000:2fbef4369ad028da:d96361ff7869686e",
-        "layer_mask": 1,
-        "collides_with_mask": 4294967295,
-        "is_trigger": false,
-        "enabled": true
-      },
       "terrain": {
         "asset": "asset-key:1e942e8bb18f627f:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:236178699b1b52e3:5578d804d61c780c",
+        "constraint_surface": {
+          "asset": "asset-key:f1dafcc24f526a6e:0000000000000000:f11eca55e7000b01:0000000000000000:0000000000000002:0000000000000000:2fbef4369ad028da:d96361ff7869686e"
+        },
         "visible": true,
         "queryable": true,
         "constrain_movement": true
@@ -652,9 +619,9 @@
         "space": "world",
         "terrain_constrained": true,
         "terrain_ride_height": 0.20000000298023224,
-        "terrain_footprint_radius": 1,
+        "terrain_footprint_radius": 0.60000002384185791,
         "terrain_align_to_surface": true,
-        "terrain_alignment_strength": 1,
+        "terrain_alignment_strength": 0.30500000715255737,
         "enabled": true
       },
       "behaviors": [
@@ -873,6 +840,44 @@
         "double_sided": true,
         "hidden_line_prepass": false
       }
+    },
+    {
+      "id": "empty_7",
+      "parent": "empty_6",
+      "name": "camera",
+      "transform": {
+        "translation": [
+          6.4499998092651367,
+          1.5,
+          0
+        ],
+        "rotation_quat": [
+          1.0677194950403646e-07,
+          -0.70709449052810669,
+          1.0677194950403646e-07,
+          0.7071191668510437
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:b6c63f90e0e3b239:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:e0fcad82e754b828:4ac179bb3a2e5357"
+      },
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      },
+      "mesh_source": {
+        "kind": "placeholder",
+        "path": "",
+        "mesh_index": 0
+      }
     }
   ],
   "lights": [
@@ -993,7 +998,7 @@
     }
   ],
   "defaults": {
-    "active_camera": "camera_01"
+    "active_camera": "empty_7"
   },
   "scene_editor_metadata": {
     "schema": "wozzits.scene_editor_metadata.v1",
@@ -1001,15 +1006,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        129.51702880859375,
-        73.734405517578125,
-        65.075393676757812
+        -76.329597473144531,
+        106.86484527587891,
+        97.853416442871094
       ],
       "orientation": [
-        -0.29889264702796936,
-        -0.22742126882076263,
-        0.087735563516616821,
-        -0.92262953519821167
+        0.35510510206222534,
+        0.84215593338012695,
+        -0.19066846370697021,
+        0.35821673274040222
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

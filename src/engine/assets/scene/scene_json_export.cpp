@@ -734,6 +734,19 @@ namespace wz::engine::assets
             auto obj = object_value();
             add_member(*obj, "asset",
                 string_value(asset_key_string(terrain.terrain_asset)));
+            if (!(terrain.constraint_surface_asset == wz::asset::AssetKey{})) {
+                auto constraint_surface = object_value();
+                add_member(
+                    *constraint_surface,
+                    "asset",
+                    string_value(
+                        asset_key_string(
+                            terrain.constraint_surface_asset)));
+                add_member(
+                    *obj,
+                    "constraint_surface",
+                    std::move(constraint_surface));
+            }
             add_member(*obj, "visible", bool_value(terrain.visible));
             add_member(*obj, "queryable", bool_value(terrain.queryable));
             add_member(*obj, "constrain_movement",

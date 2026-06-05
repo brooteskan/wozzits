@@ -1893,6 +1893,22 @@ namespace wz::engine::assets::internal
                 const auto* terrain = find_member(node_val, "terrain");
                 SceneTerrainAsset component{};
                 component.terrain_asset = *terrain_asset;
+                std::optional<wz::asset::AssetKey>
+                    constraint_surface_asset;
+                if (!parse_asset_reference_object(
+                        *terrain,
+                        node.id,
+                        "constraint_surface",
+                        logger,
+                        collision_asset_references,
+                        constraint_surface_asset))
+                {
+                    return std::nullopt;
+                }
+                if (constraint_surface_asset) {
+                    component.constraint_surface_asset =
+                        *constraint_surface_asset;
+                }
                 auto visible = read_bool(*terrain, "visible");
                 if (visible) {
                     component.visible = *visible;

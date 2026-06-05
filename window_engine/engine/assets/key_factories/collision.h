@@ -43,11 +43,15 @@ namespace wz::engine::assets
         std::string_view name,
         const wz::asset::AssetKey& terrain_key,
         CollisionBuildMethod build_method,
-        const CollisionOccupancyData& occupancy) noexcept
+        const CollisionOccupancyData& occupancy,
+        uint32_t projection_resolution_x = 0,
+        uint32_t projection_resolution_y = 0) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, static_cast<uint64_t>(build_method));
         h = mix_collision_occupancy(h, occupancy);
+        h = detail::mix64(h, projection_resolution_x);
+        h = detail::mix64(h, projection_resolution_y);
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

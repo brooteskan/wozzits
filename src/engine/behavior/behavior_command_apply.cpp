@@ -514,6 +514,34 @@ namespace wz::engine::behavior
             uint32_t sample_count = 0u;
         };
 
+        bool has_terrain_constraint_surface(
+            const wz::engine::collision::CollisionFrameStorage& collision,
+            wz::scene::RuntimeEntityId entity) noexcept
+        {
+            for (const auto& entry : collision.terrain_constraint_surfaces) {
+                if (entry.entity == entity && entry.enabled
+                    && entry.resolved)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        wz::engine::collision::CollisionWorldEntry
+        world_entry_from_constraint_surface(
+            const wz::engine::collision::TerrainConstraintSurfaceEntry& entry)
+                noexcept
+        {
+            return wz::engine::collision::CollisionWorldEntry{
+                .entity = entry.entity,
+                .collision_asset = entry.collision_asset,
+                .world_from_local = entry.world_from_local,
+                .enabled = entry.enabled,
+                .resolved = entry.resolved,
+            };
+        }
+
         TerrainConstraintSurface sample_constraint_surface(
             const wz::engine::assets::SceneInstance& scene,
             const wz::engine::collision::CollisionFrameStorage& collision,
@@ -525,11 +553,9 @@ namespace wz::engine::behavior
             wz::engine::collision::CollisionSurfaceSample best_sample{};
             wz::engine::collision::CollisionSurfaceSample best_nearest_sample{};
 
-            for (const auto& entry : collision.world) {
-                if (!entity_has_constraining_terrain(scene, entry.entity)) {
-                    continue;
-                }
-
+            auto sample_entry =
+                [&](const wz::engine::collision::CollisionWorldEntry& entry)
+            {
                 wz::engine::collision::CollisionSurfaceSample sample{};
                 if (wz::engine::collision::sample_terrain_surface(
                         entry,
@@ -544,11 +570,11 @@ namespace wz::engine::behavior
                         best_sample = sample;
                         found_surface = true;
                     }
-                    continue;
+                    return;
                 }
 
                 if (found_surface) {
-                    continue;
+                    return;
                 }
 
                 wz::engine::collision::CollisionSurfaceSample nearest_sample{};
@@ -559,7 +585,7 @@ namespace wz::engine::behavior
                         nearest_sample)
                     || !nearest_sample.hit)
                 {
-                    continue;
+                    return;
                 }
 
                 if (!found_nearest_surface
@@ -569,6 +595,23 @@ namespace wz::engine::behavior
                     best_nearest_sample = nearest_sample;
                     found_nearest_surface = true;
                 }
+            };
+
+            for (const auto& entry : collision.terrain_constraint_surfaces) {
+                if (!entity_has_constraining_terrain(scene, entry.entity)) {
+                    continue;
+                }
+                sample_entry(world_entry_from_constraint_surface(entry));
+            }
+
+            for (const auto& entry : collision.world) {
+                if (!entity_has_constraining_terrain(scene, entry.entity)
+                    || has_terrain_constraint_surface(collision, entry.entity))
+                {
+                    continue;
+                }
+
+                sample_entry(entry);
             }
 
             if (found_surface) {

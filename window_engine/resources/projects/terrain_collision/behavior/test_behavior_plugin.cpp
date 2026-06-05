@@ -3,13 +3,15 @@
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*",
-    "frame.update"
+    "input.*"
     };
 
     struct TankState {
         float throttle = 0.0f;
         float turn = 0.0f;
+        float left_tread_speed = 0.0f;
+        float right_tread_speed = 0.0f;
+
         WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     };
 
@@ -70,6 +72,8 @@ namespace
         constexpr float kMoveSpeed = 6.0f;
         constexpr float kTurnSpeed = 1.8f;
 
+
+
         drive_heading_speed(
             facts,
             event,
@@ -101,13 +105,14 @@ namespace
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t axis = wz_input_event_controller_axis(facts);
             float value = wz_input_event_controller_axis_value(facts);
+           
 
-            if (axis == 1) {
-                state->throttle += movement_factor * value;
+            if (axis == 4) {
+                state->left_tread_speed = value;
             }
 
-            if (axis == 0) {
-                state->turn += movement_factor * value;
+            if (axis == 5) {
+                state->right_tread_speed = value;
             }
 
             wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
@@ -133,6 +138,8 @@ namespace
             break;
         }
 
+        state->turn = 0.1f * (state->left_tread_speed - state->right_tread_speed);
+        state->throttle = -0.5f * (state->left_tread_speed + state->right_tread_speed);
         apply_tank_motion(facts, event, state);
 
     }

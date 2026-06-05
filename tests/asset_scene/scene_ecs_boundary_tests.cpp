@@ -758,6 +758,34 @@ TEST(SceneECSBoundary, FingerprintTracksCollisionComponentData)
     EXPECT_NE(original, changed);
 }
 
+TEST(SceneECSBoundary, FingerprintTracksTerrainConstraintSurface)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "fingerprint_terrain_constraint_surface_scene";
+
+    wz::asset::AssetKey terrain_key{};
+    terrain_key.content_hash = { 0x7e44, 0x100u };
+    wz::asset::AssetKey constraint_surface_key{};
+    constraint_surface_key.content_hash = { 0xc011, 0x100u };
+
+    SceneNodeAsset node{};
+    node.id = "terrain";
+    node.terrain = SceneTerrainAsset{
+        .terrain_asset = terrain_key,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const uint64_t original = scene_asset_fingerprint(scene);
+
+    scene.nodes[0].terrain->constraint_surface_asset =
+        constraint_surface_key;
+    const uint64_t changed = scene_asset_fingerprint(scene);
+
+    EXPECT_NE(original, changed);
+}
+
 TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
 {
     using namespace wz::engine::assets;

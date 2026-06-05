@@ -10,6 +10,7 @@
 #include <any>
 #include <cfloat>
 #include <cmath>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -230,6 +231,384 @@ namespace wz::engine::assets::internal
             }
         }
 
+        float height_sample_at(
+            const TerrainAssetData& terrain,
+            uint32_t x,
+            uint32_t z) noexcept
+        {
+            const size_t index =
+                static_cast<size_t>(z) * terrain.resolution_x + x;
+            return index < terrain.height_samples.size()
+                ? terrain.base_height
+                    + terrain.height_samples[index] * terrain.vertical_scale
+                : terrain.base_height;
+        }
+
+        float bilinear_height_sample(
+            const TerrainAssetData& terrain,
+            float sample_x,
+            float sample_z) noexcept
+        {
+            if (terrain.resolution_x == 0u || terrain.resolution_y == 0u) {
+                return terrain.base_height;
+            }
+            const uint32_t x0 =
+                static_cast<uint32_t>(std::floor(sample_x));
+            const uint32_t z0 =
+                static_cast<uint32_t>(std::floor(sample_z));
+            const uint32_t x1 =
+                (std::min)(x0 + 1u, terrain.resolution_x - 1u);
+            const uint32_t z1 =
+                (std::min)(z0 + 1u, terrain.resolution_y - 1u);
+            const float tx = sample_x - static_cast<float>(x0);
+            const float tz = sample_z - static_cast<float>(z0);
+
+            const float h00 = height_sample_at(terrain, x0, z0);
+            const float h10 = height_sample_at(terrain, x1, z0);
+            const float h01 = height_sample_at(terrain, x0, z1);
+            const float h11 = height_sample_at(terrain, x1, z1);
+            const float h0 = h00 + (h10 - h00) * tx;
+            const float h1 = h01 + (h11 - h01) * tx;
+            return h0 + (h1 - h0) * tz;
+        }
+
+        bool triangle_height_at_xz(
+            float x,
+            float z,
+            const CollisionPoint& a,
+            const CollisionPoint& b,
+            const CollisionPoint& c,
+            float& out_y) noexcept
+        {
+            const float ax = a.position[0];
+            const float ay = a.position[1];
+            const float az = a.position[2];
+            const float bx = b.position[0];
+            const float by = b.position[1];
+            const float bz = b.position[2];
+            const float cx = c.position[0];
+            const float cy = c.position[1];
+            const float cz = c.position[2];
+            const float denom =
+                (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+            if (std::abs(denom) <= 1e-8f) {
+                return false;
+            }
+
+            const float u =
+                ((bz - cz) * (x - cx) + (cx - bx) * (z - cz))
+                / denom;
+            const float v =
+                ((cz - az) * (x - cx) + (ax - cx) * (z - cz))
+                / denom;
+            const float w = 1.0f - u - v;
+            constexpr float kEpsilon = 1e-5f;
+            if (u < -kEpsilon || v < -kEpsilon || w < -kEpsilon) {
+                return false;
+            }
+
+            out_y = u * ay + v * by + w * cy;
+            return true;
+        }
+
+        void fill_missing_projection_samples(
+            std::vector<float>& samples,
+            std::vector<uint8_t>& hit,
+            uint32_t resolution_x,
+            uint32_t resolution_y,
+            float fallback_height)
+        {
+            if (std::all_of(
+                    hit.begin(),
+                    hit.end(),
+                    [](uint8_t value) { return value != 0u; }))
+            {
+                return;
+            }
+
+            for (uint32_t pass = 0;
+                pass < resolution_x + resolution_y;
+                ++pass)
+            {
+                bool changed = false;
+                std::vector<float> next_samples = samples;
+                std::vector<uint8_t> next_hit = hit;
+
+                for (uint32_t z = 0; z < resolution_y; ++z) {
+                    for (uint32_t x = 0; x < resolution_x; ++x) {
+                        const size_t index =
+                            static_cast<size_t>(z) * resolution_x + x;
+                        if (hit[index]) {
+                            continue;
+                        }
+
+                        float sum = 0.0f;
+                        uint32_t count = 0;
+                        const int offsets[][2] = {
+                            { -1, 0 },
+                            { 1, 0 },
+                            { 0, -1 },
+                            { 0, 1 },
+                        };
+                        for (const auto& offset : offsets) {
+                            const int nx = static_cast<int>(x) + offset[0];
+                            const int nz = static_cast<int>(z) + offset[1];
+                            if (nx < 0
+                                || nz < 0
+                                || nx >= static_cast<int>(resolution_x)
+                                || nz >= static_cast<int>(resolution_y))
+                            {
+                                continue;
+                            }
+                            const size_t neighbor =
+                                static_cast<size_t>(nz) * resolution_x
+                                + static_cast<size_t>(nx);
+                            if (!hit[neighbor]) {
+                                continue;
+                            }
+                            sum += samples[neighbor];
+                            ++count;
+                        }
+
+                        if (count > 0u) {
+                            next_samples[index] =
+                                sum / static_cast<float>(count);
+                            next_hit[index] = 1u;
+                            changed = true;
+                        }
+                    }
+                }
+
+                samples = std::move(next_samples);
+                hit = std::move(next_hit);
+                if (!changed) {
+                    break;
+                }
+            }
+
+            for (size_t i = 0; i < samples.size(); ++i) {
+                if (!hit[i]) {
+                    samples[i] = fallback_height;
+                    hit[i] = 1u;
+                }
+            }
+        }
+
+        bool project_mesh_terrain_to_heightfield(
+            CollisionAssetData& data,
+            const TerrainAssetData& terrain,
+            uint32_t resolution_x,
+            uint32_t resolution_y)
+        {
+            if (resolution_x < 2u
+                || resolution_y < 2u
+                || terrain.size[0] <= 0.0f
+                || terrain.size[1] <= 0.0f)
+            {
+                return false;
+            }
+
+            const size_t sample_count =
+                static_cast<size_t>(resolution_x) * resolution_y;
+            std::vector<float> samples(
+                sample_count,
+                -std::numeric_limits<float>::infinity());
+            std::vector<uint8_t> hit(sample_count, 0u);
+            const float step_x =
+                terrain.size[0] / static_cast<float>(resolution_x - 1u);
+            const float step_z =
+                terrain.size[1] / static_cast<float>(resolution_y - 1u);
+
+            auto sample_index = [](float value, float origin, float step) {
+                return static_cast<int>(
+                    std::floor((value - origin) / step));
+            };
+
+            for (size_t tri = 0;
+                tri + 2 < terrain.mesh_surface_indices.size();
+                tri += 3)
+            {
+                const uint32_t ia = terrain.mesh_surface_indices[tri + 0u];
+                const uint32_t ib = terrain.mesh_surface_indices[tri + 1u];
+                const uint32_t ic = terrain.mesh_surface_indices[tri + 2u];
+                if (ia * 3u + 2u >= terrain.mesh_surface_points.size()
+                    || ib * 3u + 2u >= terrain.mesh_surface_points.size()
+                    || ic * 3u + 2u >= terrain.mesh_surface_points.size())
+                {
+                    continue;
+                }
+
+                const CollisionPoint a{
+                    .position = {
+                        terrain.mesh_surface_points[ia * 3u + 0u],
+                        terrain.mesh_surface_points[ia * 3u + 1u],
+                        terrain.mesh_surface_points[ia * 3u + 2u],
+                    },
+                };
+                const CollisionPoint b{
+                    .position = {
+                        terrain.mesh_surface_points[ib * 3u + 0u],
+                        terrain.mesh_surface_points[ib * 3u + 1u],
+                        terrain.mesh_surface_points[ib * 3u + 2u],
+                    },
+                };
+                const CollisionPoint c{
+                    .position = {
+                        terrain.mesh_surface_points[ic * 3u + 0u],
+                        terrain.mesh_surface_points[ic * 3u + 1u],
+                        terrain.mesh_surface_points[ic * 3u + 2u],
+                    },
+                };
+
+                const float min_x =
+                    (std::min)({ a.position[0], b.position[0], c.position[0] });
+                const float max_x =
+                    (std::max)({ a.position[0], b.position[0], c.position[0] });
+                const float min_z =
+                    (std::min)({ a.position[2], b.position[2], c.position[2] });
+                const float max_z =
+                    (std::max)({ a.position[2], b.position[2], c.position[2] });
+                const int min_ix = (std::clamp)(
+                    sample_index(min_x, terrain.origin[0], step_x),
+                    0,
+                    static_cast<int>(resolution_x) - 1);
+                const int max_ix = (std::clamp)(
+                    sample_index(max_x, terrain.origin[0], step_x) + 1,
+                    0,
+                    static_cast<int>(resolution_x) - 1);
+                const int min_iz = (std::clamp)(
+                    sample_index(min_z, terrain.origin[1], step_z),
+                    0,
+                    static_cast<int>(resolution_y) - 1);
+                const int max_iz = (std::clamp)(
+                    sample_index(max_z, terrain.origin[1], step_z) + 1,
+                    0,
+                    static_cast<int>(resolution_y) - 1);
+
+                for (int z = min_iz; z <= max_iz; ++z) {
+                    const float world_z =
+                        terrain.origin[1] + step_z * static_cast<float>(z);
+                    for (int x = min_ix; x <= max_ix; ++x) {
+                        const float world_x =
+                            terrain.origin[0]
+                            + step_x * static_cast<float>(x);
+                        float height = 0.0f;
+                        if (!triangle_height_at_xz(
+                                world_x,
+                                world_z,
+                                a,
+                                b,
+                                c,
+                                height))
+                        {
+                            continue;
+                        }
+                        const size_t index =
+                            static_cast<size_t>(z) * resolution_x
+                            + static_cast<size_t>(x);
+                        if (!hit[index] || height > samples[index]) {
+                            samples[index] = height;
+                            hit[index] = 1u;
+                        }
+                    }
+                }
+            }
+
+            fill_missing_projection_samples(
+                samples,
+                hit,
+                resolution_x,
+                resolution_y,
+                terrain.min_height);
+
+            float min_height = samples.empty() ? 0.0f : samples[0];
+            float max_height = min_height;
+            for (float height : samples) {
+                min_height = (std::min)(min_height, height);
+                max_height = (std::max)(max_height, height);
+            }
+
+            data.shape_kind = CollisionShapeKind::TerrainHeightField;
+            data.mesh = terrain.mesh;
+            data.source_triangle_count = terrain.mesh_triangle_count;
+            data.accepted_triangle_count =
+                terrain.mesh_accepted_surface_triangle_count;
+            data.origin[0] = terrain.origin[0];
+            data.origin[1] = terrain.origin[1];
+            data.size[0] = terrain.size[0];
+            data.size[1] = terrain.size[1];
+            data.resolution_x = resolution_x;
+            data.resolution_y = resolution_y;
+            data.vertical_scale = 1.0f;
+            data.base_height = 0.0f;
+            data.min_height = min_height;
+            data.max_height = max_height;
+            data.height_samples = std::move(samples);
+            data.supports_height_query = true;
+            data.supports_ray_query = true;
+            return true;
+        }
+
+        bool resample_heightfield_terrain(
+            CollisionAssetData& data,
+            const TerrainAssetData& terrain,
+            uint32_t resolution_x,
+            uint32_t resolution_y)
+        {
+            if (resolution_x < 2u
+                || resolution_y < 2u
+                || terrain.resolution_x == 0u
+                || terrain.resolution_y == 0u)
+            {
+                return false;
+            }
+
+            std::vector<float> samples;
+            samples.resize(static_cast<size_t>(resolution_x) * resolution_y);
+            float min_height = std::numeric_limits<float>::infinity();
+            float max_height = -std::numeric_limits<float>::infinity();
+            for (uint32_t z = 0; z < resolution_y; ++z) {
+                const float source_z =
+                    resolution_y > 1u
+                        ? static_cast<float>(z)
+                            * static_cast<float>(terrain.resolution_y - 1u)
+                            / static_cast<float>(resolution_y - 1u)
+                        : 0.0f;
+                for (uint32_t x = 0; x < resolution_x; ++x) {
+                    const float source_x =
+                        resolution_x > 1u
+                            ? static_cast<float>(x)
+                                * static_cast<float>(
+                                    terrain.resolution_x - 1u)
+                                / static_cast<float>(resolution_x - 1u)
+                            : 0.0f;
+                    const float height =
+                        bilinear_height_sample(terrain, source_x, source_z);
+                    samples[static_cast<size_t>(z) * resolution_x + x] =
+                        height;
+                    min_height = (std::min)(min_height, height);
+                    max_height = (std::max)(max_height, height);
+                }
+            }
+
+            data.shape_kind = CollisionShapeKind::TerrainHeightField;
+            data.height_field = terrain.height_field;
+            data.origin[0] = terrain.origin[0];
+            data.origin[1] = terrain.origin[1];
+            data.size[0] = terrain.size[0];
+            data.size[1] = terrain.size[1];
+            data.resolution_x = resolution_x;
+            data.resolution_y = resolution_y;
+            data.vertical_scale = 1.0f;
+            data.base_height = 0.0f;
+            data.min_height = min_height;
+            data.max_height = max_height;
+            data.height_samples = std::move(samples);
+            data.supports_height_query = true;
+            data.supports_ray_query = true;
+            return true;
+        }
+
         CollisionAssetData collision_from_terrain(
             const CollisionFromTerrainCompileDesc& desc,
             const TerrainAssetData& terrain)
@@ -248,6 +627,43 @@ namespace wz::engine::assets::internal
             if (desc.build_method == CollisionBuildMethod::Bounds) {
                 data.shape_kind = CollisionShapeKind::Bounds;
                 data.supports_overlap_query = true;
+                return data;
+            }
+
+            if (desc.build_method
+                == CollisionBuildMethod::TerrainProjectionHeightField)
+            {
+                const uint32_t resolution_x =
+                    desc.projection_resolution_x == 0u
+                        ? terrain.resolution_x
+                        : desc.projection_resolution_x;
+                const uint32_t resolution_y =
+                    desc.projection_resolution_y == 0u
+                        ? terrain.resolution_y
+                        : desc.projection_resolution_y;
+                const bool projected =
+                    terrain.representation
+                        == TerrainRepresentationKind::HeightField
+                    ? resample_heightfield_terrain(
+                        data,
+                        terrain,
+                        resolution_x,
+                        resolution_y)
+                    : project_mesh_terrain_to_heightfield(
+                        data,
+                        terrain,
+                        resolution_x,
+                        resolution_y);
+                if (projected) {
+                    data.bounds_min[0] = data.origin[0];
+                    data.bounds_min[1] = data.min_height;
+                    data.bounds_min[2] = data.origin[1];
+                    data.bounds_max[0] = data.origin[0] + data.size[0];
+                    data.bounds_max[1] = data.max_height;
+                    data.bounds_max[2] = data.origin[1] + data.size[1];
+                } else {
+                    data.source_asset = {};
+                }
                 return data;
             }
 

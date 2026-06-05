@@ -77,13 +77,19 @@ namespace wz::engine::assets
         compile_desc.terrain = desc.terrain.output;
         compile_desc.build_method = desc.build_method;
         compile_desc.occupancy = desc.occupancy;
+        compile_desc.projection_resolution_x =
+            desc.projection_resolution_x;
+        compile_desc.projection_resolution_y =
+            desc.projection_resolution_y;
 
         const wz::asset::AssetKey key =
             make_collision_from_terrain_key(
                 desc.name,
                 desc.terrain.output,
                 desc.build_method,
-                desc.occupancy);
+                desc.occupancy,
+                desc.projection_resolution_x,
+                desc.projection_resolution_y);
 
         wz::asset::AssetNode node{};
         node.key = key;

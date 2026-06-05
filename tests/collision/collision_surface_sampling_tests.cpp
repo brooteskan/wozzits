@@ -59,6 +59,32 @@ namespace
         return surface;
     }
 
+    wz::engine::assets::CollisionAssetData quadratic_height_field_surface()
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 0.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = 2.0f;
+        surface.bounds_max[1] = 4.0f;
+        surface.bounds_max[2] = 1.0f;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = 2.0f;
+        surface.size[1] = 1.0f;
+        surface.resolution_x = 3u;
+        surface.resolution_y = 2u;
+        surface.vertical_scale = 1.0f;
+        surface.height_samples = {
+            0.0f, 1.0f, 4.0f,
+            0.0f, 1.0f, 4.0f,
+        };
+        return surface;
+    }
+
     wz::engine::collision::CollisionWorldEntry surface_entry(
         const wz::engine::assets::CollisionAssetData& surface,
         const wz::math::Mat4& world_from_local =
@@ -150,4 +176,48 @@ TEST(CollisionSurfaceSampling, MeshSurfaceSamplesThroughLargeWorldScale)
     EXPECT_NEAR(sample.position.y, 5000.0f, 1e-3f);
     EXPECT_NEAR(sample.position.z, 750.0f, 1e-3f);
     EXPECT_NEAR(sample.normal.y, 1.0f, 1e-5f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldNormalDoesNotSnapAtHalfCell)
+{
+    const auto surface = quadratic_height_field_surface();
+    wz::engine::collision::CollisionSurfaceSample left_sample{};
+    wz::engine::collision::CollisionSurfaceSample right_sample{};
+
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(surface),
+        0.49f,
+        0.4f,
+        left_sample));
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(surface),
+        0.51f,
+        0.4f,
+        right_sample));
+
+    EXPECT_NEAR(left_sample.normal.x, right_sample.normal.x, 0.03f);
+    EXPECT_NEAR(left_sample.normal.y, right_sample.normal.y, 0.03f);
+    EXPECT_NEAR(left_sample.normal.z, right_sample.normal.z, 0.03f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldNormalIsSmoothAcrossCellBoundary)
+{
+    const auto surface = quadratic_height_field_surface();
+    wz::engine::collision::CollisionSurfaceSample left_sample{};
+    wz::engine::collision::CollisionSurfaceSample right_sample{};
+
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(surface),
+        0.99f,
+        0.4f,
+        left_sample));
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(surface),
+        1.01f,
+        0.4f,
+        right_sample));
+
+    EXPECT_NEAR(left_sample.normal.x, right_sample.normal.x, 0.03f);
+    EXPECT_NEAR(left_sample.normal.y, right_sample.normal.y, 0.03f);
+    EXPECT_NEAR(left_sample.normal.z, right_sample.normal.z, 0.03f);
 }

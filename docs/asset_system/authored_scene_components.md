@@ -572,6 +572,7 @@ Runtime-relevant authored placement component for semantic terrain assets.
 Fields:
 
 - `asset`
+- `constraint_surface`
 - `visible`
 - `queryable`
 - `constrain_movement`
@@ -587,6 +588,20 @@ terrain as an explicit authored target. `constrain_movement` controls whether
 runtime movement constraints may use this terrain to place constrained actors.
 Those flags are intentionally separate so a terrain can constrain movement
 without exposing itself to behavior queries, or vice versa.
+
+`constraint_surface` is optional. When present, it references a `CollisionAsset`
+used only by the runtime movement constraint. The terrain can render with a
+detailed adaptive visual mesh while constrained actors ride on a simpler
+projection surface. The proxy surface is interpreted in the terrain node's local
+space and does not participate in normal collision broadphase pairs or collision
+events.
+
+For adaptive mesh terrain, the recommended proxy is a regular terrain projection
+heightfield. Its X/Z resolution is an authored choice independent of render mesh
+density: the terrain can keep an adaptive visual mesh, while constrained motion
+uses a predictable grid. Runtime sampling is smooth for height and normal, so
+terrain alignment does not pop at adaptive triangle boundaries or half-cell
+normal snaps.
 
 ### Motion
 

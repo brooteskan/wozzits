@@ -36,6 +36,7 @@ namespace wz::engine::assets
         Bounds,
         TriangleMesh,
         TerrainSurface,
+        TerrainProjectionHeightField,
     };
 
     struct CollisionOccupancyData
@@ -127,6 +128,8 @@ namespace wz::engine::assets
             true,
             true,
         };
+        uint32_t projection_resolution_x = 0;
+        uint32_t projection_resolution_y = 0;
     };
 
     class CollisionAssetTable
