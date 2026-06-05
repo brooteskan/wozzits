@@ -50,6 +50,15 @@ namespace wz::engine::rendering
             wz::engine::assets::EngineAssetLibrary& assets,
             const wz::engine::assets::RenderableAssetData& renderable);
 
+        PreparedRenderable realize_mesh_data(
+            wz::gpu::Device& device,
+            wz::asset::AssetKey cache_key,
+            const wz::engine::assets::MeshData& mesh,
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle render_program,
+            wz::engine::assets::RenderDomain domain,
+            uint32_t policy_flags);
+
         void clear();
 
     private:

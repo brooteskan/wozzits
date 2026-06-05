@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 
 namespace wz::render::backend::dx12
@@ -185,6 +186,133 @@ namespace wz::render::backend::dx12
         bool is_terrain_surface_program(BuiltinRenderProgram program)
         {
             return program == BuiltinRenderProgram::TerrainMeshSurface;
+        }
+
+        struct ClipPoint
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            float w = 1.0f;
+        };
+
+        ClipPoint transform_clip_point(
+            const Mat4& m,
+            float x,
+            float y,
+            float z) noexcept
+        {
+            return ClipPoint{
+                m.m[0] * x + m.m[4] * y + m.m[8] * z + m.m[12],
+                m.m[1] * x + m.m[5] * y + m.m[9] * z + m.m[13],
+                m.m[2] * x + m.m[6] * y + m.m[10] * z + m.m[14],
+                m.m[3] * x + m.m[7] * y + m.m[11] * z + m.m[15],
+            };
+        }
+
+        bool terrain_chunk_intersects_clip(
+            const wz::engine::assets::TerrainVisualChunk& chunk,
+            const Mat4& world,
+            const Mat4& view_projection)
+        {
+            if (chunk.index_count == 0) {
+                return false;
+            }
+
+            const Mat4 world_view_projection =
+                wz::math::mul(view_projection, world);
+
+            bool outside_left = true;
+            bool outside_right = true;
+            bool outside_bottom = true;
+            bool outside_top = true;
+            bool outside_near = true;
+            bool outside_far = true;
+
+            for (int x_bit = 0; x_bit < 2; ++x_bit) {
+                const float x = x_bit != 0
+                    ? chunk.bounds_max[0]
+                    : chunk.bounds_min[0];
+                for (int y_bit = 0; y_bit < 2; ++y_bit) {
+                    const float y = y_bit != 0
+                        ? chunk.bounds_max[1]
+                        : chunk.bounds_min[1];
+                    for (int z_bit = 0; z_bit < 2; ++z_bit) {
+                        const float z = z_bit != 0
+                            ? chunk.bounds_max[2]
+                            : chunk.bounds_min[2];
+                        const ClipPoint p = transform_clip_point(
+                            world_view_projection,
+                            x,
+                            y,
+                            z);
+
+                        if (p.w <= 0.0f) {
+                            return true;
+                        }
+
+                        outside_left = outside_left && p.x < -p.w;
+                        outside_right = outside_right && p.x > p.w;
+                        outside_bottom = outside_bottom && p.y < -p.w;
+                        outside_top = outside_top && p.y > p.w;
+                        outside_near = outside_near && p.z < 0.0f;
+                        outside_far = outside_far && p.z > p.w;
+                    }
+                }
+            }
+
+            return !(
+                outside_left
+                || outside_right
+                || outside_bottom
+                || outside_top
+                || outside_near
+                || outside_far);
+        }
+
+        bool draw_chunked_terrain_mesh(
+            ID3D12GraphicsCommandList* cmdList,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            const DrawCommand& dc,
+            const RenderFrameView& frame,
+            const wz::engine::rendering::RenderResourceResolver& resolver)
+        {
+            if (!is_terrain_surface_program(resolved.program)
+                || resolved.terrain_chunks.empty())
+            {
+                return false;
+            }
+
+            uint64_t total_triangles = 0;
+            uint64_t submitted_triangles = 0;
+            uint64_t submitted_chunks = 0;
+
+            for (const auto& chunk : resolved.terrain_chunks) {
+                total_triangles += chunk.triangle_count();
+                if (!terrain_chunk_intersects_clip(
+                        chunk,
+                        dc.world,
+                        frame.view.view_projection))
+                {
+                    continue;
+                }
+
+                cmdList->DrawIndexedInstanced(
+                    chunk.index_count,
+                    1,
+                    chunk.first_index,
+                    0,
+                    0);
+                ++submitted_chunks;
+                submitted_triangles += chunk.triangle_count();
+            }
+
+            resolver.record_terrain_render_stats(
+                static_cast<uint64_t>(resolved.terrain_chunks.size()),
+                submitted_chunks,
+                total_triangles,
+                submitted_triangles);
+            return true;
         }
 
         bool is_mesh_wireframe_program(BuiltinRenderProgram program)
@@ -382,7 +510,15 @@ namespace wz::render::backend::dx12
                     0);
                 cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                 cmdList->IASetIndexBuffer(&mesh->index_view);
-                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                if (!draw_chunked_terrain_mesh(
+                        cmdList,
+                        *resolved,
+                        dc,
+                        frame,
+                        resolver))
+                {
+                    cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+                }
 
                 if (mesh_surface) {
                     draw_mesh_surface_wireframe_overlay(
@@ -752,6 +888,7 @@ namespace wz::render::backend::dx12
                 const RenderFrameView& frame,
                 const wz::engine::rendering::RenderResourceResolver& resolver)
     {
+        resolver.reset_terrain_render_stats();
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
 
         submit_sky_pass(device, frame.view.view, frame.sky, nullptr);
@@ -863,6 +1000,7 @@ namespace wz::render::backend::dx12
                 const wz::engine::rendering::RenderResourceResolver& resolver,
                 const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
     {
+        resolver.reset_terrain_render_stats();
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
 
         submit_sky_pass(device, frame.view.view, frame.sky, &pipeline_cache);
@@ -958,7 +1096,15 @@ namespace wz::render::backend::dx12
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
-            cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+            if (!draw_chunked_terrain_mesh(
+                    cmdList,
+                    *resolved,
+                    dc,
+                    frame,
+                    resolver))
+            {
+                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+            }
 
             if (mesh_surface) {
                 draw_mesh_surface_wireframe_overlay(
@@ -1031,6 +1177,7 @@ namespace wz::render::backend::dx12
                 const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
                 const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
     {
+        resolver.reset_terrain_render_stats();
         auto* cmdList = wz::gpu::dx12::internal::get_command_list(device);
 
         submit_sky_pass(device, frame.view.view, frame.sky, &pipeline_cache);
@@ -1138,7 +1285,15 @@ namespace wz::render::backend::dx12
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
-            cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+            if (!draw_chunked_terrain_mesh(
+                    cmdList,
+                    *resolved,
+                    dc,
+                    frame,
+                    resolver))
+            {
+                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
+            }
 
             if (mesh_surface) {
                 draw_mesh_surface_wireframe_overlay(

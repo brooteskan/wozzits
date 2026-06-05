@@ -8,6 +8,7 @@
 #include <gpu/mesh.h>
 
 #include <algorithm>
+#include <span>
 
 namespace wz::engine::rendering
 {
@@ -94,6 +95,19 @@ namespace wz::engine::rendering
 
             return mesh;
         }
+
+        wz::engine::assets::MeshData make_terrain_surface_mesh(
+            const wz::engine::assets::TerrainAssetData& terrain,
+            const wz::engine::assets::MeshData& source,
+            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks)
+        {
+            wz::engine::assets::MeshData mesh = source;
+            if (!terrain.mesh_visual_indices.empty()) {
+                mesh.indices = terrain.mesh_visual_indices;
+            }
+            chunks = terrain.mesh_visual_chunks;
+            return mesh;
+        }
     }
 
     GpuSceneRenderResourceResolver::GpuSceneRenderResourceResolver(
@@ -116,8 +130,75 @@ namespace wz::engine::rendering
         const wz::engine::assets::MeshData* mesh_data = nullptr;
         wz::gpu::GPUHandle cached_mesh{};
 
+        const bool is_terrain_surface =
+            renderable.kind == wz::engine::assets::RenderableKind::Mesh
+            && renderable.program
+                == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface
+            && !(renderable.companion_asset == wz::asset::AssetKey{});
+
+        const wz::engine::assets::TerrainAssetData* terrain_data = nullptr;
+        std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks_storage;
+
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
-            if (cache_) {
+            if (is_terrain_surface) {
+                const wz::engine::assets::TerrainAsset terrain_asset{
+                    .output = renderable.companion_asset,
+                };
+                const wz::engine::assets::TerrainHandle terrain_handle =
+                    assets_.terrains().get_terrain(terrain_asset);
+                if (!terrain_handle.valid()) {
+                    return false;
+                }
+
+                terrain_data =
+                    assets_.terrains().get_terrain_data(terrain_handle);
+                if (!terrain_data || !terrain_data->valid()) {
+                    return false;
+                }
+
+                const wz::engine::assets::MeshAsset mesh_asset{
+                    .output = renderable.source_asset,
+                };
+                const wz::engine::assets::MeshHandle mesh_handle =
+                    assets_.meshes().get_mesh(mesh_asset);
+                if (!mesh_handle.valid()) {
+                    return false;
+                }
+
+                const wz::engine::assets::MeshData* source_mesh =
+                    assets_.meshes().get_mesh_data(mesh_handle);
+                if (!source_mesh || !source_mesh->valid()) {
+                    return false;
+                }
+
+                preview_mesh = make_terrain_surface_mesh(
+                    *terrain_data,
+                    *source_mesh,
+                    terrain_chunks_storage);
+                if (!preview_mesh.valid()) {
+                    return false;
+                }
+
+                if (cache_) {
+                    const PreparedRenderable prepared =
+                        cache_->realize_mesh_data(
+                            device_,
+                            renderable.companion_asset,
+                            preview_mesh,
+                            renderable.program,
+                            renderable.render_program,
+                            renderable.domain,
+                            renderable.policy_flags);
+                    if (!prepared.valid()) {
+                        return false;
+                    }
+                    cached_mesh = prepared.gpu_resource;
+                }
+                else {
+                    mesh_data = &preview_mesh;
+                }
+            }
+            else if (cache_) {
                 const PreparedRenderable prepared =
                     cache_->realize_data(device_, assets_, renderable);
                 if (!prepared.valid()) {
@@ -191,13 +272,19 @@ namespace wz::engine::rendering
         if (!gpu_mesh.valid())
             return false;
 
+        std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+        if (terrain_data) {
+            terrain_chunks = terrain_chunks_storage;
+        }
+
         const wz::scene::MeshHandle scene_mesh =
             render_resolver_.register_mesh(
                 gpu_mesh,
                 renderable.program,
                 renderable.render_program,
                 renderable.terrain_lighting,
-                renderable.mesh_style);
+                renderable.mesh_style,
+                terrain_chunks);
 
         descriptor.mesh = scene_mesh;
         descriptor.material = wz::scene::INVALID_MATERIAL;

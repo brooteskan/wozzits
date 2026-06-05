@@ -250,4 +250,43 @@ namespace wz::engine::rendering
 
         return {};
     }
+
+    PreparedRenderable RenderableGpuCache::realize_mesh_data(
+        wz::gpu::Device& device,
+        wz::asset::AssetKey cache_key,
+        const wz::engine::assets::MeshData& mesh,
+        wz::engine::assets::BuiltinRenderProgram program,
+        wz::asset::ResourceHandle render_program,
+        wz::engine::assets::RenderDomain domain,
+        uint32_t policy_flags)
+    {
+        if (!device.valid() || !mesh.valid()) {
+            return {};
+        }
+
+        PreparedRenderable out{};
+        out.kind = wz::engine::assets::RenderableKind::Mesh;
+        out.source_asset = cache_key;
+        out.program = program;
+        out.render_program = render_program;
+        out.domain = domain;
+        out.policy_flags = policy_flags;
+
+        if (const Entry* cached =
+                find(cache_key, wz::engine::assets::RenderableKind::Mesh))
+        {
+            out.gpu_resource = cached->gpu_resource;
+            return out;
+        }
+
+        const wz::gpu::GPUHandle gpu_mesh =
+            wz::gpu::upload_mesh(device, mesh);
+        if (!gpu_mesh.valid()) {
+            return {};
+        }
+
+        add(cache_key, wz::engine::assets::RenderableKind::Mesh, gpu_mesh);
+        out.gpu_resource = gpu_mesh;
+        return out;
+    }
 }

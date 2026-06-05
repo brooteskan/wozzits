@@ -479,6 +479,60 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     EXPECT_FLOAT_EQ(cmd.world.m[14], 6.0f);
 }
 
+TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
+{
+    using namespace wz::engine::assets;
+
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    TerrainVisualChunk chunks[2]{};
+    chunks[0].first_index = 0u;
+    chunks[0].index_count = 6u;
+    chunks[0].aggregate.triangle_count = 2u;
+    chunks[1].first_index = 6u;
+    chunks[1].index_count = 3u;
+    chunks[1].aggregate.triangle_count = 1u;
+
+    const wz::gpu::GPUHandle gpu_mesh{
+        .id = 7u,
+        .epoch = 1u,
+        .type = wz::gpu::GPUResourceType::Mesh,
+    };
+
+    const auto mesh_handle = resolver.register_mesh(
+        gpu_mesh,
+        BuiltinRenderProgram::TerrainMeshSurface,
+        {},
+        {},
+        {},
+        std::span<const TerrainVisualChunk>(chunks, 2u));
+
+    const auto resolved = resolver.resolve_mesh(mesh_handle);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(resolved->gpu_resource, gpu_mesh);
+    ASSERT_EQ(resolved->terrain_chunks.size(), 2u);
+    EXPECT_EQ(resolved->terrain_chunks[0].first_index, 0u);
+    EXPECT_EQ(resolved->terrain_chunks[0].index_count, 6u);
+    EXPECT_EQ(resolved->terrain_chunks[1].first_index, 6u);
+    EXPECT_EQ(resolved->terrain_chunks[1].index_count, 3u);
+
+    resolver.record_terrain_render_stats(2u, 1u, 3u, 2u);
+    resolver.record_terrain_render_stats(4u, 3u, 12u, 9u);
+
+    auto stats = resolver.terrain_render_stats();
+    EXPECT_EQ(stats.total_chunks, 6u);
+    EXPECT_EQ(stats.submitted_chunks, 4u);
+    EXPECT_EQ(stats.total_triangles, 15u);
+    EXPECT_EQ(stats.submitted_triangles, 11u);
+
+    resolver.reset_terrain_render_stats();
+    stats = resolver.terrain_render_stats();
+    EXPECT_EQ(stats.total_chunks, 0u);
+    EXPECT_EQ(stats.submitted_chunks, 0u);
+    EXPECT_EQ(stats.total_triangles, 0u);
+    EXPECT_EQ(stats.submitted_triangles, 0u);
+}
+
 TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)
 {
     const wz::fs::Path root =

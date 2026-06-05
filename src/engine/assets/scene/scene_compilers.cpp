@@ -2013,6 +2013,21 @@ namespace wz::engine::assets::internal
                     style.terrain_bounce_strength =
                         static_cast<float>(*terrain_bounce_strength);
                 }
+                auto target_pixels_per_triangle = read_number(
+                    *terrain_render_style,
+                    "target_pixels_per_triangle");
+                if (target_pixels_per_triangle) {
+                    if (*target_pixels_per_triangle < 0.0
+                        || !std::isfinite(*target_pixels_per_triangle))
+                    {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid target_pixels_per_triangle");
+                        return std::nullopt;
+                    }
+                    style.target_pixels_per_triangle =
+                        static_cast<float>(*target_pixels_per_triangle);
+                }
 
                 node.terrain_render_style = style;
             }

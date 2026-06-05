@@ -151,6 +151,8 @@ namespace wz::engine::assets
             out += ":sky_visibility:" + std::to_string(style.sky_visibility_strength);
             out += ":normal_lighting:" + std::to_string(style.normal_lighting_strength);
             out += ":terrain_bounce:" + std::to_string(style.terrain_bounce_strength);
+            out += ":target_pixels_per_triangle:"
+                + std::to_string(style.target_pixels_per_triangle);
             return out;
         }
 

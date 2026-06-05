@@ -61,16 +61,21 @@ namespace wz::engine::rendering
         wz::engine::assets::BuiltinRenderProgram program,
         wz::asset::ResourceHandle                render_program,
         wz::engine::assets::TerrainLightingData  terrain_lighting,
-        wz::engine::assets::MeshRenderStyleData  mesh_style)
+        wz::engine::assets::MeshRenderStyleData  mesh_style,
+        std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks)
     {
         const auto index =
             static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
-        mesh_entries_.push_back(
-            { gpu_resource,
-              program,
-              render_program,
-              terrain_lighting,
-              mesh_style });
+        Entry entry{};
+        entry.gpu_resource = gpu_resource;
+        entry.program = program;
+        entry.render_program = render_program;
+        entry.terrain_lighting = terrain_lighting;
+        entry.mesh_style = mesh_style;
+        entry.terrain_chunks.assign(
+            terrain_chunks.begin(),
+            terrain_chunks.end());
+        mesh_entries_.push_back(std::move(entry));
         return index;
     }
 
@@ -88,6 +93,30 @@ namespace wz::engine::rendering
             e.program,
             e.render_program,
             e.terrain_lighting,
-            e.mesh_style };
+            e.mesh_style,
+            e.terrain_chunks };
+    }
+
+    void RenderResourceResolver::reset_terrain_render_stats() const noexcept
+    {
+        terrain_stats_ = {};
+    }
+
+    void RenderResourceResolver::record_terrain_render_stats(
+        uint64_t total_chunks,
+        uint64_t submitted_chunks,
+        uint64_t total_triangles,
+        uint64_t submitted_triangles) const noexcept
+    {
+        terrain_stats_.total_chunks += total_chunks;
+        terrain_stats_.submitted_chunks += submitted_chunks;
+        terrain_stats_.total_triangles += total_triangles;
+        terrain_stats_.submitted_triangles += submitted_triangles;
+    }
+
+    TerrainRenderStats RenderResourceResolver::terrain_render_stats()
+        const noexcept
+    {
+        return terrain_stats_;
     }
 }

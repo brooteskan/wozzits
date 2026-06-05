@@ -11,8 +11,10 @@
 #include <scene/compile/compiled_scene.h>
 #include <gpu/gpu_types.h>
 #include <engine/assets/renderable/renderable.h>
+#include <engine/assets/terrain/terrain.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace wz::engine::rendering
@@ -28,6 +30,15 @@ namespace wz::engine::rendering
         wz::asset::ResourceHandle                render_program{};  // preferred when valid
         wz::engine::assets::TerrainLightingData  terrain_lighting{};
         wz::engine::assets::MeshRenderStyleData  mesh_style{};
+        std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+    };
+
+    struct TerrainRenderStats
+    {
+        uint64_t total_chunks = 0;
+        uint64_t submitted_chunks = 0;
+        uint64_t total_triangles = 0;
+        uint64_t submitted_triangles = 0;
     };
 
     class RenderResourceResolver
@@ -73,12 +84,21 @@ namespace wz::engine::rendering
             wz::engine::assets::BuiltinRenderProgram program,
             wz::asset::ResourceHandle                render_program = {},
             wz::engine::assets::TerrainLightingData  terrain_lighting = {},
-            wz::engine::assets::MeshRenderStyleData  mesh_style = {});
+            wz::engine::assets::MeshRenderStyleData  mesh_style = {},
+            std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
         std::optional<ResolvedRenderableResource>
         resolve_mesh(wz::scene::MeshHandle handle) const noexcept;
+
+        void reset_terrain_render_stats() const noexcept;
+        void record_terrain_render_stats(
+            uint64_t total_chunks,
+            uint64_t submitted_chunks,
+            uint64_t total_triangles,
+            uint64_t submitted_triangles) const noexcept;
+        TerrainRenderStats terrain_render_stats() const noexcept;
 
     private:
         struct Entry
@@ -88,9 +108,11 @@ namespace wz::engine::rendering
             wz::asset::ResourceHandle                render_program{};
             wz::engine::assets::TerrainLightingData  terrain_lighting{};
             wz::engine::assets::MeshRenderStyleData  mesh_style{};
+            std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
         };
 
         std::vector<Entry> splat_entries_;
         std::vector<Entry> mesh_entries_;
+        mutable TerrainRenderStats terrain_stats_{};
     };
 }

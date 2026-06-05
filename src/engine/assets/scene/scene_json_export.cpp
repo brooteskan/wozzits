@@ -801,6 +801,8 @@ namespace wz::engine::assets
                 number_value(style.normal_lighting_strength));
             add_member(*obj, "terrain_bounce_strength",
                 number_value(style.terrain_bounce_strength));
+            add_member(*obj, "target_pixels_per_triangle",
+                number_value(style.target_pixels_per_triangle));
             return obj;
         }
 

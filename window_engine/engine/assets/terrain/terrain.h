@@ -48,6 +48,30 @@ namespace wz::engine::assets
         ImportedField,
     };
 
+    struct TerrainVisualChunkAggregate
+    {
+        float mean_height = 0.0f;
+        float height_variance = 0.0f;
+        float normal_mean[3]{ 0.0f, 1.0f, 0.0f };
+        float normal_variance[2]{ 0.0f, 0.0f };
+        float albedo_mean[3]{ 1.0f, 1.0f, 1.0f };
+        uint32_t triangle_count = 0;
+    };
+
+    struct TerrainVisualChunk
+    {
+        float bounds_min[3]{ 0.0f, 0.0f, 0.0f };
+        float bounds_max[3]{ 0.0f, 0.0f, 0.0f };
+        uint32_t first_index = 0;
+        uint32_t index_count = 0;
+        TerrainVisualChunkAggregate aggregate{};
+
+        [[nodiscard]] uint32_t triangle_count() const noexcept
+        {
+            return index_count / 3u;
+        }
+    };
+
     struct TerrainAssetData
     {
         TerrainRepresentationKind representation =
@@ -96,6 +120,8 @@ namespace wz::engine::assets
 
         std::vector<float> mesh_surface_points;
         std::vector<uint32_t> mesh_surface_indices;
+        std::vector<uint32_t> mesh_visual_indices;
+        std::vector<TerrainVisualChunk> mesh_visual_chunks;
 
         bool valid() const noexcept;
     };

@@ -366,6 +366,7 @@ namespace wz::engine::assets
         float sky_visibility_strength = 1.0f;
         float normal_lighting_strength = 1.0f;
         float terrain_bounce_strength = 0.0f;
+        float target_pixels_per_triangle = 2.0f;
     };
 
     enum class SceneScalarFieldSourceKind : uint8_t

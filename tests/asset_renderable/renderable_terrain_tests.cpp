@@ -373,6 +373,78 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
 }
 
+TEST(RenderableAssetModule, MeshTerrainBuildsVisualChunkRanges)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mesh_terrain_visual_chunk_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/chunk_source_quad",
+            .kind = ProceduralMeshKind::Quad,
+            });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto terrain =
+        assets.terrains().create_from_mesh({
+            .name = "terrain/chunked_surface",
+            .mesh = mesh,
+            .min_surface_normal_y = 0.0f,
+            .include_backfaces = true,
+            });
+    ASSERT_TRUE(terrain.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto terrain_handle = assets.terrains().get_terrain(terrain);
+    ASSERT_TRUE(terrain_handle.valid());
+    const auto* data = assets.terrains().get_terrain_data(terrain_handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+
+    ASSERT_FALSE(data->mesh_visual_chunks.empty());
+
+    uint64_t index_total = 0;
+    uint64_t triangle_total = 0;
+    for (const auto& chunk : data->mesh_visual_chunks) {
+        EXPECT_GT(chunk.index_count, 0u);
+        EXPECT_EQ(chunk.index_count % 3u, 0u);
+        EXPECT_LE(
+            static_cast<uint64_t>(chunk.first_index) + chunk.index_count,
+            data->mesh_visual_indices.size());
+        EXPECT_EQ(
+            chunk.aggregate.triangle_count,
+            chunk.triangle_count());
+        for (int axis = 0; axis < 3; ++axis) {
+            EXPECT_LE(chunk.bounds_min[axis], chunk.bounds_max[axis]);
+        }
+        index_total += chunk.index_count;
+        triangle_total += chunk.triangle_count();
+    }
+
+    EXPECT_EQ(index_total, data->mesh_visual_indices.size());
+    EXPECT_EQ(
+        triangle_total,
+        data->mesh_triangle_count);
+}
+
 TEST(RenderableAssetModule, TerrainSurfaceRenderableCarriesHDRILighting)
 {
     const wz::fs::Path root =

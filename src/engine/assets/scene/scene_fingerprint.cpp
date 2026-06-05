@@ -431,6 +431,7 @@ namespace wz::engine::assets
                 fp.mix_value(style.sky_visibility_strength);
                 fp.mix_value(style.normal_lighting_strength);
                 fp.mix_value(style.terrain_bounce_strength);
+                fp.mix_value(style.target_pixels_per_triangle);
             }
 
             if (node.terrain_mesh_source) {
