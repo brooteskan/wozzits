@@ -256,7 +256,8 @@ namespace wz::engine::assets
                 desc.mesh_program,
                 desc.mesh_policy_flags,
                 desc.domain,
-                desc.lighting);
+                desc.lighting,
+                desc.target_pixels_per_triangle);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -270,6 +271,8 @@ namespace wz::engine::assets
             .domain = desc.domain,
             .mesh_policy_flags = desc.mesh_policy_flags,
             .lighting = desc.lighting,
+            .target_pixels_per_triangle =
+                desc.target_pixels_per_triangle,
         };
 
         if (!system_.register_asset(std::move(node), { desc.terrain.output }))

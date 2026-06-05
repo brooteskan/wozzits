@@ -77,6 +77,7 @@ namespace wz::engine::assets
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite;
         TerrainLightingData lighting{};
+        float target_pixels_per_triangle = 0.0f;
     };
 
     struct RenderableAsset

@@ -153,6 +153,8 @@ namespace wz::engine::assets
             out += ":terrain_bounce:" + std::to_string(style.terrain_bounce_strength);
             out += ":target_pixels_per_triangle:"
                 + std::to_string(style.target_pixels_per_triangle);
+            out += ":visual_chunk_count:"
+                + std::to_string(style.visual_chunk_count);
             return out;
         }
 
@@ -1002,6 +1004,8 @@ namespace wz::engine::assets
                     .mesh_policy_flags =
                         policy_flags_for_terrain_render_style(style, false),
                     .lighting = terrain_lighting_for_style(scene, style),
+                    .target_pixels_per_triangle =
+                        style.target_pixels_per_triangle,
                 });
 
             if (!renderable.valid()) {
@@ -1651,6 +1655,9 @@ namespace wz::engine::assets
 
             TerrainAsset terrain_asset{};
             bool is_mesh_terrain = false;
+            const SceneTerrainRenderStyleAsset render_style =
+                node.terrain_render_style.value_or(
+                    SceneTerrainRenderStyleAsset{});
             if (node.terrain_height_field_source) {
                 const auto& source = *node.terrain_height_field_source;
                 if (source.scalar_field_asset == wz::asset::AssetKey{}) {
@@ -1696,6 +1703,8 @@ namespace wz::engine::assets
                     .include_backfaces = source.include_backfaces,
                     .render_mode = TerrainRenderMode::DebugMesh,
                     .collision_mode = TerrainCollisionMode::MeshSurface,
+                    .visual_chunk_count =
+                        render_style.visual_chunk_count,
                 });
                 if (!terrain_asset.valid()) {
                     report.error =
@@ -1714,10 +1723,6 @@ namespace wz::engine::assets
                 node.renderable_asset.reset();
                 continue;
             }
-
-            const SceneTerrainRenderStyleAsset render_style =
-                node.terrain_render_style.value_or(
-                    SceneTerrainRenderStyleAsset{});
 
             RenderableAsset renderable{};
             bool use_surface = false;

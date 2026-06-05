@@ -44,9 +44,49 @@ namespace wz::engine::rendering
 
     void RenderableGpuCache::clear()
     {
-        // This cache does not own GPU resources in v0.
-        // GPU resource lifetime remains owned by the backend/device resource tables.
         entries_.clear();
+        terrain_far_splat_entries_.clear();
+    }
+
+    void RenderableGpuCache::clear(wz::gpu::Device& device)
+    {
+        if (device.valid()) {
+            wz::gpu::wait_idle(device);
+
+            for (const Entry& entry : entries_) {
+                if (entry.kind == wz::engine::assets::RenderableKind::Mesh) {
+                    (void)wz::gpu::release_mesh(device, entry.gpu_resource);
+                }
+            }
+        }
+
+        clear();
+    }
+
+    const std::vector<TerrainFarSplatChunk>*
+    RenderableGpuCache::find_terrain_far_splat_chunks(
+        wz::asset::AssetKey terrain_asset) const
+    {
+        for (const auto& entry : terrain_far_splat_entries_) {
+            if (entry.first == terrain_asset) {
+                return &entry.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void RenderableGpuCache::add_terrain_far_splat_chunks(
+        wz::asset::AssetKey terrain_asset,
+        std::vector<TerrainFarSplatChunk> chunks)
+    {
+        if (terrain_asset == wz::asset::AssetKey{} || chunks.empty()) {
+            return;
+        }
+
+        terrain_far_splat_entries_.push_back({
+            terrain_asset,
+            std::move(chunks),
+        });
     }
 
     PreparedRenderable RenderableGpuCache::realize(

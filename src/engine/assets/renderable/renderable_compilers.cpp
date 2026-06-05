@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cmath>
 #include <span>
 
 namespace wz::engine::assets::internal
@@ -43,6 +44,227 @@ namespace wz::engine::assets::internal
                         std::max(dst_max[axis], vertex.position[axis]);
                 }
             }
+        }
+
+        float clamp01(float v) noexcept
+        {
+            return std::clamp(v, 0.0f, 1.0f);
+        }
+
+        void expand_splat_bounds(
+            GaussianSplatCloudData& cloud,
+            const GaussianSplat& splat)
+        {
+            if (!cloud.bounds.valid) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    cloud.bounds.min[axis] = splat.position[axis];
+                    cloud.bounds.max[axis] = splat.position[axis];
+                }
+                cloud.bounds.valid = true;
+            }
+            else {
+                for (int axis = 0; axis < 3; ++axis) {
+                    cloud.bounds.min[axis] =
+                        std::min(cloud.bounds.min[axis], splat.position[axis]);
+                    cloud.bounds.max[axis] =
+                        std::max(cloud.bounds.max[axis], splat.position[axis]);
+                }
+            }
+        }
+
+        float logit(float v) noexcept
+        {
+            const float x = std::clamp(v, 0.001f, 0.999f);
+            return std::log(x / (1.0f - x));
+        }
+
+        void triangle_normal(
+            const TerrainAssetData& terrain,
+            uint32_t ia,
+            uint32_t ib,
+            uint32_t ic,
+            float normal[3]) noexcept
+        {
+            const float* points = terrain.mesh_surface_points.data();
+            const float* a = points + static_cast<size_t>(ia) * 3u;
+            const float* b = points + static_cast<size_t>(ib) * 3u;
+            const float* c = points + static_cast<size_t>(ic) * 3u;
+
+            const float abx = b[0] - a[0];
+            const float aby = b[1] - a[1];
+            const float abz = b[2] - a[2];
+            const float acx = c[0] - a[0];
+            const float acy = c[1] - a[1];
+            const float acz = c[2] - a[2];
+            float nx = aby * acz - abz * acy;
+            float ny = abz * acx - abx * acz;
+            float nz = abx * acy - aby * acx;
+            const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (len <= 1e-6f) {
+                normal[0] = 0.0f;
+                normal[1] = 1.0f;
+                normal[2] = 0.0f;
+                return;
+            }
+            const float inv_len = 1.0f / len;
+            normal[0] = nx * inv_len;
+            normal[1] = ny * inv_len;
+            normal[2] = nz * inv_len;
+        }
+
+        void y_axis_to_normal_quat(
+            const float normal[3],
+            float rotation_wxyz[4]) noexcept
+        {
+            const float dot_y = std::clamp(normal[1], -1.0f, 1.0f);
+            if (dot_y > 0.999f) {
+                rotation_wxyz[0] = 1.0f;
+                rotation_wxyz[1] = 0.0f;
+                rotation_wxyz[2] = 0.0f;
+                rotation_wxyz[3] = 0.0f;
+                return;
+            }
+            if (dot_y < -0.999f) {
+                rotation_wxyz[0] = 0.0f;
+                rotation_wxyz[1] = 1.0f;
+                rotation_wxyz[2] = 0.0f;
+                rotation_wxyz[3] = 0.0f;
+                return;
+            }
+
+            const float axis_x = normal[2];
+            const float axis_y = 0.0f;
+            const float axis_z = -normal[0];
+            const float s = std::sqrt((1.0f + dot_y) * 2.0f);
+            const float inv_s = 1.0f / s;
+            rotation_wxyz[0] = 0.5f * s;
+            rotation_wxyz[1] = axis_x * inv_s;
+            rotation_wxyz[2] = axis_y * inv_s;
+            rotation_wxyz[3] = axis_z * inv_s;
+        }
+
+        GaussianSplat make_terrain_far_splat(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& chunk,
+            uint32_t ia,
+            uint32_t ib,
+            uint32_t ic,
+            float tangent_scale)
+        {
+            constexpr float SH_C0 = 0.28209479177387814f;
+            const float* points = terrain.mesh_surface_points.data();
+            const float* a = points + static_cast<size_t>(ia) * 3u;
+            const float* b = points + static_cast<size_t>(ib) * 3u;
+            const float* c = points + static_cast<size_t>(ic) * 3u;
+
+            GaussianSplat out{};
+            for (int axis = 0; axis < 3; ++axis) {
+                out.position[axis] = (a[axis] + b[axis] + c[axis]) / 3.0f;
+            }
+
+            float normal[3]{};
+            triangle_normal(terrain, ia, ib, ic, normal);
+            y_axis_to_normal_quat(normal, out.rotation);
+
+            const float thickness =
+                std::max(0.0005f, tangent_scale * 0.15f);
+            out.scale[0] = std::log(std::max(0.0005f, tangent_scale));
+            out.scale[1] = std::log(thickness);
+            out.scale[2] = std::log(std::max(0.0005f, tangent_scale));
+            out.opacity = logit(0.88f);
+
+            const float height_range =
+                std::max(terrain.max_height - terrain.min_height, 1e-5f);
+            const float height_t =
+                clamp01((out.position[1] - terrain.min_height) / height_range);
+            const float low[3]{ 0.20f, 0.34f, 0.18f };
+            const float high[3]{ 0.54f, 0.50f, 0.36f };
+            for (int axis = 0; axis < 3; ++axis) {
+                const float base =
+                    low[axis] + (high[axis] - low[axis]) * height_t;
+                out.color_dc[axis] = (base - 0.5f) / SH_C0;
+            }
+
+            (void)chunk;
+            return out;
+        }
+
+        std::vector<GaussianSplatCloudData> make_terrain_far_splat_chunks(
+            const TerrainAssetData& terrain)
+        {
+            std::vector<GaussianSplatCloudData> clouds;
+            if (terrain.mesh_visual_chunks.empty()
+                || terrain.mesh_visual_indices.empty()
+                || terrain.mesh_surface_points.empty())
+            {
+                return clouds;
+            }
+
+            clouds.reserve(terrain.mesh_visual_chunks.size());
+            constexpr uint32_t kMaxSplatsPerChunk = 1024u;
+
+            for (const TerrainVisualChunk& chunk : terrain.mesh_visual_chunks) {
+                GaussianSplatCloudData cloud{};
+                const uint32_t triangle_count = chunk.triangle_count();
+                if (triangle_count == 0) {
+                    clouds.push_back(std::move(cloud));
+                    continue;
+                }
+
+                const uint32_t splat_count =
+                    std::min(triangle_count, kMaxSplatsPerChunk);
+                const float bounds_x =
+                    std::max(chunk.bounds_max[0] - chunk.bounds_min[0], 0.001f);
+                const float bounds_z =
+                    std::max(chunk.bounds_max[2] - chunk.bounds_min[2], 0.001f);
+                const float spacing =
+                    std::sqrt(
+                        std::max(
+                            (bounds_x * bounds_z)
+                                / static_cast<float>(splat_count),
+                            1e-6f));
+                const float tangent_scale = spacing * 0.35f;
+
+                cloud.splats.reserve(splat_count);
+                cloud.opacity_min = logit(0.88f);
+                cloud.opacity_max = logit(0.88f);
+                cloud.scale_min = std::log(std::max(0.0005f, tangent_scale));
+                cloud.scale_max = cloud.scale_min;
+
+                for (uint32_t s = 0; s < splat_count; ++s) {
+                    const uint32_t tri =
+                        static_cast<uint32_t>(
+                            (static_cast<uint64_t>(s) * triangle_count)
+                            / splat_count);
+                    const uint32_t base =
+                        chunk.first_index + tri * 3u;
+                    if (base + 2u >= terrain.mesh_visual_indices.size()) {
+                        continue;
+                    }
+
+                    const uint32_t ia = terrain.mesh_visual_indices[base + 0u];
+                    const uint32_t ib = terrain.mesh_visual_indices[base + 1u];
+                    const uint32_t ic = terrain.mesh_visual_indices[base + 2u];
+                    const uint32_t point_count = static_cast<uint32_t>(
+                        terrain.mesh_surface_points.size() / 3u);
+                    if (ia >= point_count || ib >= point_count || ic >= point_count) {
+                        continue;
+                    }
+
+                    GaussianSplat splat = make_terrain_far_splat(
+                        terrain,
+                        chunk,
+                        ia,
+                        ib,
+                        ic,
+                        tangent_scale);
+                    expand_splat_bounds(cloud, splat);
+                    cloud.splats.push_back(std::move(splat));
+                }
+                clouds.push_back(std::move(cloud));
+            }
+
+            return clouds;
         }
     }
 
@@ -393,6 +615,10 @@ namespace wz::engine::assets::internal
                 data.domain = desc->domain;
                 data.policy_flags = desc->mesh_policy_flags;
                 data.terrain_lighting = desc->lighting;
+                data.terrain_target_pixels_per_triangle =
+                    (std::max)(0.0f, desc->target_pixels_per_triangle);
+                data.terrain_far_splat_chunks =
+                    make_terrain_far_splat_chunks(*terrain);
 
                 copy_bounds(
                     data.bounds_min,

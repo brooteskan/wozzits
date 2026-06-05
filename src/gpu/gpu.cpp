@@ -32,6 +32,11 @@ namespace wz::gpu
         wz::gpu::dx12::resize(d, w, h);
     }
 
+    void wait_idle(Device& d)
+    {
+        wz::gpu::dx12::wait_idle(d);
+    }
+
     void begin_frame(Device& d)
     {
         wz::gpu::dx12::begin_frame(d);

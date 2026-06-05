@@ -99,6 +99,8 @@ namespace wz::engine::assets
         compile_desc.preferred_uv_source = desc.preferred_uv_source;
         compile_desc.render_mode = desc.render_mode;
         compile_desc.collision_mode = desc.collision_mode;
+        compile_desc.visual_chunk_count =
+            desc.visual_chunk_count == 0u ? 4096u : desc.visual_chunk_count;
 
         const wz::asset::AssetKey key =
             make_terrain_from_mesh_key(
@@ -110,7 +112,8 @@ namespace wz::engine::assets
                 static_cast<uint8_t>(desc.preferred_normal_source),
                 static_cast<uint8_t>(desc.preferred_uv_source),
                 static_cast<uint8_t>(desc.render_mode),
-                static_cast<uint8_t>(desc.collision_mode));
+                static_cast<uint8_t>(desc.collision_mode),
+                compile_desc.visual_chunk_count);
 
         wz::asset::AssetNode node{};
         node.key = key;

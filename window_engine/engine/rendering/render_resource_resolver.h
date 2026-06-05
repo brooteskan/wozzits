@@ -19,6 +19,12 @@
 
 namespace wz::engine::rendering
 {
+    struct TerrainFarSplatChunk
+    {
+        wz::gpu::GPUHandle gpu_resource{};
+        uint32_t splat_count = 0;
+    };
+
     // Resolved result: the GPU resource handle plus pipeline identification.
     // submit_render_frame uses render_program (when valid) to look up the PSO
     // in RenderProgramPipelineCache; falls back to the legacy BuiltinRenderProgram
@@ -29,8 +35,10 @@ namespace wz::engine::rendering
         wz::engine::assets::BuiltinRenderProgram program{};
         wz::asset::ResourceHandle                render_program{};  // preferred when valid
         wz::engine::assets::TerrainLightingData  terrain_lighting{};
+        float                                   terrain_target_pixels_per_triangle = 0.0f;
         wz::engine::assets::MeshRenderStyleData  mesh_style{};
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
     };
 
     struct TerrainRenderStats
@@ -39,6 +47,23 @@ namespace wz::engine::rendering
         uint64_t submitted_chunks = 0;
         uint64_t total_triangles = 0;
         uint64_t submitted_triangles = 0;
+        uint64_t lod_candidate_chunks = 0;
+        uint64_t lod_candidate_triangles = 0;
+        uint64_t far_splat_chunks = 0;
+        uint64_t far_splats = 0;
+        float lod_target_pixels_per_triangle = 0.0f;
+        float pixels_per_triangle_min = 0.0f;
+        float pixels_per_triangle_max = 0.0f;
+        float pixels_per_triangle_weighted_mean = 0.0f;
+
+        uint64_t pixels_per_triangle_triangles_le_0_5 = 0;
+        uint64_t pixels_per_triangle_triangles_le_1 = 0;
+        uint64_t pixels_per_triangle_triangles_le_2 = 0;
+        uint64_t pixels_per_triangle_triangles_le_4 = 0;
+        uint64_t pixels_per_triangle_triangles_le_8 = 0;
+        uint64_t pixels_per_triangle_triangles_le_16 = 0;
+        uint64_t pixels_per_triangle_triangles_le_32 = 0;
+        uint64_t pixels_per_triangle_triangles_le_64 = 0;
     };
 
     class RenderResourceResolver
@@ -84,8 +109,10 @@ namespace wz::engine::rendering
             wz::engine::assets::BuiltinRenderProgram program,
             wz::asset::ResourceHandle                render_program = {},
             wz::engine::assets::TerrainLightingData  terrain_lighting = {},
+            float                                   terrain_target_pixels_per_triangle = 0.0f,
             wz::engine::assets::MeshRenderStyleData  mesh_style = {},
-            std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {});
+            std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
+            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
@@ -97,7 +124,23 @@ namespace wz::engine::rendering
             uint64_t total_chunks,
             uint64_t submitted_chunks,
             uint64_t total_triangles,
-            uint64_t submitted_triangles) const noexcept;
+            uint64_t submitted_triangles,
+            uint64_t lod_candidate_chunks = 0,
+            uint64_t lod_candidate_triangles = 0,
+            uint64_t far_splat_chunks = 0,
+            uint64_t far_splats = 0,
+            float lod_target_pixels_per_triangle = 0.0f,
+            float pixels_per_triangle_min = 0.0f,
+            float pixels_per_triangle_max = 0.0f,
+            double pixels_per_triangle_weighted_sum = 0.0,
+            uint64_t pixels_per_triangle_triangles_le_0_5 = 0,
+            uint64_t pixels_per_triangle_triangles_le_1 = 0,
+            uint64_t pixels_per_triangle_triangles_le_2 = 0,
+            uint64_t pixels_per_triangle_triangles_le_4 = 0,
+            uint64_t pixels_per_triangle_triangles_le_8 = 0,
+            uint64_t pixels_per_triangle_triangles_le_16 = 0,
+            uint64_t pixels_per_triangle_triangles_le_32 = 0,
+            uint64_t pixels_per_triangle_triangles_le_64 = 0) const noexcept;
         TerrainRenderStats terrain_render_stats() const noexcept;
 
     private:
@@ -107,8 +150,10 @@ namespace wz::engine::rendering
             wz::engine::assets::BuiltinRenderProgram program{};
             wz::asset::ResourceHandle                render_program{};
             wz::engine::assets::TerrainLightingData  terrain_lighting{};
+            float                                   terrain_target_pixels_per_triangle = 0.0f;
             wz::engine::assets::MeshRenderStyleData  mesh_style{};
             std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+            std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks{};
         };
 
         std::vector<Entry> splat_entries_;

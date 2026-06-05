@@ -151,4 +151,15 @@ namespace wz::gpu::dx12::internal
 
         return impl->meshes.get(handle);
     }
+
+    bool release_mesh_dx12(
+        Device& device,
+        GPUHandle handle)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl)
+            return false;
+
+        return impl->meshes.release(handle);
+    }
 }

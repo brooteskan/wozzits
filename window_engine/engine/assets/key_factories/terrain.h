@@ -56,7 +56,8 @@ namespace wz::engine::assets
         uint8_t preferred_normal_source,
         uint8_t preferred_uv_source,
         uint8_t render_mode,
-        uint8_t collision_mode) noexcept
+        uint8_t collision_mode,
+        uint32_t visual_chunk_count = 4096u) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, static_cast<uint64_t>(height_policy));
@@ -66,6 +67,7 @@ namespace wz::engine::assets
         h = detail::mix64(h, static_cast<uint64_t>(preferred_uv_source));
         h = detail::mix64(h, static_cast<uint64_t>(render_mode));
         h = detail::mix64(h, static_cast<uint64_t>(collision_mode));
+        h = detail::mix64(h, static_cast<uint64_t>(visual_chunk_count));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

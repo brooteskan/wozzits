@@ -5,6 +5,36 @@
 #include "dx12_device_internal.h"
 
 namespace wz::gpu::dx12::internal {
+    namespace
+    {
+        void release_mesh_resource(DX12MeshResource& mesh)
+        {
+            if (mesh.vertex_buffer) {
+                mesh.vertex_buffer->Release();
+                mesh.vertex_buffer = nullptr;
+            }
+
+            if (mesh.index_buffer) {
+                mesh.index_buffer->Release();
+                mesh.index_buffer = nullptr;
+            }
+
+            if (mesh.vertex_upload) {
+                mesh.vertex_upload->Release();
+                mesh.vertex_upload = nullptr;
+            }
+
+            if (mesh.index_upload) {
+                mesh.index_upload->Release();
+                mesh.index_upload = nullptr;
+            }
+
+            mesh.vertex_view = {};
+            mesh.index_view = {};
+            mesh.vertex_count = 0;
+            mesh.index_count = 0;
+        }
+    }
 
     GaussianSplatDebugPipelineRef get_gaussian_splat_debug_pipeline(Device& d)
     {
@@ -119,25 +149,9 @@ namespace wz::gpu::dx12::internal {
             if (!slot.occupied)
                 continue;
 
-            if (slot.mesh.vertex_buffer) {
-                slot.mesh.vertex_buffer->Release();
-                slot.mesh.vertex_buffer = nullptr;
-            }
-
-            if (slot.mesh.index_buffer) {
-                slot.mesh.index_buffer->Release();
-                slot.mesh.index_buffer = nullptr;
-            }
-
-            if (slot.mesh.vertex_upload) {
-                slot.mesh.vertex_upload->Release();
-                slot.mesh.vertex_upload = nullptr;
-            }
-
-            if (slot.mesh.index_upload) {
-                slot.mesh.index_upload->Release();
-                slot.mesh.index_upload = nullptr;
-            }
+            release_mesh_resource(slot.mesh);
+            slot.occupied = false;
+            ++slot.epoch;
         }
 
         slots_.clear();
@@ -146,6 +160,24 @@ namespace wz::gpu::dx12::internal {
 
     GPUHandle DX12MeshTable::add(DX12MeshResource mesh)
     {
+        for (uint32_t id = 1; id < static_cast<uint32_t>(slots_.size()); ++id)
+        {
+            Slot& slot = slots_[id];
+            if (slot.occupied)
+                continue;
+
+            if (slot.epoch == 0)
+                slot.epoch = 1;
+            slot.occupied = true;
+            slot.mesh = mesh;
+
+            return GPUHandle{
+                .id = id,
+                .epoch = slot.epoch,
+                .type = GPUResourceType::Mesh,
+            };
+        }
+
         Slot slot{};
         slot.epoch = 1;
         slot.occupied = true;
@@ -183,6 +215,36 @@ namespace wz::gpu::dx12::internal {
             return nullptr;
 
         return &slot.mesh;
+    }
+
+    bool DX12MeshTable::release(GPUHandle handle)
+    {
+        if (!handle.valid())
+            return false;
+
+        if (handle.type != GPUResourceType::Mesh)
+            return false;
+
+        if (handle.id == 0)
+            return false;
+
+        if (handle.id >= slots_.size())
+            return false;
+
+        Slot& slot = slots_[handle.id];
+
+        if (!slot.occupied)
+            return false;
+
+        if (slot.epoch != handle.epoch)
+            return false;
+
+        release_mesh_resource(slot.mesh);
+        slot.occupied = false;
+        ++slot.epoch;
+        if (slot.epoch == 0)
+            slot.epoch = 1;
+        return true;
     }
 
 

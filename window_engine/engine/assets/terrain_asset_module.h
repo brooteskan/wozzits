@@ -46,6 +46,7 @@ namespace wz::engine::assets
         TerrainRenderMode render_mode = TerrainRenderMode::DebugMesh;
         TerrainCollisionMode collision_mode =
             TerrainCollisionMode::MeshSurface;
+        uint32_t visual_chunk_count = 4096;
     };
 
     struct TerrainAsset

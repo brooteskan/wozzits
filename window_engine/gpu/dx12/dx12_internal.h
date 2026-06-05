@@ -156,6 +156,7 @@ namespace wz::gpu::dx12::internal {
 
         GPUHandle add(DX12MeshResource mesh);
         const DX12MeshResource* get(GPUHandle handle) const;
+        bool release(GPUHandle handle);
         void destroy();
 
     private:
@@ -175,6 +176,11 @@ namespace wz::gpu::dx12::internal {
     );
 
     const DX12MeshResource* get_mesh(
+        Device& device,
+        GPUHandle handle
+    );
+
+    bool release_mesh_dx12(
         Device& device,
         GPUHandle handle
     );

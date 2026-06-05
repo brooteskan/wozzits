@@ -276,20 +276,86 @@ namespace wz::engine::assets::internal
             out.normal_variance[1] = static_cast<float>(var_z);
         }
 
-        uint32_t visual_chunk_grid_for_mesh(const MeshData& mesh) noexcept
+        struct TriangleCentroid
         {
-            const uint32_t triangles =
-                static_cast<uint32_t>(mesh.indices.size() / 3u);
-            if (triangles < 512u) {
-                return 4u;
+            uint32_t tri_index;
+            float cx;
+            float cz;
+        };
+
+        constexpr uint32_t kDefaultVisualChunkCount = 4096u;
+
+        void kd_split_visual_chunks(
+            const MeshData& mesh,
+            std::vector<TriangleCentroid>& centroids,
+            size_t begin,
+            size_t end,
+            uint32_t target_triangles,
+            std::vector<ChunkBuildState>& out_chunks)
+        {
+            const size_t count = end - begin;
+            if (count == 0) {
+                return;
             }
-            if (triangles < 8192u) {
-                return 8u;
+
+            if (count <= target_triangles) {
+                ChunkBuildState chunk{};
+                chunk.indices.reserve(count * 3u);
+                for (size_t i = begin; i < end; ++i) {
+                    const size_t base =
+                        static_cast<size_t>(centroids[i].tri_index) * 3u;
+                    const uint32_t ia = mesh.indices[base + 0];
+                    const uint32_t ib = mesh.indices[base + 1];
+                    const uint32_t ic = mesh.indices[base + 2];
+                    chunk.indices.push_back(ia);
+                    chunk.indices.push_back(ib);
+                    chunk.indices.push_back(ic);
+                    expand_chunk_bounds(chunk, mesh, ia, ib, ic);
+                    accumulate_chunk_aggregate(chunk, mesh, ia, ib, ic);
+                }
+                out_chunks.push_back(std::move(chunk));
+                return;
             }
-            if (triangles < 131072u) {
-                return 16u;
+
+            float min_x = centroids[begin].cx;
+            float max_x = min_x;
+            float min_z = centroids[begin].cz;
+            float max_z = min_z;
+            for (size_t i = begin + 1; i < end; ++i) {
+                min_x = std::min(min_x, centroids[i].cx);
+                max_x = std::max(max_x, centroids[i].cx);
+                min_z = std::min(min_z, centroids[i].cz);
+                max_z = std::max(max_z, centroids[i].cz);
             }
-            return 32u;
+
+            const size_t mid = begin + count / 2u;
+            if ((max_x - min_x) >= (max_z - min_z)) {
+                std::nth_element(
+                    centroids.begin() + static_cast<ptrdiff_t>(begin),
+                    centroids.begin() + static_cast<ptrdiff_t>(mid),
+                    centroids.begin() + static_cast<ptrdiff_t>(end),
+                    [](const TriangleCentroid& a,
+                       const TriangleCentroid& b) {
+                        return a.cx < b.cx;
+                    });
+            }
+            else {
+                std::nth_element(
+                    centroids.begin() + static_cast<ptrdiff_t>(begin),
+                    centroids.begin() + static_cast<ptrdiff_t>(mid),
+                    centroids.begin() + static_cast<ptrdiff_t>(end),
+                    [](const TriangleCentroid& a,
+                       const TriangleCentroid& b) {
+                        return a.cz < b.cz;
+                    });
+            }
+
+            kd_split_visual_chunks(
+                mesh, centroids, begin, mid,
+                target_triangles, out_chunks);
+            kd_split_visual_chunks(
+                mesh, centroids, mid, end,
+                target_triangles, out_chunks);
         }
 
         bool mesh_triangle_is_accepted_surface(
@@ -352,56 +418,59 @@ namespace wz::engine::assets::internal
 
         void copy_chunked_visual_mesh_surface(
             TerrainAssetData& data,
-            const MeshData& mesh)
+            const MeshData& mesh,
+            uint32_t visual_chunk_count)
         {
-            const uint32_t grid = visual_chunk_grid_for_mesh(mesh);
-            const float min_x = data.bounds_min[0];
-            const float min_z = data.bounds_min[2];
-            const float size_x = data.bounds_max[0] - data.bounds_min[0];
-            const float size_z = data.bounds_max[2] - data.bounds_min[2];
-            const float inv_size_x = size_x > 0.0f ? 1.0f / size_x : 0.0f;
-            const float inv_size_z = size_z > 0.0f ? 1.0f / size_z : 0.0f;
+            const uint32_t triangle_count =
+                static_cast<uint32_t>(mesh.indices.size() / 3u);
 
-            std::vector<ChunkBuildState> chunks(
-                static_cast<size_t>(grid) * grid);
+            data.mesh_visual_indices.clear();
+            data.mesh_visual_chunks.clear();
 
-            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
-                const uint32_t ia = mesh.indices[i + 0];
-                const uint32_t ib = mesh.indices[i + 1];
-                const uint32_t ic = mesh.indices[i + 2];
+            if (triangle_count == 0) {
+                return;
+            }
+
+            const uint32_t chunk_count =
+                visual_chunk_count == 0u
+                    ? kDefaultVisualChunkCount
+                    : visual_chunk_count;
+            const uint32_t target_triangles_per_chunk = std::max(
+                1u,
+                (triangle_count + chunk_count - 1u) / chunk_count);
+
+            std::vector<TriangleCentroid> centroids;
+            centroids.reserve(triangle_count);
+            for (uint32_t t = 0; t < triangle_count; ++t) {
+                const size_t base = static_cast<size_t>(t) * 3u;
+                const uint32_t ia = mesh.indices[base + 0];
+                const uint32_t ib = mesh.indices[base + 1];
+                const uint32_t ic = mesh.indices[base + 2];
                 if (ia >= mesh.vertices.size()
                     || ib >= mesh.vertices.size()
                     || ic >= mesh.vertices.size())
                 {
                     continue;
                 }
-
                 const auto& a = mesh.vertices[ia];
                 const auto& b = mesh.vertices[ib];
                 const auto& c = mesh.vertices[ic];
-                const float cx =
-                    (a.position[0] + b.position[0] + c.position[0]) / 3.0f;
-                const float cz =
-                    (a.position[2] + b.position[2] + c.position[2]) / 3.0f;
-                const float tx = std::clamp((cx - min_x) * inv_size_x, 0.0f, 0.999999f);
-                const float tz = std::clamp((cz - min_z) * inv_size_z, 0.0f, 0.999999f);
-                const uint32_t ix = std::min(
-                    static_cast<uint32_t>(tx * static_cast<float>(grid)),
-                    grid - 1u);
-                const uint32_t iz = std::min(
-                    static_cast<uint32_t>(tz * static_cast<float>(grid)),
-                    grid - 1u);
-
-                ChunkBuildState& chunk = chunks[static_cast<size_t>(iz) * grid + ix];
-                chunk.indices.push_back(ia);
-                chunk.indices.push_back(ib);
-                chunk.indices.push_back(ic);
-                expand_chunk_bounds(chunk, mesh, ia, ib, ic);
-                accumulate_chunk_aggregate(chunk, mesh, ia, ib, ic);
+                centroids.push_back({
+                    t,
+                    (a.position[0] + b.position[0] + c.position[0]) / 3.0f,
+                    (a.position[2] + b.position[2] + c.position[2]) / 3.0f,
+                });
             }
 
-            data.mesh_visual_indices.clear();
-            data.mesh_visual_chunks.clear();
+            std::vector<ChunkBuildState> chunks;
+            kd_split_visual_chunks(
+                mesh,
+                centroids,
+                0,
+                centroids.size(),
+                target_triangles_per_chunk,
+                chunks);
+
             data.mesh_visual_indices.reserve(mesh.indices.size());
             data.mesh_visual_chunks.reserve(chunks.size());
 
@@ -552,6 +621,10 @@ namespace wz::engine::assets::internal
                 data.include_backfaces = desc->include_backfaces;
                 data.mesh_has_source_normals = mesh->has_normals;
                 data.mesh_has_source_uv0 = mesh->has_uv0;
+                data.mesh_visual_chunk_count =
+                    desc->visual_chunk_count == 0u
+                        ? kDefaultVisualChunkCount
+                        : desc->visual_chunk_count;
                 data.mesh_triangle_count =
                     static_cast<uint32_t>(mesh->indices.size() / 3u);
                 data.mesh_accepted_surface_triangle_count =
@@ -571,7 +644,10 @@ namespace wz::engine::assets::internal
                     *mesh,
                     desc->min_surface_normal_y,
                     desc->include_backfaces);
-                copy_chunked_visual_mesh_surface(data, *mesh);
+                copy_chunked_visual_mesh_surface(
+                    data,
+                    *mesh,
+                    data.mesh_visual_chunk_count);
                 data.origin[0] = data.bounds_min[0];
                 data.origin[1] = data.bounds_min[2];
                 data.size[0] = data.bounds_max[0] - data.bounds_min[0];

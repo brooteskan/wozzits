@@ -562,6 +562,7 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         .normal_lighting_strength = 0.9f,
         .terrain_bounce_strength = 0.2f,
         .target_pixels_per_triangle = 3.5f,
+        .visual_chunk_count = 2048u,
     };
     authored.nodes.push_back(std::move(node));
 
@@ -579,6 +580,7 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(
         exported.find("\"target_pixels_per_triangle\""),
         std::string::npos);
+    EXPECT_NE(exported.find("\"visual_chunk_count\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"constraint_surface\""), std::string::npos);
     EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
@@ -643,6 +645,9 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].terrain_render_style->target_pixels_per_triangle,
         3.5f);
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain_render_style->visual_chunk_count,
+        2048u);
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;

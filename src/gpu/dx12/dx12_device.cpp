@@ -572,6 +572,15 @@ namespace wz::gpu::dx12
 
     }
 
+    void wait_idle(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->queue || !impl->fence || !impl->fence_event)
+            return;
+
+        wait_for_gpu(impl);
+    }
+
     void destroy_device(Device& d)
     {
         auto* impl = (DX12Device*)d.impl;

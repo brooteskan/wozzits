@@ -64,11 +64,18 @@ namespace wz::engine::assets
         float bounds_max[3]{ 0.0f, 0.0f, 0.0f };
         uint32_t first_index = 0;
         uint32_t index_count = 0;
+        uint32_t replacement_first_index = 0;
+        uint32_t replacement_index_count = 0;
         TerrainVisualChunkAggregate aggregate{};
 
         [[nodiscard]] uint32_t triangle_count() const noexcept
         {
             return index_count / 3u;
+        }
+
+        [[nodiscard]] uint32_t replacement_triangle_count() const noexcept
+        {
+            return replacement_index_count / 3u;
         }
     };
 
@@ -94,6 +101,7 @@ namespace wz::engine::assets
         bool mesh_has_source_uv0 = false;
         uint32_t mesh_triangle_count = 0;
         uint32_t mesh_accepted_surface_triangle_count = 0;
+        uint32_t mesh_visual_chunk_count = 4096;
 
         float origin[2]{ 0.0f, 0.0f };
         float size[2]{ 1.0f, 1.0f };
@@ -157,6 +165,7 @@ namespace wz::engine::assets
         TerrainRenderMode render_mode = TerrainRenderMode::DebugMesh;
         TerrainCollisionMode collision_mode =
             TerrainCollisionMode::MeshSurface;
+        uint32_t visual_chunk_count = 4096;
     };
 
     class TerrainAssetTable

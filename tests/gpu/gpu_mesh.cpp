@@ -185,6 +185,36 @@ TEST(DX12MeshTable, DestroyInvalidatesExistingHandles)
     EXPECT_EQ(table.get(handle), nullptr);
 }
 
+TEST(DX12MeshTable, ReleaseInvalidatesHandleAndReusesSlot)
+{
+    wz::gpu::dx12::internal::DX12MeshTable table{};
+
+    wz::gpu::dx12::internal::DX12MeshResource first{};
+    first.vertex_count = 3;
+    first.index_count = 3;
+
+    const wz::gpu::GPUHandle first_handle = table.add(first);
+    ASSERT_NE(table.get(first_handle), nullptr);
+
+    EXPECT_TRUE(table.release(first_handle));
+    EXPECT_EQ(table.get(first_handle), nullptr);
+    EXPECT_FALSE(table.release(first_handle));
+
+    wz::gpu::dx12::internal::DX12MeshResource second{};
+    second.vertex_count = 4;
+    second.index_count = 6;
+
+    const wz::gpu::GPUHandle second_handle = table.add(second);
+    const wz::gpu::dx12::internal::DX12MeshResource* resolved =
+        table.get(second_handle);
+
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_EQ(second_handle.id, first_handle.id);
+    EXPECT_NE(second_handle.epoch, first_handle.epoch);
+    EXPECT_EQ(resolved->vertex_count, 4u);
+    EXPECT_EQ(resolved->index_count, 6u);
+}
+
 TEST(DX12MeshTable, CanAddAfterDestroy)
 {
     wz::gpu::dx12::internal::DX12MeshTable table{};

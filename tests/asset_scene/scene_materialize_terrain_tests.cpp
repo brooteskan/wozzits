@@ -209,6 +209,8 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)
         .sky_visibility_strength = 0.75f,
         .normal_lighting_strength = 0.5f,
         .terrain_bounce_strength = 0.1f,
+        .target_pixels_per_triangle = 7.0f,
+        .visual_chunk_count = 1024u,
     };
     scene.nodes.push_back(std::move(terrain));
 
@@ -220,6 +222,14 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto terrain_handle = assets.terrains().get_terrain(
+        TerrainAsset{ .output = scene.nodes[1].terrain->terrain_asset });
+    ASSERT_TRUE(terrain_handle.valid());
+    const auto* terrain_data =
+        assets.terrains().get_terrain_data(terrain_handle);
+    ASSERT_NE(terrain_data, nullptr);
+    EXPECT_EQ(terrain_data->mesh_visual_chunk_count, 1024u);
 
     const auto renderable = assets.renderables().get_renderable(
         RenderableAsset{ .output = *scene.nodes[1].renderable_asset });
@@ -233,6 +243,7 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)
     EXPECT_FLOAT_EQ(data->terrain_lighting.dominant_light_intensity, 0.5f);
     EXPECT_FLOAT_EQ(data->terrain_lighting.sky_visibility_strength, 0.75f);
     EXPECT_FLOAT_EQ(data->terrain_lighting.terrain_bounce_strength, 0.1f);
+    EXPECT_FLOAT_EQ(data->terrain_target_pixels_per_triangle, 7.0f);
 }
 
 TEST(SceneAuthoringMaterialize, TerrainHDRILightingCanBeDerivedFromEXR)

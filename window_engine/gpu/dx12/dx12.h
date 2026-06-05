@@ -17,6 +17,7 @@ namespace wz::gpu::dx12
 
     void destroy_device(wz::gpu::Device& device);
     void resize(wz::gpu::Device& device, int w, int h);
+    void wait_idle(wz::gpu::Device& device);
 
     void begin_frame(wz::gpu::Device& device);
     void clear(wz::gpu::Device& device, float r, float g, float b, float a);

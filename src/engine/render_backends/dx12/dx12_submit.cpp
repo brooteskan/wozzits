@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <vector>
 
 namespace wz::render::backend::dx12
 {
@@ -270,11 +271,118 @@ namespace wz::render::backend::dx12
                 || outside_far);
         }
 
+        float terrain_chunk_projected_area_pixels(
+            const wz::engine::assets::TerrainVisualChunk& chunk,
+            const Mat4& world,
+            const Mat4& view_projection,
+            float viewport_w,
+            float viewport_h)
+        {
+            if (viewport_w <= 0.0f || viewport_h <= 0.0f) {
+                return 0.0f;
+            }
+
+            const Mat4 world_view_projection =
+                wz::math::mul(view_projection, world);
+
+            float min_x = viewport_w;
+            float min_y = viewport_h;
+            float max_x = 0.0f;
+            float max_y = 0.0f;
+            bool has_projected_corner = false;
+
+            for (int x_bit = 0; x_bit < 2; ++x_bit) {
+                const float x = x_bit != 0
+                    ? chunk.bounds_max[0]
+                    : chunk.bounds_min[0];
+                for (int y_bit = 0; y_bit < 2; ++y_bit) {
+                    const float y = y_bit != 0
+                        ? chunk.bounds_max[1]
+                        : chunk.bounds_min[1];
+                    for (int z_bit = 0; z_bit < 2; ++z_bit) {
+                        const float z = z_bit != 0
+                            ? chunk.bounds_max[2]
+                            : chunk.bounds_min[2];
+                        const ClipPoint p = transform_clip_point(
+                            world_view_projection,
+                            x,
+                            y,
+                            z);
+                        if (p.w <= 0.0f) {
+                            return viewport_w * viewport_h;
+                        }
+
+                        const float ndc_x = p.x / p.w;
+                        const float ndc_y = p.y / p.w;
+                        const float px = (ndc_x * 0.5f + 0.5f) * viewport_w;
+                        const float py = (0.5f - ndc_y * 0.5f) * viewport_h;
+
+                        min_x = (std::min)(min_x, px);
+                        min_y = (std::min)(min_y, py);
+                        max_x = (std::max)(max_x, px);
+                        max_y = (std::max)(max_y, py);
+                        has_projected_corner = true;
+                    }
+                }
+            }
+
+            if (!has_projected_corner) {
+                return 0.0f;
+            }
+
+            min_x = (std::clamp)(min_x, 0.0f, viewport_w);
+            max_x = (std::clamp)(max_x, 0.0f, viewport_w);
+            min_y = (std::clamp)(min_y, 0.0f, viewport_h);
+            max_y = (std::clamp)(max_y, 0.0f, viewport_h);
+            return (std::max)(0.0f, max_x - min_x)
+                * (std::max)(0.0f, max_y - min_y);
+        }
+
+        void record_pixels_per_triangle_bucket(
+            float pixels_per_triangle,
+            uint32_t triangle_count,
+            uint64_t& triangles_le_0_5,
+            uint64_t& triangles_le_1,
+            uint64_t& triangles_le_2,
+            uint64_t& triangles_le_4,
+            uint64_t& triangles_le_8,
+            uint64_t& triangles_le_16,
+            uint64_t& triangles_le_32,
+            uint64_t& triangles_le_64) noexcept
+        {
+            if (pixels_per_triangle <= 0.5f) {
+                triangles_le_0_5 += triangle_count;
+            }
+            if (pixels_per_triangle <= 1.0f) {
+                triangles_le_1 += triangle_count;
+            }
+            if (pixels_per_triangle <= 2.0f) {
+                triangles_le_2 += triangle_count;
+            }
+            if (pixels_per_triangle <= 4.0f) {
+                triangles_le_4 += triangle_count;
+            }
+            if (pixels_per_triangle <= 8.0f) {
+                triangles_le_8 += triangle_count;
+            }
+            if (pixels_per_triangle <= 16.0f) {
+                triangles_le_16 += triangle_count;
+            }
+            if (pixels_per_triangle <= 32.0f) {
+                triangles_le_32 += triangle_count;
+            }
+            if (pixels_per_triangle <= 64.0f) {
+                triangles_le_64 += triangle_count;
+            }
+        }
+
         bool draw_chunked_terrain_mesh(
+            wz::gpu::Device& device,
             ID3D12GraphicsCommandList* cmdList,
             const wz::engine::rendering::ResolvedRenderableResource& resolved,
             const DrawCommand& dc,
             const RenderFrameView& frame,
+            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
             const wz::engine::rendering::RenderResourceResolver& resolver)
         {
             if (!is_terrain_surface_program(resolved.program)
@@ -286,9 +394,36 @@ namespace wz::render::backend::dx12
             uint64_t total_triangles = 0;
             uint64_t submitted_triangles = 0;
             uint64_t submitted_chunks = 0;
+            uint64_t lod_candidate_chunks = 0;
+            uint64_t lod_candidate_triangles = 0;
+            double pixels_per_triangle_weighted_sum = 0.0;
+            float pixels_per_triangle_min = 0.0f;
+            float pixels_per_triangle_max = 0.0f;
+            bool has_pixels_per_triangle = false;
+            uint64_t pixels_per_triangle_triangles_le_0_5 = 0;
+            uint64_t pixels_per_triangle_triangles_le_1 = 0;
+            uint64_t pixels_per_triangle_triangles_le_2 = 0;
+            uint64_t pixels_per_triangle_triangles_le_4 = 0;
+            uint64_t pixels_per_triangle_triangles_le_8 = 0;
+            uint64_t pixels_per_triangle_triangles_le_16 = 0;
+            uint64_t pixels_per_triangle_triangles_le_32 = 0;
+            uint64_t pixels_per_triangle_triangles_le_64 = 0;
+            const float target_pixels_per_triangle =
+                resolved.terrain_target_pixels_per_triangle;
+            const bool lod_active =
+                target_pixels_per_triangle > 0.0f;
+            const float viewport_w = static_cast<float>(
+                wz::gpu::dx12::internal::get_width(device));
+            const float viewport_h = static_cast<float>(
+                wz::gpu::dx12::internal::get_height(device));
 
-            for (const auto& chunk : resolved.terrain_chunks) {
-                total_triangles += chunk.triangle_count();
+            for (uint32_t chunk_index = 0;
+                chunk_index < resolved.terrain_chunks.size();
+                ++chunk_index)
+            {
+                const auto& chunk = resolved.terrain_chunks[chunk_index];
+                const uint32_t triangle_count = chunk.triangle_count();
+                total_triangles += triangle_count;
                 if (!terrain_chunk_intersects_clip(
                         chunk,
                         dc.world,
@@ -297,21 +432,89 @@ namespace wz::render::backend::dx12
                     continue;
                 }
 
+                uint32_t draw_first_index = chunk.first_index;
+                uint32_t draw_index_count = chunk.index_count;
+
+                if (triangle_count > 0 && lod_active) {
+                    const float projected_area =
+                        terrain_chunk_projected_area_pixels(
+                            chunk,
+                            dc.world,
+                            frame.view.view_projection,
+                            viewport_w,
+                            viewport_h);
+                    const float pixels_per_triangle =
+                        projected_area
+                        / static_cast<float>(triangle_count);
+                    pixels_per_triangle_weighted_sum +=
+                        static_cast<double>(pixels_per_triangle)
+                        * static_cast<double>(triangle_count);
+                    record_pixels_per_triangle_bucket(
+                        pixels_per_triangle,
+                        triangle_count,
+                        pixels_per_triangle_triangles_le_0_5,
+                        pixels_per_triangle_triangles_le_1,
+                        pixels_per_triangle_triangles_le_2,
+                        pixels_per_triangle_triangles_le_4,
+                        pixels_per_triangle_triangles_le_8,
+                        pixels_per_triangle_triangles_le_16,
+                        pixels_per_triangle_triangles_le_32,
+                        pixels_per_triangle_triangles_le_64);
+                    if (!has_pixels_per_triangle) {
+                        pixels_per_triangle_min = pixels_per_triangle;
+                        pixels_per_triangle_max = pixels_per_triangle;
+                        has_pixels_per_triangle = true;
+                    }
+                    else {
+                        pixels_per_triangle_min = (std::min)(
+                            pixels_per_triangle_min,
+                            pixels_per_triangle);
+                        pixels_per_triangle_max = (std::max)(
+                            pixels_per_triangle_max,
+                            pixels_per_triangle);
+                    }
+
+                    if (pixels_per_triangle < target_pixels_per_triangle) {
+                        ++lod_candidate_chunks;
+                        lod_candidate_triangles += triangle_count;
+                        if (chunk.replacement_index_count > 0) {
+                            draw_first_index = chunk.replacement_first_index;
+                            draw_index_count = chunk.replacement_index_count;
+                        }
+                    }
+                }
+
                 cmdList->DrawIndexedInstanced(
-                    chunk.index_count,
+                    draw_index_count,
                     1,
-                    chunk.first_index,
+                    draw_first_index,
                     0,
                     0);
                 ++submitted_chunks;
-                submitted_triangles += chunk.triangle_count();
+                submitted_triangles += draw_index_count / 3u;
             }
 
             resolver.record_terrain_render_stats(
                 static_cast<uint64_t>(resolved.terrain_chunks.size()),
                 submitted_chunks,
                 total_triangles,
-                submitted_triangles);
+                submitted_triangles,
+                lod_candidate_chunks,
+                lod_candidate_triangles,
+                0u,
+                0u,
+                target_pixels_per_triangle,
+                pixels_per_triangle_min,
+                pixels_per_triangle_max,
+                pixels_per_triangle_weighted_sum,
+                pixels_per_triangle_triangles_le_0_5,
+                pixels_per_triangle_triangles_le_1,
+                pixels_per_triangle_triangles_le_2,
+                pixels_per_triangle_triangles_le_4,
+                pixels_per_triangle_triangles_le_8,
+                pixels_per_triangle_triangles_le_16,
+                pixels_per_triangle_triangles_le_32,
+                pixels_per_triangle_triangles_le_64);
             return true;
         }
 
@@ -511,10 +714,12 @@ namespace wz::render::backend::dx12
                 cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                 cmdList->IASetIndexBuffer(&mesh->index_view);
                 if (!draw_chunked_terrain_mesh(
+                        device,
                         cmdList,
                         *resolved,
                         dc,
                         frame,
+                        pipeline_cache,
                         resolver))
                 {
                     cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -1097,10 +1302,12 @@ namespace wz::render::backend::dx12
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             if (!draw_chunked_terrain_mesh(
+                    device,
                     cmdList,
                     *resolved,
                     dc,
                     frame,
+                    pipeline_cache,
                     resolver))
             {
                 cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
@@ -1286,10 +1493,12 @@ namespace wz::render::backend::dx12
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             if (!draw_chunked_terrain_mesh(
+                    device,
                     cmdList,
                     *resolved,
                     dc,
                     frame,
+                    pipeline_cache,
                     resolver))
             {
                 cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);

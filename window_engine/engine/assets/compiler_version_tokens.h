@@ -49,7 +49,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kTerrainSurfaceRenderableCompilerVersion = 2;
+    inline constexpr uint64_t kTerrainSurfaceRenderableCompilerVersion = 5;
     inline constexpr uint64_t kDiagnosticResampledTimeSeriesToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryToDataTableCompilerVersion = 1;
@@ -58,7 +58,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kGaussianSplatColorLODCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatTerrainSurfaceFromHeightFieldCompilerVersion = 2;
     inline constexpr uint64_t kTerrainSplatFromGaeaR32CompilerVersion = 2;
-    inline constexpr uint64_t kTerrainCompilerVersion = 3;
+    inline constexpr uint64_t kTerrainCompilerVersion = 4;
     inline constexpr uint64_t kCollisionCompilerVersion = 2;
     inline constexpr uint64_t kSceneFromJSONCompilerVersion = 4;
     inline constexpr uint64_t kSceneFromGLBCompilerVersion = 1;

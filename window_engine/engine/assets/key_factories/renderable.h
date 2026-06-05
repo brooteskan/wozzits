@@ -162,13 +162,17 @@ namespace wz::engine::assets
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite,
         RenderDomain domain = RenderDomain::Opaque,
-        const TerrainLightingData& lighting = {}) noexcept
+        const TerrainLightingData& lighting = {},
+        float target_pixels_per_triangle = 0.0f) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, static_cast<uint64_t>(mesh_program));
         h = detail::mix64(h, static_cast<uint64_t>(mesh_policy_flags));
         h = detail::mix64(h, static_cast<uint64_t>(domain));
         h = mix_terrain_lighting_data(h, lighting);
+        h = detail::mix64(
+            h,
+            terrain_lighting_float_bits(target_pixels_per_triangle));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

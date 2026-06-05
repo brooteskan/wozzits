@@ -2028,6 +2028,34 @@ namespace wz::engine::assets::internal
                     style.target_pixels_per_triangle =
                         static_cast<float>(*target_pixels_per_triangle);
                 }
+                auto visual_chunk_count = read_number(
+                    *terrain_render_style,
+                    "visual_chunk_count");
+                if (visual_chunk_count) {
+                    const double value = *visual_chunk_count;
+                    if (!std::isfinite(value) || value < 0.0) {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid visual_chunk_count");
+                        return std::nullopt;
+                    }
+                    const uint32_t chunks =
+                        static_cast<uint32_t>(value);
+                    const bool exact_integer =
+                        static_cast<double>(chunks) == value;
+                    const bool allowed =
+                        chunks == 512u
+                        || chunks == 1024u
+                        || chunks == 2048u
+                        || chunks == 4096u;
+                    if (!exact_integer || !allowed) {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid visual_chunk_count");
+                        return std::nullopt;
+                    }
+                    style.visual_chunk_count = chunks;
+                }
 
                 node.terrain_render_style = style;
             }

@@ -40,5 +40,6 @@ namespace wz::gpu
 	void present(Device& device); // swapchain present (vsync on, sync_interval=1)
 	void present(Device& device, uint32_t sync_interval); // explicit sync interval (0 = no vsync)
 	void resize(Device& device, int w, int h); // This MUST recreate swapchain safely.
+	void wait_idle(Device& device);
 
 }

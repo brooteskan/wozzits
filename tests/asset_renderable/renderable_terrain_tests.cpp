@@ -343,6 +343,7 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
         assets.renderables().create_terrain_surface({
             .name = "terrain/surface_mesh_renderable",
             .terrain = terrain,
+            .target_pixels_per_triangle = 5.0f,
             });
 
     ASSERT_TRUE(renderable.valid());
@@ -368,6 +369,9 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
     EXPECT_EQ(data->program, BuiltinRenderProgram::TerrainMeshSurface);
     EXPECT_EQ(data->domain, RenderDomain::Opaque);
     EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::SceneLights);
+    EXPECT_FLOAT_EQ(data->terrain_target_pixels_per_triangle, 5.0f);
+    ASSERT_FALSE(data->terrain_far_splat_chunks.empty());
+    EXPECT_TRUE(data->terrain_far_splat_chunks.front().valid());
     EXPECT_EQ(data->policy_flags & RenderPolicy_Wireframe, 0u);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
@@ -406,6 +410,7 @@ TEST(RenderableAssetModule, MeshTerrainBuildsVisualChunkRanges)
             .mesh = mesh,
             .min_surface_normal_y = 0.0f,
             .include_backfaces = true,
+            .visual_chunk_count = 512u,
             });
     ASSERT_TRUE(terrain.valid());
 
@@ -418,6 +423,7 @@ TEST(RenderableAssetModule, MeshTerrainBuildsVisualChunkRanges)
     const auto* data = assets.terrains().get_terrain_data(terrain_handle);
     ASSERT_NE(data, nullptr);
     ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_visual_chunk_count, 512u);
 
     ASSERT_FALSE(data->mesh_visual_chunks.empty());
 

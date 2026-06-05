@@ -39,6 +39,7 @@ namespace wz::engine::rendering
                 renderable.program,
                 renderable.render_program,
                 renderable.terrain_lighting,
+                renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style);
 
         descriptor.mesh = scene_mesh;

@@ -3,6 +3,7 @@
 // engine/assets/renderable/renderable.h
 
 #include <asset/types.h>
+#include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
 #include <engine/assets/mesh_render_style/mesh_render_style.h>
 
 #include <cstdint>
@@ -106,6 +107,8 @@ namespace wz::engine::assets
         float bounds_max[3]{};
 
         TerrainLightingData terrain_lighting{};
+        float terrain_target_pixels_per_triangle = 0.0f;
+        std::vector<GaussianSplatCloudData> terrain_far_splat_chunks;
         MeshRenderStyleData mesh_style{};
 
         bool valid() const noexcept;
@@ -175,5 +178,6 @@ namespace wz::engine::assets
             RenderPolicy_DepthTest
             | RenderPolicy_DepthWrite;
         TerrainLightingData lighting{};
+        float target_pixels_per_triangle = 0.0f;
     };
 }

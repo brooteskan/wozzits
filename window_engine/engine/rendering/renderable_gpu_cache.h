@@ -7,6 +7,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable_asset_module.h>
+#include <engine/rendering/render_resource_resolver.h>
 
 #include <vector>
 
@@ -35,8 +36,9 @@ namespace wz::engine::rendering
 
     // Runtime helper that realizes RenderableAssetData into backend GPU handles.
     //
-    // This cache does not own the GPU resources it remembers. Backend/device
-    // resource tables own the resources. clear() only forgets cached mappings.
+    // Backend/device resource tables own realized GPU resources. clear() only
+    // forgets cached mappings; clear(device) also releases cache-owned mesh
+    // handles from the backend table.
     class RenderableGpuCache
     {
     public:
@@ -59,7 +61,15 @@ namespace wz::engine::rendering
             wz::engine::assets::RenderDomain domain,
             uint32_t policy_flags);
 
+        const std::vector<TerrainFarSplatChunk>* find_terrain_far_splat_chunks(
+            wz::asset::AssetKey terrain_asset) const;
+
+        void add_terrain_far_splat_chunks(
+            wz::asset::AssetKey terrain_asset,
+            std::vector<TerrainFarSplatChunk> chunks);
+
         void clear();
+        void clear(wz::gpu::Device& device);
 
     private:
         struct Entry
@@ -79,5 +89,8 @@ namespace wz::engine::rendering
             wz::gpu::GPUHandle gpu_resource);
 
         std::vector<Entry> entries_;
+        std::vector<std::pair<
+            wz::asset::AssetKey,
+            std::vector<TerrainFarSplatChunk>>> terrain_far_splat_entries_;
     };
 }

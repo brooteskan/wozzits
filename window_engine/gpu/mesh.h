@@ -38,4 +38,8 @@ namespace wz::gpu
             .mesh = &mesh,
             });
     }
+
+    bool release_mesh(
+        Device& device,
+        GPUHandle handle);
 }
