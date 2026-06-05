@@ -56,7 +56,7 @@ namespace
 
         if (state) {
             uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
-            wz_log_infof(facts, "find empty_2: %u", result);
+            // wz_log_infof(facts, "find empty_2: %u", result);
             // wz_find_entity_by_name(facts, "terrain", &state->terrain);
             // First load gives zeroed memory. Re-init/hot reload may preserve it.
         }
@@ -115,21 +115,21 @@ namespace
                 state->right_tread_speed = value;
             }
 
-            wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
+            // wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
         {
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t button = wz_input_event_controller_button(facts);
-            wz_log_infof(facts, "frame %u pressed controller %u button %u",frame_index, controller, button);
+            //wz_log_infof(facts, "frame %u pressed controller %u button %u",frame_index, controller, button);
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
         {
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t button = wz_input_event_controller_button(facts);
-            wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
+            //wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
             break;
         }
         
