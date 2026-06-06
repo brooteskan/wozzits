@@ -243,6 +243,97 @@ TEST(CollisionAssetModule, MeshTerrainProducesTerrainMeshSurfaceAsset)
     EXPECT_GT(data->accepted_triangle_count, 0u);
 }
 
+TEST(CollisionAssetModule, TerrainCollisionUsesProjectDiskCache)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_terrain_disk_cache_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path cache_root =
+        wz::fs::join(root, ".wozzits/cache");
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    auto resolve_collision =
+        [&](const char* mesh_name,
+            const char* terrain_name,
+            const char* collision_name) -> CollisionAssetData
+    {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            root,
+            EngineAssetCacheSettings{
+                .root = cache_root,
+                .enabled = true,
+            },
+        };
+
+        const auto mesh = assets.meshes().create_procedural_mesh({
+            .name = mesh_name,
+            .kind = ProceduralMeshKind::Cube,
+        });
+        EXPECT_TRUE(mesh.valid());
+
+        const auto terrain = assets.terrains().create_from_mesh({
+            .name = terrain_name,
+            .mesh = mesh,
+            .min_surface_normal_y = 0.0f,
+            .include_backfaces = true,
+        });
+        EXPECT_TRUE(terrain.valid());
+
+        const auto collision = assets.collisions().create_from_terrain({
+            .name = collision_name,
+            .terrain = terrain,
+        });
+        EXPECT_TRUE(collision.valid());
+
+        EXPECT_TRUE(assets.commit());
+        const auto report = assets.resolve_all();
+        EXPECT_TRUE(report.ok());
+
+        const CollisionAssetData* data =
+            assets.collisions().get_collision_data(
+                assets.collisions().get_collision(collision));
+        EXPECT_NE(data, nullptr);
+        return data ? *data : CollisionAssetData{};
+    };
+
+    const CollisionAssetData first = resolve_collision(
+        "collision/cache_source_cube",
+        "collision/cache_mesh_terrain",
+        "collision/cache_terrain_surface");
+    ASSERT_TRUE(first.valid());
+
+    const wz::fs::Path cache_directory =
+        wz::fs::join(
+            wz::fs::join(cache_root, "assets"),
+            "collision_terrain");
+    const auto entries = wz::fs::list_directory(cache_directory);
+    ASSERT_EQ(entries.error, wz::fs::FileError::None);
+    EXPECT_FALSE(entries.value.empty());
+
+    const CollisionAssetData second = resolve_collision(
+        "collision/cache_source_cube",
+        "collision/cache_mesh_terrain",
+        "collision/cache_terrain_surface");
+    ASSERT_TRUE(second.valid());
+
+    EXPECT_EQ(second.shape_kind, first.shape_kind);
+    EXPECT_EQ(second.points.size(), first.points.size());
+    EXPECT_EQ(second.indices.size(), first.indices.size());
+    EXPECT_EQ(second.triangle_bounds.size(), first.triangle_bounds.size());
+    EXPECT_EQ(
+        second.surface_grid.cell_triangle_indices.size(),
+        first.surface_grid.cell_triangle_indices.size());
+    EXPECT_EQ(second.source_triangle_count, first.source_triangle_count);
+    EXPECT_EQ(second.accepted_triangle_count, first.accepted_triangle_count);
+}
+
 TEST(CollisionAssetModule, MeshTerrainProducesRegularProjectionHeightField)
 {
     const wz::fs::Path root =

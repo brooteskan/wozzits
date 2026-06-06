@@ -99,6 +99,32 @@ namespace wz::engine::assets
         };
     }
 
+    MeshAsset MeshAssetModule::create_decimated_mesh(
+        const MeshDecimationAssetDesc& desc)
+    {
+        if (!desc.source_mesh.valid())
+            return {};
+
+        const wz::asset::AssetKey mesh_key =
+            make_decimated_mesh_key(desc.source_mesh.output, desc);
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kMeshDecimationSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        if (!system_.register_asset(
+            std::move(node),
+            { desc.source_mesh.output }))
+            return MeshAsset{ .output = mesh_key };
+
+        return MeshAsset{
+            .output = mesh_key,
+        };
+    }
+
     MeshAsset MeshAssetModule::create_placeholder_mesh(
         std::string)
     {

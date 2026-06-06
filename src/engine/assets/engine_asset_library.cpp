@@ -3,6 +3,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/engine_asset_library_internal.h>
 
+#include <utility>
 #include <vector>
 
 namespace wz::engine::assets
@@ -42,9 +43,23 @@ namespace wz::engine::assets
         wz::gpu::Device& device,
         wz::Logger& logger,
         wz::fs::Path     resource_root)
+        : EngineAssetLibrary(
+            device,
+            logger,
+            std::move(resource_root),
+            EngineAssetCacheSettings{})
+    {
+    }
+
+    EngineAssetLibrary::EngineAssetLibrary(
+        wz::gpu::Device& device,
+        wz::Logger& logger,
+        wz::fs::Path     resource_root,
+        EngineAssetCacheSettings cache_settings)
         : device_(device)
         , logger_(logger)
         , resource_root_(std::move(resource_root))
+        , cache_settings_(std::move(cache_settings))
         , scalar_fields_table_{}
         , vector_fields_table_{}
         , csv_table_{}
@@ -91,6 +106,7 @@ namespace wz::engine::assets
                 .ambient_lighting_table = ambient_lighting_table_,
                 .hdri_environment_table = hdri_environment_table_,
                 .scene_table         = scene_table_,
+                .cache_settings      = cache_settings_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -128,6 +144,26 @@ namespace wz::engine::assets
             renderables_,
             scene_table_)
     {
+        if (!cache_settings_.enabled) {
+            logger_.info("asset cache disabled");
+        }
+        else if (cache_settings_.root.empty()) {
+            logger_.info("asset cache root unset");
+        }
+        else {
+            const wz::fs::FileError err =
+                wz::fs::create_directories(cache_settings_.root);
+            if (err != wz::fs::FileError::None) {
+                logger_.warn(
+                    "asset cache directory unavailable: "
+                    + cache_settings_.root);
+            }
+            else {
+                logger_.info(
+                    "asset cache ready: "
+                    + cache_settings_.root);
+            }
+        }
     }
 
 

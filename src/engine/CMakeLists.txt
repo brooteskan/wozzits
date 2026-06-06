@@ -48,6 +48,7 @@ target_sources(window_engine PRIVATE
     assets/mesh/mesh_compilers.cpp
     assets/mesh_asset_module.cpp
     assets/mesh/procedural_mesh.cpp
+    mesh_processing/mesh_processing_pmp.cpp
 
     assets/terrain/terrain.cpp
     assets/terrain/terrain_compilers.cpp

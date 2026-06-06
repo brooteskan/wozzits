@@ -43,7 +43,12 @@ TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAsset
     SceneNodeAsset child = make_scene_node("child_mesh");
     child.parent_id = "child_terrain";
     child.mesh_source = SceneMeshSourceAsset{
-        .kind = SceneMeshSourceKind::ProceduralQuad,
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    child.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .target_ratio = 0.5f,
+        .preserve_boundary = true,
     };
     scene.nodes.push_back(std::move(child));
 
@@ -53,6 +58,12 @@ TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAsset
     EXPECT_EQ(scene.nodes[0].terrain_mesh_source->mesh_asset, direct_mesh.output);
     EXPECT_NE(scene.nodes[0].terrain->terrain_asset, wz::asset::AssetKey{});
     EXPECT_NE(scene.nodes[1].terrain_mesh_source->mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(
+        scene.nodes[1].terrain_mesh_source->mesh_asset,
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/raw_child_mesh_check",
+            .kind = ProceduralMeshKind::Cube,
+        }).output);
     EXPECT_NE(scene.nodes[1].terrain->terrain_asset, wz::asset::AssetKey{});
     ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[1].renderable_asset.has_value());
@@ -151,6 +162,73 @@ TEST(SceneAuthoringMaterialize, TerrainRenderStyleSelectsRenderablePath)
     EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
     EXPECT_EQ(data->domain, RenderDomain::Debug);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
+}
+
+TEST(SceneAuthoringMaterialize, TerrainCanCalculateConstraintSurface)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_terrain_constraint_surface_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const MeshAsset mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "terrain/constraint_mesh",
+            .kind = ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    SceneAssetData scene{};
+    scene.name = "terrain_constraint_surface";
+
+    SceneNodeAsset terrain = make_scene_node("terrain");
+    terrain.terrain = SceneTerrainAsset{
+        .calculate_constraint_surface = true,
+    };
+    terrain.terrain_mesh_source = SceneTerrainMeshSourceAsset{
+        .mode = SceneTerrainMeshSourceMode::MeshAsset,
+        .mesh_asset = mesh.output,
+        .min_surface_normal_y = 0.0f,
+        .include_backfaces = true,
+    };
+    scene.nodes.push_back(std::move(terrain));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].terrain.has_value());
+    EXPECT_NE(
+        scene.nodes[0].terrain->terrain_asset,
+        wz::asset::AssetKey{});
+    EXPECT_NE(
+        scene.nodes[0].terrain->constraint_surface_asset,
+        wz::asset::AssetKey{});
+    EXPECT_TRUE(scene.nodes[0].terrain->calculate_constraint_surface);
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto collision = assets.collisions().get_collision(
+        CollisionAsset{
+            .output = scene.nodes[0].terrain->constraint_surface_asset,
+        });
+    ASSERT_TRUE(collision.valid());
+    const auto* collision_data =
+        assets.collisions().get_collision_data(collision);
+    ASSERT_NE(collision_data, nullptr);
+    EXPECT_EQ(
+        collision_data->shape_kind,
+        CollisionShapeKind::TerrainHeightField);
+    EXPECT_EQ(collision_data->resolution_x, 2048u);
+    EXPECT_EQ(collision_data->resolution_y, 2048u);
+    EXPECT_TRUE(collision_data->supports_height_query);
 }
 
 TEST(SceneAuthoringMaterialize, TerrainRenderStyleResolvesHDRILighting)

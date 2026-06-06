@@ -550,6 +550,10 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
         1u,
         2u,
         1u,
+        2u,
+        1u,
+        1u,
+        1u,
         16u,
         4.0f,
         1.5f,
@@ -557,6 +561,8 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
         3.0,
         0u,
         0u,
+        2u,
+        2u,
         2u,
         2u,
         2u,
@@ -571,6 +577,10 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
         2u,
         7u,
         2u,
+        7u,
+        2u,
+        3u,
+        2u,
         24u,
         6.0f,
         0.5f,
@@ -578,6 +588,8 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
         12.0,
         3u,
         4u,
+        9u,
+        9u,
         9u,
         9u,
         9u,
@@ -592,6 +604,10 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(stats.submitted_triangles, 11u);
     EXPECT_EQ(stats.lod_candidate_chunks, 3u);
     EXPECT_EQ(stats.lod_candidate_triangles, 9u);
+    EXPECT_EQ(stats.lod_replacement_available_chunks, 3u);
+    EXPECT_EQ(stats.lod_replacement_available_triangles, 9u);
+    EXPECT_EQ(stats.lod_replacement_drawn_chunks, 3u);
+    EXPECT_EQ(stats.lod_replacement_drawn_triangles, 4u);
     EXPECT_EQ(stats.far_splat_chunks, 3u);
     EXPECT_EQ(stats.far_splats, 40u);
     EXPECT_FLOAT_EQ(stats.lod_target_pixels_per_triangle, 6.0f);
@@ -608,6 +624,8 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_16, 11u);
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_32, 11u);
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_64, 11u);
+    EXPECT_EQ(stats.pixels_per_triangle_triangles_le_128, 11u);
+    EXPECT_EQ(stats.pixels_per_triangle_triangles_le_256, 11u);
 
     resolver.reset_terrain_render_stats();
     stats = resolver.terrain_render_stats();
@@ -617,6 +635,10 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(stats.submitted_triangles, 0u);
     EXPECT_EQ(stats.lod_candidate_chunks, 0u);
     EXPECT_EQ(stats.lod_candidate_triangles, 0u);
+    EXPECT_EQ(stats.lod_replacement_available_chunks, 0u);
+    EXPECT_EQ(stats.lod_replacement_available_triangles, 0u);
+    EXPECT_EQ(stats.lod_replacement_drawn_chunks, 0u);
+    EXPECT_EQ(stats.lod_replacement_drawn_triangles, 0u);
     EXPECT_EQ(stats.far_splat_chunks, 0u);
     EXPECT_EQ(stats.far_splats, 0u);
     EXPECT_FLOAT_EQ(stats.lod_target_pixels_per_triangle, 0.0f);
@@ -631,6 +653,8 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_16, 0u);
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_32, 0u);
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_64, 0u);
+    EXPECT_EQ(stats.pixels_per_triangle_triangles_le_128, 0u);
+    EXPECT_EQ(stats.pixels_per_triangle_triangles_le_256, 0u);
 }
 
 TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)

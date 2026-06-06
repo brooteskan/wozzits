@@ -53,7 +53,65 @@ namespace wz::engine::rendering
         // ScopedGPUHandle destructors automatically queue deferred release
         // for all GPU resources — no manual release logic needed here.
         entries_.clear();
+        terrain_mesh_chunk_entries_.clear();
         terrain_far_splat_entries_.clear();
+    }
+
+    PreparedRenderable RenderableGpuCache::find_mesh_data(
+        wz::asset::AssetKey cache_key,
+        wz::engine::assets::BuiltinRenderProgram program,
+        wz::asset::ResourceHandle render_program,
+        wz::engine::assets::RenderDomain domain,
+        uint32_t policy_flags) const
+    {
+        PreparedRenderable out{};
+        out.kind = wz::engine::assets::RenderableKind::Mesh;
+        out.source_asset = cache_key;
+        out.program = program;
+        out.render_program = render_program;
+        out.domain = domain;
+        out.policy_flags = policy_flags;
+
+        if (const Entry* cached =
+                find(cache_key, wz::engine::assets::RenderableKind::Mesh))
+        {
+            out.gpu_resource = cached->gpu_resource.get();
+        }
+
+        return out;
+    }
+
+    const std::vector<wz::engine::assets::TerrainVisualChunk>*
+    RenderableGpuCache::find_terrain_mesh_chunks(
+        wz::asset::AssetKey terrain_asset) const
+    {
+        for (const auto& entry : terrain_mesh_chunk_entries_) {
+            if (entry.terrain_asset == terrain_asset) {
+                return &entry.chunks;
+            }
+        }
+        return nullptr;
+    }
+
+    void RenderableGpuCache::add_terrain_mesh_chunks(
+        wz::asset::AssetKey terrain_asset,
+        std::vector<wz::engine::assets::TerrainVisualChunk> chunks)
+    {
+        if (terrain_asset == wz::asset::AssetKey{} || chunks.empty()) {
+            return;
+        }
+
+        for (auto& entry : terrain_mesh_chunk_entries_) {
+            if (entry.terrain_asset == terrain_asset) {
+                entry.chunks = std::move(chunks);
+                return;
+            }
+        }
+
+        terrain_mesh_chunk_entries_.push_back(TerrainMeshChunkEntry{
+            .terrain_asset = terrain_asset,
+            .chunks = std::move(chunks),
+            });
     }
 
     const std::vector<TerrainFarSplatChunk>*

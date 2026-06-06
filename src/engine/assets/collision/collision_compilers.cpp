@@ -2,7 +2,9 @@
 
 #include <engine/assets/collision/collision_compilers.h>
 
+#include <engine/assets/engine_asset_library.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -10,14 +12,532 @@
 #include <any>
 #include <cfloat>
 #include <cmath>
+#include <cstring>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr uint32_t kCollisionTerrainDiskCacheMagic = 0x43435a57u;
+        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 2u;
+
+        template<typename T>
+        void append_scalar(std::vector<uint8_t>& out, const T& value)
+        {
+            const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
+            out.insert(out.end(), bytes, bytes + sizeof(T));
+        }
+
+        template<typename T>
+        bool read_scalar(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            T& out)
+        {
+            if (offset + sizeof(T) > bytes.size()) {
+                return false;
+            }
+            std::memcpy(&out, bytes.data() + offset, sizeof(T));
+            offset += sizeof(T);
+            return true;
+        }
+
+        void append_asset_key(
+            std::vector<uint8_t>& out,
+            const wz::asset::AssetKey& key)
+        {
+            append_scalar(out, key.content_hash.lo);
+            append_scalar(out, key.content_hash.hi);
+            append_scalar(out, key.schema_hash.lo);
+            append_scalar(out, key.schema_hash.hi);
+            append_scalar(out, key.compiler_hash.lo);
+            append_scalar(out, key.compiler_hash.hi);
+            append_scalar(out, key.deps_hash.lo);
+            append_scalar(out, key.deps_hash.hi);
+        }
+
+        bool read_asset_key(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            wz::asset::AssetKey& key)
+        {
+            return read_scalar(bytes, offset, key.content_hash.lo)
+                && read_scalar(bytes, offset, key.content_hash.hi)
+                && read_scalar(bytes, offset, key.schema_hash.lo)
+                && read_scalar(bytes, offset, key.schema_hash.hi)
+                && read_scalar(bytes, offset, key.compiler_hash.lo)
+                && read_scalar(bytes, offset, key.compiler_hash.hi)
+                && read_scalar(bytes, offset, key.deps_hash.lo)
+                && read_scalar(bytes, offset, key.deps_hash.hi);
+        }
+
+        uint64_t mix_cache_key_word(uint64_t state, uint64_t word)
+        {
+            state ^= word + 0x9e3779b97f4a7c15ull + (state << 6) + (state >> 2);
+            state ^= state >> 30;
+            state *= 0xbf58476d1ce4e5b9ull;
+            state ^= state >> 27;
+            state *= 0x94d049bb133111ebull;
+            return state ^ (state >> 31);
+        }
+
+        std::string short_asset_key_hex(const wz::asset::AssetKey& key)
+        {
+            const uint64_t words[]{
+                key.content_hash.lo,
+                key.content_hash.hi,
+                key.schema_hash.lo,
+                key.schema_hash.hi,
+                key.compiler_hash.lo,
+                key.compiler_hash.hi,
+                key.deps_hash.lo,
+                key.deps_hash.hi,
+            };
+
+            uint64_t lo = 0x243f6a8885a308d3ull;
+            uint64_t hi = 0x13198a2e03707344ull;
+            for (uint64_t word : words) {
+                lo = mix_cache_key_word(lo, word);
+                hi = mix_cache_key_word(hi, word ^ lo);
+            }
+
+            std::ostringstream out;
+            out << std::hex << std::setfill('0')
+                << std::setw(16) << lo
+                << std::setw(16) << hi;
+            return out.str();
+        }
+
+        wz::fs::Path collision_terrain_cache_directory(
+            const EngineAssetCacheSettings& cache)
+        {
+            return wz::fs::join(
+                wz::fs::join(cache.root, "assets"),
+                "collision_terrain");
+        }
+
+        wz::fs::Path collision_terrain_cache_path(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key)
+        {
+            return wz::fs::join(
+                collision_terrain_cache_directory(cache),
+                short_asset_key_hex(key) + ".bin");
+        }
+
+        void append_float_array(
+            std::vector<uint8_t>& out,
+            const float* values,
+            uint32_t count)
+        {
+            for (uint32_t i = 0; i < count; ++i) {
+                append_scalar(out, values[i]);
+            }
+        }
+
+        bool read_float_array(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            float* values,
+            uint32_t count)
+        {
+            for (uint32_t i = 0; i < count; ++i) {
+                if (!read_scalar(bytes, offset, values[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void append_occupancy(
+            std::vector<uint8_t>& out,
+            const CollisionOccupancyData& occupancy)
+        {
+            append_scalar(out, static_cast<uint8_t>(occupancy.kind));
+            append_scalar(out, static_cast<uint8_t>(occupancy.blocks_movement));
+            append_scalar(out, static_cast<uint8_t>(occupancy.queryable));
+        }
+
+        bool read_occupancy(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            CollisionOccupancyData& occupancy)
+        {
+            uint8_t kind = 0;
+            uint8_t blocks = 0;
+            uint8_t queryable = 0;
+            if (!read_scalar(bytes, offset, kind)
+                || !read_scalar(bytes, offset, blocks)
+                || !read_scalar(bytes, offset, queryable))
+            {
+                return false;
+            }
+            occupancy.kind = static_cast<CollisionOccupancyKind>(kind);
+            occupancy.blocks_movement = blocks != 0u;
+            occupancy.queryable = queryable != 0u;
+            return true;
+        }
+
+        template<typename T>
+        void append_vector_count(std::vector<uint8_t>& out, const std::vector<T>& v)
+        {
+            append_scalar(out, static_cast<uint64_t>(v.size()));
+        }
+
+        bool read_vector_count(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            uint64_t& count,
+            uint64_t min_bytes_per_entry)
+        {
+            if (!read_scalar(bytes, offset, count)) {
+                return false;
+            }
+            if (min_bytes_per_entry == 0u) {
+                return true;
+            }
+            const uint64_t remaining =
+                static_cast<uint64_t>(bytes.size() - offset);
+            return count <= remaining / min_bytes_per_entry;
+        }
+
+        std::vector<uint8_t> serialize_collision_asset(
+            const wz::asset::AssetKey& key,
+            const CollisionAssetData& data)
+        {
+            std::vector<uint8_t> out;
+            out.reserve(
+                256u
+                + data.points.size() * sizeof(CollisionPoint)
+                + data.indices.size() * sizeof(uint32_t)
+                + data.triangle_bounds.size() * sizeof(CollisionTriangleBounds)
+                + data.height_samples.size() * sizeof(float)
+                + data.surface_grid.cell_offsets.size() * sizeof(uint32_t)
+                + data.surface_grid.cell_triangle_indices.size() * sizeof(uint32_t)
+                + data.surface_grid.cell_bounds.size() * sizeof(CollisionTriangleBounds));
+
+            append_scalar(out, kCollisionTerrainDiskCacheMagic);
+            append_scalar(out, kCollisionTerrainDiskCacheVersion);
+            append_scalar(out, kCollisionCompilerVersion);
+            append_asset_key(out, key);
+            append_scalar(out, static_cast<uint8_t>(data.source_kind));
+            append_scalar(out, static_cast<uint8_t>(data.shape_kind));
+            append_occupancy(out, data.occupancy);
+            append_asset_key(out, data.source_asset);
+            append_asset_key(out, data.geometry_asset);
+            append_float_array(out, data.bounds_min, 3);
+            append_float_array(out, data.bounds_max, 3);
+
+            append_vector_count(out, data.points);
+            for (const CollisionPoint& point : data.points) {
+                append_float_array(out, point.position, 3);
+            }
+
+            append_vector_count(out, data.indices);
+            for (uint32_t index : data.indices) {
+                append_scalar(out, index);
+            }
+
+            append_vector_count(out, data.triangle_bounds);
+            for (const CollisionTriangleBounds& bounds : data.triangle_bounds) {
+                append_float_array(out, bounds.min, 3);
+                append_float_array(out, bounds.max, 3);
+            }
+
+            append_scalar(out, data.surface_grid.origin_x);
+            append_scalar(out, data.surface_grid.origin_z);
+            append_scalar(out, data.surface_grid.cell_size_x);
+            append_scalar(out, data.surface_grid.cell_size_z);
+            append_scalar(out, data.surface_grid.cells_x);
+            append_scalar(out, data.surface_grid.cells_z);
+
+            append_vector_count(out, data.surface_grid.cell_offsets);
+            for (uint32_t value : data.surface_grid.cell_offsets) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.surface_grid.cell_triangle_indices);
+            for (uint32_t value : data.surface_grid.cell_triangle_indices) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.surface_grid.cell_bounds);
+            for (const CollisionTriangleBounds& bounds : data.surface_grid.cell_bounds) {
+                append_float_array(out, bounds.min, 3);
+                append_float_array(out, bounds.max, 3);
+            }
+
+            append_asset_key(out, data.height_field);
+            append_asset_key(out, data.mesh);
+            append_float_array(out, data.origin, 2);
+            append_float_array(out, data.size, 2);
+            append_scalar(out, data.resolution_x);
+            append_scalar(out, data.resolution_y);
+            append_scalar(out, data.vertical_scale);
+            append_scalar(out, data.base_height);
+            append_scalar(out, data.min_height);
+            append_scalar(out, data.max_height);
+
+            append_vector_count(out, data.height_samples);
+            for (float value : data.height_samples) {
+                append_scalar(out, value);
+            }
+
+            append_scalar(out, data.source_triangle_count);
+            append_scalar(out, data.accepted_triangle_count);
+            append_scalar(out, static_cast<uint8_t>(data.supports_bounds_query));
+            append_scalar(out, static_cast<uint8_t>(data.supports_height_query));
+            append_scalar(out, static_cast<uint8_t>(data.supports_ray_query));
+            append_scalar(out, static_cast<uint8_t>(data.supports_overlap_query));
+            return out;
+        }
+
+        bool deserialize_collision_asset(
+            const std::vector<uint8_t>& bytes,
+            const wz::asset::AssetKey& expected_key,
+            CollisionAssetData& data)
+        {
+            size_t offset = 0;
+            uint32_t magic = 0;
+            uint32_t version = 0;
+            uint64_t compiler_version = 0;
+            if (!read_scalar(bytes, offset, magic)
+                || !read_scalar(bytes, offset, version)
+                || !read_scalar(bytes, offset, compiler_version)
+                || magic != kCollisionTerrainDiskCacheMagic
+                || version != kCollisionTerrainDiskCacheVersion
+                || compiler_version != kCollisionCompilerVersion)
+            {
+                return false;
+            }
+
+            wz::asset::AssetKey stored_key{};
+            if (!read_asset_key(bytes, offset, stored_key)
+                || stored_key != expected_key)
+            {
+                return false;
+            }
+
+            uint8_t source_kind = 0;
+            uint8_t shape_kind = 0;
+            if (!read_scalar(bytes, offset, source_kind)
+                || !read_scalar(bytes, offset, shape_kind)
+                || !read_occupancy(bytes, offset, data.occupancy)
+                || !read_asset_key(bytes, offset, data.source_asset)
+                || !read_asset_key(bytes, offset, data.geometry_asset)
+                || !read_float_array(bytes, offset, data.bounds_min, 3)
+                || !read_float_array(bytes, offset, data.bounds_max, 3))
+            {
+                return false;
+            }
+            data.source_kind = static_cast<CollisionSourceKind>(source_kind);
+            data.shape_kind = static_cast<CollisionShapeKind>(shape_kind);
+
+            uint64_t count = 0;
+            if (!read_vector_count(bytes, offset, count, 3u * sizeof(float))) {
+                return false;
+            }
+            data.points.resize(static_cast<size_t>(count));
+            for (CollisionPoint& point : data.points) {
+                if (!read_float_array(bytes, offset, point.position, 3)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
+                return false;
+            }
+            data.indices.resize(static_cast<size_t>(count));
+            for (uint32_t& index : data.indices) {
+                if (!read_scalar(bytes, offset, index)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, 6u * sizeof(float))) {
+                return false;
+            }
+            data.triangle_bounds.resize(static_cast<size_t>(count));
+            for (CollisionTriangleBounds& bounds : data.triangle_bounds) {
+                if (!read_float_array(bytes, offset, bounds.min, 3)
+                    || !read_float_array(bytes, offset, bounds.max, 3))
+                {
+                    return false;
+                }
+            }
+
+            if (!read_scalar(bytes, offset, data.surface_grid.origin_x)
+                || !read_scalar(bytes, offset, data.surface_grid.origin_z)
+                || !read_scalar(bytes, offset, data.surface_grid.cell_size_x)
+                || !read_scalar(bytes, offset, data.surface_grid.cell_size_z)
+                || !read_scalar(bytes, offset, data.surface_grid.cells_x)
+                || !read_scalar(bytes, offset, data.surface_grid.cells_z))
+            {
+                return false;
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
+                return false;
+            }
+            data.surface_grid.cell_offsets.resize(static_cast<size_t>(count));
+            for (uint32_t& value : data.surface_grid.cell_offsets) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+            if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
+                return false;
+            }
+            data.surface_grid.cell_triangle_indices.resize(static_cast<size_t>(count));
+            for (uint32_t& value : data.surface_grid.cell_triangle_indices) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+            if (!read_vector_count(bytes, offset, count, 6u * sizeof(float))) {
+                return false;
+            }
+            data.surface_grid.cell_bounds.resize(static_cast<size_t>(count));
+            for (CollisionTriangleBounds& bounds : data.surface_grid.cell_bounds) {
+                if (!read_float_array(bytes, offset, bounds.min, 3)
+                    || !read_float_array(bytes, offset, bounds.max, 3))
+                {
+                    return false;
+                }
+            }
+
+            if (!read_asset_key(bytes, offset, data.height_field)
+                || !read_asset_key(bytes, offset, data.mesh)
+                || !read_float_array(bytes, offset, data.origin, 2)
+                || !read_float_array(bytes, offset, data.size, 2)
+                || !read_scalar(bytes, offset, data.resolution_x)
+                || !read_scalar(bytes, offset, data.resolution_y)
+                || !read_scalar(bytes, offset, data.vertical_scale)
+                || !read_scalar(bytes, offset, data.base_height)
+                || !read_scalar(bytes, offset, data.min_height)
+                || !read_scalar(bytes, offset, data.max_height))
+            {
+                return false;
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(float))) {
+                return false;
+            }
+            data.height_samples.resize(static_cast<size_t>(count));
+            for (float& value : data.height_samples) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+
+            uint8_t supports_bounds = 0;
+            uint8_t supports_height = 0;
+            uint8_t supports_ray = 0;
+            uint8_t supports_overlap = 0;
+            if (!read_scalar(bytes, offset, data.source_triangle_count)
+                || !read_scalar(bytes, offset, data.accepted_triangle_count)
+                || !read_scalar(bytes, offset, supports_bounds)
+                || !read_scalar(bytes, offset, supports_height)
+                || !read_scalar(bytes, offset, supports_ray)
+                || !read_scalar(bytes, offset, supports_overlap))
+            {
+                return false;
+            }
+            data.supports_bounds_query = supports_bounds != 0u;
+            data.supports_height_query = supports_height != 0u;
+            data.supports_ray_query = supports_ray != 0u;
+            data.supports_overlap_query = supports_overlap != 0u;
+            return offset == bytes.size();
+        }
+
+        bool load_cached_terrain_collision(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            wz::Logger& logger,
+            CollisionAssetData& data)
+        {
+            if (!cache.enabled || cache.root.empty()) {
+                return false;
+            }
+
+            const wz::fs::Path path = collision_terrain_cache_path(cache, key);
+            const auto bytes = wz::fs::read_file(path);
+            if (!bytes) {
+                logger.info("asset disk cache miss: terrain collision " + path);
+                return false;
+            }
+
+            CollisionAssetData loaded{};
+            if (!deserialize_collision_asset(bytes.value, key, loaded)
+                || !loaded.valid())
+            {
+                logger.warn(
+                    "asset disk cache ignored invalid terrain collision: "
+                    + path);
+                return false;
+            }
+
+            data = std::move(loaded);
+            logger.info("asset disk cache hit: terrain collision " + path);
+            return true;
+        }
+
+        void store_cached_terrain_collision(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            const CollisionAssetData& data,
+            wz::Logger& logger)
+        {
+            if (!cache.enabled || cache.root.empty() || !data.valid()) {
+                return;
+            }
+
+            const wz::fs::Path directory =
+                collision_terrain_cache_directory(cache);
+            if (wz::fs::create_directories(directory)
+                != wz::fs::FileError::None)
+            {
+                logger.warn(
+                    "asset disk cache directory unavailable: " + directory);
+                return;
+            }
+
+            const wz::fs::Path path = collision_terrain_cache_path(cache, key);
+            const std::vector<uint8_t> bytes =
+                serialize_collision_asset(key, data);
+            const wz::fs::FileError err =
+                wz::fs::write_file(path, bytes, true);
+            if (err != wz::fs::FileError::None)
+            {
+                logger.warn(
+                    "asset disk cache write failed: terrain collision "
+                    + path
+                    + " error="
+                    + std::to_string(static_cast<int>(err)));
+                return;
+            }
+
+            logger.info(
+                "asset disk cache stored: terrain collision "
+                + path
+                + " bytes="
+                + std::to_string(bytes.size()));
+        }
+
+        wz::asset::AssetNode compiled_collision_node(
+            const wz::asset::AssetNode& input,
+            wz::asset::ResourceHandle handle)
+        {
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
+
         void copy_mesh_bounds(
             float dst_min[3],
             float dst_max[3],
@@ -715,7 +1235,8 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
-        CollisionAssetTable& collision_table)
+        CollisionAssetTable& collision_table,
+        const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kCollisionFromMeshSchema,
@@ -756,17 +1277,14 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return compiled_collision_node(input, handle);
             }
         });
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kCollisionFromTerrainSchema,
             .output_type = kAssetTypeCollisionAsset,
-            .compile = [&logger, &terrain_table, &collision_table](
+            .compile = [&logger, &terrain_table, &collision_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -792,12 +1310,35 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                CollisionAssetData cached_data{};
+                if (load_cached_terrain_collision(
+                        cache_settings,
+                        input.key,
+                        logger,
+                        cached_data))
+                {
+                    wz::asset::ResourceHandle handle =
+                        collision_table.add(std::move(cached_data));
+                    if (!handle.valid()) {
+                        logger.error(
+                            "failed to store cached terrain collision asset");
+                        return compile_failed_node(input);
+                    }
+                    return compiled_collision_node(input, handle);
+                }
+
                 CollisionAssetData data =
                     collision_from_terrain(*desc, *terrain);
                 if (!data.valid()) {
                     logger.error("compiled terrain collision asset is invalid");
                     return compile_failed_node(input);
                 }
+
+                store_cached_terrain_collision(
+                    cache_settings,
+                    input.key,
+                    data,
+                    logger);
 
                 wz::asset::ResourceHandle handle =
                     collision_table.add(std::move(data));
@@ -806,10 +1347,7 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return compiled_collision_node(input, handle);
             }
         });
     }

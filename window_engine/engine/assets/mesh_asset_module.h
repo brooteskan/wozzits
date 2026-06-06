@@ -49,6 +49,24 @@ namespace wz::engine::assets
         uint32_t mesh_index = 0;
     };
 
+    struct MeshDecimationAssetDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+
+        uint32_t target_vertex_count = 0;
+        uint32_t target_triangle_count = 0;
+        float target_ratio = 0.0f;
+
+        bool preserve_boundary = true;
+
+        float aspect_ratio = 0.0f;
+        float edge_length = 0.0f;
+        uint32_t max_valence = 0;
+        float normal_deviation = 0.0f;
+        float hausdorff_error = 0.0f;
+    };
+
     class MeshAssetModule
     {
     public:
@@ -61,6 +79,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_glb_mesh(
             const GLBMeshDesc& desc);
+
+        [[nodiscard]] MeshAsset create_decimated_mesh(
+            const MeshDecimationAssetDesc& desc);
 
         [[nodiscard]] MeshAsset create_placeholder_mesh(
             std::string name = {});

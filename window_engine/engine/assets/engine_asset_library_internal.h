@@ -4,6 +4,7 @@
 #include <asset/types.h>
 #include <asset/compiler.h>
 #include <logging/logger.h>
+#include <engine/assets/asset_cache_settings.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/vector_field/vector_field.h>
 #include <engine/assets/vector_field/vector_field_compilers.h>
@@ -73,6 +74,7 @@ namespace wz::engine::assets::internal {
         AmbientLightingTable&               ambient_lighting_table;
         HDRIEnvironmentTable&               hdri_environment_table;
         SceneAssetTable&                    scene_table;
+        EngineAssetCacheSettings            cache_settings;
     };
 
     wz::asset::AssetNode compile_failed_node(

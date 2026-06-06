@@ -48,7 +48,8 @@ namespace wz::engine
         ctx.assets = std::make_unique<wz::engine::assets::EngineAssetLibrary>(
             ctx.device,
             ctx.logger,
-            desc.resource_root
+            desc.resource_root,
+            desc.asset_cache
         );
 
         {

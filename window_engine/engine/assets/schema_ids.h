@@ -153,6 +153,12 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000504ull
     };
 
+    // Mesh decimation recipe. Compiled from a kAssetTypeMesh dependency and
+    // implemented through the engine mesh processing abstraction.
+    inline constexpr wz::asset::SchemaID kMeshDecimationSchema{
+        0xF11E'CA55'E7'000405ull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

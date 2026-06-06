@@ -622,6 +622,32 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_processing_value(
+            const SceneMeshProcessingAsset& processing)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(processing.enabled));
+            add_member(*obj, "target_vertex_count",
+                number_value(processing.target_vertex_count));
+            add_member(*obj, "target_triangle_count",
+                number_value(processing.target_triangle_count));
+            add_member(*obj, "target_ratio",
+                number_value(processing.target_ratio));
+            add_member(*obj, "preserve_boundary",
+                bool_value(processing.preserve_boundary));
+            add_member(*obj, "aspect_ratio",
+                number_value(processing.aspect_ratio));
+            add_member(*obj, "edge_length",
+                number_value(processing.edge_length));
+            add_member(*obj, "max_valence",
+                number_value(processing.max_valence));
+            add_member(*obj, "normal_deviation",
+                number_value(processing.normal_deviation));
+            add_member(*obj, "hausdorff_error",
+                number_value(processing.hausdorff_error));
+            return obj;
+        }
+
         JSONValuePtr scene_import_source_value(
             const SceneImportSourceAsset& source)
         {
@@ -747,6 +773,10 @@ namespace wz::engine::assets
                     "constraint_surface",
                     std::move(constraint_surface));
             }
+            add_member(
+                *obj,
+                "calculate_constraint_surface",
+                bool_value(terrain.calculate_constraint_surface));
             add_member(*obj, "visible", bool_value(terrain.visible));
             add_member(*obj, "queryable", bool_value(terrain.queryable));
             add_member(*obj, "constrain_movement",
@@ -1072,6 +1102,10 @@ namespace wz::engine::assets
             if (node.mesh_source) {
                 add_member(*obj, "mesh_source",
                     mesh_source_value(*node.mesh_source));
+            }
+            if (node.mesh_processing) {
+                add_member(*obj, "mesh_processing",
+                    mesh_processing_value(*node.mesh_processing));
             }
             if (node.mesh_render_style) {
                 add_member(*obj, "mesh_render_style",

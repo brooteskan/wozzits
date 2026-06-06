@@ -123,6 +123,10 @@ namespace wz::engine::rendering
         uint64_t submitted_triangles,
         uint64_t lod_candidate_chunks,
         uint64_t lod_candidate_triangles,
+        uint64_t lod_replacement_available_chunks,
+        uint64_t lod_replacement_available_triangles,
+        uint64_t lod_replacement_drawn_chunks,
+        uint64_t lod_replacement_drawn_triangles,
         uint64_t far_splat_chunks,
         uint64_t far_splats,
         float lod_target_pixels_per_triangle,
@@ -136,7 +140,9 @@ namespace wz::engine::rendering
         uint64_t pixels_per_triangle_triangles_le_8,
         uint64_t pixels_per_triangle_triangles_le_16,
         uint64_t pixels_per_triangle_triangles_le_32,
-        uint64_t pixels_per_triangle_triangles_le_64) const noexcept
+        uint64_t pixels_per_triangle_triangles_le_64,
+        uint64_t pixels_per_triangle_triangles_le_128,
+        uint64_t pixels_per_triangle_triangles_le_256) const noexcept
     {
         const uint64_t previous_submitted_triangles =
             terrain_stats_.submitted_triangles;
@@ -155,6 +161,14 @@ namespace wz::engine::rendering
         terrain_stats_.submitted_triangles += submitted_triangles;
         terrain_stats_.lod_candidate_chunks += lod_candidate_chunks;
         terrain_stats_.lod_candidate_triangles += lod_candidate_triangles;
+        terrain_stats_.lod_replacement_available_chunks +=
+            lod_replacement_available_chunks;
+        terrain_stats_.lod_replacement_available_triangles +=
+            lod_replacement_available_triangles;
+        terrain_stats_.lod_replacement_drawn_chunks +=
+            lod_replacement_drawn_chunks;
+        terrain_stats_.lod_replacement_drawn_triangles +=
+            lod_replacement_drawn_triangles;
         terrain_stats_.far_splat_chunks += far_splat_chunks;
         terrain_stats_.far_splats += far_splats;
         terrain_stats_.lod_target_pixels_per_triangle = (std::max)(
@@ -176,6 +190,10 @@ namespace wz::engine::rendering
             pixels_per_triangle_triangles_le_32;
         terrain_stats_.pixels_per_triangle_triangles_le_64 +=
             pixels_per_triangle_triangles_le_64;
+        terrain_stats_.pixels_per_triangle_triangles_le_128 +=
+            pixels_per_triangle_triangles_le_128;
+        terrain_stats_.pixels_per_triangle_triangles_le_256 +=
+            pixels_per_triangle_triangles_le_256;
 
         if (submitted_triangles > 0) {
             if (!had_pixels_per_triangle) {

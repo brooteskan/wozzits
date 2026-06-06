@@ -33,6 +33,8 @@ namespace wz::engine::assets
             std::unordered_map<std::string, AmbientLightingAsset>;
         using HDRIEnvironmentCache =
             std::unordered_map<std::string, HDRIEnvironmentAsset>;
+        using CollisionCache =
+            std::unordered_map<std::string, CollisionAsset>;
 
         std::string mesh_source_cache_key(const SceneMeshSourceAsset& source)
         {
@@ -51,6 +53,35 @@ namespace wz::engine::assets
             }
 
             return "placeholder";
+        }
+
+        std::string mesh_processing_cache_suffix(
+            const SceneMeshProcessingAsset* processing)
+        {
+            if (!processing || !processing->enabled) {
+                return {};
+            }
+
+            std::ostringstream out;
+            out << ":decimate"
+                << ":v" << processing->target_vertex_count
+                << ":t" << processing->target_triangle_count
+                << ":r" << processing->target_ratio
+                << ":b" << (processing->preserve_boundary ? 1 : 0)
+                << ":ar" << processing->aspect_ratio
+                << ":el" << processing->edge_length
+                << ":mv" << processing->max_valence
+                << ":nd" << processing->normal_deviation
+                << ":he" << processing->hausdorff_error;
+            return out.str();
+        }
+
+        std::string mesh_cache_key(
+            const SceneMeshSourceAsset& source,
+            const SceneMeshProcessingAsset* processing)
+        {
+            return mesh_source_cache_key(source)
+                + mesh_processing_cache_suffix(processing);
         }
 
         MeshRenderLayerStyle mesh_render_layer_style_for_scene_layer(
@@ -156,6 +187,15 @@ namespace wz::engine::assets
             out += ":visual_chunk_count:"
                 + std::to_string(style.visual_chunk_count);
             return out;
+        }
+
+        std::string terrain_constraint_surface_cache_key(
+            const wz::asset::AssetKey& terrain_asset)
+        {
+            return std::string("terrain_constraint_surface:")
+                + std::to_string(terrain_asset.content_hash.lo)
+                + ":" + std::to_string(terrain_asset.content_hash.hi)
+                + ":projected_heightfield:2048x2048";
         }
 
         std::string direct_light_source_cache_key(
@@ -1030,11 +1070,12 @@ namespace wz::engine::assets
         bool ensure_mesh_for_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
+            const SceneMeshProcessingAsset* processing,
             MeshCache& meshes,
             MeshAsset& out,
             std::string& error)
         {
-            const std::string source_key = mesh_source_cache_key(source);
+            const std::string source_key = mesh_cache_key(source, processing);
             if (const auto found = meshes.find(source_key);
                 found != meshes.end())
             {
@@ -1048,14 +1089,85 @@ namespace wz::engine::assets
                 return false;
             }
 
+            if (processing && processing->enabled) {
+                mesh = assets.meshes().create_decimated_mesh({
+                    .name = "scene_editor/processed_mesh/" + source_key,
+                    .source_mesh = mesh,
+                    .target_vertex_count =
+                        processing->target_vertex_count,
+                    .target_triangle_count =
+                        processing->target_triangle_count,
+                    .target_ratio = processing->target_ratio,
+                    .preserve_boundary = processing->preserve_boundary,
+                    .aspect_ratio = processing->aspect_ratio,
+                    .edge_length = processing->edge_length,
+                    .max_valence = processing->max_valence,
+                    .normal_deviation = processing->normal_deviation,
+                    .hausdorff_error = processing->hausdorff_error,
+                });
+                if (!mesh.valid()) {
+                    error = "failed to register processed mesh: "
+                        + source_key;
+                    return false;
+                }
+            }
+
             meshes.emplace(source_key, mesh);
             out = mesh;
+            return true;
+        }
+
+        bool ensure_processed_mesh_asset(
+            EngineAssetLibrary& assets,
+            MeshAsset source_mesh,
+            const std::string& key,
+            const SceneMeshProcessingAsset* processing,
+            MeshCache& meshes,
+            MeshAsset& out,
+            std::string& error)
+        {
+            if (!processing || !processing->enabled) {
+                out = source_mesh;
+                return true;
+            }
+
+            const std::string processed_key =
+                key + mesh_processing_cache_suffix(processing);
+            if (const auto found = meshes.find(processed_key);
+                found != meshes.end())
+            {
+                out = found->second;
+                return true;
+            }
+
+            MeshAsset processed = assets.meshes().create_decimated_mesh({
+                .name = "scene_editor/processed_mesh/" + processed_key,
+                .source_mesh = source_mesh,
+                .target_vertex_count = processing->target_vertex_count,
+                .target_triangle_count = processing->target_triangle_count,
+                .target_ratio = processing->target_ratio,
+                .preserve_boundary = processing->preserve_boundary,
+                .aspect_ratio = processing->aspect_ratio,
+                .edge_length = processing->edge_length,
+                .max_valence = processing->max_valence,
+                .normal_deviation = processing->normal_deviation,
+                .hausdorff_error = processing->hausdorff_error,
+            });
+            if (!processed.valid()) {
+                error = "failed to register processed mesh: "
+                    + processed_key;
+                return false;
+            }
+
+            meshes.emplace(processed_key, processed);
+            out = processed;
             return true;
         }
 
         bool ensure_renderable_for_mesh_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
+            const SceneMeshProcessingAsset* processing,
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
@@ -1063,7 +1175,7 @@ namespace wz::engine::assets
             MeshAsset& out_mesh,
             std::string& error)
         {
-            const std::string source_key = mesh_source_cache_key(source);
+            const std::string source_key = mesh_cache_key(source, processing);
             const std::string key =
                 source_key + ":" + mesh_render_style_cache_key(style);
             if (const auto found = renderables.find(key);
@@ -1078,7 +1190,14 @@ namespace wz::engine::assets
                 return true;
             }
 
-            if (!ensure_mesh_for_source(assets, source, meshes, out_mesh, error)) {
+            if (!ensure_mesh_for_source(
+                    assets,
+                    source,
+                    processing,
+                    meshes,
+                    out_mesh,
+                    error))
+            {
                 return false;
             }
 
@@ -1247,6 +1366,7 @@ namespace wz::engine::assets
         DirectLightCache direct_lights;
         AmbientLightingCache ambient_lighting;
         HDRIEnvironmentCache hdri_environments;
+        CollisionCache collisions;
         std::unordered_map<std::string, wz::asset::AssetKey> mesh_assets_by_node;
         std::unordered_map<std::string, wz::asset::AssetKey>
             scalar_field_assets_by_node;
@@ -1535,6 +1655,9 @@ namespace wz::engine::assets
                 if (!ensure_renderable_for_mesh_source(
                         assets,
                         *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
                         render_style,
                         renderables,
                         meshes,
@@ -1560,6 +1683,7 @@ namespace wz::engine::assets
             else if (!ensure_mesh_for_source(
                     assets,
                     *node.mesh_source,
+                    node.mesh_processing ? &*node.mesh_processing : nullptr,
                     meshes,
                     mesh,
                     report.error))
@@ -1687,16 +1811,37 @@ namespace wz::engine::assets
             }
             else if (node.terrain_mesh_source) {
                 is_mesh_terrain = true;
-                const auto& source = *node.terrain_mesh_source;
+                auto& source = *node.terrain_mesh_source;
                 if (source.mesh_asset == wz::asset::AssetKey{}) {
                     terrain.terrain_asset = {};
                     node.renderable_asset.reset();
                     continue;
                 }
 
+                MeshAsset terrain_mesh{ .output = source.mesh_asset };
+                if (!ensure_processed_mesh_asset(
+                        assets,
+                        terrain_mesh,
+                        "terrain_mesh:" + node.id,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        terrain_mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "processed terrain mesh unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                source.mesh_asset = terrain_mesh.output;
+
                 terrain_asset = assets.terrains().create_from_mesh({
                     .name = "scene_editor/terrain/" + node.id,
-                    .mesh = MeshAsset{ .output = source.mesh_asset },
+                    .mesh = terrain_mesh,
                     .height_policy =
                         terrain_height_policy_for_source(source.height_policy),
                     .min_surface_normal_y = source.min_surface_normal_y,
@@ -1718,6 +1863,45 @@ namespace wz::engine::assets
             }
 
             terrain.terrain_asset = terrain_asset.output;
+
+            if (terrain.calculate_constraint_surface) {
+                const std::string key =
+                    terrain_constraint_surface_cache_key(terrain.terrain_asset);
+                CollisionAsset collision{};
+                if (const auto found = collisions.find(key);
+                    found != collisions.end())
+                {
+                    collision = found->second;
+                }
+                else {
+                    collision = assets.collisions().create_from_terrain({
+                        .name =
+                            "scene_editor/collision/constraint_heightfield/"
+                            + node.id,
+                        .terrain = TerrainAsset{
+                            .output = terrain.terrain_asset,
+                        },
+                        .build_method =
+                            CollisionBuildMethod::TerrainProjectionHeightField,
+                        .occupancy = CollisionOccupancyData{
+                            .kind =
+                                CollisionOccupancyKind::WalkableSurface,
+                            .blocks_movement = true,
+                            .queryable = true,
+                        },
+                        .projection_resolution_x = 2048u,
+                        .projection_resolution_y = 2048u,
+                    });
+                    if (!collision.valid()) {
+                        report.error =
+                            "terrain constraint surface unavailable for "
+                            + node_log_name(node);
+                        return report;
+                    }
+                    collisions.emplace(key, collision);
+                }
+                terrain.constraint_surface_asset = collision.output;
+            }
 
             if (!terrain.visible) {
                 node.renderable_asset.reset();

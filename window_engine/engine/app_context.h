@@ -31,6 +31,7 @@ namespace wz::engine
     {
         wz::window::WindowDesc   window{};
         wz::fs::Path             resource_root{ "resources" };
+        wz::engine::assets::EngineAssetCacheSettings asset_cache{};
         wz::logging::LoggerDesc  logger{ .enable_debugger_sink = true };
     };
 

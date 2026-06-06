@@ -22,6 +22,7 @@
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/vector_field_asset_module.h>
 #include <engine/assets/csv_asset_module.h>
+#include <engine/assets/asset_cache_settings.h>
 
 #include <engine/assets/toml/toml.h>
 #include <engine/assets/toml_asset_module.h>
@@ -95,6 +96,13 @@ namespace wz::engine::assets
             wz::fs::Path      resource_root
         );
 
+        EngineAssetLibrary(
+            wz::gpu::Device& device,
+            wz::Logger& logger,
+            wz::fs::Path      resource_root,
+            EngineAssetCacheSettings cache_settings
+        );
+
         EngineAssetLibrary(const EngineAssetLibrary&) = delete;
         EngineAssetLibrary& operator=(const EngineAssetLibrary&) = delete;
 
@@ -109,6 +117,16 @@ namespace wz::engine::assets
         const wz::fs::Path& resource_root() const noexcept
         {
             return resource_root_;
+        }
+
+        const EngineAssetCacheSettings& cache_settings() const noexcept
+        {
+            return cache_settings_;
+        }
+
+        const wz::fs::Path& cache_root() const noexcept
+        {
+            return cache_settings_.root;
         }
 
         // ── Module accessors ──────────────────────────────────────────────────────
@@ -192,6 +210,7 @@ namespace wz::engine::assets
         wz::gpu::Device& device_;
         wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
+        EngineAssetCacheSettings cache_settings_;
 
         ScalarFieldTable            scalar_fields_table_;
         VectorFieldTable            vector_fields_table_;

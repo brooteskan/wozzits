@@ -117,7 +117,7 @@ namespace wz::engine::rendering
             const uint32_t detail_triangle_count = detail_index_count / 3u;
 
             constexpr uint32_t kMinReplacementSourceTriangles = 96u;
-            constexpr uint32_t kMaxReplacementTriangles = 512u;
+            constexpr uint32_t kMaxReplacementTriangles = 256u;
 
             struct ClusterAccum
             {
@@ -311,8 +311,8 @@ namespace wz::engine::rendering
                 }
 
                 const uint32_t desired_triangles = std::clamp(
-                    source_triangles / 16u,
-                    32u,
+                    source_triangles / 32u,
+                    16u,
                     kMaxReplacementTriangles);
                 const uint32_t grid_cells = std::clamp(
                     static_cast<uint32_t>(
@@ -436,6 +436,9 @@ namespace wz::engine::rendering
                             clusters[cluster_id].vertex_index;
                     }
                     if (!valid) {
+                        mesh.indices.push_back(mesh.indices[base + 0u]);
+                        mesh.indices.push_back(mesh.indices[base + 1u]);
+                        mesh.indices.push_back(mesh.indices[base + 2u]);
                         continue;
                     }
 
@@ -503,7 +506,7 @@ namespace wz::engine::rendering
                     static_cast<uint32_t>(mesh.indices.size())
                     - replacement_first;
                 if (replacement_count >= 3u
-                    && replacement_count * 4u <= chunk.index_count * 3u)
+                    && replacement_count < chunk.index_count)
                 {
                     chunk.replacement_first_index = replacement_first;
                     chunk.replacement_index_count = replacement_count;
@@ -547,7 +550,6 @@ namespace wz::engine::rendering
 
         const wz::engine::assets::TerrainAssetData* terrain_data = nullptr;
         std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks_storage;
-        std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks_storage;
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
             if (is_terrain_surface) {
@@ -581,59 +583,59 @@ namespace wz::engine::rendering
                     return false;
                 }
 
-                preview_mesh = make_terrain_surface_mesh(
-                    *terrain_data,
-                    *source_mesh,
-                    terrain_chunks_storage);
-                if (!preview_mesh.valid()) {
-                    return false;
-                }
-
                 if (cache_) {
-                    const PreparedRenderable prepared =
-                        cache_->realize_mesh_data(
-                            device_,
+                    const PreparedRenderable cached =
+                        cache_->find_mesh_data(
                             renderable.companion_asset,
-                            preview_mesh,
                             renderable.program,
                             renderable.render_program,
                             renderable.domain,
                             renderable.policy_flags);
-                    if (!prepared.valid()) {
-                        return false;
-                    }
-                    cached_mesh = prepared.gpu_resource;
-
-                    if (const auto* cached_far_splats =
-                            cache_->find_terrain_far_splat_chunks(
-                                renderable.companion_asset))
-                    {
-                        terrain_far_splat_chunks_storage =
-                            *cached_far_splats;
-                    }
-                    else if (!renderable.terrain_far_splat_chunks.empty()) {
-                        terrain_far_splat_chunks_storage.reserve(
-                            renderable.terrain_far_splat_chunks.size());
-                        for (const auto& cloud :
-                            renderable.terrain_far_splat_chunks)
+                    if (cached.valid()) {
+                        if (const auto* cached_chunks =
+                                cache_->find_terrain_mesh_chunks(
+                                    renderable.companion_asset))
                         {
-                            TerrainFarSplatChunk chunk{};
-                            if (cloud.valid()) {
-                                chunk.gpu_resource =
-                                    wz::gpu::upload_gaussian_splat_cloud(
-                                        device_,
-                                        cloud);
-                                chunk.splat_count = static_cast<uint32_t>(
-                                    cloud.splats.size());
-                            }
-                            terrain_far_splat_chunks_storage.push_back(chunk);
+                            terrain_chunks_storage = *cached_chunks;
+                            cached_mesh = cached.gpu_resource;
                         }
-                        cache_->add_terrain_far_splat_chunks(
+                    }
+
+                    if (!cached_mesh.valid()) {
+                        preview_mesh = make_terrain_surface_mesh(
+                            *terrain_data,
+                            *source_mesh,
+                            terrain_chunks_storage);
+                        if (!preview_mesh.valid()) {
+                            return false;
+                        }
+
+                        const PreparedRenderable prepared =
+                            cache_->realize_mesh_data(
+                                device_,
+                                renderable.companion_asset,
+                                preview_mesh,
+                                renderable.program,
+                                renderable.render_program,
+                                renderable.domain,
+                                renderable.policy_flags);
+                        if (!prepared.valid()) {
+                            return false;
+                        }
+                        cached_mesh = prepared.gpu_resource;
+                        cache_->add_terrain_mesh_chunks(
                             renderable.companion_asset,
-                            terrain_far_splat_chunks_storage);
+                            terrain_chunks_storage);
                     }
                 }
                 else {
+                    preview_mesh = make_terrain_surface_mesh(
+                        *terrain_data,
+                        *source_mesh,
+                        terrain_chunks_storage);
+                    if (!preview_mesh.valid()) {
+                        return false;
+                    }
                     mesh_data = &preview_mesh;
                 }
             }
@@ -712,10 +714,8 @@ namespace wz::engine::rendering
             return false;
 
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
-        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
         if (terrain_data) {
             terrain_chunks = terrain_chunks_storage;
-            terrain_far_splat_chunks = terrain_far_splat_chunks_storage;
         }
 
         const wz::scene::MeshHandle scene_mesh =
@@ -726,8 +726,7 @@ namespace wz::engine::rendering
                 renderable.terrain_lighting,
                 renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style,
-                terrain_chunks,
-                terrain_far_splat_chunks);
+                terrain_chunks);
 
         descriptor.mesh = scene_mesh;
         descriptor.material = wz::scene::INVALID_MATERIAL;

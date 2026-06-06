@@ -7,6 +7,7 @@
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/mesh/procedural_mesh.h>
 #include <engine/assets/gltf/gltf_importer.h>
+#include <engine/mesh_processing/mesh_processing.h>
 
 namespace wz::engine::assets::internal
 {
@@ -101,6 +102,67 @@ namespace wz::engine::assets::internal
             return out;
         }
 
+        wz::asset::AssetNode compile_decimated_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table)
+        {
+            const auto* desc =
+                std::any_cast<MeshDecimationAssetDesc>(&input.meta);
+            if (!desc) {
+                logger.error("decimated mesh node missing compile desc");
+                return compile_failed_node(input);
+            }
+            if (dep_handles.size() != 1u) {
+                logger.error("decimated mesh node requires one mesh dependency");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source = mesh_table.get(dep_handles[0]);
+            if (!source || !source->valid()) {
+                logger.error("decimated mesh source is invalid");
+                return compile_failed_node(input);
+            }
+
+            const wz::engine::mesh_processing::MeshDecimationDesc
+                processing_desc{
+                    .target_vertex_count = desc->target_vertex_count,
+                    .target_triangle_count = desc->target_triangle_count,
+                    .target_ratio = desc->target_ratio,
+                    .preserve_boundary = desc->preserve_boundary,
+                    .aspect_ratio = desc->aspect_ratio,
+                    .edge_length = desc->edge_length,
+                    .max_valence = desc->max_valence,
+                    .normal_deviation = desc->normal_deviation,
+                    .hausdorff_error = desc->hausdorff_error,
+                };
+
+            wz::engine::mesh_processing::MeshProcessingResult result =
+                wz::engine::mesh_processing::decimate_mesh(
+                    *source,
+                    processing_desc);
+            if (!result.ok || !result.mesh.valid()) {
+                logger.error(
+                    result.error.empty()
+                    ? "decimated mesh compiler produced invalid data"
+                    : result.error.c_str());
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(result.mesh));
+            if (!handle.valid()) {
+                logger.error("failed to store decimated mesh");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
+
     } // anonymous namespace
 
 
@@ -177,6 +239,19 @@ namespace wz::engine::assets::internal
             {
                 return compile_glb_mesh_node(
                     input, dep_nodes, logger, mesh_table);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshDecimationSchema,
+            .output_type = kAssetTypeMesh,
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
+            {
+                return compile_decimated_mesh_node(
+                    input, dep_handles, logger, mesh_table);
             }
             });
     }

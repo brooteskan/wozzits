@@ -133,6 +133,50 @@ TEST(MeshAssetModule, ResolvesProceduralCubeMesh)
     EXPECT_EQ(data->index_count(), 36u);
 }
 
+TEST(MeshAssetModule, ResolvesDecimatedMeshAsset)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto decimated = assets.meshes().create_decimated_mesh({
+        .name = "cube_decimated",
+        .source_mesh = source,
+        .target_vertex_count = 6u,
+        .preserve_boundary = true,
+        });
+    ASSERT_TRUE(decimated.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 2u);
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto decimated_handle = assets.meshes().get_mesh(decimated);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(decimated_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* decimated_data =
+        assets.meshes().get_mesh_data(decimated_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(decimated_data, nullptr);
+    EXPECT_TRUE(decimated_data->valid());
+    EXPECT_LE(decimated_data->vertex_count(), source_data->vertex_count());
+    EXPECT_LE(decimated_data->index_count(), source_data->index_count());
+}
+
 TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
 {
     wz::Logger logger;

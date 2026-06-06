@@ -271,7 +271,7 @@ namespace wz::render::backend::dx12
                 || outside_far);
         }
 
-        float terrain_chunk_projected_area_pixels(
+        float terrain_chunk_projected_footprint_pixels(
             const wz::engine::assets::TerrainVisualChunk& chunk,
             const Mat4& world,
             const Mat4& view_projection,
@@ -284,46 +284,41 @@ namespace wz::render::backend::dx12
 
             const Mat4 world_view_projection =
                 wz::math::mul(view_projection, world);
+            const float y = (std::clamp)(
+                chunk.aggregate.mean_height,
+                chunk.bounds_min[1],
+                chunk.bounds_max[1]);
+            const float corners[4][3]{
+                { chunk.bounds_min[0], y, chunk.bounds_min[2] },
+                { chunk.bounds_max[0], y, chunk.bounds_min[2] },
+                { chunk.bounds_min[0], y, chunk.bounds_max[2] },
+                { chunk.bounds_max[0], y, chunk.bounds_max[2] },
+            };
 
             float min_x = viewport_w;
             float min_y = viewport_h;
             float max_x = 0.0f;
             float max_y = 0.0f;
             bool has_projected_corner = false;
-
-            for (int x_bit = 0; x_bit < 2; ++x_bit) {
-                const float x = x_bit != 0
-                    ? chunk.bounds_max[0]
-                    : chunk.bounds_min[0];
-                for (int y_bit = 0; y_bit < 2; ++y_bit) {
-                    const float y = y_bit != 0
-                        ? chunk.bounds_max[1]
-                        : chunk.bounds_min[1];
-                    for (int z_bit = 0; z_bit < 2; ++z_bit) {
-                        const float z = z_bit != 0
-                            ? chunk.bounds_max[2]
-                            : chunk.bounds_min[2];
-                        const ClipPoint p = transform_clip_point(
-                            world_view_projection,
-                            x,
-                            y,
-                            z);
-                        if (p.w <= 0.0f) {
-                            return viewport_w * viewport_h;
-                        }
-
-                        const float ndc_x = p.x / p.w;
-                        const float ndc_y = p.y / p.w;
-                        const float px = (ndc_x * 0.5f + 0.5f) * viewport_w;
-                        const float py = (0.5f - ndc_y * 0.5f) * viewport_h;
-
-                        min_x = (std::min)(min_x, px);
-                        min_y = (std::min)(min_y, py);
-                        max_x = (std::max)(max_x, px);
-                        max_y = (std::max)(max_y, py);
-                        has_projected_corner = true;
-                    }
+            for (const auto& corner : corners) {
+                const ClipPoint p = transform_clip_point(
+                    world_view_projection,
+                    corner[0],
+                    corner[1],
+                    corner[2]);
+                if (p.w <= 0.0f) {
+                    return viewport_w * viewport_h;
                 }
+
+                const float ndc_x = p.x / p.w;
+                const float ndc_y = p.y / p.w;
+                const float px = (ndc_x * 0.5f + 0.5f) * viewport_w;
+                const float py = (0.5f - ndc_y * 0.5f) * viewport_h;
+                min_x = (std::min)(min_x, px);
+                min_y = (std::min)(min_y, py);
+                max_x = (std::max)(max_x, px);
+                max_y = (std::max)(max_y, py);
+                has_projected_corner = true;
             }
 
             if (!has_projected_corner) {
@@ -348,7 +343,9 @@ namespace wz::render::backend::dx12
             uint64_t& triangles_le_8,
             uint64_t& triangles_le_16,
             uint64_t& triangles_le_32,
-            uint64_t& triangles_le_64) noexcept
+            uint64_t& triangles_le_64,
+            uint64_t& triangles_le_128,
+            uint64_t& triangles_le_256) noexcept
         {
             if (pixels_per_triangle <= 0.5f) {
                 triangles_le_0_5 += triangle_count;
@@ -374,6 +371,12 @@ namespace wz::render::backend::dx12
             if (pixels_per_triangle <= 64.0f) {
                 triangles_le_64 += triangle_count;
             }
+            if (pixels_per_triangle <= 128.0f) {
+                triangles_le_128 += triangle_count;
+            }
+            if (pixels_per_triangle <= 256.0f) {
+                triangles_le_256 += triangle_count;
+            }
         }
 
         bool draw_chunked_terrain_mesh(
@@ -396,6 +399,10 @@ namespace wz::render::backend::dx12
             uint64_t submitted_chunks = 0;
             uint64_t lod_candidate_chunks = 0;
             uint64_t lod_candidate_triangles = 0;
+            uint64_t lod_replacement_available_chunks = 0;
+            uint64_t lod_replacement_available_triangles = 0;
+            uint64_t lod_replacement_drawn_chunks = 0;
+            uint64_t lod_replacement_drawn_triangles = 0;
             double pixels_per_triangle_weighted_sum = 0.0;
             float pixels_per_triangle_min = 0.0f;
             float pixels_per_triangle_max = 0.0f;
@@ -408,6 +415,8 @@ namespace wz::render::backend::dx12
             uint64_t pixels_per_triangle_triangles_le_16 = 0;
             uint64_t pixels_per_triangle_triangles_le_32 = 0;
             uint64_t pixels_per_triangle_triangles_le_64 = 0;
+            uint64_t pixels_per_triangle_triangles_le_128 = 0;
+            uint64_t pixels_per_triangle_triangles_le_256 = 0;
             const float target_pixels_per_triangle =
                 resolved.terrain_target_pixels_per_triangle;
             const bool lod_active =
@@ -434,10 +443,17 @@ namespace wz::render::backend::dx12
 
                 uint32_t draw_first_index = chunk.first_index;
                 uint32_t draw_index_count = chunk.index_count;
+                const bool replacement_available =
+                    chunk.replacement_index_count > 0
+                    && chunk.replacement_index_count < chunk.index_count;
+                if (replacement_available) {
+                    ++lod_replacement_available_chunks;
+                    lod_replacement_available_triangles += triangle_count;
+                }
 
                 if (triangle_count > 0 && lod_active) {
                     const float projected_area =
-                        terrain_chunk_projected_area_pixels(
+                        terrain_chunk_projected_footprint_pixels(
                             chunk,
                             dc.world,
                             frame.view.view_projection,
@@ -459,7 +475,9 @@ namespace wz::render::backend::dx12
                         pixels_per_triangle_triangles_le_8,
                         pixels_per_triangle_triangles_le_16,
                         pixels_per_triangle_triangles_le_32,
-                        pixels_per_triangle_triangles_le_64);
+                        pixels_per_triangle_triangles_le_64,
+                        pixels_per_triangle_triangles_le_128,
+                        pixels_per_triangle_triangles_le_256);
                     if (!has_pixels_per_triangle) {
                         pixels_per_triangle_min = pixels_per_triangle;
                         pixels_per_triangle_max = pixels_per_triangle;
@@ -474,12 +492,16 @@ namespace wz::render::backend::dx12
                             pixels_per_triangle);
                     }
 
-                    if (pixels_per_triangle < target_pixels_per_triangle) {
+                    if (pixels_per_triangle < target_pixels_per_triangle)
+                    {
                         ++lod_candidate_chunks;
                         lod_candidate_triangles += triangle_count;
-                        if (chunk.replacement_index_count > 0) {
+                        if (replacement_available) {
                             draw_first_index = chunk.replacement_first_index;
                             draw_index_count = chunk.replacement_index_count;
+                            ++lod_replacement_drawn_chunks;
+                            lod_replacement_drawn_triangles +=
+                                draw_index_count / 3u;
                         }
                     }
                 }
@@ -501,6 +523,10 @@ namespace wz::render::backend::dx12
                 submitted_triangles,
                 lod_candidate_chunks,
                 lod_candidate_triangles,
+                lod_replacement_available_chunks,
+                lod_replacement_available_triangles,
+                lod_replacement_drawn_chunks,
+                lod_replacement_drawn_triangles,
                 0u,
                 0u,
                 target_pixels_per_triangle,
@@ -514,7 +540,9 @@ namespace wz::render::backend::dx12
                 pixels_per_triangle_triangles_le_8,
                 pixels_per_triangle_triangles_le_16,
                 pixels_per_triangle_triangles_le_32,
-                pixels_per_triangle_triangles_le_64);
+                pixels_per_triangle_triangles_le_64,
+                pixels_per_triangle_triangles_le_128,
+                pixels_per_triangle_triangles_le_256);
             return true;
         }
 

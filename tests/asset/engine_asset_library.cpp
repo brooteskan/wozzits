@@ -162,6 +162,25 @@ TEST_F(AssetLibraryGpuFixture, CreateShaderPairReturnsValidAssetKeys)
     EXPECT_TRUE(pair.valid());
 }
 
+TEST_F(AssetLibraryGpuFixture, CacheRootIsConfigurable)
+{
+    TempResourceDir resources;
+    const fs::path cache_root = resources.root / ".wozzits" / "cache";
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root(),
+        wz::engine::assets::EngineAssetCacheSettings{
+            .root = cache_root.string(),
+            .enabled = true,
+        },
+    };
+
+    EXPECT_EQ(assets.cache_root(), cache_root.string());
+    EXPECT_TRUE(fs::is_directory(cache_root));
+}
+
 TEST_F(AssetLibraryGpuFixture, CommitSucceedsAfterShaderPairRegistration)
 {
     TempResourceDir resources;

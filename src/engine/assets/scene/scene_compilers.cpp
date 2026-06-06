@@ -1419,6 +1419,88 @@ namespace wz::engine::assets::internal
                 node.mesh_source = std::move(source);
             }
 
+            const auto* mp = find_member(node_val, "mesh_processing");
+            if (mp && mp->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshProcessingAsset processing{};
+
+                if (auto enabled = read_bool(*mp, "enabled")) {
+                    processing.enabled = *enabled;
+                }
+                if (auto target_vertex_count =
+                        read_number(*mp, "target_vertex_count"))
+                {
+                    if (*target_vertex_count < 0.0
+                        || !std::isfinite(*target_vertex_count))
+                    {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has invalid target_vertex_count");
+                        return std::nullopt;
+                    }
+                    processing.target_vertex_count =
+                        static_cast<uint32_t>(*target_vertex_count);
+                }
+                if (auto target_triangle_count =
+                        read_number(*mp, "target_triangle_count"))
+                {
+                    if (*target_triangle_count < 0.0
+                        || !std::isfinite(*target_triangle_count))
+                    {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has invalid target_triangle_count");
+                        return std::nullopt;
+                    }
+                    processing.target_triangle_count =
+                        static_cast<uint32_t>(*target_triangle_count);
+                }
+                if (auto target_ratio = read_number(*mp, "target_ratio")) {
+                    if (!std::isfinite(*target_ratio)) {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has invalid target_ratio");
+                        return std::nullopt;
+                    }
+                    processing.target_ratio = static_cast<float>(
+                        (std::clamp)(*target_ratio, 0.0, 1.0));
+                }
+                if (auto preserve_boundary =
+                        read_bool(*mp, "preserve_boundary"))
+                {
+                    processing.preserve_boundary = *preserve_boundary;
+                }
+                if (auto aspect_ratio = read_number(*mp, "aspect_ratio")) {
+                    processing.aspect_ratio =
+                        static_cast<float>((std::max)(0.0, *aspect_ratio));
+                }
+                if (auto edge_length = read_number(*mp, "edge_length")) {
+                    processing.edge_length =
+                        static_cast<float>((std::max)(0.0, *edge_length));
+                }
+                if (auto max_valence = read_number(*mp, "max_valence")) {
+                    if (*max_valence < 0.0 || !std::isfinite(*max_valence)) {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has invalid max_valence");
+                        return std::nullopt;
+                    }
+                    processing.max_valence =
+                        static_cast<uint32_t>(*max_valence);
+                }
+                if (auto normal_deviation =
+                        read_number(*mp, "normal_deviation"))
+                {
+                    processing.normal_deviation =
+                        static_cast<float>(
+                            (std::max)(0.0, *normal_deviation));
+                }
+                if (auto hausdorff_error =
+                        read_number(*mp, "hausdorff_error"))
+                {
+                    processing.hausdorff_error =
+                        static_cast<float>(
+                            (std::max)(0.0, *hausdorff_error));
+                }
+
+                node.mesh_processing = processing;
+            }
+
             const auto* mrs = find_member(node_val, "mesh_render_style");
             if (mrs && mrs->kind == wz::json::JSONValueKind::Object) {
                 SceneMeshRenderStyleAsset style{};
@@ -1908,6 +1990,12 @@ namespace wz::engine::assets::internal
                 if (constraint_surface_asset) {
                     component.constraint_surface_asset =
                         *constraint_surface_asset;
+                }
+                auto calculate_constraint_surface =
+                    read_bool(*terrain, "calculate_constraint_surface");
+                if (calculate_constraint_surface) {
+                    component.calculate_constraint_surface =
+                        *calculate_constraint_surface;
                 }
                 auto visible = read_bool(*terrain, "visible");
                 if (visible) {

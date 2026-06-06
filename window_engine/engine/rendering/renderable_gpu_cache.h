@@ -68,6 +68,20 @@ namespace wz::engine::rendering
             wz::engine::assets::RenderDomain domain,
             uint32_t policy_flags);
 
+        PreparedRenderable find_mesh_data(
+            wz::asset::AssetKey cache_key,
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle render_program,
+            wz::engine::assets::RenderDomain domain,
+            uint32_t policy_flags) const;
+
+        const std::vector<wz::engine::assets::TerrainVisualChunk>*
+        find_terrain_mesh_chunks(wz::asset::AssetKey terrain_asset) const;
+
+        void add_terrain_mesh_chunks(
+            wz::asset::AssetKey terrain_asset,
+            std::vector<wz::engine::assets::TerrainVisualChunk> chunks);
+
         const std::vector<TerrainFarSplatChunk>* find_terrain_far_splat_chunks(
             wz::asset::AssetKey terrain_asset) const;
 
@@ -98,6 +112,13 @@ namespace wz::engine::rendering
 
         wz::gpu::DeferredReleaseQueue& release_queue_;
         std::vector<Entry> entries_;
+
+        struct TerrainMeshChunkEntry
+        {
+            wz::asset::AssetKey terrain_asset{};
+            std::vector<wz::engine::assets::TerrainVisualChunk> chunks;
+        };
+        std::vector<TerrainMeshChunkEntry> terrain_mesh_chunk_entries_;
 
         struct TerrainFarSplatEntry
         {

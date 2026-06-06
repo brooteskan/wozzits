@@ -49,6 +49,10 @@ namespace wz::engine::rendering
         uint64_t submitted_triangles = 0;
         uint64_t lod_candidate_chunks = 0;
         uint64_t lod_candidate_triangles = 0;
+        uint64_t lod_replacement_available_chunks = 0;
+        uint64_t lod_replacement_available_triangles = 0;
+        uint64_t lod_replacement_drawn_chunks = 0;
+        uint64_t lod_replacement_drawn_triangles = 0;
         uint64_t far_splat_chunks = 0;
         uint64_t far_splats = 0;
         float lod_target_pixels_per_triangle = 0.0f;
@@ -64,6 +68,8 @@ namespace wz::engine::rendering
         uint64_t pixels_per_triangle_triangles_le_16 = 0;
         uint64_t pixels_per_triangle_triangles_le_32 = 0;
         uint64_t pixels_per_triangle_triangles_le_64 = 0;
+        uint64_t pixels_per_triangle_triangles_le_128 = 0;
+        uint64_t pixels_per_triangle_triangles_le_256 = 0;
     };
 
     class RenderResourceResolver
@@ -127,6 +133,10 @@ namespace wz::engine::rendering
             uint64_t submitted_triangles,
             uint64_t lod_candidate_chunks = 0,
             uint64_t lod_candidate_triangles = 0,
+            uint64_t lod_replacement_available_chunks = 0,
+            uint64_t lod_replacement_available_triangles = 0,
+            uint64_t lod_replacement_drawn_chunks = 0,
+            uint64_t lod_replacement_drawn_triangles = 0,
             uint64_t far_splat_chunks = 0,
             uint64_t far_splats = 0,
             float lod_target_pixels_per_triangle = 0.0f,
@@ -140,7 +150,9 @@ namespace wz::engine::rendering
             uint64_t pixels_per_triangle_triangles_le_8 = 0,
             uint64_t pixels_per_triangle_triangles_le_16 = 0,
             uint64_t pixels_per_triangle_triangles_le_32 = 0,
-            uint64_t pixels_per_triangle_triangles_le_64 = 0) const noexcept;
+            uint64_t pixels_per_triangle_triangles_le_64 = 0,
+            uint64_t pixels_per_triangle_triangles_le_128 = 0,
+            uint64_t pixels_per_triangle_triangles_le_256 = 0) const noexcept;
         TerrainRenderStats terrain_render_stats() const noexcept;
 
     private:

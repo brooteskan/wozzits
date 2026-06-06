@@ -281,6 +281,20 @@ namespace wz::engine::assets
         uint32_t mesh_index = 0;
     };
 
+    struct SceneMeshProcessingAsset
+    {
+        bool enabled = false;
+        uint32_t target_vertex_count = 0;
+        uint32_t target_triangle_count = 0;
+        float target_ratio = 1.0f;
+        bool preserve_boundary = true;
+        float aspect_ratio = 0.0f;
+        float edge_length = 0.0f;
+        uint32_t max_valence = 0;
+        float normal_deviation = 0.0f;
+        float hausdorff_error = 0.0f;
+    };
+
     enum class SceneImportSourceKind : uint8_t
     {
         GLB = 0,
@@ -422,6 +436,7 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey terrain_asset{};
         wz::asset::AssetKey constraint_surface_asset{};
+        bool calculate_constraint_surface = false;
         bool visible = true;
         bool queryable = true;
         bool constrain_movement = true;
@@ -584,6 +599,7 @@ namespace wz::engine::assets
         std::optional<SceneImportSourceAsset> scene_import_source;
         std::optional<SceneImportedNodeAsset> imported_node;
         std::optional<SceneMeshSourceAsset> mesh_source;
+        std::optional<SceneMeshProcessingAsset> mesh_processing;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
@@ -655,6 +671,7 @@ namespace wz::engine::assets
         uint32_t total_recipes = 0;
         uint32_t scene_import_sources = 0;
         uint32_t mesh_sources = 0;
+        uint32_t mesh_processing = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
@@ -1218,6 +1235,7 @@ namespace wz::engine::assets
     {
         return node.scene_import_source.has_value()
             || node.mesh_source.has_value()
+            || node.mesh_processing.has_value()
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
@@ -1273,6 +1291,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_source) {
                 ++out.mesh_sources;
+                ++out.total_recipes;
+            }
+            if (node.mesh_processing) {
+                ++out.mesh_processing;
                 ++out.total_recipes;
             }
             if (node.mesh_render_style) {

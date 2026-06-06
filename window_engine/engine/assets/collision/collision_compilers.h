@@ -3,6 +3,7 @@
 // engine/assets/collision/collision_compilers.h
 
 #include <asset/compiler.h>
+#include <engine/assets/asset_cache_settings.h>
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/terrain/terrain.h>
@@ -16,5 +17,6 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
-        CollisionAssetTable& collision_table);
+        CollisionAssetTable& collision_table,
+        const EngineAssetCacheSettings& cache_settings);
 }

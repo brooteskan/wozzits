@@ -370,8 +370,7 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
     EXPECT_EQ(data->domain, RenderDomain::Opaque);
     EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::SceneLights);
     EXPECT_FLOAT_EQ(data->terrain_target_pixels_per_triangle, 5.0f);
-    ASSERT_FALSE(data->terrain_far_splat_chunks.empty());
-    EXPECT_TRUE(data->terrain_far_splat_chunks.front().valid());
+    EXPECT_TRUE(data->terrain_far_splat_chunks.empty());
     EXPECT_EQ(data->policy_flags & RenderPolicy_Wireframe, 0u);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
     EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);

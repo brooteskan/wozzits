@@ -3,10 +3,20 @@
 
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/engine_asset_key_core.h>
+#include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/schema_ids.h>
+
+#include <cstring>
 
 namespace wz::engine::assets
 {
+    [[nodiscard]] inline uint64_t mesh_key_float_bits(float value) noexcept
+    {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<uint64_t>(bits);
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_procedural_triangle_mesh_key() noexcept
     {
         return wz::asset::AssetKey{
@@ -60,6 +70,29 @@ namespace wz::engine::assets
             .schema_hash = detail::hash_u64(kGLBMeshSchema.value),
             .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
             .deps_hash = detail::key_to_dep_hash(source_file_key),
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey make_decimated_mesh_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const MeshDecimationAssetDesc& desc) noexcept
+    {
+        uint64_t h = kMeshDecimationSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.target_vertex_count));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.target_triangle_count));
+        h = detail::mix64(h, mesh_key_float_bits(desc.target_ratio));
+        h = detail::mix64(h, desc.preserve_boundary ? 1ull : 0ull);
+        h = detail::mix64(h, mesh_key_float_bits(desc.aspect_ratio));
+        h = detail::mix64(h, mesh_key_float_bits(desc.edge_length));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.max_valence));
+        h = detail::mix64(h, mesh_key_float_bits(desc.normal_deviation));
+        h = detail::mix64(h, mesh_key_float_bits(desc.hausdorff_error));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(kMeshDecimationSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(source_mesh_key),
         };
     }
 }

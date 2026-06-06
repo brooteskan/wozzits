@@ -31,6 +31,11 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
       "id": "source_mesh",
       "mesh_source": {
         "kind": "procedural_cube"
+      },
+      "mesh_processing": {
+        "enabled": true,
+        "target_ratio": 0.5,
+        "preserve_boundary": true
       }
     },
     {
@@ -71,6 +76,11 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     ASSERT_NE(scene_data, nullptr);
     ASSERT_EQ(scene_data->nodes.size(), 2u);
 
+    ASSERT_TRUE(scene_data->nodes[0].mesh_processing.has_value());
+    EXPECT_TRUE(scene_data->nodes[0].mesh_processing->enabled);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].mesh_processing->target_ratio, 0.5f);
+    EXPECT_TRUE(scene_data->nodes[0].mesh_processing->preserve_boundary);
+
     const auto& node = scene_data->nodes[1];
     ASSERT_TRUE(node.terrain_mesh_source.has_value());
     EXPECT_EQ(
@@ -89,6 +99,8 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"terrain_mesh_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"mesh_processing\""), std::string::npos);
+    EXPECT_NE(exported.find("\"target_ratio\""), std::string::npos);
     EXPECT_NE(exported.find("\"scene_node\""), std::string::npos);
     EXPECT_NE(exported.find("\"source_mesh\""), std::string::npos);
     EXPECT_NE(exported.find("\"height_policy\""), std::string::npos);
@@ -129,6 +141,8 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
         reparse_assets.scenes().get_scene(exported_scene_asset));
     ASSERT_NE(reparsed_scene_data, nullptr);
     ASSERT_EQ(reparsed_scene_data->nodes.size(), 2u);
+    ASSERT_TRUE(
+        reparsed_scene_data->nodes[0].mesh_processing.has_value());
     ASSERT_TRUE(
         reparsed_scene_data->nodes[1].terrain_mesh_source.has_value());
     EXPECT_EQ(

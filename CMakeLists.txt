@@ -106,6 +106,23 @@ wz_add_subdirectory_quiet(external/gltf/fastgltf)
 # ----------------------
 add_subdirectory(external/ply)
 
+# ----------------------
+# dependency: PMP
+# ----------------------
+set(PMP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_VIEWERS OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_POLYGONAL OFF CACHE BOOL "" FORCE)
+set(PMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(PMP_STRICT_COMPILATION OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_REGRESSIONS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(WZ_CMAKE_CXX_FLAGS_BEFORE_PMP "${CMAKE_CXX_FLAGS}")
+wz_add_subdirectory_quiet(external/pmp)
+set(CMAKE_CXX_FLAGS "${WZ_CMAKE_CXX_FLAGS_BEFORE_PMP}")
+unset(WZ_CMAKE_CXX_FLAGS_BEFORE_PMP)
+
 
 # ----------------------
 # dependency: rtaudio 6.0.1
@@ -204,6 +221,7 @@ PUBLIC
     algo_math::algo_math
 PRIVATE
     rtaudio
+    $<BUILD_INTERFACE:pmp>
     fastgltf::fastgltf
     dwmapi
     d3d12
@@ -425,6 +443,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_mesh mesh_asset_module_interface)
     rs_add_test_group(asset_mesh procedural_mesh)
     rs_add_test_group(asset_mesh mesh_asset_module) 
+    rs_add_test_group(mesh_processing mesh_processing_pmp)
 
     rs_add_test_group(asset_terrain terrain_asset_module)
 

@@ -545,6 +545,7 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     node.terrain = SceneTerrainAsset{
         .terrain_asset = terrain.output,
         .constraint_surface_asset = constraint_surface.output,
+        .calculate_constraint_surface = true,
         .visible = true,
         .queryable = true,
         .constrain_movement = false,
@@ -583,6 +584,9 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"visual_chunk_count\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"constraint_surface\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"calculate_constraint_surface\""),
+        std::string::npos);
     EXPECT_NE(exported.find("\"queryable\""), std::string::npos);
     EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
     EXPECT_NE(exported.find("asset-key:"), std::string::npos);
@@ -610,6 +614,8 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         scene_data->nodes[0].terrain->constraint_surface_asset,
         constraint_surface.output);
+    EXPECT_TRUE(
+        scene_data->nodes[0].terrain->calculate_constraint_surface);
     EXPECT_TRUE(scene_data->nodes[0].terrain->visible);
     EXPECT_TRUE(scene_data->nodes[0].terrain->queryable);
     EXPECT_FALSE(scene_data->nodes[0].terrain->constrain_movement);

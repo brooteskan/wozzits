@@ -123,6 +123,8 @@ namespace wz::engine::assets
                 node.scene_import_source.has_value();
             const bool has_imported_node = node.imported_node.has_value();
             const bool has_mesh_source = node.mesh_source.has_value();
+            const bool has_mesh_processing =
+                node.mesh_processing.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
             const bool has_scalar_field_source =
@@ -154,6 +156,7 @@ namespace wz::engine::assets
             fp.mix_value(has_scene_import_source);
             fp.mix_value(has_imported_node);
             fp.mix_value(has_mesh_source);
+            fp.mix_value(has_mesh_processing);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
@@ -300,6 +303,20 @@ namespace wz::engine::assets
                 fp.mix_value(source.mesh_index);
             }
 
+            if (node.mesh_processing) {
+                const auto& processing = *node.mesh_processing;
+                fp.mix_value(processing.enabled);
+                fp.mix_value(processing.target_vertex_count);
+                fp.mix_value(processing.target_triangle_count);
+                fp.mix_value(processing.target_ratio);
+                fp.mix_value(processing.preserve_boundary);
+                fp.mix_value(processing.aspect_ratio);
+                fp.mix_value(processing.edge_length);
+                fp.mix_value(processing.max_valence);
+                fp.mix_value(processing.normal_deviation);
+                fp.mix_value(processing.hausdorff_error);
+            }
+
             if (node.mesh_render_style) {
                 const auto& style = *node.mesh_render_style;
                 mix_asset_key(fp, style.style_asset);
@@ -413,6 +430,7 @@ namespace wz::engine::assets
                 const auto& terrain = *node.terrain;
                 mix_asset_key(fp, terrain.terrain_asset);
                 mix_asset_key(fp, terrain.constraint_surface_asset);
+                fp.mix_value(terrain.calculate_constraint_surface);
                 fp.mix_value(terrain.visible);
                 fp.mix_value(terrain.queryable);
                 fp.mix_value(terrain.constrain_movement);
