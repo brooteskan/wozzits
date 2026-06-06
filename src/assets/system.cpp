@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace wz::asset
 {
@@ -53,6 +54,56 @@ namespace wz::asset
                 return resident ? "#bfdbfe" : "#dbeafe";
             }
             return resident ? "#fde68a" : "#f8fafc";
+        }
+
+        struct DebugGraphCommunities
+        {
+            std::vector<uint32_t> node_community;
+            std::vector<uint32_t> sizes;
+        };
+
+        DebugGraphCommunities compute_debug_graph_communities(const AssetGraph& g)
+        {
+            const uint32_t count = wz::core::graph::node_count(g);
+            DebugGraphCommunities result;
+            result.node_community.assign(count, UINT32_MAX);
+
+            std::vector<uint32_t> stack;
+            for (uint32_t root = 0; root < count; ++root) {
+                if (result.node_community[root] != UINT32_MAX) {
+                    continue;
+                }
+
+                const uint32_t community =
+                    static_cast<uint32_t>(result.sizes.size());
+                uint32_t size = 0u;
+                stack.clear();
+                stack.push_back(root);
+                result.node_community[root] = community;
+
+                while (!stack.empty()) {
+                    const uint32_t node = stack.back();
+                    stack.pop_back();
+                    ++size;
+
+                    for (const NodeHandle parent : prerequisites(g, node)) {
+                        if (result.node_community[parent] == UINT32_MAX) {
+                            result.node_community[parent] = community;
+                            stack.push_back(parent);
+                        }
+                    }
+                    for (const NodeHandle child : dependents(g, node)) {
+                        if (result.node_community[child] == UINT32_MAX) {
+                            result.node_community[child] = community;
+                            stack.push_back(child);
+                        }
+                    }
+                }
+
+                result.sizes.push_back(size);
+            }
+
+            return result;
         }
     }
 
@@ -232,8 +283,10 @@ namespace wz::asset
 
         const AssetGraph& g = storage_->dag();
         const uint32_t count = wz::core::graph::node_count(g);
+        const DebugGraphCommunities communities =
+            compute_debug_graph_communities(g);
 
-        for (uint32_t i = 0; i < count; ++i) {
+        auto emit_node = [&](uint32_t i, const char* indent) {
             const AssetNode& node = wz::core::graph::node_data(g, i);
             const auto prereqs = prerequisites(g, i);
             const auto deps = dependents(g, i);
@@ -242,8 +295,9 @@ namespace wz::asset
             const bool resident = compiled_nodes_.find(node.key) != compiled_nodes_.end();
             const bool cache_hit = cache_.contains(node.key);
 
-            out << "  n" << i << " [label=\"";
+            out << indent << "n" << i << " [label=\"";
             out << "#" << i
+                << " community=" << communities.node_community[i]
                 << "\\ntype=" << static_cast<uint16_t>(node.type)
                 << " schema=" << schema_hex(node.schema)
                 << "\\nstage=" << stage_name(node.stage)
@@ -265,6 +319,25 @@ namespace wz::asset
             out << "\", fillcolor=\""
                 << dot_fill_color(source_root, terminal, resident)
                 << "\"];\n";
+        };
+
+        for (uint32_t community = 0;
+            community < static_cast<uint32_t>(communities.sizes.size());
+            ++community)
+        {
+            out << "  subgraph cluster_" << community << " {\n";
+            out << "    label=\"community " << community
+                << " (" << communities.sizes[community] << " nodes)\";\n";
+            out << "    color=\"#94a3b8\";\n";
+            out << "    style=\"rounded\";\n";
+
+            for (uint32_t i = 0; i < count; ++i) {
+                if (communities.node_community[i] == community) {
+                    emit_node(i, "    ");
+                }
+            }
+
+            out << "  }\n";
         }
 
         for (uint32_t i = 0; i < count; ++i) {

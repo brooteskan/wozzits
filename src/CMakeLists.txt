@@ -1,3 +1,4 @@
+add_subdirectory(algo_math)
 add_subdirectory(scene_render)
 add_subdirectory(engine)
 add_subdirectory(logging)

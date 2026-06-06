@@ -25,7 +25,6 @@ endif()
 
 option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
 option(WINDOW_ENGINE_BUILD_EXAMPLES "Build standalone examples" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
-option(WINDOW_ENGINE_DEV_BUILD "Use local algo_math" ON)
 option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 
 
@@ -74,26 +73,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 endif()
 
 
-
-# ----------------------
-# dependency: algo_math
-# ----------------------
-if(NOT TARGET algo_math::algo_math)
-
-    find_package(algo_math QUIET)
-
-    if(NOT TARGET algo_math::algo_math)
-        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../wozzits-algo-math/CMakeLists.txt")
-            add_subdirectory(
-                "${CMAKE_CURRENT_LIST_DIR}/../wozzits-algo-math"
-                "${CMAKE_BINARY_DIR}/algo_math_build"
-            )
-        else()
-            message(FATAL_ERROR "algo_math not found")
-        endif()
-    endif()
-
-endif()
 
 # ----------------------
 # dependency: fastgltf
@@ -215,8 +194,6 @@ target_include_directories(window_engine
 )
 
 target_link_libraries(window_engine
-PUBLIC
-    algo_math::algo_math
 PRIVATE
     rtaudio
     $<BUILD_INTERFACE:pmp>
@@ -303,7 +280,6 @@ function(rs_add_test_group category name)
         PRIVATE
             gtest
             GTest::gtest_main
-            algo_math::algo_math
             window_engine
     )
 
@@ -516,6 +492,29 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_gltf gltf_importer)
     # rs_add_test_group(game_app game_app_main)
 
+    # Containers
+    rs_add_test_group(containers mpsc_queue)
+    rs_add_test_group(containers mpsc_ring_buffer)
+    rs_add_test_group(containers spsc_queue)
+    rs_add_test_group(containers buffer)
+    rs_add_test_group(containers buffer_2)
+    rs_add_test_group(containers buffer_spec_test)
+
+    # Math
+    rs_add_test_group(math test_vec3)
+    rs_add_test_group(math test_mat4)
+    rs_add_test_group(math test_quaternion)
+    rs_add_test_group(math test_quaternion_mat4)
+    rs_add_test_group(math test_camera)
+    rs_add_test_group(math algo_math_spec)
+
+    # Graph
+    rs_add_test_group(graph static_dag_tests_0)
+    rs_add_test_group(graph static_dag_algo_tests_0)
+    rs_add_test_group(graph static_polytree_tests_0)
+    rs_add_test_group(graph static_polytree_algo_tests_0)
+    rs_add_test_group(graph graph_problems_tests_0)
+
     # Scene render
     rs_add_test_group(scene_graph scene_graph_test_1)
     rs_add_test_group(render render_ir_test_3)
@@ -557,7 +556,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     target_link_libraries(${BENCHMARK_APP_TARGET}
         PRIVATE
-            algo_math::algo_math
             window_engine
     )
 
