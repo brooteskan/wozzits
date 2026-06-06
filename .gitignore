@@ -4,6 +4,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 .claude
+.wozzits/
 build/
 CmakeUserPresets.json
 CMakeSettings.json
