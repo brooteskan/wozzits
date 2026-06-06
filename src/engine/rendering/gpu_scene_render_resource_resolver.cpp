@@ -48,6 +48,35 @@ namespace wz::engine::rendering
             return true;
         }
 
+        void append_raw_bytes(
+            std::vector<uint8_t>& out,
+            const void* data,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return;
+            }
+            const auto* first = static_cast<const uint8_t*>(data);
+            out.insert(out.end(), first, first + byte_count);
+        }
+
+        bool read_raw_bytes(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            void* out,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return true;
+            }
+            if (offset + byte_count > bytes.size()) {
+                return false;
+            }
+            std::memcpy(out, bytes.data() + offset, byte_count);
+            offset += byte_count;
+            return true;
+        }
+
         void append_asset_key(
             std::vector<uint8_t>& out,
             const wz::asset::AssetKey& key)
@@ -140,82 +169,6 @@ namespace wz::engine::rendering
                 || count <= remaining / min_bytes_per_entry;
         }
 
-        void append_mesh_vertex(
-            std::vector<uint8_t>& out,
-            const wz::engine::assets::MeshVertex& v)
-        {
-            for (float value : v.position) append_scalar(out, value);
-            for (float value : v.normal) append_scalar(out, value);
-            for (float value : v.uv) append_scalar(out, value);
-        }
-
-        bool read_mesh_vertex(
-            const std::vector<uint8_t>& bytes,
-            size_t& offset,
-            wz::engine::assets::MeshVertex& v)
-        {
-            for (float& value : v.position) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : v.normal) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : v.uv) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            return true;
-        }
-
-        void append_chunk(
-            std::vector<uint8_t>& out,
-            const wz::engine::assets::TerrainVisualChunk& chunk)
-        {
-            for (float value : chunk.bounds_min) append_scalar(out, value);
-            for (float value : chunk.bounds_max) append_scalar(out, value);
-            append_scalar(out, chunk.first_index);
-            append_scalar(out, chunk.index_count);
-            append_scalar(out, chunk.replacement_first_index);
-            append_scalar(out, chunk.replacement_index_count);
-            append_scalar(out, chunk.aggregate.mean_height);
-            append_scalar(out, chunk.aggregate.height_variance);
-            for (float value : chunk.aggregate.normal_mean) append_scalar(out, value);
-            for (float value : chunk.aggregate.normal_variance) append_scalar(out, value);
-            for (float value : chunk.aggregate.albedo_mean) append_scalar(out, value);
-            append_scalar(out, chunk.aggregate.triangle_count);
-        }
-
-        bool read_chunk(
-            const std::vector<uint8_t>& bytes,
-            size_t& offset,
-            wz::engine::assets::TerrainVisualChunk& chunk)
-        {
-            for (float& value : chunk.bounds_min) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : chunk.bounds_max) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            if (!read_scalar(bytes, offset, chunk.first_index)
-                || !read_scalar(bytes, offset, chunk.index_count)
-                || !read_scalar(bytes, offset, chunk.replacement_first_index)
-                || !read_scalar(bytes, offset, chunk.replacement_index_count)
-                || !read_scalar(bytes, offset, chunk.aggregate.mean_height)
-                || !read_scalar(bytes, offset, chunk.aggregate.height_variance))
-            {
-                return false;
-            }
-            for (float& value : chunk.aggregate.normal_mean) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : chunk.aggregate.normal_variance) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : chunk.aggregate.albedo_mean) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            return read_scalar(bytes, offset, chunk.aggregate.triangle_count);
-        }
-
         std::vector<uint8_t> serialize_terrain_render_mesh(
             const wz::asset::AssetKey& key,
             const wz::engine::assets::MeshData& mesh,
@@ -236,17 +189,22 @@ namespace wz::engine::rendering
             append_scalar(out, static_cast<uint8_t>(mesh.has_normals));
             append_scalar(out, static_cast<uint8_t>(mesh.has_uv0));
             append_scalar(out, static_cast<uint64_t>(mesh.vertices.size()));
-            for (const auto& vertex : mesh.vertices) {
-                append_mesh_vertex(out, vertex);
-            }
+            append_raw_bytes(
+                out,
+                mesh.vertices.data(),
+                mesh.vertices.size()
+                    * sizeof(wz::engine::assets::MeshVertex));
             append_scalar(out, static_cast<uint64_t>(mesh.indices.size()));
-            for (uint32_t index : mesh.indices) {
-                append_scalar(out, index);
-            }
+            append_raw_bytes(
+                out,
+                mesh.indices.data(),
+                mesh.indices.size() * sizeof(uint32_t));
             append_scalar(out, static_cast<uint64_t>(chunks.size()));
-            for (const auto& chunk : chunks) {
-                append_chunk(out, chunk);
-            }
+            append_raw_bytes(
+                out,
+                chunks.data(),
+                chunks.size()
+                    * sizeof(wz::engine::assets::TerrainVisualChunk));
             return out;
         }
 
@@ -296,24 +254,46 @@ namespace wz::engine::rendering
                 return false;
             }
             mesh.vertices.resize(static_cast<size_t>(count));
-            for (auto& vertex : mesh.vertices) {
-                if (!read_mesh_vertex(bytes, offset, vertex)) return false;
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    mesh.vertices.data(),
+                    mesh.vertices.size()
+                        * sizeof(wz::engine::assets::MeshVertex)))
+            {
+                return false;
             }
 
             if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
                 return false;
             }
             mesh.indices.resize(static_cast<size_t>(count));
-            for (uint32_t& index : mesh.indices) {
-                if (!read_scalar(bytes, offset, index)) return false;
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    mesh.indices.data(),
+                    mesh.indices.size() * sizeof(uint32_t)))
+            {
+                return false;
             }
 
-            if (!read_vector_count(bytes, offset, count, 80u)) {
+            if (!read_vector_count(
+                    bytes,
+                    offset,
+                    count,
+                    sizeof(wz::engine::assets::TerrainVisualChunk)))
+            {
                 return false;
             }
             chunks.resize(static_cast<size_t>(count));
-            for (auto& chunk : chunks) {
-                if (!read_chunk(bytes, offset, chunk)) return false;
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    chunks.data(),
+                    chunks.size()
+                        * sizeof(wz::engine::assets::TerrainVisualChunk)))
+            {
+                return false;
             }
             return offset == bytes.size();
         }

@@ -23,6 +23,10 @@ namespace wz::logging
 
         uint64_t sequence = 0;
         uint64_t event_ticks = 0;
+        uint64_t wall_time_ms = 0;
+
+        const char* timestamp = nullptr;
+        std::size_t timestamp_size = 0;
     };
 
     using LogSinkFn =

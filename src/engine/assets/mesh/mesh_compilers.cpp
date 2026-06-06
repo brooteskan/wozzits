@@ -44,6 +44,35 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        void append_raw_bytes(
+            std::vector<uint8_t>& out,
+            const void* data,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return;
+            }
+            const auto* first = static_cast<const uint8_t*>(data);
+            out.insert(out.end(), first, first + byte_count);
+        }
+
+        bool read_raw_bytes(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            void* out,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return true;
+            }
+            if (offset + byte_count > bytes.size()) {
+                return false;
+            }
+            std::memcpy(out, bytes.data() + offset, byte_count);
+            offset += byte_count;
+            return true;
+        }
+
         void append_asset_key(
             std::vector<uint8_t>& out,
             const wz::asset::AssetKey& key)
@@ -136,30 +165,6 @@ namespace wz::engine::assets::internal
                 || count <= remaining / min_bytes_per_entry;
         }
 
-        void append_mesh_vertex(std::vector<uint8_t>& out, const MeshVertex& v)
-        {
-            for (float value : v.position) append_scalar(out, value);
-            for (float value : v.normal) append_scalar(out, value);
-            for (float value : v.uv) append_scalar(out, value);
-        }
-
-        bool read_mesh_vertex(
-            const std::vector<uint8_t>& bytes,
-            size_t& offset,
-            MeshVertex& v)
-        {
-            for (float& value : v.position) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : v.normal) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            for (float& value : v.uv) {
-                if (!read_scalar(bytes, offset, value)) return false;
-            }
-            return true;
-        }
-
         std::vector<uint8_t> serialize_mesh_asset(
             const wz::asset::AssetKey& key,
             const MeshData& mesh)
@@ -178,13 +183,15 @@ namespace wz::engine::assets::internal
             append_scalar(out, static_cast<uint8_t>(mesh.has_normals));
             append_scalar(out, static_cast<uint8_t>(mesh.has_uv0));
             append_scalar(out, static_cast<uint64_t>(mesh.vertices.size()));
-            for (const MeshVertex& vertex : mesh.vertices) {
-                append_mesh_vertex(out, vertex);
-            }
+            append_raw_bytes(
+                out,
+                mesh.vertices.data(),
+                mesh.vertices.size() * sizeof(MeshVertex));
             append_scalar(out, static_cast<uint64_t>(mesh.indices.size()));
-            for (uint32_t index : mesh.indices) {
-                append_scalar(out, index);
-            }
+            append_raw_bytes(
+                out,
+                mesh.indices.data(),
+                mesh.indices.size() * sizeof(uint32_t));
             return out;
         }
 
@@ -232,16 +239,26 @@ namespace wz::engine::assets::internal
                 return false;
             }
             mesh.vertices.resize(static_cast<size_t>(count));
-            for (MeshVertex& vertex : mesh.vertices) {
-                if (!read_mesh_vertex(bytes, offset, vertex)) return false;
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    mesh.vertices.data(),
+                    mesh.vertices.size() * sizeof(MeshVertex)))
+            {
+                return false;
             }
 
             if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
                 return false;
             }
             mesh.indices.resize(static_cast<size_t>(count));
-            for (uint32_t& index : mesh.indices) {
-                if (!read_scalar(bytes, offset, index)) return false;
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    mesh.indices.data(),
+                    mesh.indices.size() * sizeof(uint32_t)))
+            {
+                return false;
             }
 
             return offset == bytes.size();
@@ -378,8 +395,23 @@ namespace wz::engine::assets::internal
                     logger,
                     cached_data))
             {
+                const uint64_t vertex_count =
+                    static_cast<uint64_t>(cached_data.vertices.size());
+                const uint64_t index_count =
+                    static_cast<uint64_t>(cached_data.indices.size());
+                const auto store_started = std::chrono::steady_clock::now();
                 wz::asset::ResourceHandle handle =
                     mesh_table.add(std::move(cached_data));
+                const auto store_elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - store_started).count();
+                logger.info(
+                    "asset table store: cached glb mesh vertices="
+                    + std::to_string(vertex_count)
+                    + " indices="
+                    + std::to_string(index_count)
+                    + " ms="
+                    + std::to_string(store_elapsed));
                 if (!handle.valid()) {
                     logger.error("failed to store cached GLB mesh data");
                     return compile_failed_node(input);

@@ -1,18 +1,329 @@
 // src/engine/assets/scalar_field/scalar_field_compilers.cpp
 
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
+#include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+#include <file/filesystem.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <limits>
+#include <sstream>
+#include <string>
 
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr uint32_t kScalarFieldDiskCacheMagic = 0x53465a57u;
+        constexpr uint32_t kScalarFieldDiskCacheVersion = 1u;
+
+        template<typename T>
+        void append_scalar(std::vector<uint8_t>& out, const T& value)
+        {
+            const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
+            out.insert(out.end(), bytes, bytes + sizeof(T));
+        }
+
+        template<typename T>
+        bool read_scalar(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            T& out)
+        {
+            if (offset + sizeof(T) > bytes.size()) {
+                return false;
+            }
+            std::memcpy(&out, bytes.data() + offset, sizeof(T));
+            offset += sizeof(T);
+            return true;
+        }
+
+        void append_raw_bytes(
+            std::vector<uint8_t>& out,
+            const void* data,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return;
+            }
+            const auto* first = static_cast<const uint8_t*>(data);
+            out.insert(out.end(), first, first + byte_count);
+        }
+
+        bool read_raw_bytes(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            void* out,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return true;
+            }
+            if (offset + byte_count > bytes.size()) {
+                return false;
+            }
+            std::memcpy(out, bytes.data() + offset, byte_count);
+            offset += byte_count;
+            return true;
+        }
+
+        void append_asset_key(
+            std::vector<uint8_t>& out,
+            const wz::asset::AssetKey& key)
+        {
+            append_scalar(out, key.content_hash.lo);
+            append_scalar(out, key.content_hash.hi);
+            append_scalar(out, key.schema_hash.lo);
+            append_scalar(out, key.schema_hash.hi);
+            append_scalar(out, key.compiler_hash.lo);
+            append_scalar(out, key.compiler_hash.hi);
+            append_scalar(out, key.deps_hash.lo);
+            append_scalar(out, key.deps_hash.hi);
+        }
+
+        bool read_asset_key(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            wz::asset::AssetKey& key)
+        {
+            return read_scalar(bytes, offset, key.content_hash.lo)
+                && read_scalar(bytes, offset, key.content_hash.hi)
+                && read_scalar(bytes, offset, key.schema_hash.lo)
+                && read_scalar(bytes, offset, key.schema_hash.hi)
+                && read_scalar(bytes, offset, key.compiler_hash.lo)
+                && read_scalar(bytes, offset, key.compiler_hash.hi)
+                && read_scalar(bytes, offset, key.deps_hash.lo)
+                && read_scalar(bytes, offset, key.deps_hash.hi);
+        }
+
+        uint64_t mix_cache_key_word(uint64_t state, uint64_t word)
+        {
+            state ^= word + 0x9e3779b97f4a7c15ull + (state << 6) + (state >> 2);
+            state ^= state >> 30;
+            state *= 0xbf58476d1ce4e5b9ull;
+            state ^= state >> 27;
+            state *= 0x94d049bb133111ebull;
+            return state ^ (state >> 31);
+        }
+
+        std::string short_asset_key_hex(const wz::asset::AssetKey& key)
+        {
+            const uint64_t words[]{
+                key.content_hash.lo,
+                key.content_hash.hi,
+                key.schema_hash.lo,
+                key.schema_hash.hi,
+                key.compiler_hash.lo,
+                key.compiler_hash.hi,
+                key.deps_hash.lo,
+                key.deps_hash.hi,
+            };
+
+            uint64_t lo = 0x912a3f5dc8732019ull;
+            uint64_t hi = 0x6c8e9cf570932bd5ull;
+            for (uint64_t word : words) {
+                lo = mix_cache_key_word(lo, word);
+                hi = mix_cache_key_word(hi, word ^ lo);
+            }
+
+            std::ostringstream out;
+            out << std::hex << std::setfill('0')
+                << std::setw(16) << lo
+                << std::setw(16) << hi;
+            return out.str();
+        }
+
+        wz::fs::Path scalar_field_cache_directory(
+            const EngineAssetCacheSettings& cache)
+        {
+            return wz::fs::join(
+                wz::fs::join(cache.root, "assets"),
+                "scalar_field");
+        }
+
+        wz::fs::Path scalar_field_cache_path(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key)
+        {
+            return wz::fs::join(
+                scalar_field_cache_directory(cache),
+                short_asset_key_hex(key) + ".bin");
+        }
+
+        std::vector<uint8_t> serialize_scalar_field_asset(
+            const wz::asset::AssetKey& key,
+            const ScalarFieldData& field)
+        {
+            std::vector<uint8_t> out;
+            out.reserve(
+                128u + field.values.size() * sizeof(float));
+            append_scalar(out, kScalarFieldDiskCacheMagic);
+            append_scalar(out, kScalarFieldDiskCacheVersion);
+            append_scalar(out, kScalarFieldCompilerVersion);
+            append_asset_key(out, key);
+            append_scalar(out, field.width);
+            append_scalar(out, field.height);
+            append_scalar(out, field.depth);
+            append_scalar(out, static_cast<uint8_t>(field.format));
+            append_scalar(out, static_cast<uint8_t>(field.domain_kind));
+            append_scalar(out, static_cast<uint8_t>(field.layout));
+            append_scalar(out, static_cast<uint8_t>(field.origin));
+            append_scalar(out, field.min_value);
+            append_scalar(out, field.max_value);
+            append_scalar(out, static_cast<uint64_t>(field.values.size()));
+            append_raw_bytes(
+                out,
+                field.values.data(),
+                field.values.size() * sizeof(float));
+            return out;
+        }
+
+        bool deserialize_scalar_field_asset(
+            const std::vector<uint8_t>& bytes,
+            const wz::asset::AssetKey& expected_key,
+            ScalarFieldData& field)
+        {
+            size_t offset = 0;
+            uint32_t magic = 0;
+            uint32_t version = 0;
+            uint64_t compiler_version = 0;
+            if (!read_scalar(bytes, offset, magic)
+                || !read_scalar(bytes, offset, version)
+                || !read_scalar(bytes, offset, compiler_version)
+                || magic != kScalarFieldDiskCacheMagic
+                || version != kScalarFieldDiskCacheVersion
+                || compiler_version != kScalarFieldCompilerVersion)
+            {
+                return false;
+            }
+
+            wz::asset::AssetKey stored_key{};
+            uint8_t format = 0;
+            uint8_t domain_kind = 0;
+            uint8_t layout = 0;
+            uint8_t origin = 0;
+            if (!read_asset_key(bytes, offset, stored_key)
+                || stored_key != expected_key
+                || !read_scalar(bytes, offset, field.width)
+                || !read_scalar(bytes, offset, field.height)
+                || !read_scalar(bytes, offset, field.depth)
+                || !read_scalar(bytes, offset, format)
+                || !read_scalar(bytes, offset, domain_kind)
+                || !read_scalar(bytes, offset, layout)
+                || !read_scalar(bytes, offset, origin)
+                || !read_scalar(bytes, offset, field.min_value)
+                || !read_scalar(bytes, offset, field.max_value))
+            {
+                return false;
+            }
+
+            field.format = static_cast<ScalarFieldFormat>(format);
+            field.domain_kind =
+                static_cast<ScalarFieldDomainKind>(domain_kind);
+            field.layout = static_cast<ScalarFieldSampleLayout>(layout);
+            field.origin = static_cast<ScalarFieldOrigin>(origin);
+
+            uint64_t count = 0;
+            if (!read_scalar(bytes, offset, count)) {
+                return false;
+            }
+            const uint64_t remaining =
+                static_cast<uint64_t>(bytes.size() - offset);
+            if (count > remaining / sizeof(float)) {
+                return false;
+            }
+            field.values.resize(static_cast<size_t>(count));
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    field.values.data(),
+                    field.values.size() * sizeof(float)))
+            {
+                return false;
+            }
+            return offset == bytes.size() && field.valid();
+        }
+
+        bool load_cached_scalar_field(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            wz::Logger& logger,
+            ScalarFieldData& field)
+        {
+            if (!cache.enabled || cache.root.empty()) {
+                return false;
+            }
+
+            const wz::fs::Path path = scalar_field_cache_path(cache, key);
+            const auto started = std::chrono::steady_clock::now();
+            const auto bytes = wz::fs::read_file(path);
+            if (!bytes) {
+                logger.info("asset disk cache miss: scalar field " + path);
+                return false;
+            }
+
+            ScalarFieldData loaded{};
+            if (!deserialize_scalar_field_asset(bytes.value, key, loaded)) {
+                logger.warn(
+                    "asset disk cache ignored invalid scalar field: " + path);
+                return false;
+            }
+
+            const auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            field = std::move(loaded);
+            logger.info(
+                "asset disk cache hit: scalar field "
+                + path
+                + " ms="
+                + std::to_string(elapsed));
+            return true;
+        }
+
+        void store_cached_scalar_field(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            const ScalarFieldData& field,
+            wz::Logger& logger)
+        {
+            if (!cache.enabled || cache.root.empty() || !field.valid()) {
+                return;
+            }
+
+            const wz::fs::Path directory = scalar_field_cache_directory(cache);
+            if (wz::fs::create_directories(directory)
+                != wz::fs::FileError::None)
+            {
+                logger.warn(
+                    "asset disk cache directory unavailable: " + directory);
+                return;
+            }
+
+            const wz::fs::Path path = scalar_field_cache_path(cache, key);
+            const std::vector<uint8_t> bytes =
+                serialize_scalar_field_asset(key, field);
+            const wz::fs::FileError err = wz::fs::write_file(path, bytes, true);
+            if (err != wz::fs::FileError::None) {
+                logger.warn(
+                    "asset disk cache write failed: scalar field "
+                    + path
+                    + " error="
+                    + std::to_string(static_cast<int>(err)));
+                return;
+            }
+            logger.info(
+                "asset disk cache stored: scalar field "
+                + path
+                + " bytes="
+                + std::to_string(bytes.size()));
+        }
+
         // Validates all values (rejects NaN and infinity) and computes
         // min_value / max_value. Returns false and logs on the first bad value.
         bool compute_min_max(
@@ -57,7 +368,8 @@ namespace wz::engine::assets::internal
     void register_scalar_field_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        ScalarFieldTable& scalar_field_table)
+        ScalarFieldTable& scalar_field_table,
+        const EngineAssetCacheSettings& cache_settings)
     {
         // ── Scalar field compiler (file-backed) ───────────────────────────────
         //
@@ -68,7 +380,7 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldFromRawF32Schema,
             .output_type = kAssetTypeScalarField,
-            .compile = [&logger, &scalar_field_table](
+            .compile = [&logger, &scalar_field_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -128,6 +440,21 @@ namespace wz::engine::assets::internal
 
                 // ── 4. Reinterpret bytes as float32 values ────────────────────
 
+                ScalarFieldData cached_data{};
+                if (load_cached_scalar_field(
+                        cache_settings,
+                        input.key,
+                        logger,
+                        cached_data))
+                {
+                    wz::asset::ResourceHandle handle =
+                        scalar_field_table.add(std::move(cached_data));
+                    wz::asset::AssetNode out = input;
+                    out.stage = wz::asset::AssetStage::Compiled;
+                    out.payload = handle;
+                    return out;
+                }
+
                 std::vector<float> values(count);
                 std::memcpy(values.data(), bytes->data(), expected_bytes);
 
@@ -154,6 +481,12 @@ namespace wz::engine::assets::internal
                 data.max_value = max_val;
                 data.values = std::move(values);
 
+                store_cached_scalar_field(
+                    cache_settings,
+                    input.key,
+                    data,
+                    logger);
+
                 wz::asset::ResourceHandle handle =
                     scalar_field_table.add(std::move(data));
 
@@ -176,7 +509,7 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldProceduralSchema,
             .output_type = kAssetTypeScalarField,
-            .compile = [&logger, &scalar_field_table](
+            .compile = [&logger, &scalar_field_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -224,6 +557,21 @@ namespace wz::engine::assets::internal
                 const uint32_t width = desc->width;
                 const uint32_t height = desc->height;
                 const uint32_t count = width * height; // depth == 1
+
+                ScalarFieldData cached_data{};
+                if (load_cached_scalar_field(
+                        cache_settings,
+                        input.key,
+                        logger,
+                        cached_data))
+                {
+                    wz::asset::ResourceHandle handle =
+                        scalar_field_table.add(std::move(cached_data));
+                    wz::asset::AssetNode out = input;
+                    out.stage = wz::asset::AssetStage::Compiled;
+                    out.payload = handle;
+                    return out;
+                }
 
                 std::vector<float> values(count);
 
@@ -322,6 +670,12 @@ namespace wz::engine::assets::internal
                 data.min_value = min_val;
                 data.max_value = max_val;
                 data.values = std::move(values);
+
+                store_cached_scalar_field(
+                    cache_settings,
+                    input.key,
+                    data,
+                    logger);
 
                 wz::asset::ResourceHandle handle =
                     scalar_field_table.add(std::move(data));

@@ -2,6 +2,7 @@
 #include "logging/internal/memory_log_sink.h"
 
 #include <cstdio>
+#include <ctime>
 #include <cstring>
 
 #ifdef _WIN32
@@ -25,6 +26,36 @@ namespace wz::logging::internal
             case LogLevel::Critical: return "CRITICAL";
             }
             return "";
+        }
+
+        void format_timestamp(
+            uint64_t wall_time_ms,
+            char* out,
+            std::size_t out_size)
+        {
+            if (!out || out_size == 0u) {
+                return;
+            }
+
+            const std::time_t seconds =
+                static_cast<std::time_t>(wall_time_ms / 1000u);
+            const unsigned millis =
+                static_cast<unsigned>(wall_time_ms % 1000u);
+
+            std::tm local_time{};
+#ifdef _WIN32
+            localtime_s(&local_time, &seconds);
+#else
+            localtime_r(&seconds, &local_time);
+#endif
+            std::snprintf(
+                out,
+                out_size,
+                "%02d:%02d:%02d.%03u",
+                local_time.tm_hour,
+                local_time.tm_min,
+                local_time.tm_sec,
+                millis);
         }
 
 #ifdef _WIN32
@@ -138,15 +169,23 @@ namespace wz::logging::internal
     void LoggerState::dispatch(const LogMessage& msg)
     {
         const char* lvl = level_str(msg.level);
+        char timestamp[16]{};
+        format_timestamp(msg.wall_time_ms, timestamp, sizeof(timestamp));
 
         if (stderr_sink_)
-            std::fprintf(stderr, "[%s] %s\n", lvl, msg.text);
+            std::fprintf(stderr, "[%s] [%s] %s\n", timestamp, lvl, msg.text);
 
 #ifdef _WIN32
         if (debugger_sink_)
         {
-            char buf[kMaxLogMessageText + 16];
-            std::snprintf(buf, sizeof(buf), "[%s] %s\n", lvl, msg.text);
+            char buf[kMaxLogMessageText + 32];
+            std::snprintf(
+                buf,
+                sizeof(buf),
+                "[%s] [%s] %s\n",
+                timestamp,
+                lvl,
+                msg.text);
             OutputDebugStringA(buf);
         }
 
@@ -161,8 +200,14 @@ namespace wz::logging::internal
 
             SetConsoleTextAttribute(h, console_color(msg.level));
 
-            char buf[kMaxLogMessageText + 16];
-            int  len = std::snprintf(buf, sizeof(buf), "[%s] %s\n", lvl, msg.text);
+            char buf[kMaxLogMessageText + 32];
+            int len = std::snprintf(
+                buf,
+                sizeof(buf),
+                "[%s] [%s] %s\n",
+                timestamp,
+                lvl,
+                msg.text);
             DWORD written = 0;
             WriteConsoleA(h, buf, static_cast<DWORD>(len), &written, nullptr);
 
@@ -193,6 +238,9 @@ namespace wz::logging::internal
                 .text_size = len,
                 .sequence = msg.sequence,
                 .event_ticks = msg.event_ticks,
+                .wall_time_ms = msg.wall_time_ms,
+                .timestamp = timestamp,
+                .timestamp_size = std::strlen(timestamp),
             };
 
             sink(record, user);

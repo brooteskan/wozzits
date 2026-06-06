@@ -14,6 +14,7 @@ namespace wz::logging::internal
     {
         uint64_t sequence    = 0;
         uint64_t event_ticks = 0;
+        uint64_t wall_time_ms = 0;
         wz::LogLevel level   = wz::LogLevel::Info;
         char text[kMaxLogMessageText + 1] = {};
     };

@@ -3,6 +3,7 @@
 // engine/assets/terrain_asset_module.h
 
 #include <asset/system.h>
+#include <engine/assets/asset_cache_settings.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/terrain/terrain.h>
@@ -75,7 +76,8 @@ namespace wz::engine::assets
         TerrainAssetModule(
             wz::asset::AssetSystem& system,
             wz::Logger& logger,
-            TerrainAssetTable& table);
+            TerrainAssetTable& table,
+            const EngineAssetCacheSettings& cache_settings);
 
         [[nodiscard]] TerrainAsset create_from_height_field(
             const TerrainFromHeightFieldDesc& desc);
@@ -93,5 +95,6 @@ namespace wz::engine::assets
         wz::asset::AssetSystem& system_;
         wz::Logger& logger_;
         TerrainAssetTable& table_;
+        EngineAssetCacheSettings cache_settings_;
     };
 }

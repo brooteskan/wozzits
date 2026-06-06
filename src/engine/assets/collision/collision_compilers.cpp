@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <any>
+#include <chrono>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -45,6 +46,35 @@ namespace wz::engine::assets::internal
             }
             std::memcpy(&out, bytes.data() + offset, sizeof(T));
             offset += sizeof(T);
+            return true;
+        }
+
+        void append_raw_bytes(
+            std::vector<uint8_t>& out,
+            const void* data,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return;
+            }
+            const auto* first = static_cast<const uint8_t*>(data);
+            out.insert(out.end(), first, first + byte_count);
+        }
+
+        bool read_raw_bytes(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            void* out,
+            size_t byte_count)
+        {
+            if (byte_count == 0u) {
+                return true;
+            }
+            if (offset + byte_count > bytes.size()) {
+                return false;
+            }
+            std::memcpy(out, bytes.data() + offset, byte_count);
+            offset += byte_count;
             return true;
         }
 
@@ -235,20 +265,23 @@ namespace wz::engine::assets::internal
             append_float_array(out, data.bounds_max, 3);
 
             append_vector_count(out, data.points);
-            for (const CollisionPoint& point : data.points) {
-                append_float_array(out, point.position, 3);
-            }
+            append_raw_bytes(
+                out,
+                data.points.data(),
+                data.points.size() * sizeof(CollisionPoint));
 
             append_vector_count(out, data.indices);
-            for (uint32_t index : data.indices) {
-                append_scalar(out, index);
-            }
+            append_raw_bytes(
+                out,
+                data.indices.data(),
+                data.indices.size() * sizeof(uint32_t));
 
             append_vector_count(out, data.triangle_bounds);
-            for (const CollisionTriangleBounds& bounds : data.triangle_bounds) {
-                append_float_array(out, bounds.min, 3);
-                append_float_array(out, bounds.max, 3);
-            }
+            append_raw_bytes(
+                out,
+                data.triangle_bounds.data(),
+                data.triangle_bounds.size()
+                    * sizeof(CollisionTriangleBounds));
 
             append_scalar(out, data.surface_grid.origin_x);
             append_scalar(out, data.surface_grid.origin_z);
@@ -258,18 +291,22 @@ namespace wz::engine::assets::internal
             append_scalar(out, data.surface_grid.cells_z);
 
             append_vector_count(out, data.surface_grid.cell_offsets);
-            for (uint32_t value : data.surface_grid.cell_offsets) {
-                append_scalar(out, value);
-            }
+            append_raw_bytes(
+                out,
+                data.surface_grid.cell_offsets.data(),
+                data.surface_grid.cell_offsets.size() * sizeof(uint32_t));
             append_vector_count(out, data.surface_grid.cell_triangle_indices);
-            for (uint32_t value : data.surface_grid.cell_triangle_indices) {
-                append_scalar(out, value);
-            }
+            append_raw_bytes(
+                out,
+                data.surface_grid.cell_triangle_indices.data(),
+                data.surface_grid.cell_triangle_indices.size()
+                    * sizeof(uint32_t));
             append_vector_count(out, data.surface_grid.cell_bounds);
-            for (const CollisionTriangleBounds& bounds : data.surface_grid.cell_bounds) {
-                append_float_array(out, bounds.min, 3);
-                append_float_array(out, bounds.max, 3);
-            }
+            append_raw_bytes(
+                out,
+                data.surface_grid.cell_bounds.data(),
+                data.surface_grid.cell_bounds.size()
+                    * sizeof(CollisionTriangleBounds));
 
             append_asset_key(out, data.height_field);
             append_asset_key(out, data.mesh);
@@ -283,9 +320,10 @@ namespace wz::engine::assets::internal
             append_scalar(out, data.max_height);
 
             append_vector_count(out, data.height_samples);
-            for (float value : data.height_samples) {
-                append_scalar(out, value);
-            }
+            append_raw_bytes(
+                out,
+                data.height_samples.data(),
+                data.height_samples.size() * sizeof(float));
 
             append_scalar(out, data.source_triangle_count);
             append_scalar(out, data.accepted_triangle_count);
@@ -342,32 +380,45 @@ namespace wz::engine::assets::internal
                 return false;
             }
             data.points.resize(static_cast<size_t>(count));
-            for (CollisionPoint& point : data.points) {
-                if (!read_float_array(bytes, offset, point.position, 3)) {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.points.data(),
+                    data.points.size() * sizeof(CollisionPoint)))
+            {
+                return false;
             }
 
             if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
                 return false;
             }
             data.indices.resize(static_cast<size_t>(count));
-            for (uint32_t& index : data.indices) {
-                if (!read_scalar(bytes, offset, index)) {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.indices.data(),
+                    data.indices.size() * sizeof(uint32_t)))
+            {
+                return false;
             }
 
-            if (!read_vector_count(bytes, offset, count, 6u * sizeof(float))) {
+            if (!read_vector_count(
+                    bytes,
+                    offset,
+                    count,
+                    sizeof(CollisionTriangleBounds)))
+            {
                 return false;
             }
             data.triangle_bounds.resize(static_cast<size_t>(count));
-            for (CollisionTriangleBounds& bounds : data.triangle_bounds) {
-                if (!read_float_array(bytes, offset, bounds.min, 3)
-                    || !read_float_array(bytes, offset, bounds.max, 3))
-                {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.triangle_bounds.data(),
+                    data.triangle_bounds.size()
+                        * sizeof(CollisionTriangleBounds)))
+            {
+                return false;
             }
 
             if (!read_scalar(bytes, offset, data.surface_grid.origin_x)
@@ -384,30 +435,44 @@ namespace wz::engine::assets::internal
                 return false;
             }
             data.surface_grid.cell_offsets.resize(static_cast<size_t>(count));
-            for (uint32_t& value : data.surface_grid.cell_offsets) {
-                if (!read_scalar(bytes, offset, value)) {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.surface_grid.cell_offsets.data(),
+                    data.surface_grid.cell_offsets.size() * sizeof(uint32_t)))
+            {
+                return false;
             }
             if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
                 return false;
             }
             data.surface_grid.cell_triangle_indices.resize(static_cast<size_t>(count));
-            for (uint32_t& value : data.surface_grid.cell_triangle_indices) {
-                if (!read_scalar(bytes, offset, value)) {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.surface_grid.cell_triangle_indices.data(),
+                    data.surface_grid.cell_triangle_indices.size()
+                        * sizeof(uint32_t)))
+            {
+                return false;
             }
-            if (!read_vector_count(bytes, offset, count, 6u * sizeof(float))) {
+            if (!read_vector_count(
+                    bytes,
+                    offset,
+                    count,
+                    sizeof(CollisionTriangleBounds)))
+            {
                 return false;
             }
             data.surface_grid.cell_bounds.resize(static_cast<size_t>(count));
-            for (CollisionTriangleBounds& bounds : data.surface_grid.cell_bounds) {
-                if (!read_float_array(bytes, offset, bounds.min, 3)
-                    || !read_float_array(bytes, offset, bounds.max, 3))
-                {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.surface_grid.cell_bounds.data(),
+                    data.surface_grid.cell_bounds.size()
+                        * sizeof(CollisionTriangleBounds)))
+            {
+                return false;
             }
 
             if (!read_asset_key(bytes, offset, data.height_field)
@@ -428,10 +493,13 @@ namespace wz::engine::assets::internal
                 return false;
             }
             data.height_samples.resize(static_cast<size_t>(count));
-            for (float& value : data.height_samples) {
-                if (!read_scalar(bytes, offset, value)) {
-                    return false;
-                }
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    data.height_samples.data(),
+                    data.height_samples.size() * sizeof(float)))
+            {
+                return false;
             }
 
             uint8_t supports_bounds = 0;
@@ -465,6 +533,7 @@ namespace wz::engine::assets::internal
             }
 
             const wz::fs::Path path = collision_terrain_cache_path(cache, key);
+            const auto started = std::chrono::steady_clock::now();
             const auto bytes = wz::fs::read_file(path);
             if (!bytes) {
                 logger.info("asset disk cache miss: terrain collision " + path);
@@ -482,7 +551,14 @@ namespace wz::engine::assets::internal
             }
 
             data = std::move(loaded);
-            logger.info("asset disk cache hit: terrain collision " + path);
+            const auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger.info(
+                "asset disk cache hit: terrain collision "
+                + path
+                + " ms="
+                + std::to_string(elapsed));
             return true;
         }
 

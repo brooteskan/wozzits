@@ -1,6 +1,60 @@
 #include <asset/system.h>
+
+#include <iomanip>
+#include <sstream>
+#include <string>
+
 namespace wz::asset
 {
+    namespace
+    {
+        std::string short_hash_hex(const Hash& hash)
+        {
+            std::ostringstream out;
+            out << std::hex << std::setfill('0')
+                << std::setw(8) << static_cast<uint32_t>(hash.hi >> 32)
+                << std::setw(8) << static_cast<uint32_t>(hash.hi)
+                << std::setw(8) << static_cast<uint32_t>(hash.lo >> 32)
+                << std::setw(8) << static_cast<uint32_t>(hash.lo);
+            return out.str();
+        }
+
+        std::string schema_hex(SchemaID schema)
+        {
+            std::ostringstream out;
+            out << "0x"
+                << std::hex << std::setfill('0') << std::setw(16)
+                << schema.value;
+            return out.str();
+        }
+
+        const char* stage_name(AssetStage stage) noexcept
+        {
+            switch (stage) {
+            case AssetStage::Source:
+                return "source";
+            case AssetStage::Intermediate:
+                return "intermediate";
+            case AssetStage::Compiled:
+                return "compiled";
+            }
+            return "unknown";
+        }
+
+        const char* dot_fill_color(
+            bool source_root,
+            bool terminal,
+            bool resident) noexcept
+        {
+            if (terminal) {
+                return resident ? "#b7e4c7" : "#d8f3dc";
+            }
+            if (source_root) {
+                return resident ? "#bfdbfe" : "#dbeafe";
+            }
+            return resident ? "#fde68a" : "#f8fafc";
+        }
+    }
 
 
     bool AssetSystem::commit() {
@@ -158,6 +212,69 @@ namespace wz::asset
             }
         }
         return ok;
+    }
+
+    std::string AssetSystem::debug_graph_dot() const
+    {
+        std::ostringstream out;
+        out << "digraph asset_dag {\n";
+        out << "  graph [rankdir=LR, compound=true];\n";
+        out << "  node [shape=box, style=\"rounded,filled\", fontname=\"Consolas\", fontsize=10];\n";
+        out << "  edge [color=\"#64748b\", arrowsize=0.7];\n";
+        out << "  labelloc=\"t\";\n";
+        out << "  label=\"Asset DAG: prerequisite -> dependent\";\n";
+
+        if (!committed_ || !storage_) {
+            out << "  empty [label=\"asset graph not committed\", fillcolor=\"#fee2e2\"];\n";
+            out << "}\n";
+            return out.str();
+        }
+
+        const AssetGraph& g = storage_->dag();
+        const uint32_t count = wz::core::graph::node_count(g);
+
+        for (uint32_t i = 0; i < count; ++i) {
+            const AssetNode& node = wz::core::graph::node_data(g, i);
+            const auto prereqs = prerequisites(g, i);
+            const auto deps = dependents(g, i);
+            const bool source_root = prereqs.empty();
+            const bool terminal = deps.empty();
+            const bool resident = compiled_nodes_.find(node.key) != compiled_nodes_.end();
+            const bool cache_hit = cache_.contains(node.key);
+
+            out << "  n" << i << " [label=\"";
+            out << "#" << i
+                << "\\ntype=" << static_cast<uint16_t>(node.type)
+                << " schema=" << schema_hex(node.schema)
+                << "\\nstage=" << stage_name(node.stage)
+                << " prereq=" << prereqs.size()
+                << " dep=" << deps.size()
+                << "\\nkey=" << short_hash_hex(node.key.content_hash).substr(0, 12);
+            if (source_root) {
+                out << "\\nsource-root";
+            }
+            if (terminal) {
+                out << "\\nterminal";
+            }
+            if (resident) {
+                out << "\\nresident";
+            }
+            if (cache_hit) {
+                out << "\\nasset-cache-hit";
+            }
+            out << "\", fillcolor=\""
+                << dot_fill_color(source_root, terminal, resident)
+                << "\"];\n";
+        }
+
+        for (uint32_t i = 0; i < count; ++i) {
+            for (const NodeHandle child : dependents(g, i)) {
+                out << "  n" << i << " -> n" << child << ";\n";
+            }
+        }
+
+        out << "}\n";
+        return out.str();
     }
 
 } // namespace wz::asset

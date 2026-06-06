@@ -21,6 +21,7 @@ namespace wz::logging::internal
         LogMessage msg{};
         msg.sequence    = next_sequence();
         msg.event_ticks = now_ticks();
+        msg.wall_time_ms = now_wall_time_ms();
         msg.level       = level;
 
         const auto len = std::min(text.size(), kMaxLogMessageText);
@@ -78,6 +79,16 @@ namespace wz::logging::internal
         using clock = std::chrono::steady_clock;
         return static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
+                clock::now().time_since_epoch()
+            ).count()
+        );
+    }
+
+    uint64_t LoggerQueue::now_wall_time_ms() const
+    {
+        using clock = std::chrono::system_clock;
+        return static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
                 clock::now().time_since_epoch()
             ).count()
         );

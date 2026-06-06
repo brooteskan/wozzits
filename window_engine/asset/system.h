@@ -28,6 +28,7 @@
 #include "cache.h"
 #include <cassert>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -196,6 +197,13 @@ namespace wz::asset {
         const AssetGraph* graph() const {
             return committed_ ? &storage_->dag() : nullptr;
         }
+
+        // Diagnostic Graphviz/DOT view of the committed asset DAG.
+        //
+        // Edge direction is prerequisite -> dependent. This method does not
+        // resolve assets or touch runtime tables; it only reports graph shape
+        // plus current resident/cache state.
+        [[nodiscard]] std::string debug_graph_dot() const;
 
         const AssetIndex& index()    const { return index_; }
         AssetCache& cache() { return cache_; }

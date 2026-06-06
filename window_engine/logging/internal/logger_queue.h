@@ -36,6 +36,7 @@ namespace wz::logging::internal
     private:
         uint64_t next_sequence();
         uint64_t now_ticks() const;
+        uint64_t now_wall_time_ms() const;
 
     private:
         std::atomic<bool>     accepting_     { true };

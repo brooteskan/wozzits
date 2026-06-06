@@ -3,6 +3,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/engine_asset_library_internal.h>
 
+#include <chrono>
 #include <utility>
 #include <vector>
 
@@ -116,7 +117,7 @@ namespace wz::engine::assets
         , json_(system_, logger_, files_, json_table_)
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
-        , terrains_(system_, logger_, terrain_table_)
+        , terrains_(system_, logger_, terrain_table_, cache_settings_)
         , collisions_(system_, logger_, collision_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)
@@ -182,11 +183,18 @@ namespace wz::engine::assets
 
     bool EngineAssetLibrary::commit()
     {
+        const auto started = std::chrono::steady_clock::now();
         if (!system_.commit()) {
             logger_.error("asset graph rejected — cycle or missing dependency");
             return false;
         }
 
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+        logger_.info(
+            "asset graph commit complete ms="
+            + std::to_string(elapsed));
         return true;
     }
 
@@ -194,8 +202,19 @@ namespace wz::engine::assets
     {
         ResolveReport report{};
 
+        const auto started = std::chrono::steady_clock::now();
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> raw_errors;
         report.resolved_count = system_.resolve_all(&raw_errors);
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+        logger_.info(
+            "asset resolve_all complete resolved="
+            + std::to_string(report.resolved_count)
+            + " failures="
+            + std::to_string(raw_errors.size())
+            + " ms="
+            + std::to_string(elapsed));
 
         for (auto& [key, err] : raw_errors) {
             logger_.error("asset resolve failed");

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -267,6 +268,12 @@ namespace wz::engine::assets
             SceneHDRIEnvironmentAsset& environment)
         {
             if (environment.path.empty()) {
+                return;
+            }
+            if (environment.environment_light_intensity > 0.0f
+                || environment.dominant_light_intensity > 0.0f
+                || environment.dominant_light_confidence > 0.0f)
+            {
                 return;
             }
             if (environment.format == HDRIEnvironmentFormat::RadianceHDR) {
@@ -1375,13 +1382,29 @@ namespace wz::engine::assets
         const SceneMeshRenderStyleAsset default_render_style{};
         scene.sky_draws.clear();
 
+        const auto materialize_started = std::chrono::steady_clock::now();
+        auto elapsed_ms_since = [](const auto& started)
+        {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+        };
+        auto log_phase = [&assets](const std::string& name, int64_t ms)
+        {
+            assets.logger().info(
+                "scene authoring materialize phase " + name
+                + " ms=" + std::to_string(ms));
+        };
+
+        const auto import_started = std::chrono::steady_clock::now();
         if (!materialize_scene_import_sources(scene, assets, report.error)) {
             if (report.error.empty()) {
                 report.error = "scene import source materialization failed";
             }
             return report;
         }
+        log_phase("import_sources", elapsed_ms_since(import_started));
 
+        const auto fields_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.scalar_field_source) {
                 continue;
@@ -1454,7 +1477,9 @@ namespace wz::engine::assets
             scene,
             scalar_field_assets_by_node,
             vector_field_assets_by_node);
+        log_phase("fields_and_sky", elapsed_ms_since(fields_started));
 
+        const auto lights_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.direct_light_source) {
                 continue;
@@ -1637,7 +1662,9 @@ namespace wz::engine::assets
         }
 
         prioritize_terrain_render_style_lights(scene);
+        log_phase("lights_and_environment", elapsed_ms_since(lights_started));
 
+        const auto mesh_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.mesh_source) {
                 continue;
@@ -1650,7 +1677,7 @@ namespace wz::engine::assets
                 node.mesh_render_style.value_or(default_render_style);
             render_style.style_asset = {};
 
-            if (options.create_preview_renderables) {
+            if (options.create_preview_renderables && node.visible) {
                 RenderableAsset renderable{};
                 if (!ensure_renderable_for_mesh_source(
                         assets,
@@ -1695,12 +1722,17 @@ namespace wz::engine::assets
                 }
                 return report;
             }
+            else {
+                node.renderable_asset.reset();
+            }
 
             if (mesh.valid()) {
                 mesh_assets_by_node[node.id] = mesh.output;
             }
         }
+        log_phase("mesh_sources", elapsed_ms_since(mesh_started));
 
+        const auto terrain_links_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.terrain_mesh_source) {
                 continue;
@@ -1763,7 +1795,9 @@ namespace wz::engine::assets
                 source.scalar_field_asset = {};
             }
         }
+        log_phase("terrain_source_links", elapsed_ms_since(terrain_links_started));
 
+        const auto terrain_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.terrain) {
                 continue;
@@ -1976,8 +2010,16 @@ namespace wz::engine::assets
             node.renderable_asset = renderable.output;
             append_unique_renderable(report, renderable.output);
         }
+        log_phase("terrain_assets", elapsed_ms_since(terrain_started));
 
         report.ok = true;
+        assets.logger().info(
+            "scene authoring materialize complete nodes="
+            + std::to_string(scene.nodes.size())
+            + " renderables_to_realize="
+            + std::to_string(report.renderables_to_realize.size())
+            + " ms="
+            + std::to_string(elapsed_ms_since(materialize_started)));
         return report;
     }
 

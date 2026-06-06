@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <any>
+#include <chrono>
 #include <span>
+#include <string>
 
 namespace wz::engine::assets::internal
 {
@@ -95,7 +97,19 @@ namespace wz::engine::assets::internal
                 data.domain = desc->domain;
                 data.policy_flags = desc->policy_flags;
 
+                const auto bounds_started = std::chrono::steady_clock::now();
                 copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
+                const auto bounds_elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - bounds_started)
+                        .count();
+                if (bounds_elapsed >= 25) {
+                    logger->info(
+                        "asset compile: mesh wireframe renderable bounds vertices="
+                        + std::to_string(mesh->vertices.size())
+                        + " ms="
+                        + std::to_string(bounds_elapsed));
+                }
 
                 wz::asset::ResourceHandle handle =
                     renderable_table->add(std::move(data));
@@ -319,7 +333,19 @@ namespace wz::engine::assets::internal
                     apply_depth_policy();
                 }
                 data.mesh_style = effective_style;
+                const auto bounds_started = std::chrono::steady_clock::now();
                 copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
+                const auto bounds_elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - bounds_started)
+                        .count();
+                if (bounds_elapsed >= 25) {
+                    logger->info(
+                        "asset compile: mesh styled renderable bounds vertices="
+                        + std::to_string(mesh->vertices.size())
+                        + " ms="
+                        + std::to_string(bounds_elapsed));
+                }
 
                 wz::asset::ResourceHandle handle =
                     renderable_table->add(std::move(data));
