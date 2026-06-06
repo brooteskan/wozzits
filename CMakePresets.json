@@ -8,7 +8,6 @@
       "cacheVariables": {
         "WINDOW_ENGINE_ENABLE_TESTS": "ON",
         "WINDOW_ENGINE_DEV_BUILD": "ON",
-        "SCENE_RENDER_ENABLE_TESTS": "ON",
         "WOZZITS_ENABLE_V8_SCRIPTING": "OFF"
       }
     },

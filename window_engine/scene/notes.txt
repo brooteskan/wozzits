@@ -1,0 +1,411 @@
+# Rendering Backend Bring-Up Plan (5-Day Path to First Pixels)
+
+This document defines a minimal, disciplined path from the current RenderFrame system to a working GPU backend that renders actual pixels on screen.
+
+The goal is not completeness. The goal is a **vertical slice through the entire pipeline**:
+
+Scene → CompiledScene → RenderIR → RenderFrame → GPU → Pixels
+
+---
+
+# Core Principle
+
+Only one thing matters during this phase:
+
+> Can we see geometry on screen through the full pipeline without breaking abstraction boundaries?
+
+Everything else (splats, particles, advanced sorting) is explicitly deferred.
+
+---
+
+# DAY 1 — GPU Skeleton (Window + Swapchain + Clear Screen)
+
+## Objective
+
+Establish a working graphics context.
+
+## Deliverables
+
+* Window creation
+* GPU device initialization (Vulkan or DX12)
+* Swapchain setup
+* Render loop
+* Clear screen with solid color
+
+## Constraints
+
+* No scene system
+* No RenderFrame usage
+* No buffers beyond what backend requires
+
+## Success Criteria
+
+* A window opens
+* Screen clears to a visible color every frame
+
+## Notes
+
+This is the “hello GPU world” step. Nothing else matters yet.
+
+---
+
+# DAY 2 — First Triangle (Hardcoded Pipeline)
+
+## Objective
+
+Render a hardcoded triangle using a fixed pipeline.
+
+## Deliverables
+
+* Vertex buffer
+* Index buffer (optional)
+* Hardcoded shader
+* Single draw call per frame
+
+## Constraints
+
+* No RenderFrame integration yet
+* No scene data
+
+## Success Criteria
+
+* A triangle appears and persists
+
+## Notes
+
+If this fails, nothing else in the engine matters yet.
+
+---
+
+# DAY 3 — RenderFrame Integration (Opaque Only)
+
+## Objective
+
+Introduce RenderFrame → GPU translation layer.
+
+## Deliverables
+
+* Function: `submit_gpu(const RenderFrame&)`
+* Support ONLY:
+
+  * PipelineStage::OpaqueGeometry
+* DrawCommand → GPU draw mapping
+
+## Mapping Rules
+
+For each OpaqueGeometry command:
+
+* bind mesh buffers
+* bind material pipeline (can be single shader initially)
+* upload world matrix (push constant or uniform)
+* issue draw call
+
+## Constraints
+
+* Ignore all other pipeline stages
+* Ignore sorting correctness for now
+
+## Success Criteria
+
+* Scene-driven geometry renders
+* You can move from hardcoded triangle to scene mesh
+
+## Notes
+
+This is the first real validation of your architecture.
+
+---
+
+# DAY 4 — Full Data Path Validation
+
+## Objective
+
+Connect full CPU pipeline:
+
+Scene → CompiledScene → RenderIR → RenderFrame → GPU
+
+## Deliverables
+
+* RenderIR feeding RenderFrame
+* At least one real SceneGraph-driven mesh
+* Stable per-frame rendering
+
+## Additions
+
+* Verify sort_key is preserved (debug logging optional)
+* Ensure no dangling references
+
+## Success Criteria
+
+* Scene object renders via full pipeline
+* You can move camera and still see correct transforms
+
+## Notes
+
+Do NOT add splats or transparency yet.
+This step is about correctness, not features.
+
+---
+
+# DAY 5 — Minimal Material + Depth Stability
+
+## Objective
+
+Make rendering stable and slightly more “engine-like”.
+
+## Deliverables
+
+* Basic material binding (even if single shader with variants)
+* Depth buffer enabled
+* Depth-tested opaque rendering
+
+## Optional
+
+* Simple camera movement
+* Basic multiple meshes
+
+## Success Criteria
+
+* Scene behaves like a real 3D world
+* Objects occlude correctly
+* No rendering flicker or ordering issues
+
+---
+
+# WHAT IS EXPLICITLY DEFERRED
+
+Do NOT implement during this phase:
+
+* Splats
+* Particles
+* Transparent sorting
+* GPU-driven rendering
+* Compute pipelines
+* Multi-pass lighting
+
+These come AFTER a stable opaque pipeline exists.
+
+---
+
+# ARCHITECTURAL CHECKPOINT
+
+At the end of Day 5, you should have:
+
+* A fully working CPU → GPU render pipeline
+* One supported pipeline stage (OpaqueGeometry)
+* Deterministic rendering from scene data
+* A stable foundation for expansion
+
+---
+
+# NEXT PHASE (Preview)
+
+Once this is working:
+
+* TransparentGeometry pipeline activation
+* Splat pipeline integration (depth + sorting refinement)
+* Particle compute integration
+* RenderGraph evolution (if needed)
+
+---
+
+# FINAL RULE
+
+If pixels are not on screen, nothing else in the system is real yet.
+
+
+
+========================================================
+
+What I would push you to do next
+1. Make transform propagation explicit
+
+Something like:
+
+void update_world_transforms(SceneGraph& g, uint32_t frame);
+
+Using:
+
+topo order
+parent lookup
+
+This is where your polytree really pays off.
+
+2. Tighten invariants at boundaries
+
+At compile() entry:
+
+assert(descriptors.size() == node_count(g));
+
+Don’t tolerate mismatch.
+
+3. Decide what flags actually mean
+
+Right now they’re vague.
+
+You need to answer:
+
+is a node renderable because of flags?
+or because it has a descriptor?
+
+Pick one as the source of truth.
+
+4. Either remove or complete dirty tracking
+
+Don’t leave this in limbo:
+
+either implement incremental updates
+or delete last_updated_frame for now
+Bottom line
+
+You’ve crossed an important threshold:
+
+This is no longer “graph code.” This is an engine pipeline.
+
+And it’s a good one:
+
+clean separation
+cache-friendly data
+correct abstraction boundaries
+
+Now the challenge shifts from:
+
+“Can this represent a scene?”
+
+to:
+
+“Can this scale, stay correct, and remain maintainable under pressure?”
+
+You’re close—but the next gains come from tightening invariants and finishing the systems you’ve hinted at
+
+
+You now have two worlds
+1. Authoring / construction world (undefined for now)
+could be editor
+could be importer
+could be procedural generation
+could be ECS
+
+This world is:
+
+messy
+dynamic
+flexible
+2. Runtime world (what you’ve built)
+frozen polytree
+flat descriptors
+compiled render data
+
+This world is:
+
+rigid
+cache-optimized
+predictable
+The key insight:
+
+Your polytree is already a compiled artifact, not a primary data structure.
+
+That’s why it feels so clean—it’s not trying to do everything.
+
+Where this strengthens your current design
+Your compile step becomes conceptually clean
+
+Right now:
+
+SceneGraph (polytree + nodes)
+    ↓
+compile()
+    ↓
+CompiledScene
+
+But really it’s:
+
+[authoring world]
+    ↓
+Polytree (compiled topology)
+    ↓
+Transform propagation
+    ↓
+compile()
+    ↓
+Render data
+
+You’ve implicitly split:
+
+structure compilation
+spatial evaluation
+render extraction
+
+That’s exactly how high-end engines think about it.
+
+One thing I would push you to clean up now
+Make transform propagation a first-class step
+
+Right now it’s implied.
+
+Don’t leave it that way.
+
+Create something explicit like:
+
+void evaluate_transforms(SceneGraph& g);
+
+And make compile() assume:
+
+“world matrices are already correct”
+
+That gives you:
+
+a clean contract
+easier debugging
+flexibility later (parallelism, partial updates, etc.)
+Subtle but important: your current system is frame-coherent
+
+Because:
+
+topology is static
+topo order is stable
+arrays are contiguous
+
+You’ve set yourself up for:
+
+SIMD-friendly passes
+multithreaded chunking (later)
+deterministic behavior
+
+That’s a big deal.
+
+What you should not do (temptation warning)
+
+Don’t start sneaking in:
+
+dynamic reparenting
+partial graph edits
+“just one mutable edge”
+
+That will:
+
+break your invariants
+destroy your memory layout advantages
+force you into expensive rebuilds anyway
+
+If you need dynamism later, the correct move is:
+
+rebuild the polytree (or double-buffer it)
+
+Not mutate it in place.
+
+Bottom line
+
+If this is truly a static scene system:
+
+Your polytree design is exactly right
+Your compile boundary is clean
+Your data layout is engine-grade
+
+But you need to commit to the model:
+
+Treat the polytree as a compiled, immutable runtime structure, not a living scene graph.
+
+Do that, and everything you’ve written becomes simpler, faster, and more predictable.
+
+Hedge halfway toward dynamism, and this design will start to fight you.

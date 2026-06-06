@@ -76,21 +76,20 @@ endif()
 
 
 # ----------------------
-# dependency: scene_render
+# dependency: algo_math
 # ----------------------
-# 1. If already provided (top-level project)
-if(NOT TARGET scene_render::scene_render)
+if(NOT TARGET algo_math::algo_math)
 
-    find_package(scene_render QUIET)
+    find_package(algo_math QUIET)
 
-    if(NOT TARGET scene_render::scene_render)
-        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../wozzits-scene-render/CMakeLists.txt")
+    if(NOT TARGET algo_math::algo_math)
+        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../wozzits-algo-math/CMakeLists.txt")
             add_subdirectory(
-                "${CMAKE_CURRENT_LIST_DIR}/../wozzits-scene-render"
-                "${CMAKE_BINARY_DIR}/scene_render_build"
+                "${CMAKE_CURRENT_LIST_DIR}/../wozzits-algo-math"
+                "${CMAKE_BINARY_DIR}/algo_math_build"
             )
         else()
-            message(FATAL_ERROR "scene_render not found")
+            message(FATAL_ERROR "algo_math not found")
         endif()
     endif()
 
@@ -217,7 +216,6 @@ target_include_directories(window_engine
 
 target_link_libraries(window_engine
 PUBLIC
-    scene_render::scene_render
     algo_math::algo_math
 PRIVATE
     rtaudio
@@ -306,7 +304,6 @@ function(rs_add_test_group category name)
             gtest
             GTest::gtest_main
             algo_math::algo_math
-            scene_render::scene_render
             window_engine
     )
 
@@ -368,7 +365,7 @@ if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     endif()
 endif()
 
-if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
+if(WINDOW_ENGINE_ENABLE_TESTS)
     target_compile_definitions(window_engine PUBLIC WZ_ENABLE_TESTING)
 
     rs_add_test_group(engine engine)
@@ -519,6 +516,26 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     rs_add_test_group(asset_gltf gltf_importer)
     # rs_add_test_group(game_app game_app_main)
 
+    # Scene render
+    rs_add_test_group(scene_graph scene_graph_test_1)
+    rs_add_test_group(render render_ir_test_3)
+    rs_add_test_group(render render_ir_frustum_test_1)
+    rs_add_test_group(render stub_backend_test_4)
+    rs_add_test_group(render storage_reuse_tests)
+    rs_add_test_group(render render_frame_sectioned_test_1)
+    rs_add_test_group(render pipeline_benchmark_test_1)
+    rs_add_test_group(scene_compile scene_compiler_test_2)
+    rs_add_test_group(scene_compile scene_compiler_tests_3)
+    rs_add_test_group(scene_compile scene_metadata_test_1)
+    rs_add_test_group(scene_compile scene_ecs_boundary_test_1)
+    rs_add_test_group(scene_compile scene_refresh_test_1)
+    rs_add_test_group(scene_compile scene_transform_update_test_1)
+    rs_add_test_group(scene_compile scene_descriptor_update_test_1)
+    rs_add_test_group(scene_compile scene_transform_dirty_filter_test_1)
+    rs_add_test_group(scene_compile scene_adversarial_test_1)
+    rs_add_test_group(scene_compile scene_adversarial_test_2)
+    rs_add_test_group(scene_compile scene_adversarial_test_3)
+
     # ── BenchmarkApp ──────────────────────────────────────────────────────────
     # Standalone interactive app — no gtest dependency, resources required.
 
@@ -541,7 +558,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS AND SCENE_RENDER_ENABLE_TESTS)
     target_link_libraries(${BENCHMARK_APP_TARGET}
         PRIVATE
             algo_math::algo_math
-            scene_render::scene_render
             window_engine
     )
 

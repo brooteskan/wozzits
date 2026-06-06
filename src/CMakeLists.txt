@@ -1,3 +1,4 @@
+add_subdirectory(scene_render)
 add_subdirectory(engine)
 add_subdirectory(logging)
 add_subdirectory(jobs)
