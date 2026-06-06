@@ -98,6 +98,11 @@ set(PMP_BUILD_REGRESSIONS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(WZ_CMAKE_CXX_FLAGS_BEFORE_PMP "${CMAKE_CXX_FLAGS}")
 wz_add_subdirectory_quiet(external/pmp)
+if(TARGET pmp AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # PMP adds GCC-style warning flags globally inside its subdirectory. Keep
+    # third-party diagnostics out of engine builds while preserving our flags.
+    target_compile_options(pmp PRIVATE -w)
+endif()
 set(CMAKE_CXX_FLAGS "${WZ_CMAKE_CXX_FLAGS_BEFORE_PMP}")
 unset(WZ_CMAKE_CXX_FLAGS_BEFORE_PMP)
 
