@@ -316,3 +316,71 @@ TEST(GLBMeshAsset, ImportsCubeThroughAssetGraphFromAbsolutePath)
     EXPECT_GT(data->index_count(), 0u);
     EXPECT_EQ(data->index_count() % 3u, 0u);
 }
+
+TEST(GLBMeshAsset, UsesProjectDiskCache)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_glb_mesh_disk_cache_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path cache_root =
+        wz::fs::join(root, ".wozzits/cache");
+
+    wz::gpu::Device device{};
+    wz::Logger logger{};
+
+    auto resolve_mesh = [&]() -> wz::engine::assets::MeshData
+    {
+        wz::engine::assets::EngineAssetLibrary assets{
+            device,
+            logger,
+            WZ_TEST_FIXTURE_DIR,
+            wz::engine::assets::EngineAssetCacheSettings{
+                .root = cache_root,
+                .enabled = true,
+            },
+        };
+
+        const wz::asset::AssetKey file_key =
+            assets.files().register_file_node(
+                "gltf/cube.glb",
+                wz::engine::assets::kRawFileSchema,
+                wz::engine::assets::kAssetTypeRawFile);
+        EXPECT_FALSE(file_key == wz::asset::AssetKey{});
+
+        const auto mesh = assets.meshes().create_glb_mesh({
+            .name = "cube_cached",
+            .source_file = file_key,
+            .mesh_index = 0,
+        });
+        EXPECT_TRUE(mesh.valid());
+
+        EXPECT_TRUE(assets.commit());
+        const auto report = assets.resolve_all();
+        EXPECT_TRUE(report.ok());
+
+        const auto handle = assets.meshes().get_mesh(mesh);
+        EXPECT_TRUE(handle.valid());
+        const auto* data = assets.meshes().get_mesh_data(handle);
+        EXPECT_NE(data, nullptr);
+        return data ? *data : wz::engine::assets::MeshData{};
+    };
+
+    const wz::engine::assets::MeshData first = resolve_mesh();
+    ASSERT_TRUE(first.valid());
+
+    const wz::fs::Path cache_directory =
+        wz::fs::join(wz::fs::join(cache_root, "assets"), "glb_mesh");
+    const auto entries = wz::fs::list_directory(cache_directory);
+    ASSERT_EQ(entries.error, wz::fs::FileError::None);
+    EXPECT_FALSE(entries.value.empty());
+
+    const wz::engine::assets::MeshData second = resolve_mesh();
+    ASSERT_TRUE(second.valid());
+    EXPECT_EQ(second.vertex_count(), first.vertex_count());
+    EXPECT_EQ(second.index_count(), first.index_count());
+    EXPECT_EQ(second.has_normals, first.has_normals);
+    EXPECT_EQ(second.has_uv0, first.has_uv0);
+}

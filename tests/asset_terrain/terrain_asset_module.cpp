@@ -145,6 +145,95 @@ TEST(TerrainAssetModule, ResolvesMeshTerrain)
     EXPECT_FALSE(data->supports_ray_query);
 }
 
+TEST(TerrainAssetModule, MeshTerrainUsesProjectDiskCache)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_terrain_mesh_disk_cache_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path cache_root =
+        wz::fs::join(root, ".wozzits/cache");
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    auto resolve_terrain = [&]() -> TerrainAssetData
+    {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            root,
+            EngineAssetCacheSettings{
+                .root = cache_root,
+                .enabled = true,
+            },
+        };
+
+        const auto mesh =
+            assets.meshes().create_procedural_mesh({
+                .name = "terrain/cache_mesh_cube",
+                .kind = ProceduralMeshKind::Cube,
+            });
+        EXPECT_TRUE(mesh.valid());
+
+        const auto terrain =
+            assets.terrains().create_from_mesh({
+                .name = "terrain/cache_mesh_surface",
+                .mesh = mesh,
+                .min_surface_normal_y = 0.0f,
+                .include_backfaces = true,
+                .visual_chunk_count = 512u,
+            });
+        EXPECT_TRUE(terrain.valid());
+
+        EXPECT_TRUE(assets.commit());
+        const auto report = assets.resolve_all();
+        EXPECT_TRUE(report.ok());
+
+        const auto handle = assets.terrains().get_terrain(terrain);
+        EXPECT_TRUE(handle.valid());
+        const TerrainAssetData* data =
+            assets.terrains().get_terrain_data(handle);
+        EXPECT_NE(data, nullptr);
+        return data ? *data : TerrainAssetData{};
+    };
+
+    const TerrainAssetData first = resolve_terrain();
+    ASSERT_TRUE(first.valid());
+    EXPECT_EQ(first.representation, TerrainRepresentationKind::MeshSurface);
+    EXPECT_EQ(first.mesh_visual_chunk_count, 512u);
+    EXPECT_FALSE(first.mesh_visual_indices.empty());
+    EXPECT_FALSE(first.mesh_visual_chunks.empty());
+
+    const wz::fs::Path cache_directory =
+        wz::fs::join(wz::fs::join(cache_root, "assets"), "mesh_terrain");
+    const auto entries = wz::fs::list_directory(cache_directory);
+    ASSERT_EQ(entries.error, wz::fs::FileError::None);
+    EXPECT_FALSE(entries.value.empty());
+
+    const TerrainAssetData second = resolve_terrain();
+    ASSERT_TRUE(second.valid());
+    EXPECT_EQ(second.representation, first.representation);
+    EXPECT_EQ(second.mesh_visual_chunk_count, first.mesh_visual_chunk_count);
+    EXPECT_EQ(second.mesh_triangle_count, first.mesh_triangle_count);
+    EXPECT_EQ(
+        second.mesh_accepted_surface_triangle_count,
+        first.mesh_accepted_surface_triangle_count);
+    EXPECT_EQ(second.mesh_surface_points.size(), first.mesh_surface_points.size());
+    EXPECT_EQ(second.mesh_surface_indices.size(), first.mesh_surface_indices.size());
+    EXPECT_EQ(second.mesh_visual_indices.size(), first.mesh_visual_indices.size());
+    EXPECT_EQ(second.mesh_visual_chunks.size(), first.mesh_visual_chunks.size());
+    ASSERT_FALSE(second.mesh_visual_chunks.empty());
+    EXPECT_EQ(
+        second.mesh_visual_chunks.front().index_count,
+        first.mesh_visual_chunks.front().index_count);
+}
+
 TEST(TerrainAssetModule, DuplicateMeshTerrainRegistrationReturnsSameAsset)
 {
     const wz::fs::Path root =

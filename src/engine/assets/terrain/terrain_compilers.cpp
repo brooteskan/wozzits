@@ -2,6 +2,7 @@
 
 #include <engine/assets/terrain/terrain_compilers.h>
 
+#include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -9,14 +10,524 @@
 #include <algorithm>
 #include <any>
 #include <cmath>
+#include <cstring>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr uint32_t kMeshTerrainDiskCacheMagic = 0x54435a57u;
+        constexpr uint32_t kMeshTerrainDiskCacheVersion = 1u;
+
+        template<typename T>
+        void append_scalar(std::vector<uint8_t>& out, const T& value)
+        {
+            const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
+            out.insert(out.end(), bytes, bytes + sizeof(T));
+        }
+
+        template<typename T>
+        bool read_scalar(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            T& out)
+        {
+            if (offset + sizeof(T) > bytes.size()) {
+                return false;
+            }
+            std::memcpy(&out, bytes.data() + offset, sizeof(T));
+            offset += sizeof(T);
+            return true;
+        }
+
+        void append_asset_key(
+            std::vector<uint8_t>& out,
+            const wz::asset::AssetKey& key)
+        {
+            append_scalar(out, key.content_hash.lo);
+            append_scalar(out, key.content_hash.hi);
+            append_scalar(out, key.schema_hash.lo);
+            append_scalar(out, key.schema_hash.hi);
+            append_scalar(out, key.compiler_hash.lo);
+            append_scalar(out, key.compiler_hash.hi);
+            append_scalar(out, key.deps_hash.lo);
+            append_scalar(out, key.deps_hash.hi);
+        }
+
+        bool read_asset_key(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            wz::asset::AssetKey& key)
+        {
+            return read_scalar(bytes, offset, key.content_hash.lo)
+                && read_scalar(bytes, offset, key.content_hash.hi)
+                && read_scalar(bytes, offset, key.schema_hash.lo)
+                && read_scalar(bytes, offset, key.schema_hash.hi)
+                && read_scalar(bytes, offset, key.compiler_hash.lo)
+                && read_scalar(bytes, offset, key.compiler_hash.hi)
+                && read_scalar(bytes, offset, key.deps_hash.lo)
+                && read_scalar(bytes, offset, key.deps_hash.hi);
+        }
+
+        uint64_t mix_cache_key_word(uint64_t state, uint64_t word)
+        {
+            state ^= word + 0x9e3779b97f4a7c15ull + (state << 6) + (state >> 2);
+            state ^= state >> 30;
+            state *= 0xbf58476d1ce4e5b9ull;
+            state ^= state >> 27;
+            state *= 0x94d049bb133111ebull;
+            return state ^ (state >> 31);
+        }
+
+        std::string short_asset_key_hex(const wz::asset::AssetKey& key)
+        {
+            const uint64_t words[]{
+                key.content_hash.lo,
+                key.content_hash.hi,
+                key.schema_hash.lo,
+                key.schema_hash.hi,
+                key.compiler_hash.lo,
+                key.compiler_hash.hi,
+                key.deps_hash.lo,
+                key.deps_hash.hi,
+            };
+
+            uint64_t lo = 0xa4093822299f31d0ull;
+            uint64_t hi = 0x082efa98ec4e6c89ull;
+            for (uint64_t word : words) {
+                lo = mix_cache_key_word(lo, word);
+                hi = mix_cache_key_word(hi, word ^ lo);
+            }
+
+            std::ostringstream out;
+            out << std::hex << std::setfill('0')
+                << std::setw(16) << lo
+                << std::setw(16) << hi;
+            return out.str();
+        }
+
+        wz::fs::Path mesh_terrain_cache_directory(
+            const EngineAssetCacheSettings& cache)
+        {
+            return wz::fs::join(
+                wz::fs::join(cache.root, "assets"),
+                "mesh_terrain");
+        }
+
+        wz::fs::Path mesh_terrain_cache_path(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key)
+        {
+            return wz::fs::join(
+                mesh_terrain_cache_directory(cache),
+                short_asset_key_hex(key) + ".bin");
+        }
+
+        void append_float_array(
+            std::vector<uint8_t>& out,
+            const float* values,
+            uint32_t count)
+        {
+            for (uint32_t i = 0; i < count; ++i) {
+                append_scalar(out, values[i]);
+            }
+        }
+
+        bool read_float_array(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            float* values,
+            uint32_t count)
+        {
+            for (uint32_t i = 0; i < count; ++i) {
+                if (!read_scalar(bytes, offset, values[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        template<typename T>
+        void append_vector_count(std::vector<uint8_t>& out, const std::vector<T>& v)
+        {
+            append_scalar(out, static_cast<uint64_t>(v.size()));
+        }
+
+        bool read_vector_count(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            uint64_t& count,
+            uint64_t min_bytes_per_entry)
+        {
+            if (!read_scalar(bytes, offset, count)) {
+                return false;
+            }
+            if (min_bytes_per_entry == 0u) {
+                return true;
+            }
+            const uint64_t remaining =
+                static_cast<uint64_t>(bytes.size() - offset);
+            return count <= remaining / min_bytes_per_entry;
+        }
+
+        void append_visual_chunk_aggregate(
+            std::vector<uint8_t>& out,
+            const TerrainVisualChunkAggregate& aggregate)
+        {
+            append_scalar(out, aggregate.mean_height);
+            append_scalar(out, aggregate.height_variance);
+            append_float_array(out, aggregate.normal_mean, 3);
+            append_float_array(out, aggregate.normal_variance, 2);
+            append_float_array(out, aggregate.albedo_mean, 3);
+            append_scalar(out, aggregate.triangle_count);
+        }
+
+        bool read_visual_chunk_aggregate(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualChunkAggregate& aggregate)
+        {
+            return read_scalar(bytes, offset, aggregate.mean_height)
+                && read_scalar(bytes, offset, aggregate.height_variance)
+                && read_float_array(bytes, offset, aggregate.normal_mean, 3)
+                && read_float_array(bytes, offset, aggregate.normal_variance, 2)
+                && read_float_array(bytes, offset, aggregate.albedo_mean, 3)
+                && read_scalar(bytes, offset, aggregate.triangle_count);
+        }
+
+        void append_visual_chunk(
+            std::vector<uint8_t>& out,
+            const TerrainVisualChunk& chunk)
+        {
+            append_float_array(out, chunk.bounds_min, 3);
+            append_float_array(out, chunk.bounds_max, 3);
+            append_scalar(out, chunk.first_index);
+            append_scalar(out, chunk.index_count);
+            append_scalar(out, chunk.replacement_first_index);
+            append_scalar(out, chunk.replacement_index_count);
+            append_visual_chunk_aggregate(out, chunk.aggregate);
+        }
+
+        bool read_visual_chunk(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualChunk& chunk)
+        {
+            return read_float_array(bytes, offset, chunk.bounds_min, 3)
+                && read_float_array(bytes, offset, chunk.bounds_max, 3)
+                && read_scalar(bytes, offset, chunk.first_index)
+                && read_scalar(bytes, offset, chunk.index_count)
+                && read_scalar(bytes, offset, chunk.replacement_first_index)
+                && read_scalar(bytes, offset, chunk.replacement_index_count)
+                && read_visual_chunk_aggregate(bytes, offset, chunk.aggregate);
+        }
+
+        std::vector<uint8_t> serialize_mesh_terrain_asset(
+            const wz::asset::AssetKey& key,
+            const TerrainAssetData& data)
+        {
+            std::vector<uint8_t> out;
+            out.reserve(
+                512u
+                + data.height_samples.size() * sizeof(float)
+                + data.mesh_surface_points.size() * sizeof(float)
+                + data.mesh_surface_indices.size() * sizeof(uint32_t)
+                + data.mesh_visual_indices.size() * sizeof(uint32_t)
+                + data.mesh_visual_chunks.size() * 96u);
+
+            append_scalar(out, kMeshTerrainDiskCacheMagic);
+            append_scalar(out, kMeshTerrainDiskCacheVersion);
+            append_scalar(out, kTerrainCompilerVersion);
+            append_asset_key(out, key);
+            append_scalar(out, static_cast<uint8_t>(data.representation));
+            append_asset_key(out, data.source_asset);
+            append_asset_key(out, data.height_field);
+            append_asset_key(out, data.mesh);
+            append_asset_key(out, data.normal_field);
+            append_asset_key(out, data.material_mask_set);
+            append_scalar(out, static_cast<uint8_t>(data.mesh_height_policy));
+            append_scalar(out, data.min_surface_normal_y);
+            append_scalar(out, static_cast<uint8_t>(data.include_backfaces));
+            append_scalar(out, static_cast<uint8_t>(data.normal_source));
+            append_scalar(out, static_cast<uint8_t>(data.uv_source));
+            append_scalar(out, static_cast<uint8_t>(data.mesh_has_source_normals));
+            append_scalar(out, static_cast<uint8_t>(data.mesh_has_source_uv0));
+            append_scalar(out, data.mesh_triangle_count);
+            append_scalar(out, data.mesh_accepted_surface_triangle_count);
+            append_scalar(out, data.mesh_visual_chunk_count);
+            append_float_array(out, data.origin, 2);
+            append_float_array(out, data.size, 2);
+            append_scalar(out, data.resolution_x);
+            append_scalar(out, data.resolution_y);
+            append_scalar(out, data.vertical_scale);
+            append_scalar(out, data.base_height);
+            append_scalar(out, data.min_height);
+            append_scalar(out, data.max_height);
+            append_float_array(out, data.bounds_min, 3);
+            append_float_array(out, data.bounds_max, 3);
+            append_scalar(out, static_cast<uint8_t>(data.render_mode));
+            append_scalar(out, static_cast<uint8_t>(data.collision_mode));
+            append_scalar(out, static_cast<uint8_t>(data.supports_height_query));
+            append_scalar(out, static_cast<uint8_t>(data.supports_ray_query));
+            append_scalar(out, static_cast<uint8_t>(data.supports_render_mesh));
+
+            append_vector_count(out, data.height_samples);
+            for (float value : data.height_samples) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.mesh_surface_points);
+            for (float value : data.mesh_surface_points) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.mesh_surface_indices);
+            for (uint32_t value : data.mesh_surface_indices) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.mesh_visual_indices);
+            for (uint32_t value : data.mesh_visual_indices) {
+                append_scalar(out, value);
+            }
+            append_vector_count(out, data.mesh_visual_chunks);
+            for (const TerrainVisualChunk& chunk : data.mesh_visual_chunks) {
+                append_visual_chunk(out, chunk);
+            }
+
+            return out;
+        }
+
+        bool deserialize_mesh_terrain_asset(
+            const std::vector<uint8_t>& bytes,
+            const wz::asset::AssetKey& expected_key,
+            TerrainAssetData& data)
+        {
+            size_t offset = 0;
+            uint32_t magic = 0;
+            uint32_t version = 0;
+            uint64_t compiler_version = 0;
+            if (!read_scalar(bytes, offset, magic)
+                || !read_scalar(bytes, offset, version)
+                || !read_scalar(bytes, offset, compiler_version)
+                || magic != kMeshTerrainDiskCacheMagic
+                || version != kMeshTerrainDiskCacheVersion
+                || compiler_version != kTerrainCompilerVersion)
+            {
+                return false;
+            }
+
+            wz::asset::AssetKey stored_key{};
+            uint8_t representation = 0;
+            uint8_t mesh_height_policy = 0;
+            uint8_t include_backfaces = 0;
+            uint8_t normal_source = 0;
+            uint8_t uv_source = 0;
+            uint8_t mesh_has_source_normals = 0;
+            uint8_t mesh_has_source_uv0 = 0;
+            uint8_t render_mode = 0;
+            uint8_t collision_mode = 0;
+            uint8_t supports_height_query = 0;
+            uint8_t supports_ray_query = 0;
+            uint8_t supports_render_mesh = 0;
+
+            if (!read_asset_key(bytes, offset, stored_key)
+                || stored_key != expected_key
+                || !read_scalar(bytes, offset, representation)
+                || !read_asset_key(bytes, offset, data.source_asset)
+                || !read_asset_key(bytes, offset, data.height_field)
+                || !read_asset_key(bytes, offset, data.mesh)
+                || !read_asset_key(bytes, offset, data.normal_field)
+                || !read_asset_key(bytes, offset, data.material_mask_set)
+                || !read_scalar(bytes, offset, mesh_height_policy)
+                || !read_scalar(bytes, offset, data.min_surface_normal_y)
+                || !read_scalar(bytes, offset, include_backfaces)
+                || !read_scalar(bytes, offset, normal_source)
+                || !read_scalar(bytes, offset, uv_source)
+                || !read_scalar(bytes, offset, mesh_has_source_normals)
+                || !read_scalar(bytes, offset, mesh_has_source_uv0)
+                || !read_scalar(bytes, offset, data.mesh_triangle_count)
+                || !read_scalar(bytes, offset, data.mesh_accepted_surface_triangle_count)
+                || !read_scalar(bytes, offset, data.mesh_visual_chunk_count)
+                || !read_float_array(bytes, offset, data.origin, 2)
+                || !read_float_array(bytes, offset, data.size, 2)
+                || !read_scalar(bytes, offset, data.resolution_x)
+                || !read_scalar(bytes, offset, data.resolution_y)
+                || !read_scalar(bytes, offset, data.vertical_scale)
+                || !read_scalar(bytes, offset, data.base_height)
+                || !read_scalar(bytes, offset, data.min_height)
+                || !read_scalar(bytes, offset, data.max_height)
+                || !read_float_array(bytes, offset, data.bounds_min, 3)
+                || !read_float_array(bytes, offset, data.bounds_max, 3)
+                || !read_scalar(bytes, offset, render_mode)
+                || !read_scalar(bytes, offset, collision_mode)
+                || !read_scalar(bytes, offset, supports_height_query)
+                || !read_scalar(bytes, offset, supports_ray_query)
+                || !read_scalar(bytes, offset, supports_render_mesh))
+            {
+                return false;
+            }
+
+            data.representation =
+                static_cast<TerrainRepresentationKind>(representation);
+            data.mesh_height_policy =
+                static_cast<TerrainMeshSurfaceHeightPolicy>(mesh_height_policy);
+            data.include_backfaces = include_backfaces != 0u;
+            data.normal_source = static_cast<TerrainNormalSource>(normal_source);
+            data.uv_source = static_cast<TerrainUVSource>(uv_source);
+            data.mesh_has_source_normals = mesh_has_source_normals != 0u;
+            data.mesh_has_source_uv0 = mesh_has_source_uv0 != 0u;
+            data.render_mode = static_cast<TerrainRenderMode>(render_mode);
+            data.collision_mode =
+                static_cast<TerrainCollisionMode>(collision_mode);
+            data.supports_height_query = supports_height_query != 0u;
+            data.supports_ray_query = supports_ray_query != 0u;
+            data.supports_render_mesh = supports_render_mesh != 0u;
+
+            uint64_t count = 0;
+            if (!read_vector_count(bytes, offset, count, sizeof(float))) {
+                return false;
+            }
+            data.height_samples.resize(static_cast<size_t>(count));
+            for (float& value : data.height_samples) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(float))) {
+                return false;
+            }
+            data.mesh_surface_points.resize(static_cast<size_t>(count));
+            for (float& value : data.mesh_surface_points) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
+                return false;
+            }
+            data.mesh_surface_indices.resize(static_cast<size_t>(count));
+            for (uint32_t& value : data.mesh_surface_indices) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, sizeof(uint32_t))) {
+                return false;
+            }
+            data.mesh_visual_indices.resize(static_cast<size_t>(count));
+            for (uint32_t& value : data.mesh_visual_indices) {
+                if (!read_scalar(bytes, offset, value)) {
+                    return false;
+                }
+            }
+
+            if (!read_vector_count(bytes, offset, count, 80u)) {
+                return false;
+            }
+            data.mesh_visual_chunks.resize(static_cast<size_t>(count));
+            for (TerrainVisualChunk& chunk : data.mesh_visual_chunks) {
+                if (!read_visual_chunk(bytes, offset, chunk)) {
+                    return false;
+                }
+            }
+
+            return offset == bytes.size();
+        }
+
+        bool load_cached_mesh_terrain(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            wz::Logger& logger,
+            TerrainAssetData& data)
+        {
+            if (!cache.enabled || cache.root.empty()) {
+                return false;
+            }
+
+            const wz::fs::Path path = mesh_terrain_cache_path(cache, key);
+            const auto bytes = wz::fs::read_file(path);
+            if (!bytes) {
+                logger.info("asset disk cache miss: mesh terrain " + path);
+                return false;
+            }
+
+            TerrainAssetData loaded{};
+            if (!deserialize_mesh_terrain_asset(bytes.value, key, loaded)
+                || !loaded.valid()
+                || loaded.representation != TerrainRepresentationKind::MeshSurface)
+            {
+                logger.warn(
+                    "asset disk cache ignored invalid mesh terrain: "
+                    + path);
+                return false;
+            }
+
+            data = std::move(loaded);
+            logger.info("asset disk cache hit: mesh terrain " + path);
+            return true;
+        }
+
+        void store_cached_mesh_terrain(
+            const EngineAssetCacheSettings& cache,
+            const wz::asset::AssetKey& key,
+            const TerrainAssetData& data,
+            wz::Logger& logger)
+        {
+            if (!cache.enabled
+                || cache.root.empty()
+                || !data.valid()
+                || data.representation != TerrainRepresentationKind::MeshSurface)
+            {
+                return;
+            }
+
+            const wz::fs::Path directory = mesh_terrain_cache_directory(cache);
+            if (wz::fs::create_directories(directory)
+                != wz::fs::FileError::None)
+            {
+                logger.warn(
+                    "asset disk cache directory unavailable: " + directory);
+                return;
+            }
+
+            const wz::fs::Path path = mesh_terrain_cache_path(cache, key);
+            const std::vector<uint8_t> bytes =
+                serialize_mesh_terrain_asset(key, data);
+            const wz::fs::FileError err =
+                wz::fs::write_file(path, bytes, true);
+            if (err != wz::fs::FileError::None) {
+                logger.warn(
+                    "asset disk cache write failed: mesh terrain "
+                    + path
+                    + " error="
+                    + std::to_string(static_cast<int>(err)));
+                return;
+            }
+
+            logger.info(
+                "asset disk cache stored: mesh terrain "
+                + path
+                + " bytes="
+                + std::to_string(bytes.size()));
+        }
+
+        wz::asset::AssetNode compiled_terrain_node(
+            const wz::asset::AssetNode& input,
+            wz::asset::ResourceHandle handle)
+        {
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
+
         void copy_mesh_bounds(
             float dst_min[3],
             float dst_max[3],
@@ -498,7 +1009,8 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         ScalarFieldTable& scalar_fields_table,
         MeshTable& mesh_table,
-        TerrainAssetTable& terrain_table)
+        TerrainAssetTable& terrain_table,
+        const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainFromHeightFieldSchema,
@@ -579,17 +1091,14 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return compiled_terrain_node(input, handle);
             }
         });
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainFromMeshSchema,
             .output_type = kAssetTypeTerrain,
-            .compile = [&logger, &mesh_table, &terrain_table](
+            .compile = [&logger, &mesh_table, &terrain_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -610,6 +1119,22 @@ namespace wz::engine::assets::internal
                 if (!mesh || !mesh->valid()) {
                     logger.error("terrain mesh source is invalid");
                     return compile_failed_node(input);
+                }
+
+                TerrainAssetData cached_data{};
+                if (load_cached_mesh_terrain(
+                        cache_settings,
+                        input.key,
+                        logger,
+                        cached_data))
+                {
+                    wz::asset::ResourceHandle handle =
+                        terrain_table.add(std::move(cached_data));
+                    if (!handle.valid()) {
+                        logger.error("failed to store cached mesh terrain");
+                        return compile_failed_node(input);
+                    }
+                    return compiled_terrain_node(input, handle);
                 }
 
                 TerrainAssetData data{};
@@ -661,6 +1186,12 @@ namespace wz::engine::assets::internal
                 data.supports_render_mesh =
                     desc->render_mode == TerrainRenderMode::DebugMesh;
 
+                store_cached_mesh_terrain(
+                    cache_settings,
+                    input.key,
+                    data,
+                    logger);
+
                 wz::asset::ResourceHandle handle =
                     terrain_table.add(std::move(data));
                 if (!handle.valid()) {
@@ -668,10 +1199,7 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return compiled_terrain_node(input, handle);
             }
         });
     }

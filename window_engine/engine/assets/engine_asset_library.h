@@ -129,6 +129,11 @@ namespace wz::engine::assets
             return cache_settings_.root;
         }
 
+        wz::Logger& logger() const noexcept
+        {
+            return logger_;
+        }
+
         // ── Module accessors ──────────────────────────────────────────────────────
 
         FileCarrierAssetModule&       files()         { return files_; }
