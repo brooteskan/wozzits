@@ -1,8 +1,10 @@
 #include <asset/system.h>
 
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace wz::asset
@@ -42,11 +44,56 @@ namespace wz::asset
             return "unknown";
         }
 
+        const char* residency_intent_name(ResidencyIntent intent) noexcept
+        {
+            switch (intent) {
+            case ResidencyIntent::RuntimeResident:
+                return "runtime";
+            case ResidencyIntent::EditorResident:
+                return "editor";
+            case ResidencyIntent::CompileOnly:
+                return "compile-only";
+            case ResidencyIntent::Transient:
+                return "transient";
+            }
+            return "unknown";
+        }
+
+        const char* asset_node_kind_name(AssetNodeKind kind) noexcept
+        {
+            switch (kind) {
+            case AssetNodeKind::Asset:
+                return "asset";
+            case AssetNodeKind::DemandRoot:
+                return "demand-root";
+            }
+            return "unknown";
+        }
+
+        const char* demand_root_name(DemandRoot root) noexcept
+        {
+            switch (root) {
+            case DemandRoot::None:
+                return "none";
+            case DemandRoot::GPURuntime:
+                return "gpu-runtime";
+            case DemandRoot::CPURuntime:
+                return "cpu-runtime";
+            case DemandRoot::Editor:
+                return "editor";
+            }
+            return "unknown";
+        }
+
         const char* dot_fill_color(
+            bool demand_root,
             bool source_root,
             bool terminal,
             bool resident) noexcept
         {
+            if (demand_root) {
+                return "#e9d5ff";
+            }
             if (terminal) {
                 return resident ? "#b7e4c7" : "#d8f3dc";
             }
@@ -252,7 +299,12 @@ namespace wz::asset
 
         uint32_t ok = 0;
         for (NodeHandle nh : compilation_order(storage_->dag())) {
-            const AssetKey& key = wz::core::graph::node_data(storage_->dag(), nh).key;
+            const AssetNode& node =
+                wz::core::graph::node_data(storage_->dag(), nh);
+            if (node.kind == AssetNodeKind::DemandRoot) {
+                continue;
+            }
+            const AssetKey& key = node.key;
 
             auto r = resolve(key);
             if (std::holds_alternative<ResourceHandle>(r)) {
@@ -263,6 +315,215 @@ namespace wz::asset
             }
         }
         return ok;
+    }
+
+    uint32_t AssetSystem::resolve_roots(
+        std::span<const AssetKey> roots,
+        ResolvePolicy policy,
+        ExternalCacheProvider* provider,
+        std::vector<std::pair<AssetKey, ResolveError>>* errors)
+    {
+        if (!committed_) {
+            if (errors) {
+                for (const AssetKey& root : roots) {
+                    errors->emplace_back(root, ResolveError::NodeNotFound);
+                }
+            }
+            return 0;
+        }
+
+        const AssetGraph& g = storage_->dag();
+        std::unordered_set<AssetKey, AssetKeyHash> resolved_assets;
+        std::unordered_set<AssetKey, AssetKeyHash> error_keys;
+        uint32_t ok = 0;
+
+        auto record_error = [&](const AssetKey& key, ResolveError error) {
+            if (errors && error_keys.insert(key).second) {
+                errors->emplace_back(key, error);
+            }
+        };
+
+        auto valid_cached_handle =
+            [&](const AssetNode& node) -> std::optional<ResourceHandle>
+        {
+            if (auto h = cache_.lookup(node.key)) {
+                auto it = compiled_nodes_.find(node.key);
+                if (it != compiled_nodes_.end()) {
+                    if (const auto* compiled_handle =
+                        std::get_if<ResourceHandle>(&it->second.payload))
+                    {
+                        if (*compiled_handle == *h) {
+                            return *h;
+                        }
+                    }
+                    else if (std::holds_alternative<std::vector<uint8_t>>(
+                        it->second.payload))
+                    {
+                        if (!h->valid()) {
+                            return *h;
+                        }
+                    }
+                }
+
+                cache_.evict(node.key);
+                compiled_nodes_.erase(node.key);
+            }
+            return std::nullopt;
+        };
+
+        auto load_external =
+            [&](const AssetNode& node) -> std::optional<ResolveError>
+        {
+            if (policy == ResolvePolicy::ForceRecompile) {
+                return std::nullopt;
+            }
+
+            if (!provider
+                || !provider->can_load(node.schema, node.type, node.key))
+            {
+                return policy == ResolvePolicy::CacheRequired
+                    ? std::optional<ResolveError>{ ResolveError::ExternalCacheMiss }
+                    : std::nullopt;
+            }
+
+            std::optional<ResourceHandle> loaded =
+                provider->load(node.schema, node.type, node.key);
+            if (!loaded || !loaded->valid()) {
+                return policy == ResolvePolicy::CacheRequired
+                    ? std::optional<ResolveError>{
+                        ResolveError::ExternalCacheLoadFailed }
+                    : std::nullopt;
+            }
+
+            AssetNode compiled = node;
+            compiled.stage = AssetStage::Compiled;
+            compiled.payload = *loaded;
+            compiled_nodes_.insert_or_assign(node.key, std::move(compiled));
+            cache_.store(node.key, *loaded);
+            return std::nullopt;
+        };
+
+        std::function<std::optional<ResolveError>(NodeHandle)> resolve_node =
+            [&](NodeHandle nh) -> std::optional<ResolveError>
+        {
+            const AssetNode& node = wz::core::graph::node_data(g, nh);
+
+            if (node.kind == AssetNodeKind::DemandRoot) {
+                for (const NodeHandle prereq : prerequisites(g, nh)) {
+                    if (const auto error = resolve_node(prereq)) {
+                        return ResolveError::DependencyFailed;
+                    }
+                }
+                return std::nullopt;
+            }
+
+            if (resolved_assets.find(node.key) != resolved_assets.end()) {
+                return std::nullopt;
+            }
+
+            if (valid_cached_handle(node).has_value()) {
+                resolved_assets.insert(node.key);
+                ++ok;
+                return std::nullopt;
+            }
+
+            if (const auto external_error = load_external(node)) {
+                return *external_error;
+            }
+
+            if (cache_.contains(node.key)) {
+                resolved_assets.insert(node.key);
+                ++ok;
+                return std::nullopt;
+            }
+
+            if (policy == ResolvePolicy::CacheRequired) {
+                return ResolveError::ExternalCacheMiss;
+            }
+
+            for (const NodeHandle prereq : prerequisites(g, nh)) {
+                if (resolve_node(prereq).has_value()) {
+                    return ResolveError::DependencyFailed;
+                }
+            }
+
+            auto resolved = resolve(node.key);
+            if (std::holds_alternative<ResolveError>(resolved)) {
+                return std::get<ResolveError>(resolved);
+            }
+
+            resolved_assets.insert(node.key);
+            ++ok;
+            return std::nullopt;
+        };
+
+        for (const AssetKey& root : roots) {
+            const NodeHandle root_node = find_asset_node(index_, root);
+            if (root_node == INVALID_ASSET_NODE) {
+                record_error(root, ResolveError::NodeNotFound);
+                continue;
+            }
+
+            if (const auto error = resolve_node(root_node)) {
+                record_error(root, *error);
+            }
+        }
+
+        return ok;
+    }
+
+    uint32_t AssetSystem::evict_evictable_not_demanded(
+        std::span<const AssetKey> roots)
+    {
+        if (!committed_) {
+            return 0;
+        }
+
+        const AssetGraph& g = storage_->dag();
+        std::unordered_set<AssetKey, AssetKeyHash> directly_demanded;
+
+        for (const AssetKey& root : roots) {
+            const NodeHandle root_node = find_asset_node(index_, root);
+            if (root_node == INVALID_ASSET_NODE) {
+                continue;
+            }
+
+            const AssetNode& node = wz::core::graph::node_data(g, root_node);
+            if (node.kind == AssetNodeKind::DemandRoot) {
+                for (const NodeHandle prereq : prerequisites(g, root_node)) {
+                    const AssetNode& prereq_node =
+                        wz::core::graph::node_data(g, prereq);
+                    if (prereq_node.kind == AssetNodeKind::Asset) {
+                        directly_demanded.insert(prereq_node.key);
+                    }
+                }
+            }
+            else {
+                directly_demanded.insert(node.key);
+            }
+        }
+
+        std::vector<AssetKey> evict_keys;
+        evict_keys.reserve(compiled_nodes_.size());
+        for (const auto& [key, node] : compiled_nodes_) {
+            const bool evictable =
+                node.residency == ResidencyIntent::CompileOnly
+                || node.residency == ResidencyIntent::Transient;
+            if (!evictable) {
+                continue;
+            }
+            if (directly_demanded.find(key) != directly_demanded.end()) {
+                continue;
+            }
+            evict_keys.push_back(key);
+        }
+
+        for (const AssetKey& key : evict_keys) {
+            cache_.evict(key);
+            compiled_nodes_.erase(key);
+        }
+
+        return static_cast<uint32_t>(evict_keys.size());
     }
 
     std::string AssetSystem::debug_graph_dot() const
@@ -292,18 +553,25 @@ namespace wz::asset
             const auto deps = dependents(g, i);
             const bool source_root = prereqs.empty();
             const bool terminal = deps.empty();
+            const bool demand_root =
+                node.kind == AssetNodeKind::DemandRoot;
             const bool resident = compiled_nodes_.find(node.key) != compiled_nodes_.end();
             const bool cache_hit = cache_.contains(node.key);
 
             out << indent << "n" << i << " [label=\"";
             out << "#" << i
                 << " community=" << communities.node_community[i]
+                << "\\nkind=" << asset_node_kind_name(node.kind)
                 << "\\ntype=" << static_cast<uint16_t>(node.type)
                 << " schema=" << schema_hex(node.schema)
                 << "\\nstage=" << stage_name(node.stage)
+                << " residency=" << residency_intent_name(node.residency)
                 << " prereq=" << prereqs.size()
                 << " dep=" << deps.size()
                 << "\\nkey=" << short_hash_hex(node.key.content_hash).substr(0, 12);
+            if (demand_root) {
+                out << "\\nroot=" << demand_root_name(node.demand_root);
+            }
             if (source_root) {
                 out << "\\nsource-root";
             }
@@ -316,8 +584,10 @@ namespace wz::asset
             if (cache_hit) {
                 out << "\\nasset-cache-hit";
             }
-            out << "\", fillcolor=\""
-                << dot_fill_color(source_root, terminal, resident)
+            out << "\", shape=\""
+                << (demand_root ? "diamond" : "box")
+                << "\", fillcolor=\""
+                << dot_fill_color(demand_root, source_root, terminal, resident)
                 << "\"];\n";
         };
 

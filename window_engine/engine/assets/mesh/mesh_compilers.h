@@ -14,4 +14,10 @@ namespace wz::engine::assets::internal {
         const EngineAssetCacheSettings& cache_settings
     );
 
+    bool load_cached_glb_mesh(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshData& mesh);
+
 }

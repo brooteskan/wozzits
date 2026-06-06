@@ -26,8 +26,10 @@
 #include "dag.h"
 #include "compiler.h"
 #include "cache.h"
+#include "external_cache_provider.h"
 #include <cassert>
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -41,6 +43,14 @@ namespace wz::asset {
         CompilerNotFound,  // no compiler registered for (schema, type)
         CompileFailed,     // compiler returned an invalid or wrong-stage node
         DependencyFailed,  // at least one prerequisite failed to resolve
+        ExternalCacheMiss, // required external cache entry was absent
+        ExternalCacheLoadFailed, // external cache entry was invalid or failed to load
+    };
+
+    enum class ResolvePolicy : uint8_t {
+        CacheRequired,  // disk-cache miss is an error; do not wake prerequisites
+        CachePreferred, // disk-cache hit skips prerequisites; miss resolves from source
+        ForceRecompile, // ignore disk cache and resolve from source
     };
 
     template<typename T>
@@ -74,6 +84,26 @@ namespace wz::asset {
             registered_index_.emplace(node.key, slot);
             registered_.push_back({ std::move(node), std::move(dep_keys) });
             return true;
+        }
+
+        inline bool register_demand_root(
+            DemandRoot root,
+            std::vector<AssetKey> dep_keys = {})
+        {
+            if (root == DemandRoot::None) return false;
+
+            AssetNode node{};
+            node.key = make_demand_root_key(root);
+            node.type = AssetType::Unknown;
+            node.schema = {};
+            node.stage = AssetStage::Source;
+            node.residency = root == DemandRoot::Editor
+                ? ResidencyIntent::EditorResident
+                : ResidencyIntent::RuntimeResident;
+            node.kind = AssetNodeKind::DemandRoot;
+            node.demand_root = root;
+            node.payload = std::vector<uint8_t>{};
+            return register_asset(std::move(node), std::move(dep_keys));
         }
 
         // ── Commit phase ──────────────────────────────────────────────────────────
@@ -115,6 +145,15 @@ namespace wz::asset {
         // Returns the count of successfully compiled nodes.
 
         uint32_t resolve_all(
+            std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr);
+
+        uint32_t evict_evictable_not_demanded(
+            std::span<const AssetKey> roots);
+
+        uint32_t resolve_roots(
+            std::span<const AssetKey> roots,
+            ResolvePolicy policy,
+            ExternalCacheProvider* provider = nullptr,
             std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr);
         
 
@@ -170,7 +209,16 @@ namespace wz::asset {
             for (const auto& [key, node] : compiled_nodes_) {
                 const NodeHandle nh = find_asset_node(index_, key);
                 if (nh == INVALID_ASSET_NODE) continue;
-                if (!is_terminal(g, nh)) continue;
+                bool has_asset_dependent = false;
+                for (const NodeHandle child : dependents(g, nh)) {
+                    if (wz::core::graph::node_data(g, child).kind
+                        == AssetNodeKind::Asset)
+                    {
+                        has_asset_dependent = true;
+                        break;
+                    }
+                }
+                if (has_asset_dependent) continue;
                 const auto* h = std::get_if<ResourceHandle>(&node.payload);
                 if (!h || !h->valid()) continue;
                 out.push_back({ key, *h, &node });

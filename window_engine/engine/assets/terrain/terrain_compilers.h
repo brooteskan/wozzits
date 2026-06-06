@@ -19,4 +19,10 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
         const EngineAssetCacheSettings& cache_settings);
+
+    bool load_cached_mesh_terrain(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        TerrainAssetData& data);
 }

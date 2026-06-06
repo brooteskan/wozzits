@@ -19,4 +19,10 @@ namespace wz::engine::assets::internal
         TerrainAssetTable& terrain_table,
         CollisionAssetTable& collision_table,
         const EngineAssetCacheSettings& cache_settings);
+
+    bool load_cached_terrain_collision(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        CollisionAssetData& data);
 }

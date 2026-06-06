@@ -237,6 +237,56 @@ TEST_F(AssetLibraryGpuFixture, ResolveShaderPairProducesValidHandles)
     EXPECT_TRUE(handles.pixel.valid());
 }
 
+TEST_F(AssetLibraryGpuFixture, ResolveRuntimeUsesDemandRootsAndEvictsFileCarriers)
+{
+    TempResourceDir resources;
+    write_triangle_shaders(resources);
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    auto pair = assets.shaders().create_shader_pair({
+        .name = "triangle",
+        .vertex_path = "shaders/triangle/triangle_vs.hlsl",
+        .pixel_path = "shaders/triangle/triangle_ps.hlsl",
+        });
+
+    ASSERT_TRUE(pair.valid());
+    ASSERT_TRUE(assets.system().register_demand_root(
+        wz::asset::DemandRoot::GPURuntime,
+        { pair.vertex_shader, pair.pixel_shader }));
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_runtime();
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 4u);
+    EXPECT_GE(report.evicted_count, 2u);
+
+    auto handles = assets.shaders().get_shader_pair(pair);
+    EXPECT_TRUE(handles.valid());
+}
+
+TEST_F(AssetLibraryGpuFixture, ResolveRuntimeWithoutDemandRootsIsNoOp)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_runtime();
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 0u);
+    EXPECT_EQ(report.evicted_count, 0u);
+}
+
 TEST_F(AssetLibraryGpuFixture, MissingShaderFileDoesNotProduceValidHandles)
 {
     TempResourceDir resources;

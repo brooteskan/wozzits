@@ -95,6 +95,5 @@ namespace wz::engine::assets
         wz::asset::AssetSystem& system_;
         wz::Logger& logger_;
         TerrainAssetTable& table_;
-        EngineAssetCacheSettings cache_settings_;
     };
 }

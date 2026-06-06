@@ -2,6 +2,8 @@
 
 #include <engine/assets/mesh/mesh_compilers.h>
 #include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/disk_cache_keys.h>
+#include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/schema_ids.h>
@@ -102,52 +104,24 @@ namespace wz::engine::assets::internal
                 && read_scalar(bytes, offset, key.deps_hash.hi);
         }
 
-        uint64_t mix_cache_key_word(uint64_t state, uint64_t word)
-        {
-            state ^= word + 0x9e3779b97f4a7c15ull + (state << 6) + (state >> 2);
-            state ^= state >> 30;
-            state *= 0xbf58476d1ce4e5b9ull;
-            state ^= state >> 27;
-            state *= 0x94d049bb133111ebull;
-            return state ^ (state >> 31);
-        }
-
-        std::string short_asset_key_hex(const wz::asset::AssetKey& key)
-        {
-            const uint64_t words[]{
-                key.content_hash.lo, key.content_hash.hi,
-                key.schema_hash.lo, key.schema_hash.hi,
-                key.compiler_hash.lo, key.compiler_hash.hi,
-                key.deps_hash.lo, key.deps_hash.hi,
-            };
-
-            uint64_t lo = 0x452821e638d01377ull;
-            uint64_t hi = 0xbe5466cf34e90c6cull;
-            for (uint64_t word : words) {
-                lo = mix_cache_key_word(lo, word);
-                hi = mix_cache_key_word(hi, word ^ lo);
-            }
-
-            std::ostringstream out;
-            out << std::hex << std::setfill('0')
-                << std::setw(16) << lo
-                << std::setw(16) << hi;
-            return out.str();
-        }
-
         wz::fs::Path glb_mesh_cache_directory(
             const EngineAssetCacheSettings& cache)
         {
-            return wz::fs::join(wz::fs::join(cache.root, "assets"), "glb_mesh");
+            return disk_cache_asset_directory(
+                cache,
+                kGLBMeshDiskCacheKey.subdirectory);
         }
 
         wz::fs::Path glb_mesh_cache_path(
             const EngineAssetCacheSettings& cache,
             const wz::asset::AssetKey& key)
         {
-            return wz::fs::join(
-                glb_mesh_cache_directory(cache),
-                short_asset_key_hex(key) + ".bin");
+            return disk_cache_asset_path(
+                cache,
+                kGLBMeshDiskCacheKey.subdirectory,
+                key,
+                kGLBMeshDiskCacheKey.seed_lo,
+                kGLBMeshDiskCacheKey.seed_hi);
         }
 
         bool read_vector_count(
@@ -264,7 +238,7 @@ namespace wz::engine::assets::internal
             return offset == bytes.size();
         }
 
-        bool load_cached_glb_mesh(
+        bool load_cached_glb_mesh_impl(
             const EngineAssetCacheSettings& cache,
             const wz::asset::AssetKey& key,
             wz::Logger& logger,
@@ -389,7 +363,7 @@ namespace wz::engine::assets::internal
             }
 
             MeshData cached_data{};
-            if (load_cached_glb_mesh(
+            if (load_cached_glb_mesh_impl(
                     cache_settings,
                     input.key,
                     logger,
@@ -619,6 +593,15 @@ namespace wz::engine::assets::internal
                     input, dep_handles, logger, mesh_table);
             }
             });
+    }
+
+    bool load_cached_glb_mesh(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshData& mesh)
+    {
+        return load_cached_glb_mesh_impl(cache, key, logger, mesh);
     }
 
 } // namespace wz::engine::assets::internal

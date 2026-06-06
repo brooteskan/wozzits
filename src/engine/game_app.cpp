@@ -1276,10 +1276,20 @@ namespace wz::app
         if (!object_shaders.valid())
             INIT_FAIL("create_shader_pair(debug_opaque_object)");
 
+        if (!app.ctx.assets->system().register_demand_root(
+                wz::asset::DemandRoot::GPURuntime,
+                { object_shaders.vertex_shader, object_shaders.pixel_shader }))
+            INIT_FAIL("register GPU runtime demand root");
+
+        if (!app.ctx.assets->system().register_demand_root(
+                wz::asset::DemandRoot::CPURuntime))
+            INIT_FAIL("register CPU runtime demand root");
+
         if (!app.ctx.assets->commit())
             INIT_FAIL("assets commit");
 
-        app.ctx.assets->resolve_all();
+        if (!app.ctx.assets->resolve_runtime().ok())
+            INIT_FAIL("assets resolve_runtime");
 
         auto object_shader_handles =
             app.ctx.assets->shaders().get_shader_pair(object_shaders);

@@ -4,6 +4,8 @@
 #include <asset/compiler.h>
 
 #include <algorithm>
+#include <optional>
+#include <string>
 
 using namespace wz::asset;
 
@@ -78,6 +80,65 @@ static constexpr AssetKey kKeyD{ Hash{13,13},Hash{14,14},Hash{15,15},Hash{16,16}
 
 // ─── Fixture ──────────────────────────────────────────────────────────────────
 
+class CountingExternalCacheProvider final : public ExternalCacheProvider
+{
+public:
+    bool can_load(SchemaID, AssetType, const AssetKey&) const override
+    {
+        ++can_load_calls;
+        return false;
+    }
+
+    std::optional<ResourceHandle> load(
+        SchemaID,
+        AssetType,
+        const AssetKey&) override
+    {
+        ++load_calls;
+        return std::nullopt;
+    }
+
+    mutable uint32_t can_load_calls = 0;
+    uint32_t load_calls = 0;
+};
+
+class SingleEntryExternalCacheProvider final : public ExternalCacheProvider
+{
+public:
+    explicit SingleEntryExternalCacheProvider(
+        AssetKey key,
+        ResourceHandle handle)
+        : key_(key)
+        , handle_(handle)
+    {
+    }
+
+    bool can_load(SchemaID, AssetType, const AssetKey& key) const override
+    {
+        ++can_load_calls;
+        return key == key_;
+    }
+
+    std::optional<ResourceHandle> load(
+        SchemaID,
+        AssetType,
+        const AssetKey& key) override
+    {
+        ++load_calls;
+        if (key == key_) {
+            return handle_;
+        }
+        return std::nullopt;
+    }
+
+    mutable uint32_t can_load_calls = 0;
+    uint32_t load_calls = 0;
+
+private:
+    AssetKey key_{};
+    ResourceHandle handle_{};
+};
+
 class AssetSystemTest : public ::testing::Test {
 protected:
     CompilerRegistry registry;
@@ -119,6 +180,77 @@ TEST_F(AssetSystemTest, RegisterAsset_WithValidDependency)
 
 
 // ─── Commit ───────────────────────────────────────────────────────────────────
+
+TEST_F(AssetSystemTest, RegisterAsset_DefaultResidencyIntentIsRuntimeResident)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    const AssetGraph* graph = sys->graph();
+    ASSERT_NE(graph, nullptr);
+    const NodeHandle node = find_asset_node(sys->index(), kKeyA);
+    ASSERT_NE(node, INVALID_ASSET_NODE);
+    EXPECT_EQ(
+        wz::core::graph::node_data(*graph, node).residency,
+        ResidencyIntent::RuntimeResident);
+}
+
+TEST_F(AssetSystemTest, RegisterAsset_ExplicitResidencyIntentSurvivesResolve)
+{
+    AssetNode node = make_node(kKeyA, AssetType::Mesh, kMeshSchema);
+    node.residency = ResidencyIntent::CompileOnly;
+
+    ASSERT_TRUE(sys->register_asset(std::move(node)));
+    ASSERT_TRUE(sys->commit());
+
+    auto resolved = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(resolved));
+
+    const auto* compiled = sys->find_compiled(kKeyA);
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_EQ(compiled->node->residency, ResidencyIntent::CompileOnly);
+
+    const std::string dot = sys->debug_graph_dot();
+    EXPECT_NE(dot.find("residency=compile-only"), std::string::npos);
+}
+
+TEST_F(AssetSystemTest, RegisterDemandRoot_AddsExplicitSyntheticNode)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->register_demand_root(DemandRoot::GPURuntime, { kKeyA }));
+    ASSERT_TRUE(sys->commit());
+
+    const AssetGraph* graph = sys->graph();
+    ASSERT_NE(graph, nullptr);
+    EXPECT_EQ(wz::core::graph::node_count(*graph), 2u);
+
+    const NodeHandle root_node =
+        find_asset_node(sys->index(), make_demand_root_key(DemandRoot::GPURuntime));
+    ASSERT_NE(root_node, INVALID_ASSET_NODE);
+
+    const AssetNode& root = wz::core::graph::node_data(*graph, root_node);
+    EXPECT_EQ(root.kind, AssetNodeKind::DemandRoot);
+    EXPECT_EQ(root.demand_root, DemandRoot::GPURuntime);
+    EXPECT_EQ(prerequisites(*graph, root_node).size(), 1u);
+
+    const std::string dot = sys->debug_graph_dot();
+    EXPECT_NE(dot.find("kind=demand-root"), std::string::npos);
+    EXPECT_NE(dot.find("root=gpu-runtime"), std::string::npos);
+    EXPECT_NE(dot.find("shape=\"diamond\""), std::string::npos);
+}
+
+TEST_F(AssetSystemTest, RegisterDemandRoot_RejectsDuplicateAndNone)
+{
+    EXPECT_FALSE(sys->register_demand_root(DemandRoot::None));
+    EXPECT_TRUE(sys->register_demand_root(DemandRoot::Editor));
+    EXPECT_FALSE(sys->register_demand_root(DemandRoot::Editor));
+}
+
+TEST_F(AssetSystemTest, Commit_RejectsDemandRootMissingDependencyKey)
+{
+    EXPECT_TRUE(sys->register_demand_root(DemandRoot::CPURuntime, { kKeyA }));
+    EXPECT_FALSE(sys->commit());
+}
 
 TEST_F(AssetSystemTest, Commit_RejectsMissingDependencyKey)
 {
@@ -867,6 +999,322 @@ TEST_F(AssetSystemTest, ResolveAll_CollectsErrors)
 
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
+
+TEST_F(AssetSystemTest, ResolveAll_SkipsDemandRootsWithoutChangingAssetTerminals)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->register_demand_root(DemandRoot::GPURuntime, { kKeyA }));
+    ASSERT_TRUE(sys->commit());
+
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(sys->resolve_all(&errors), 1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_TRUE(sys->cache().contains(kKeyA));
+    EXPECT_FALSE(sys->cache().contains(make_demand_root_key(DemandRoot::GPURuntime)));
+    EXPECT_EQ(
+        sys->find_compiled(make_demand_root_key(DemandRoot::GPURuntime)),
+        nullptr);
+
+    const std::vector<AssetSystem::CompiledAsset> terminals =
+        sys->compiled_terminals();
+    ASSERT_EQ(terminals.size(), 1u);
+    EXPECT_EQ(terminals[0].key, kKeyA);
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_CacheRequiredMissDoesNotResolvePrerequisites)
+{
+    uint32_t source_compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kTexSchema,
+        .output_type = AssetType::Texture,
+        .compile = [&source_compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++source_compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ 1, 1, AssetType::Texture };
+            return out;
+        }
+    });
+    reg2.register_compiler(make_stub_compiler(kMeshSchema, AssetType::Mesh));
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        { kKeyA }));
+    ASSERT_TRUE(sys2.commit());
+
+    CountingExternalCacheProvider provider;
+    const AssetKey roots[]{ kKeyB };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::CacheRequired,
+            &provider,
+            &errors),
+        0u);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].first, kKeyB);
+    EXPECT_EQ(errors[0].second, ResolveError::ExternalCacheMiss);
+    EXPECT_EQ(source_compile_count, 0u);
+    EXPECT_FALSE(sys2.cache().contains(kKeyA));
+    EXPECT_FALSE(sys2.cache().contains(kKeyB));
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_CachePreferredHitSkipsPrerequisites)
+{
+    CompilerRegistry reg2;
+    reg2.register_compiler(make_failing_compiler(kTexSchema, AssetType::Texture));
+    reg2.register_compiler(make_stub_compiler(kMeshSchema, AssetType::Mesh));
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        { kKeyA }));
+    ASSERT_TRUE(sys2.commit());
+
+    SingleEntryExternalCacheProvider provider{
+        kKeyB,
+        ResourceHandle{ 77, 1, AssetType::Mesh },
+    };
+    const AssetKey roots[]{ kKeyB };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            &provider,
+            &errors),
+        1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(provider.can_load_calls, 1u);
+    EXPECT_EQ(provider.load_calls, 1u);
+    EXPECT_FALSE(sys2.cache().contains(kKeyA));
+    EXPECT_TRUE(sys2.cache().contains(kKeyB));
+
+    const auto* compiled = sys2.find_compiled(kKeyB);
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_EQ(compiled->handle.id, 77u);
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_CachePreferredMissFallsBackToSource)
+{
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kTexSchema,
+        .output_type = AssetType::Texture,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ compile_count, 1, AssetType::Texture };
+            return out;
+        }
+    });
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ compile_count, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        { kKeyA }));
+    ASSERT_TRUE(sys2.commit());
+
+    CountingExternalCacheProvider provider;
+    const AssetKey roots[]{ kKeyB };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            &provider,
+            &errors),
+        2u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(compile_count, 2u);
+    EXPECT_TRUE(sys2.cache().contains(kKeyA));
+    EXPECT_TRUE(sys2.cache().contains(kKeyB));
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileIgnoresExternalProvider)
+{
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ 5, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    SingleEntryExternalCacheProvider provider{
+        kKeyA,
+        ResourceHandle{ 99, 1, AssetType::Mesh },
+    };
+    const AssetKey roots[]{ kKeyA };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::ForceRecompile,
+            &provider,
+            &errors),
+        1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(provider.can_load_calls, 0u);
+    EXPECT_EQ(provider.load_calls, 0u);
+    EXPECT_EQ(compile_count, 1u);
+
+    const auto* compiled = sys2.find_compiled(kKeyA);
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_EQ(compiled->handle.id, 5u);
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_DemandRootCountsAssetsNotRoot)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->register_demand_root(DemandRoot::GPURuntime, { kKeyA }));
+    ASSERT_TRUE(sys->commit());
+
+    SingleEntryExternalCacheProvider provider{
+        kKeyA,
+        ResourceHandle{ 42, 1, AssetType::Mesh },
+    };
+    const AssetKey roots[]{ make_demand_root_key(DemandRoot::GPURuntime) };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys->resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            &provider,
+            &errors),
+        1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_TRUE(sys->cache().contains(kKeyA));
+    EXPECT_FALSE(sys->cache().contains(make_demand_root_key(DemandRoot::GPURuntime)));
+}
+
+TEST_F(AssetSystemTest, EvictEvictableNotDemanded_ReleasesIndirectPrerequisites)
+{
+    AssetNode source = make_node(kKeyA, AssetType::Mesh, kMeshSchema);
+    source.residency = ResidencyIntent::CompileOnly;
+    AssetNode runtime = make_node(kKeyB, AssetType::Texture, kTexSchema);
+    runtime.residency = ResidencyIntent::RuntimeResident;
+
+    ASSERT_TRUE(sys->register_asset(std::move(source)));
+    ASSERT_TRUE(sys->register_asset(std::move(runtime), { kKeyA }));
+    ASSERT_TRUE(sys->register_demand_root(DemandRoot::GPURuntime, { kKeyB }));
+    ASSERT_TRUE(sys->commit());
+
+    const AssetKey roots[]{ make_demand_root_key(DemandRoot::GPURuntime) };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys->resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            nullptr,
+            &errors),
+        2u);
+    ASSERT_TRUE(errors.empty());
+    EXPECT_TRUE(sys->cache().contains(kKeyA));
+    EXPECT_TRUE(sys->cache().contains(kKeyB));
+
+    EXPECT_EQ(sys->evict_evictable_not_demanded(roots), 1u);
+    EXPECT_FALSE(sys->cache().contains(kKeyA));
+    EXPECT_TRUE(sys->cache().contains(kKeyB));
+    EXPECT_EQ(sys->find_compiled(kKeyA), nullptr);
+    EXPECT_NE(sys->find_compiled(kKeyB), nullptr);
+}
+
+TEST_F(AssetSystemTest, EvictEvictableNotDemanded_KeepsDirectDemand)
+{
+    AssetNode direct = make_node(kKeyA, AssetType::Mesh, kMeshSchema);
+    direct.residency = ResidencyIntent::Transient;
+
+    ASSERT_TRUE(sys->register_asset(std::move(direct)));
+    ASSERT_TRUE(sys->register_demand_root(DemandRoot::CPURuntime, { kKeyA }));
+    ASSERT_TRUE(sys->commit());
+
+    const AssetKey roots[]{ make_demand_root_key(DemandRoot::CPURuntime) };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys->resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            nullptr,
+            &errors),
+        1u);
+    ASSERT_TRUE(errors.empty());
+
+    EXPECT_EQ(sys->evict_evictable_not_demanded(roots), 0u);
+    EXPECT_TRUE(sys->cache().contains(kKeyA));
+    EXPECT_NE(sys->find_compiled(kKeyA), nullptr);
+}
+
+TEST_F(AssetSystemTest, ExternalCacheProvider_InterfaceIsGenericAssetCore)
+{
+    CountingExternalCacheProvider provider;
+
+    EXPECT_FALSE(provider.can_load(kMeshSchema, AssetType::Mesh, kKeyA));
+    EXPECT_EQ(provider.load(kMeshSchema, AssetType::Mesh, kKeyA), std::nullopt);
+    EXPECT_EQ(provider.can_load_calls, 1u);
+    EXPECT_EQ(provider.load_calls, 1u);
+
+    constexpr ResolvePolicy cache_required = ResolvePolicy::CacheRequired;
+    constexpr ResolvePolicy cache_preferred = ResolvePolicy::CachePreferred;
+    constexpr ResolvePolicy force_recompile = ResolvePolicy::ForceRecompile;
+    static_assert(cache_required == ResolvePolicy::CacheRequired);
+    static_assert(cache_preferred == ResolvePolicy::CachePreferred);
+    static_assert(force_recompile == ResolvePolicy::ForceRecompile);
+}
+
+TEST_F(AssetSystemTest, ResolveAll_DoesNotConsultExternalCacheProvider)
+{
+    CountingExternalCacheProvider provider;
+
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(sys->resolve_all(&errors), 1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(provider.can_load_calls, 0u);
+    EXPECT_EQ(provider.load_calls, 0u);
+}
 
 TEST_F(AssetSystemTest, Cache_StoredAfterResolve)
 {

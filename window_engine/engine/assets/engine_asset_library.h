@@ -79,6 +79,7 @@ namespace wz::engine::assets
     struct ResolveReport
     {
         uint32_t                  resolved_count = 0;
+        uint32_t                  evicted_count = 0;
         std::vector<ResolveFailure> failures;
 
         bool ok() const noexcept { return failures.empty(); }
@@ -113,6 +114,9 @@ namespace wz::engine::assets
 
         bool          commit();
         ResolveReport resolve_all();
+        ResolveReport resolve_runtime();
+        ResolveReport resolve_editor();
+        ResolveReport resolve_demanded(wz::asset::ResolvePolicy policy);
 
         const wz::fs::Path& resource_root() const noexcept
         {
@@ -262,6 +266,14 @@ namespace wz::engine::assets
         RenderProgramAssetModule    render_programs_;
         LightAssetModule            lights_;
         SceneAssetModule            scenes_;
+
+        ResolveReport resolve_roots_with_report(
+            std::span<const wz::asset::AssetKey> roots,
+            wz::asset::ResolvePolicy policy,
+            const char* label);
+        std::vector<wz::asset::AssetKey> active_demand_roots(
+            std::span<const wz::asset::DemandRoot> roots) const;
+        std::vector<wz::asset::AssetKey> all_active_demand_roots() const;
     };
 
 } // namespace wz::engine::assets

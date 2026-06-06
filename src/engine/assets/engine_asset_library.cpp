@@ -1,9 +1,13 @@
 // engine/assets/engine_asset_library.cpp
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/engine_disk_cache_provider.h>
 #include <engine/assets/engine_asset_library_internal.h>
 
+#include <array>
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -33,6 +37,50 @@ namespace wz::engine::assets
             const wz::asset::AssetNode& input)
         {
             return input;
+        }
+
+        const char* resolve_error_name(wz::asset::ResolveError error) noexcept
+        {
+            switch (error) {
+            case wz::asset::ResolveError::NodeNotFound:
+                return "NodeNotFound";
+            case wz::asset::ResolveError::CompilerNotFound:
+                return "CompilerNotFound";
+            case wz::asset::ResolveError::CompileFailed:
+                return "CompileFailed";
+            case wz::asset::ResolveError::DependencyFailed:
+                return "DependencyFailed";
+            case wz::asset::ResolveError::ExternalCacheMiss:
+                return "ExternalCacheMiss";
+            case wz::asset::ResolveError::ExternalCacheLoadFailed:
+                return "ExternalCacheLoadFailed";
+            }
+            return "Unknown";
+        }
+
+        std::string short_asset_key_hex(const wz::asset::AssetKey& key)
+        {
+            const uint64_t words[]{
+                key.content_hash.lo,
+                key.content_hash.hi,
+                key.schema_hash.lo,
+                key.schema_hash.hi,
+                key.compiler_hash.lo,
+                key.compiler_hash.hi,
+                key.deps_hash.lo,
+                key.deps_hash.hi,
+            };
+
+            uint64_t state = 0x6a09e667f3bcc909ull;
+            for (const uint64_t word : words) {
+                state ^= word + 0x9e3779b97f4a7c15ull
+                    + (state << 6)
+                    + (state >> 2);
+            }
+
+            std::ostringstream out;
+            out << std::hex << std::setfill('0') << std::setw(16) << state;
+            return out.str();
         }
 
     } //  namespace internal
@@ -217,11 +265,139 @@ namespace wz::engine::assets
             + std::to_string(elapsed));
 
         for (auto& [key, err] : raw_errors) {
-            logger_.error("asset resolve failed");
+            logger_.error(
+                "asset resolve_all failed key="
+                + internal::short_asset_key_hex(key)
+                + " error="
+                + internal::resolve_error_name(err));
             report.failures.push_back({ key, err });
         }
 
         return report;
+    }
+
+    ResolveReport EngineAssetLibrary::resolve_runtime()
+    {
+        constexpr std::array<wz::asset::DemandRoot, 2> roots{
+            wz::asset::DemandRoot::GPURuntime,
+            wz::asset::DemandRoot::CPURuntime,
+        };
+        std::vector<wz::asset::AssetKey> active =
+            active_demand_roots(roots);
+        return resolve_roots_with_report(
+            active,
+            wz::asset::ResolvePolicy::CachePreferred,
+            "resolve_runtime");
+    }
+
+    ResolveReport EngineAssetLibrary::resolve_editor()
+    {
+        constexpr std::array<wz::asset::DemandRoot, 1> roots{
+            wz::asset::DemandRoot::Editor,
+        };
+        std::vector<wz::asset::AssetKey> active =
+            active_demand_roots(roots);
+        return resolve_roots_with_report(
+            active,
+            wz::asset::ResolvePolicy::CachePreferred,
+            "resolve_editor");
+    }
+
+    ResolveReport EngineAssetLibrary::resolve_demanded(
+        wz::asset::ResolvePolicy policy)
+    {
+        std::vector<wz::asset::AssetKey> active = all_active_demand_roots();
+        return resolve_roots_with_report(active, policy, "resolve_demanded");
+    }
+
+    ResolveReport EngineAssetLibrary::resolve_roots_with_report(
+        std::span<const wz::asset::AssetKey> roots,
+        wz::asset::ResolvePolicy policy,
+        const char* label)
+    {
+        ResolveReport report{};
+
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
+            raw_errors;
+        EngineDiskCacheProvider disk_cache_provider{
+            cache_settings_,
+            logger_,
+            scalar_fields_table_,
+            mesh_table_,
+            terrain_table_,
+            collision_table_,
+        };
+        report.resolved_count =
+            system_.resolve_roots(
+                roots,
+                policy,
+                &disk_cache_provider,
+                &raw_errors);
+        if (raw_errors.empty()) {
+            report.evicted_count =
+                system_.evict_evictable_not_demanded(roots);
+        }
+
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+        logger_.info(
+            std::string("asset ")
+            + label
+            + " complete roots="
+            + std::to_string(roots.size())
+            + " resolved="
+            + std::to_string(report.resolved_count)
+            + " evicted="
+            + std::to_string(report.evicted_count)
+            + " failures="
+            + std::to_string(raw_errors.size())
+            + " ms="
+            + std::to_string(elapsed));
+
+        for (auto& [key, err] : raw_errors) {
+            logger_.error(
+                std::string("asset ")
+                + label
+                + " failed key="
+                + internal::short_asset_key_hex(key)
+                + " error="
+                + internal::resolve_error_name(err));
+            report.failures.push_back({ key, err });
+        }
+
+        return report;
+    }
+
+    std::vector<wz::asset::AssetKey> EngineAssetLibrary::active_demand_roots(
+        std::span<const wz::asset::DemandRoot> roots) const
+    {
+        std::vector<wz::asset::AssetKey> active;
+        active.reserve(roots.size());
+        if (!system_.committed()) {
+            return active;
+        }
+
+        const auto& index = system_.index();
+        for (const wz::asset::DemandRoot root : roots) {
+            const wz::asset::AssetKey key = wz::asset::make_demand_root_key(root);
+            if (index.find(key) != index.end()) {
+                active.push_back(key);
+            }
+        }
+        return active;
+    }
+
+    std::vector<wz::asset::AssetKey>
+        EngineAssetLibrary::all_active_demand_roots() const
+    {
+        constexpr std::array<wz::asset::DemandRoot, 3> roots{
+            wz::asset::DemandRoot::GPURuntime,
+            wz::asset::DemandRoot::CPURuntime,
+            wz::asset::DemandRoot::Editor,
+        };
+        return active_demand_roots(roots);
     }
 
 

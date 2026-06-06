@@ -193,6 +193,73 @@ namespace wz::engine::assets::test {
         EXPECT_TRUE(handle.valid());
     }
 
+    TEST_F(ScalarFieldTest, ResolveRuntimeLoadsCachedScalarFieldWithoutSourceFile)
+    {
+        const auto values = make_2x2_known();
+        const auto rel = write_field_file("cached_runtime.rawf32", values);
+        const fs::path cache_root =
+            fs::path(temp_dir_) / ".wozzits" / "cache";
+
+        ScalarFieldFileDesc desc{
+            .name = "cached_runtime",
+            .path = rel,
+            .width = 2,
+            .height = 2,
+            .depth = 1,
+        };
+
+        wz::asset::AssetKey field_key{};
+        {
+            EngineAssetLibrary warm_library{
+                null_device_,
+                logger_,
+                temp_dir_,
+                EngineAssetCacheSettings{
+                    .root = cache_root.string(),
+                    .enabled = true,
+                },
+            };
+            const ScalarFieldAsset asset =
+                warm_library.scalar_fields().create_scalar_field(desc);
+            ASSERT_TRUE(asset.valid());
+            field_key = asset.output;
+            ASSERT_TRUE(warm_library.commit());
+            ASSERT_TRUE(warm_library.resolve_all().ok());
+        }
+
+        fs::remove(fs::path(temp_dir_) / rel);
+
+        EngineAssetLibrary cached_library{
+            null_device_,
+            logger_,
+            temp_dir_,
+            EngineAssetCacheSettings{
+                .root = cache_root.string(),
+                .enabled = true,
+            },
+        };
+        const ScalarFieldAsset asset =
+            cached_library.scalar_fields().create_scalar_field(desc);
+        ASSERT_TRUE(asset.valid());
+        ASSERT_EQ(asset.output, field_key);
+        ASSERT_TRUE(cached_library.system().register_demand_root(
+            wz::asset::DemandRoot::GPURuntime,
+            { asset.output }));
+        ASSERT_TRUE(cached_library.commit());
+
+        const auto report = cached_library.resolve_runtime();
+        EXPECT_TRUE(report.ok());
+        EXPECT_EQ(report.resolved_count, 1u);
+
+        const ScalarFieldHandle handle =
+            cached_library.scalar_fields().get_scalar_field(asset);
+        ASSERT_TRUE(handle.valid());
+        const ScalarFieldData* data =
+            cached_library.scalar_fields().get_scalar_field_data(handle);
+        ASSERT_NE(data, nullptr);
+        EXPECT_EQ(data->values, values);
+    }
+
     // The resolved ScalarFieldData contains exactly the values written to the file.
     // Uses a 2x2 field with four known float values for precise per-sample checking.
     TEST_F(ScalarFieldTest, ScalarFieldDataMatchesRawF32Input)

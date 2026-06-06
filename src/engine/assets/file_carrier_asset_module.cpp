@@ -36,9 +36,10 @@ namespace wz::engine::assets
         node.key     = key;
         node.type    = type;
         node.schema  = schema;
-        node.stage   = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta    = internal::FileSourceDesc{
+        node.stage     = wz::asset::AssetStage::Source;
+        node.residency = wz::asset::ResidencyIntent::CompileOnly;
+        node.payload   = std::vector<uint8_t>{};
+        node.meta      = internal::FileSourceDesc{
             .full_path      = full_path,
             .canonical_path = canonical,
         };

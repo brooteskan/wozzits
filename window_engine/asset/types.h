@@ -87,6 +87,36 @@ namespace wz::asset {
         Compiled = 2,   // ready for the renderer
     };
 
+    enum class ResidencyIntent : uint8_t {
+        RuntimeResident = 0,   // keep resident for runtime consumers
+        EditorResident = 1,    // keep resident only while editor consumers need it
+        CompileOnly = 2,       // prerequisite data; evictable after dependents resolve
+        Transient = 3,         // intermediate data; evictable after direct dependents resolve
+    };
+
+    enum class AssetNodeKind : uint8_t {
+        Asset = 0,
+        DemandRoot = 1,
+    };
+
+    enum class DemandRoot : uint8_t {
+        None = 0,
+        GPURuntime = 1,
+        CPURuntime = 2,
+        Editor = 3,
+    };
+
+    inline constexpr AssetKey make_demand_root_key(DemandRoot root) noexcept
+    {
+        const uint64_t id = static_cast<uint64_t>(root);
+        return AssetKey{
+            .content_hash = { 0x44454d414e44524full, id },
+            .schema_hash = { 0x524f4f545343484dull, id },
+            .compiler_hash = { 0x44454d414e445243ull, id },
+            .deps_hash = { 0x43524f53532d524full, id },
+        };
+    }
+
     // ─── ResourceHandle ───────────────────────────────────────────────────────────
     // Opaque reference to a runtime-owned resource (CPU table or GPU backend).
     // The asset system does not interpret this value; it only stores and returns it.
@@ -192,6 +222,9 @@ namespace wz::asset {
         AssetType  type = AssetType::Unknown;
         SchemaID   schema = {};
         AssetStage stage = AssetStage::Source;
+        ResidencyIntent residency = ResidencyIntent::RuntimeResident;
+        AssetNodeKind kind = AssetNodeKind::Asset;
+        DemandRoot demand_root = DemandRoot::None;
 
         std::variant<
             std::vector<uint8_t>,   // Source, or Compiled carrier
