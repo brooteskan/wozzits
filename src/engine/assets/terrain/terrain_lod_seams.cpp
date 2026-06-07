@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 namespace wz::engine::assets
@@ -43,7 +44,7 @@ namespace wz::engine::assets
             return nullptr;
         }
 
-        TerrainLodId selected_lod_or_default(
+        std::optional<TerrainLodId> find_selected_lod(
             const std::unordered_map<uint32_t, TerrainLodId>& selections,
             TerrainChunkId chunk_id) noexcept
         {
@@ -51,7 +52,7 @@ namespace wz::engine::assets
             if (it != selections.end()) {
                 return it->second;
             }
-            return TerrainLodId{ 0u };
+            return std::nullopt;
         }
 
         float directed_max_gap(
@@ -120,19 +121,22 @@ namespace wz::engine::assets
                 return;
             }
 
-            const TerrainLodId chunk_lod =
-                selected_lod_or_default(selections, chunk.chunk_id);
-            const TerrainLodId neighbor_lod =
-                selected_lod_or_default(selections, neighbor);
+            const std::optional<TerrainLodId> chunk_lod =
+                find_selected_lod(selections, chunk.chunk_id);
+            const std::optional<TerrainLodId> neighbor_lod =
+                find_selected_lod(selections, neighbor);
+            if (!chunk_lod || !neighbor_lod) {
+                return;
+            }
 
             const TerrainLodSeamEndpoint a{
                 .chunk_id = chunk.chunk_id,
-                .lod_id = chunk_lod,
+                .lod_id = *chunk_lod,
                 .edge = edge,
             };
             const TerrainLodSeamEndpoint b{
                 .chunk_id = neighbor,
-                .lod_id = neighbor_lod,
+                .lod_id = *neighbor_lod,
                 .edge = opposite_terrain_boundary_edge(edge),
             };
 
@@ -148,9 +152,10 @@ namespace wz::engine::assets
                 return;
             }
 
-            const TerrainVisualProxyLodRecord* lod_a = find_lod(chunk, chunk_lod);
+            const TerrainVisualProxyLodRecord* lod_a =
+                find_lod(chunk, *chunk_lod);
             const TerrainVisualProxyLodRecord* lod_b =
-                find_lod(*neighbor_it->second, neighbor_lod);
+                find_lod(*neighbor_it->second, *neighbor_lod);
             if (!lod_a || !lod_b) {
                 report.gap_exceeds_tolerance = true;
                 out.push_back(report);

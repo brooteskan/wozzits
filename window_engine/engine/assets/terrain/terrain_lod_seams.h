@@ -8,6 +8,9 @@
 
 namespace wz::engine::assets
 {
+    // #127 chooses stitch-strip seam transitions. This module is the CPU
+    // diagnostic foundation: it compares selected adjacent LOD boundary rings
+    // and reports where #133 must provide transition geometry.
     enum class TerrainVisualProxyBoundaryEdge : uint8_t
     {
         NegativeX,
@@ -40,9 +43,14 @@ namespace wz::engine::assets
         bool needs_transition = false;
         bool gap_exceeds_tolerance = false;
 
-        [[nodiscard]] bool valid() const noexcept
+        [[nodiscard]] bool has_boundary_data() const noexcept
         {
             return a_boundary_points > 0u && b_boundary_points > 0u;
+        }
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return has_boundary_data();
         }
     };
 
@@ -63,6 +71,8 @@ namespace wz::engine::assets
     [[nodiscard]] std::vector<TerrainLodSeamReport>
     analyze_adjacent_terrain_lod_seams(
         const TerrainVisualProxyData& proxy,
+        // Selections represent currently visible chunk LODs. Neighbor pairs are
+        // skipped unless both chunks have an explicit selection.
         std::span<const TerrainLodSelection> selections,
         float tolerance);
 }

@@ -180,6 +180,7 @@ namespace wz::engine::assets
         EXPECT_EQ(2u, report.a_boundary_points);
         EXPECT_EQ(2u, report.b_boundary_points);
         EXPECT_FLOAT_EQ(0.0f, report.max_boundary_gap);
+        EXPECT_TRUE(report.has_boundary_data());
         EXPECT_FALSE(report.needs_transition);
         EXPECT_FALSE(report.gap_exceeds_tolerance);
     }
@@ -206,8 +207,50 @@ namespace wz::engine::assets
         EXPECT_EQ(1u, report.a_boundary_points);
         EXPECT_EQ(2u, report.b_boundary_points);
         EXPECT_FLOAT_EQ(0.5f, report.max_boundary_gap);
+        EXPECT_TRUE(report.has_boundary_data());
         EXPECT_TRUE(report.needs_transition);
         EXPECT_TRUE(report.gap_exceeds_tolerance);
+    }
+
+    TEST(TerrainLodSeams, InvalidEndpointReportsToleranceFailure)
+    {
+        const TerrainVisualProxyData proxy = two_chunk_proxy();
+
+        const TerrainLodSeamReport missing_chunk = analyze_terrain_lod_seam(
+            proxy,
+            TerrainLodSeamEndpoint{
+                .chunk_id = TerrainChunkId{ 99u },
+                .lod_id = TerrainLodId{ 0u },
+                .edge = TerrainVisualProxyBoundaryEdge::PositiveX,
+            },
+            TerrainLodSeamEndpoint{
+                .chunk_id = TerrainChunkId{ 1u },
+                .lod_id = TerrainLodId{ 0u },
+                .edge = TerrainVisualProxyBoundaryEdge::NegativeX,
+            },
+            0.001f);
+
+        EXPECT_FALSE(missing_chunk.has_boundary_data());
+        EXPECT_FALSE(missing_chunk.valid());
+        EXPECT_TRUE(missing_chunk.gap_exceeds_tolerance);
+
+        const TerrainLodSeamReport missing_lod = analyze_terrain_lod_seam(
+            proxy,
+            TerrainLodSeamEndpoint{
+                .chunk_id = TerrainChunkId{ 0u },
+                .lod_id = TerrainLodId{ 99u },
+                .edge = TerrainVisualProxyBoundaryEdge::PositiveX,
+            },
+            TerrainLodSeamEndpoint{
+                .chunk_id = TerrainChunkId{ 1u },
+                .lod_id = TerrainLodId{ 0u },
+                .edge = TerrainVisualProxyBoundaryEdge::NegativeX,
+            },
+            0.001f);
+
+        EXPECT_FALSE(missing_lod.has_boundary_data());
+        EXPECT_FALSE(missing_lod.valid());
+        EXPECT_TRUE(missing_lod.gap_exceeds_tolerance);
     }
 
     TEST(TerrainLodSeams, AdjacentSeamAnalysisUsesNeighborMetadata)
@@ -238,5 +281,21 @@ namespace wz::engine::assets
             reports[0].b.edge);
         EXPECT_TRUE(reports[0].needs_transition);
         EXPECT_TRUE(reports[0].gap_exceeds_tolerance);
+    }
+
+    TEST(TerrainLodSeams, AdjacentSeamAnalysisSkipsUnselectedChunks)
+    {
+        const TerrainVisualProxyData proxy = two_chunk_proxy();
+        const std::vector<TerrainLodSelection> selections{
+            TerrainLodSelection{
+                .chunk_id = TerrainChunkId{ 0u },
+                .lod_id = TerrainLodId{ 1u },
+            },
+        };
+
+        const std::vector<TerrainLodSeamReport> reports =
+            analyze_adjacent_terrain_lod_seams(proxy, selections, 0.001f);
+
+        EXPECT_TRUE(reports.empty());
     }
 }
