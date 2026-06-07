@@ -53,6 +53,7 @@ target_sources(window_engine PRIVATE
 
     assets/terrain/terrain.cpp
     assets/terrain/terrain_compilers.cpp
+    assets/terrain/terrain_lod_seams.cpp
     assets/terrain/terrain_visual_proxy.cpp
     assets/terrain/terrain_visual_proxy_compilers.cpp
     assets/terrain_asset_module.cpp
