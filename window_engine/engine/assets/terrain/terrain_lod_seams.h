@@ -11,14 +11,6 @@ namespace wz::engine::assets
     // #127 chooses stitch-strip seam transitions. This module is the CPU
     // diagnostic foundation: it compares selected adjacent LOD boundary rings
     // and reports where #133 must provide transition geometry.
-    enum class TerrainVisualProxyBoundaryEdge : uint8_t
-    {
-        NegativeX,
-        PositiveX,
-        NegativeZ,
-        PositiveZ,
-    };
-
     struct TerrainLodSelection
     {
         TerrainChunkId chunk_id{};

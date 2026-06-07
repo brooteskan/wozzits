@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <string>
@@ -23,7 +24,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kTerrainVisualProxyDiskCacheMagic = 0x56505a57u;
-        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 2u;
+        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 3u;
         constexpr uint32_t kTerrainVisualProxyTargetLodCount = 4u;
         constexpr float kTerrainVisualProxyEdgeEpsilon = 1e-5f;
 
@@ -278,6 +279,244 @@ namespace wz::engine::assets::internal
             std::sort(ring.positive_x.begin(), ring.positive_x.end(), by_z);
             std::sort(ring.negative_z.begin(), ring.negative_z.end(), by_x);
             std::sort(ring.positive_z.begin(), ring.positive_z.end(), by_x);
+        }
+
+        float boundary_parameter(
+            TerrainVisualProxyBoundaryEdge edge,
+            const TerrainVisualProxyBoundaryPoint& point) noexcept
+        {
+            switch (edge) {
+            case TerrainVisualProxyBoundaryEdge::NegativeX:
+            case TerrainVisualProxyBoundaryEdge::PositiveX:
+                return point.position[2];
+            case TerrainVisualProxyBoundaryEdge::NegativeZ:
+            case TerrainVisualProxyBoundaryEdge::PositiveZ:
+                return point.position[0];
+            }
+            return 0.0f;
+        }
+
+        const std::vector<TerrainVisualProxyBoundaryPoint>& boundary_points(
+            const TerrainVisualProxyLodBoundaryRing& ring,
+            TerrainVisualProxyBoundaryEdge edge) noexcept
+        {
+            switch (edge) {
+            case TerrainVisualProxyBoundaryEdge::NegativeX:
+                return ring.negative_x;
+            case TerrainVisualProxyBoundaryEdge::PositiveX:
+                return ring.positive_x;
+            case TerrainVisualProxyBoundaryEdge::NegativeZ:
+                return ring.negative_z;
+            case TerrainVisualProxyBoundaryEdge::PositiveZ:
+                return ring.positive_z;
+            }
+            return ring.negative_x;
+        }
+
+        TerrainVisualProxyBoundaryEdge opposite_boundary_edge(
+            TerrainVisualProxyBoundaryEdge edge) noexcept
+        {
+            switch (edge) {
+            case TerrainVisualProxyBoundaryEdge::NegativeX:
+                return TerrainVisualProxyBoundaryEdge::PositiveX;
+            case TerrainVisualProxyBoundaryEdge::PositiveX:
+                return TerrainVisualProxyBoundaryEdge::NegativeX;
+            case TerrainVisualProxyBoundaryEdge::NegativeZ:
+                return TerrainVisualProxyBoundaryEdge::PositiveZ;
+            case TerrainVisualProxyBoundaryEdge::PositiveZ:
+                return TerrainVisualProxyBoundaryEdge::NegativeZ;
+            }
+            return TerrainVisualProxyBoundaryEdge::NegativeX;
+        }
+
+        std::vector<TerrainVisualProxyBoundaryPoint> normalized_boundary(
+            const std::vector<TerrainVisualProxyBoundaryPoint>& points,
+            TerrainVisualProxyBoundaryEdge edge)
+        {
+            std::vector<TerrainVisualProxyBoundaryPoint> out = points;
+            std::sort(
+                out.begin(),
+                out.end(),
+                [edge](const auto& lhs, const auto& rhs) {
+                    return boundary_parameter(edge, lhs)
+                        < boundary_parameter(edge, rhs);
+                });
+            out.erase(
+                std::unique(
+                    out.begin(),
+                    out.end(),
+                    [edge](const auto& lhs, const auto& rhs) {
+                        return nearly_equal(
+                            boundary_parameter(edge, lhs),
+                            boundary_parameter(edge, rhs));
+                    }),
+                out.end());
+            return out;
+        }
+
+        TerrainVisualProxyTransitionVertex sample_boundary(
+            const std::vector<TerrainVisualProxyBoundaryPoint>& points,
+            TerrainVisualProxyBoundaryEdge edge,
+            float parameter)
+        {
+            TerrainVisualProxyTransitionVertex out{};
+            if (points.empty()) {
+                return out;
+            }
+            if (points.size() == 1u
+                || parameter <= boundary_parameter(edge, points.front()))
+            {
+                std::copy(
+                    std::begin(points.front().position),
+                    std::end(points.front().position),
+                    std::begin(out.position));
+                return out;
+            }
+            if (parameter >= boundary_parameter(edge, points.back())) {
+                std::copy(
+                    std::begin(points.back().position),
+                    std::end(points.back().position),
+                    std::begin(out.position));
+                return out;
+            }
+
+            for (size_t i = 0u; i + 1u < points.size(); ++i) {
+                const float a = boundary_parameter(edge, points[i]);
+                const float b = boundary_parameter(edge, points[i + 1u]);
+                if (parameter < a || parameter > b || nearly_equal(a, b)) {
+                    continue;
+                }
+                const float t = (parameter - a) / (b - a);
+                for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                    out.position[axis] =
+                        points[i].position[axis]
+                        + (points[i + 1u].position[axis]
+                           - points[i].position[axis])
+                            * t;
+                }
+                return out;
+            }
+
+            std::copy(
+                std::begin(points.back().position),
+                std::end(points.back().position),
+                std::begin(out.position));
+            return out;
+        }
+
+        void append_transition_triangle(
+            TerrainVisualProxyTransitionStrip& strip,
+            uint32_t a,
+            uint32_t b,
+            uint32_t c)
+        {
+            strip.indices.push_back(a);
+            strip.indices.push_back(b);
+            strip.indices.push_back(c);
+        }
+
+        TerrainVisualProxyTransitionStrip build_transition_strip(
+            TerrainChunkId chunk_id,
+            TerrainChunkId neighbor_chunk_id,
+            const TerrainVisualProxyLodRecord& lod,
+            const TerrainVisualProxyLodRecord& neighbor_lod,
+            TerrainVisualProxyBoundaryEdge edge)
+        {
+            TerrainVisualProxyTransitionStrip strip{};
+            strip.chunk_id = chunk_id;
+            strip.neighbor_chunk_id = neighbor_chunk_id;
+            strip.lod_id = lod.lod_id;
+            strip.neighbor_lod_id = neighbor_lod.lod_id;
+            strip.edge = edge;
+
+            if (lod.lod_id == neighbor_lod.lod_id) {
+                return strip;
+            }
+
+            const TerrainVisualProxyBoundaryEdge neighbor_edge =
+                opposite_boundary_edge(edge);
+            const std::vector<TerrainVisualProxyBoundaryPoint> points =
+                normalized_boundary(
+                    boundary_points(lod.boundary_ring, edge),
+                    edge);
+            const std::vector<TerrainVisualProxyBoundaryPoint> neighbor_points =
+                normalized_boundary(
+                    boundary_points(neighbor_lod.boundary_ring, neighbor_edge),
+                    neighbor_edge);
+            if (points.empty() || neighbor_points.empty()) {
+                return strip;
+            }
+
+            const float min_parameter = std::max(
+                boundary_parameter(edge, points.front()),
+                boundary_parameter(neighbor_edge, neighbor_points.front()));
+            const float max_parameter = std::min(
+                boundary_parameter(edge, points.back()),
+                boundary_parameter(neighbor_edge, neighbor_points.back()));
+            if (max_parameter - min_parameter
+                <= kTerrainVisualProxyEdgeEpsilon)
+            {
+                return strip;
+            }
+
+            std::vector<float> parameters;
+            parameters.reserve(points.size() + neighbor_points.size());
+            parameters.push_back(min_parameter);
+            parameters.push_back(max_parameter);
+            for (const auto& point : points) {
+                const float parameter = boundary_parameter(edge, point);
+                if (parameter >= min_parameter
+                    && parameter <= max_parameter)
+                {
+                    parameters.push_back(parameter);
+                }
+            }
+            for (const auto& point : neighbor_points) {
+                const float parameter =
+                    boundary_parameter(neighbor_edge, point);
+                if (parameter >= min_parameter
+                    && parameter <= max_parameter)
+                {
+                    parameters.push_back(parameter);
+                }
+            }
+            std::sort(parameters.begin(), parameters.end());
+            parameters.erase(
+                std::unique(
+                    parameters.begin(),
+                    parameters.end(),
+                    [](float a, float b) { return nearly_equal(a, b); }),
+                parameters.end());
+            if (parameters.size() < 2u) {
+                return strip;
+            }
+
+            strip.vertices.reserve(parameters.size() * 2u);
+            for (float parameter : parameters) {
+                TerrainVisualProxyTransitionVertex owner_vertex =
+                    sample_boundary(points, edge, parameter);
+                owner_vertex.side = 0u;
+                strip.vertices.push_back(owner_vertex);
+
+                TerrainVisualProxyTransitionVertex neighbor_vertex =
+                    sample_boundary(
+                        neighbor_points,
+                        neighbor_edge,
+                        parameter);
+                neighbor_vertex.side = 1u;
+                strip.vertices.push_back(neighbor_vertex);
+            }
+
+            strip.indices.reserve((parameters.size() - 1u) * 6u);
+            for (uint32_t i = 0u; i + 1u < parameters.size(); ++i) {
+                const uint32_t a0 = i * 2u;
+                const uint32_t b0 = a0 + 1u;
+                const uint32_t a1 = (i + 1u) * 2u;
+                const uint32_t b1 = a1 + 1u;
+                append_transition_triangle(strip, a0, b0, a1);
+                append_transition_triangle(strip, a1, b0, b1);
+            }
+            return strip;
         }
 
         struct SimplifiedVertex
@@ -628,6 +867,112 @@ namespace wz::engine::assets::internal
             }
         }
 
+        TerrainVisualProxyChunkRecord* find_chunk(
+            std::vector<TerrainVisualProxyChunkRecord>& chunks,
+            TerrainChunkId chunk_id) noexcept
+        {
+            for (TerrainVisualProxyChunkRecord& chunk : chunks) {
+                if (chunk.chunk_id == chunk_id) {
+                    return &chunk;
+                }
+            }
+            return nullptr;
+        }
+
+        void append_transition_strips_for_neighbor(
+            TerrainVisualProxyChunkRecord& chunk,
+            const TerrainVisualProxyChunkRecord& neighbor,
+            TerrainVisualProxyBoundaryEdge edge)
+        {
+            if (chunk.chunk_id.value >= neighbor.chunk_id.value) {
+                return;
+            }
+
+            // Precompute every mixed LOD pair so runtime selection is a simple
+            // lookup keyed by (chunk, neighbor, edge, lod, neighbor_lod). This
+            // is O(L^2) per neighbor edge; keep transition counts visible in
+            // tests before increasing kTerrainVisualProxyTargetLodCount.
+            for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+                for (const TerrainVisualProxyLodRecord& neighbor_lod :
+                     neighbor.lods)
+                {
+                    TerrainVisualProxyTransitionStrip strip =
+                        build_transition_strip(
+                            chunk.chunk_id,
+                            neighbor.chunk_id,
+                            lod,
+                            neighbor_lod,
+                            edge);
+                    if (strip.valid()) {
+                        chunk.transition_strips.push_back(std::move(strip));
+                    }
+                }
+            }
+        }
+
+        void generate_transition_strips(
+            std::vector<TerrainVisualProxyChunkRecord>& chunks)
+        {
+            for (TerrainVisualProxyChunkRecord& chunk : chunks) {
+                if (chunk.boundary.negative_x_neighbor
+                    != kInvalidTerrainChunkId)
+                {
+                    if (const TerrainVisualProxyChunkRecord* neighbor =
+                            find_chunk(
+                                chunks,
+                                chunk.boundary.negative_x_neighbor))
+                    {
+                        append_transition_strips_for_neighbor(
+                            chunk,
+                            *neighbor,
+                            TerrainVisualProxyBoundaryEdge::NegativeX);
+                    }
+                }
+                if (chunk.boundary.positive_x_neighbor
+                    != kInvalidTerrainChunkId)
+                {
+                    if (const TerrainVisualProxyChunkRecord* neighbor =
+                            find_chunk(
+                                chunks,
+                                chunk.boundary.positive_x_neighbor))
+                    {
+                        append_transition_strips_for_neighbor(
+                            chunk,
+                            *neighbor,
+                            TerrainVisualProxyBoundaryEdge::PositiveX);
+                    }
+                }
+                if (chunk.boundary.negative_z_neighbor
+                    != kInvalidTerrainChunkId)
+                {
+                    if (const TerrainVisualProxyChunkRecord* neighbor =
+                            find_chunk(
+                                chunks,
+                                chunk.boundary.negative_z_neighbor))
+                    {
+                        append_transition_strips_for_neighbor(
+                            chunk,
+                            *neighbor,
+                            TerrainVisualProxyBoundaryEdge::NegativeZ);
+                    }
+                }
+                if (chunk.boundary.positive_z_neighbor
+                    != kInvalidTerrainChunkId)
+                {
+                    if (const TerrainVisualProxyChunkRecord* neighbor =
+                            find_chunk(
+                                chunks,
+                                chunk.boundary.positive_z_neighbor))
+                    {
+                        append_transition_strips_for_neighbor(
+                            chunk,
+                            *neighbor,
+                            TerrainVisualProxyBoundaryEdge::PositiveZ);
+                    }
+                }
+            }
+        }
+
         TerrainVisualProxyData compile_multi_lod_proxy(
             const wz::asset::AssetKey& proxy_key,
             const wz::asset::AssetKey& terrain_key,
@@ -781,6 +1126,7 @@ namespace wz::engine::assets::internal
             }
 
             assign_chunk_neighbors(proxy.chunks);
+            generate_transition_strips(proxy.chunks);
 
             return proxy;
         }
@@ -898,6 +1244,73 @@ namespace wz::engine::assets::internal
                 && read_boundary_points(bytes, offset, ring.positive_z);
         }
 
+        void append_transition_strip(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxyTransitionStrip& strip)
+        {
+            append_scalar(out, strip.chunk_id.value);
+            append_scalar(out, strip.neighbor_chunk_id.value);
+            append_scalar(out, strip.lod_id.value);
+            append_scalar(out, strip.neighbor_lod_id.value);
+            append_scalar(out, static_cast<uint8_t>(strip.edge));
+            append_scalar(out, static_cast<uint64_t>(strip.vertices.size()));
+            for (const auto& vertex : strip.vertices) {
+                append_float_array(out, vertex.position, 3u);
+                append_scalar(out, vertex.side);
+            }
+            append_scalar(out, static_cast<uint64_t>(strip.indices.size()));
+            for (uint32_t index : strip.indices) {
+                append_scalar(out, index);
+            }
+        }
+
+        bool read_transition_strip(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxyTransitionStrip& strip)
+        {
+            uint8_t edge = 0u;
+            uint64_t vertex_count = 0u;
+            uint64_t index_count = 0u;
+            if (!read_scalar(bytes, offset, strip.chunk_id.value)
+                || !read_scalar(bytes, offset, strip.neighbor_chunk_id.value)
+                || !read_scalar(bytes, offset, strip.lod_id.value)
+                || !read_scalar(bytes, offset, strip.neighbor_lod_id.value)
+                || !read_scalar(bytes, offset, edge)
+                || !read_scalar(bytes, offset, vertex_count))
+            {
+                return false;
+            }
+            if (vertex_count > 100000u) {
+                return false;
+            }
+            strip.edge = static_cast<TerrainVisualProxyBoundaryEdge>(edge);
+            strip.vertices.resize(static_cast<size_t>(vertex_count));
+            for (auto& vertex : strip.vertices) {
+                if (!read_float_array(bytes, offset, vertex.position, 3u)
+                    || !read_scalar(bytes, offset, vertex.side)
+                    || vertex.side > 1u)
+                {
+                    return false;
+                }
+            }
+
+            if (!read_scalar(bytes, offset, index_count)
+                || index_count > 300000u)
+            {
+                return false;
+            }
+            strip.indices.resize(static_cast<size_t>(index_count));
+            for (uint32_t& index : strip.indices) {
+                if (!read_scalar(bytes, offset, index)
+                    || index >= strip.vertices.size())
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         void append_lod(
             std::vector<uint8_t>& out,
             const TerrainVisualProxyLodRecord& lod)
@@ -982,6 +1395,12 @@ namespace wz::engine::assets::internal
                 for (const auto& lod : chunk.lods) {
                     append_lod(out, lod);
                 }
+                append_scalar(
+                    out,
+                    static_cast<uint64_t>(chunk.transition_strips.size()));
+                for (const auto& strip : chunk.transition_strips) {
+                    append_transition_strip(out, strip);
+                }
             }
             return out;
         }
@@ -1026,6 +1445,7 @@ namespace wz::engine::assets::internal
             for (auto& chunk : data.chunks) {
                 uint8_t chunk_kind = 0u;
                 uint64_t lod_count = 0u;
+                uint64_t transition_count = 0u;
                 if (!read_scalar(bytes, offset, chunk.chunk_id.value)
                     || !read_scalar(bytes, offset, chunk.representation_id.value)
                     || !read_scalar(bytes, offset, chunk_kind)
@@ -1052,6 +1472,18 @@ namespace wz::engine::assets::internal
                 chunk.lods.resize(static_cast<size_t>(lod_count));
                 for (auto& lod : chunk.lods) {
                     if (!read_lod(bytes, offset, lod)) {
+                        return false;
+                    }
+                }
+                if (!read_scalar(bytes, offset, transition_count)
+                    || transition_count > 100000u)
+                {
+                    return false;
+                }
+                chunk.transition_strips.resize(
+                    static_cast<size_t>(transition_count));
+                for (auto& strip : chunk.transition_strips) {
+                    if (!read_transition_strip(bytes, offset, strip)) {
                         return false;
                     }
                 }

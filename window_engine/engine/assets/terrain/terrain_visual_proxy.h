@@ -16,7 +16,7 @@
 
 namespace wz::engine::assets
 {
-    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 2;
+    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 3;
 
     enum class TerrainVisualRepresentationKind : uint8_t
     {
@@ -60,6 +60,14 @@ namespace wz::engine::assets
         uint32_t value = 0;
 
         bool operator==(const TerrainRepresentationId&) const = default;
+    };
+
+    enum class TerrainVisualProxyBoundaryEdge : uint8_t
+    {
+        NegativeX,
+        PositiveX,
+        NegativeZ,
+        PositiveZ,
     };
 
     struct TerrainVisualProxyBounds
@@ -131,6 +139,55 @@ namespace wz::engine::assets
         }
     };
 
+    struct TerrainVisualProxyTransitionVertex
+    {
+        float position[3]{ 0.0f, 0.0f, 0.0f };
+        // 0 = owning chunk edge, 1 = neighboring chunk edge.
+        uint8_t side = 0u;
+    };
+
+    struct TerrainVisualProxyTransitionStrip
+    {
+        TerrainChunkId chunk_id{};
+        TerrainChunkId neighbor_chunk_id{};
+        TerrainLodId lod_id{};
+        TerrainLodId neighbor_lod_id{};
+        TerrainVisualProxyBoundaryEdge edge =
+            TerrainVisualProxyBoundaryEdge::NegativeX;
+        std::vector<TerrainVisualProxyTransitionVertex> vertices;
+        std::vector<uint32_t> indices;
+
+        [[nodiscard]] uint32_t triangle_count() const noexcept
+        {
+            return static_cast<uint32_t>(indices.size() / 3u);
+        }
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            if (chunk_id == neighbor_chunk_id
+                || lod_id == neighbor_lod_id
+                || vertices.size() < 3u
+                || indices.size() < 3u
+                || indices.size() % 3u != 0u)
+            {
+                return false;
+            }
+            for (const TerrainVisualProxyTransitionVertex& vertex :
+                 vertices)
+            {
+                if (vertex.side > 1u) {
+                    return false;
+                }
+            }
+            for (uint32_t index : indices) {
+                if (index >= vertices.size()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    };
+
     struct TerrainVisualProxyLodRecord
     {
         TerrainLodId lod_id{};
@@ -178,13 +235,27 @@ namespace wz::engine::assets
         TerrainVisualProxyAggregate aggregate{};
         TerrainVisualChunkBoundaryMetadata boundary{};
         std::vector<TerrainVisualProxyLodRecord> lods;
+        std::vector<TerrainVisualProxyTransitionStrip> transition_strips;
 
         [[nodiscard]] bool valid() const noexcept
         {
-            return bounds.valid()
-                && triangle_count > 0
-                && vertex_count > 0
-                && !lods.empty();
+            if (!bounds.valid()
+                || triangle_count == 0
+                || vertex_count == 0
+                || lods.empty())
+            {
+                return false;
+            }
+
+            for (const TerrainVisualProxyTransitionStrip& strip :
+                 transition_strips)
+            {
+                if (!strip.valid()) {
+                    return false;
+                }
+            }
+
+            return true;
         }
     };
 
@@ -237,6 +308,16 @@ namespace wz::engine::assets
             uint32_t count = 0;
             for (const TerrainVisualProxyChunkRecord& chunk : chunks) {
                 count += static_cast<uint32_t>(chunk.lods.size());
+            }
+            return count;
+        }
+
+        [[nodiscard]] uint32_t transition_strip_count() const noexcept
+        {
+            uint32_t count = 0;
+            for (const TerrainVisualProxyChunkRecord& chunk : chunks) {
+                count +=
+                    static_cast<uint32_t>(chunk.transition_strips.size());
             }
             return count;
         }

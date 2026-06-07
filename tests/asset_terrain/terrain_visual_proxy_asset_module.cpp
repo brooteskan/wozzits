@@ -3,6 +3,7 @@
 #include "terrain_fixture_assets.h"
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/terrain/terrain_lod_seams.h>
 #include <engine/assets/terrain/terrain_visual_proxy_compilers.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/rendering/render_resource_resolver.h>
@@ -11,6 +12,8 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <algorithm>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -82,6 +85,179 @@ namespace
             .deps_hash = { lo + 6u, lo + 7u },
         };
     }
+
+    float transition_parameter(
+        wz::engine::assets::TerrainVisualProxyBoundaryEdge edge,
+        const wz::engine::assets::TerrainVisualProxyTransitionVertex& vertex)
+    {
+        using wz::engine::assets::TerrainVisualProxyBoundaryEdge;
+        switch (edge) {
+        case TerrainVisualProxyBoundaryEdge::NegativeX:
+        case TerrainVisualProxyBoundaryEdge::PositiveX:
+            return vertex.position[2];
+        case TerrainVisualProxyBoundaryEdge::NegativeZ:
+        case TerrainVisualProxyBoundaryEdge::PositiveZ:
+            return vertex.position[0];
+        }
+        return 0.0f;
+    }
+
+    float boundary_parameter(
+        wz::engine::assets::TerrainVisualProxyBoundaryEdge edge,
+        const wz::engine::assets::TerrainVisualProxyBoundaryPoint& point)
+    {
+        using wz::engine::assets::TerrainVisualProxyBoundaryEdge;
+        switch (edge) {
+        case TerrainVisualProxyBoundaryEdge::NegativeX:
+        case TerrainVisualProxyBoundaryEdge::PositiveX:
+            return point.position[2];
+        case TerrainVisualProxyBoundaryEdge::NegativeZ:
+        case TerrainVisualProxyBoundaryEdge::PositiveZ:
+            return point.position[0];
+        }
+        return 0.0f;
+    }
+
+    bool contains_parameter(const std::vector<float>& values, float parameter)
+    {
+        return std::any_of(
+            values.begin(),
+            values.end(),
+            [parameter](float value) {
+                return std::abs(value - parameter) <= 1e-5f;
+            });
+    }
+
+    std::vector<float> transition_side_parameters(
+        const wz::engine::assets::TerrainVisualProxyTransitionStrip& strip,
+        uint8_t side)
+    {
+        std::vector<float> out;
+        for (const auto& vertex : strip.vertices) {
+            if (vertex.side == side) {
+                out.push_back(transition_parameter(strip.edge, vertex));
+            }
+        }
+        std::sort(out.begin(), out.end());
+        out.erase(
+            std::unique(
+                out.begin(),
+                out.end(),
+                [](float a, float b) {
+                    return std::abs(a - b) <= 1e-5f;
+                }),
+            out.end());
+        return out;
+    }
+
+    void expect_transition_sides_share_parameters(
+        const wz::engine::assets::TerrainVisualProxyTransitionStrip& strip)
+    {
+        const std::vector<float> owner =
+            transition_side_parameters(strip, 0u);
+        const std::vector<float> neighbor =
+            transition_side_parameters(strip, 1u);
+
+        ASSERT_EQ(owner.size(), neighbor.size());
+        for (size_t i = 0u; i < owner.size(); ++i) {
+            EXPECT_NEAR(owner[i], neighbor[i], 1e-5f);
+        }
+    }
+
+    const wz::engine::assets::TerrainVisualProxyLodRecord* find_lod(
+        const wz::engine::assets::TerrainVisualProxyChunkRecord& chunk,
+        wz::engine::assets::TerrainLodId lod_id)
+    {
+        for (const auto& lod : chunk.lods) {
+            if (lod.lod_id == lod_id) {
+                return &lod;
+            }
+        }
+        return nullptr;
+    }
+
+    void expect_transition_covers_boundary_breakpoints(
+        const wz::engine::assets::TerrainVisualProxyTransitionStrip& strip,
+        const wz::engine::assets::TerrainVisualProxyLodRecord& lod,
+        const wz::engine::assets::TerrainVisualProxyLodRecord& neighbor_lod)
+    {
+        using namespace wz::engine::assets;
+
+        const TerrainVisualProxyBoundaryEdge neighbor_edge =
+            opposite_terrain_boundary_edge(strip.edge);
+        const auto* owner_points =
+            terrain_lod_boundary_points(lod, strip.edge);
+        const auto* neighbor_points =
+            terrain_lod_boundary_points(neighbor_lod, neighbor_edge);
+        ASSERT_NE(owner_points, nullptr);
+        ASSERT_NE(neighbor_points, nullptr);
+        ASSERT_FALSE(owner_points->empty());
+        ASSERT_FALSE(neighbor_points->empty());
+
+        const float min_parameter = std::max(
+            boundary_parameter(strip.edge, owner_points->front()),
+            boundary_parameter(neighbor_edge, neighbor_points->front()));
+        const float max_parameter = std::min(
+            boundary_parameter(strip.edge, owner_points->back()),
+            boundary_parameter(neighbor_edge, neighbor_points->back()));
+
+        const std::vector<float> owner_strip =
+            transition_side_parameters(strip, 0u);
+        const std::vector<float> neighbor_strip =
+            transition_side_parameters(strip, 1u);
+
+        for (const auto& point : *owner_points) {
+            const float parameter = boundary_parameter(strip.edge, point);
+            if (parameter >= min_parameter && parameter <= max_parameter) {
+                EXPECT_TRUE(contains_parameter(owner_strip, parameter));
+                EXPECT_TRUE(contains_parameter(neighbor_strip, parameter));
+            }
+        }
+        for (const auto& point : *neighbor_points) {
+            const float parameter = boundary_parameter(neighbor_edge, point);
+            if (parameter >= min_parameter && parameter <= max_parameter) {
+                EXPECT_TRUE(contains_parameter(owner_strip, parameter));
+                EXPECT_TRUE(contains_parameter(neighbor_strip, parameter));
+            }
+        }
+    }
+
+    wz::engine::assets::TerrainAssetData make_two_chunk_lod_grid()
+    {
+        using namespace wz::engine::assets::test;
+
+        const float origin[3]{ 0.0f, 0.0f, 0.0f };
+        wz::engine::assets::TerrainAssetData terrain =
+            detail::make_grid_fixture(
+                9000u,
+                5u,
+                5u,
+                1.0f,
+                detail::plateau_height,
+                origin);
+
+        const float min_bottom[3]{ 0.0f, 0.0f, 0.0f };
+        const float max_bottom[3]{ 4.0f, 2.0f, 2.0f };
+        const float min_top[3]{ 0.0f, 0.0f, 2.0f };
+        const float max_top[3]{ 4.0f, 2.0f, 4.0f };
+        terrain.mesh_visual_chunks.clear();
+        terrain.mesh_visual_chunks.push_back(
+            detail::make_chunk(
+                terrain,
+                0u,
+                48u,
+                min_bottom,
+                max_bottom));
+        terrain.mesh_visual_chunks.push_back(
+            detail::make_chunk(
+                terrain,
+                48u,
+                48u,
+                min_top,
+                max_top));
+        terrain.mesh_visual_chunk_count = 2u;
+        return terrain;
+    }
 }
 
 TEST(TerrainVisualProxyAssetModule, CompilesMultiLodProxyFromMeshTerrain)
@@ -114,6 +290,7 @@ TEST(TerrainVisualProxyAssetModule, CompilesMultiLodProxyFromMeshTerrain)
         TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_GT(proxy.chunk_count(), 0u);
     EXPECT_GT(proxy.lod_record_count(), proxy.chunk_count());
+    EXPECT_EQ(proxy.transition_strip_count(), 0u);
 
     uint32_t combined_boundary_flags = TerrainVisualChunkBoundary_None;
     for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
@@ -189,6 +366,7 @@ TEST(TerrainVisualProxyAssetModule, UsesProjectDiskCache)
     EXPECT_EQ(second.terrain_proxy_id, first.terrain_proxy_id);
     EXPECT_EQ(second.chunk_count(), first.chunk_count());
     EXPECT_EQ(second.lod_record_count(), first.lod_record_count());
+    EXPECT_EQ(second.transition_strip_count(), first.transition_strip_count());
     ASSERT_FALSE(second.chunks.empty());
     ASSERT_EQ(second.chunks.front().lods.size(), first.chunks.front().lods.size());
     EXPECT_EQ(
@@ -292,6 +470,99 @@ TEST(TerrainVisualProxyAssetModule, MultiChunkSeamCarriesNeighborAndLodRings)
             EXPECT_GT(lod.boundary_ring.point_count(), 0u);
         }
     }
+}
+
+TEST(TerrainVisualProxyAssetModule, MultiChunkGridPrecomputesMixedLodTransitions)
+{
+    using namespace wz::engine::assets;
+
+    const TerrainAssetData terrain = make_two_chunk_lod_grid();
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2200u),
+            test_key(2300u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 2u);
+    EXPECT_GT(proxy.transition_strip_count(), 0u);
+    uint32_t max_mixed_lod_pairs = 0u;
+    for (const TerrainVisualProxyLodRecord& lod : proxy.chunks[0].lods) {
+        for (const TerrainVisualProxyLodRecord& neighbor_lod :
+             proxy.chunks[1].lods)
+        {
+            if (lod.lod_id != neighbor_lod.lod_id) {
+                ++max_mixed_lod_pairs;
+            }
+        }
+    }
+    EXPECT_LE(proxy.transition_strip_count(), max_mixed_lod_pairs);
+
+    bool saw_mixed_lod_strip = false;
+    bool saw_non_flat_strip = false;
+    bool saw_gap_covered_by_strip = false;
+    for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
+        for (const TerrainVisualProxyTransitionStrip& strip :
+             chunk.transition_strips)
+        {
+            EXPECT_TRUE(strip.valid());
+            EXPECT_LT(strip.chunk_id.value, strip.neighbor_chunk_id.value);
+            EXPECT_NE(strip.lod_id, strip.neighbor_lod_id);
+            ASSERT_GE(strip.vertices.size(), 3u);
+            EXPECT_GT(strip.triangle_count(), 0u);
+            EXPECT_LE(strip.triangle_count(), strip.vertices.size() - 2u);
+            expect_transition_sides_share_parameters(strip);
+            saw_non_flat_strip |= std::any_of(
+                strip.vertices.begin(),
+                strip.vertices.end(),
+                [](const TerrainVisualProxyTransitionVertex& vertex) {
+                    return vertex.position[1] > 0.0f;
+                });
+
+            ASSERT_LT(strip.chunk_id.value, proxy.chunks.size());
+            ASSERT_LT(strip.neighbor_chunk_id.value, proxy.chunks.size());
+            const TerrainVisualProxyLodRecord* lod =
+                find_lod(proxy.chunks[strip.chunk_id.value], strip.lod_id);
+            const TerrainVisualProxyLodRecord* neighbor_lod =
+                find_lod(
+                    proxy.chunks[strip.neighbor_chunk_id.value],
+                    strip.neighbor_lod_id);
+            ASSERT_NE(lod, nullptr);
+            ASSERT_NE(neighbor_lod, nullptr);
+
+            const TerrainLodSeamReport seam =
+                analyze_terrain_lod_seam(
+                    proxy,
+                    TerrainLodSeamEndpoint{
+                        .chunk_id = strip.chunk_id,
+                        .lod_id = strip.lod_id,
+                        .edge = strip.edge,
+                    },
+                    TerrainLodSeamEndpoint{
+                        .chunk_id = strip.neighbor_chunk_id,
+                        .lod_id = strip.neighbor_lod_id,
+                        .edge = opposite_terrain_boundary_edge(strip.edge),
+                    },
+                    0.001f);
+            if (seam.valid() && seam.gap_exceeds_tolerance) {
+                expect_transition_covers_boundary_breakpoints(
+                    strip,
+                    *lod,
+                    *neighbor_lod);
+                saw_gap_covered_by_strip = true;
+            }
+
+            if (strip.lod_id == TerrainLodId{ 0u }
+                && strip.neighbor_lod_id != TerrainLodId{ 0u })
+            {
+                saw_mixed_lod_strip = true;
+            }
+        }
+    }
+    EXPECT_TRUE(saw_mixed_lod_strip);
+    EXPECT_TRUE(saw_non_flat_strip);
+    EXPECT_TRUE(saw_gap_covered_by_strip);
 }
 
 TEST(TerrainVisualProxyAssetModule, ModifiedSourceTerrainUsesDistinctCacheKey)
