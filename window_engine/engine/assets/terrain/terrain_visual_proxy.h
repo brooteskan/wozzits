@@ -16,7 +16,7 @@
 
 namespace wz::engine::assets
 {
-    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 1;
+    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 2;
 
     enum class TerrainVisualRepresentationKind : uint8_t
     {
@@ -109,6 +109,28 @@ namespace wz::engine::assets
         TerrainChunkId positive_z_neighbor = kInvalidTerrainChunkId;
     };
 
+    struct TerrainVisualProxyBoundaryPoint
+    {
+        float position[3]{ 0.0f, 0.0f, 0.0f };
+    };
+
+    struct TerrainVisualProxyLodBoundaryRing
+    {
+        std::vector<TerrainVisualProxyBoundaryPoint> negative_x;
+        std::vector<TerrainVisualProxyBoundaryPoint> positive_x;
+        std::vector<TerrainVisualProxyBoundaryPoint> negative_z;
+        std::vector<TerrainVisualProxyBoundaryPoint> positive_z;
+
+        [[nodiscard]] uint32_t point_count() const noexcept
+        {
+            return static_cast<uint32_t>(
+                negative_x.size()
+                + positive_x.size()
+                + negative_z.size()
+                + positive_z.size());
+        }
+    };
+
     struct TerrainVisualProxyLodRecord
     {
         TerrainLodId lod_id{};
@@ -116,6 +138,7 @@ namespace wz::engine::assets
         TerrainVisualRepresentationKind representation_kind =
             TerrainVisualRepresentationKind::MeshChunks;
 
+        TerrainVisualProxyBounds bounds{};
         uint32_t first_index = 0;
         uint32_t index_count = 0;
         uint32_t first_vertex = 0;
@@ -129,10 +152,12 @@ namespace wz::engine::assets
 
         TerrainVisualProxyAggregate source_region_aggregate{};
         TerrainVisualProxyAggregate lod_surface_aggregate{};
+        TerrainVisualProxyLodBoundaryRing boundary_ring{};
 
         [[nodiscard]] bool valid() const noexcept
         {
-            return triangle_count > 0
+            return bounds.valid()
+                && triangle_count > 0
                 && conservative_geometric_error >= 0.0f;
         }
     };

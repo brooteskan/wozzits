@@ -364,6 +364,12 @@ TEST(TerrainVisualProxyData, DefinesStableCpuReadableLodVocabulary)
     lod0.lod_id = TerrainLodId{ 0 };
     lod0.representation_id = TerrainRepresentationId{ 10 };
     lod0.representation_kind = TerrainVisualRepresentationKind::MeshChunks;
+    lod0.bounds.min[0] = -1.0f;
+    lod0.bounds.min[1] = 0.0f;
+    lod0.bounds.min[2] = -2.0f;
+    lod0.bounds.max[0] = 1.0f;
+    lod0.bounds.max[1] = 3.0f;
+    lod0.bounds.max[2] = 2.0f;
     lod0.first_index = 0;
     lod0.index_count = 300;
     lod0.first_vertex = 0;
@@ -466,6 +472,9 @@ TEST(TerrainVisualProxyData, RejectsMissingVersionIdentityOrLods)
     };
 
     TerrainVisualProxyLodRecord lod{};
+    lod.bounds.max[0] = 1.0f;
+    lod.bounds.max[1] = 1.0f;
+    lod.bounds.max[2] = 1.0f;
     lod.triangle_count = 4;
     lod.vertex_count = 6;
 

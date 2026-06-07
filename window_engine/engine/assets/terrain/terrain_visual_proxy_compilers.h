@@ -20,4 +20,9 @@ namespace wz::engine::assets::internal
         const wz::asset::AssetKey& key,
         wz::Logger& logger,
         TerrainVisualProxyData& data);
+
+    TerrainVisualProxyData compile_terrain_visual_proxy_for_tests(
+        const wz::asset::AssetKey& proxy_key,
+        const wz::asset::AssetKey& terrain_key,
+        const TerrainAssetData& terrain);
 }

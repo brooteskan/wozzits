@@ -8,10 +8,13 @@
 #include <engine/assets/engine_asset_library_internal.h>
 
 #include <algorithm>
+#include <array>
 #include <any>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <limits>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -20,7 +23,9 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kTerrainVisualProxyDiskCacheMagic = 0x56505a57u;
-        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 1u;
+        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 2u;
+        constexpr uint32_t kTerrainVisualProxyTargetLodCount = 4u;
+        constexpr float kTerrainVisualProxyEdgeEpsilon = 1e-5f;
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -149,6 +154,34 @@ namespace wz::engine::assets::internal
             return bounds;
         }
 
+        TerrainVisualProxyBounds empty_bounds()
+        {
+            TerrainVisualProxyBounds bounds{};
+            for (uint32_t axis = 0; axis < 3u; ++axis) {
+                bounds.min[axis] = (std::numeric_limits<float>::max)();
+                bounds.max[axis] = (std::numeric_limits<float>::lowest)();
+            }
+            return bounds;
+        }
+
+        void expand_bounds(
+            TerrainVisualProxyBounds& bounds,
+            const float position[3])
+        {
+            for (uint32_t axis = 0; axis < 3u; ++axis) {
+                bounds.min[axis] = std::min(bounds.min[axis], position[axis]);
+                bounds.max[axis] = std::max(bounds.max[axis], position[axis]);
+            }
+        }
+
+        float distance3(const float a[3], const float b[3])
+        {
+            const float dx = a[0] - b[0];
+            const float dy = a[1] - b[1];
+            const float dz = a[2] - b[2];
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
         TerrainVisualProxyAggregate aggregate_from_chunk(
             const TerrainVisualChunk& chunk)
         {
@@ -211,7 +244,391 @@ namespace wz::engine::assets::internal
             return flags;
         }
 
-        TerrainVisualProxyData compile_single_lod_proxy(
+        bool nearly_equal(float a, float b) noexcept
+        {
+            return std::abs(a - b) <= kTerrainVisualProxyEdgeEpsilon;
+        }
+
+        void append_boundary_point(
+            std::vector<TerrainVisualProxyBoundaryPoint>& points,
+            const float position[3])
+        {
+            TerrainVisualProxyBoundaryPoint point{};
+            for (uint32_t axis = 0; axis < 3u; ++axis) {
+                point.position[axis] = position[axis];
+            }
+            points.push_back(point);
+        }
+
+        void sort_boundary_ring(TerrainVisualProxyLodBoundaryRing& ring)
+        {
+            const auto by_z = [](const auto& lhs, const auto& rhs) {
+                if (lhs.position[2] != rhs.position[2]) {
+                    return lhs.position[2] < rhs.position[2];
+                }
+                return lhs.position[1] < rhs.position[1];
+            };
+            const auto by_x = [](const auto& lhs, const auto& rhs) {
+                if (lhs.position[0] != rhs.position[0]) {
+                    return lhs.position[0] < rhs.position[0];
+                }
+                return lhs.position[1] < rhs.position[1];
+            };
+            std::sort(ring.negative_x.begin(), ring.negative_x.end(), by_z);
+            std::sort(ring.positive_x.begin(), ring.positive_x.end(), by_z);
+            std::sort(ring.negative_z.begin(), ring.negative_z.end(), by_x);
+            std::sort(ring.positive_z.begin(), ring.positive_z.end(), by_x);
+        }
+
+        struct SimplifiedVertex
+        {
+            float position[3]{};
+            uint32_t count = 0;
+        };
+
+        struct SimplifiedChunkLod
+        {
+            uint32_t triangle_count = 0;
+            uint32_t vertex_count = 0;
+            float conservative_error = 0.0f;
+            TerrainVisualProxyBounds bounds{};
+            TerrainVisualProxyLodBoundaryRing boundary_ring{};
+        };
+
+        struct ChunkVertexMap
+        {
+            std::vector<uint32_t> unique_vertices;
+            std::vector<uint32_t> index_local_vertices;
+        };
+
+        ChunkVertexMap make_chunk_vertex_map(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& chunk)
+        {
+            ChunkVertexMap out{};
+            out.unique_vertices.reserve(chunk.index_count);
+            out.index_local_vertices.reserve(chunk.index_count);
+
+            const uint32_t end = std::min(
+                static_cast<uint32_t>(terrain.mesh_visual_indices.size()),
+                chunk.first_index + chunk.index_count);
+            for (uint32_t i = chunk.first_index; i < end; ++i) {
+                const uint32_t vertex = terrain.mesh_visual_indices[i];
+                if (vertex * 3u + 2u < terrain.mesh_surface_points.size()) {
+                    out.unique_vertices.push_back(vertex);
+                }
+            }
+            std::sort(out.unique_vertices.begin(), out.unique_vertices.end());
+            out.unique_vertices.erase(
+                std::unique(
+                    out.unique_vertices.begin(),
+                    out.unique_vertices.end()),
+                out.unique_vertices.end());
+
+            for (uint32_t i = chunk.first_index; i < end; ++i) {
+                const uint32_t vertex = terrain.mesh_visual_indices[i];
+                const auto it = std::lower_bound(
+                    out.unique_vertices.begin(),
+                    out.unique_vertices.end(),
+                    vertex);
+                out.index_local_vertices.push_back(
+                    it != out.unique_vertices.end() && *it == vertex
+                        ? static_cast<uint32_t>(
+                            it - out.unique_vertices.begin())
+                        : UINT32_MAX);
+            }
+            return out;
+        }
+
+        SimplifiedChunkLod simplify_chunk_for_grid(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& chunk,
+            const ChunkVertexMap& chunk_vertices,
+            uint32_t grid_cells)
+        {
+            // Deterministic vertex clustering is intentionally used here as a
+            // robust first compiler pass: it handles pathological fixture
+            // geometry cheaply, at the cost of looser error bounds than QEM.
+            SimplifiedChunkLod out{};
+            out.bounds = empty_bounds();
+            const float extent_x = chunk.bounds_max[0] - chunk.bounds_min[0];
+            const float extent_z = chunk.bounds_max[2] - chunk.bounds_min[2];
+            if (extent_x <= kTerrainVisualProxyEdgeEpsilon
+                || extent_z <= kTerrainVisualProxyEdgeEpsilon)
+            {
+                return out;
+            }
+
+            const uint32_t grid_vertices = grid_cells + 1u;
+            std::vector<SimplifiedVertex> vertices(
+                static_cast<size_t>(grid_vertices) * grid_vertices);
+
+            const auto cluster_for_position =
+                [&](const float position[3]) -> uint32_t {
+                    const float ux = std::clamp(
+                        (position[0] - chunk.bounds_min[0]) / extent_x,
+                        0.0f,
+                        1.0f);
+                    const float uz = std::clamp(
+                        (position[2] - chunk.bounds_min[2]) / extent_z,
+                        0.0f,
+                        1.0f);
+                    const uint32_t gx = std::min(
+                        grid_cells,
+                        static_cast<uint32_t>(
+                            ux * static_cast<float>(grid_cells) + 0.5f));
+                    const uint32_t gz = std::min(
+                        grid_cells,
+                        static_cast<uint32_t>(
+                            uz * static_cast<float>(grid_cells) + 0.5f));
+                    return gz * grid_vertices + gx;
+                };
+
+            std::vector<uint32_t> vertex_clusters(
+                chunk_vertices.unique_vertices.size(),
+                UINT32_MAX);
+            float min_height = (std::numeric_limits<float>::max)();
+            float max_height = (std::numeric_limits<float>::lowest)();
+
+            for (uint32_t vertex_index = 0u;
+                 vertex_index < chunk_vertices.unique_vertices.size();
+                 ++vertex_index)
+            {
+                const uint32_t source_vertex =
+                    chunk_vertices.unique_vertices[vertex_index];
+                const float* position =
+                    terrain.mesh_surface_points.data() + source_vertex * 3u;
+                min_height = std::min(min_height, position[1]);
+                max_height = std::max(max_height, position[1]);
+                const uint32_t cluster = cluster_for_position(position);
+                vertex_clusters[vertex_index] = cluster;
+                SimplifiedVertex& vertex = vertices[cluster];
+                for (uint32_t axis = 0; axis < 3u; ++axis) {
+                    vertex.position[axis] += position[axis];
+                }
+                ++vertex.count;
+            }
+
+            std::vector<uint32_t> compact_index(vertices.size(), UINT32_MAX);
+            for (uint32_t i = 0; i < vertices.size(); ++i) {
+                SimplifiedVertex& vertex = vertices[i];
+                if (vertex.count == 0u) {
+                    continue;
+                }
+                const float inv = 1.0f / static_cast<float>(vertex.count);
+                for (uint32_t axis = 0; axis < 3u; ++axis) {
+                    vertex.position[axis] *= inv;
+                }
+                compact_index[i] = out.vertex_count++;
+                expand_bounds(out.bounds, vertex.position);
+            }
+
+            std::set<std::array<uint32_t, 3>> emitted;
+            for (uint32_t i = 0u; i + 2u < chunk.index_count; i += 3u) {
+                uint32_t mapped[3]{};
+                bool valid = true;
+                for (uint32_t corner = 0; corner < 3u; ++corner) {
+                    const uint32_t local =
+                        i + corner < chunk_vertices.index_local_vertices.size()
+                            ? chunk_vertices.index_local_vertices[i + corner]
+                            : UINT32_MAX;
+                    if (local == UINT32_MAX
+                        || local >= vertex_clusters.size())
+                    {
+                        valid = false;
+                        break;
+                    }
+                    const uint32_t cluster =
+                        vertex_clusters[local];
+                    if (cluster == UINT32_MAX
+                        || cluster >= compact_index.size()
+                        || compact_index[cluster] == UINT32_MAX)
+                    {
+                        valid = false;
+                        break;
+                    }
+                    mapped[corner] = compact_index[cluster];
+                }
+                if (!valid
+                    || mapped[0] == mapped[1]
+                    || mapped[1] == mapped[2]
+                    || mapped[2] == mapped[0])
+                {
+                    continue;
+                }
+                std::array<uint32_t, 3> key{
+                    mapped[0],
+                    mapped[1],
+                    mapped[2],
+                };
+                std::sort(key.begin(), key.end());
+                if (emitted.insert(key).second) {
+                    ++out.triangle_count;
+                }
+            }
+
+            if (out.triangle_count == 0u || out.vertex_count == 0u) {
+                out = {};
+                return out;
+            }
+
+            auto mapped_position =
+                [&](uint32_t local_vertex) -> const float* {
+                    const uint32_t cluster = vertex_clusters[local_vertex];
+                    return vertices[cluster].position;
+                };
+
+            for (uint32_t local_vertex = 0u;
+                 local_vertex < chunk_vertices.unique_vertices.size();
+                 ++local_vertex)
+            {
+                const uint32_t source_vertex =
+                    chunk_vertices.unique_vertices[local_vertex];
+                const float* source_position =
+                    terrain.mesh_surface_points.data() + source_vertex * 3u;
+                out.conservative_error = std::max(
+                    out.conservative_error,
+                    distance3(source_position, mapped_position(local_vertex)));
+
+                const float* simplified = mapped_position(local_vertex);
+                // Corner vertices intentionally belong to both adjacent edge
+                // rings; #133 can deduplicate per transition strip if needed.
+                if (nearly_equal(source_position[0], chunk.bounds_min[0])) {
+                    append_boundary_point(out.boundary_ring.negative_x, simplified);
+                }
+                if (nearly_equal(source_position[0], chunk.bounds_max[0])) {
+                    append_boundary_point(out.boundary_ring.positive_x, simplified);
+                }
+                if (nearly_equal(source_position[2], chunk.bounds_min[2])) {
+                    append_boundary_point(out.boundary_ring.negative_z, simplified);
+                }
+                if (nearly_equal(source_position[2], chunk.bounds_max[2])) {
+                    append_boundary_point(out.boundary_ring.positive_z, simplified);
+                }
+            }
+
+            for (uint32_t i = 0u; i + 2u < chunk.index_count; i += 3u) {
+                uint32_t local[3]{};
+                bool valid = true;
+                for (uint32_t corner = 0; corner < 3u; ++corner) {
+                    local[corner] =
+                        i + corner < chunk_vertices.index_local_vertices.size()
+                            ? chunk_vertices.index_local_vertices[i + corner]
+                            : UINT32_MAX;
+                    if (local[corner] == UINT32_MAX
+                        || local[corner] >= vertex_clusters.size()
+                        || vertex_clusters[local[corner]] == UINT32_MAX)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (!valid) {
+                    continue;
+                }
+
+                const uint32_t base = chunk.first_index + i;
+                if (base + 2u >= terrain.mesh_visual_indices.size()) {
+                    continue;
+                }
+                const uint32_t source_indices[3]{
+                    terrain.mesh_visual_indices[base + 0u],
+                    terrain.mesh_visual_indices[base + 1u],
+                    terrain.mesh_visual_indices[base + 2u],
+                };
+                if (source_indices[0] * 3u + 2u
+                        >= terrain.mesh_surface_points.size()
+                    || source_indices[1] * 3u + 2u
+                        >= terrain.mesh_surface_points.size()
+                    || source_indices[2] * 3u + 2u
+                        >= terrain.mesh_surface_points.size())
+                {
+                    continue;
+                }
+
+                float source_mid[3][3]{};
+                float simplified_mid[3][3]{};
+                float source_centroid[3]{};
+                float simplified_centroid[3]{};
+                const float* s[3]{
+                    terrain.mesh_surface_points.data()
+                        + source_indices[0] * 3u,
+                    terrain.mesh_surface_points.data()
+                        + source_indices[1] * 3u,
+                    terrain.mesh_surface_points.data()
+                        + source_indices[2] * 3u,
+                };
+                const float* l[3]{
+                    mapped_position(local[0]),
+                    mapped_position(local[1]),
+                    mapped_position(local[2]),
+                };
+                for (uint32_t axis = 0; axis < 3u; ++axis) {
+                    for (uint32_t edge = 0u; edge < 3u; ++edge) {
+                        const uint32_t next = (edge + 1u) % 3u;
+                        source_mid[edge][axis] =
+                            (s[edge][axis] + s[next][axis]) * 0.5f;
+                        simplified_mid[edge][axis] =
+                            (l[edge][axis] + l[next][axis]) * 0.5f;
+                    }
+                    source_centroid[axis] =
+                        (s[0][axis] + s[1][axis] + s[2][axis]) / 3.0f;
+                    simplified_centroid[axis] =
+                        (l[0][axis] + l[1][axis] + l[2][axis]) / 3.0f;
+                }
+                for (uint32_t edge = 0u; edge < 3u; ++edge) {
+                    out.conservative_error = std::max(
+                        out.conservative_error,
+                        distance3(source_mid[edge], simplified_mid[edge]));
+                }
+                out.conservative_error = std::max(
+                    out.conservative_error,
+                    distance3(source_centroid, simplified_centroid));
+            }
+
+            sort_boundary_ring(out.boundary_ring);
+            if (max_height - min_height <= kTerrainVisualProxyEdgeEpsilon) {
+                // For planar terrain, tessellation changes are visually exact in
+                // this terrain-height error model even when XZ vertices move.
+                out.conservative_error = 0.0f;
+            }
+            out.conservative_error =
+                std::max(0.0f, out.conservative_error);
+            return out;
+        }
+
+        void assign_chunk_neighbors(std::vector<TerrainVisualProxyChunkRecord>& chunks)
+        {
+            for (uint32_t i = 0; i < chunks.size(); ++i) {
+                auto& a = chunks[i];
+                for (uint32_t j = 0; j < chunks.size(); ++j) {
+                    if (i == j) {
+                        continue;
+                    }
+                    const auto& b = chunks[j];
+                    const bool z_overlap =
+                        a.bounds.min[2] <= b.bounds.max[2]
+                        && b.bounds.min[2] <= a.bounds.max[2];
+                    const bool x_overlap =
+                        a.bounds.min[0] <= b.bounds.max[0]
+                        && b.bounds.min[0] <= a.bounds.max[0];
+                    if (z_overlap && nearly_equal(a.bounds.min[0], b.bounds.max[0])) {
+                        a.boundary.negative_x_neighbor = b.chunk_id;
+                    }
+                    if (z_overlap && nearly_equal(a.bounds.max[0], b.bounds.min[0])) {
+                        a.boundary.positive_x_neighbor = b.chunk_id;
+                    }
+                    if (x_overlap && nearly_equal(a.bounds.min[2], b.bounds.max[2])) {
+                        a.boundary.negative_z_neighbor = b.chunk_id;
+                    }
+                    if (x_overlap && nearly_equal(a.bounds.max[2], b.bounds.min[2])) {
+                        a.boundary.positive_z_neighbor = b.chunk_id;
+                    }
+                }
+            }
+        }
+
+        TerrainVisualProxyData compile_multi_lod_proxy(
             const wz::asset::AssetKey& proxy_key,
             const wz::asset::AssetKey& terrain_key,
             const TerrainAssetData& terrain)
@@ -257,6 +674,7 @@ namespace wz::engine::assets::internal
                 lod.lod_id = TerrainLodId{ 0u };
                 lod.representation_id = chunk.representation_id;
                 lod.representation_kind = chunk.representation_kind;
+                lod.bounds = chunk.bounds;
                 lod.first_index = source.first_index;
                 lod.index_count = source.index_count;
                 lod.first_vertex = chunk.first_vertex;
@@ -266,10 +684,103 @@ namespace wz::engine::assets::internal
                 lod.mesh_asset = terrain.mesh;
                 lod.source_region_aggregate = chunk.aggregate;
                 lod.lod_surface_aggregate = chunk.aggregate;
+                const ChunkVertexMap chunk_vertices =
+                    make_chunk_vertex_map(terrain, source);
+                {
+                    for (uint32_t vertex : chunk_vertices.unique_vertices) {
+                        const float* position =
+                            terrain.mesh_surface_points.data() + vertex * 3u;
+                        if (nearly_equal(position[0], source.bounds_min[0])) {
+                            append_boundary_point(
+                                lod.boundary_ring.negative_x,
+                                position);
+                        }
+                        if (nearly_equal(position[0], source.bounds_max[0])) {
+                            append_boundary_point(
+                                lod.boundary_ring.positive_x,
+                                position);
+                        }
+                        if (nearly_equal(position[2], source.bounds_min[2])) {
+                            append_boundary_point(
+                                lod.boundary_ring.negative_z,
+                                position);
+                        }
+                        if (nearly_equal(position[2], source.bounds_max[2])) {
+                            append_boundary_point(
+                                lod.boundary_ring.positive_z,
+                                position);
+                        }
+                    }
+                    sort_boundary_ring(lod.boundary_ring);
+                }
                 chunk.lods.push_back(std::move(lod));
+
+                uint32_t previous_triangles = chunk.triangle_count;
+                float previous_error = 0.0f;
+                for (uint32_t lod_index = 1u;
+                     lod_index < kTerrainVisualProxyTargetLodCount;
+                     ++lod_index)
+                {
+                    if (previous_triangles <= 2u) {
+                        break;
+                    }
+                    const uint32_t target_triangles = std::max(
+                        2u,
+                        previous_triangles / 2u);
+                    const uint32_t grid_cells = std::max(
+                        1u,
+                        static_cast<uint32_t>(
+                            std::sqrt(
+                                static_cast<float>(target_triangles)
+                                * 0.5f)));
+                    SimplifiedChunkLod simplified =
+                        simplify_chunk_for_grid(
+                            terrain,
+                            source,
+                            chunk_vertices,
+                            grid_cells);
+                    if (simplified.triangle_count == 0u
+                        || simplified.triangle_count > previous_triangles)
+                    {
+                        break;
+                    }
+
+                    TerrainVisualProxyLodRecord coarse{};
+                    coarse.lod_id = TerrainLodId{ lod_index };
+                    coarse.representation_id = chunk.representation_id;
+                    coarse.representation_kind = chunk.representation_kind;
+                    // Coarse bounds are derived from clustered vertices, so
+                    // they may shrink relative to the source chunk bounds.
+                    coarse.bounds = simplified.bounds;
+                    // #126 currently persists the LOD selection metadata. The
+                    // renderer still needs a follow-up drawable-geometry store
+                    // before these spans can identify distinct LOD buffers.
+                    coarse.first_index = source.first_index;
+                    coarse.index_count = simplified.triangle_count * 3u;
+                    coarse.first_vertex = chunk.first_vertex;
+                    coarse.vertex_count = simplified.vertex_count;
+                    coarse.triangle_count = simplified.triangle_count;
+                    coarse.conservative_geometric_error = std::max(
+                        previous_error,
+                        simplified.conservative_error);
+                    coarse.mesh_asset = terrain.mesh;
+                    coarse.source_region_aggregate = chunk.aggregate;
+                    coarse.lod_surface_aggregate = chunk.aggregate;
+                    coarse.lod_surface_aggregate.height_variance =
+                        chunk.aggregate.height_variance
+                        + coarse.conservative_geometric_error
+                            * coarse.conservative_geometric_error;
+                    coarse.boundary_ring = std::move(simplified.boundary_ring);
+
+                    previous_triangles = coarse.triangle_count;
+                    previous_error = coarse.conservative_geometric_error;
+                    chunk.lods.push_back(std::move(coarse));
+                }
 
                 proxy.chunks.push_back(std::move(chunk));
             }
+
+            assign_chunk_neighbors(proxy.chunks);
 
             return proxy;
         }
@@ -338,6 +849,55 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        void append_boundary_points(
+            std::vector<uint8_t>& out,
+            const std::vector<TerrainVisualProxyBoundaryPoint>& points)
+        {
+            append_scalar(out, static_cast<uint64_t>(points.size()));
+            for (const auto& point : points) {
+                append_float_array(out, point.position, 3u);
+            }
+        }
+
+        bool read_boundary_points(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            std::vector<TerrainVisualProxyBoundaryPoint>& points)
+        {
+            uint64_t count = 0u;
+            if (!read_scalar(bytes, offset, count) || count > 100000u) {
+                return false;
+            }
+            points.resize(static_cast<size_t>(count));
+            for (auto& point : points) {
+                if (!read_float_array(bytes, offset, point.position, 3u)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void append_boundary_ring(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxyLodBoundaryRing& ring)
+        {
+            append_boundary_points(out, ring.negative_x);
+            append_boundary_points(out, ring.positive_x);
+            append_boundary_points(out, ring.negative_z);
+            append_boundary_points(out, ring.positive_z);
+        }
+
+        bool read_boundary_ring(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxyLodBoundaryRing& ring)
+        {
+            return read_boundary_points(bytes, offset, ring.negative_x)
+                && read_boundary_points(bytes, offset, ring.positive_x)
+                && read_boundary_points(bytes, offset, ring.negative_z)
+                && read_boundary_points(bytes, offset, ring.positive_z);
+        }
+
         void append_lod(
             std::vector<uint8_t>& out,
             const TerrainVisualProxyLodRecord& lod)
@@ -345,6 +905,7 @@ namespace wz::engine::assets::internal
             append_scalar(out, lod.lod_id.value);
             append_scalar(out, lod.representation_id.value);
             append_scalar(out, static_cast<uint8_t>(lod.representation_kind));
+            append_bounds(out, lod.bounds);
             append_scalar(out, lod.first_index);
             append_scalar(out, lod.index_count);
             append_scalar(out, lod.first_vertex);
@@ -354,6 +915,7 @@ namespace wz::engine::assets::internal
             append_asset_key(out, lod.mesh_asset);
             append_aggregate(out, lod.source_region_aggregate);
             append_aggregate(out, lod.lod_surface_aggregate);
+            append_boundary_ring(out, lod.boundary_ring);
         }
 
         bool read_lod(
@@ -365,6 +927,7 @@ namespace wz::engine::assets::internal
             if (!read_scalar(bytes, offset, lod.lod_id.value)
                 || !read_scalar(bytes, offset, lod.representation_id.value)
                 || !read_scalar(bytes, offset, kind)
+                || !read_bounds(bytes, offset, lod.bounds)
                 || !read_scalar(bytes, offset, lod.first_index)
                 || !read_scalar(bytes, offset, lod.index_count)
                 || !read_scalar(bytes, offset, lod.first_vertex)
@@ -373,7 +936,8 @@ namespace wz::engine::assets::internal
                 || !read_scalar(bytes, offset, lod.conservative_geometric_error)
                 || !read_asset_key(bytes, offset, lod.mesh_asset)
                 || !read_aggregate(bytes, offset, lod.source_region_aggregate)
-                || !read_aggregate(bytes, offset, lod.lod_surface_aggregate))
+                || !read_aggregate(bytes, offset, lod.lod_surface_aggregate)
+                || !read_boundary_ring(bytes, offset, lod.boundary_ring))
             {
                 return false;
             }
@@ -636,7 +1200,7 @@ namespace wz::engine::assets::internal
                 }
 
                 TerrainVisualProxyData proxy =
-                    compile_single_lod_proxy(input.key, *terrain_key, *terrain);
+                    compile_multi_lod_proxy(input.key, *terrain_key, *terrain);
                 if (!proxy.valid()) {
                     logger.error("compiled terrain visual proxy is invalid");
                     return compile_failed_node(input);
@@ -666,5 +1230,13 @@ namespace wz::engine::assets::internal
         TerrainVisualProxyData& data)
     {
         return load_cached_terrain_visual_proxy_impl(cache, key, logger, data);
+    }
+
+    TerrainVisualProxyData compile_terrain_visual_proxy_for_tests(
+        const wz::asset::AssetKey& proxy_key,
+        const wz::asset::AssetKey& terrain_key,
+        const TerrainAssetData& terrain)
+    {
+        return compile_multi_lod_proxy(proxy_key, terrain_key, terrain);
     }
 }

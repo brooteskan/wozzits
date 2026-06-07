@@ -47,6 +47,10 @@ namespace
                 wz::engine::assets::TerrainRepresentationId{ 1u },
             .representation_kind =
                 wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .bounds = wz::engine::assets::TerrainVisualProxyBounds{
+                .min = { -1.0f, -1.0f, 10.0f },
+                .max = { 1.0f, 1.0f, 11.0f },
+            },
             .triangle_count = triangles,
             .conservative_geometric_error = error,
         };

@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "terrain_fixture_assets.h"
+
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/terrain/terrain_visual_proxy_compilers.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/rendering/render_resource_resolver.h>
 
@@ -22,7 +25,7 @@ namespace
         wz::engine::assets::EngineAssetLibrary& assets,
         wz::engine::assets::TerrainAsset* out_terrain = nullptr,
         wz::engine::assets::TerrainVisualProxyAsset* out_proxy_asset = nullptr,
-        uint32_t visual_chunk_count = 4u)
+        uint32_t visual_chunk_count = 1u)
     {
         using namespace wz::engine::assets;
 
@@ -69,9 +72,19 @@ namespace
         }
         return data ? *data : TerrainVisualProxyData{};
     }
+
+    wz::asset::AssetKey test_key(uint64_t lo)
+    {
+        return wz::asset::AssetKey{
+            .content_hash = { lo, lo + 1u },
+            .schema_hash = { lo + 2u, lo + 3u },
+            .compiler_hash = { lo + 4u, lo + 5u },
+            .deps_hash = { lo + 6u, lo + 7u },
+        };
+    }
 }
 
-TEST(TerrainVisualProxyAssetModule, CompilesSingleLodProxyFromMeshTerrain)
+TEST(TerrainVisualProxyAssetModule, CompilesMultiLodProxyFromMeshTerrain)
 {
     const wz::fs::Path root =
         test_root("wozzits_terrain_visual_proxy_compile_tests");
@@ -100,17 +113,32 @@ TEST(TerrainVisualProxyAssetModule, CompilesSingleLodProxyFromMeshTerrain)
         proxy.primary_representation_kind,
         TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_GT(proxy.chunk_count(), 0u);
-    EXPECT_EQ(proxy.lod_record_count(), proxy.chunk_count());
+    EXPECT_GT(proxy.lod_record_count(), proxy.chunk_count());
 
     uint32_t combined_boundary_flags = TerrainVisualChunkBoundary_None;
     for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
-        ASSERT_EQ(chunk.lods.size(), 1u);
+        ASSERT_GE(chunk.lods.size(), 1u);
         const TerrainVisualProxyLodRecord& lod = chunk.lods.front();
         EXPECT_EQ(lod.lod_id, TerrainLodId{ 0u });
         EXPECT_EQ(lod.representation_kind, TerrainVisualRepresentationKind::MeshChunks);
+        EXPECT_TRUE(lod.bounds.valid());
         EXPECT_EQ(lod.index_count, chunk.triangle_count * 3u);
         EXPECT_EQ(lod.triangle_count, chunk.triangle_count);
         EXPECT_FLOAT_EQ(lod.conservative_geometric_error, 0.0f);
+        EXPECT_GT(lod.boundary_ring.point_count(), 0u);
+        uint32_t previous_triangles = lod.triangle_count;
+        float previous_error = lod.conservative_geometric_error;
+        for (size_t i = 1u; i < chunk.lods.size(); ++i) {
+            const TerrainVisualProxyLodRecord& coarse = chunk.lods[i];
+            EXPECT_EQ(coarse.lod_id, TerrainLodId{ static_cast<uint32_t>(i) });
+            EXPECT_TRUE(coarse.bounds.valid());
+            EXPECT_LE(coarse.triangle_count, previous_triangles);
+            EXPECT_LE(coarse.index_count, previous_triangles * 3u);
+            EXPECT_GE(coarse.conservative_geometric_error, previous_error);
+            EXPECT_GT(coarse.boundary_ring.point_count(), 0u);
+            previous_triangles = coarse.triangle_count;
+            previous_error = coarse.conservative_geometric_error;
+        }
         combined_boundary_flags |= chunk.boundary.boundary_flags;
     }
     EXPECT_GT(combined_boundary_flags, TerrainVisualChunkBoundary_None);
@@ -162,9 +190,108 @@ TEST(TerrainVisualProxyAssetModule, UsesProjectDiskCache)
     EXPECT_EQ(second.chunk_count(), first.chunk_count());
     EXPECT_EQ(second.lod_record_count(), first.lod_record_count());
     ASSERT_FALSE(second.chunks.empty());
+    ASSERT_EQ(second.chunks.front().lods.size(), first.chunks.front().lods.size());
     EXPECT_EQ(
         second.chunks.front().lods.front().triangle_count,
         first.chunks.front().lods.front().triangle_count);
+    EXPECT_EQ(
+        second.chunks.front().lods.back().triangle_count,
+        first.chunks.front().lods.back().triangle_count);
+    EXPECT_EQ(
+        second.chunks.front().lods.back().boundary_ring.point_count(),
+        first.chunks.front().lods.back().boundary_ring.point_count());
+}
+
+TEST(TerrainVisualProxyAssetModule, FixtureLodChainsAreMonotonic)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    uint64_t key_seed = 100u;
+    for (const std::string_view name : kTerrainFixtureNames) {
+        const TerrainAssetData terrain = load_fixture_terrain(name);
+        ASSERT_TRUE(terrain.valid()) << name;
+
+        const TerrainVisualProxyData proxy =
+            internal::compile_terrain_visual_proxy_for_tests(
+                test_key(key_seed),
+                test_key(key_seed + 20u),
+                terrain);
+        key_seed += 100u;
+
+        ASSERT_TRUE(proxy.valid()) << name;
+        ASSERT_EQ(proxy.chunk_count(), terrain.mesh_visual_chunks.size()) << name;
+        for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
+            ASSERT_GE(chunk.lods.size(), 1u) << name;
+            uint32_t previous_triangles = chunk.lods.front().triangle_count;
+            float previous_error =
+                chunk.lods.front().conservative_geometric_error;
+            EXPECT_FLOAT_EQ(previous_error, 0.0f) << name;
+            EXPECT_GT(chunk.lods.front().boundary_ring.point_count(), 0u)
+                << name;
+            for (size_t i = 1u; i < chunk.lods.size(); ++i) {
+                const TerrainVisualProxyLodRecord& lod = chunk.lods[i];
+                EXPECT_LE(lod.triangle_count, previous_triangles) << name;
+                EXPECT_GE(lod.conservative_geometric_error, previous_error)
+                    << name;
+                EXPECT_TRUE(lod.bounds.valid()) << name;
+                EXPECT_GT(lod.boundary_ring.point_count(), 0u) << name;
+                previous_triangles = lod.triangle_count;
+                previous_error = lod.conservative_geometric_error;
+            }
+        }
+    }
+}
+
+TEST(TerrainVisualProxyAssetModule, FlatPlaneReachesTwoTriangleZeroErrorLod)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("flat_plane");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(1000u),
+            test_key(1100u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 1u);
+    ASSERT_GE(proxy.chunks.front().lods.size(), 2u);
+    const TerrainVisualProxyLodRecord& coarsest =
+        proxy.chunks.front().lods.back();
+    EXPECT_LE(coarsest.triangle_count, 2u);
+    EXPECT_FLOAT_EQ(coarsest.conservative_geometric_error, 0.0f);
+}
+
+TEST(TerrainVisualProxyAssetModule, MultiChunkSeamCarriesNeighborAndLodRings)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("multi_chunk_seam");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2000u),
+            test_key(2100u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 2u);
+    EXPECT_EQ(
+        proxy.chunks[0].boundary.positive_x_neighbor,
+        TerrainChunkId{ 1u });
+    EXPECT_EQ(
+        proxy.chunks[1].boundary.negative_x_neighbor,
+        TerrainChunkId{ 0u });
+
+    for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
+        for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+            EXPECT_GT(lod.boundary_ring.point_count(), 0u);
+        }
+    }
 }
 
 TEST(TerrainVisualProxyAssetModule, ModifiedSourceTerrainUsesDistinctCacheKey)
@@ -253,7 +380,7 @@ TEST(TerrainVisualProxyAssetModule, RegistersCompiledProxyWithRenderResolver)
     std::vector<TerrainVisualChunk> chunks;
     chunks.reserve(proxy.chunks.size());
     for (const TerrainVisualProxyChunkRecord& proxy_chunk : proxy.chunks) {
-        ASSERT_EQ(proxy_chunk.lods.size(), 1u);
+        ASSERT_GE(proxy_chunk.lods.size(), 1u);
         const TerrainVisualProxyLodRecord& lod = proxy_chunk.lods.front();
 
         TerrainVisualChunk chunk{};

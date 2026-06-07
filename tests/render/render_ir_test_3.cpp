@@ -64,6 +64,7 @@ namespace {
             wz::engine::assets::TerrainVisualProxyLodRecord lod{};
             lod.lod_id = wz::engine::assets::TerrainLodId{ 0u };
             lod.representation_id = chunk.representation_id;
+            lod.bounds = chunk.bounds;
             lod.triangle_count = 2u;
             lod.vertex_count = 4u;
             chunk.lods.push_back(lod);
