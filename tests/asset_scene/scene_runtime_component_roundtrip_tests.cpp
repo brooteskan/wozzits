@@ -538,12 +538,20 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         });
     ASSERT_TRUE(constraint_surface.valid());
 
+    const wz::asset::AssetKey visual_proxy_key{
+        .content_hash = { 11, 12 },
+        .schema_hash = { 13, 14 },
+        .compiler_hash = { 15, 16 },
+        .deps_hash = { 17, 18 },
+    };
+
     SceneAssetData authored{};
     authored.name = "terrain_component_scene";
     SceneNodeAsset node{};
     node.id = "landscape";
     node.terrain = SceneTerrainAsset{
         .terrain_asset = terrain.output,
+        .visual_proxy_asset = visual_proxy_key,
         .constraint_surface_asset = constraint_surface.output,
         .calculate_constraint_surface = true,
         .visible = true,
@@ -583,6 +591,7 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         std::string::npos);
     EXPECT_NE(exported.find("\"visual_chunk_count\""), std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
+    EXPECT_NE(exported.find("\"visual_proxy\""), std::string::npos);
     EXPECT_NE(exported.find("\"constraint_surface\""), std::string::npos);
     EXPECT_NE(
         exported.find("\"calculate_constraint_surface\""),
@@ -611,6 +620,9 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     ASSERT_TRUE(scene_data->nodes[0].terrain.has_value());
     ASSERT_TRUE(scene_data->nodes[0].terrain_render_style.has_value());
     EXPECT_EQ(scene_data->nodes[0].terrain->terrain_asset, terrain.output);
+    EXPECT_EQ(
+        scene_data->nodes[0].terrain->visual_proxy_asset,
+        visual_proxy_key);
     EXPECT_EQ(
         scene_data->nodes[0].terrain->constraint_surface_asset,
         constraint_surface.output);
@@ -661,6 +673,9 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         result.instance.terrains[0].component.terrain_asset,
         terrain.output);
+    EXPECT_EQ(
+        result.instance.terrains[0].component.visual_proxy_asset,
+        visual_proxy_key);
     EXPECT_EQ(
         result.instance.terrains[0].component.constraint_surface_asset,
         constraint_surface.output);

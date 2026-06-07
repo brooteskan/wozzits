@@ -62,6 +62,7 @@ namespace wz::engine::assets
     struct TerrainComponent
     {
         wz::asset::AssetKey terrain_asset{};
+        wz::asset::AssetKey visual_proxy_asset{};
         wz::asset::AssetKey constraint_surface_asset{};
         bool visible = true;
         bool queryable = true;

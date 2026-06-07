@@ -2,6 +2,8 @@
 
 // engine/assets/terrain/terrain.h
 
+#include <engine/assets/terrain/terrain_visual_proxy.h>
+
 #include <asset/types.h>
 
 #include <cstdint>

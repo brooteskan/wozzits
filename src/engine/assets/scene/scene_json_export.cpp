@@ -760,6 +760,14 @@ namespace wz::engine::assets
             auto obj = object_value();
             add_member(*obj, "asset",
                 string_value(asset_key_string(terrain.terrain_asset)));
+            if (!(terrain.visual_proxy_asset == wz::asset::AssetKey{})) {
+                auto visual_proxy = object_value();
+                add_member(
+                    *visual_proxy,
+                    "asset",
+                    string_value(asset_key_string(terrain.visual_proxy_asset)));
+                add_member(*obj, "visual_proxy", std::move(visual_proxy));
+            }
             if (!(terrain.constraint_surface_asset == wz::asset::AssetKey{})) {
                 auto constraint_surface = object_value();
                 add_member(

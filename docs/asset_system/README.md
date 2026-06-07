@@ -160,6 +160,24 @@ flags. Height-field terrain supports height-query semantics; mesh terrain record
 surface bounds/source metadata and leaves acceleration-backed ray/project queries
 for a later compiler/runtime layer.
 
+`TerrainVisualProxyData` is the separate compiled render representation for
+terrain. It is CPU-side metadata for chunk records, per-chunk LOD records,
+world-space geometric error, representation kind (`MeshChunks`, `GridTiles`, or
+`SurfelCloud`), bounds, seam/boundary metadata, and per-LOD aggregates. It also
+stores cache/version fields (`schema_version`, `compiler_version`,
+`source_asset_key`, and `simplification_settings_hash`) plus stable
+`TerrainProxyId`, `TerrainChunkId`, `TerrainLodId`, and
+`TerrainRepresentationId` values used by downstream render IR and selector work.
+GPU buffers are intentionally not owned by the proxy data model; the LOD selector
+can read bounds, errors, triangle counts, representation IDs, and aggregate data
+directly on the CPU.
+
+`SceneTerrainAsset` keeps the semantic terrain asset reference and may also carry
+an optional `visual_proxy_asset` key once a compiled proxy asset exists. The
+lightweight `TerrainRenderable` value names the same pair for scene-facing
+terrain renderables. The render proxy remains distinct from source/query terrain
+data even when both are produced from the same authored terrain.
+
 Mesh terrain also records source-attribute availability and selected terrain
 sources. If source mesh normals are present, `TerrainFromMesh` defaults to
 `TerrainNormalSource::MeshVertexNormal`; otherwise it falls back to

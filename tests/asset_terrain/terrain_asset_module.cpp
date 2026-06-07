@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <engine/assets/type_extensions.h>
 
 #include <file/filesystem.h>
@@ -340,4 +341,163 @@ TEST(TerrainAssetModule, MeshTerrainPolicyAndSourcePreferencesAffectAsset)
     EXPECT_TRUE(data->include_backfaces);
     EXPECT_EQ(data->mesh_triangle_count, 12u);
     EXPECT_GT(data->mesh_accepted_surface_triangle_count, 0u);
+}
+
+TEST(TerrainVisualProxyData, DefinesStableCpuReadableLodVocabulary)
+{
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey source_key{
+        .content_hash = { 1, 2 },
+        .schema_hash = { 3, 4 },
+        .compiler_hash = { 5, 6 },
+        .deps_hash = { 7, 8 },
+    };
+    const wz::asset::AssetKey proxy_key{
+        .content_hash = { 11, 12 },
+        .schema_hash = { 13, 14 },
+        .compiler_hash = { 15, 16 },
+        .deps_hash = { 17, 18 },
+    };
+
+    TerrainVisualProxyLodRecord lod0{};
+    lod0.lod_id = TerrainLodId{ 0 };
+    lod0.representation_id = TerrainRepresentationId{ 10 };
+    lod0.representation_kind = TerrainVisualRepresentationKind::MeshChunks;
+    lod0.first_index = 0;
+    lod0.index_count = 300;
+    lod0.first_vertex = 0;
+    lod0.vertex_count = 120;
+    lod0.triangle_count = 100;
+    lod0.conservative_geometric_error = 0.0f;
+    lod0.source_region_aggregate.mean_height = 7.0f;
+    lod0.source_region_aggregate.height_variance = 4.0f;
+    lod0.lod_surface_aggregate.mean_height = 6.5f;
+    lod0.lod_surface_aggregate.height_variance = 0.25f;
+    lod0.source_region_aggregate.material_coverage.push_back(
+        TerrainMaterialCoverage{ .material_id = 3, .coverage = 0.75f });
+
+    TerrainVisualProxyLodRecord lod1 = lod0;
+    lod1.lod_id = TerrainLodId{ 1 };
+    lod1.first_index = 300;
+    lod1.index_count = 48;
+    lod1.vertex_count = 24;
+    lod1.triangle_count = 16;
+    lod1.conservative_geometric_error = 0.5f;
+
+    TerrainVisualProxyChunkRecord chunk{};
+    chunk.chunk_id = TerrainChunkId{ 42 };
+    chunk.representation_id = TerrainRepresentationId{ 10 };
+    chunk.representation_kind = TerrainVisualRepresentationKind::MeshChunks;
+    chunk.bounds.min[0] = -1.0f;
+    chunk.bounds.min[1] = 0.0f;
+    chunk.bounds.min[2] = -2.0f;
+    chunk.bounds.max[0] = 1.0f;
+    chunk.bounds.max[1] = 3.0f;
+    chunk.bounds.max[2] = 2.0f;
+    chunk.first_triangle = 0;
+    chunk.triangle_count = 100;
+    chunk.first_vertex = 0;
+    chunk.vertex_count = 120;
+    chunk.aggregate.normal_mean[1] = 1.0f;
+    chunk.boundary.boundary_flags =
+        TerrainVisualChunkBoundary_NegativeX
+        | TerrainVisualChunkBoundary_PositiveZ;
+    chunk.boundary.positive_x_neighbor = TerrainChunkId{ 43 };
+    chunk.lods = { lod0, lod1 };
+
+    TerrainVisualProxyData proxy{};
+    proxy.compiler_version = 23;
+    proxy.source_asset_key = source_key;
+    proxy.simplification_settings_hash = { 101, 202 };
+    proxy.terrain_proxy_id = TerrainProxyId{ proxy_key };
+    proxy.bounds = chunk.bounds;
+    proxy.chunks.push_back(chunk);
+
+    ASSERT_TRUE(proxy.valid());
+    EXPECT_EQ(proxy.schema_version, kTerrainVisualProxySchemaVersion);
+    EXPECT_EQ(proxy.source_asset_key, source_key);
+    EXPECT_EQ(proxy.terrain_proxy_id.key, proxy_key);
+    EXPECT_EQ(proxy.chunk_count(), 1u);
+    EXPECT_EQ(proxy.lod_record_count(), 2u);
+
+    const TerrainVisualProxyChunkRecord& stored_chunk = proxy.chunks.front();
+    EXPECT_EQ(stored_chunk.chunk_id, TerrainChunkId{ 42 });
+    EXPECT_EQ(stored_chunk.lods[1].lod_id, TerrainLodId{ 1 });
+    EXPECT_EQ(
+        stored_chunk.lods[1].representation_id,
+        TerrainRepresentationId{ 10 });
+    EXPECT_EQ(stored_chunk.lods[1].triangle_count, 16u);
+    EXPECT_FLOAT_EQ(
+        stored_chunk.lods[1].conservative_geometric_error,
+        0.5f);
+    EXPECT_FLOAT_EQ(
+        stored_chunk.lods[0].source_region_aggregate.height_variance,
+        4.0f);
+    EXPECT_FLOAT_EQ(
+        stored_chunk.lods[0].lod_surface_aggregate.height_variance,
+        0.25f);
+    ASSERT_EQ(
+        stored_chunk.lods[0].source_region_aggregate.material_coverage.size(),
+        1u);
+    EXPECT_FLOAT_EQ(
+        stored_chunk.lods[0]
+            .source_region_aggregate
+            .material_coverage[0]
+            .coverage,
+        0.75f);
+}
+
+TEST(TerrainVisualProxyData, RejectsMissingVersionIdentityOrLods)
+{
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey source_key{
+        .content_hash = { 1, 0 },
+        .schema_hash = { 2, 0 },
+        .compiler_hash = { 3, 0 },
+        .deps_hash = { 4, 0 },
+    };
+    const wz::asset::AssetKey proxy_key{
+        .content_hash = { 5, 0 },
+        .schema_hash = { 6, 0 },
+        .compiler_hash = { 7, 0 },
+        .deps_hash = { 8, 0 },
+    };
+
+    TerrainVisualProxyLodRecord lod{};
+    lod.triangle_count = 4;
+    lod.vertex_count = 6;
+
+    TerrainVisualProxyChunkRecord chunk{};
+    chunk.bounds.max[0] = 1.0f;
+    chunk.bounds.max[1] = 1.0f;
+    chunk.bounds.max[2] = 1.0f;
+    chunk.triangle_count = 4;
+    chunk.vertex_count = 6;
+    chunk.lods.push_back(lod);
+
+    TerrainVisualProxyData proxy{};
+    proxy.compiler_version = 1;
+    proxy.source_asset_key = source_key;
+    proxy.terrain_proxy_id = TerrainProxyId{ proxy_key };
+    proxy.bounds = chunk.bounds;
+    proxy.chunks.push_back(chunk);
+    ASSERT_TRUE(proxy.valid());
+
+    TerrainVisualProxyData stale_schema = proxy;
+    stale_schema.schema_version = kTerrainVisualProxySchemaVersion + 1u;
+    EXPECT_FALSE(stale_schema.valid());
+
+    TerrainVisualProxyData missing_source = proxy;
+    missing_source.source_asset_key = {};
+    EXPECT_FALSE(missing_source.valid());
+
+    TerrainVisualProxyData missing_identity = proxy;
+    missing_identity.terrain_proxy_id = {};
+    EXPECT_FALSE(missing_identity.valid());
+
+    TerrainVisualProxyData missing_lods = proxy;
+    missing_lods.chunks.front().lods.clear();
+    EXPECT_FALSE(missing_lods.valid());
 }

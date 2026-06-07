@@ -274,7 +274,12 @@ namespace wz::engine::assets
                 || environment.dominant_light_intensity > 0.0f
                 || environment.dominant_light_confidence > 0.0f)
             {
-                return;
+                // First-pass nonzero lighting metadata is authored explicitly.
+                // After materialization, environment_asset marks derived metadata
+                // that should refresh when exposure or rotation changes.
+                if (environment.environment_asset == wz::asset::AssetKey{}) {
+                    return;
+                }
             }
             if (environment.format == HDRIEnvironmentFormat::RadianceHDR) {
                 return;

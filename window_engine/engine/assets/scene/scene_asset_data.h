@@ -435,6 +435,7 @@ namespace wz::engine::assets
     struct SceneTerrainAsset
     {
         wz::asset::AssetKey terrain_asset{};
+        wz::asset::AssetKey visual_proxy_asset{};
         wz::asset::AssetKey constraint_surface_asset{};
         bool calculate_constraint_surface = false;
         bool visible = true;

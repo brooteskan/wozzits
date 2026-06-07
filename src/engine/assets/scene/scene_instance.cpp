@@ -603,6 +603,7 @@ namespace wz::engine::assets
                     .node = h,
                     .component = TerrainComponent{
                         .terrain_asset = terrain.terrain_asset,
+                        .visual_proxy_asset = terrain.visual_proxy_asset,
                         .constraint_surface_asset =
                             terrain.constraint_surface_asset,
                         .visible = terrain.visible,

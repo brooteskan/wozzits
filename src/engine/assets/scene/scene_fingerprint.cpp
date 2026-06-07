@@ -430,6 +430,7 @@ namespace wz::engine::assets
             if (node.terrain) {
                 const auto& terrain = *node.terrain;
                 mix_asset_key(fp, terrain.terrain_asset);
+                mix_asset_key(fp, terrain.visual_proxy_asset);
                 mix_asset_key(fp, terrain.constraint_surface_asset);
                 fp.mix_value(terrain.calculate_constraint_surface);
                 fp.mix_value(terrain.visible);
