@@ -105,7 +105,10 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
 
     EXPECT_EQ(summary.runtime_entities, 0u);
     EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.hdri_environments, 0u);
+    EXPECT_EQ(summary.sky_draws, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
@@ -117,7 +120,6 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.audio_listeners, 0u);
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
-    EXPECT_EQ(summary.editor_handles, 0u);
 }
 
 TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
@@ -166,6 +168,18 @@ TEST(SceneECSBoundary, CoreNodeFieldsDoNotCountAsOptionalComponents)
     EXPECT_EQ(summary.event_listeners, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
     EXPECT_EQ(summary.editor_handles, 0u);
+}
+
+TEST(SceneECSBoundary, SkyVisualOnlyNodeIsRuntimeRelevant)
+{
+    using namespace wz::engine::assets;
+
+    SceneNodeAsset sky = make_scene_node("sky_visual");
+    sky.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::Gradient,
+    };
+
+    EXPECT_TRUE(has_runtime_relevant_components(sky));
 }
 
 TEST(SceneECSBoundary, SummarizesAuthoredComponentInventory)
@@ -480,8 +494,6 @@ TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.runtime_entities, 2u);
     EXPECT_EQ(runtime_summary.terrains, 1u);
-    EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
-    EXPECT_EQ(runtime_summary.terrain_height_field_sources, 0u);
     EXPECT_TRUE(result.instance.terrains[0].component.terrain_asset
         == terrain_key);
 }
@@ -658,7 +670,9 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     const auto summary = summarize_scene_instance_components(result.instance);
     EXPECT_EQ(summary.runtime_entities, 2u);
     EXPECT_EQ(summary.renderable_descriptor_slots, 2u);
+    EXPECT_EQ(summary.cameras, 1u);
     EXPECT_EQ(summary.lights, 1u);
+    EXPECT_EQ(summary.hdri_environments, 0u);
     EXPECT_EQ(summary.input_receivers, 1u);
     EXPECT_EQ(summary.flying_camera_controllers, 1u);
     EXPECT_EQ(summary.actor_movement_controllers, 1u);
@@ -667,7 +681,6 @@ TEST(SceneECSBoundary, SummarizesRuntimeProjectionInventory)
     EXPECT_EQ(summary.audio_listeners, 1u);
     EXPECT_EQ(summary.event_listeners, 1u);
     EXPECT_EQ(summary.auxiliary_visuals, 1u);
-    EXPECT_EQ(summary.editor_handles, 1u);
 }
 
 TEST(SceneECSBoundary, SummaryCountsDeclaredLightsWithoutResolvingNodeIds)
@@ -1032,8 +1045,6 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     const auto runtime_summary =
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.terrains, 0u);
-    EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
-    EXPECT_EQ(runtime_summary.terrain_height_field_sources, 0u);
     EXPECT_EQ(runtime_summary.renderable_descriptor_slots, 1u);
     EXPECT_TRUE(result.instance.input_receivers.empty());
     EXPECT_TRUE(result.instance.ground_boundaries.empty());

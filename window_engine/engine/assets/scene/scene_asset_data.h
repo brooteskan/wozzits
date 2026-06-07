@@ -1259,6 +1259,7 @@ namespace wz::engine::assets
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
             || node.hdri_environment.has_value()
+            || node.sky_visual.has_value()
             || node.sky_surface.has_value()
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()

@@ -197,7 +197,9 @@ namespace wz::scene
     {
         uint32_t runtime_entities = 0;
         uint32_t renderable_descriptor_slots = 0;
+        uint32_t cameras = 0;
         uint32_t lights = 0;
+        uint32_t hdri_environments = 0;
         uint32_t sky_draws = 0;
         uint32_t input_receivers = 0;
         uint32_t flying_camera_controllers = 0;
@@ -205,15 +207,12 @@ namespace wz::scene
         uint32_t ground_boundaries = 0;
         uint32_t collisions = 0;
         uint32_t terrains = 0;
-        uint32_t terrain_mesh_sources = 0;
-        uint32_t terrain_height_field_sources = 0;
         uint32_t audio_listeners = 0;
         uint32_t event_listeners = 0;
         uint32_t proximities = 0;
         uint32_t motions = 0;
         uint32_t behaviors = 0;
         uint32_t auxiliary_visuals = 0;
-        uint32_t editor_handles = 0;
     };
 
     // Runtime component record used by scene projections. The field remains

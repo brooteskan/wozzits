@@ -28,7 +28,10 @@ TEST(SceneECSBoundary, RuntimeSummaryDefaultsToZero)
 
     EXPECT_EQ(summary.runtime_entities, 0u);
     EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
+    EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.hdri_environments, 0u);
+    EXPECT_EQ(summary.sky_draws, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
@@ -41,7 +44,6 @@ TEST(SceneECSBoundary, RuntimeSummaryDefaultsToZero)
     EXPECT_EQ(summary.motions, 0u);
     EXPECT_EQ(summary.behaviors, 0u);
     EXPECT_EQ(summary.auxiliary_visuals, 0u);
-    EXPECT_EQ(summary.editor_handles, 0u);
 }
 
 TEST(SceneECSBoundary, ClassifiesCoreNodeComponents)

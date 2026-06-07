@@ -345,7 +345,9 @@ namespace wz::engine::assets
         wz::scene::SceneStorage storage{};
 
         std::vector<wz::scene::RenderableDescriptor> renderables;
+        uint32_t cameras = 0;
         std::vector<wz::scene::LightRecord> lights;
+        uint32_t hdri_environments = 0;
         std::vector<SceneSkyDrawAsset> sky_draws;
 
         wz::scene::ViewData default_view{};

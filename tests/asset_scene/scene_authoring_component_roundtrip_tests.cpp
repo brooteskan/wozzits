@@ -153,7 +153,7 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     ASSERT_TRUE(result.ok()) << result.error_detail;
     const auto runtime_summary =
         summarize_scene_instance_components(result.instance);
-    EXPECT_EQ(runtime_summary.terrain_mesh_sources, 0u);
+    EXPECT_EQ(runtime_summary.terrains, 0u);
 }
 
 TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
@@ -771,5 +771,10 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
 
     const auto summary = summarize_authored_scene_components(*scene_data);
     EXPECT_EQ(summary.hdri_environments, 1u);
-}
 
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.hdri_environments, 1u);
+}

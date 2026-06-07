@@ -265,7 +265,10 @@ namespace wz::engine::assets
                 << " storage=" << static_cast<const void*>(&inst.storage)
                 << " runtime_entities=" << summary.runtime_entities
                 << " descriptor_slots=" << summary.renderable_descriptor_slots
+                << " cameras=" << summary.cameras
                 << " lights=" << summary.lights
+                << " hdri_environments=" << summary.hdri_environments
+                << " sky_draws=" << summary.sky_draws
                 << " input_receivers=" << summary.input_receivers
                 << " flying_camera_controllers="
                 << summary.flying_camera_controllers
@@ -274,8 +277,7 @@ namespace wz::engine::assets
                 << " ground_boundaries=" << summary.ground_boundaries
                 << " audio_listeners=" << summary.audio_listeners
                 << " event_listeners=" << summary.event_listeners
-                << " auxiliary_visuals=" << summary.auxiliary_visuals
-                << " editor_handles=" << summary.editor_handles;
+                << " auxiliary_visuals=" << summary.auxiliary_visuals;
             context.logger->info(msg.str());
         }
     }
@@ -335,7 +337,9 @@ namespace wz::engine::assets
                 wz::core::graph::node_count(instance.storage.polytree)),
             .renderable_descriptor_slots = static_cast<uint32_t>(
                 instance.renderables.size()),
+            .cameras = instance.cameras,
             .lights = static_cast<uint32_t>(instance.lights.size()),
+            .hdri_environments = instance.hdri_environments,
             .sky_draws = static_cast<uint32_t>(instance.sky_draws.size()),
             .input_receivers = static_cast<uint32_t>(
                 instance.input_receivers.size()),
@@ -349,8 +353,6 @@ namespace wz::engine::assets
                 instance.collisions.size()),
             .terrains = static_cast<uint32_t>(
                 instance.terrains.size()),
-            .terrain_mesh_sources = 0,
-            .terrain_height_field_sources = 0,
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
             .event_listeners = static_cast<uint32_t>(
@@ -363,8 +365,6 @@ namespace wz::engine::assets
                 instance.behaviors.size()),
             .auxiliary_visuals = static_cast<uint32_t>(
                 instance.auxiliary_visuals.size()),
-            .editor_handles = static_cast<uint32_t>(
-                instance.editor_handles.size()),
         };
     }
 
@@ -529,6 +529,14 @@ namespace wz::engine::assets
         std::unordered_set<std::string> behavior_binding_ids;
         for (const auto& node : scene.nodes) {
             NodeHandle h = id_to_handle[node.id];
+
+            if (node.camera) {
+                ++inst.cameras;
+            }
+
+            if (node.hdri_environment) {
+                ++inst.hdri_environments;
+            }
 
             if (node.input_receiver) {
                 inst.input_receivers.push_back({
