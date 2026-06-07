@@ -145,6 +145,12 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeCollisionAsset =
         static_cast<wz::asset::AssetType>(150);
 
+    // Implemented: CPU-side terrain render proxy metadata.
+    // Runtime data is owned by TerrainVisualProxyTable; GPU resources remain
+    // renderer-owned and are registered from this CPU metadata.
+    inline constexpr wz::asset::AssetType kAssetTypeTerrainVisualProxy =
+        static_cast<wz::asset::AssetType>(153);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);

@@ -6,6 +6,7 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/terrain/terrain.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <logging/logger.h>
 
 #include <optional>
@@ -21,6 +22,7 @@ namespace wz::engine::assets
             ScalarFieldTable& scalar_fields,
             MeshTable& meshes,
             TerrainAssetTable& terrains,
+            TerrainVisualProxyTable& terrain_visual_proxies,
             CollisionAssetTable& collisions);
 
         bool can_load(
@@ -39,6 +41,7 @@ namespace wz::engine::assets
         ScalarFieldTable& scalar_fields_;
         MeshTable& meshes_;
         TerrainAssetTable& terrains_;
+        TerrainVisualProxyTable& terrain_visual_proxies_;
         CollisionAssetTable& collisions_;
     };
 }

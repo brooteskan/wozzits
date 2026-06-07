@@ -10,6 +10,8 @@
 #include <asset/types.h>
 
 #include <cstdint>
+#include <limits>
+#include <utility>
 #include <vector>
 
 namespace wz::engine::assets
@@ -40,6 +42,10 @@ namespace wz::engine::assets
         uint32_t value = 0;
 
         bool operator==(const TerrainChunkId&) const = default;
+    };
+
+    inline constexpr TerrainChunkId kInvalidTerrainChunkId{
+        (std::numeric_limits<uint32_t>::max)()
     };
 
     struct TerrainLodId
@@ -97,10 +103,10 @@ namespace wz::engine::assets
     struct TerrainVisualChunkBoundaryMetadata
     {
         uint32_t boundary_flags = TerrainVisualChunkBoundary_None;
-        TerrainChunkId negative_x_neighbor{};
-        TerrainChunkId positive_x_neighbor{};
-        TerrainChunkId negative_z_neighbor{};
-        TerrainChunkId positive_z_neighbor{};
+        TerrainChunkId negative_x_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId positive_x_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId negative_z_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId positive_z_neighbor = kInvalidTerrainChunkId;
     };
 
     struct TerrainVisualProxyLodRecord
@@ -209,6 +215,29 @@ namespace wz::engine::assets
             }
             return count;
         }
+    };
+
+    class TerrainVisualProxyTable
+    {
+    public:
+        TerrainVisualProxyTable();
+
+        wz::asset::ResourceHandle add(TerrainVisualProxyData proxy);
+
+        const TerrainVisualProxyData* get(
+            wz::asset::ResourceHandle handle) const;
+
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            TerrainVisualProxyData proxy;
+        };
+
+        std::vector<Slot> slots_;
     };
 
     struct TerrainRenderable

@@ -34,4 +34,10 @@ namespace wz::engine::assets::internal
         0x243f6a8885a308d3ull,
         0x13198a2e03707344ull,
     };
+
+    inline constexpr DiskCacheKeySpec kTerrainVisualProxyDiskCacheKey{
+        "terrain_visual_proxy",
+        0xe7037ed1b5f41a29ull,
+        0x9f86d081884c7d65ull,
+    };
 }

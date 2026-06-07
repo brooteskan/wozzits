@@ -88,6 +88,11 @@ namespace wz::asset {
             return true;
         }
 
+        [[nodiscard]] inline bool is_registered(const AssetKey& key) const
+        {
+            return registered_index_.count(key) != 0u;
+        }
+
         inline bool register_demand_root(
             DemandRoot root,
             std::vector<AssetKey> dep_keys = {})

@@ -7,6 +7,7 @@
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/terrain/terrain_compilers.h>
+#include <engine/assets/terrain/terrain_visual_proxy_compilers.h>
 #include <engine/assets/type_extensions.h>
 
 namespace wz::engine::assets
@@ -29,12 +30,14 @@ namespace wz::engine::assets
         ScalarFieldTable& scalar_fields,
         MeshTable& meshes,
         TerrainAssetTable& terrains,
+        TerrainVisualProxyTable& terrain_visual_proxies,
         CollisionAssetTable& collisions)
         : cache_settings_(cache_settings)
         , logger_(logger)
         , scalar_fields_(scalar_fields)
         , meshes_(meshes)
         , terrains_(terrains)
+        , terrain_visual_proxies_(terrain_visual_proxies)
         , collisions_(collisions)
     {
     }
@@ -71,6 +74,16 @@ namespace wz::engine::assets
                 key,
                 internal::kMeshTerrainDiskCacheKey.seed_lo,
                 internal::kMeshTerrainDiskCacheKey.seed_hi);
+        }
+        if (schema == kTerrainVisualProxySchema
+            && type == kAssetTypeTerrainVisualProxy)
+        {
+            return internal::disk_cache_asset_exists(
+                cache_settings_,
+                internal::kTerrainVisualProxyDiskCacheKey.subdirectory,
+                key,
+                internal::kTerrainVisualProxyDiskCacheKey.seed_lo,
+                internal::kTerrainVisualProxyDiskCacheKey.seed_hi);
         }
         if (schema == kCollisionFromTerrainSchema
             && type == kAssetTypeCollisionAsset)
@@ -135,6 +148,25 @@ namespace wz::engine::assets
                 return std::nullopt;
             }
             wz::asset::ResourceHandle handle = terrains_.add(std::move(data));
+            return handle.valid()
+                ? std::optional<wz::asset::ResourceHandle>{ handle }
+                : std::nullopt;
+        }
+
+        if (schema == kTerrainVisualProxySchema
+            && type == kAssetTypeTerrainVisualProxy)
+        {
+            TerrainVisualProxyData data{};
+            if (!internal::load_cached_terrain_visual_proxy(
+                    cache_settings_,
+                    key,
+                    logger_,
+                    data))
+            {
+                return std::nullopt;
+            }
+            wz::asset::ResourceHandle handle =
+                terrain_visual_proxies_.add(std::move(data));
             return handle.valid()
                 ? std::optional<wz::asset::ResourceHandle>{ handle }
                 : std::nullopt;

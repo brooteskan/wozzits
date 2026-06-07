@@ -171,6 +171,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A01ull
     };
 
+    // Terrain visual proxy metadata generated from semantic terrain data.
+    // Produces kAssetTypeTerrainVisualProxy output.
+    inline constexpr wz::asset::SchemaID kTerrainVisualProxySchema{
+        0xF11E'CA55'E7'000A02ull
+    };
+
     // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
     // header_mode ordinal is encoded in the key so the same file compiled with
     // different modes produces distinct asset keys.
