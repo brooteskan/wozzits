@@ -181,6 +181,29 @@ TEST_F(AssetSystemTest, RegisterAsset_WithValidDependency)
 
 // ─── Commit ───────────────────────────────────────────────────────────────────
 
+TEST_F(AssetSystemTest, RegisterAsset_EmptyDependencySlotsAreOptional)
+{
+    EXPECT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    EXPECT_TRUE(sys->register_asset(
+        make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        { kKeyA, AssetKey{} }));
+
+    EXPECT_TRUE(sys->commit());
+
+    const AssetGraph* graph = sys->graph();
+    ASSERT_NE(graph, nullptr);
+    const NodeHandle mesh_node = find_asset_node(sys->index(), kKeyB);
+    ASSERT_NE(mesh_node, INVALID_ASSET_NODE);
+
+    const auto deps = prerequisites(*graph, mesh_node);
+    ASSERT_EQ(deps.size(), 1u);
+    EXPECT_EQ(wz::core::graph::node_data(*graph, deps[0]).key, kKeyA);
+
+    const auto resolved = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(resolved));
+    EXPECT_TRUE(std::get<ResourceHandle>(resolved).valid());
+}
+
 TEST_F(AssetSystemTest, RegisterAsset_DefaultResidencyIntentIsRuntimeResident)
 {
     ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));

@@ -73,7 +73,9 @@ namespace wz::asset {
         // until that rebuild succeeds.
         //
         // dep_keys: AssetKeys of all direct prerequisites for this node.
-        //           Every listed key must itself be registered before commit().
+        //           Empty keys are explicit optional dependency slots and do
+        //           not create DAG edges. Every non-empty listed key must
+        //           itself be registered before commit().
         //
         // Returns false (and does nothing) if the node's key is already registered.
 

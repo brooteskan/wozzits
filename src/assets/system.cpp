@@ -168,6 +168,10 @@ namespace wz::asset
         //   → children(g, A) == dependents of A     (compiled after A)
         for (uint32_t i = 0; i < static_cast<uint32_t>(registered_.size()); ++i) {
             for (const AssetKey& dep_key : registered_[i].dep_keys) {
+                if (dep_key == AssetKey{}) {
+                    continue;
+                }
+
                 auto it = registered_index_.find(dep_key);
                 if (it == registered_index_.end()) return false;  // missing dep
 

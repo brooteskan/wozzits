@@ -95,11 +95,11 @@ namespace wz::engine::assets
             .color_lod_asset   = color_lod_key,
         };
 
-        // Cloud is always a dep; LOD is appended when present so the resolve
-        // order guarantees the LOD is compiled before the renderable.
-        std::vector<wz::asset::AssetKey> deps{ desc.splat_cloud.output };
-        if (desc.color_lod.valid())
-            deps.push_back(desc.color_lod.output);
+        // Cloud is always a dep; the second slot is an explicit optional LOD.
+        const std::vector<wz::asset::AssetKey> deps{
+            desc.splat_cloud.output,
+            color_lod_key,
+        };
 
         if (!system_.register_asset(std::move(node), deps))
             return RenderableAsset{ .output = key };

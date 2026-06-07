@@ -79,13 +79,10 @@ namespace wz::engine::assets
             return {};
         }
 
-        std::vector<wz::asset::AssetKey> deps;
-        if (!(compile_desc.intensity_field == wz::asset::AssetKey{})) {
-            deps.push_back(compile_desc.intensity_field);
-        }
-        if (!(compile_desc.color_field == wz::asset::AssetKey{})) {
-            deps.push_back(compile_desc.color_field);
-        }
+        const std::vector<wz::asset::AssetKey> deps{
+            compile_desc.intensity_field,
+            compile_desc.color_field,
+        };
 
         const wz::asset::AssetKey key =
             make_ambient_lighting_key(desc.name, compile_desc);
