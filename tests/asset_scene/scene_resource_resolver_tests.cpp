@@ -825,6 +825,15 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     proxy_key.content_hash = { 0x1234u, 0x5678u };
     const TerrainProxyId proxy_id{ proxy_key };
 
+    wz::engine::rendering::TerrainTransitionDrawRange transition_ranges[1]{};
+    transition_ranges[0].chunk_id = TerrainChunkId{ 0u };
+    transition_ranges[0].neighbor_chunk_id = TerrainChunkId{ 1u };
+    transition_ranges[0].lod_id = TerrainLodId{ 0u };
+    transition_ranges[0].neighbor_lod_id = TerrainLodId{ 1u };
+    transition_ranges[0].edge = TerrainVisualProxyBoundaryEdge::PositiveX;
+    transition_ranges[0].first_index = 36u;
+    transition_ranges[0].index_count = 6u;
+
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
@@ -833,7 +842,11 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
         {},
         8.0f,
         {},
-        std::span<const TerrainVisualChunk>(chunks, 1u)));
+        std::span<const TerrainVisualChunk>(chunks, 1u),
+        {},
+        std::span<const wz::engine::rendering::TerrainTransitionDrawRange>(
+            transition_ranges,
+            1u)));
 
     auto resolved = resolver.resolve_terrain_proxy(proxy_id);
     ASSERT_TRUE(resolved.has_value());
@@ -867,6 +880,22 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     EXPECT_EQ(draw->index_count, 3u);
     EXPECT_TRUE(draw->lod_replacement_available);
     EXPECT_TRUE(draw->lod_replacement_selected);
+
+    wz::render::TerrainDrawRef transition_ref{};
+    transition_ref.kind = wz::render::TerrainDrawRefKind::LodTransition;
+    transition_ref.chunk_id = TerrainChunkId{ 0u };
+    transition_ref.neighbor_chunk_id = TerrainChunkId{ 1u };
+    transition_ref.lod_id = TerrainLodId{ 0u };
+    transition_ref.neighbor_lod_id = TerrainLodId{ 1u };
+    transition_ref.transition_edge =
+        TerrainVisualProxyBoundaryEdge::PositiveX;
+
+    draw = resolver.resolve_terrain_draw(proxy_id, transition_ref);
+    ASSERT_TRUE(draw.has_value());
+    EXPECT_EQ(draw->first_index, 36u);
+    EXPECT_EQ(draw->index_count, 6u);
+    EXPECT_TRUE(draw->transition_selected);
+    EXPECT_FALSE(draw->lod_replacement_available);
 
     TerrainVisualChunk updated[1]{};
     updated[0].first_index = 24u;

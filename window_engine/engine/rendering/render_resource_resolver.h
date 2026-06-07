@@ -27,6 +27,23 @@ namespace wz::engine::rendering
         uint32_t splat_count = 0;
     };
 
+    struct TerrainTransitionDrawRange
+    {
+        wz::engine::assets::TerrainChunkId chunk_id{};
+        wz::engine::assets::TerrainChunkId neighbor_chunk_id{};
+        wz::engine::assets::TerrainLodId lod_id{};
+        wz::engine::assets::TerrainLodId neighbor_lod_id{};
+        wz::engine::assets::TerrainVisualProxyBoundaryEdge edge =
+            wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
+        uint32_t first_index = 0;
+        uint32_t index_count = 0;
+
+        [[nodiscard]] uint32_t triangle_count() const noexcept
+        {
+            return index_count / 3u;
+        }
+    };
+
     // Resolved result: the GPU resource handle plus pipeline identification.
     // submit_render_frame uses render_program (when valid) to look up the PSO
     // in RenderProgramPipelineCache; falls back to the legacy BuiltinRenderProgram
@@ -55,6 +72,7 @@ namespace wz::engine::rendering
         uint32_t                                source_triangle_count = 0;
         bool                                    lod_replacement_available = false;
         bool                                    lod_replacement_selected = false;
+        bool                                    transition_selected = false;
     };
 
     struct TerrainRenderStats
@@ -150,7 +168,8 @@ namespace wz::engine::rendering
             float                                   terrain_target_pixels_per_triangle = 0.0f,
             wz::engine::assets::MeshRenderStyleData  mesh_style = {},
             std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
-            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {});
+            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {},
+            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {});
 
         bool register_terrain_proxy(
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
@@ -161,7 +180,8 @@ namespace wz::engine::rendering
             float                                   terrain_target_pixels_per_triangle = 0.0f,
             wz::engine::assets::MeshRenderStyleData  mesh_style = {},
             std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
-            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {});
+            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {},
+            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
@@ -242,6 +262,7 @@ namespace wz::engine::rendering
             wz::engine::assets::MeshRenderStyleData  mesh_style{};
             std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
             std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks{};
+            std::vector<TerrainTransitionDrawRange> terrain_transition_ranges{};
         };
 
         std::vector<Entry> splat_entries_;

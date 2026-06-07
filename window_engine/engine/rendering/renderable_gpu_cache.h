@@ -78,9 +78,17 @@ namespace wz::engine::rendering
         const std::vector<wz::engine::assets::TerrainVisualChunk>*
         find_terrain_mesh_chunks(wz::asset::AssetKey terrain_asset) const;
 
+        const std::vector<TerrainTransitionDrawRange>*
+        find_terrain_transition_ranges(
+            wz::asset::AssetKey terrain_asset) const;
+
         void add_terrain_mesh_chunks(
             wz::asset::AssetKey terrain_asset,
             std::vector<wz::engine::assets::TerrainVisualChunk> chunks);
+
+        void add_terrain_transition_ranges(
+            wz::asset::AssetKey terrain_asset,
+            std::vector<TerrainTransitionDrawRange> ranges);
 
         const std::vector<TerrainFarSplatChunk>* find_terrain_far_splat_chunks(
             wz::asset::AssetKey terrain_asset) const;
@@ -117,6 +125,7 @@ namespace wz::engine::rendering
         {
             wz::asset::AssetKey terrain_asset{};
             std::vector<wz::engine::assets::TerrainVisualChunk> chunks;
+            std::vector<TerrainTransitionDrawRange> transition_ranges;
         };
         std::vector<TerrainMeshChunkEntry> terrain_mesh_chunk_entries_;
 

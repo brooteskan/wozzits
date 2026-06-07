@@ -69,7 +69,8 @@ namespace wz::engine::rendering
         float                                   terrain_target_pixels_per_triangle,
         wz::engine::assets::MeshRenderStyleData  mesh_style,
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks,
-        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks)
+        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks,
+        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges)
     {
         const auto index =
             static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
@@ -87,6 +88,9 @@ namespace wz::engine::rendering
         entry.terrain_far_splat_chunks.assign(
             terrain_far_splat_chunks.begin(),
             terrain_far_splat_chunks.end());
+        entry.terrain_transition_ranges.assign(
+            terrain_transition_ranges.begin(),
+            terrain_transition_ranges.end());
         mesh_entries_.push_back(std::move(entry));
         return index;
     }
@@ -100,7 +104,8 @@ namespace wz::engine::rendering
         float                                   terrain_target_pixels_per_triangle,
         wz::engine::assets::MeshRenderStyleData  mesh_style,
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks,
-        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks)
+        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks,
+        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges)
     {
         if (!terrain_proxy_id.valid()
             || !gpu_resource.valid()
@@ -123,6 +128,9 @@ namespace wz::engine::rendering
         entry.terrain_far_splat_chunks.assign(
             terrain_far_splat_chunks.begin(),
             terrain_far_splat_chunks.end());
+        entry.terrain_transition_ranges.assign(
+            terrain_transition_ranges.begin(),
+            terrain_transition_ranges.end());
 
         for (auto& registered : terrain_proxy_entries_) {
             if (registered.first == terrain_proxy_id) {
@@ -200,6 +208,35 @@ namespace wz::engine::rendering
                 continue;
 
             const Entry& e = registered.second;
+            if (ref.kind == wz::render::TerrainDrawRefKind::LodTransition) {
+                for (const TerrainTransitionDrawRange& range :
+                     e.terrain_transition_ranges)
+                {
+                    if (range.chunk_id == ref.chunk_id
+                        && range.neighbor_chunk_id == ref.neighbor_chunk_id
+                        && range.lod_id == ref.lod_id
+                        && range.neighbor_lod_id == ref.neighbor_lod_id
+                        && range.edge == ref.transition_edge
+                        && range.index_count > 0u)
+                    {
+                        return ResolvedTerrainDrawResource{
+                            e.gpu_resource,
+                            e.program,
+                            e.render_program,
+                            e.terrain_lighting,
+                            e.terrain_target_pixels_per_triangle,
+                            range.first_index,
+                            range.index_count,
+                            range.triangle_count(),
+                            false,
+                            false,
+                            true,
+                        };
+                    }
+                }
+                return std::nullopt;
+            }
+
             if (ref.chunk_id.value >= e.terrain_chunks.size())
                 return std::nullopt;
 
@@ -228,6 +265,7 @@ namespace wz::engine::rendering
                 chunk.triangle_count(),
                 replacement_available,
                 replacement_selected,
+                false,
             };
         }
 

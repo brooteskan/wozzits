@@ -25,7 +25,7 @@ namespace wz::engine::rendering
     namespace
     {
         constexpr uint32_t kTerrainRenderMeshDiskCacheMagic = 0x52545a57u;
-        constexpr uint32_t kTerrainRenderMeshDiskCacheVersion = 1u;
+        constexpr uint32_t kTerrainRenderMeshDiskCacheVersion = 2u;
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -172,14 +172,17 @@ namespace wz::engine::rendering
         std::vector<uint8_t> serialize_terrain_render_mesh(
             const wz::asset::AssetKey& key,
             const wz::engine::assets::MeshData& mesh,
-            const std::vector<wz::engine::assets::TerrainVisualChunk>& chunks)
+            const std::vector<wz::engine::assets::TerrainVisualChunk>& chunks,
+            const std::vector<TerrainTransitionDrawRange>& transition_ranges)
         {
             std::vector<uint8_t> out;
             out.reserve(
                 160u
                 + mesh.vertices.size() * sizeof(wz::engine::assets::MeshVertex)
                 + mesh.indices.size() * sizeof(uint32_t)
-                + chunks.size() * 96u);
+                + chunks.size() * 96u
+                + transition_ranges.size()
+                    * sizeof(TerrainTransitionDrawRange));
             append_scalar(out, kTerrainRenderMeshDiskCacheMagic);
             append_scalar(out, kTerrainRenderMeshDiskCacheVersion);
             append_scalar(out, wz::engine::assets::kTerrainCompilerVersion);
@@ -205,6 +208,14 @@ namespace wz::engine::rendering
                 chunks.data(),
                 chunks.size()
                     * sizeof(wz::engine::assets::TerrainVisualChunk));
+            append_scalar(
+                out,
+                static_cast<uint64_t>(transition_ranges.size()));
+            append_raw_bytes(
+                out,
+                transition_ranges.data(),
+                transition_ranges.size()
+                    * sizeof(TerrainTransitionDrawRange));
             return out;
         }
 
@@ -212,7 +223,8 @@ namespace wz::engine::rendering
             const std::vector<uint8_t>& bytes,
             const wz::asset::AssetKey& expected_key,
             wz::engine::assets::MeshData& mesh,
-            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks)
+            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks,
+            std::vector<TerrainTransitionDrawRange>& transition_ranges)
         {
             size_t offset = 0;
             uint32_t magic = 0;
@@ -295,6 +307,25 @@ namespace wz::engine::rendering
             {
                 return false;
             }
+
+            if (!read_vector_count(
+                    bytes,
+                    offset,
+                    count,
+                    sizeof(TerrainTransitionDrawRange)))
+            {
+                return false;
+            }
+            transition_ranges.resize(static_cast<size_t>(count));
+            if (!read_raw_bytes(
+                    bytes,
+                    offset,
+                    transition_ranges.data(),
+                    transition_ranges.size()
+                        * sizeof(TerrainTransitionDrawRange)))
+            {
+                return false;
+            }
             return offset == bytes.size();
         }
 
@@ -303,7 +334,8 @@ namespace wz::engine::rendering
             const wz::asset::AssetKey& key,
             wz::Logger& logger,
             wz::engine::assets::MeshData& mesh,
-            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks)
+            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks,
+            std::vector<TerrainTransitionDrawRange>& transition_ranges)
         {
             if (!cache.enabled || cache.root.empty()) {
                 return false;
@@ -317,11 +349,13 @@ namespace wz::engine::rendering
             }
             wz::engine::assets::MeshData loaded_mesh{};
             std::vector<wz::engine::assets::TerrainVisualChunk> loaded_chunks;
+            std::vector<TerrainTransitionDrawRange> loaded_transition_ranges;
             if (!deserialize_terrain_render_mesh(
                     bytes.value,
                     key,
                     loaded_mesh,
-                    loaded_chunks)
+                    loaded_chunks,
+                    loaded_transition_ranges)
                 || !loaded_mesh.valid()
                 || loaded_chunks.empty())
             {
@@ -335,6 +369,7 @@ namespace wz::engine::rendering
                     std::chrono::steady_clock::now() - started).count();
             mesh = std::move(loaded_mesh);
             chunks = std::move(loaded_chunks);
+            transition_ranges = std::move(loaded_transition_ranges);
             logger.info(
                 "asset disk cache hit: terrain render mesh "
                 + path
@@ -348,6 +383,7 @@ namespace wz::engine::rendering
             const wz::asset::AssetKey& key,
             const wz::engine::assets::MeshData& mesh,
             const std::vector<wz::engine::assets::TerrainVisualChunk>& chunks,
+            const std::vector<TerrainTransitionDrawRange>& transition_ranges,
             wz::Logger& logger)
         {
             if (!cache.enabled
@@ -367,7 +403,11 @@ namespace wz::engine::rendering
             }
             const wz::fs::Path path = terrain_render_mesh_cache_path(cache, key);
             const std::vector<uint8_t> bytes =
-                serialize_terrain_render_mesh(key, mesh, chunks);
+                serialize_terrain_render_mesh(
+                    key,
+                    mesh,
+                    chunks,
+                    transition_ranges);
             const wz::fs::FileError err = wz::fs::write_file(path, bytes, true);
             if (err != wz::fs::FileError::None) {
                 logger.warn(
@@ -469,7 +509,9 @@ namespace wz::engine::rendering
         wz::engine::assets::MeshData make_terrain_surface_mesh(
             const wz::engine::assets::TerrainAssetData& terrain,
             const wz::engine::assets::MeshData& source,
-            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks)
+            const wz::engine::assets::TerrainVisualProxyData* visual_proxy,
+            std::vector<wz::engine::assets::TerrainVisualChunk>& chunks,
+            std::vector<TerrainTransitionDrawRange>& transition_ranges)
         {
             wz::engine::assets::MeshData mesh = source;
             if (!terrain.mesh_visual_indices.empty()) {
@@ -882,6 +924,58 @@ namespace wz::engine::rendering
                 }
             }
 
+            transition_ranges.clear();
+            if (visual_proxy) {
+                for (const auto& proxy_chunk : visual_proxy->chunks) {
+                    for (const auto& strip : proxy_chunk.transition_strips) {
+                        if (!strip.valid()) {
+                            continue;
+                        }
+
+                        const uint32_t first_vertex =
+                            static_cast<uint32_t>(mesh.vertices.size());
+                        for (const auto& strip_vertex : strip.vertices) {
+                            wz::engine::assets::MeshVertex vertex{};
+                            vertex.position[0] = strip_vertex.position[0];
+                            vertex.position[1] = strip_vertex.position[1];
+                            vertex.position[2] = strip_vertex.position[2];
+                            vertex.normal[1] = 1.0f;
+                            vertex.uv[0] = strip_vertex.position[0];
+                            vertex.uv[1] = strip_vertex.position[2];
+                            mesh.vertices.push_back(vertex);
+                        }
+
+                        const uint32_t first_index =
+                            static_cast<uint32_t>(mesh.indices.size());
+                        for (uint32_t index : strip.indices) {
+                            if (index >= strip.vertices.size()) {
+                                continue;
+                            }
+                            mesh.indices.push_back(first_vertex + index);
+                        }
+                        const uint32_t index_count =
+                            static_cast<uint32_t>(mesh.indices.size())
+                            - first_index;
+                        if (index_count < 3u) {
+                            mesh.indices.resize(first_index);
+                            mesh.vertices.resize(first_vertex);
+                            continue;
+                        }
+
+                        transition_ranges.push_back(
+                            TerrainTransitionDrawRange{
+                                .chunk_id = strip.chunk_id,
+                                .neighbor_chunk_id = strip.neighbor_chunk_id,
+                                .lod_id = strip.lod_id,
+                                .neighbor_lod_id = strip.neighbor_lod_id,
+                                .edge = strip.edge,
+                                .first_index = first_index,
+                                .index_count = index_count,
+                            });
+                    }
+                }
+            }
+
             mesh.has_normals = true;
             mesh.has_uv0 = true;
             return mesh;
@@ -918,6 +1012,7 @@ namespace wz::engine::rendering
         const wz::engine::assets::TerrainVisualProxyData* terrain_visual_proxy_data =
             nullptr;
         std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks_storage;
+        std::vector<TerrainTransitionDrawRange> terrain_transition_ranges_storage;
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
             if (is_terrain_surface) {
@@ -986,6 +1081,13 @@ namespace wz::engine::rendering
                         {
                             terrain_chunks_storage = *cached_chunks;
                             cached_mesh = cached.gpu_resource;
+                            if (const auto* cached_transition_ranges =
+                                    cache_->find_terrain_transition_ranges(
+                                        renderable.companion_asset))
+                            {
+                                terrain_transition_ranges_storage =
+                                    *cached_transition_ranges;
+                            }
                         }
                     }
 
@@ -997,14 +1099,17 @@ namespace wz::engine::rendering
                                 renderable.companion_asset,
                                 logger,
                                 preview_mesh,
-                                terrain_chunks_storage))
+                                terrain_chunks_storage,
+                                terrain_transition_ranges_storage))
                         {
                             const auto build_started =
                                 std::chrono::steady_clock::now();
                             preview_mesh = make_terrain_surface_mesh(
                                 *terrain_data,
                                 *source_mesh,
-                                terrain_chunks_storage);
+                                terrain_visual_proxy_data,
+                                terrain_chunks_storage,
+                                terrain_transition_ranges_storage);
                             const auto build_elapsed =
                                 std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::steady_clock::now()
@@ -1017,6 +1122,7 @@ namespace wz::engine::rendering
                                 renderable.companion_asset,
                                 preview_mesh,
                                 terrain_chunks_storage,
+                                terrain_transition_ranges_storage,
                                 logger);
                         }
                         if (!preview_mesh.valid()) {
@@ -1039,24 +1145,30 @@ namespace wz::engine::rendering
                         cache_->add_terrain_mesh_chunks(
                             renderable.companion_asset,
                             terrain_chunks_storage);
+                        cache_->add_terrain_transition_ranges(
+                            renderable.companion_asset,
+                            terrain_transition_ranges_storage);
                     }
                 }
                 else {
                     const auto& cache_settings = assets_.cache_settings();
                     wz::Logger& logger = assets_.logger();
                     if (!load_cached_terrain_render_mesh(
-                            cache_settings,
-                            renderable.companion_asset,
-                            logger,
-                            preview_mesh,
-                            terrain_chunks_storage))
-                    {
+                        cache_settings,
+                        renderable.companion_asset,
+                        logger,
+                        preview_mesh,
+                        terrain_chunks_storage,
+                        terrain_transition_ranges_storage))
+                {
                         const auto build_started =
                             std::chrono::steady_clock::now();
-                        preview_mesh = make_terrain_surface_mesh(
-                            *terrain_data,
-                            *source_mesh,
-                            terrain_chunks_storage);
+                    preview_mesh = make_terrain_surface_mesh(
+                        *terrain_data,
+                        *source_mesh,
+                        terrain_visual_proxy_data,
+                        terrain_chunks_storage,
+                        terrain_transition_ranges_storage);
                         const auto build_elapsed =
                             std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now()
@@ -1065,11 +1177,12 @@ namespace wz::engine::rendering
                             "asset compile: terrain render mesh build ms="
                             + std::to_string(build_elapsed));
                         store_cached_terrain_render_mesh(
-                            cache_settings,
-                            renderable.companion_asset,
-                            preview_mesh,
-                            terrain_chunks_storage,
-                            logger);
+                        cache_settings,
+                        renderable.companion_asset,
+                        preview_mesh,
+                        terrain_chunks_storage,
+                        terrain_transition_ranges_storage,
+                        logger);
                     }
                     if (!preview_mesh.valid()) {
                         return false;
@@ -1152,8 +1265,10 @@ namespace wz::engine::rendering
             return false;
 
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges{};
         if (terrain_data) {
             terrain_chunks = terrain_chunks_storage;
+            terrain_transition_ranges = terrain_transition_ranges_storage;
         }
 
         const wz::scene::MeshHandle scene_mesh =
@@ -1164,7 +1279,9 @@ namespace wz::engine::rendering
                 renderable.terrain_lighting,
                 renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style,
-                terrain_chunks);
+                terrain_chunks,
+                {},
+                terrain_transition_ranges);
 
         descriptor.mesh = scene_mesh;
         if (renderable.program
@@ -1181,7 +1298,9 @@ namespace wz::engine::rendering
                 renderable.terrain_lighting,
                 renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style,
-                terrain_chunks);
+                terrain_chunks,
+                {},
+                terrain_transition_ranges);
             descriptor.terrain_visual_proxy_asset =
                 renderable.companion_asset;
             descriptor.terrain_proxy_id = terrain_proxy_id;

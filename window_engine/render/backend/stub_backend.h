@@ -91,9 +91,14 @@ namespace wz::render::backend {
             std::ostringstream ss;
             ss << "[" << idx << "] "
                 << "terrain key=0x" << std::hex << ref.sort_key << std::dec
+                << " kind=" << static_cast<uint32_t>(ref.kind)
                 << " instance=" << ref.terrain_instance_index
                 << " chunk=" << ref.chunk_id.value
                 << " lod=" << ref.lod_id.value;
+            if (ref.kind == TerrainDrawRefKind::LodTransition) {
+                ss << " neighbor=" << ref.neighbor_chunk_id.value
+                    << " neighbor_lod=" << ref.neighbor_lod_id.value;
+            }
             return ss.str();
         }
 

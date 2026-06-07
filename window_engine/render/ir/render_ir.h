@@ -28,12 +28,24 @@ namespace wz::render {
         uint64_t sort_key; // retained for debugging and secondary sorts
     };
 
+    enum class TerrainDrawRefKind : uint8_t {
+        ChunkLod = 0,
+        LodTransition,
+    };
+
     struct TerrainDrawRef {
+        TerrainDrawRefKind kind{ TerrainDrawRefKind::ChunkLod };
         uint32_t terrain_instance_index = 0;
         wz::engine::assets::TerrainChunkId chunk_id{};
+        wz::engine::assets::TerrainChunkId neighbor_chunk_id{
+            wz::engine::assets::kInvalidTerrainChunkId
+        };
         wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
             wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
         wz::engine::assets::TerrainLodId lod_id{};
+        wz::engine::assets::TerrainLodId neighbor_lod_id{};
+        wz::engine::assets::TerrainVisualProxyBoundaryEdge transition_edge =
+            wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
         uint64_t batch_key = 0;
         uint64_t sort_key = 0;
     };

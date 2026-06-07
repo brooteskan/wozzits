@@ -19,14 +19,21 @@ namespace wz::render {
                 | static_cast<uint64_t>(p.mesh);
         }
 
-        inline uint64_t terrain_batch_key(
+        inline uint64_t terrain_ref_batch_key(
             const TerrainVisualInstance& instance,
-            const TerrainLodChoice& choice)
+            const TerrainDrawRef& ref)
         {
-            return static_cast<uint64_t>(instance.material) << 32
+            const uint64_t transition_bit =
+                ref.kind == TerrainDrawRefKind::LodTransition
+                    ? (1ull << 63)
+                    : 0ull;
+            return transition_bit
+                | (static_cast<uint64_t>(instance.material) << 32)
                 | (static_cast<uint64_t>(
-                       choice.terrain_instance_index & 0xffffu) << 16)
-                | static_cast<uint64_t>(choice.lod_id.value & 0xffffu);
+                       ref.terrain_instance_index & 0xffu) << 24)
+                | (static_cast<uint64_t>(
+                       ref.chunk_id.value & 0xfffu) << 12)
+                | static_cast<uint64_t>(ref.lod_id.value & 0xfffu);
         }
 
         inline uint64_t depth_key_back_to_front(float depth)
@@ -87,11 +94,6 @@ namespace wz::render {
             }
         };
 
-        struct TerrainDrawRefCandidate {
-            bool visible{ false };
-            TerrainDrawRef ref{};
-        };
-
         struct TerrainDrawRefSink {
             TerrainDrawRef* ptr{ nullptr };
             uint32_t count{ 0 };
@@ -100,12 +102,9 @@ namespace wz::render {
                 std::span<TerrainDrawRef> out) noexcept
                 : ptr(out.data()) {}
 
-            bool push(const TerrainDrawRefCandidate& candidate)
+            bool push_ref(const TerrainDrawRef& ref)
             {
-                if (!candidate.visible)
-                    return true;
-
-                new (&ptr[count++]) TerrainDrawRef(candidate.ref);
+                new (&ptr[count++]) TerrainDrawRef(ref);
                 return true;
             }
         };
@@ -130,23 +129,154 @@ namespace wz::render {
             return sink.count;
         }
 
-        template<typename MakeCandidate>
-        uint32_t fill_sorted_terrain_refs(
-            uint32_t                    total,
-            std::span<TerrainDrawRef>   out,
-            MakeCandidate&&             make_candidate)
+        uint32_t max_terrain_draw_ref_capacity(
+            const CompiledSceneView& scene)
         {
-            using namespace wz::core::algo::next;
+            uint32_t count = 0u;
+            for (const TerrainVisualInstance& instance :
+                 scene.terrain_instances)
+            {
+                if (!instance.visual_proxy_data) {
+                    continue;
+                }
+                const auto& proxy = *instance.visual_proxy_data;
+                count += static_cast<uint32_t>(proxy.chunks.size());
+                count += proxy.transition_strip_count();
+            }
+            if (count == 0u) {
+                count = static_cast<uint32_t>(
+                    scene.terrain_lod_choices.size());
+            }
+            return count;
+        }
 
-            TerrainDrawRefSink sink{ out };
-            transform(
-                std::views::iota(0u, total),
-                sink,
-                std::forward<MakeCandidate>(make_candidate));
-
-            std::sort(out.begin(), out.begin() + sink.count,
-                [](const TerrainDrawRef& a, const TerrainDrawRef& b)
+        const TerrainLodChoice* find_terrain_lod_choice(
+            std::span<const TerrainLodChoice> choices,
+            uint32_t terrain_instance_index,
+            wz::engine::assets::TerrainChunkId chunk_id)
+        {
+            for (const TerrainLodChoice& choice : choices) {
+                if (choice.terrain_instance_index == terrain_instance_index
+                    && choice.chunk_id == chunk_id)
                 {
+                    return &choice;
+                }
+            }
+            return nullptr;
+        }
+
+        TerrainDrawRef terrain_ref_from_choice(
+            const TerrainVisualInstance& instance,
+            const TerrainLodChoice& choice)
+        {
+            TerrainDrawRef ref{
+                .terrain_instance_index = choice.terrain_instance_index,
+                .chunk_id = choice.chunk_id,
+                .representation_kind = choice.representation_kind,
+                .lod_id = choice.lod_id,
+            };
+            const uint64_t batch = terrain_ref_batch_key(instance, ref);
+            ref.batch_key = batch;
+            ref.sort_key = batch;
+            return ref;
+        }
+
+        TerrainDrawRef terrain_ref_from_transition(
+            const TerrainVisualInstance& instance,
+            uint32_t terrain_instance_index,
+            const wz::engine::assets::TerrainVisualProxyTransitionStrip& strip)
+        {
+            TerrainDrawRef ref{
+                .kind = TerrainDrawRefKind::LodTransition,
+                .terrain_instance_index = terrain_instance_index,
+                .chunk_id = strip.chunk_id,
+                .neighbor_chunk_id = strip.neighbor_chunk_id,
+                .representation_kind =
+                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = strip.lod_id,
+                .neighbor_lod_id = strip.neighbor_lod_id,
+                .transition_edge = strip.edge,
+            };
+            const uint64_t batch = terrain_ref_batch_key(instance, ref);
+            ref.batch_key = batch;
+            ref.sort_key = batch;
+            return ref;
+        }
+
+        uint32_t fill_terrain_refs(
+            const CompiledSceneView& scene,
+            const Frustum& frustum,
+            std::span<TerrainDrawRef> out)
+        {
+            TerrainDrawRefSink sink{ out };
+
+            for (const TerrainLodChoice& choice :
+                 scene.terrain_lod_choices)
+            {
+                if (choice.terrain_instance_index
+                    >= scene.terrain_instances.size())
+                {
+                    continue;
+                }
+
+                const TerrainVisualInstance& instance =
+                    scene.terrain_instances[choice.terrain_instance_index];
+                if (!instance.visible
+                    || !intersects_aabb(frustum, instance.bounds))
+                {
+                    continue;
+                }
+                sink.push_ref(terrain_ref_from_choice(instance, choice));
+            }
+
+            for (uint32_t instance_index = 0u;
+                 instance_index < scene.terrain_instances.size();
+                 ++instance_index)
+            {
+                const TerrainVisualInstance& instance =
+                    scene.terrain_instances[instance_index];
+                if (!instance.visible
+                    || !instance.visual_proxy_data
+                    || !intersects_aabb(frustum, instance.bounds))
+                {
+                    continue;
+                }
+
+                const auto& proxy = *instance.visual_proxy_data;
+                for (const auto& chunk : proxy.chunks) {
+                    for (const auto& strip : chunk.transition_strips) {
+                        const TerrainLodChoice* choice =
+                            find_terrain_lod_choice(
+                                scene.terrain_lod_choices,
+                                instance_index,
+                                strip.chunk_id);
+                        const TerrainLodChoice* neighbor_choice =
+                            find_terrain_lod_choice(
+                                scene.terrain_lod_choices,
+                                instance_index,
+                                strip.neighbor_chunk_id);
+                        if (!choice || !neighbor_choice) {
+                            continue;
+                        }
+                        if (choice->lod_id != strip.lod_id
+                            || neighbor_choice->lod_id
+                                != strip.neighbor_lod_id)
+                        {
+                            continue;
+                        }
+                        sink.push_ref(
+                            terrain_ref_from_transition(
+                                instance,
+                                instance_index,
+                                strip));
+                    }
+                }
+            }
+
+            std::sort(
+                out.begin(),
+                out.begin() + sink.count,
+                [](const TerrainDrawRef& a, const TerrainDrawRef& b) {
                     return a.sort_key < b.sort_key;
                 });
 
@@ -213,37 +343,8 @@ namespace wz::render {
                     };
                 });
 
-            const uint32_t visible_terrain = fill_sorted_terrain_refs(
-                static_cast<uint32_t>(scene.terrain_lod_choices.size()),
-                terrain_w,
-                [&scene, &frustum](uint32_t i) -> TerrainDrawRefCandidate {
-                    const TerrainLodChoice& choice =
-                        scene.terrain_lod_choices[i];
-                    if (choice.terrain_instance_index
-                        >= scene.terrain_instances.size())
-                    {
-                        return {};
-                    }
-
-                    const TerrainVisualInstance& instance =
-                        scene.terrain_instances[choice.terrain_instance_index];
-                    const uint64_t batch =
-                        terrain_batch_key(instance, choice);
-                    return {
-                        .visible = instance.visible
-                            && intersects_aabb(frustum, instance.bounds),
-                        .ref = TerrainDrawRef{
-                            .terrain_instance_index =
-                                choice.terrain_instance_index,
-                            .chunk_id = choice.chunk_id,
-                            .representation_kind =
-                                choice.representation_kind,
-                            .lod_id = choice.lod_id,
-                            .batch_key = batch,
-                            .sort_key = batch,
-                        },
-                    };
-                });
+            const uint32_t visible_terrain =
+                fill_terrain_refs(scene, frustum, terrain_w);
 
             storage.ir.opaque      = { opaque_w.data(),      visible_opaque };
             storage.ir.transparent = { transparent_w.data(), visible_transparent };
@@ -262,7 +363,7 @@ namespace wz::render {
                 .culled_particles    = static_cast<uint32_t>(scene.particles.size()) - visible_particles,
                 .visible_terrain     = visible_terrain,
                 .culled_terrain      =
-                    static_cast<uint32_t>(scene.terrain_lod_choices.size())
+                    storage.terrain_capacity
                     - visible_terrain,
             };
         }
@@ -276,8 +377,7 @@ namespace wz::render {
         const uint32_t transparent_total = static_cast<uint32_t>(cs.transparent.size());
         const uint32_t splat_total       = static_cast<uint32_t>(cs.splats.size());
         const uint32_t particle_total    = static_cast<uint32_t>(cs.particles.size());
-        const uint32_t terrain_total     =
-            static_cast<uint32_t>(cs.terrain_lod_choices.size());
+        const uint32_t terrain_total = detail::max_terrain_draw_ref_capacity(cs);
 
         const size_t buf_size =
             sizeof(DrawRef) * opaque_total        + alignof(DrawRef)

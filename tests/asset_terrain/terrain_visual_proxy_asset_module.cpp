@@ -565,6 +565,51 @@ TEST(TerrainVisualProxyAssetModule, MultiChunkGridPrecomputesMixedLodTransitions
     EXPECT_TRUE(saw_gap_covered_by_strip);
 }
 
+TEST(TerrainVisualProxyAssetModule, TransitionStripOverheadStaysBounded)
+{
+    using namespace wz::engine::assets;
+
+    const TerrainAssetData terrain = make_two_chunk_lod_grid();
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2400u),
+            test_key(2500u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_GT(proxy.transition_strip_count(), 0u);
+
+    uint64_t lod_boundary_points = 0u;
+    uint64_t transition_vertices = 0u;
+    uint64_t transition_indices = 0u;
+    uint64_t transition_triangles = 0u;
+    for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
+        for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+            lod_boundary_points += lod.boundary_ring.point_count();
+        }
+        for (const TerrainVisualProxyTransitionStrip& strip :
+             chunk.transition_strips)
+        {
+            transition_vertices += strip.vertices.size();
+            transition_indices += strip.indices.size();
+            transition_triangles += strip.triangle_count();
+        }
+    }
+
+    const uint64_t source_triangles =
+        terrain.mesh_visual_indices.empty()
+            ? terrain.mesh_surface_indices.size() / 3u
+            : terrain.mesh_visual_indices.size() / 3u;
+
+    EXPECT_LE(
+        proxy.transition_strip_count(),
+        proxy.lod_record_count() * proxy.lod_record_count());
+    EXPECT_LE(transition_vertices, lod_boundary_points * 2u);
+    EXPECT_LE(transition_indices, transition_vertices * 6u);
+    EXPECT_LE(transition_triangles, source_triangles * 2u);
+}
+
 TEST(TerrainVisualProxyAssetModule, ModifiedSourceTerrainUsesDistinctCacheKey)
 {
     const wz::fs::Path root =

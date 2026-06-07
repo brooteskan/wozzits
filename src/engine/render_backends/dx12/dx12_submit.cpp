@@ -275,12 +275,16 @@ namespace wz::render::backend::dx12
                 resolved->index_count / 3u,
                 0u,
                 0u,
-                resolved->lod_replacement_available ? 1u : 0u,
                 resolved->lod_replacement_available
+                    && !resolved->transition_selected ? 1u : 0u,
+                resolved->lod_replacement_available
+                    && !resolved->transition_selected
                     ? resolved->source_triangle_count
                     : 0u,
-                resolved->lod_replacement_selected ? 1u : 0u,
                 resolved->lod_replacement_selected
+                    && !resolved->transition_selected ? 1u : 0u,
+                resolved->lod_replacement_selected
+                    && !resolved->transition_selected
                     ? resolved->index_count / 3u
                     : 0u,
                 0u,
@@ -342,7 +346,9 @@ namespace wz::render::backend::dx12
                 if (!instance.visible)
                     continue;
 
-                resolver.record_terrain_visible_chunks(1u);
+                if (ref.kind == TerrainDrawRefKind::ChunkLod) {
+                    resolver.record_terrain_visible_chunks(1u);
+                }
                 draw_terrain_ref_mesh(
                     device,
                     cmdList,

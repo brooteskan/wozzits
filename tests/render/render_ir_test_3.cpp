@@ -73,6 +73,44 @@ namespace {
         return proxy;
     }
 
+    wz::engine::assets::TerrainVisualProxyData test_transition_proxy_data()
+    {
+        wz::engine::assets::TerrainVisualProxyData proxy = test_proxy_data();
+        for (auto& chunk : proxy.chunks) {
+            wz::engine::assets::TerrainVisualProxyLodRecord lod =
+                chunk.lods.front();
+            lod.lod_id = wz::engine::assets::TerrainLodId{ 1u };
+            lod.triangle_count = 1u;
+            lod.index_count = 3u;
+            lod.conservative_geometric_error = 1.0f;
+            chunk.lods.push_back(lod);
+        }
+
+        wz::engine::assets::TerrainVisualProxyTransitionStrip strip{};
+        strip.chunk_id = wz::engine::assets::TerrainChunkId{ 0u };
+        strip.neighbor_chunk_id = wz::engine::assets::TerrainChunkId{ 1u };
+        strip.lod_id = wz::engine::assets::TerrainLodId{ 0u };
+        strip.neighbor_lod_id = wz::engine::assets::TerrainLodId{ 1u };
+        strip.edge =
+            wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveX;
+        strip.vertices.resize(4u);
+        strip.vertices[0].position[0] = 0.0f;
+        strip.vertices[0].position[2] = -1.0f;
+        strip.vertices[0].side = 0u;
+        strip.vertices[1].position[0] = 0.0f;
+        strip.vertices[1].position[2] = -1.0f;
+        strip.vertices[1].side = 1u;
+        strip.vertices[2].position[0] = 0.0f;
+        strip.vertices[2].position[2] = 1.0f;
+        strip.vertices[2].side = 0u;
+        strip.vertices[3].position[0] = 0.0f;
+        strip.vertices[3].position[2] = 1.0f;
+        strip.vertices[3].side = 1u;
+        strip.indices = { 0u, 1u, 2u, 2u, 1u, 3u };
+        proxy.chunks[0].transition_strips.push_back(std::move(strip));
+        return proxy;
+    }
+
     ViewData camera_at_z(float z)
     {
         ViewData v{};
@@ -175,6 +213,52 @@ namespace {
         const wz::asset::AssetKey proxy_key = test_proxy_key();
         static const wz::engine::assets::TerrainVisualProxyData proxy =
             test_proxy_data();
+        std::vector<RenderableDescriptor> descs(node_count(storage->polytree));
+        descs[root_h] = { classify_legacy_renderable(RenderPipeline::None) };
+        descs[terrain_h] = RenderableDescriptor{
+            .node_class = SceneNodeClass{
+                .role = SceneRole::Renderable,
+                .producer = ProducerKind::TerrainPatch,
+                .default_surface = SurfaceClass::Opaque,
+                .spatial = SpatialKind::Box,
+                .compile = CompileBehavior::Static,
+                .domains = static_cast<RenderDomainMask>(RenderDomain::Surface),
+            },
+            .material = 9u,
+            .local_bounds = unit_box(),
+            .terrain_visual_proxy_asset = proxy_key,
+            .terrain_proxy_id =
+                wz::engine::assets::TerrainProxyId{ proxy_key },
+            .terrain_visual_proxy_data = &proxy,
+            .terrain_visual_chunk_count = 2u,
+            .visible = true,
+        };
+
+        CompiledSceneStorage cs{};
+        compile(cs, storage->polytree, descs, {}, view);
+        return cs;
+    }
+
+    CompiledSceneStorage make_transition_terrain_scene(
+        ViewData view = camera_at_z(0.f))
+    {
+        SceneBuilder b;
+        TransformNode root{};
+        NodeHandle root_h = add_node(b, root);
+
+        TransformNode terrain_node{};
+        terrain_node.local = translation_z(1.0f);
+        terrain_node.flags = TransformNodeFlag::RenderDomain;
+        NodeHandle terrain_h = add_node(b, terrain_node);
+        add_edge(b, root_h, terrain_h);
+
+        auto storage = build(std::move(b));
+        assert(storage.has_value());
+        propagate_all(storage->polytree);
+
+        const wz::asset::AssetKey proxy_key = test_proxy_key();
+        static const wz::engine::assets::TerrainVisualProxyData proxy =
+            test_transition_proxy_data();
         std::vector<RenderableDescriptor> descs(node_count(storage->polytree));
         descs[root_h] = { classify_legacy_renderable(RenderPipeline::None) };
         descs[terrain_h] = RenderableDescriptor{
@@ -317,6 +401,81 @@ TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)
         EXPECT_NE(ref.sort_key, 0u);
     }
     EXPECT_NE(ir.terrain[0].chunk_id, ir.terrain[1].chunk_id);
+}
+
+TEST(RenderIRSpec, TerrainDrawRefsIncludeSelectedMixedLodTransition)
+{
+    auto cs = make_transition_terrain_scene();
+    std::vector<TerrainLodChoice> choices{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+        },
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+        },
+    };
+
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, scene);
+
+    ASSERT_EQ(ir.terrain.size(), 3u);
+    const auto transition = std::find_if(
+        ir.terrain.begin(),
+        ir.terrain.end(),
+        [](const TerrainDrawRef& ref) {
+            return ref.kind == TerrainDrawRefKind::LodTransition;
+        });
+    ASSERT_NE(transition, ir.terrain.end());
+    EXPECT_EQ(transition->chunk_id.value, 0u);
+    EXPECT_EQ(transition->neighbor_chunk_id.value, 1u);
+    EXPECT_EQ(transition->lod_id.value, 0u);
+    EXPECT_EQ(transition->neighbor_lod_id.value, 1u);
+}
+
+TEST(RenderIRSpec, TerrainDrawRefsSkipTransitionForEqualLods)
+{
+    auto cs = make_transition_terrain_scene();
+    std::vector<TerrainLodChoice> choices{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+        },
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+        },
+    };
+
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, scene);
+
+    ASSERT_EQ(ir.terrain.size(), 2u);
+    EXPECT_TRUE(std::none_of(
+        ir.terrain.begin(),
+        ir.terrain.end(),
+        [](const TerrainDrawRef& ref) {
+            return ref.kind == TerrainDrawRefKind::LodTransition;
+        }));
 }
 
 

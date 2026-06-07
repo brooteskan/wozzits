@@ -93,6 +93,18 @@ namespace wz::engine::rendering
         return nullptr;
     }
 
+    const std::vector<TerrainTransitionDrawRange>*
+    RenderableGpuCache::find_terrain_transition_ranges(
+        wz::asset::AssetKey terrain_asset) const
+    {
+        for (const auto& entry : terrain_mesh_chunk_entries_) {
+            if (entry.terrain_asset == terrain_asset) {
+                return &entry.transition_ranges;
+            }
+        }
+        return nullptr;
+    }
+
     void RenderableGpuCache::add_terrain_mesh_chunks(
         wz::asset::AssetKey terrain_asset,
         std::vector<wz::engine::assets::TerrainVisualChunk> chunks)
@@ -111,6 +123,27 @@ namespace wz::engine::rendering
         terrain_mesh_chunk_entries_.push_back(TerrainMeshChunkEntry{
             .terrain_asset = terrain_asset,
             .chunks = std::move(chunks),
+            });
+    }
+
+    void RenderableGpuCache::add_terrain_transition_ranges(
+        wz::asset::AssetKey terrain_asset,
+        std::vector<TerrainTransitionDrawRange> ranges)
+    {
+        if (terrain_asset == wz::asset::AssetKey{}) {
+            return;
+        }
+
+        for (auto& entry : terrain_mesh_chunk_entries_) {
+            if (entry.terrain_asset == terrain_asset) {
+                entry.transition_ranges = std::move(ranges);
+                return;
+            }
+        }
+
+        terrain_mesh_chunk_entries_.push_back(TerrainMeshChunkEntry{
+            .terrain_asset = terrain_asset,
+            .transition_ranges = std::move(ranges),
             });
     }
 
