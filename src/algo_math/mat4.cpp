@@ -58,6 +58,23 @@ namespace wz::math
         return m;
     }
 
+    Mat4 projection_orthographic_dx(
+        float width,
+        float height,
+        float near_z,
+        float far_z)
+    {
+        Mat4 m = {};
+
+        m.m[0] = 2.0f / width;
+        m.m[5] = 2.0f / height;
+        m.m[10] = 1.0f / (far_z - near_z);
+        m.m[14] = -near_z / (far_z - near_z);
+        m.m[15] = 1.0f;
+
+        return m;
+    }
+
     Mat4 view_matrix(const Transform& camera)
     {
         Quaternion qinv = {

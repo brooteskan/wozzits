@@ -10,5 +10,8 @@ namespace wz::math
     // Left-handed, depth [0, 1] (Direct3D / Metal convention)
     Mat4 projection_perspective_dx(float fov_y_radians, float aspect, float near_z, float far_z);
 
+    // Left-handed orthographic, depth [0, 1] (Direct3D / Metal convention)
+    Mat4 projection_orthographic_dx(float width, float height, float near_z, float far_z);
+
     bool intersects(const Frustum& f, const Sphere& s);
 }

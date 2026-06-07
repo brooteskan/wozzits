@@ -512,6 +512,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(math test_quaternion_mat4)
     rs_add_test_group(math test_camera)
     rs_add_test_group(math algo_math_spec)
+    rs_add_test_group(math screen_space_metrics)
 
     # Graph
     rs_add_test_group(graph static_dag_tests_0)

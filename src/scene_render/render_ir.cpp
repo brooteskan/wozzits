@@ -1,5 +1,6 @@
 #include <render/ir/render_ir.h>
 #include <math/frustum.h>
+#include <math/screen_space_metrics.h>
 #include <algo/next.h>
 
 #include <new>
@@ -35,24 +36,6 @@ namespace wz::render {
             return static_cast<uint64_t>(~bits);
         }
 
-        inline bool aabb_in_frustum(const Frustum& f, const AABB& aabb)
-        {
-            const std::span<const Plane> planes{ f.planes };
-            return wz::core::algo::next::reduce(
-                planes,
-                true,
-                [&aabb](bool inside, const Plane& p) {
-                    if (!inside)
-                        return false;
-
-                    const float px = p.normal.x >= 0.f ? aabb.max.x : aabb.min.x;
-                    const float py = p.normal.y >= 0.f ? aabb.max.y : aabb.min.y;
-                    const float pz = p.normal.z >= 0.f ? aabb.max.z : aabb.min.z;
-
-                    return p.normal.x * px + p.normal.y * py + p.normal.z * pz + p.distance >= 0.f;
-                });
-        }
-
         inline bool point_in_frustum(const Frustum& f, const Vec3& pt)
         {
             const std::span<const Plane> planes{ f.planes };
@@ -79,7 +62,7 @@ namespace wz::render {
         {
             if (aabb_is_degenerate(bounds))
                 return point_in_frustum(f, center_fallback);
-            return aabb_in_frustum(f, bounds);
+            return intersects_aabb(f, bounds);
         }
 
         struct DrawRefCandidate {
@@ -191,7 +174,7 @@ namespace wz::render {
                 [&scene, &frustum](uint32_t i) -> DrawRefCandidate {
                     const auto& p = scene.opaque[i];
                     return {
-                        .visible = aabb_in_frustum(frustum, p.bounds),
+                        .visible = intersects_aabb(frustum, p.bounds),
                         .ref     = { i, opaque_key(p) },
                     };
                 });
@@ -202,7 +185,7 @@ namespace wz::render {
                 [&scene, &frustum](uint32_t i) -> DrawRefCandidate {
                     const auto& p = scene.transparent[i];
                     return {
-                        .visible = aabb_in_frustum(frustum, p.bounds),
+                        .visible = intersects_aabb(frustum, p.bounds),
                         .ref     = { i, depth_key_back_to_front(p.depth) },
                     };
                 });
@@ -248,7 +231,7 @@ namespace wz::render {
                         terrain_batch_key(instance, choice);
                     return {
                         .visible = instance.visible
-                            && aabb_in_frustum(frustum, instance.bounds),
+                            && intersects_aabb(frustum, instance.bounds),
                         .ref = TerrainDrawRef{
                             .terrain_instance_index =
                                 choice.terrain_instance_index,
