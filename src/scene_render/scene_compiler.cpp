@@ -52,6 +52,7 @@ namespace wz::scene {
             uint32_t particles{ 0 };
             uint32_t lights{ 0 };
             uint32_t terrain{ 0 };
+            uint32_t terrain_lod_choices{ 0 };
         };
 
         inline PrimitiveCounts operator+(PrimitiveCounts a, PrimitiveCounts b)
@@ -63,6 +64,8 @@ namespace wz::scene {
                 .particles   = a.particles + b.particles,
                 .lights      = a.lights + b.lights,
                 .terrain     = a.terrain + b.terrain,
+                .terrain_lod_choices =
+                    a.terrain_lod_choices + b.terrain_lod_choices,
             };
         }
 
@@ -90,7 +93,11 @@ namespace wz::scene {
                 return d.mesh != INVALID_MESH ? PrimitiveCounts{ .particles = 1 } : PrimitiveCounts{};
             case ProducerKind::TerrainPatch:
                 return d.terrain_proxy_id.valid()
-                    ? PrimitiveCounts{ .terrain = 1 }
+                    ? PrimitiveCounts{
+                        .terrain = 1,
+                        .terrain_lod_choices =
+                            d.terrain_visual_chunk_count,
+                    }
                     : PrimitiveCounts{};
             default:
                 return {};
@@ -119,6 +126,7 @@ namespace wz::scene {
             std::span<TransparentGeometryPrimitive> transparent;
             std::span<ParticlePrimitive>            particles;
             std::span<TerrainVisualInstance>         terrain_instances;
+            std::span<TerrainLodChoice>              terrain_lod_choices;
             std::span<CompiledOutputRef>            node_to_output;
             std::span<NodeHandle>                   opaque_source_nodes;
             std::span<NodeHandle>                   transparent_source_nodes;
@@ -131,6 +139,7 @@ namespace wz::scene {
             uint32_t transparent_count{ 0 };
             uint32_t particle_count{ 0 };
             uint32_t terrain_count{ 0 };
+            uint32_t terrain_lod_choice_count{ 0 };
         };
 
         struct CompileNodeSink {
@@ -272,6 +281,23 @@ namespace wz::scene {
                     out,
                 };
                 new (&state.terrain_source_nodes[out]) NodeHandle{ n };
+                for (uint32_t chunk = 0;
+                     chunk < d.terrain_visual_chunk_count;
+                     ++chunk)
+                {
+                    const uint32_t choice =
+                        state.terrain_lod_choice_count++;
+                    new (&state.terrain_lod_choices[choice])
+                        TerrainLodChoice{
+                            .terrain_instance_index = out,
+                            .chunk_id =
+                                wz::engine::assets::TerrainChunkId{ chunk },
+                            .representation_kind =
+                                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+                            .lod_id =
+                                wz::engine::assets::TerrainLodId{ 0 },
+                        };
+                }
             }
         };
 
@@ -501,7 +527,9 @@ namespace wz::scene {
             + sizeof(ParticlePrimitive) * counts.particles
             + alignof(ParticlePrimitive)
             + sizeof(float) * counts.splats
-            + alignof(float);
+            + alignof(float)
+            + sizeof(TerrainLodChoice) * counts.terrain_lod_choices
+            + alignof(TerrainLodChoice);
 
         storage.view_stats.reset_build_counters();
         storage.view_stats.record_owned(storage.view_bytes);
@@ -524,6 +552,7 @@ namespace wz::scene {
         std::span<TransparentGeometryPrimitive> transparent_w;
         std::span<ParticlePrimitive>            particles_w;
         std::span<float>                        splat_depths_w;
+        std::span<TerrainLodChoice>             terrain_lod_choices_w;
 
         vp = wz::core::graph::detail::carve<TransparentGeometryPrimitive>(
             vp, ve, counts.transparent, transparent_w);
@@ -531,6 +560,8 @@ namespace wz::scene {
             vp, ve, counts.particles, particles_w);
         vp = wz::core::graph::detail::carve<float>(
             vp, ve, counts.splats, splat_depths_w);
+        vp = wz::core::graph::detail::carve<TerrainLodChoice>(
+            vp, ve, counts.terrain_lod_choices, terrain_lod_choices_w);
 
         detail::CompileFillState fill_state{
             .opaque                  = opaque_w,
@@ -538,6 +569,7 @@ namespace wz::scene {
             .transparent             = transparent_w,
             .particles               = particles_w,
             .terrain_instances       = terrain_w,
+            .terrain_lod_choices     = terrain_lod_choices_w,
             .node_to_output          = node_to_output_w,
             .opaque_source_nodes     = opaque_src_w,
             .transparent_source_nodes = transparent_src_w,
@@ -573,7 +605,7 @@ namespace wz::scene {
             .transparent  = transparent_w,
             .particles    = particles_w,
             .splat_depths = splat_depths_w,
-            .terrain_lod_choices = {},
+            .terrain_lod_choices = terrain_lod_choices_w,
             .view         = {},
         };
 

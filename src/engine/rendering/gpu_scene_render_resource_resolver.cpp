@@ -919,8 +919,27 @@ namespace wz::engine::rendering
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
             if (is_terrain_surface) {
+                const wz::engine::assets::TerrainVisualProxyAsset
+                    visual_proxy_asset{
+                        .output = renderable.companion_asset,
+                    };
+                const wz::engine::assets::TerrainVisualProxyHandle proxy_handle =
+                    assets_.terrain_visual_proxies().get_proxy(
+                        visual_proxy_asset);
+                if (!proxy_handle.valid()) {
+                    return false;
+                }
+
+                const wz::engine::assets::TerrainVisualProxyData*
+                    visual_proxy =
+                        assets_.terrain_visual_proxies().get_proxy_data(
+                            proxy_handle);
+                if (!visual_proxy || !visual_proxy->valid()) {
+                    return false;
+                }
+
                 const wz::engine::assets::TerrainAsset terrain_asset{
-                    .output = renderable.companion_asset,
+                    .output = visual_proxy->source_asset_key,
                 };
                 const wz::engine::assets::TerrainHandle terrain_handle =
                     assets_.terrains().get_terrain(terrain_asset);
@@ -1163,6 +1182,8 @@ namespace wz::engine::rendering
             descriptor.terrain_visual_proxy_asset =
                 renderable.companion_asset;
             descriptor.terrain_proxy_id = terrain_proxy_id;
+            descriptor.terrain_visual_chunk_count =
+                static_cast<uint32_t>(terrain_chunks.size());
         }
         descriptor.material = wz::scene::INVALID_MATERIAL;
 

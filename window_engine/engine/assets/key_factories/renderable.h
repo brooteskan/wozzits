@@ -156,6 +156,7 @@ namespace wz::engine::assets
     [[nodiscard]] inline wz::asset::AssetKey make_terrain_surface_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& terrain_key,
+        const wz::asset::AssetKey& visual_proxy_key,
         BuiltinRenderProgram mesh_program =
             BuiltinRenderProgram::TerrainMeshSurface,
         uint32_t mesh_policy_flags =
@@ -178,7 +179,14 @@ namespace wz::engine::assets
             .content_hash = detail::hash_u64(h),
             .schema_hash = detail::hash_u64(kTerrainSurfaceRenderableSchema.value),
             .compiler_hash = detail::hash_u64(kTerrainSurfaceRenderableCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(terrain_key),
+            .deps_hash = wz::asset::Hash{
+                detail::mix64(
+                    detail::key_to_dep_hash(terrain_key).lo,
+                    detail::key_to_dep_hash(visual_proxy_key).lo),
+                detail::mix64(
+                    detail::key_to_dep_hash(terrain_key).hi,
+                    detail::key_to_dep_hash(visual_proxy_key).hi),
+            },
         };
     }
 }

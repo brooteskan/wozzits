@@ -150,6 +150,7 @@ namespace {
             .terrain_visual_proxy_asset = proxy_key,
             .terrain_proxy_id =
                 wz::engine::assets::TerrainProxyId{ proxy_key },
+            .terrain_visual_chunk_count = 2u,
             .visible = true,
         };
 
@@ -211,6 +212,24 @@ TEST(RenderIRSpec, TerrainInstanceCompilesAsFirstClassSceneRecord)
         cs.metadata.node_to_output[source].kind,
         CompiledOutputKind::TerrainVisualInstance);
     EXPECT_EQ(cs.metadata.node_to_output[source].index, 0u);
+}
+
+TEST(RenderIRSpec, TerrainDescriptorChunksCompileToDefaultLodChoices)
+{
+    auto cs = make_terrain_scene();
+
+    ASSERT_EQ(cs.scene.terrain_lod_choices.size(), 2u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[0].terrain_instance_index, 0u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[0].chunk_id.value, 0u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[0].lod_id.value, 0u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[1].terrain_instance_index, 0u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[1].chunk_id.value, 1u);
+    EXPECT_EQ(cs.scene.terrain_lod_choices[1].lod_id.value, 0u);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, cs.scene);
+
+    EXPECT_EQ(ir.terrain.size(), 2u);
 }
 
 TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)

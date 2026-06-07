@@ -34,8 +34,14 @@ namespace wz::engine::assets
 
             switch (data.kind) {
             case RenderableKind::Mesh:
-                nc.producer = sc::ProducerKind::Mesh;
-                nc.spatial  = sc::SpatialKind::MeshBounds;
+                if (data.program == BuiltinRenderProgram::TerrainMeshSurface) {
+                    nc.producer = sc::ProducerKind::TerrainPatch;
+                    nc.spatial  = sc::SpatialKind::Box;
+                }
+                else {
+                    nc.producer = sc::ProducerKind::Mesh;
+                    nc.spatial  = sc::SpatialKind::MeshBounds;
+                }
                 break;
             case RenderableKind::GaussianSplatCloud:
                 nc.producer = sc::ProducerKind::SplatCloud;

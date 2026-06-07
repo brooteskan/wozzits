@@ -171,6 +171,7 @@ namespace wz::engine::assets
     struct TerrainSurfaceRenderableCompileDesc
     {
         wz::asset::AssetKey terrain_asset{};
+        wz::asset::AssetKey visual_proxy_asset{};
         BuiltinRenderProgram mesh_program =
             BuiltinRenderProgram::TerrainMeshSurface;
         RenderDomain domain = RenderDomain::Opaque;

@@ -279,6 +279,7 @@ namespace wz::scene {
         SplatDescriptor splat_data{};
         wz::asset::AssetKey terrain_visual_proxy_asset{};
         wz::engine::assets::TerrainProxyId terrain_proxy_id{};
+        uint32_t        terrain_visual_chunk_count{ 0 };
         bool            visible{ true };
     };
 

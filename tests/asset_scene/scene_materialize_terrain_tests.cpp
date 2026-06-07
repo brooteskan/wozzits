@@ -94,7 +94,10 @@ TEST(SceneAuthoringMaterialize, TerrainMeshSourceSupportsDirectAndChildMeshAsset
         BuiltinRenderProgram::TerrainMeshSurface);
     EXPECT_EQ(direct_renderable_data->domain, RenderDomain::Opaque);
     EXPECT_EQ(direct_renderable_data->companion_asset,
-        scene.nodes[0].terrain->terrain_asset);
+        scene.nodes[0].terrain->visual_proxy_asset);
+    EXPECT_NE(
+        scene.nodes[0].terrain->visual_proxy_asset,
+        wz::asset::AssetKey{});
 }
 
 TEST(SceneAuthoringMaterialize, TerrainRenderStyleSelectsRenderablePath)

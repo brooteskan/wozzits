@@ -12,9 +12,12 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstring>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 
 namespace wz::engine::assets
@@ -36,6 +39,140 @@ namespace wz::engine::assets
             std::unordered_map<std::string, HDRIEnvironmentAsset>;
         using CollisionCache =
             std::unordered_map<std::string, CollisionAsset>;
+
+        uint64_t hash_string64(std::string_view text) noexcept
+        {
+            uint64_t hash = 14695981039346656037ull;
+            for (const char ch : text) {
+                hash ^= static_cast<unsigned char>(ch);
+                hash *= 1099511628211ull;
+            }
+            return hash;
+        }
+
+        std::string hex64(uint64_t value)
+        {
+            std::ostringstream out;
+            out << std::hex << std::setfill('0') << std::setw(16) << value;
+            return out.str();
+        }
+
+        void append_u32(std::vector<uint8_t>& bytes, uint32_t value)
+        {
+            const auto* src = reinterpret_cast<const uint8_t*>(&value);
+            bytes.insert(bytes.end(), src, src + sizeof(value));
+        }
+
+        void append_f32(std::vector<uint8_t>& bytes, float value)
+        {
+            const auto* src = reinterpret_cast<const uint8_t*>(&value);
+            bytes.insert(bytes.end(), src, src + sizeof(value));
+        }
+
+        bool read_u32(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            uint32_t& out) noexcept
+        {
+            if (offset + sizeof(out) > bytes.size()) {
+                return false;
+            }
+            std::memcpy(&out, bytes.data() + offset, sizeof(out));
+            offset += sizeof(out);
+            return true;
+        }
+
+        bool read_f32(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            float& out) noexcept
+        {
+            if (offset + sizeof(out) > bytes.size()) {
+                return false;
+            }
+            std::memcpy(&out, bytes.data() + offset, sizeof(out));
+            offset += sizeof(out);
+            return true;
+        }
+
+        wz::fs::Path hdri_lighting_metadata_cache_path(
+            const EngineAssetCacheSettings& cache,
+            const std::string& file_identity,
+            uint32_t sample_resolution)
+        {
+            if (!cache.enabled || cache.root.empty()) {
+                return {};
+            }
+
+            const std::string key =
+                hex64(hash_string64(file_identity))
+                + hex64(hash_string64(
+                    "sample:" + std::to_string(sample_resolution)));
+            return wz::fs::join(
+                wz::fs::join(
+                    wz::fs::join(cache.root, "assets"),
+                    "hdri_lighting_metadata"),
+                key + ".bin");
+        }
+
+        std::vector<uint8_t> serialize_hdri_lighting_metadata(
+            const HDRILightingMetadata& metadata)
+        {
+            std::vector<uint8_t> bytes;
+            bytes.reserve(sizeof(uint32_t) + sizeof(float) * 14u);
+            append_u32(bytes, 1u);
+            for (float value : metadata.environment_light_color) {
+                append_f32(bytes, value);
+            }
+            append_f32(bytes, metadata.environment_light_intensity);
+            for (float value : metadata.dominant_light_direction) {
+                append_f32(bytes, value);
+            }
+            for (float value : metadata.dominant_light_color) {
+                append_f32(bytes, value);
+            }
+            append_f32(bytes, metadata.dominant_light_intensity);
+            append_f32(bytes, metadata.dominant_light_confidence);
+            return bytes;
+        }
+
+        bool deserialize_hdri_lighting_metadata(
+            const std::vector<uint8_t>& bytes,
+            HDRILightingMetadata& metadata)
+        {
+            size_t offset = 0;
+            uint32_t version = 0;
+            if (!read_u32(bytes, offset, version) || version != 1u) {
+                return false;
+            }
+            HDRILightingMetadata out{};
+            for (float& value : out.environment_light_color) {
+                if (!read_f32(bytes, offset, value)) {
+                    return false;
+                }
+            }
+            if (!read_f32(bytes, offset, out.environment_light_intensity)) {
+                return false;
+            }
+            for (float& value : out.dominant_light_direction) {
+                if (!read_f32(bytes, offset, value)) {
+                    return false;
+                }
+            }
+            for (float& value : out.dominant_light_color) {
+                if (!read_f32(bytes, offset, value)) {
+                    return false;
+                }
+            }
+            if (!read_f32(bytes, offset, out.dominant_light_intensity)
+                || !read_f32(bytes, offset, out.dominant_light_confidence)
+                || offset != bytes.size())
+            {
+                return false;
+            }
+            metadata = out;
+            return true;
+        }
 
         std::string mesh_source_cache_key(const SceneMeshSourceAsset& source)
         {
@@ -305,6 +442,11 @@ namespace wz::engine::assets
                 full_path + ":sample_width:"
                 + std::to_string(environment.lighting_sample_resolution)
                 + ":file_identity:" + file_identity;
+            const wz::fs::Path disk_cache_path =
+                hdri_lighting_metadata_cache_path(
+                    assets.cache_settings(),
+                    cache_key,
+                    environment.lighting_sample_resolution);
 
             HDRILightingMetadata metadata{};
             bool found_cached = false;
@@ -314,6 +456,24 @@ namespace wz::engine::assets
                 if (found != cache.end()) {
                     metadata = found->second;
                     found_cached = true;
+                }
+            }
+
+            if (!found_cached) {
+                if (!disk_cache_path.empty() && wz::fs::exists(disk_cache_path)) {
+                    const auto bytes = wz::fs::read_file(disk_cache_path);
+                    if (bytes
+                        && deserialize_hdri_lighting_metadata(
+                            bytes.value,
+                            metadata))
+                    {
+                        assets.logger().info(
+                            "asset disk cache hit: hdri lighting metadata "
+                            + disk_cache_path);
+                        std::lock_guard<std::mutex> lock(cache_mutex);
+                        cache[cache_key] = metadata;
+                        found_cached = true;
+                    }
                 }
             }
 
@@ -340,8 +500,25 @@ namespace wz::engine::assets
                     return;
                 }
 
-                std::lock_guard<std::mutex> lock(cache_mutex);
-                cache[cache_key] = metadata;
+                {
+                    std::lock_guard<std::mutex> lock(cache_mutex);
+                    cache[cache_key] = metadata;
+                }
+                if (!disk_cache_path.empty()) {
+                    const auto directory = wz::fs::parent_path(disk_cache_path);
+                    if (!directory.empty()) {
+                        wz::fs::create_directories(directory);
+                    }
+                    const auto bytes =
+                        serialize_hdri_lighting_metadata(metadata);
+                    if (wz::fs::write_file(disk_cache_path, bytes, true)
+                        == wz::fs::FileError::None)
+                    {
+                        assets.logger().info(
+                            "asset disk cache store: hdri lighting metadata "
+                            + disk_cache_path);
+                    }
+                }
             }
 
             metadata = transform_hdri_lighting_metadata(
@@ -1038,6 +1215,7 @@ namespace wz::engine::assets
             const std::string& key,
             const std::string& name,
             TerrainAsset terrain,
+            TerrainVisualProxyAsset visual_proxy,
             const SceneTerrainRenderStyleAsset& style,
             RenderableCache& renderables,
             RenderableAsset& out)
@@ -1053,6 +1231,7 @@ namespace wz::engine::assets
                 assets.renderables().create_terrain_surface({
                     .name = name,
                     .terrain = terrain,
+                    .visual_proxy = visual_proxy,
                     .mesh_policy_flags =
                         policy_flags_for_terrain_render_style(style, false),
                     .lighting = terrain_lighting_for_style(scene, style),
@@ -1902,6 +2081,22 @@ namespace wz::engine::assets
             }
 
             terrain.terrain_asset = terrain_asset.output;
+            terrain.visual_proxy_asset = {};
+
+            TerrainVisualProxyAsset visual_proxy{};
+            if (is_mesh_terrain) {
+                visual_proxy = assets.terrain_visual_proxies().create_from_terrain({
+                    .name = "scene_editor/terrain_visual_proxy/" + node.id,
+                    .terrain = terrain_asset,
+                });
+                if (!visual_proxy.valid()) {
+                    report.error =
+                        "terrain visual proxy unavailable for "
+                        + node_log_name(node);
+                    return report;
+                }
+                terrain.visual_proxy_asset = visual_proxy.output;
+            }
 
             if (terrain.calculate_constraint_surface) {
                 const std::string key =
@@ -1992,6 +2187,7 @@ namespace wz::engine::assets
                     key,
                     name,
                     terrain_asset,
+                    visual_proxy,
                     render_style,
                     renderables,
                     renderable)

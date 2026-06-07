@@ -11,6 +11,7 @@
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
+#include <engine/assets/terrain_visual_proxy_asset_module.h>
 
 #include <logging/logger.h>
 
@@ -70,6 +71,7 @@ namespace wz::engine::assets
     {
         std::string name;
         TerrainAsset terrain{};
+        TerrainVisualProxyAsset visual_proxy{};
         BuiltinRenderProgram mesh_program =
             BuiltinRenderProgram::TerrainMeshSurface;
         RenderDomain domain = RenderDomain::Opaque;

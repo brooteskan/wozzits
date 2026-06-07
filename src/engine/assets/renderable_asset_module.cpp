@@ -249,10 +249,17 @@ namespace wz::engine::assets
             return {};
         }
 
+        if (!desc.visual_proxy.valid()) {
+            logger_.error("terrain surface renderable has invalid visual proxy: "
+                + desc.name);
+            return {};
+        }
+
         const wz::asset::AssetKey key =
             make_terrain_surface_renderable_key(
                 desc.name,
                 desc.terrain.output,
+                desc.visual_proxy.output,
                 desc.mesh_program,
                 desc.mesh_policy_flags,
                 desc.domain,
@@ -267,6 +274,7 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta = TerrainSurfaceRenderableCompileDesc{
             .terrain_asset = desc.terrain.output,
+            .visual_proxy_asset = desc.visual_proxy.output,
             .mesh_program = desc.mesh_program,
             .domain = desc.domain,
             .mesh_policy_flags = desc.mesh_policy_flags,
@@ -275,8 +283,12 @@ namespace wz::engine::assets
                 desc.target_pixels_per_triangle,
         };
 
-        if (!system_.register_asset(std::move(node), { desc.terrain.output }))
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.terrain.output, desc.visual_proxy.output }))
+        {
             return RenderableAsset{ .output = key };
+        }
 
         return RenderableAsset{
             .output = key,

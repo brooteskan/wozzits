@@ -339,10 +339,18 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
 
     ASSERT_TRUE(terrain.valid());
 
+    const auto visual_proxy =
+        assets.terrain_visual_proxies().create_from_terrain({
+            .name = "terrain/surface_mesh_visual_proxy",
+            .terrain = terrain,
+            });
+    ASSERT_TRUE(visual_proxy.valid());
+
     const auto renderable =
         assets.renderables().create_terrain_surface({
             .name = "terrain/surface_mesh_renderable",
             .terrain = terrain,
+            .visual_proxy = visual_proxy,
             .target_pixels_per_triangle = 5.0f,
             });
 
@@ -351,7 +359,7 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
 
     const auto report = assets.resolve_all();
     EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 3u);
+    EXPECT_EQ(report.resolved_count, 4u);
 
     const auto handle =
         assets.renderables().get_renderable(renderable);
@@ -365,7 +373,7 @@ TEST(RenderableAssetModule, ResolvesMeshTerrainSurfaceRenderable)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->kind, RenderableKind::Mesh);
     EXPECT_EQ(data->source_asset, mesh.output);
-    EXPECT_EQ(data->companion_asset, terrain.output);
+    EXPECT_EQ(data->companion_asset, visual_proxy.output);
     EXPECT_EQ(data->program, BuiltinRenderProgram::TerrainMeshSurface);
     EXPECT_EQ(data->domain, RenderDomain::Opaque);
     EXPECT_EQ(data->terrain_lighting.mode, TerrainLightingMode::SceneLights);
@@ -484,6 +492,13 @@ TEST(RenderableAssetModule, TerrainSurfaceRenderableCarriesHDRILighting)
             });
     ASSERT_TRUE(terrain.valid());
 
+    const auto visual_proxy =
+        assets.terrain_visual_proxies().create_from_terrain({
+            .name = "terrain/hdri_surface_mesh_visual_proxy",
+            .terrain = terrain,
+            });
+    ASSERT_TRUE(visual_proxy.valid());
+
     TerrainLightingData lighting{};
     lighting.mode = TerrainLightingMode::HDRIEnvironment;
     lighting.environment_color[0] = 0.6f;
@@ -501,6 +516,7 @@ TEST(RenderableAssetModule, TerrainSurfaceRenderableCarriesHDRILighting)
         assets.renderables().create_terrain_surface({
             .name = "terrain/hdri_surface_mesh_renderable",
             .terrain = terrain,
+            .visual_proxy = visual_proxy,
             .lighting = lighting,
             });
     ASSERT_TRUE(renderable.valid());
@@ -567,10 +583,18 @@ TEST(RenderableAssetModule, RejectsHeightFieldTerrainSurfaceRenderable)
 
     ASSERT_TRUE(terrain.valid());
 
+    const auto visual_proxy =
+        assets.terrain_visual_proxies().create_from_terrain({
+            .name = "terrain/heightfield_surface_visual_proxy",
+            .terrain = terrain,
+            });
+    ASSERT_TRUE(visual_proxy.valid());
+
     const auto renderable =
         assets.renderables().create_terrain_surface({
             .name = "terrain/heightfield_surface_renderable",
             .terrain = terrain,
+            .visual_proxy = visual_proxy,
             });
 
     ASSERT_TRUE(renderable.valid());

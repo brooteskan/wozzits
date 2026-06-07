@@ -380,8 +380,9 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                if (dep_handles.size() != 1) {
-                    logger->error("terrain surface renderable requires one terrain dependency");
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "terrain surface renderable requires terrain and visual proxy dependencies");
                     return compile_failed_node(input);
                 }
 
@@ -412,10 +413,15 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                if (desc->visual_proxy_asset == wz::asset::AssetKey{}) {
+                    logger->error("terrain surface renderable has no visual proxy");
+                    return compile_failed_node(input);
+                }
+
                 RenderableAssetData data{};
                 data.kind = RenderableKind::Mesh;
                 data.source_asset = terrain->mesh;
-                data.companion_asset = desc->terrain_asset;
+                data.companion_asset = desc->visual_proxy_asset;
                 data.program = desc->mesh_program;
                 data.domain = desc->domain;
                 data.policy_flags = desc->mesh_policy_flags;
