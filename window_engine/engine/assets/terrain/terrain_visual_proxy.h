@@ -16,7 +16,7 @@
 
 namespace wz::engine::assets
 {
-    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 3;
+    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 4;
 
     enum class TerrainVisualRepresentationKind : uint8_t
     {
@@ -97,6 +97,36 @@ namespace wz::engine::assets
         float normal_variance[2]{ 0.0f, 0.0f };
         float albedo_mean[3]{ 1.0f, 1.0f, 1.0f };
         std::vector<TerrainMaterialCoverage> material_coverage;
+    };
+
+    struct TerrainVisualProxySourceRegionAggregate
+    {
+        float normal_variance = 0.0f;
+        float height_range[2]{ 0.0f, 0.0f };
+        float roughness = 0.0f;
+        float dominant_normal[3]{ 0.0f, 1.0f, 0.0f };
+        std::vector<TerrainMaterialCoverage> material_histogram;
+    };
+
+    struct TerrainVisualProxyLodSurfaceAggregate
+    {
+        float normal_variance = 0.0f;
+        float triangle_area_variance = 0.0f;
+        float max_aspect_ratio = 0.0f;
+        float height_range[2]{ 0.0f, 0.0f };
+    };
+
+    struct TerrainVisualProxyLostDetailAggregate
+    {
+        float normal_variance = 0.0f;
+        float height_detail = 0.0f;
+    };
+
+    struct TerrainVisualProxyPrefilterAggregates
+    {
+        TerrainVisualProxySourceRegionAggregate source_region{};
+        TerrainVisualProxyLodSurfaceAggregate lod_surface{};
+        TerrainVisualProxyLostDetailAggregate lost_detail{};
     };
 
     enum TerrainVisualChunkBoundaryFlags : uint32_t
@@ -207,8 +237,9 @@ namespace wz::engine::assets
         // remain backend-owned and are intentionally not required here.
         wz::asset::AssetKey mesh_asset{};
 
-        TerrainVisualProxyAggregate source_region_aggregate{};
-        TerrainVisualProxyAggregate lod_surface_aggregate{};
+        TerrainVisualProxySourceRegionAggregate source_region_aggregate{};
+        TerrainVisualProxyLodSurfaceAggregate lod_surface_aggregate{};
+        TerrainVisualProxyLostDetailAggregate lost_detail_aggregate{};
         TerrainVisualProxyLodBoundaryRing boundary_ring{};
 
         [[nodiscard]] bool valid() const noexcept
@@ -322,6 +353,18 @@ namespace wz::engine::assets
             return count;
         }
     };
+
+    [[nodiscard]] TerrainVisualProxyPrefilterAggregates
+    terrain_visual_proxy_resample_aggregates(
+        const TerrainVisualProxyData& proxy,
+        TerrainChunkId chunk_id,
+        TerrainLodId target_lod);
+
+    [[nodiscard]] TerrainVisualProxyPrefilterAggregates
+    terrain_visual_proxy_blend_aggregates(
+        const TerrainVisualProxyPrefilterAggregates& a,
+        const TerrainVisualProxyPrefilterAggregates& b,
+        float weight);
 
     class TerrainVisualProxyTable
     {

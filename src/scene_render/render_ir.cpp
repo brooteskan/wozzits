@@ -255,6 +255,16 @@ namespace wz::render {
                 sink.push_ref(terrain_ref_from_choice(instance, choice));
             }
 
+            if (!scene.view.terrain_lod.enable_lod_transitions) {
+                std::sort(
+                    out.begin(),
+                    out.begin() + sink.count,
+                    [](const TerrainDrawRef& a, const TerrainDrawRef& b) {
+                        return a.sort_key < b.sort_key;
+                    });
+                return sink.count;
+            }
+
             for (uint32_t instance_index = 0u;
                  instance_index < scene.terrain_instances.size();
                  ++instance_index)

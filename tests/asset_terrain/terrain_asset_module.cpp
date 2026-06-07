@@ -376,11 +376,16 @@ TEST(TerrainVisualProxyData, DefinesStableCpuReadableLodVocabulary)
     lod0.vertex_count = 120;
     lod0.triangle_count = 100;
     lod0.conservative_geometric_error = 0.0f;
-    lod0.source_region_aggregate.mean_height = 7.0f;
-    lod0.source_region_aggregate.height_variance = 4.0f;
-    lod0.lod_surface_aggregate.mean_height = 6.5f;
-    lod0.lod_surface_aggregate.height_variance = 0.25f;
-    lod0.source_region_aggregate.material_coverage.push_back(
+    lod0.source_region_aggregate.normal_variance = 0.4f;
+    lod0.source_region_aggregate.height_range[0] = 1.0f;
+    lod0.source_region_aggregate.height_range[1] = 7.0f;
+    lod0.source_region_aggregate.roughness = 2.0f;
+    lod0.lod_surface_aggregate.normal_variance = 0.25f;
+    lod0.lod_surface_aggregate.height_range[0] = 1.5f;
+    lod0.lod_surface_aggregate.height_range[1] = 6.5f;
+    lod0.lost_detail_aggregate.normal_variance = 0.15f;
+    lod0.lost_detail_aggregate.height_detail = 1.0f;
+    lod0.source_region_aggregate.material_histogram.push_back(
         TerrainMaterialCoverage{ .material_id = 3, .coverage = 0.75f });
 
     TerrainVisualProxyLodRecord lod1 = lod0;
@@ -438,18 +443,21 @@ TEST(TerrainVisualProxyData, DefinesStableCpuReadableLodVocabulary)
         stored_chunk.lods[1].conservative_geometric_error,
         0.5f);
     EXPECT_FLOAT_EQ(
-        stored_chunk.lods[0].source_region_aggregate.height_variance,
-        4.0f);
+        stored_chunk.lods[0].source_region_aggregate.roughness,
+        2.0f);
     EXPECT_FLOAT_EQ(
-        stored_chunk.lods[0].lod_surface_aggregate.height_variance,
+        stored_chunk.lods[0].lod_surface_aggregate.normal_variance,
         0.25f);
+    EXPECT_FLOAT_EQ(
+        stored_chunk.lods[0].lost_detail_aggregate.height_detail,
+        1.0f);
     ASSERT_EQ(
-        stored_chunk.lods[0].source_region_aggregate.material_coverage.size(),
+        stored_chunk.lods[0].source_region_aggregate.material_histogram.size(),
         1u);
     EXPECT_FLOAT_EQ(
         stored_chunk.lods[0]
             .source_region_aggregate
-            .material_coverage[0]
+            .material_histogram[0]
             .coverage,
         0.75f);
 }

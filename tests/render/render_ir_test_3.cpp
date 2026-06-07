@@ -425,6 +425,7 @@ TEST(RenderIRSpec, TerrainDrawRefsIncludeSelectedMixedLodTransition)
 
     CompiledSceneView scene = cs.scene;
     scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+    scene.view.terrain_lod.enable_lod_transitions = true;
 
     RenderIRStorage ir_storage;
     const RenderIRView ir = build_render_ir(ir_storage, scene);
@@ -441,6 +442,41 @@ TEST(RenderIRSpec, TerrainDrawRefsIncludeSelectedMixedLodTransition)
     EXPECT_EQ(transition->neighbor_chunk_id.value, 1u);
     EXPECT_EQ(transition->lod_id.value, 0u);
     EXPECT_EQ(transition->neighbor_lod_id.value, 1u);
+}
+
+TEST(RenderIRSpec, TerrainDrawRefsSkipTransitionsByDefault)
+{
+    auto cs = make_transition_terrain_scene();
+    std::vector<TerrainLodChoice> choices{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+        },
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+        },
+    };
+
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, scene);
+
+    ASSERT_EQ(ir.terrain.size(), 2u);
+    EXPECT_TRUE(std::none_of(
+        ir.terrain.begin(),
+        ir.terrain.end(),
+        [](const TerrainDrawRef& ref) {
+            return ref.kind == TerrainDrawRefKind::LodTransition;
+        }));
 }
 
 TEST(RenderIRSpec, TerrainDrawRefsSkipTransitionForEqualLods)

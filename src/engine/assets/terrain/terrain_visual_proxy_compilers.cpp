@@ -24,7 +24,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kTerrainVisualProxyDiskCacheMagic = 0x56505a57u;
-        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 3u;
+        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 4u;
         constexpr uint32_t kTerrainVisualProxyTargetLodCount = 4u;
         constexpr float kTerrainVisualProxyEdgeEpsilon = 1e-5f;
 
@@ -197,6 +197,202 @@ namespace wz::engine::assets::internal
                 out.normal_variance[i] = chunk.aggregate.normal_variance[i];
             }
             return out;
+        }
+
+        float sqr(float value) noexcept
+        {
+            return value * value;
+        }
+
+        float vector_length(const float v[3]) noexcept
+        {
+            return std::sqrt(sqr(v[0]) + sqr(v[1]) + sqr(v[2]));
+        }
+
+        void normalize_or_up(float v[3]) noexcept
+        {
+            const float length = vector_length(v);
+            if (length <= kTerrainVisualProxyEdgeEpsilon) {
+                v[0] = 0.0f;
+                v[1] = 1.0f;
+                v[2] = 0.0f;
+                return;
+            }
+            const float inv = 1.0f / length;
+            v[0] *= inv;
+            v[1] *= inv;
+            v[2] *= inv;
+        }
+
+        TerrainVisualProxySourceRegionAggregate source_region_from_chunk(
+            const TerrainVisualChunk& chunk,
+            float source_normal_variance)
+        {
+            TerrainVisualProxySourceRegionAggregate out{};
+            out.normal_variance = std::max(0.0f, source_normal_variance);
+            out.height_range[0] = chunk.bounds_min[1];
+            out.height_range[1] = chunk.bounds_max[1];
+            out.roughness = std::sqrt(
+                std::max(0.0f, chunk.aggregate.height_variance));
+            for (uint32_t axis = 0; axis < 3u; ++axis) {
+                out.dominant_normal[axis] = chunk.aggregate.normal_mean[axis];
+            }
+            normalize_or_up(out.dominant_normal);
+            out.material_histogram.push_back(TerrainMaterialCoverage{
+                .material_id = 0u,
+                .coverage = 1.0f,
+            });
+            return out;
+        }
+
+        TerrainVisualProxyLodSurfaceAggregate lod_surface_from_chunk(
+            const TerrainVisualChunk& chunk)
+        {
+            TerrainVisualProxyLodSurfaceAggregate out{};
+            out.normal_variance =
+                std::max(0.0f, chunk.aggregate.normal_variance[0])
+                + std::max(0.0f, chunk.aggregate.normal_variance[1]);
+            out.height_range[0] = chunk.bounds_min[1];
+            out.height_range[1] = chunk.bounds_max[1];
+            return out;
+        }
+
+        TerrainVisualProxyLostDetailAggregate lost_detail_from_aggregates(
+            const TerrainVisualProxySourceRegionAggregate& source,
+            const TerrainVisualProxyLodSurfaceAggregate& lod)
+        {
+            TerrainVisualProxyLostDetailAggregate out{};
+            out.normal_variance =
+                std::max(0.0f, source.normal_variance - lod.normal_variance);
+            const float source_height =
+                std::max(0.0f, source.height_range[1] - source.height_range[0]);
+            const float lod_height =
+                std::max(0.0f, lod.height_range[1] - lod.height_range[0]);
+            out.height_detail = std::max(0.0f, source_height - lod_height);
+            return out;
+        }
+
+        struct SurfaceAggregateAccumulator
+        {
+            uint32_t triangle_count = 0u;
+            float area_sum = 0.0f;
+            float area_sq_sum = 0.0f;
+            float normal_sum[3]{ 0.0f, 0.0f, 0.0f };
+            float max_aspect_ratio = 0.0f;
+            float min_height = (std::numeric_limits<float>::max)();
+            float max_height = (std::numeric_limits<float>::lowest)();
+            std::vector<std::array<float, 3>> normals;
+        };
+
+        float distance_between(const float a[3], const float b[3]) noexcept
+        {
+            const float d[3]{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+            return vector_length(d);
+        }
+
+        void accumulate_surface_triangle(
+            SurfaceAggregateAccumulator& acc,
+            const float a[3],
+            const float b[3],
+            const float c[3])
+        {
+            float ab[3]{ b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+            float ac[3]{ c[0] - a[0], c[1] - a[1], c[2] - a[2] };
+            float normal[3]{
+                ab[1] * ac[2] - ab[2] * ac[1],
+                ab[2] * ac[0] - ab[0] * ac[2],
+                ab[0] * ac[1] - ab[1] * ac[0],
+            };
+            const float cross_length = vector_length(normal);
+            const float area = cross_length * 0.5f;
+            if (area <= kTerrainVisualProxyEdgeEpsilon) {
+                return;
+            }
+            normalize_or_up(normal);
+
+            acc.area_sum += area;
+            acc.area_sq_sum += area * area;
+            for (uint32_t axis = 0; axis < 3u; ++axis) {
+                acc.normal_sum[axis] += normal[axis];
+            }
+            acc.normals.push_back({ normal[0], normal[1], normal[2] });
+            ++acc.triangle_count;
+
+            const float edges[3]{
+                distance_between(a, b),
+                distance_between(b, c),
+                distance_between(c, a),
+            };
+            const float longest = std::max(edges[0], std::max(edges[1], edges[2]));
+            const float shortest = std::max(
+                kTerrainVisualProxyEdgeEpsilon,
+                std::min(edges[0], std::min(edges[1], edges[2])));
+            acc.max_aspect_ratio =
+                std::max(acc.max_aspect_ratio, longest / shortest);
+            acc.min_height = std::min(acc.min_height, std::min(a[1], std::min(b[1], c[1])));
+            acc.max_height = std::max(acc.max_height, std::max(a[1], std::max(b[1], c[1])));
+        }
+
+        TerrainVisualProxyLodSurfaceAggregate finalize_surface_aggregate(
+            SurfaceAggregateAccumulator& acc,
+            const TerrainVisualProxyLodSurfaceAggregate& fallback)
+        {
+            if (acc.triangle_count == 0u) {
+                return fallback;
+            }
+            TerrainVisualProxyLodSurfaceAggregate out{};
+            float mean_normal[3]{
+                acc.normal_sum[0] / static_cast<float>(acc.triangle_count),
+                acc.normal_sum[1] / static_cast<float>(acc.triangle_count),
+                acc.normal_sum[2] / static_cast<float>(acc.triangle_count),
+            };
+            normalize_or_up(mean_normal);
+            for (const auto& normal : acc.normals) {
+                out.normal_variance +=
+                    sqr(normal[0] - mean_normal[0])
+                    + sqr(normal[1] - mean_normal[1])
+                    + sqr(normal[2] - mean_normal[2]);
+            }
+            out.normal_variance /= static_cast<float>(acc.triangle_count);
+            const float mean_area =
+                acc.area_sum / static_cast<float>(acc.triangle_count);
+            out.triangle_area_variance =
+                std::max(
+                    0.0f,
+                    acc.area_sq_sum / static_cast<float>(acc.triangle_count)
+                        - mean_area * mean_area);
+            out.max_aspect_ratio = acc.max_aspect_ratio;
+            out.height_range[0] = acc.min_height;
+            out.height_range[1] = acc.max_height;
+            return out;
+        }
+
+        TerrainVisualProxyLodSurfaceAggregate lod_surface_from_source_mesh(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& chunk)
+        {
+            SurfaceAggregateAccumulator acc{};
+            for (uint32_t i = 0u; i + 2u < chunk.index_count; i += 3u) {
+                const uint32_t base = chunk.first_index + i;
+                if (base + 2u >= terrain.mesh_visual_indices.size()) {
+                    continue;
+                }
+                const uint32_t ia = terrain.mesh_visual_indices[base + 0u];
+                const uint32_t ib = terrain.mesh_visual_indices[base + 1u];
+                const uint32_t ic = terrain.mesh_visual_indices[base + 2u];
+                if (ia * 3u + 2u >= terrain.mesh_surface_points.size()
+                    || ib * 3u + 2u >= terrain.mesh_surface_points.size()
+                    || ic * 3u + 2u >= terrain.mesh_surface_points.size())
+                {
+                    continue;
+                }
+                accumulate_surface_triangle(
+                    acc,
+                    terrain.mesh_surface_points.data() + ia * 3u,
+                    terrain.mesh_surface_points.data() + ib * 3u,
+                    terrain.mesh_surface_points.data() + ic * 3u);
+            }
+            return finalize_surface_aggregate(acc, lod_surface_from_chunk(chunk));
         }
 
         void compute_vertex_span(
@@ -531,6 +727,7 @@ namespace wz::engine::assets::internal
             uint32_t vertex_count = 0;
             float conservative_error = 0.0f;
             TerrainVisualProxyBounds bounds{};
+            TerrainVisualProxyLodSurfaceAggregate lod_surface_aggregate{};
             TerrainVisualProxyLodBoundaryRing boundary_ring{};
         };
 
@@ -663,8 +860,10 @@ namespace wz::engine::assets::internal
             }
 
             std::set<std::array<uint32_t, 3>> emitted;
+            SurfaceAggregateAccumulator surface_acc{};
             for (uint32_t i = 0u; i + 2u < chunk.index_count; i += 3u) {
                 uint32_t mapped[3]{};
+                uint32_t clusters[3]{};
                 bool valid = true;
                 for (uint32_t corner = 0; corner < 3u; ++corner) {
                     const uint32_t local =
@@ -686,6 +885,7 @@ namespace wz::engine::assets::internal
                         valid = false;
                         break;
                     }
+                    clusters[corner] = cluster;
                     mapped[corner] = compact_index[cluster];
                 }
                 if (!valid
@@ -703,6 +903,11 @@ namespace wz::engine::assets::internal
                 std::sort(key.begin(), key.end());
                 if (emitted.insert(key).second) {
                     ++out.triangle_count;
+                    accumulate_surface_triangle(
+                        surface_acc,
+                        vertices[clusters[0]].position,
+                        vertices[clusters[1]].position,
+                        vertices[clusters[2]].position);
                 }
             }
 
@@ -826,6 +1031,8 @@ namespace wz::engine::assets::internal
             }
 
             sort_boundary_ring(out.boundary_ring);
+            out.lod_surface_aggregate =
+                finalize_surface_aggregate(surface_acc, {});
             if (max_height - min_height <= kTerrainVisualProxyEdgeEpsilon) {
                 // For planar terrain, tessellation changes are visually exact in
                 // this terrain-height error model even when XZ vertices move.
@@ -1014,6 +1221,12 @@ namespace wz::engine::assets::internal
                 chunk.aggregate = aggregate_from_chunk(source);
                 chunk.boundary.boundary_flags =
                     boundary_flags_for_chunk(chunk.bounds, proxy.bounds);
+                const TerrainVisualProxyLodSurfaceAggregate source_surface =
+                    lod_surface_from_source_mesh(terrain, source);
+                const TerrainVisualProxySourceRegionAggregate source_region =
+                    source_region_from_chunk(
+                        source,
+                        source_surface.normal_variance);
 
                 TerrainVisualProxyLodRecord lod{};
                 lod.lod_id = TerrainLodId{ 0u };
@@ -1027,8 +1240,11 @@ namespace wz::engine::assets::internal
                 lod.triangle_count = chunk.triangle_count;
                 lod.conservative_geometric_error = 0.0f;
                 lod.mesh_asset = terrain.mesh;
-                lod.source_region_aggregate = chunk.aggregate;
-                lod.lod_surface_aggregate = chunk.aggregate;
+                lod.source_region_aggregate = source_region;
+                lod.lod_surface_aggregate = source_surface;
+                lod.lost_detail_aggregate = lost_detail_from_aggregates(
+                    lod.source_region_aggregate,
+                    lod.lod_surface_aggregate);
                 const ChunkVertexMap chunk_vertices =
                     make_chunk_vertex_map(terrain, source);
                 {
@@ -1062,6 +1278,8 @@ namespace wz::engine::assets::internal
 
                 uint32_t previous_triangles = chunk.triangle_count;
                 float previous_error = 0.0f;
+                float previous_surface_normal_variance =
+                    lod.lod_surface_aggregate.normal_variance;
                 for (uint32_t lod_index = 1u;
                      lod_index < kTerrainVisualProxyTargetLodCount;
                      ++lod_index)
@@ -1109,16 +1327,22 @@ namespace wz::engine::assets::internal
                         previous_error,
                         simplified.conservative_error);
                     coarse.mesh_asset = terrain.mesh;
-                    coarse.source_region_aggregate = chunk.aggregate;
-                    coarse.lod_surface_aggregate = chunk.aggregate;
-                    coarse.lod_surface_aggregate.height_variance =
-                        chunk.aggregate.height_variance
-                        + coarse.conservative_geometric_error
-                            * coarse.conservative_geometric_error;
+                    coarse.source_region_aggregate = source_region;
+                    coarse.lod_surface_aggregate =
+                        simplified.lod_surface_aggregate;
+                    coarse.lod_surface_aggregate.normal_variance = std::min(
+                        coarse.lod_surface_aggregate.normal_variance,
+                        previous_surface_normal_variance);
+                    coarse.lost_detail_aggregate =
+                        lost_detail_from_aggregates(
+                            coarse.source_region_aggregate,
+                            coarse.lod_surface_aggregate);
                     coarse.boundary_ring = std::move(simplified.boundary_ring);
 
                     previous_triangles = coarse.triangle_count;
                     previous_error = coarse.conservative_geometric_error;
+                    previous_surface_normal_variance =
+                        coarse.lod_surface_aggregate.normal_variance;
                     chunk.lods.push_back(std::move(coarse));
                 }
 
@@ -1193,6 +1417,90 @@ namespace wz::engine::assets::internal
                 }
             }
             return true;
+        }
+
+        void append_source_region_aggregate(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxySourceRegionAggregate& aggregate)
+        {
+            append_scalar(out, aggregate.normal_variance);
+            append_float_array(out, aggregate.height_range, 2u);
+            append_scalar(out, aggregate.roughness);
+            append_float_array(out, aggregate.dominant_normal, 3u);
+            append_scalar(
+                out,
+                static_cast<uint64_t>(aggregate.material_histogram.size()));
+            for (const auto& coverage : aggregate.material_histogram) {
+                append_scalar(out, coverage.material_id);
+                append_scalar(out, coverage.coverage);
+            }
+        }
+
+        bool read_source_region_aggregate(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxySourceRegionAggregate& aggregate)
+        {
+            uint64_t material_count = 0u;
+            if (!read_scalar(bytes, offset, aggregate.normal_variance)
+                || !read_float_array(bytes, offset, aggregate.height_range, 2u)
+                || !read_scalar(bytes, offset, aggregate.roughness)
+                || !read_float_array(bytes, offset, aggregate.dominant_normal, 3u)
+                || !read_scalar(bytes, offset, material_count))
+            {
+                return false;
+            }
+            if (material_count > 1024u) {
+                return false;
+            }
+            aggregate.material_histogram.resize(
+                static_cast<size_t>(material_count));
+            for (auto& coverage : aggregate.material_histogram) {
+                if (!read_scalar(bytes, offset, coverage.material_id)
+                    || !read_scalar(bytes, offset, coverage.coverage))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void append_lod_surface_aggregate(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxyLodSurfaceAggregate& aggregate)
+        {
+            append_scalar(out, aggregate.normal_variance);
+            append_scalar(out, aggregate.triangle_area_variance);
+            append_scalar(out, aggregate.max_aspect_ratio);
+            append_float_array(out, aggregate.height_range, 2u);
+        }
+
+        bool read_lod_surface_aggregate(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxyLodSurfaceAggregate& aggregate)
+        {
+            return read_scalar(bytes, offset, aggregate.normal_variance)
+                && read_scalar(bytes, offset, aggregate.triangle_area_variance)
+                && read_scalar(bytes, offset, aggregate.max_aspect_ratio)
+                && read_float_array(bytes, offset, aggregate.height_range, 2u);
+        }
+
+        void append_lost_detail_aggregate(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxyLostDetailAggregate& aggregate)
+        {
+            append_scalar(out, aggregate.normal_variance);
+            append_scalar(out, aggregate.height_detail);
+        }
+
+        bool read_lost_detail_aggregate(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxyLostDetailAggregate& aggregate)
+        {
+            return read_scalar(bytes, offset, aggregate.normal_variance)
+                && read_scalar(bytes, offset, aggregate.height_detail);
         }
 
         void append_boundary_points(
@@ -1326,8 +1634,9 @@ namespace wz::engine::assets::internal
             append_scalar(out, lod.triangle_count);
             append_scalar(out, lod.conservative_geometric_error);
             append_asset_key(out, lod.mesh_asset);
-            append_aggregate(out, lod.source_region_aggregate);
-            append_aggregate(out, lod.lod_surface_aggregate);
+            append_source_region_aggregate(out, lod.source_region_aggregate);
+            append_lod_surface_aggregate(out, lod.lod_surface_aggregate);
+            append_lost_detail_aggregate(out, lod.lost_detail_aggregate);
             append_boundary_ring(out, lod.boundary_ring);
         }
 
@@ -1348,8 +1657,18 @@ namespace wz::engine::assets::internal
                 || !read_scalar(bytes, offset, lod.triangle_count)
                 || !read_scalar(bytes, offset, lod.conservative_geometric_error)
                 || !read_asset_key(bytes, offset, lod.mesh_asset)
-                || !read_aggregate(bytes, offset, lod.source_region_aggregate)
-                || !read_aggregate(bytes, offset, lod.lod_surface_aggregate)
+                || !read_source_region_aggregate(
+                    bytes,
+                    offset,
+                    lod.source_region_aggregate)
+                || !read_lod_surface_aggregate(
+                    bytes,
+                    offset,
+                    lod.lod_surface_aggregate)
+                || !read_lost_detail_aggregate(
+                    bytes,
+                    offset,
+                    lod.lost_detail_aggregate)
                 || !read_boundary_ring(bytes, offset, lod.boundary_ring))
             {
                 return false;

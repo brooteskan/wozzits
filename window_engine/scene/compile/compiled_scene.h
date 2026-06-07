@@ -148,6 +148,7 @@ namespace wz::scene {
         float hysteresis_fraction = 0.2f;
         bool enforce_neighbor_lod_delta = false;
         uint32_t max_neighbor_lod_delta = 1;
+        bool enable_lod_transitions = false;
     };
 
     struct TerrainLodChoice {

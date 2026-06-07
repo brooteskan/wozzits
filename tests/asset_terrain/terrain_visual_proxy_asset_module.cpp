@@ -378,6 +378,189 @@ TEST(TerrainVisualProxyAssetModule, UsesProjectDiskCache)
     EXPECT_EQ(
         second.chunks.front().lods.back().boundary_ring.point_count(),
         first.chunks.front().lods.back().boundary_ring.point_count());
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().lods.front()
+            .source_region_aggregate.normal_variance,
+        first.chunks.front().lods.front()
+            .source_region_aggregate.normal_variance);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().lods.back()
+            .lod_surface_aggregate.normal_variance,
+        first.chunks.front().lods.back()
+            .lod_surface_aggregate.normal_variance);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().lods.back()
+            .lost_detail_aggregate.height_detail,
+        first.chunks.front().lods.back()
+            .lost_detail_aggregate.height_detail);
+}
+
+TEST(TerrainVisualProxyAssetModule, ComputesPrefilterAggregatesPerLod)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("noise_terrain");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2600u),
+            test_key(2700u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_FALSE(proxy.chunks.empty());
+    const TerrainVisualProxyChunkRecord& chunk = proxy.chunks.front();
+    ASSERT_GE(chunk.lods.size(), 2u);
+
+    const auto& source = chunk.lods.front().source_region_aggregate;
+    EXPECT_GE(source.normal_variance, 0.0f);
+    EXPECT_LE(source.height_range[0], source.height_range[1]);
+    EXPECT_GE(source.roughness, 0.0f);
+    ASSERT_FALSE(source.material_histogram.empty());
+
+    float previous_lod_normal_variance =
+        chunk.lods.front().lod_surface_aggregate.normal_variance;
+    for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+        EXPECT_FLOAT_EQ(
+            lod.source_region_aggregate.normal_variance,
+            source.normal_variance);
+        EXPECT_FLOAT_EQ(
+            lod.source_region_aggregate.height_range[0],
+            source.height_range[0]);
+        EXPECT_FLOAT_EQ(
+            lod.source_region_aggregate.height_range[1],
+            source.height_range[1]);
+        EXPECT_GE(lod.lod_surface_aggregate.normal_variance, 0.0f);
+        EXPECT_LE(
+            lod.lod_surface_aggregate.normal_variance,
+            previous_lod_normal_variance + 1e-5f);
+        EXPECT_GE(lod.lod_surface_aggregate.triangle_area_variance, 0.0f);
+        EXPECT_GE(lod.lod_surface_aggregate.max_aspect_ratio, 0.0f);
+        EXPECT_GE(lod.lost_detail_aggregate.normal_variance, 0.0f);
+        EXPECT_GE(lod.lost_detail_aggregate.height_detail, 0.0f);
+        EXPECT_NEAR(
+            lod.lost_detail_aggregate.normal_variance,
+            std::max(
+                0.0f,
+                lod.source_region_aggregate.normal_variance
+                    - lod.lod_surface_aggregate.normal_variance),
+            1e-5f);
+        previous_lod_normal_variance =
+            lod.lod_surface_aggregate.normal_variance;
+    }
+}
+
+TEST(TerrainVisualProxyAssetModule, SmoothHemispherePrefilterAggregatesAreModerate)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("smooth_hemisphere");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2750u),
+            test_key(2775u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 1u);
+    const TerrainVisualProxyChunkRecord& chunk = proxy.chunks.front();
+    ASSERT_GE(chunk.lods.size(), 2u);
+
+    const float source_normal_variance =
+        chunk.lods.front().source_region_aggregate.normal_variance;
+    EXPECT_GT(source_normal_variance, 0.0f);
+    EXPECT_LT(source_normal_variance, 1.0f);
+
+    float previous_lod_normal_variance =
+        chunk.lods.front().lod_surface_aggregate.normal_variance;
+    for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+        EXPECT_FLOAT_EQ(
+            lod.source_region_aggregate.normal_variance,
+            source_normal_variance);
+        EXPECT_LE(
+            lod.lod_surface_aggregate.normal_variance,
+            previous_lod_normal_variance + 1e-5f);
+        EXPECT_GE(lod.lost_detail_aggregate.normal_variance, 0.0f);
+        previous_lod_normal_variance =
+            lod.lod_surface_aggregate.normal_variance;
+    }
+}
+
+TEST(TerrainVisualProxyAssetModule, FlatPlaneHasNoLostPrefilterDetail)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("flat_plane");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2800u),
+            test_key(2900u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 1u);
+    for (const TerrainVisualProxyLodRecord& lod : proxy.chunks.front().lods) {
+        EXPECT_NEAR(lod.source_region_aggregate.normal_variance, 0.0f, 1e-5f);
+        EXPECT_NEAR(lod.lod_surface_aggregate.normal_variance, 0.0f, 1e-5f);
+        EXPECT_NEAR(lod.lost_detail_aggregate.normal_variance, 0.0f, 1e-5f);
+        EXPECT_NEAR(lod.lost_detail_aggregate.height_detail, 0.0f, 1e-5f);
+    }
+}
+
+TEST(TerrainVisualProxyAssetModule, ResamplesAndBlendsPrefilterAggregates)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("noise_terrain");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(3000u),
+            test_key(3100u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_FALSE(proxy.chunks.empty());
+    ASSERT_GE(proxy.chunks.front().lods.size(), 2u);
+
+    const TerrainVisualProxyPrefilterAggregates fine =
+        terrain_visual_proxy_resample_aggregates(
+            proxy,
+            proxy.chunks.front().chunk_id,
+            TerrainLodId{ 0u });
+    const TerrainVisualProxyPrefilterAggregates coarse =
+        terrain_visual_proxy_resample_aggregates(
+            proxy,
+            proxy.chunks.front().chunk_id,
+            proxy.chunks.front().lods.back().lod_id);
+    const TerrainVisualProxyPrefilterAggregates blended =
+        terrain_visual_proxy_blend_aggregates(fine, coarse, 0.25f);
+
+    EXPECT_FLOAT_EQ(
+        fine.source_region.normal_variance,
+        proxy.chunks.front().lods.front()
+            .source_region_aggregate.normal_variance);
+    EXPECT_GE(blended.lost_detail.normal_variance, 0.0f);
+    EXPECT_LE(
+        blended.lost_detail.normal_variance,
+        std::max(
+            fine.lost_detail.normal_variance,
+            coarse.lost_detail.normal_variance)
+            + 1e-5f);
+    EXPECT_LE(
+        std::abs(
+            blended.lod_surface.normal_variance
+            - fine.lod_surface.normal_variance),
+        std::abs(
+            coarse.lod_surface.normal_variance
+            - fine.lod_surface.normal_variance)
+            + 1e-5f);
 }
 
 TEST(TerrainVisualProxyAssetModule, FixtureLodChainsAreMonotonic)
@@ -708,7 +891,9 @@ TEST(TerrainVisualProxyAssetModule, RegistersCompiledProxyWithRenderResolver)
         chunk.index_count = lod.index_count;
         chunk.aggregate.triangle_count = lod.triangle_count;
         chunk.aggregate.mean_height =
-            lod.source_region_aggregate.mean_height;
+            (lod.source_region_aggregate.height_range[0]
+             + lod.source_region_aggregate.height_range[1])
+            * 0.5f;
         chunks.push_back(chunk);
     }
 
