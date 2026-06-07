@@ -5,6 +5,7 @@
 
 #include <new>
 #include <ranges>
+#include <vector>
 
 namespace wz::render {
 
@@ -150,17 +151,42 @@ namespace wz::render {
             return count;
         }
 
-        const TerrainLodChoice* find_terrain_lod_choice(
+        using TerrainChoiceLookup =
+            std::vector<const TerrainLodChoice*>;
+
+        TerrainChoiceLookup terrain_choices_for_instance(
             std::span<const TerrainLodChoice> choices,
-            uint32_t terrain_instance_index,
+            uint32_t terrain_instance_index)
+        {
+            TerrainChoiceLookup out;
+            out.reserve(choices.size());
+            for (const TerrainLodChoice& choice : choices) {
+                if (choice.terrain_instance_index == terrain_instance_index) {
+                    out.push_back(&choice);
+                }
+            }
+            std::sort(
+                out.begin(),
+                out.end(),
+                [](const TerrainLodChoice* a, const TerrainLodChoice* b) {
+                    return a->chunk_id.value < b->chunk_id.value;
+                });
+            return out;
+        }
+
+        const TerrainLodChoice* find_terrain_lod_choice(
+            const TerrainChoiceLookup& choices,
             wz::engine::assets::TerrainChunkId chunk_id)
         {
-            for (const TerrainLodChoice& choice : choices) {
-                if (choice.terrain_instance_index == terrain_instance_index
-                    && choice.chunk_id == chunk_id)
-                {
-                    return &choice;
-                }
+            const auto it = std::lower_bound(
+                choices.begin(),
+                choices.end(),
+                chunk_id.value,
+                [](const TerrainLodChoice* choice, uint32_t value) {
+                    return choice->chunk_id.value < value;
+                });
+            if (it != choices.end() && (*it)->chunk_id == chunk_id) {
+                return *it;
             }
             return nullptr;
         }
@@ -243,17 +269,23 @@ namespace wz::render {
                 }
 
                 const auto& proxy = *instance.visual_proxy_data;
+                const TerrainChoiceLookup selected_choices =
+                    terrain_choices_for_instance(
+                        scene.terrain_lod_choices,
+                        instance_index);
+                if (selected_choices.empty()) {
+                    continue;
+                }
+
                 for (const auto& chunk : proxy.chunks) {
                     for (const auto& strip : chunk.transition_strips) {
                         const TerrainLodChoice* choice =
                             find_terrain_lod_choice(
-                                scene.terrain_lod_choices,
-                                instance_index,
+                                selected_choices,
                                 strip.chunk_id);
                         const TerrainLodChoice* neighbor_choice =
                             find_terrain_lod_choice(
-                                scene.terrain_lod_choices,
-                                instance_index,
+                                selected_choices,
                                 strip.neighbor_chunk_id);
                         if (!choice || !neighbor_choice) {
                             continue;

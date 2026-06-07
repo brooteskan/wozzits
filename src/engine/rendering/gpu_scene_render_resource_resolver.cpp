@@ -1154,21 +1154,21 @@ namespace wz::engine::rendering
                     const auto& cache_settings = assets_.cache_settings();
                     wz::Logger& logger = assets_.logger();
                     if (!load_cached_terrain_render_mesh(
-                        cache_settings,
-                        renderable.companion_asset,
-                        logger,
-                        preview_mesh,
-                        terrain_chunks_storage,
-                        terrain_transition_ranges_storage))
-                {
+                            cache_settings,
+                            renderable.companion_asset,
+                            logger,
+                            preview_mesh,
+                            terrain_chunks_storage,
+                            terrain_transition_ranges_storage))
+                    {
                         const auto build_started =
                             std::chrono::steady_clock::now();
-                    preview_mesh = make_terrain_surface_mesh(
-                        *terrain_data,
-                        *source_mesh,
-                        terrain_visual_proxy_data,
-                        terrain_chunks_storage,
-                        terrain_transition_ranges_storage);
+                        preview_mesh = make_terrain_surface_mesh(
+                            *terrain_data,
+                            *source_mesh,
+                            terrain_visual_proxy_data,
+                            terrain_chunks_storage,
+                            terrain_transition_ranges_storage);
                         const auto build_elapsed =
                             std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now()
@@ -1177,12 +1177,12 @@ namespace wz::engine::rendering
                             "asset compile: terrain render mesh build ms="
                             + std::to_string(build_elapsed));
                         store_cached_terrain_render_mesh(
-                        cache_settings,
-                        renderable.companion_asset,
-                        preview_mesh,
-                        terrain_chunks_storage,
-                        terrain_transition_ranges_storage,
-                        logger);
+                            cache_settings,
+                            renderable.companion_asset,
+                            preview_mesh,
+                            terrain_chunks_storage,
+                            terrain_transition_ranges_storage,
+                            logger);
                     }
                     if (!preview_mesh.valid()) {
                         return false;

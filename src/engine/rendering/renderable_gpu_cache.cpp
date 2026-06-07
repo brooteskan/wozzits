@@ -141,10 +141,8 @@ namespace wz::engine::rendering
             }
         }
 
-        terrain_mesh_chunk_entries_.push_back(TerrainMeshChunkEntry{
-            .terrain_asset = terrain_asset,
-            .transition_ranges = std::move(ranges),
-            });
+        // Transition ranges are sidecar data for terrain mesh chunks.  Do not
+        // create an entry that cannot satisfy find_terrain_mesh_chunks().
     }
 
     const std::vector<TerrainFarSplatChunk>*
