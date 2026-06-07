@@ -1,0 +1,3 @@
+[submodule "external/pmp"]
+	path = external/pmp
+	url = https://github.com/pmp-library/pmp-library.git
