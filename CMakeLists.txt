@@ -424,6 +424,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(mesh_processing mesh_processing_pmp)
 
     rs_add_test_group(asset_terrain terrain_asset_module)
+    rs_add_test_group(asset_terrain terrain_fixture_assets)
 
     rs_add_test_group(asset_collision collision_asset_module)
     rs_add_test_group(collision proximity_frame_tests)
