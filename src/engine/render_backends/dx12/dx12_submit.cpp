@@ -269,9 +269,9 @@ namespace wz::render::backend::dx12
                 0);
 
             resolver.record_terrain_render_stats(
+                0u,
                 1u,
-                1u,
-                resolved->source_triangle_count,
+                0u,
                 resolved->index_count / 3u,
                 0u,
                 0u,
@@ -285,7 +285,23 @@ namespace wz::render::backend::dx12
                     : 0u,
                 0u,
                 0u,
-                resolved->terrain_target_pixels_per_triangle);
+                resolved->terrain_target_pixels_per_triangle,
+                0.0f,
+                0.0f,
+                0.0,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                ref.lod_id.value,
+                ref.representation_kind,
+                1u);
             return true;
         }
 
@@ -299,6 +315,21 @@ namespace wz::render::backend::dx12
             auto* cmdList =
                 wz::gpu::dx12::internal::get_command_list(device);
 
+            for (const TerrainVisualInstance& instance :
+                frame.terrain_instances)
+            {
+                if (!instance.visible)
+                    continue;
+
+                const auto diagnostics =
+                    resolver.resolve_terrain_proxy_diagnostics(
+                        instance.terrain_proxy_id);
+                if (diagnostics)
+                    resolver.record_terrain_source_totals(
+                        diagnostics->proxy_chunks,
+                        diagnostics->source_triangles);
+            }
+
             for (const TerrainDrawRef& ref : frame.terrain) {
                 if (ref.terrain_instance_index
                     >= frame.terrain_instances.size())
@@ -311,6 +342,7 @@ namespace wz::render::backend::dx12
                 if (!instance.visible)
                     continue;
 
+                resolver.record_terrain_visible_chunks(1u);
                 draw_terrain_ref_mesh(
                     device,
                     cmdList,

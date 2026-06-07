@@ -234,6 +234,29 @@ namespace wz::engine::rendering
         return std::nullopt;
     }
 
+    std::optional<wz::render::TerrainFrameDiagnostics>
+    RenderResourceResolver::resolve_terrain_proxy_diagnostics(
+        wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept
+    {
+        if (!terrain_proxy_id.valid())
+            return std::nullopt;
+
+        for (const auto& registered : terrain_proxy_entries_) {
+            if (registered.first != terrain_proxy_id)
+                continue;
+
+            const Entry& e = registered.second;
+            wz::render::TerrainFrameDiagnostics diagnostics{};
+            diagnostics.proxy_chunks =
+                static_cast<uint64_t>(e.terrain_chunks.size());
+            for (const auto& chunk : e.terrain_chunks)
+                diagnostics.source_triangles += chunk.triangle_count();
+            return diagnostics;
+        }
+
+        return std::nullopt;
+    }
+
     void RenderResourceResolver::reset_terrain_render_stats() const noexcept
     {
         terrain_stats_ = {};
@@ -265,7 +288,10 @@ namespace wz::engine::rendering
         uint64_t pixels_per_triangle_triangles_le_32,
         uint64_t pixels_per_triangle_triangles_le_64,
         uint64_t pixels_per_triangle_triangles_le_128,
-        uint64_t pixels_per_triangle_triangles_le_256) const noexcept
+        uint64_t pixels_per_triangle_triangles_le_256,
+        uint32_t lod_level,
+        wz::engine::assets::TerrainVisualRepresentationKind representation_kind,
+        uint64_t submitted_draw_calls) const noexcept
     {
         const uint64_t previous_submitted_triangles =
             terrain_stats_.submitted_triangles;
@@ -282,6 +308,24 @@ namespace wz::engine::rendering
         terrain_stats_.submitted_chunks += submitted_chunks;
         terrain_stats_.total_triangles += total_triangles;
         terrain_stats_.submitted_triangles += submitted_triangles;
+        terrain_stats_.submitted_draw_calls += submitted_draw_calls > 0
+            ? submitted_draw_calls
+            : submitted_chunks;
+        const uint32_t lod_bucket = (std::min)(
+            lod_level,
+            wz::render::kTerrainDiagnosticLodHistogramSize - 1u);
+        terrain_stats_.lod_histogram[lod_bucket] += submitted_chunks;
+        switch (representation_kind) {
+        case wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks:
+            terrain_stats_.representation_counts.mesh_chunks += submitted_chunks;
+            break;
+        case wz::engine::assets::TerrainVisualRepresentationKind::GridTiles:
+            terrain_stats_.representation_counts.grid_tiles += submitted_chunks;
+            break;
+        case wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud:
+            terrain_stats_.representation_counts.surfel_clouds += submitted_chunks;
+            break;
+        }
         terrain_stats_.lod_candidate_chunks += lod_candidate_chunks;
         terrain_stats_.lod_candidate_triangles += lod_candidate_triangles;
         terrain_stats_.lod_replacement_available_chunks +=
@@ -344,9 +388,97 @@ namespace wz::engine::rendering
         }
     }
 
+    void RenderResourceResolver::record_terrain_source_totals(
+        uint64_t proxy_chunks,
+        uint64_t source_triangles) const noexcept
+    {
+        terrain_stats_.total_chunks += proxy_chunks;
+        terrain_stats_.total_triangles += source_triangles;
+    }
+
+    void RenderResourceResolver::record_terrain_visible_chunks(
+        uint64_t visible_chunks) const noexcept
+    {
+        terrain_stats_.visible_chunks += visible_chunks;
+    }
+
+    void RenderResourceResolver::record_terrain_projected_error_samples(
+        std::span<const float> projected_error_px) const
+    {
+        const wz::render::TerrainFrameDiagnostics diagnostics =
+            wz::render::terrain_projected_error_diagnostics(
+                projected_error_px);
+        terrain_stats_.projected_error_sample_count +=
+            diagnostics.projected_error_sample_count;
+        terrain_stats_.max_projected_error_px = (std::max)(
+            terrain_stats_.max_projected_error_px,
+            diagnostics.max_projected_error_px);
+        terrain_stats_.median_projected_error_px = (std::max)(
+            terrain_stats_.median_projected_error_px,
+            diagnostics.median_projected_error_px);
+        terrain_stats_.p95_projected_error_px = (std::max)(
+            terrain_stats_.p95_projected_error_px,
+            diagnostics.p95_projected_error_px);
+    }
+
+    void RenderResourceResolver::record_terrain_selector_cpu_us(
+        double selector_cpu_us) const noexcept
+    {
+        terrain_stats_.selector_cpu_us += (std::max)(0.0, selector_cpu_us);
+    }
+
+    void RenderResourceResolver::record_terrain_gpu_us(
+        double terrain_gpu_us) const noexcept
+    {
+        terrain_stats_.terrain_gpu_us += (std::max)(0.0, terrain_gpu_us);
+        terrain_stats_.terrain_gpu_us_valid = true;
+    }
+
+    void RenderResourceResolver::record_terrain_budget_diagnostics(
+        uint64_t budget_target_triangles,
+        bool budget_missed) const noexcept
+    {
+        terrain_stats_.budget_target_triangles = (std::max)(
+            terrain_stats_.budget_target_triangles,
+            budget_target_triangles);
+        if (budget_missed)
+            ++terrain_stats_.budget_misses;
+    }
+
     TerrainRenderStats RenderResourceResolver::terrain_render_stats()
         const noexcept
     {
         return terrain_stats_;
+    }
+
+    wz::render::TerrainFrameDiagnostics
+    RenderResourceResolver::terrain_frame_diagnostics() const noexcept
+    {
+        wz::render::TerrainFrameDiagnostics diagnostics{};
+        diagnostics.source_triangles = terrain_stats_.total_triangles;
+        diagnostics.proxy_chunks = terrain_stats_.total_chunks;
+        diagnostics.visible_chunks = terrain_stats_.visible_chunks;
+        diagnostics.submitted_triangles = terrain_stats_.submitted_triangles;
+        diagnostics.submitted_draw_calls =
+            terrain_stats_.submitted_draw_calls;
+        diagnostics.lod_histogram = terrain_stats_.lod_histogram;
+        diagnostics.selector_cpu_us = terrain_stats_.selector_cpu_us;
+        diagnostics.terrain_gpu_us = terrain_stats_.terrain_gpu_us;
+        diagnostics.terrain_gpu_us_valid =
+            terrain_stats_.terrain_gpu_us_valid;
+        diagnostics.budget_target_triangles =
+            terrain_stats_.budget_target_triangles;
+        diagnostics.budget_misses = terrain_stats_.budget_misses;
+        diagnostics.representation_counts =
+            terrain_stats_.representation_counts;
+        diagnostics.projected_error_sample_count =
+            terrain_stats_.projected_error_sample_count;
+        diagnostics.max_projected_error_px =
+            terrain_stats_.max_projected_error_px;
+        diagnostics.median_projected_error_px =
+            terrain_stats_.median_projected_error_px;
+        diagnostics.p95_projected_error_px =
+            terrain_stats_.p95_projected_error_px;
+        return diagnostics;
     }
 }

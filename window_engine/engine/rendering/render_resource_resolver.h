@@ -13,6 +13,7 @@
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/terrain/terrain.h>
 #include <render/ir/render_ir.h>
+#include <render/diagnostics/terrain_diagnostics.h>
 
 #include <optional>
 #include <span>
@@ -61,7 +62,9 @@ namespace wz::engine::rendering
         uint64_t total_chunks = 0;
         uint64_t submitted_chunks = 0;
         uint64_t total_triangles = 0;
+        uint64_t visible_chunks = 0;
         uint64_t submitted_triangles = 0;
+        uint64_t submitted_draw_calls = 0;
         uint64_t lod_candidate_chunks = 0;
         uint64_t lod_candidate_triangles = 0;
         uint64_t lod_replacement_available_chunks = 0;
@@ -85,6 +88,20 @@ namespace wz::engine::rendering
         uint64_t pixels_per_triangle_triangles_le_64 = 0;
         uint64_t pixels_per_triangle_triangles_le_128 = 0;
         uint64_t pixels_per_triangle_triangles_le_256 = 0;
+
+        std::array<
+            uint64_t,
+            wz::render::kTerrainDiagnosticLodHistogramSize> lod_histogram{};
+        double selector_cpu_us = 0.0;
+        double terrain_gpu_us = 0.0;
+        bool terrain_gpu_us_valid = false;
+        uint64_t budget_target_triangles = 0;
+        uint64_t budget_misses = 0;
+        wz::render::TerrainRepresentationCounts representation_counts{};
+        uint64_t projected_error_sample_count = 0;
+        float max_projected_error_px = 0.0f;
+        float median_projected_error_px = 0.0f;
+        float p95_projected_error_px = 0.0f;
     };
 
     class RenderResourceResolver
@@ -160,6 +177,10 @@ namespace wz::engine::rendering
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
             const wz::render::TerrainDrawRef& ref) const noexcept;
 
+        std::optional<wz::render::TerrainFrameDiagnostics>
+        resolve_terrain_proxy_diagnostics(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept;
+
         void reset_terrain_render_stats() const noexcept;
         void record_terrain_render_stats(
             uint64_t total_chunks,
@@ -187,8 +208,28 @@ namespace wz::engine::rendering
             uint64_t pixels_per_triangle_triangles_le_32 = 0,
             uint64_t pixels_per_triangle_triangles_le_64 = 0,
             uint64_t pixels_per_triangle_triangles_le_128 = 0,
-            uint64_t pixels_per_triangle_triangles_le_256 = 0) const noexcept;
+            uint64_t pixels_per_triangle_triangles_le_256 = 0,
+            uint32_t lod_level = 0,
+            wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            uint64_t submitted_draw_calls = 0) const noexcept;
+        void record_terrain_source_totals(
+            uint64_t proxy_chunks,
+            uint64_t source_triangles)
+            const noexcept;
+        void record_terrain_visible_chunks(uint64_t visible_chunks)
+            const noexcept;
+        void record_terrain_projected_error_samples(
+            std::span<const float> projected_error_px) const;
+        void record_terrain_selector_cpu_us(double selector_cpu_us)
+            const noexcept;
+        void record_terrain_gpu_us(double terrain_gpu_us) const noexcept;
+        void record_terrain_budget_diagnostics(
+            uint64_t budget_target_triangles,
+            bool budget_missed) const noexcept;
         TerrainRenderStats terrain_render_stats() const noexcept;
+        wz::render::TerrainFrameDiagnostics terrain_frame_diagnostics()
+            const noexcept;
 
     private:
         struct Entry
