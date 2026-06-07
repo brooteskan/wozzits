@@ -62,6 +62,7 @@ namespace wz::engine::assets
             fp.mix_string(behavior.module);
             fp.mix_string(behavior.name);
             fp.mix_value(behavior.enabled);
+            fp.mix_value(behavior.apply_in_editor);
             fp.mix_value(behavior.events.size());
             for (const auto& event : behavior.events) {
                 fp.mix_string(event);

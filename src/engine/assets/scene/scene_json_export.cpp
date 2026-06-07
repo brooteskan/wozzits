@@ -961,6 +961,10 @@ namespace wz::engine::assets
             }
             add_member(*obj, "name", string_value(behavior.name));
             add_member(*obj, "enabled", bool_value(behavior.enabled));
+            add_member(
+                *obj,
+                "apply_in_editor",
+                bool_value(behavior.apply_in_editor));
             if (!behavior.events.empty()) {
                 auto events = array_value();
                 for (const auto& event : behavior.events) {

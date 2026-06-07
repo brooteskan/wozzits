@@ -558,6 +558,7 @@ namespace wz::engine::assets
         std::string module;
         std::string name;
         bool enabled = true;
+        bool apply_in_editor = false;
         std::vector<std::string> events;
         std::vector<SceneBehaviorConfigValue> config;
     };

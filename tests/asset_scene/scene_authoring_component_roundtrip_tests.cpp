@@ -245,6 +245,72 @@ TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
     EXPECT_EQ(parsed_turret->behavior->module, "tank");
 }
 
+TEST(SceneAssetModule, BehaviorApplyInEditorRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_behavior_apply_in_editor_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "behavior_apply_in_editor_roundtrip";
+
+    SceneNodeAsset node = make_scene_node("listener");
+    node.event_listener = SceneEventListenerAsset{
+        .channels = { "collision.*" },
+    };
+    node.behaviors.push_back(SceneBehaviorAsset{
+        .id = "listener_behavior",
+        .label = "Listener behavior",
+        .module = "debug",
+        .name = "log_collision_events",
+        .enabled = true,
+        .apply_in_editor = true,
+        .events = { "collision.*" },
+    });
+    authored.nodes.push_back(std::move(node));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"apply_in_editor\""), std::string::npos);
+    EXPECT_NE(exported.find("true"), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "behavior_apply_in_editor.scene.json",
+        exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "behavior_apply_in_editor",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+
+    const auto* parsed_node = find_scene_node(*data, "listener");
+    ASSERT_NE(parsed_node, nullptr);
+    ASSERT_EQ(parsed_node->behaviors.size(), 1u);
+    EXPECT_TRUE(parsed_node->behaviors[0].apply_in_editor);
+
+    const std::string reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data));
+    EXPECT_NE(
+        reparsed_export.find("\"apply_in_editor\""),
+        std::string::npos);
+}
+
 TEST(SceneAssetModule, ParsesExportsAndSummarizesScalarFieldSource)
 {
     const wz::fs::Path root =

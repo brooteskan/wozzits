@@ -694,6 +694,11 @@ namespace wz::engine::assets::internal
                 component.enabled = *enabled;
             }
 
+            auto apply_in_editor = read_bool(value, "apply_in_editor");
+            if (apply_in_editor) {
+                component.apply_in_editor = *apply_in_editor;
+            }
+
             if (!read_behavior_events(
                     value,
                     field_name,
