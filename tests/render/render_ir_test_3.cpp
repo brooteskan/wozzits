@@ -34,6 +34,44 @@ namespace {
         };
     }
 
+    wz::engine::assets::TerrainVisualProxyData test_proxy_data()
+    {
+        const wz::asset::AssetKey proxy_key = test_proxy_key();
+        wz::engine::assets::TerrainVisualProxyData proxy{};
+        proxy.compiler_version = 1u;
+        proxy.source_asset_key = proxy_key;
+        proxy.terrain_proxy_id =
+            wz::engine::assets::TerrainProxyId{ proxy_key };
+        proxy.bounds.min[0] = -1.0f;
+        proxy.bounds.min[1] = -1.0f;
+        proxy.bounds.min[2] = -1.0f;
+        proxy.bounds.max[0] = 1.0f;
+        proxy.bounds.max[1] = 1.0f;
+        proxy.bounds.max[2] = 1.0f;
+        for (uint32_t i = 0u; i < 2u; ++i) {
+            wz::engine::assets::TerrainVisualProxyChunkRecord chunk{};
+            chunk.chunk_id = wz::engine::assets::TerrainChunkId{ i };
+            chunk.representation_id =
+                wz::engine::assets::TerrainRepresentationId{ i };
+            chunk.bounds.min[0] = i == 0u ? -1.0f : 0.0f;
+            chunk.bounds.min[1] = -1.0f;
+            chunk.bounds.min[2] = -1.0f;
+            chunk.bounds.max[0] = i == 0u ? 0.0f : 1.0f;
+            chunk.bounds.max[1] = 1.0f;
+            chunk.bounds.max[2] = 1.0f;
+            chunk.triangle_count = 2u;
+            chunk.vertex_count = 4u;
+            wz::engine::assets::TerrainVisualProxyLodRecord lod{};
+            lod.lod_id = wz::engine::assets::TerrainLodId{ 0u };
+            lod.representation_id = chunk.representation_id;
+            lod.triangle_count = 2u;
+            lod.vertex_count = 4u;
+            chunk.lods.push_back(lod);
+            proxy.chunks.push_back(std::move(chunk));
+        }
+        return proxy;
+    }
+
     ViewData camera_at_z(float z)
     {
         ViewData v{};
@@ -134,6 +172,8 @@ namespace {
         propagate_all(storage->polytree);
 
         const wz::asset::AssetKey proxy_key = test_proxy_key();
+        static const wz::engine::assets::TerrainVisualProxyData proxy =
+            test_proxy_data();
         std::vector<RenderableDescriptor> descs(node_count(storage->polytree));
         descs[root_h] = { classify_legacy_renderable(RenderPipeline::None) };
         descs[terrain_h] = RenderableDescriptor{
@@ -150,6 +190,7 @@ namespace {
             .terrain_visual_proxy_asset = proxy_key,
             .terrain_proxy_id =
                 wz::engine::assets::TerrainProxyId{ proxy_key },
+            .terrain_visual_proxy_data = &proxy,
             .terrain_visual_chunk_count = 2u,
             .visible = true,
         };

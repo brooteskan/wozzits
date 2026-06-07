@@ -257,6 +257,35 @@ TEST(SceneInstantiate, TerrainSurfaceRenderableCompilesToTerrainDrawRefs)
         explicit TerrainResourceResolver(wz::asset::AssetKey proxy_key)
             : proxy_key_(proxy_key)
         {
+            proxy_.compiler_version = 1u;
+            proxy_.source_asset_key = proxy_key_;
+            proxy_.terrain_proxy_id = TerrainProxyId{ proxy_key_ };
+            proxy_.bounds.min[0] = -1.0f;
+            proxy_.bounds.min[1] = -1.0f;
+            proxy_.bounds.min[2] = 1.0f;
+            proxy_.bounds.max[0] = 1.0f;
+            proxy_.bounds.max[1] = 1.0f;
+            proxy_.bounds.max[2] = 3.0f;
+            for (uint32_t i = 0u; i < 2u; ++i) {
+                TerrainVisualProxyChunkRecord chunk{};
+                chunk.chunk_id = TerrainChunkId{ i };
+                chunk.representation_id = TerrainRepresentationId{ i };
+                chunk.bounds.min[0] = i == 0u ? -1.0f : 0.0f;
+                chunk.bounds.min[1] = -1.0f;
+                chunk.bounds.min[2] = 1.0f;
+                chunk.bounds.max[0] = i == 0u ? 0.0f : 1.0f;
+                chunk.bounds.max[1] = 1.0f;
+                chunk.bounds.max[2] = 3.0f;
+                chunk.triangle_count = 2u;
+                chunk.vertex_count = 4u;
+                TerrainVisualProxyLodRecord lod{};
+                lod.lod_id = TerrainLodId{ 0u };
+                lod.representation_id = chunk.representation_id;
+                lod.triangle_count = 2u;
+                lod.vertex_count = 4u;
+                chunk.lods.push_back(lod);
+                proxy_.chunks.push_back(std::move(chunk));
+            }
         }
 
         bool realize_renderable_descriptor(
@@ -265,12 +294,14 @@ TEST(SceneInstantiate, TerrainSurfaceRenderableCompilesToTerrainDrawRefs)
         {
             descriptor.terrain_visual_proxy_asset = proxy_key_;
             descriptor.terrain_proxy_id = TerrainProxyId{ proxy_key_ };
+            descriptor.terrain_visual_proxy_data = &proxy_;
             descriptor.terrain_visual_chunk_count = 2u;
             return true;
         }
 
     private:
         wz::asset::AssetKey proxy_key_{};
+        TerrainVisualProxyData proxy_{};
     };
 
     RenderableAssetData renderable{};

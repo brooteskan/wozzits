@@ -1,9 +1,12 @@
 #include <scene/compile/scene_compiler.h>
+#include <scene/compile/terrain_lod_selector.h>
 #include <algo/next.h>
 
+#include <algorithm>
 #include <new>
 #include <ranges>
 #include <span>
+#include <vector>
 
 namespace wz::scene {
 
@@ -273,6 +276,7 @@ namespace wz::scene {
                     .bounds             = transform_aabb(d.local_bounds, node.world),
                     .terrain_proxy_id   = d.terrain_proxy_id,
                     .visual_proxy_asset = d.terrain_visual_proxy_asset,
+                    .visual_proxy_data  = d.terrain_visual_proxy_data,
                     .material           = d.material,
                     .visible            = d.visible,
                 };
@@ -281,25 +285,75 @@ namespace wz::scene {
                     out,
                 };
                 new (&state.terrain_source_nodes[out]) NodeHandle{ n };
-                for (uint32_t chunk = 0;
-                     chunk < d.terrain_visual_chunk_count;
-                     ++chunk)
-                {
-                    const uint32_t choice =
-                        state.terrain_lod_choice_count++;
-                    new (&state.terrain_lod_choices[choice])
-                        TerrainLodChoice{
-                            .terrain_instance_index = out,
-                            .chunk_id =
-                                wz::engine::assets::TerrainChunkId{ chunk },
-                            .representation_kind =
-                                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-                            .lod_id =
-                                wz::engine::assets::TerrainLodId{ 0 },
-                        };
-                }
             }
         };
+
+        AABB terrain_proxy_bounds_to_aabb(
+            const wz::engine::assets::TerrainVisualProxyBounds& bounds)
+        {
+            return AABB{
+                .min = { bounds.min[0], bounds.min[1], bounds.min[2] },
+                .max = { bounds.max[0], bounds.max[1], bounds.max[2] },
+            };
+        }
+
+        void select_view_terrain_lods(
+            CompiledSceneStorage& storage,
+            const ViewData& view)
+        {
+            CompiledSceneView& cs = storage.scene;
+            std::span<TerrainLodChoice> choice_capacity =
+                storage.terrain_lod_choice_capacity;
+            if (choice_capacity.empty()) {
+                cs.terrain_lod_choices = {};
+                return;
+            }
+
+            const std::vector<TerrainLodChoice> previous(
+                cs.terrain_lod_choices.begin(),
+                cs.terrain_lod_choices.end());
+
+            std::vector<TerrainChunkInfo> chunks;
+            chunks.reserve(choice_capacity.size());
+            for (uint32_t instance_index = 0u;
+                 instance_index < cs.terrain_instances.size();
+                 ++instance_index)
+            {
+                const TerrainVisualInstance& instance =
+                    cs.terrain_instances[instance_index];
+                if (!instance.visible || !instance.visual_proxy_data) {
+                    continue;
+                }
+
+                const auto& proxy = *instance.visual_proxy_data;
+                for (const auto& chunk : proxy.chunks) {
+                    chunks.push_back(TerrainChunkInfo{
+                        .terrain_instance_index = instance_index,
+                        .chunk_id = chunk.chunk_id,
+                        .representation_kind = chunk.representation_kind,
+                        .world_bounds = transform_aabb(
+                            terrain_proxy_bounds_to_aabb(chunk.bounds),
+                            instance.world),
+                        .boundary = chunk.boundary,
+                        .lods = chunk.lods,
+                    });
+                }
+            }
+
+            std::vector<TerrainLodChoice> selected =
+                select_terrain_lods(chunks, view.terrain_lod, view, previous);
+            const uint32_t write_count =
+                (std::min)(
+                    static_cast<uint32_t>(selected.size()),
+                    static_cast<uint32_t>(choice_capacity.size()));
+            for (uint32_t i = 0u; i < write_count; ++i) {
+                new (&choice_capacity[i]) TerrainLodChoice(selected[i]);
+            }
+
+            cs.terrain_lod_choices = std::span<const TerrainLodChoice>(
+                choice_capacity.data(),
+                write_count);
+        }
 
         void patch_node_transform(
             CompiledSceneStorage&                 storage,
@@ -400,6 +454,8 @@ namespace wz::scene {
         });
         transform(cs.particles, particle_sink,
             [](const ParticlePrimitive& p) -> const ParticlePrimitive& { return p; });
+
+        detail::select_view_terrain_lods(storage, view);
 
         cs.view = view;
     }
@@ -608,6 +664,7 @@ namespace wz::scene {
             .terrain_lod_choices = terrain_lod_choices_w,
             .view         = {},
         };
+        storage.terrain_lod_choice_capacity = terrain_lod_choices_w;
 
         storage.metadata = CompiledSceneMetadataView{
             .node_to_output           = node_to_output_w,
@@ -678,6 +735,7 @@ namespace wz::scene {
                 cs.terrain_instances[i]);
             rec.terrain_proxy_id = descs[n].terrain_proxy_id;
             rec.visual_proxy_asset = descs[n].terrain_visual_proxy_asset;
+            rec.visual_proxy_data = descs[n].terrain_visual_proxy_data;
             rec.material = descs[n].material;
             rec.visible = descs[n].visible;
         });

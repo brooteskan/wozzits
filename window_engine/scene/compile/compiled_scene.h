@@ -8,6 +8,7 @@
 #include <scene/geometry.h>
 #include <scene/compile/scene_node_class.h>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <memory>
 
@@ -131,8 +132,22 @@ namespace wz::scene {
         AABB           bounds{};
         wz::engine::assets::TerrainProxyId terrain_proxy_id{};
         wz::asset::AssetKey visual_proxy_asset{};
+        // Non-owning CPU metadata owned by TerrainVisualProxyTable. The asset
+        // library/table must outlive compiled scene views that select terrain LODs.
+        const wz::engine::assets::TerrainVisualProxyData* visual_proxy_data = nullptr;
         MaterialHandle material{ INVALID_MATERIAL };
         bool           visible{ true };
+    };
+
+    struct TerrainLodSelectionParams {
+        float viewport_width = 1920.0f;
+        float viewport_height = 1080.0f;
+        float fov_y_radians = 1.0471975512f;
+        float pixel_error_threshold = 2.0f;
+        uint32_t triangle_budget = (std::numeric_limits<uint32_t>::max)();
+        float hysteresis_fraction = 0.2f;
+        bool enforce_neighbor_lod_delta = false;
+        uint32_t max_neighbor_lod_delta = 1;
     };
 
     struct TerrainLodChoice {
@@ -168,6 +183,7 @@ namespace wz::scene {
         wz::math::Mat4 projection{};
         wz::math::Mat4 view_projection{};
         wz::math::Vec3 camera_position{};
+        TerrainLodSelectionParams terrain_lod{};
     };
 
 
@@ -257,6 +273,7 @@ namespace wz::scene {
 
         CompiledSceneView         scene;
         CompiledSceneMetadataView metadata;
+        std::span<TerrainLodChoice> terrain_lod_choice_capacity;
     };
 
 
@@ -279,6 +296,10 @@ namespace wz::scene {
         SplatDescriptor splat_data{};
         wz::asset::AssetKey terrain_visual_proxy_asset{};
         wz::engine::assets::TerrainProxyId terrain_proxy_id{};
+        // Non-owning CPU metadata owned by TerrainVisualProxyTable. Resource
+        // resolvers populate this for terrain LOD selection; they do not transfer
+        // ownership to scene-render.
+        const wz::engine::assets::TerrainVisualProxyData* terrain_visual_proxy_data = nullptr;
         uint32_t        terrain_visual_chunk_count{ 0 };
         bool            visible{ true };
     };

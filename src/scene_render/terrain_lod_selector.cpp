@@ -1,0 +1,500 @@
+#include <scene/compile/terrain_lod_selector.h>
+
+#include <math/screen_space_metrics.h>
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <queue>
+#include <unordered_map>
+
+namespace wz::scene
+{
+    namespace
+    {
+        using wz::engine::assets::TerrainChunkId;
+        using wz::engine::assets::TerrainVisualProxyLodRecord;
+
+        struct VisibleChunk
+        {
+            TerrainChunkInfo info{};
+            wz::math::ProjectionResult projection{};
+            float projected_area_px = 0.0f;
+            std::vector<const TerrainVisualProxyLodRecord*> lods;
+            std::vector<float> errors_px;
+            uint32_t selected = 0;
+        };
+
+        struct RefinementCandidate
+        {
+            uint32_t chunk_index = 0;
+            uint32_t current = 0;
+            uint32_t target = 0;
+            uint32_t cost = 0;
+            float priority = 0.0f;
+
+            bool operator<(const RefinementCandidate& other) const noexcept
+            {
+                return priority < other.priority;
+            }
+        };
+
+        constexpr uint32_t kUnlimitedBudget =
+            (std::numeric_limits<uint32_t>::max)();
+
+        bool budget_is_unlimited(uint32_t budget) noexcept
+        {
+            return budget == kUnlimitedBudget;
+        }
+
+        uint32_t lod_level_value(
+            const TerrainVisualProxyLodRecord* lod) noexcept
+        {
+            return lod ? lod->lod_id.value : 0u;
+        }
+
+        uint32_t lod_triangles(
+            const TerrainVisualProxyLodRecord* lod) noexcept
+        {
+            return lod ? lod->triangle_count : 0u;
+        }
+
+        float lod_error(
+            const TerrainVisualProxyLodRecord* lod,
+            const wz::math::ProjectionResult& projection,
+            const TerrainLodSelectionParams& params) noexcept
+        {
+            return wz::math::world_error_to_pixels(
+                lod ? lod->conservative_geometric_error : 0.0f,
+                projection.nearest_depth,
+                params.viewport_height,
+                params.fov_y_radians);
+        }
+
+        bool lods_are_finer_first(
+            const TerrainVisualProxyLodRecord* a,
+            const TerrainVisualProxyLodRecord* b) noexcept
+        {
+            return lod_level_value(a) < lod_level_value(b);
+        }
+
+        uint32_t coarsest_threshold_lod(
+            const VisibleChunk& chunk,
+            const TerrainLodSelectionParams& params) noexcept
+        {
+            for (uint32_t i = static_cast<uint32_t>(chunk.lods.size());
+                 i > 0u;
+                 --i)
+            {
+                const uint32_t index = i - 1u;
+                if (chunk.errors_px[index] <= params.pixel_error_threshold) {
+                    return index;
+                }
+            }
+            return 0u;
+        }
+
+        RefinementCandidate make_candidate(
+            const VisibleChunk& chunk,
+            uint32_t chunk_index)
+        {
+            if (chunk.selected == 0u) {
+                return {};
+            }
+
+            const uint32_t target = chunk.selected - 1u;
+            const uint32_t current_triangles =
+                lod_triangles(chunk.lods[chunk.selected]);
+            const uint32_t target_triangles =
+                lod_triangles(chunk.lods[target]);
+            if (target_triangles <= current_triangles) {
+                return {};
+            }
+
+            const float benefit =
+                (std::max)(
+                    0.0f,
+                    chunk.errors_px[chunk.selected] - chunk.errors_px[target]);
+            const uint32_t cost = target_triangles - current_triangles;
+            const float priority =
+                cost == 0u
+                    ? 0.0f
+                    : (benefit / static_cast<float>(cost))
+                        * (std::max)(0.0f, chunk.projected_area_px);
+
+            return RefinementCandidate{
+                .chunk_index = chunk_index,
+                .current = chunk.selected,
+                .target = target,
+                .cost = cost,
+                .priority = priority,
+            };
+        }
+
+        const TerrainLodChoice* find_previous_choice(
+            std::span<const TerrainLodChoice> previous,
+            uint32_t terrain_instance_index,
+            TerrainChunkId chunk_id) noexcept
+        {
+            for (const TerrainLodChoice& choice : previous) {
+                if (choice.terrain_instance_index == terrain_instance_index
+                    && choice.chunk_id == chunk_id)
+                {
+                    return &choice;
+                }
+            }
+            return nullptr;
+        }
+
+        uint32_t find_lod_index(
+            const VisibleChunk& chunk,
+            wz::engine::assets::TerrainLodId lod_id) noexcept
+        {
+            for (uint32_t i = 0u; i < chunk.lods.size(); ++i) {
+                if (chunk.lods[i]->lod_id == lod_id) {
+                    return i;
+                }
+            }
+            return (std::numeric_limits<uint32_t>::max)();
+        }
+
+        bool try_apply_hysteresis(
+            VisibleChunk& chunk,
+            const TerrainLodChoice& previous,
+            const TerrainLodSelectionParams& params,
+            uint32_t& total_triangles) noexcept
+        {
+            const uint32_t previous_index =
+                find_lod_index(chunk, previous.lod_id);
+            if (previous_index >= chunk.lods.size()
+                || previous_index == chunk.selected)
+            {
+                return false;
+            }
+
+            const float margin =
+                (std::max)(0.0f, params.hysteresis_fraction);
+            const float lower =
+                params.pixel_error_threshold * (1.0f - margin);
+            const float upper =
+                params.pixel_error_threshold * (1.0f + margin);
+
+            bool keep_previous = false;
+            if (chunk.selected > previous_index) {
+                keep_previous = chunk.errors_px[chunk.selected] > lower;
+            }
+            else {
+                keep_previous = chunk.errors_px[previous_index] < upper;
+            }
+
+            if (!keep_previous) {
+                return false;
+            }
+
+            const uint32_t selected_triangles =
+                lod_triangles(chunk.lods[chunk.selected]);
+            const uint32_t previous_triangles =
+                lod_triangles(chunk.lods[previous_index]);
+            if (!budget_is_unlimited(params.triangle_budget)
+                && previous_triangles > selected_triangles)
+            {
+                const uint32_t additional =
+                    previous_triangles - selected_triangles;
+                if (total_triangles + additional > params.triangle_budget) {
+                    return false;
+                }
+                total_triangles += additional;
+            }
+            else {
+                total_triangles -=
+                    (std::min)(total_triangles, selected_triangles);
+                total_triangles += previous_triangles;
+            }
+
+            chunk.selected = previous_index;
+            return true;
+        }
+
+        bool neighbor_id_matches(TerrainChunkId a, TerrainChunkId b) noexcept
+        {
+            return a == b
+                && a != wz::engine::assets::kInvalidTerrainChunkId;
+        }
+
+        bool are_neighbors(
+            const VisibleChunk& a,
+            const VisibleChunk& b) noexcept
+        {
+            return neighbor_id_matches(a.info.boundary.negative_x_neighbor, b.info.chunk_id)
+                || neighbor_id_matches(a.info.boundary.positive_x_neighbor, b.info.chunk_id)
+                || neighbor_id_matches(a.info.boundary.negative_z_neighbor, b.info.chunk_id)
+                || neighbor_id_matches(a.info.boundary.positive_z_neighbor, b.info.chunk_id)
+                || neighbor_id_matches(b.info.boundary.negative_x_neighbor, a.info.chunk_id)
+                || neighbor_id_matches(b.info.boundary.positive_x_neighbor, a.info.chunk_id)
+                || neighbor_id_matches(b.info.boundary.negative_z_neighbor, a.info.chunk_id)
+                || neighbor_id_matches(b.info.boundary.positive_z_neighbor, a.info.chunk_id);
+        }
+
+        void enforce_neighbor_constraints(
+            std::vector<VisibleChunk>& chunks,
+            const TerrainLodSelectionParams& params,
+            uint32_t& total_triangles)
+        {
+            if (!params.enforce_neighbor_lod_delta) {
+                return;
+            }
+
+            // Keep this pass intentionally simple until #127 settles seam policy
+            // and #126 establishes real chunk counts. Replace with chunk-id
+            // adjacency if large terrain proxies make this all-pairs walk hot.
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                for (uint32_t i = 0u; i < chunks.size(); ++i) {
+                    for (uint32_t j = i + 1u; j < chunks.size(); ++j) {
+                        if (!are_neighbors(chunks[i], chunks[j])) {
+                            continue;
+                        }
+
+                        VisibleChunk* coarser = &chunks[i];
+                        VisibleChunk* finer = &chunks[j];
+                        if (coarser->selected < finer->selected) {
+                            std::swap(coarser, finer);
+                        }
+
+                        if (coarser->selected <= finer->selected
+                            + params.max_neighbor_lod_delta)
+                        {
+                            continue;
+                        }
+                        if (coarser->selected == 0u) {
+                            continue;
+                        }
+
+                        const uint32_t target = coarser->selected - 1u;
+                        const uint32_t current_triangles =
+                            lod_triangles(coarser->lods[coarser->selected]);
+                        const uint32_t target_triangles =
+                            lod_triangles(coarser->lods[target]);
+                        const uint32_t additional =
+                            target_triangles > current_triangles
+                                ? target_triangles - current_triangles
+                                : 0u;
+                        if (!budget_is_unlimited(params.triangle_budget)
+                            && total_triangles + additional
+                                > params.triangle_budget)
+                        {
+                            continue;
+                        }
+
+                        coarser->selected = target;
+                        total_triangles += additional;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        TerrainLodChoice make_choice(const VisibleChunk& chunk)
+        {
+            const TerrainVisualProxyLodRecord* lod =
+                chunk.lods[chunk.selected];
+            return TerrainLodChoice{
+                .terrain_instance_index = chunk.info.terrain_instance_index,
+                .chunk_id = chunk.info.chunk_id,
+                .representation_kind = lod->representation_kind,
+                .lod_id = lod->lod_id,
+                .projected_error_px = chunk.errors_px[chunk.selected],
+                .projected_area_px = chunk.projected_area_px,
+                .priority = wz::math::lod_priority(
+                    chunk.errors_px[chunk.selected],
+                    chunk.projected_area_px,
+                static_cast<float>(lod->triangle_count)),
+            };
+        }
+
+        float selected_lod_priority(const VisibleChunk& chunk) noexcept
+        {
+            return wz::math::lod_priority(
+                chunk.errors_px[chunk.selected],
+                chunk.projected_area_px,
+                static_cast<float>(
+                    lod_triangles(chunk.lods[chunk.selected])));
+        }
+
+        void evict_lowest_priority_chunks_to_budget(
+            std::vector<VisibleChunk>& chunks,
+            uint32_t& total_triangles,
+            uint32_t triangle_budget)
+        {
+            while (total_triangles > triangle_budget && !chunks.empty()) {
+                auto worst = chunks.begin();
+                for (auto it = chunks.begin() + 1; it != chunks.end(); ++it) {
+                    const float it_priority = selected_lod_priority(*it);
+                    const float worst_priority =
+                        selected_lod_priority(*worst);
+                    if (it_priority < worst_priority) {
+                        worst = it;
+                        continue;
+                    }
+                    if (it_priority == worst_priority) {
+                        const uint32_t it_cost =
+                            lod_triangles(it->lods[it->selected]);
+                        const uint32_t worst_cost =
+                            lod_triangles(worst->lods[worst->selected]);
+                        if (it_cost > worst_cost
+                            || (it_cost == worst_cost
+                                && it->projected_area_px
+                                    < worst->projected_area_px))
+                        {
+                            worst = it;
+                        }
+                    }
+                }
+
+                total_triangles -=
+                    (std::min)(
+                        total_triangles,
+                        lod_triangles(worst->lods[worst->selected]));
+                chunks.erase(worst);
+            }
+        }
+    }
+
+    std::vector<TerrainLodChoice> select_terrain_lods(
+        std::span<const TerrainChunkInfo> chunks,
+        const TerrainLodSelectionParams& params,
+        const ViewData& view,
+        std::span<const TerrainLodChoice> previous)
+    {
+        std::vector<TerrainLodChoice> out;
+        if (chunks.empty()
+            || params.triangle_budget == 0u
+            || params.viewport_width <= 0.0f
+            || params.viewport_height <= 0.0f)
+        {
+            return out;
+        }
+
+        std::vector<VisibleChunk> visible;
+        visible.reserve(chunks.size());
+
+        uint32_t total_triangles = 0u;
+        for (const TerrainChunkInfo& chunk : chunks) {
+            if (chunk.lods.empty()) {
+                continue;
+            }
+
+            const wz::math::ProjectionResult projection =
+                wz::math::project_aabb_to_screen_rect(
+                    chunk.world_bounds,
+                    view.view_projection,
+                    params.viewport_width,
+                    params.viewport_height);
+            const float area =
+                wz::math::chunk_projected_area_pixels(projection);
+            if (area <= 0.0f) {
+                continue;
+            }
+
+            VisibleChunk visible_chunk{
+                .info = chunk,
+                .projection = projection,
+                .projected_area_px = area,
+            };
+            visible_chunk.lods.reserve(chunk.lods.size());
+            for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
+                if (lod.valid()) {
+                    visible_chunk.lods.push_back(&lod);
+                }
+            }
+            if (visible_chunk.lods.empty()) {
+                continue;
+            }
+            std::sort(
+                visible_chunk.lods.begin(),
+                visible_chunk.lods.end(),
+                lods_are_finer_first);
+
+            visible_chunk.errors_px.reserve(visible_chunk.lods.size());
+            for (const TerrainVisualProxyLodRecord* lod : visible_chunk.lods) {
+                visible_chunk.errors_px.push_back(
+                    lod_error(lod, projection, params));
+            }
+
+            visible_chunk.selected =
+                static_cast<uint32_t>(visible_chunk.lods.size() - 1u);
+            const uint32_t base_cost =
+                lod_triangles(visible_chunk.lods[visible_chunk.selected]);
+            total_triangles += base_cost;
+            visible.push_back(std::move(visible_chunk));
+        }
+
+        if (!budget_is_unlimited(params.triangle_budget)
+            && total_triangles > params.triangle_budget)
+        {
+            evict_lowest_priority_chunks_to_budget(
+                visible,
+                total_triangles,
+                params.triangle_budget);
+        }
+
+        std::priority_queue<RefinementCandidate> candidates;
+        for (uint32_t i = 0u; i < visible.size(); ++i) {
+            const RefinementCandidate candidate = make_candidate(visible[i], i);
+            if (candidate.cost > 0u && candidate.priority > 0.0f) {
+                candidates.push(candidate);
+            }
+        }
+
+        while (!candidates.empty()) {
+            const RefinementCandidate candidate = candidates.top();
+            candidates.pop();
+
+            VisibleChunk& chunk = visible[candidate.chunk_index];
+            if (chunk.selected != candidate.current) {
+                continue;
+            }
+            if (chunk.selected <= coarsest_threshold_lod(chunk, params)) {
+                continue;
+            }
+            if (!budget_is_unlimited(params.triangle_budget)
+                && total_triangles + candidate.cost > params.triangle_budget)
+            {
+                continue;
+            }
+
+            chunk.selected = candidate.target;
+            total_triangles += candidate.cost;
+
+            const RefinementCandidate next =
+                make_candidate(chunk, candidate.chunk_index);
+            if (next.cost > 0u && next.priority > 0.0f) {
+                candidates.push(next);
+            }
+        }
+
+        for (VisibleChunk& chunk : visible) {
+            if (const TerrainLodChoice* previous_choice =
+                    find_previous_choice(
+                        previous,
+                        chunk.info.terrain_instance_index,
+                        chunk.info.chunk_id))
+            {
+                try_apply_hysteresis(
+                    chunk,
+                    *previous_choice,
+                    params,
+                    total_triangles);
+            }
+        }
+
+        enforce_neighbor_constraints(visible, params, total_triangles);
+
+        out.reserve(visible.size());
+        for (const VisibleChunk& chunk : visible) {
+            out.push_back(make_choice(chunk));
+        }
+        return out;
+    }
+}

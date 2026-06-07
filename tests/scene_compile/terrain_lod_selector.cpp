@@ -1,0 +1,310 @@
+#include <gtest/gtest.h>
+
+#include <math/projection.h>
+#include <scene/compile/terrain_lod_selector.h>
+
+using namespace wz::scene;
+using namespace wz::math;
+
+namespace
+{
+    constexpr float Pi = 3.14159265358979323846f;
+
+    AABB box(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z)
+    {
+        return AABB{
+            .min = { min_x, min_y, min_z },
+            .max = { max_x, max_y, max_z },
+        };
+    }
+
+    ViewData test_view()
+    {
+        ViewData view{};
+        view.view = Mat4::identity();
+        view.projection = projection_perspective_dx(
+            Pi * 0.5f,
+            1.0f,
+            0.1f,
+            100.0f);
+        view.view_projection = view.projection;
+        view.terrain_lod.viewport_width = 100.0f;
+        view.terrain_lod.viewport_height = 100.0f;
+        view.terrain_lod.fov_y_radians = Pi * 0.5f;
+        view.terrain_lod.pixel_error_threshold = 2.0f;
+        view.terrain_lod.hysteresis_fraction = 0.2f;
+        return view;
+    }
+
+    wz::engine::assets::TerrainVisualProxyLodRecord lod(
+        uint32_t lod_id,
+        uint32_t triangles,
+        float error)
+    {
+        return wz::engine::assets::TerrainVisualProxyLodRecord{
+            .lod_id = wz::engine::assets::TerrainLodId{ lod_id },
+            .representation_id =
+                wz::engine::assets::TerrainRepresentationId{ 1u },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .triangle_count = triangles,
+            .conservative_geometric_error = error,
+        };
+    }
+
+    TerrainChunkInfo chunk(
+        uint32_t chunk_id,
+        AABB bounds,
+        std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods)
+    {
+        return TerrainChunkInfo{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ chunk_id },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .world_bounds = bounds,
+            .lods = lods,
+        };
+    }
+}
+
+TEST(TerrainLodSelector, ZeroBudgetSelectsNoChunks)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 10u, 1.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 0u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    EXPECT_TRUE(choices.empty());
+}
+
+TEST(TerrainLodSelector, FlatPlaneChoosesCoarsestLod)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 25u, 0.0f),
+        lod(2u, 4u, 0.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].lod_id.value, 2u);
+}
+
+TEST(TerrainLodSelector, UnlimitedBudgetRefinesToErrorThreshold)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 25u, 0.3f),
+        lod(2u, 4u, 1.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].lod_id.value, 1u);
+    EXPECT_LE(choices[0].projected_error_px, 2.0f);
+}
+
+TEST(TerrainLodSelector, BudgetConstrainsRefinementFromCoarseBase)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 20u, 0.2f),
+        lod(2u, 5u, 1.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-3.0f, -1.0f, 10.0f, -1.0f, 1.0f, 11.0f), lods),
+        chunk(1u, box(1.0f, -1.0f, 10.0f, 3.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 25u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 2u);
+    uint32_t refined = 0u;
+    for (const TerrainLodChoice& choice : choices) {
+        if (choice.lod_id.value == 1u) {
+            ++refined;
+        }
+    }
+    EXPECT_EQ(refined, 1u);
+}
+
+TEST(TerrainLodSelector, CoarseBaseBudgetEvictsLowestPriorityChunk)
+{
+    const std::vector low_priority_large_lods{
+        lod(0u, 20u, 0.0f),
+    };
+    const std::vector high_priority_small_lods{
+        lod(0u, 6u, 4.0f),
+    };
+    const std::vector chunks{
+        chunk(
+            0u,
+            box(-4.0f, -2.0f, 10.0f, -1.0f, 2.0f, 11.0f),
+            low_priority_large_lods),
+        chunk(
+            1u,
+            box(1.0f, -1.0f, 10.0f, 2.0f, 1.0f, 11.0f),
+            high_priority_small_lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 6u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].chunk_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, ProjectedAreaWeightsRefinementPriority)
+{
+    const std::vector lods{
+        lod(0u, 12u, 0.0f),
+        lod(1u, 10u, 1.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-4.0f, -2.0f, 10.0f, -1.0f, 2.0f, 11.0f), lods),
+        chunk(1u, box(1.0f, -0.25f, 10.0f, 1.5f, 0.25f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 22u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 2u);
+    EXPECT_EQ(choices[0].chunk_id.value, 0u);
+    EXPECT_EQ(choices[0].lod_id.value, 0u);
+    EXPECT_EQ(choices[1].chunk_id.value, 1u);
+    EXPECT_EQ(choices[1].lod_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, BenefitCostRatioBeatsRawBenefit)
+{
+    const std::vector cheap_lods{
+        lod(0u, 12u, 0.2f),
+        lod(1u, 10u, 1.0f),
+    };
+    const std::vector expensive_lods{
+        lod(0u, 20u, 0.0f),
+        lod(1u, 10u, 2.4f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-2.0f, -1.0f, 10.0f, -0.5f, 1.0f, 11.0f), cheap_lods),
+        chunk(1u, box(0.5f, -1.0f, 10.0f, 2.0f, 1.0f, 11.0f), expensive_lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 30u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 2u);
+    EXPECT_EQ(choices[0].lod_id.value, 0u);
+    EXPECT_EQ(choices[1].lod_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, HysteresisSuppressesThresholdFlicker)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 10u, 0.44f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+    const std::vector previous{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+        },
+    };
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view, previous);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].lod_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, SingleLodChunkIsSelectedWhenBudgetAllows)
+{
+    const std::vector lods{
+        lod(0u, 7u, 8.0f),
+    };
+    const std::vector chunks{
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 7u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].lod_id.value, 0u);
+}
+
+TEST(TerrainLodSelector, NeighborConstraintRefinesCoarseNeighborWhenEnabled)
+{
+    const std::vector left_lods{
+        lod(0u, 20u, 0.0f),
+        lod(1u, 10u, 0.0f),
+        lod(2u, 5u, 0.0f),
+    };
+    const std::vector right_lods{
+        lod(0u, 20u, 0.0f),
+        lod(1u, 10u, 0.2f),
+        lod(2u, 5u, 1.0f),
+    };
+    TerrainChunkInfo left =
+        chunk(0u, box(-2.0f, -1.0f, 10.0f, 0.0f, 1.0f, 11.0f), left_lods);
+    TerrainChunkInfo right =
+        chunk(1u, box(0.0f, -1.0f, 10.0f, 2.0f, 1.0f, 11.0f), right_lods);
+    left.boundary.positive_x_neighbor =
+        wz::engine::assets::TerrainChunkId{ 1u };
+    right.boundary.negative_x_neighbor =
+        wz::engine::assets::TerrainChunkId{ 0u };
+    const std::vector chunks{ left, right };
+
+    ViewData view = test_view();
+    view.terrain_lod.triangle_budget = 30u;
+    view.terrain_lod.enforce_neighbor_lod_delta = true;
+    view.terrain_lod.max_neighbor_lod_delta = 1u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 2u);
+    EXPECT_LE(
+        std::abs(
+            static_cast<int>(choices[0].lod_id.value)
+            - static_cast<int>(choices[1].lod_id.value)),
+        1);
+}

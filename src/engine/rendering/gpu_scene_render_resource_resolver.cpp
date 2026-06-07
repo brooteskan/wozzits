@@ -915,6 +915,8 @@ namespace wz::engine::rendering
             && !(renderable.companion_asset == wz::asset::AssetKey{});
 
         const wz::engine::assets::TerrainAssetData* terrain_data = nullptr;
+        const wz::engine::assets::TerrainVisualProxyData* terrain_visual_proxy_data =
+            nullptr;
         std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks_storage;
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
@@ -937,6 +939,7 @@ namespace wz::engine::rendering
                 if (!visual_proxy || !visual_proxy->valid()) {
                     return false;
                 }
+                terrain_visual_proxy_data = visual_proxy;
 
                 const wz::engine::assets::TerrainAsset terrain_asset{
                     .output = visual_proxy->source_asset_key,
@@ -1182,6 +1185,7 @@ namespace wz::engine::rendering
             descriptor.terrain_visual_proxy_asset =
                 renderable.companion_asset;
             descriptor.terrain_proxy_id = terrain_proxy_id;
+            descriptor.terrain_visual_proxy_data = terrain_visual_proxy_data;
             descriptor.terrain_visual_chunk_count =
                 static_cast<uint32_t>(terrain_chunks.size());
         }
