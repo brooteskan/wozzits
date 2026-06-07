@@ -134,12 +134,13 @@ namespace wz::render {
     //   opaque      — rebuilt by build_frame() and update_frame_view() (frustum
     //                 culling changes the visible set on camera moves).
     //
-    //   splats       \
-    //   transparent   > view-dependent; rebuilt by build_frame() and update_frame_view().
-    //   particles    /
+    //   terrain      \
+    //   splats        \
+    //   transparent    > view-dependent; rebuilt by build_frame() and update_frame_view().
+    //   particles     /
     //
-    // Submission order convention: opaque → splats → transparent → particles.
-    // The backend iterates the four spans in that order.
+    // Submission order convention: sky -> opaque -> terrain -> splats ->
+    // transparent -> particles. The backend iterates the spans in that order.
     //
     // Each pipeline's draws are already sorted by the RenderIR layer:
     //   opaque      — front-to-back by material (minimises state changes)
@@ -155,9 +156,11 @@ namespace wz::render {
 
         // Stable section — backed by RenderFrameStorage::stable_buffer
         std::span<const DrawCommand> opaque;
+        std::span<const TerrainVisualInstance> terrain_instances;
 
         // View-dependent section — backed by RenderFrameStorage::view_buffer
-        // Layout within view_buffer: [ splats | transparent | particles ]
+        // Layout within view_buffer: [ terrain | splats | transparent | particles ]
+        std::span<const TerrainDrawRef> terrain;
         std::span<const DrawCommand> splats;
         std::span<const DrawCommand> transparent;
         std::span<const DrawCommand> particles;
@@ -175,7 +178,7 @@ namespace wz::render {
     //   stable_buffer — opaque commands; sized for total opaque count so
     //                   update_frame_view() can rewrite the visible subset in-place
     //                   without reallocating when the frustum changes.
-    //   view_buffer   — splat + transparent + particle commands; rebuilt every
+    //   view_buffer   — terrain refs + splat/transparent/particle commands; rebuilt every
     //                   camera move by update_frame_view().
 
     struct RenderFrameStorage {
@@ -183,6 +186,7 @@ namespace wz::render {
         size_t                       stable_bytes    = 0;
         uint32_t                     sky_capacity    = 0;
         uint32_t                     opaque_capacity = 0; // total slots carved in stable_buffer
+        uint32_t                     terrain_instance_capacity = 0;
 
         std::unique_ptr<std::byte[]> view_buffer;
         size_t                       view_bytes = 0;
@@ -203,7 +207,7 @@ namespace wz::render {
     //
     // Full rebuild — both stable and view-dependent sections.
     // Fills storage; returns a view into it.
-    // Submission order: opaque → splats → transparent → particles.
+    // Submission order: sky -> opaque -> terrain -> splats -> transparent -> particles.
     // Each pipeline's draws are already sorted by the IR layer.
 
     RenderFrameView build_frame(
@@ -216,7 +220,7 @@ namespace wz::render {
     // ─── update_frame_view() ─────────────────────────────────────────────────────
     //
     // Rebuilds the opaque section in-place (frustum culling may expose new opaques)
-    // and rebuilds the view-dependent section (splats, transparent, particles).
+    // and rebuilds the view-dependent section (terrain, splats, transparent, particles).
     //
     // Call after update_view() + update_render_ir() when the camera moved but
     // opaque geometry/descriptors are unchanged.

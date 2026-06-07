@@ -3,6 +3,7 @@
 // wz/scene/compiled_scene.h
 
 #include <stats/scene_render_storage.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <graph/static_polytree.h>
 #include <scene/geometry.h>
 #include <scene/compile/scene_node_class.h>
@@ -60,6 +61,7 @@ namespace wz::scene {
         Splat,
         Particle,
         Light,
+        TerrainVisualInstance,
         Camera,
         Volume,
         Decal,
@@ -124,6 +126,26 @@ namespace wz::scene {
         float          depth{ 0.f };
     };
 
+    struct TerrainVisualInstance {
+        wz::math::Mat4 world{};
+        AABB           bounds{};
+        wz::engine::assets::TerrainProxyId terrain_proxy_id{};
+        wz::asset::AssetKey visual_proxy_asset{};
+        MaterialHandle material{ INVALID_MATERIAL };
+        bool           visible{ true };
+    };
+
+    struct TerrainLodChoice {
+        uint32_t terrain_instance_index = 0;
+        wz::engine::assets::TerrainChunkId chunk_id{};
+        wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
+            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
+        wz::engine::assets::TerrainLodId lod_id{};
+        float projected_error_px = 0.0f;
+        float projected_area_px = 0.0f;
+        float priority = 0.0f;
+    };
+
 
     // ─── Light record ─────────────────────────────────────────────────────────────
 
@@ -166,11 +188,13 @@ namespace wz::scene {
         std::span<const OpaqueGeometryPrimitive> opaque;
         std::span<const SplatPrimitive>          splats;
         std::span<const LightRecord>             lights;
+        std::span<const TerrainVisualInstance>   terrain_instances;
 
         // View-dependent
         std::span<const TransparentGeometryPrimitive> transparent;
         std::span<const ParticlePrimitive>            particles;
         std::span<float>                              splat_depths; // mutable, parallel to splats
+        std::span<const TerrainLodChoice>             terrain_lod_choices;
 
         ViewData view{};
     };
@@ -207,6 +231,7 @@ namespace wz::scene {
         std::span<const NodeHandle> splat_source_nodes;        // parallel to CompiledSceneView::splats
         std::span<const NodeHandle> particle_source_nodes;     // parallel to CompiledSceneView::particles
         std::span<const NodeHandle> light_source_nodes;        // parallel to CompiledSceneView::lights
+        std::span<const NodeHandle> terrain_source_nodes;      // parallel to CompiledSceneView::terrain_instances
     };
 
 
@@ -252,6 +277,8 @@ namespace wz::scene {
         MaterialHandle  material{ INVALID_MATERIAL };
         AABB            local_bounds{};
         SplatDescriptor splat_data{};
+        wz::asset::AssetKey terrain_visual_proxy_asset{};
+        wz::engine::assets::TerrainProxyId terrain_proxy_id{};
         bool            visible{ true };
     };
 

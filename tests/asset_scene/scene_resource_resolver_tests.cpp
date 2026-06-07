@@ -657,6 +657,95 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(stats.pixels_per_triangle_triangles_le_256, 0u);
 }
 
+TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
+{
+    using namespace wz::engine::assets;
+
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    TerrainVisualChunk chunks[1]{};
+    chunks[0].first_index = 12u;
+    chunks[0].index_count = 6u;
+    chunks[0].replacement_first_index = 30u;
+    chunks[0].replacement_index_count = 3u;
+    chunks[0].aggregate.triangle_count = 2u;
+
+    const wz::gpu::GPUHandle gpu_mesh{
+        .id = 17u,
+        .epoch = 1u,
+        .type = wz::gpu::GPUResourceType::Mesh,
+    };
+
+    wz::asset::AssetKey proxy_key{};
+    proxy_key.content_hash = { 0x1234u, 0x5678u };
+    const TerrainProxyId proxy_id{ proxy_key };
+
+    ASSERT_TRUE(resolver.register_terrain_proxy(
+        proxy_id,
+        gpu_mesh,
+        BuiltinRenderProgram::TerrainMeshSurface,
+        {},
+        {},
+        8.0f,
+        {},
+        std::span<const TerrainVisualChunk>(chunks, 1u)));
+
+    auto resolved = resolver.resolve_terrain_proxy(proxy_id);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(resolved->gpu_resource, gpu_mesh);
+    EXPECT_FLOAT_EQ(resolved->terrain_target_pixels_per_triangle, 8.0f);
+    ASSERT_EQ(resolved->terrain_chunks.size(), 1u);
+    EXPECT_EQ(resolved->terrain_chunks[0].first_index, 12u);
+    EXPECT_EQ(resolved->terrain_chunks[0].index_count, 6u);
+
+    wz::render::TerrainDrawRef base_ref{};
+    base_ref.chunk_id = TerrainChunkId{ 0u };
+    base_ref.representation_kind =
+        TerrainVisualRepresentationKind::MeshChunks;
+    base_ref.lod_id = TerrainLodId{ 0u };
+
+    auto draw = resolver.resolve_terrain_draw(proxy_id, base_ref);
+    ASSERT_TRUE(draw.has_value());
+    EXPECT_EQ(draw->gpu_resource, gpu_mesh);
+    EXPECT_EQ(draw->first_index, 12u);
+    EXPECT_EQ(draw->index_count, 6u);
+    EXPECT_EQ(draw->source_triangle_count, 2u);
+    EXPECT_TRUE(draw->lod_replacement_available);
+    EXPECT_FALSE(draw->lod_replacement_selected);
+
+    wz::render::TerrainDrawRef replacement_ref = base_ref;
+    replacement_ref.lod_id = TerrainLodId{ 1u };
+
+    draw = resolver.resolve_terrain_draw(proxy_id, replacement_ref);
+    ASSERT_TRUE(draw.has_value());
+    EXPECT_EQ(draw->first_index, 30u);
+    EXPECT_EQ(draw->index_count, 3u);
+    EXPECT_TRUE(draw->lod_replacement_available);
+    EXPECT_TRUE(draw->lod_replacement_selected);
+
+    TerrainVisualChunk updated[1]{};
+    updated[0].first_index = 24u;
+    updated[0].index_count = 3u;
+    updated[0].aggregate.triangle_count = 1u;
+
+    ASSERT_TRUE(resolver.register_terrain_proxy(
+        proxy_id,
+        gpu_mesh,
+        BuiltinRenderProgram::TerrainMeshSurface,
+        {},
+        {},
+        2.0f,
+        {},
+        std::span<const TerrainVisualChunk>(updated, 1u)));
+
+    resolved = resolver.resolve_terrain_proxy(proxy_id);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_FLOAT_EQ(resolved->terrain_target_pixels_per_triangle, 2.0f);
+    ASSERT_EQ(resolved->terrain_chunks.size(), 1u);
+    EXPECT_EQ(resolved->terrain_chunks[0].first_index, 24u);
+    EXPECT_EQ(resolved->terrain_chunks[0].index_count, 3u);
+}
+
 TEST(SceneInstantiate, ConcreteMeshResolverRejectsNonMeshKind)
 {
     const wz::fs::Path root =

@@ -24,6 +24,16 @@ namespace {
         return { Vec3{-0.5f,-0.5f,-0.5f}, Vec3{0.5f,0.5f,0.5f} };
     }
 
+    wz::asset::AssetKey test_proxy_key()
+    {
+        return wz::asset::AssetKey{
+            .content_hash = { 1, 2 },
+            .schema_hash = { 3, 4 },
+            .compiler_hash = { 5, 6 },
+            .deps_hash = { 7, 8 },
+        };
+    }
+
     ViewData camera_at_z(float z)
     {
         ViewData v{};
@@ -107,6 +117,47 @@ namespace {
         return cs;
     }
 
+    CompiledSceneStorage make_terrain_scene(ViewData view = camera_at_z(0.f))
+    {
+        SceneBuilder b;
+        TransformNode root{};
+        NodeHandle root_h = add_node(b, root);
+
+        TransformNode terrain_node{};
+        terrain_node.local = translation_z(1.0f);
+        terrain_node.flags = TransformNodeFlag::RenderDomain;
+        NodeHandle terrain_h = add_node(b, terrain_node);
+        add_edge(b, root_h, terrain_h);
+
+        auto storage = build(std::move(b));
+        assert(storage.has_value());
+        propagate_all(storage->polytree);
+
+        const wz::asset::AssetKey proxy_key = test_proxy_key();
+        std::vector<RenderableDescriptor> descs(node_count(storage->polytree));
+        descs[root_h] = { classify_legacy_renderable(RenderPipeline::None) };
+        descs[terrain_h] = RenderableDescriptor{
+            .node_class = SceneNodeClass{
+                .role = SceneRole::Renderable,
+                .producer = ProducerKind::TerrainPatch,
+                .default_surface = SurfaceClass::Opaque,
+                .spatial = SpatialKind::Box,
+                .compile = CompileBehavior::Static,
+                .domains = static_cast<RenderDomainMask>(RenderDomain::Surface),
+            },
+            .material = 9u,
+            .local_bounds = unit_box(),
+            .terrain_visual_proxy_asset = proxy_key,
+            .terrain_proxy_id =
+                wz::engine::assets::TerrainProxyId{ proxy_key },
+            .visible = true,
+        };
+
+        CompiledSceneStorage cs{};
+        compile(cs, storage->polytree, descs, {}, view);
+        return cs;
+    }
+
 } // namespace
 
 
@@ -142,6 +193,69 @@ TEST(RenderIRSpec, ParticleRefCountMatchesPrimitives)
     RenderIRStorage ir_storage;
     auto ir = build_render_ir(ir_storage, cs.scene);
     EXPECT_EQ(ir.particles.size(), cs.scene.particles.size());
+}
+
+TEST(RenderIRSpec, TerrainInstanceCompilesAsFirstClassSceneRecord)
+{
+    auto cs = make_terrain_scene();
+
+    ASSERT_EQ(cs.scene.terrain_instances.size(), 1u);
+    EXPECT_EQ(cs.scene.terrain_instances[0].material, 9u);
+    EXPECT_EQ(
+        cs.scene.terrain_instances[0].visual_proxy_asset,
+        test_proxy_key());
+    ASSERT_EQ(cs.metadata.terrain_source_nodes.size(), 1u);
+    const NodeHandle source = cs.metadata.terrain_source_nodes[0];
+    ASSERT_LT(source, cs.metadata.node_to_output.size());
+    EXPECT_EQ(
+        cs.metadata.node_to_output[source].kind,
+        CompiledOutputKind::TerrainVisualInstance);
+    EXPECT_EQ(cs.metadata.node_to_output[source].index, 0u);
+}
+
+TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)
+{
+    auto cs = make_terrain_scene();
+    std::vector<TerrainLodChoice> choices{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 7 },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 1 },
+            .projected_error_px = 0.5f,
+            .projected_area_px = 128.0f,
+            .priority = 2.0f,
+        },
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 8 },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = wz::engine::assets::TerrainLodId{ 0 },
+            .projected_error_px = 0.1f,
+            .projected_area_px = 64.0f,
+            .priority = 1.0f,
+        },
+    };
+
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, scene);
+
+    ASSERT_EQ(ir.terrain.size(), 2u);
+    EXPECT_EQ(ir.culling.visible_terrain, 2u);
+    EXPECT_EQ(ir.culling.culled_terrain, 0u);
+    for (const TerrainDrawRef& ref : ir.terrain) {
+        EXPECT_EQ(ref.terrain_instance_index, 0u);
+        EXPECT_EQ(
+            ref.representation_kind,
+            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
+        EXPECT_NE(ref.sort_key, 0u);
+    }
+    EXPECT_NE(ir.terrain[0].chunk_id, ir.terrain[1].chunk_id);
 }
 
 

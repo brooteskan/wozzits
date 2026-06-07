@@ -1145,6 +1145,25 @@ namespace wz::engine::rendering
                 terrain_chunks);
 
         descriptor.mesh = scene_mesh;
+        if (renderable.program
+            == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface)
+        {
+            const wz::engine::assets::TerrainProxyId terrain_proxy_id{
+                renderable.companion_asset,
+            };
+            render_resolver_.register_terrain_proxy(
+                terrain_proxy_id,
+                gpu_mesh,
+                renderable.program,
+                renderable.render_program,
+                renderable.terrain_lighting,
+                renderable.terrain_target_pixels_per_triangle,
+                renderable.mesh_style,
+                terrain_chunks);
+            descriptor.terrain_visual_proxy_asset =
+                renderable.companion_asset;
+            descriptor.terrain_proxy_id = terrain_proxy_id;
+        }
         descriptor.material = wz::scene::INVALID_MATERIAL;
 
         return true;

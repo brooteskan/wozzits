@@ -28,6 +28,16 @@ namespace wz::render {
         uint64_t sort_key; // retained for debugging and secondary sorts
     };
 
+    struct TerrainDrawRef {
+        uint32_t terrain_instance_index = 0;
+        wz::engine::assets::TerrainChunkId chunk_id{};
+        wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
+            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
+        wz::engine::assets::TerrainLodId lod_id{};
+        uint64_t batch_key = 0;
+        uint64_t sort_key = 0;
+    };
+
     // ─── CullingStats ────────────────────────────────────────────────────────────
     //
     // Per-pipeline visible and culled counts from the last build or update.
@@ -41,6 +51,8 @@ namespace wz::render {
         uint32_t culled_splats       = 0;
         uint32_t visible_particles   = 0;
         uint32_t culled_particles    = 0;
+        uint32_t visible_terrain     = 0;
+        uint32_t culled_terrain      = 0;
     };
 
     // ─── RenderIRView ─────────────────────────────────────────────────────────────
@@ -64,6 +76,7 @@ namespace wz::render {
         std::span<const DrawRef> transparent;  // back-to-front by depth
         std::span<const DrawRef> splats;       // back-to-front by depth
         std::span<const DrawRef> particles;    // back-to-front by depth
+        std::span<const TerrainDrawRef> terrain;
 
         // Source view — by value; spans point into the originating CompiledSceneStorage
         CompiledSceneView source{};
@@ -83,10 +96,12 @@ namespace wz::render {
         DrawRef* transparent_base = nullptr;
         DrawRef* splat_base       = nullptr;
         DrawRef* particle_base    = nullptr;
+        TerrainDrawRef* terrain_base = nullptr;
         uint32_t opaque_capacity      = 0;
         uint32_t transparent_capacity = 0;
         uint32_t splat_capacity       = 0;
         uint32_t particle_capacity    = 0;
+        uint32_t terrain_capacity     = 0;
 
         wz::scene_render::AllocationStats stats{};
 

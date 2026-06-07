@@ -26,11 +26,12 @@ namespace wz::render::backend {
         uint32_t splat_count()       const { return counts[2]; }
         uint32_t transparent_count() const { return counts[3]; }
         uint32_t particle_count()    const { return counts[4]; }
+        uint32_t terrain_count()     const { return counts[5]; }
         uint32_t total()             const {
-            return counts[0] + counts[1] + counts[2] + counts[3] + counts[4];
+            return counts[0] + counts[1] + counts[2] + counts[3] + counts[4] + counts[5];
         }
 
-        uint32_t counts[5]{};
+        uint32_t counts[6]{};
     };
 
     namespace detail {
@@ -85,6 +86,17 @@ namespace wz::render::backend {
             return ss.str();
         }
 
+        inline std::string format_terrain_ref(const TerrainDrawRef& ref, uint32_t idx)
+        {
+            std::ostringstream ss;
+            ss << "[" << idx << "] "
+                << "terrain key=0x" << std::hex << ref.sort_key << std::dec
+                << " instance=" << ref.terrain_instance_index
+                << " chunk=" << ref.chunk_id.value
+                << " lod=" << ref.lod_id.value;
+            return ss.str();
+        }
+
         struct SubmitSink {
             SubmitResult& result;
             uint32_t&     idx;
@@ -106,6 +118,13 @@ namespace wz::render::backend {
             {
                 result.log.push_back(format_sky_command(cmd, idx++));
                 ++result.counts[0];
+                return true;
+            }
+
+            bool push(const TerrainDrawRef& ref)
+            {
+                result.log.push_back(format_terrain_ref(ref, idx++));
+                ++result.counts[5];
                 return true;
             }
         };
@@ -140,8 +159,16 @@ namespace wz::render::backend {
                 [](const DrawCommand& cmd) -> const DrawCommand& { return cmd; });
         };
 
+        auto process_terrain = [&](std::span<const TerrainDrawRef> refs) {
+            wz::core::algo::next::transform(
+                refs,
+                sink,
+                [](const TerrainDrawRef& ref) -> const TerrainDrawRef& { return ref; });
+        };
+
         process_sky(frame.sky);
         process(frame.opaque);
+        process_terrain(frame.terrain);
         process(frame.splats);
         process(frame.transparent);
         process(frame.particles);

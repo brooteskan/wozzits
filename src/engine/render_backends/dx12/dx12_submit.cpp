@@ -189,361 +189,138 @@ namespace wz::render::backend::dx12
             return program == BuiltinRenderProgram::TerrainMeshSurface;
         }
 
-        struct ClipPoint
-        {
-            float x = 0.0f;
-            float y = 0.0f;
-            float z = 0.0f;
-            float w = 1.0f;
-        };
+        UINT root_constant_count_for_program(BuiltinRenderProgram program);
 
-        ClipPoint transform_clip_point(
-            const Mat4& m,
-            float x,
-            float y,
-            float z) noexcept
-        {
-            return ClipPoint{
-                m.m[0] * x + m.m[4] * y + m.m[8] * z + m.m[12],
-                m.m[1] * x + m.m[5] * y + m.m[9] * z + m.m[13],
-                m.m[2] * x + m.m[6] * y + m.m[10] * z + m.m[14],
-                m.m[3] * x + m.m[7] * y + m.m[11] * z + m.m[15],
-            };
-        }
-
-        bool terrain_chunk_intersects_clip(
-            const wz::engine::assets::TerrainVisualChunk& chunk,
-            const Mat4& world,
-            const Mat4& view_projection)
-        {
-            if (chunk.index_count == 0) {
-                return false;
-            }
-
-            const Mat4 world_view_projection =
-                wz::math::mul(view_projection, world);
-
-            bool outside_left = true;
-            bool outside_right = true;
-            bool outside_bottom = true;
-            bool outside_top = true;
-            bool outside_near = true;
-            bool outside_far = true;
-
-            for (int x_bit = 0; x_bit < 2; ++x_bit) {
-                const float x = x_bit != 0
-                    ? chunk.bounds_max[0]
-                    : chunk.bounds_min[0];
-                for (int y_bit = 0; y_bit < 2; ++y_bit) {
-                    const float y = y_bit != 0
-                        ? chunk.bounds_max[1]
-                        : chunk.bounds_min[1];
-                    for (int z_bit = 0; z_bit < 2; ++z_bit) {
-                        const float z = z_bit != 0
-                            ? chunk.bounds_max[2]
-                            : chunk.bounds_min[2];
-                        const ClipPoint p = transform_clip_point(
-                            world_view_projection,
-                            x,
-                            y,
-                            z);
-
-                        if (p.w <= 0.0f) {
-                            return true;
-                        }
-
-                        outside_left = outside_left && p.x < -p.w;
-                        outside_right = outside_right && p.x > p.w;
-                        outside_bottom = outside_bottom && p.y < -p.w;
-                        outside_top = outside_top && p.y > p.w;
-                        outside_near = outside_near && p.z < 0.0f;
-                        outside_far = outside_far && p.z > p.w;
-                    }
-                }
-            }
-
-            return !(
-                outside_left
-                || outside_right
-                || outside_bottom
-                || outside_top
-                || outside_near
-                || outside_far);
-        }
-
-        float terrain_chunk_projected_footprint_pixels(
-            const wz::engine::assets::TerrainVisualChunk& chunk,
-            const Mat4& world,
-            const Mat4& view_projection,
-            float viewport_w,
-            float viewport_h)
-        {
-            if (viewport_w <= 0.0f || viewport_h <= 0.0f) {
-                return 0.0f;
-            }
-
-            const Mat4 world_view_projection =
-                wz::math::mul(view_projection, world);
-            const float y = (std::clamp)(
-                chunk.aggregate.mean_height,
-                chunk.bounds_min[1],
-                chunk.bounds_max[1]);
-            const float corners[4][3]{
-                { chunk.bounds_min[0], y, chunk.bounds_min[2] },
-                { chunk.bounds_max[0], y, chunk.bounds_min[2] },
-                { chunk.bounds_min[0], y, chunk.bounds_max[2] },
-                { chunk.bounds_max[0], y, chunk.bounds_max[2] },
-            };
-
-            float min_x = viewport_w;
-            float min_y = viewport_h;
-            float max_x = 0.0f;
-            float max_y = 0.0f;
-            bool has_projected_corner = false;
-            for (const auto& corner : corners) {
-                const ClipPoint p = transform_clip_point(
-                    world_view_projection,
-                    corner[0],
-                    corner[1],
-                    corner[2]);
-                if (p.w <= 0.0f) {
-                    return viewport_w * viewport_h;
-                }
-
-                const float ndc_x = p.x / p.w;
-                const float ndc_y = p.y / p.w;
-                const float px = (ndc_x * 0.5f + 0.5f) * viewport_w;
-                const float py = (0.5f - ndc_y * 0.5f) * viewport_h;
-                min_x = (std::min)(min_x, px);
-                min_y = (std::min)(min_y, py);
-                max_x = (std::max)(max_x, px);
-                max_y = (std::max)(max_y, py);
-                has_projected_corner = true;
-            }
-
-            if (!has_projected_corner) {
-                return 0.0f;
-            }
-
-            min_x = (std::clamp)(min_x, 0.0f, viewport_w);
-            max_x = (std::clamp)(max_x, 0.0f, viewport_w);
-            min_y = (std::clamp)(min_y, 0.0f, viewport_h);
-            max_y = (std::clamp)(max_y, 0.0f, viewport_h);
-            return (std::max)(0.0f, max_x - min_x)
-                * (std::max)(0.0f, max_y - min_y);
-        }
-
-        void record_pixels_per_triangle_bucket(
-            float pixels_per_triangle,
-            uint32_t triangle_count,
-            uint64_t& triangles_le_0_5,
-            uint64_t& triangles_le_1,
-            uint64_t& triangles_le_2,
-            uint64_t& triangles_le_4,
-            uint64_t& triangles_le_8,
-            uint64_t& triangles_le_16,
-            uint64_t& triangles_le_32,
-            uint64_t& triangles_le_64,
-            uint64_t& triangles_le_128,
-            uint64_t& triangles_le_256) noexcept
-        {
-            if (pixels_per_triangle <= 0.5f) {
-                triangles_le_0_5 += triangle_count;
-            }
-            if (pixels_per_triangle <= 1.0f) {
-                triangles_le_1 += triangle_count;
-            }
-            if (pixels_per_triangle <= 2.0f) {
-                triangles_le_2 += triangle_count;
-            }
-            if (pixels_per_triangle <= 4.0f) {
-                triangles_le_4 += triangle_count;
-            }
-            if (pixels_per_triangle <= 8.0f) {
-                triangles_le_8 += triangle_count;
-            }
-            if (pixels_per_triangle <= 16.0f) {
-                triangles_le_16 += triangle_count;
-            }
-            if (pixels_per_triangle <= 32.0f) {
-                triangles_le_32 += triangle_count;
-            }
-            if (pixels_per_triangle <= 64.0f) {
-                triangles_le_64 += triangle_count;
-            }
-            if (pixels_per_triangle <= 128.0f) {
-                triangles_le_128 += triangle_count;
-            }
-            if (pixels_per_triangle <= 256.0f) {
-                triangles_le_256 += triangle_count;
-            }
-        }
-
-        bool draw_chunked_terrain_mesh(
+        bool draw_terrain_ref_mesh(
             wz::gpu::Device& device,
             ID3D12GraphicsCommandList* cmdList,
-            const wz::engine::rendering::ResolvedRenderableResource& resolved,
-            const DrawCommand& dc,
+            const TerrainDrawRef& ref,
+            const TerrainVisualInstance& instance,
             const RenderFrameView& frame,
             const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
-            const wz::engine::rendering::RenderResourceResolver& resolver)
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache)
         {
-            if (!is_terrain_surface_program(resolved.program)
-                || resolved.terrain_chunks.empty())
+            if (ref.representation_kind
+                != wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks)
             {
                 return false;
             }
 
-            uint64_t total_triangles = 0;
-            uint64_t submitted_triangles = 0;
-            uint64_t submitted_chunks = 0;
-            uint64_t lod_candidate_chunks = 0;
-            uint64_t lod_candidate_triangles = 0;
-            uint64_t lod_replacement_available_chunks = 0;
-            uint64_t lod_replacement_available_triangles = 0;
-            uint64_t lod_replacement_drawn_chunks = 0;
-            uint64_t lod_replacement_drawn_triangles = 0;
-            double pixels_per_triangle_weighted_sum = 0.0;
-            float pixels_per_triangle_min = 0.0f;
-            float pixels_per_triangle_max = 0.0f;
-            bool has_pixels_per_triangle = false;
-            uint64_t pixels_per_triangle_triangles_le_0_5 = 0;
-            uint64_t pixels_per_triangle_triangles_le_1 = 0;
-            uint64_t pixels_per_triangle_triangles_le_2 = 0;
-            uint64_t pixels_per_triangle_triangles_le_4 = 0;
-            uint64_t pixels_per_triangle_triangles_le_8 = 0;
-            uint64_t pixels_per_triangle_triangles_le_16 = 0;
-            uint64_t pixels_per_triangle_triangles_le_32 = 0;
-            uint64_t pixels_per_triangle_triangles_le_64 = 0;
-            uint64_t pixels_per_triangle_triangles_le_128 = 0;
-            uint64_t pixels_per_triangle_triangles_le_256 = 0;
-            const float target_pixels_per_triangle =
-                resolved.terrain_target_pixels_per_triangle;
-            const bool lod_active =
-                target_pixels_per_triangle > 0.0f;
-            const float viewport_w = static_cast<float>(
-                wz::gpu::dx12::internal::get_width(device));
-            const float viewport_h = static_cast<float>(
-                wz::gpu::dx12::internal::get_height(device));
+            const auto resolved =
+                resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
+            if (!resolved || !is_terrain_surface_program(resolved->program))
+                return false;
 
-            for (uint32_t chunk_index = 0;
-                chunk_index < resolved.terrain_chunks.size();
-                ++chunk_index)
-            {
-                const auto& chunk = resolved.terrain_chunks[chunk_index];
-                const uint32_t triangle_count = chunk.triangle_count();
-                total_triangles += triangle_count;
-                if (!terrain_chunk_intersects_clip(
-                        chunk,
-                        dc.world,
-                        frame.view.view_projection))
+            wz::gpu::GPUHandle pipeline_handle;
+            if (render_program_cache && resolved->render_program.valid()) {
+                pipeline_handle =
+                    render_program_cache->get(resolved->render_program);
+            }
+            else {
+                pipeline_handle = pipeline_cache.get(resolved->program);
+            }
+
+            const auto* pl =
+                wz::gpu::dx12::internal::get_graphics_pipeline(
+                    device,
+                    pipeline_handle);
+            if (!pl || !pl->valid())
+                return false;
+
+            const auto* mesh = wz::gpu::dx12::internal::get_mesh(
+                device,
+                resolved->gpu_resource);
+            if (!mesh || !mesh->vertex_buffer)
+                return false;
+
+            float constants[48] = {};
+            for (int i = 0; i < 16; ++i)
+                constants[i] = instance.world.m[i];
+            for (int i = 0; i < 16; ++i)
+                constants[16 + i] = frame.view.view_projection.m[i];
+
+            const TerrainLightingConstants lighting =
+                terrain_lighting_from_renderable(
+                    resolved->terrain_lighting,
+                    frame.lights);
+            for (int i = 0; i < 4; ++i) {
+                constants[32 + i] = lighting.light_position[i];
+                constants[36 + i] = lighting.light_direction[i];
+                constants[40 + i] = lighting.light_color_intensity[i];
+                constants[44 + i] = lighting.lighting_params[i];
+            }
+
+            cmdList->SetGraphicsRootSignature(pl->root_sig);
+            cmdList->SetPipelineState(pl->pso);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmdList->SetGraphicsRoot32BitConstants(
+                0,
+                root_constant_count_for_program(resolved->program),
+                constants,
+                0);
+            cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+            cmdList->IASetIndexBuffer(&mesh->index_view);
+            cmdList->DrawIndexedInstanced(
+                resolved->index_count,
+                1,
+                resolved->first_index,
+                0,
+                0);
+
+            resolver.record_terrain_render_stats(
+                1u,
+                1u,
+                resolved->source_triangle_count,
+                resolved->index_count / 3u,
+                0u,
+                0u,
+                resolved->lod_replacement_available ? 1u : 0u,
+                resolved->lod_replacement_available
+                    ? resolved->source_triangle_count
+                    : 0u,
+                resolved->lod_replacement_selected ? 1u : 0u,
+                resolved->lod_replacement_selected
+                    ? resolved->index_count / 3u
+                    : 0u,
+                0u,
+                0u,
+                resolved->terrain_target_pixels_per_triangle);
+            return true;
+        }
+
+        void submit_terrain_refs(
+            wz::gpu::Device& device,
+            const RenderFrameView& frame,
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+            const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache)
+        {
+            auto* cmdList =
+                wz::gpu::dx12::internal::get_command_list(device);
+
+            for (const TerrainDrawRef& ref : frame.terrain) {
+                if (ref.terrain_instance_index
+                    >= frame.terrain_instances.size())
                 {
                     continue;
                 }
 
-                uint32_t draw_first_index = chunk.first_index;
-                uint32_t draw_index_count = chunk.index_count;
-                const bool replacement_available =
-                    chunk.replacement_index_count > 0
-                    && chunk.replacement_index_count < chunk.index_count;
-                if (replacement_available) {
-                    ++lod_replacement_available_chunks;
-                    lod_replacement_available_triangles += triangle_count;
-                }
+                const TerrainVisualInstance& instance =
+                    frame.terrain_instances[ref.terrain_instance_index];
+                if (!instance.visible)
+                    continue;
 
-                if (triangle_count > 0 && lod_active) {
-                    const float projected_area =
-                        terrain_chunk_projected_footprint_pixels(
-                            chunk,
-                            dc.world,
-                            frame.view.view_projection,
-                            viewport_w,
-                            viewport_h);
-                    const float pixels_per_triangle =
-                        projected_area
-                        / static_cast<float>(triangle_count);
-                    pixels_per_triangle_weighted_sum +=
-                        static_cast<double>(pixels_per_triangle)
-                        * static_cast<double>(triangle_count);
-                    record_pixels_per_triangle_bucket(
-                        pixels_per_triangle,
-                        triangle_count,
-                        pixels_per_triangle_triangles_le_0_5,
-                        pixels_per_triangle_triangles_le_1,
-                        pixels_per_triangle_triangles_le_2,
-                        pixels_per_triangle_triangles_le_4,
-                        pixels_per_triangle_triangles_le_8,
-                        pixels_per_triangle_triangles_le_16,
-                        pixels_per_triangle_triangles_le_32,
-                        pixels_per_triangle_triangles_le_64,
-                        pixels_per_triangle_triangles_le_128,
-                        pixels_per_triangle_triangles_le_256);
-                    if (!has_pixels_per_triangle) {
-                        pixels_per_triangle_min = pixels_per_triangle;
-                        pixels_per_triangle_max = pixels_per_triangle;
-                        has_pixels_per_triangle = true;
-                    }
-                    else {
-                        pixels_per_triangle_min = (std::min)(
-                            pixels_per_triangle_min,
-                            pixels_per_triangle);
-                        pixels_per_triangle_max = (std::max)(
-                            pixels_per_triangle_max,
-                            pixels_per_triangle);
-                    }
-
-                    if (pixels_per_triangle < target_pixels_per_triangle)
-                    {
-                        ++lod_candidate_chunks;
-                        lod_candidate_triangles += triangle_count;
-                        if (replacement_available) {
-                            draw_first_index = chunk.replacement_first_index;
-                            draw_index_count = chunk.replacement_index_count;
-                            ++lod_replacement_drawn_chunks;
-                            lod_replacement_drawn_triangles +=
-                                draw_index_count / 3u;
-                        }
-                    }
-                }
-
-                cmdList->DrawIndexedInstanced(
-                    draw_index_count,
-                    1,
-                    draw_first_index,
-                    0,
-                    0);
-                ++submitted_chunks;
-                submitted_triangles += draw_index_count / 3u;
+                draw_terrain_ref_mesh(
+                    device,
+                    cmdList,
+                    ref,
+                    instance,
+                    frame,
+                    pipeline_cache,
+                    resolver,
+                    render_program_cache);
             }
-
-            resolver.record_terrain_render_stats(
-                static_cast<uint64_t>(resolved.terrain_chunks.size()),
-                submitted_chunks,
-                total_triangles,
-                submitted_triangles,
-                lod_candidate_chunks,
-                lod_candidate_triangles,
-                lod_replacement_available_chunks,
-                lod_replacement_available_triangles,
-                lod_replacement_drawn_chunks,
-                lod_replacement_drawn_triangles,
-                0u,
-                0u,
-                target_pixels_per_triangle,
-                pixels_per_triangle_min,
-                pixels_per_triangle_max,
-                pixels_per_triangle_weighted_sum,
-                pixels_per_triangle_triangles_le_0_5,
-                pixels_per_triangle_triangles_le_1,
-                pixels_per_triangle_triangles_le_2,
-                pixels_per_triangle_triangles_le_4,
-                pixels_per_triangle_triangles_le_8,
-                pixels_per_triangle_triangles_le_16,
-                pixels_per_triangle_triangles_le_32,
-                pixels_per_triangle_triangles_le_64,
-                pixels_per_triangle_triangles_le_128,
-                pixels_per_triangle_triangles_le_256);
-            return true;
         }
 
         bool is_mesh_wireframe_program(BuiltinRenderProgram program)
@@ -680,26 +457,14 @@ namespace wz::render::backend::dx12
                     constants[16 + i] = frame.view.view_projection.m[i];
                 }
 
-                const bool terrain_surface =
-                    is_terrain_surface_program(resolved->program);
+                if (is_terrain_surface_program(resolved->program))
+                    continue;
                 const bool mesh_wireframe =
                     is_mesh_wireframe_program(resolved->program);
                 const bool mesh_surface =
                     is_mesh_surface_program(resolved->program);
 
-                if (terrain_surface) {
-                    const TerrainLightingConstants lighting =
-                        terrain_lighting_from_renderable(
-                            resolved->terrain_lighting,
-                            frame.lights);
-                    for (int i = 0; i < 4; ++i) {
-                        constants[32 + i] = lighting.light_position[i];
-                        constants[36 + i] = lighting.light_direction[i];
-                        constants[40 + i] = lighting.light_color_intensity[i];
-                        constants[44 + i] = lighting.lighting_params[i];
-                    }
-                }
-                else if (mesh_wireframe) {
+                if (mesh_wireframe) {
                     write_mesh_wireframe_style_constants(
                         constants,
                         resolved->mesh_style);
@@ -741,17 +506,7 @@ namespace wz::render::backend::dx12
                     0);
                 cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                 cmdList->IASetIndexBuffer(&mesh->index_view);
-                if (!draw_chunked_terrain_mesh(
-                        device,
-                        cmdList,
-                        *resolved,
-                        dc,
-                        frame,
-                        pipeline_cache,
-                        resolver))
-                {
-                    cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
-                }
+                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
                 if (mesh_surface) {
                     draw_mesh_surface_wireframe_overlay(
@@ -1268,25 +1023,13 @@ namespace wz::render::backend::dx12
                 constants[16 + i] = frame.view.view_projection.m[i];
             }
 
-            const bool terrain_surface =
-                is_terrain_surface_program(resolved->program);
+            if (is_terrain_surface_program(resolved->program))
+                continue;
             const bool mesh_wireframe =
                 is_mesh_wireframe_program(resolved->program);
             const bool mesh_surface =
                 is_mesh_surface_program(resolved->program);
-            if (terrain_surface) {
-                const TerrainLightingConstants lighting =
-                    terrain_lighting_from_renderable(
-                        resolved->terrain_lighting,
-                        frame.lights);
-                for (int i = 0; i < 4; ++i) {
-                    constants[32 + i] = lighting.light_position[i];
-                    constants[36 + i] = lighting.light_direction[i];
-                    constants[40 + i] = lighting.light_color_intensity[i];
-                    constants[44 + i] = lighting.lighting_params[i];
-                }
-            }
-            else if (mesh_wireframe) {
+            if (mesh_wireframe) {
                 write_mesh_wireframe_style_constants(
                     constants,
                     resolved->mesh_style);
@@ -1329,17 +1072,7 @@ namespace wz::render::backend::dx12
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
-            if (!draw_chunked_terrain_mesh(
-                    device,
-                    cmdList,
-                    *resolved,
-                    dc,
-                    frame,
-                    pipeline_cache,
-                    resolver))
-            {
-                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
-            }
+            cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
             if (mesh_surface) {
                 draw_mesh_surface_wireframe_overlay(
@@ -1352,6 +1085,13 @@ namespace wz::render::backend::dx12
         }
 
         // ── Splat pass ────────────────────────────────────────────────────────
+
+        submit_terrain_refs(
+            device,
+            frame,
+            resolver,
+            pipeline_cache,
+            nullptr);
 
         const float vp_w = static_cast<float>(
             wz::gpu::dx12::internal::get_width(device));
@@ -1459,25 +1199,13 @@ namespace wz::render::backend::dx12
                 constants[16 + i] = frame.view.view_projection.m[i];
             }
 
-            const bool terrain_surface =
-                is_terrain_surface_program(resolved->program);
+            if (is_terrain_surface_program(resolved->program))
+                continue;
             const bool mesh_wireframe =
                 is_mesh_wireframe_program(resolved->program);
             const bool mesh_surface =
                 is_mesh_surface_program(resolved->program);
-            if (terrain_surface) {
-                const TerrainLightingConstants lighting =
-                    terrain_lighting_from_renderable(
-                        resolved->terrain_lighting,
-                        frame.lights);
-                for (int i = 0; i < 4; ++i) {
-                    constants[32 + i] = lighting.light_position[i];
-                    constants[36 + i] = lighting.light_direction[i];
-                    constants[40 + i] = lighting.light_color_intensity[i];
-                    constants[44 + i] = lighting.lighting_params[i];
-                }
-            }
-            else if (mesh_wireframe) {
+            if (mesh_wireframe) {
                 write_mesh_wireframe_style_constants(
                     constants,
                     resolved->mesh_style);
@@ -1520,17 +1248,7 @@ namespace wz::render::backend::dx12
                 0);
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
-            if (!draw_chunked_terrain_mesh(
-                    device,
-                    cmdList,
-                    *resolved,
-                    dc,
-                    frame,
-                    pipeline_cache,
-                    resolver))
-            {
-                cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
-            }
+            cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
             if (mesh_surface) {
                 draw_mesh_surface_wireframe_overlay(
@@ -1543,6 +1261,13 @@ namespace wz::render::backend::dx12
         }
 
         // ── Splat pass ────────────────────────────────────────────────────────
+
+        submit_terrain_refs(
+            device,
+            frame,
+            resolver,
+            pipeline_cache,
+            &render_program_cache);
 
         for (const DrawCommand& dc : frame.splats)
         {

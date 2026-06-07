@@ -51,6 +51,7 @@ namespace wz::scene {
             uint32_t splats{ 0 };
             uint32_t particles{ 0 };
             uint32_t lights{ 0 };
+            uint32_t terrain{ 0 };
         };
 
         inline PrimitiveCounts operator+(PrimitiveCounts a, PrimitiveCounts b)
@@ -61,6 +62,7 @@ namespace wz::scene {
                 .splats      = a.splats + b.splats,
                 .particles   = a.particles + b.particles,
                 .lights      = a.lights + b.lights,
+                .terrain     = a.terrain + b.terrain,
             };
         }
 
@@ -86,6 +88,10 @@ namespace wz::scene {
                 return { .splats = 1 };
             case ProducerKind::ParticleEmitter:
                 return d.mesh != INVALID_MESH ? PrimitiveCounts{ .particles = 1 } : PrimitiveCounts{};
+            case ProducerKind::TerrainPatch:
+                return d.terrain_proxy_id.valid()
+                    ? PrimitiveCounts{ .terrain = 1 }
+                    : PrimitiveCounts{};
             default:
                 return {};
             }
@@ -112,16 +118,19 @@ namespace wz::scene {
             std::span<SplatPrimitive>               splats;
             std::span<TransparentGeometryPrimitive> transparent;
             std::span<ParticlePrimitive>            particles;
+            std::span<TerrainVisualInstance>         terrain_instances;
             std::span<CompiledOutputRef>            node_to_output;
             std::span<NodeHandle>                   opaque_source_nodes;
             std::span<NodeHandle>                   transparent_source_nodes;
             std::span<NodeHandle>                   splat_source_nodes;
             std::span<NodeHandle>                   particle_source_nodes;
+            std::span<NodeHandle>                   terrain_source_nodes;
 
             uint32_t opaque_count{ 0 };
             uint32_t splat_count{ 0 };
             uint32_t transparent_count{ 0 };
             uint32_t particle_count{ 0 };
+            uint32_t terrain_count{ 0 };
         };
 
         struct CompileNodeSink {
@@ -154,6 +163,9 @@ namespace wz::scene {
                     break;
                 case ProducerKind::ParticleEmitter:
                     push_particle(n, d, node);
+                    break;
+                case ProducerKind::TerrainPatch:
+                    push_terrain(n, d, node);
                     break;
                 default:
                     break;
@@ -237,6 +249,30 @@ namespace wz::scene {
                 state.node_to_output[n] = { CompiledOutputKind::Particle, out };
                 new (&state.particle_source_nodes[out]) NodeHandle{ n };
             }
+
+            void push_terrain(
+                NodeHandle                  n,
+                const RenderableDescriptor& d,
+                const TransformNode&        node)
+            {
+                if (!d.terrain_proxy_id.valid())
+                    return;
+
+                const uint32_t out = state.terrain_count++;
+                new (&state.terrain_instances[out]) TerrainVisualInstance{
+                    .world              = node.world,
+                    .bounds             = transform_aabb(d.local_bounds, node.world),
+                    .terrain_proxy_id   = d.terrain_proxy_id,
+                    .visual_proxy_asset = d.terrain_visual_proxy_asset,
+                    .material           = d.material,
+                    .visible            = d.visible,
+                };
+                state.node_to_output[n] = {
+                    CompiledOutputKind::TerrainVisualInstance,
+                    out,
+                };
+                new (&state.terrain_source_nodes[out]) NodeHandle{ n };
+            }
         };
 
         void patch_node_transform(
@@ -294,6 +330,13 @@ namespace wz::scene {
                     const Vec3 pos{ node.world.m[12], node.world.m[13], node.world.m[14] };
                     rec.depth = view_depth(view.view, pos);
                 }
+                break;
+            }
+            case CompiledOutputKind::TerrainVisualInstance: {
+                auto& rec = const_cast<TerrainVisualInstance&>(
+                    cs.terrain_instances[ref.index]);
+                rec.world = node.world;
+                rec.bounds = transform_aabb(descs[n].local_bounds, node.world);
                 break;
             }
             default:
@@ -355,7 +398,9 @@ namespace wz::scene {
             + sizeof(SplatPrimitive) * counts.splats
             + alignof(SplatPrimitive)
             + sizeof(LightRecord) * counts.lights
-            + alignof(LightRecord);
+            + alignof(LightRecord)
+            + sizeof(TerrainVisualInstance) * counts.terrain
+            + alignof(TerrainVisualInstance);
 
         storage.stable_stats.reset_build_counters();
         storage.stable_stats.record_owned(storage.stable_bytes);
@@ -377,6 +422,7 @@ namespace wz::scene {
         std::span<OpaqueGeometryPrimitive> opaque_w;
         std::span<SplatPrimitive>          splats_w;
         std::span<LightRecord>             lights_w;
+        std::span<TerrainVisualInstance>   terrain_w;
 
         sp = wz::core::graph::detail::carve<OpaqueGeometryPrimitive>(
             sp, se, counts.opaque, opaque_w);
@@ -384,6 +430,8 @@ namespace wz::scene {
             sp, se, counts.splats, splats_w);
         sp = wz::core::graph::detail::carve<LightRecord>(
             sp, se, counts.lights, lights_w);
+        sp = wz::core::graph::detail::carve<TerrainVisualInstance>(
+            sp, se, counts.terrain, terrain_w);
 
         const uint32_t n_nodes = node_count(g);
 
@@ -395,6 +443,7 @@ namespace wz::scene {
             + sizeof(NodeHandle) * counts.splats
             + sizeof(NodeHandle) * counts.particles
             + sizeof(NodeHandle) * counts.lights
+            + sizeof(NodeHandle) * counts.terrain
             + alignof(NodeHandle);
 
         storage.metadata_stats.reset_build_counters();
@@ -421,6 +470,7 @@ namespace wz::scene {
         std::span<NodeHandle>        splat_src_w;
         std::span<NodeHandle>        particle_src_w;
         std::span<NodeHandle>        light_src_w;
+        std::span<NodeHandle>        terrain_src_w;
 
         mp = wz::core::graph::detail::carve<CompiledOutputRef>(
             mp, me, n_nodes, node_to_output_w);
@@ -434,6 +484,8 @@ namespace wz::scene {
             mp, me, counts.particles, particle_src_w);
         mp = wz::core::graph::detail::carve<NodeHandle>(
             mp, me, counts.lights, light_src_w);
+        mp = wz::core::graph::detail::carve<NodeHandle>(
+            mp, me, counts.terrain, terrain_src_w);
 
         auto init_node_output_sink = detail::sink_fn([&](uint32_t i) {
             new (&node_to_output_w[i]) CompiledOutputRef{};
@@ -485,11 +537,13 @@ namespace wz::scene {
             .splats                  = splats_w,
             .transparent             = transparent_w,
             .particles               = particles_w,
+            .terrain_instances       = terrain_w,
             .node_to_output          = node_to_output_w,
             .opaque_source_nodes     = opaque_src_w,
             .transparent_source_nodes = transparent_src_w,
             .splat_source_nodes      = splat_src_w,
             .particle_source_nodes   = particle_src_w,
+            .terrain_source_nodes    = terrain_src_w,
         };
         detail::CompileNodeSink compile_sink{ fill_state, g, descs };
         transform(topo_order(g), compile_sink, [](NodeHandle n) { return n; });
@@ -515,9 +569,11 @@ namespace wz::scene {
             .opaque       = opaque_w,
             .splats       = splats_w,
             .lights       = lights_w,
+            .terrain_instances = terrain_w,
             .transparent  = transparent_w,
             .particles    = particles_w,
             .splat_depths = splat_depths_w,
+            .terrain_lod_choices = {},
             .view         = {},
         };
 
@@ -528,6 +584,7 @@ namespace wz::scene {
             .splat_source_nodes       = splat_src_w,
             .particle_source_nodes    = particle_src_w,
             .light_source_nodes       = light_src_w,
+            .terrain_source_nodes     = terrain_src_w,
         };
 
         update_view(storage, view);
@@ -582,6 +639,18 @@ namespace wz::scene {
         });
         transform(std::views::iota(0u, static_cast<uint32_t>(meta.particle_source_nodes.size())),
             particle_sink, [](uint32_t i) { return i; });
+
+        auto terrain_sink = detail::sink_fn([&](uint32_t i) {
+            const NodeHandle n = meta.terrain_source_nodes[i];
+            auto& rec = const_cast<TerrainVisualInstance&>(
+                cs.terrain_instances[i]);
+            rec.terrain_proxy_id = descs[n].terrain_proxy_id;
+            rec.visual_proxy_asset = descs[n].terrain_visual_proxy_asset;
+            rec.material = descs[n].material;
+            rec.visible = descs[n].visible;
+        });
+        transform(std::views::iota(0u, static_cast<uint32_t>(meta.terrain_source_nodes.size())),
+            terrain_sink, [](uint32_t i) { return i; });
     }
 
     void update_compiled_transforms(
@@ -603,6 +672,7 @@ namespace wz::scene {
             transform(storage.metadata.transparent_source_nodes, patch_sink, [](NodeHandle n) { return n; });
             transform(storage.metadata.splat_source_nodes, patch_sink, [](NodeHandle n) { return n; });
             transform(storage.metadata.particle_source_nodes, patch_sink, [](NodeHandle n) { return n; });
+            transform(storage.metadata.terrain_source_nodes, patch_sink, [](NodeHandle n) { return n; });
         }
         else {
             transform(dirty_nodes, patch_sink, [](NodeHandle n) { return n; });

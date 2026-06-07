@@ -38,6 +38,52 @@ namespace wz::render {
             }
         };
 
+        struct SkyCommandSink {
+            SkyDrawCommand* ptr;
+            uint32_t        count    = 0;
+            uint32_t        capacity = 0;
+
+            explicit SkyCommandSink(std::span<SkyDrawCommand> s) noexcept
+                : ptr(s.data()), capacity(static_cast<uint32_t>(s.size())) {}
+
+            bool push(SkyDrawCommand cmd) noexcept {
+                if (count >= capacity) return false;
+                new (&ptr[count++]) SkyDrawCommand(std::move(cmd));
+                return true;
+            }
+        };
+
+        struct TerrainDrawRefSink {
+            TerrainDrawRef* ptr;
+            uint32_t        count    = 0;
+            uint32_t        capacity = 0;
+
+            explicit TerrainDrawRefSink(std::span<TerrainDrawRef> s) noexcept
+                : ptr(s.data()), capacity(static_cast<uint32_t>(s.size())) {}
+
+            bool push(TerrainDrawRef ref) noexcept {
+                if (count >= capacity) return false;
+                new (&ptr[count++]) TerrainDrawRef(std::move(ref));
+                return true;
+            }
+        };
+
+        struct TerrainVisualInstanceSink {
+            TerrainVisualInstance* ptr;
+            uint32_t               count    = 0;
+            uint32_t               capacity = 0;
+
+            explicit TerrainVisualInstanceSink(
+                std::span<TerrainVisualInstance> s) noexcept
+                : ptr(s.data()), capacity(static_cast<uint32_t>(s.size())) {}
+
+            bool push(TerrainVisualInstance instance) noexcept {
+                if (count >= capacity) return false;
+                new (&ptr[count++]) TerrainVisualInstance(std::move(instance));
+                return true;
+            }
+        };
+
         struct CloudSplatCommandSink {
             DrawCommandSink         commands;
             const CompiledSceneView& cs;
@@ -144,6 +190,7 @@ namespace wz::render {
         // Returns the actual number of splat DrawCommands written.
 
         uint32_t fill_view_sections(
+            std::span<TerrainDrawRef> terrain_w,
             std::span<DrawCommand>   splats_w,
             std::span<DrawCommand>   transparent_w,
             std::span<DrawCommand>   particles_w,
@@ -152,6 +199,12 @@ namespace wz::render {
             const CompiledSceneView& cs)
         {
             using namespace wz::core::algo::next;
+
+            TerrainDrawRefSink terrain_sink{ terrain_w };
+            transform(ir.terrain, terrain_sink,
+                [](const TerrainDrawRef& ref) -> TerrainDrawRef {
+                    return ref;
+                });
 
             const uint32_t splat_cmds =
                 fill_splat_commands(splats_w, sorted_index_buf, ir, cs);
@@ -193,16 +246,19 @@ namespace wz::render {
 
         void prepare_view_buffer(
             RenderFrameStorage&     storage,
+            uint32_t                terrain_count,
             uint32_t                splat_count,
             uint32_t                transparent_count,
             uint32_t                particle_count,
+            std::span<TerrainDrawRef>& terrain_w,
             std::span<DrawCommand>& splats_w,
             std::span<DrawCommand>& transparent_w,
             std::span<DrawCommand>& particles_w)
         {
             const size_t view_size =
-                sizeof(DrawCommand) * (splat_count + transparent_count + particle_count)
-                + alignof(DrawCommand);
+                sizeof(TerrainDrawRef) * terrain_count
+                + sizeof(DrawCommand) * (splat_count + transparent_count + particle_count)
+                + (std::max)(alignof(TerrainDrawRef), alignof(DrawCommand));
 
             storage.view_stats.reset_build_counters();
             storage.view_stats.record_owned(storage.view_bytes);
@@ -217,6 +273,7 @@ namespace wz::render {
 
             std::byte* vp = storage.view_buffer.get();
             std::byte* ve = vp + view_size;
+            vp = wz::core::graph::detail::carve<TerrainDrawRef>(vp, ve, terrain_count, terrain_w);
             vp = wz::core::graph::detail::carve<DrawCommand>(vp, ve, splat_count,       splats_w);
             vp = wz::core::graph::detail::carve<DrawCommand>(vp, ve, transparent_count, transparent_w);
             vp = wz::core::graph::detail::carve<DrawCommand>(vp, ve, particle_count,    particles_w);
@@ -244,6 +301,9 @@ namespace wz::render {
 
         const uint32_t sky_total         = static_cast<uint32_t>(sky.size());
         const uint32_t opaque_total      = static_cast<uint32_t>(cs.opaque.size());
+        const uint32_t terrain_instance_total =
+            static_cast<uint32_t>(cs.terrain_instances.size());
+        const uint32_t terrain_count     = static_cast<uint32_t>(ir.terrain.size());
         const uint32_t splat_count       = static_cast<uint32_t>(ir.splats.size());
         const uint32_t transparent_count = static_cast<uint32_t>(ir.transparent.size());
         const uint32_t particle_count    = static_cast<uint32_t>(ir.particles.size());
@@ -255,7 +315,12 @@ namespace wz::render {
         const size_t stable_size =
             sizeof(SkyDrawCommand) * sky_total
             + sizeof(DrawCommand) * opaque_total
-            + (std::max)(alignof(SkyDrawCommand), alignof(DrawCommand));
+            + sizeof(TerrainVisualInstance) * terrain_instance_total
+            + (std::max)({
+                alignof(SkyDrawCommand),
+                alignof(DrawCommand),
+                alignof(TerrainVisualInstance),
+            });
 
         storage.stable_stats.reset_build_counters();
         storage.stable_stats.record_owned(storage.stable_bytes);
@@ -273,13 +338,28 @@ namespace wz::render {
 
         std::span<SkyDrawCommand> sky_w;
         std::span<DrawCommand> opaque_w;
+        std::span<TerrainVisualInstance> terrain_instances_w;
         sp = wz::core::graph::detail::carve<SkyDrawCommand>(sp, se, sky_total, sky_w);
         sp = wz::core::graph::detail::carve<DrawCommand>(sp, se, opaque_total, opaque_w);
+        sp = wz::core::graph::detail::carve<TerrainVisualInstance>(
+            sp, se, terrain_instance_total, terrain_instances_w);
         storage.sky_capacity = sky_total;
         storage.opaque_capacity = opaque_total;
+        storage.terrain_instance_capacity = terrain_instance_total;
 
-        for (uint32_t i = 0; i < sky_total; ++i)
-            new (&sky_w[i]) SkyDrawCommand(sky[i]);
+        detail::SkyCommandSink sky_sink{ sky_w };
+        transform(sky, sky_sink,
+            [](const SkyDrawCommand& cmd) -> SkyDrawCommand {
+                return cmd;
+            });
+
+        detail::TerrainVisualInstanceSink terrain_instance_sink{
+            terrain_instances_w,
+        };
+        transform(cs.terrain_instances, terrain_instance_sink,
+            [](const TerrainVisualInstance& instance) -> TerrainVisualInstance {
+                return instance;
+            });
 
         // Fill the visible opaque subset via transform.
         // ir.opaque is already sorted front-to-back by material key by the IR layer.
@@ -298,16 +378,19 @@ namespace wz::render {
 
         // ── View buffer (splats, transparent, particles) ──────────────────────────
 
+        std::span<TerrainDrawRef> terrain_w;
         std::span<DrawCommand> splats_w, transparent_w, particles_w;
-        detail::prepare_view_buffer(storage, splat_count, transparent_count, particle_count,
-                                    splats_w, transparent_w, particles_w);
+        detail::prepare_view_buffer(storage, terrain_count, splat_count, transparent_count, particle_count,
+                                    terrain_w, splats_w, transparent_w, particles_w);
         const uint32_t actual_splat_cmds = detail::fill_view_sections(
-            splats_w, transparent_w, particles_w,
+            terrain_w, splats_w, transparent_w, particles_w,
             storage.sorted_index_buffer.get(), ir, cs);
 
         storage.frame = RenderFrameView{
             .sky         = sky_w,
             .opaque      = opaque_w.subspan(0, opq_sink.count),
+            .terrain_instances = terrain_instances_w,
+            .terrain     = terrain_w,
             .splats      = splats_w.subspan(0, actual_splat_cmds),
             .transparent = transparent_w,
             .particles   = particles_w,
@@ -329,6 +412,7 @@ namespace wz::render {
 
         const CompiledSceneView& cs = scene;
 
+        const uint32_t terrain_count     = static_cast<uint32_t>(ir.terrain.size());
         const uint32_t splat_count       = static_cast<uint32_t>(ir.splats.size());
         const uint32_t transparent_count = static_cast<uint32_t>(ir.transparent.size());
         const uint32_t particle_count    = static_cast<uint32_t>(ir.particles.size());
@@ -355,14 +439,30 @@ namespace wz::render {
             });
         storage.frame.opaque = opaque_w.subspan(0, opq_sink.count);
 
+        auto terrain_instances_w = std::span<TerrainVisualInstance>(
+            const_cast<TerrainVisualInstance*>(
+                storage.frame.terrain_instances.data()),
+            storage.terrain_instance_capacity);
+        detail::TerrainVisualInstanceSink terrain_instance_sink{
+            terrain_instances_w,
+        };
+        transform(cs.terrain_instances, terrain_instance_sink,
+            [](const TerrainVisualInstance& instance) -> TerrainVisualInstance {
+                return instance;
+            });
+        storage.frame.terrain_instances =
+            terrain_instances_w.subspan(0, terrain_instance_sink.count);
+
         // Rebuild view buffer (splats, transparent, particles).
+        std::span<TerrainDrawRef> terrain_w;
         std::span<DrawCommand> splats_w, transparent_w, particles_w;
-        detail::prepare_view_buffer(storage, splat_count, transparent_count, particle_count,
-                                    splats_w, transparent_w, particles_w);
+        detail::prepare_view_buffer(storage, terrain_count, splat_count, transparent_count, particle_count,
+                                    terrain_w, splats_w, transparent_w, particles_w);
         const uint32_t actual_splat_cmds = detail::fill_view_sections(
-            splats_w, transparent_w, particles_w,
+            terrain_w, splats_w, transparent_w, particles_w,
             storage.sorted_index_buffer.get(), ir, cs);
 
+        storage.frame.terrain     = terrain_w;
         storage.frame.splats      = splats_w.subspan(0, actual_splat_cmds);
         storage.frame.transparent = transparent_w;
         storage.frame.particles   = particles_w;

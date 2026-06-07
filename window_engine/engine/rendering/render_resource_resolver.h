@@ -12,6 +12,7 @@
 #include <gpu/gpu_types.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/terrain/terrain.h>
+#include <render/ir/render_ir.h>
 
 #include <optional>
 #include <span>
@@ -39,6 +40,20 @@ namespace wz::engine::rendering
         wz::engine::assets::MeshRenderStyleData  mesh_style{};
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
         std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
+    };
+
+    struct ResolvedTerrainDrawResource
+    {
+        wz::gpu::GPUHandle                       gpu_resource{};
+        wz::engine::assets::BuiltinRenderProgram program{};
+        wz::asset::ResourceHandle                render_program{};
+        wz::engine::assets::TerrainLightingData  terrain_lighting{};
+        float                                   terrain_target_pixels_per_triangle = 0.0f;
+        uint32_t                                first_index = 0;
+        uint32_t                                index_count = 0;
+        uint32_t                                source_triangle_count = 0;
+        bool                                    lod_replacement_available = false;
+        bool                                    lod_replacement_selected = false;
     };
 
     struct TerrainRenderStats
@@ -120,10 +135,30 @@ namespace wz::engine::rendering
             std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
             std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {});
 
+        bool register_terrain_proxy(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id,
+            wz::gpu::GPUHandle                       gpu_resource,
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle                render_program = {},
+            wz::engine::assets::TerrainLightingData  terrain_lighting = {},
+            float                                   terrain_target_pixels_per_triangle = 0.0f,
+            wz::engine::assets::MeshRenderStyleData  mesh_style = {},
+            std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
+            std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {});
+
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
         std::optional<ResolvedRenderableResource>
         resolve_mesh(wz::scene::MeshHandle handle) const noexcept;
+
+        std::optional<ResolvedRenderableResource>
+        resolve_terrain_proxy(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept;
+
+        std::optional<ResolvedTerrainDrawResource>
+        resolve_terrain_draw(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id,
+            const wz::render::TerrainDrawRef& ref) const noexcept;
 
         void reset_terrain_render_stats() const noexcept;
         void record_terrain_render_stats(
@@ -170,6 +205,8 @@ namespace wz::engine::rendering
 
         std::vector<Entry> splat_entries_;
         std::vector<Entry> mesh_entries_;
+        std::vector<std::pair<wz::engine::assets::TerrainProxyId, Entry>>
+            terrain_proxy_entries_;
         mutable TerrainRenderStats terrain_stats_{};
     };
 }

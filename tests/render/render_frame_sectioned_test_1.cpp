@@ -19,6 +19,16 @@ namespace {
         return { Vec3{-0.5f,-0.5f,-0.5f}, Vec3{0.5f,0.5f,0.5f} };
     }
 
+    wz::asset::AssetKey test_proxy_key()
+    {
+        return wz::asset::AssetKey{
+            .content_hash = { 1, 2 },
+            .schema_hash = { 3, 4 },
+            .compiler_hash = { 5, 6 },
+            .deps_hash = { 7, 8 },
+        };
+    }
+
     Mat4 translation_z(float z)
     {
         Mat4 m = Mat4::identity();
@@ -101,6 +111,25 @@ namespace {
             EXPECT_FLOAT_EQ(a.sky[i].exposure, b.sky[i].exposure);
         }
         expect_same_commands(a.opaque, b.opaque);
+        ASSERT_EQ(a.terrain_instances.size(), b.terrain_instances.size());
+        for (uint32_t i = 0;
+             i < static_cast<uint32_t>(a.terrain_instances.size());
+             ++i)
+        {
+            SCOPED_TRACE(i);
+            EXPECT_EQ(
+                a.terrain_instances[i].terrain_proxy_id,
+                b.terrain_instances[i].terrain_proxy_id);
+            EXPECT_EQ(
+                a.terrain_instances[i].visual_proxy_asset,
+                b.terrain_instances[i].visual_proxy_asset);
+            EXPECT_EQ(a.terrain_instances[i].material, b.terrain_instances[i].material);
+            EXPECT_EQ(a.terrain_instances[i].visible, b.terrain_instances[i].visible);
+            for (uint32_t m = 0; m < 16u; ++m)
+                EXPECT_FLOAT_EQ(
+                    a.terrain_instances[i].world.m[m],
+                    b.terrain_instances[i].world.m[m]);
+        }
         expect_same_commands(a.splats, b.splats);
         expect_same_commands(a.transparent, b.transparent);
         expect_same_commands(a.particles, b.particles);
@@ -161,6 +190,73 @@ namespace {
         return p;
     }
 
+    CompiledSceneStorage make_terrain_scene(ViewData view = camera_at_z(0.f))
+    {
+        SceneBuilder b;
+        TransformNode root{};
+        NodeHandle root_h = add_node(b, root);
+
+        TransformNode terrain_node{};
+        terrain_node.local = translation_z(1.0f);
+        terrain_node.flags = TransformNodeFlag::RenderDomain;
+        NodeHandle terrain_h = add_node(b, terrain_node);
+        add_edge(b, root_h, terrain_h);
+
+        auto storage = build(std::move(b));
+        assert(storage.has_value());
+        propagate_all(storage->polytree);
+
+        const wz::asset::AssetKey proxy_key = test_proxy_key();
+        std::vector<RenderableDescriptor> descs(node_count(storage->polytree));
+        descs[root_h] = { classify_legacy_renderable(RenderPipeline::None) };
+        descs[terrain_h] = RenderableDescriptor{
+            .node_class = SceneNodeClass{
+                .role = SceneRole::Renderable,
+                .producer = ProducerKind::TerrainPatch,
+                .default_surface = SurfaceClass::Opaque,
+                .spatial = SpatialKind::Box,
+                .compile = CompileBehavior::Static,
+                .domains = static_cast<RenderDomainMask>(RenderDomain::Surface),
+            },
+            .material = 9u,
+            .local_bounds = unit_box(),
+            .terrain_visual_proxy_asset = proxy_key,
+            .terrain_proxy_id =
+                wz::engine::assets::TerrainProxyId{ proxy_key },
+            .visible = true,
+        };
+
+        CompiledSceneStorage cs{};
+        compile(cs, storage->polytree, descs, {}, view);
+        return cs;
+    }
+
+    std::vector<TerrainLodChoice> make_terrain_choices(uint32_t first_chunk = 7u)
+    {
+        return {
+            TerrainLodChoice{
+                .terrain_instance_index = 0u,
+                .chunk_id = wz::engine::assets::TerrainChunkId{ first_chunk },
+                .representation_kind =
+                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = wz::engine::assets::TerrainLodId{ 1 },
+                .projected_error_px = 0.5f,
+                .projected_area_px = 128.0f,
+                .priority = 2.0f,
+            },
+            TerrainLodChoice{
+                .terrain_instance_index = 0u,
+                .chunk_id = wz::engine::assets::TerrainChunkId{ first_chunk + 1u },
+                .representation_kind =
+                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = wz::engine::assets::TerrainLodId{ 0 },
+                .projected_error_px = 0.1f,
+                .projected_area_px = 64.0f,
+                .priority = 1.0f,
+            },
+        };
+    }
+
 } // namespace
 
 
@@ -188,6 +284,87 @@ TEST(SectionedRenderFrame, ParticleSectionSizeMatchesIR)
 {
     auto p = make_mixed();
     EXPECT_EQ(p.frame.frame.particles.size(),   p.ir.ir.particles.size());
+}
+
+TEST(SectionedRenderFrame, TerrainSectionSizeMatchesIR)
+{
+    auto cs = make_terrain_scene();
+    auto choices = make_terrain_choices();
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_st{};
+    RenderFrameStorage fr_st{};
+    build_render_ir(ir_st, scene);
+    build_frame(fr_st, ir_st.ir, scene);
+
+    EXPECT_EQ(fr_st.frame.terrain.size(), ir_st.ir.terrain.size());
+}
+
+TEST(SectionedRenderFrame, TerrainInstancesCopiedIntoFrame)
+{
+    auto cs = make_terrain_scene();
+    auto choices = make_terrain_choices();
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_st{};
+    RenderFrameStorage fr_st{};
+    build_render_ir(ir_st, scene);
+    build_frame(fr_st, ir_st.ir, scene);
+
+    ASSERT_EQ(fr_st.frame.terrain_instances.size(), 1u);
+    EXPECT_EQ(
+        fr_st.frame.terrain_instances[0].terrain_proxy_id,
+        cs.scene.terrain_instances[0].terrain_proxy_id);
+    EXPECT_NE(
+        fr_st.frame.terrain_instances.data(),
+        cs.scene.terrain_instances.data())
+        << "RenderFrame must own terrain instance storage";
+}
+
+TEST(SectionedRenderFrame, TerrainDrawRefsCopiedIntoFrame)
+{
+    auto cs = make_terrain_scene();
+    auto choices = make_terrain_choices();
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_st{};
+    RenderFrameStorage fr_st{};
+    build_render_ir(ir_st, scene);
+    build_frame(fr_st, ir_st.ir, scene);
+
+    ASSERT_EQ(fr_st.frame.terrain.size(), 2u);
+    EXPECT_EQ(fr_st.frame.terrain[0].terrain_instance_index, 0u);
+    EXPECT_EQ(fr_st.frame.terrain[0].chunk_id, ir_st.ir.terrain[0].chunk_id);
+    EXPECT_EQ(fr_st.frame.terrain[0].lod_id, ir_st.ir.terrain[0].lod_id);
+    EXPECT_NE(fr_st.frame.terrain.data(), ir_st.ir.terrain.data())
+        << "RenderFrame must own its terrain ref storage";
+}
+
+TEST(SectionedRenderFrame, UpdateFrameViewRebuildsTerrainSection)
+{
+    auto cs = make_terrain_scene();
+    auto choices = make_terrain_choices(7u);
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_st{};
+    RenderFrameStorage fr_st{};
+    build_render_ir(ir_st, scene);
+    build_frame(fr_st, ir_st.ir, scene);
+    ASSERT_EQ(fr_st.frame.terrain.size(), 2u);
+
+    auto updated_choices = make_terrain_choices(20u);
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(updated_choices);
+    update_render_ir(ir_st, scene);
+    update_frame_view(fr_st, ir_st.ir, scene);
+
+    ASSERT_EQ(fr_st.frame.terrain.size(), 2u);
+    EXPECT_EQ(fr_st.frame.terrain[0].chunk_id, ir_st.ir.terrain[0].chunk_id);
+    EXPECT_EQ(fr_st.frame.terrain[1].chunk_id, ir_st.ir.terrain[1].chunk_id);
+    EXPECT_NE(fr_st.frame.terrain[0].chunk_id, choices[0].chunk_id);
 }
 
 TEST(SectionedRenderFrame, BuildFrameCopiesSkyCommands)
