@@ -199,6 +199,7 @@ namespace wz::scene
         uint32_t renderable_descriptor_slots = 0;
         uint32_t cameras = 0;
         uint32_t lights = 0;
+        uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
         uint32_t sky_draws = 0;
         uint32_t input_receivers = 0;

@@ -273,6 +273,7 @@ namespace wz::engine::assets
                 << " descriptor_slots=" << summary.renderable_descriptor_slots
                 << " cameras=" << summary.cameras
                 << " lights=" << summary.lights
+                << " ambient_lighting=" << summary.ambient_lighting
                 << " hdri_environments=" << summary.hdri_environments
                 << " sky_draws=" << summary.sky_draws
                 << " input_receivers=" << summary.input_receivers
@@ -285,6 +286,18 @@ namespace wz::engine::assets
                 << " event_listeners=" << summary.event_listeners
                 << " auxiliary_visuals=" << summary.auxiliary_visuals;
             context.logger->info(msg.str());
+        }
+
+        uint32_t count_ambient_lighting_records(
+            const std::vector<wz::scene::LightRecord>& lights) noexcept
+        {
+            uint32_t count = 0;
+            for (const wz::scene::LightRecord& light : lights) {
+                if (light.type == wz::scene::LightType::Ambient) {
+                    ++count;
+                }
+            }
+            return count;
         }
     }
 
@@ -345,6 +358,8 @@ namespace wz::engine::assets
                 instance.renderables.size()),
             .cameras = instance.cameras,
             .lights = static_cast<uint32_t>(instance.lights.size()),
+            .ambient_lighting = count_ambient_lighting_records(
+                instance.lights),
             .hdri_environments = instance.hdri_environments,
             .sky_draws = static_cast<uint32_t>(instance.sky_draws.size()),
             .input_receivers = static_cast<uint32_t>(

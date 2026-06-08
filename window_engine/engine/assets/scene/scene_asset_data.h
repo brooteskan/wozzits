@@ -684,6 +684,8 @@ namespace wz::engine::assets
         uint32_t direct_light_sources = 0;
         uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
+        uint32_t sky_visuals = 0;
+        uint32_t sky_surfaces = 0;
         uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
@@ -1326,6 +1328,14 @@ namespace wz::engine::assets
             }
             if (node.hdri_environment) {
                 ++out.hdri_environments;
+                ++out.total_recipes;
+            }
+            if (node.sky_visual) {
+                ++out.sky_visuals;
+                ++out.total_recipes;
+            }
+            if (node.sky_surface) {
+                ++out.sky_surfaces;
                 ++out.total_recipes;
             }
             if (node.terrain_render_style) {

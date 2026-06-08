@@ -221,6 +221,59 @@ TEST(SceneAssetModule, EventListenerInstantiationCompilesKnownChannelMask)
             | kInputEventChannels);
 }
 
+TEST(SceneAssetModule, AmbientLightingRuntimeSummaryCountsAmbientLightRecords)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData asset{};
+    asset.name = "ambient_lighting_runtime_summary";
+    asset.lights.push_back(SceneLightAsset{
+        .node_id = "sun",
+        .light = wz::scene::LightRecord{
+            .type = wz::scene::LightType::Directional,
+        },
+    });
+    asset.lights.push_back(SceneLightAsset{
+        .node_id = "ambient",
+        .light = wz::scene::LightRecord{
+            .type = wz::scene::LightType::Ambient,
+        },
+    });
+
+    auto result = instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto summary = summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(summary.lights, 2u);
+    EXPECT_EQ(summary.ambient_lighting, 1u);
+}
+
+TEST(SceneAssetModule, SkyDrawRuntimeSummaryCountsMaterializedSkyDraws)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData asset{};
+    asset.name = "sky_draw_runtime_summary";
+    asset.sky_draws.push_back(SceneSkyDrawAsset{
+        .surface_node = "sky_surface",
+        .visual_node = "sky_visual",
+        .visual_kind = SceneSkyVisualKind::Gradient,
+        .projection = SceneSkyProjection::Sphere,
+        .radius = 1000.0f,
+        .visible_to_camera = true,
+    });
+
+    auto result = instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const auto summary = summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(summary.sky_draws, 1u);
+    ASSERT_EQ(result.instance.sky_draws.size(), 1u);
+    EXPECT_EQ(
+        result.instance.sky_draws[0].visual_kind,
+        SceneSkyVisualKind::Gradient);
+}
+
 TEST(SceneAssetModule, ActorMovementComponentDescriptorsRoundTrip)
 {
     const wz::fs::Path root =

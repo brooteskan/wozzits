@@ -30,6 +30,7 @@ TEST(SceneECSBoundary, RuntimeSummaryDefaultsToZero)
     EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
     EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.ambient_lighting, 0u);
     EXPECT_EQ(summary.hdri_environments, 0u);
     EXPECT_EQ(summary.sky_draws, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);

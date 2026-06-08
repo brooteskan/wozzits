@@ -178,6 +178,12 @@ lightweight `TerrainRenderable` value names the same pair for scene-facing
 terrain renderables. The render proxy remains distinct from source/query terrain
 data even when both are produced from the same authored terrain.
 
+Longer-term terrain and mesh LOD research is tracked separately in
+[`nanite_cluster_hierarchy.md`](nanite_cluster_hierarchy.md). That document
+describes a terrain-independent meshlet/cluster hierarchy, why it should be a
+future sibling asset rather than part of semantic terrain data, and the
+validation prerequisites before GPU-driven selection is attempted.
+
 Mesh terrain also records source-attribute availability and selected terrain
 sources. If source mesh normals are present, `TerrainFromMesh` defaults to
 `TerrainNormalSource::MeshVertexNormal`; otherwise it falls back to

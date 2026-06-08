@@ -107,6 +107,7 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.renderable_descriptor_slots, 0u);
     EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.ambient_lighting, 0u);
     EXPECT_EQ(summary.hdri_environments, 0u);
     EXPECT_EQ(summary.sky_draws, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
@@ -1025,6 +1026,8 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(recipe_summary.mesh_render_styles, 1u);
     EXPECT_EQ(recipe_summary.scalar_field_sources, 1u);
     EXPECT_EQ(recipe_summary.vector_field_sources, 1u);
+    EXPECT_EQ(recipe_summary.sky_visuals, 0u);
+    EXPECT_EQ(recipe_summary.sky_surfaces, 0u);
     EXPECT_EQ(recipe_summary.terrain_render_styles, 1u);
     EXPECT_EQ(recipe_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.terrain_height_field_sources, 1u);
@@ -1086,6 +1089,32 @@ TEST(SceneECSBoundary, SummarizesAuthoringRecipesAcrossMultipleNodes)
     EXPECT_EQ(summary.scene_import_sources, 1u);
     EXPECT_EQ(summary.mesh_sources, 1u);
     EXPECT_EQ(summary.scalar_field_sources, 1u);
+}
+
+TEST(SceneECSBoundary, SummarizesSkyAuthoringRecipes)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "sky_authoring_recipes";
+
+    SceneNodeAsset sky_visual = make_scene_node("sky_visual");
+    sky_visual.sky_visual = SceneSkyVisualAsset{
+        .kind = SceneSkyVisualKind::Gradient,
+    };
+    scene.nodes.push_back(std::move(sky_visual));
+
+    SceneNodeAsset sky_surface = make_scene_node("sky_surface");
+    sky_surface.sky_surface = SceneSkySurfaceAsset{
+        .visual_node = "sky_visual",
+    };
+    scene.nodes.push_back(std::move(sky_surface));
+
+    const auto summary = summarize_scene_asset_authoring_recipes(scene);
+    EXPECT_EQ(summary.nodes_with_recipes, 2u);
+    EXPECT_EQ(summary.total_recipes, 2u);
+    EXPECT_EQ(summary.sky_visuals, 1u);
+    EXPECT_EQ(summary.sky_surfaces, 1u);
 }
 
 TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
