@@ -315,6 +315,18 @@ namespace wz::scene {
 
             std::vector<TerrainChunkInfo> chunks;
             chunks.reserve(choice_capacity.size());
+            auto chunk_asset_density = [](const auto& chunk) noexcept
+            {
+                const float extent_x =
+                    chunk.bounds.max[0] - chunk.bounds.min[0];
+                const float extent_z =
+                    chunk.bounds.max[2] - chunk.bounds.min[2];
+                const float area = extent_x * extent_z;
+                if (area <= 0.0f) {
+                    return 0.0f;
+                }
+                return static_cast<float>(chunk.triangle_count) / area;
+            };
             for (uint32_t instance_index = 0u;
                  instance_index < cs.terrain_instances.size();
                  ++instance_index)
@@ -334,6 +346,8 @@ namespace wz::scene {
                         .world_bounds = transform_aabb(
                             terrain_proxy_bounds_to_aabb(chunk.bounds),
                             instance.world),
+                        .asset_triangle_density =
+                            chunk_asset_density(chunk),
                         .boundary = chunk.boundary,
                         .surfel_density_levels =
                             chunk.surfel_density_levels,

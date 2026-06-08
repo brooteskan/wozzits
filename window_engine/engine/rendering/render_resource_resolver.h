@@ -101,6 +101,17 @@ namespace wz::engine::rendering
         uint64_t lod_replacement_drawn_triangles = 0;
         uint64_t far_splat_chunks = 0;
         uint64_t far_splats = 0;
+        double terrain_submit_cpu_us = 0.0;
+        double terrain_submit_resolve_cpu_us = 0.0;
+        double terrain_submit_resource_cpu_us = 0.0;
+        double terrain_submit_constants_cpu_us = 0.0;
+        double terrain_submit_bind_cpu_us = 0.0;
+        double terrain_submit_draw_cpu_us = 0.0;
+        double terrain_submit_stats_cpu_us = 0.0;
+        uint64_t terrain_submit_surfel_draw_calls = 0;
+        uint64_t terrain_submit_mesh_draw_calls = 0;
+        uint64_t terrain_submit_fallback_mesh_draw_calls = 0;
+        uint64_t terrain_submit_surfel_fallbacks = 0;
         float lod_target_pixels_per_triangle = 0.0f;
         float pixels_per_triangle_min = 0.0f;
         float pixels_per_triangle_max = 0.0f;
@@ -263,6 +274,18 @@ namespace wz::engine::rendering
         void record_terrain_budget_diagnostics(
             uint64_t budget_target_triangles,
             bool budget_missed) const noexcept;
+        void record_terrain_submit_cpu_profile(
+            double total_us,
+            double resolve_us,
+            double resource_us,
+            double constants_us,
+            double bind_us,
+            double draw_us,
+            double stats_us,
+            uint64_t surfel_draw_calls,
+            uint64_t mesh_draw_calls,
+            uint64_t fallback_mesh_draw_calls,
+            uint64_t surfel_fallbacks) const noexcept;
         TerrainRenderStats terrain_render_stats() const noexcept;
         wz::render::TerrainFrameDiagnostics terrain_frame_diagnostics()
             const noexcept;
@@ -270,6 +293,12 @@ namespace wz::engine::rendering
     private:
         struct Entry
         {
+            struct TerrainFarSplatLookup
+            {
+                uint64_t key = 0;
+                size_t index = 0;
+            };
+
             wz::gpu::GPUHandle                       gpu_resource{};
             wz::engine::assets::BuiltinRenderProgram program{};
             wz::asset::ResourceHandle                render_program{};
@@ -278,8 +307,18 @@ namespace wz::engine::rendering
             wz::engine::assets::MeshRenderStyleData  mesh_style{};
             std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
             std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks{};
+            std::vector<TerrainFarSplatLookup> terrain_far_splat_lookup{};
             std::vector<TerrainTransitionDrawRange> terrain_transition_ranges{};
         };
+
+        static uint64_t terrain_far_splat_lookup_key(
+            wz::engine::assets::TerrainChunkId chunk_id,
+            wz::engine::assets::TerrainLodId density_id) noexcept;
+        static void rebuild_terrain_far_splat_lookup(Entry& entry);
+        static const TerrainFarSplatChunk* find_terrain_far_splat_chunk(
+            const Entry& entry,
+            wz::engine::assets::TerrainChunkId chunk_id,
+            wz::engine::assets::TerrainLodId density_id);
 
         std::vector<Entry> splat_entries_;
         std::vector<Entry> mesh_entries_;

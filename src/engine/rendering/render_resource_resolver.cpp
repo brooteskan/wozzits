@@ -6,6 +6,65 @@
 
 namespace wz::engine::rendering
 {
+    uint64_t RenderResourceResolver::terrain_far_splat_lookup_key(
+        wz::engine::assets::TerrainChunkId chunk_id,
+        wz::engine::assets::TerrainLodId density_id) noexcept
+    {
+        return (static_cast<uint64_t>(density_id.value) << 32u)
+            | static_cast<uint64_t>(chunk_id.value);
+    }
+
+    void RenderResourceResolver::rebuild_terrain_far_splat_lookup(
+        Entry& entry)
+    {
+        entry.terrain_far_splat_lookup.clear();
+        entry.terrain_far_splat_lookup.reserve(
+            entry.terrain_far_splat_chunks.size());
+        for (size_t i = 0; i < entry.terrain_far_splat_chunks.size(); ++i) {
+            const TerrainFarSplatChunk& chunk =
+                entry.terrain_far_splat_chunks[i];
+            entry.terrain_far_splat_lookup.push_back({
+                terrain_far_splat_lookup_key(
+                    chunk.chunk_id,
+                    chunk.density_id),
+                i,
+            });
+        }
+        std::sort(
+            entry.terrain_far_splat_lookup.begin(),
+            entry.terrain_far_splat_lookup.end(),
+            [](const Entry::TerrainFarSplatLookup& a,
+               const Entry::TerrainFarSplatLookup& b)
+            {
+                return a.key < b.key;
+            });
+    }
+
+    const TerrainFarSplatChunk*
+    RenderResourceResolver::find_terrain_far_splat_chunk(
+        const Entry& entry,
+        wz::engine::assets::TerrainChunkId chunk_id,
+        wz::engine::assets::TerrainLodId density_id)
+    {
+        const uint64_t key =
+            terrain_far_splat_lookup_key(chunk_id, density_id);
+        const auto found = std::lower_bound(
+            entry.terrain_far_splat_lookup.begin(),
+            entry.terrain_far_splat_lookup.end(),
+            key,
+            [](const Entry::TerrainFarSplatLookup& item, uint64_t value)
+            {
+                return item.key < value;
+            });
+        if (found == entry.terrain_far_splat_lookup.end()
+            || found->key != key
+            || found->index >= entry.terrain_far_splat_chunks.size())
+        {
+            return nullptr;
+        }
+        return &entry.terrain_far_splat_chunks[found->index];
+    }
+
     wz::scene::SplatHandle RenderResourceResolver::register_splat_cloud(
         wz::gpu::GPUHandle                       gpu_resource,
         wz::engine::assets::BuiltinRenderProgram program,
@@ -88,6 +147,7 @@ namespace wz::engine::rendering
         entry.terrain_far_splat_chunks.assign(
             terrain_far_splat_chunks.begin(),
             terrain_far_splat_chunks.end());
+        rebuild_terrain_far_splat_lookup(entry);
         entry.terrain_transition_ranges.assign(
             terrain_transition_ranges.begin(),
             terrain_transition_ranges.end());
@@ -128,6 +188,7 @@ namespace wz::engine::rendering
         entry.terrain_far_splat_chunks.assign(
             terrain_far_splat_chunks.begin(),
             terrain_far_splat_chunks.end());
+        rebuild_terrain_far_splat_lookup(entry);
         entry.terrain_transition_ranges.assign(
             terrain_transition_ranges.begin(),
             terrain_transition_ranges.end());
@@ -243,30 +304,28 @@ namespace wz::engine::rendering
                 == wz::engine::assets::TerrainVisualRepresentationKind
                     ::SurfelCloud)
             {
-                for (const TerrainFarSplatChunk& chunk :
-                     e.terrain_far_splat_chunks)
-                {
-                    if (chunk.chunk_id == ref.chunk_id
-                        && chunk.density_id == ref.lod_id
-                        && chunk.splat_count > 0u)
-                    {
-                        return ResolvedTerrainDrawResource{
-                            .gpu_resource = chunk.gpu_resource,
-                            .program = e.program,
-                            .render_program = e.render_program,
-                            .terrain_lighting = e.terrain_lighting,
-                            .terrain_target_pixels_per_triangle =
-                                e.terrain_target_pixels_per_triangle,
-                            .source_triangle_count =
-                                ref.chunk_id.value < e.terrain_chunks.size()
-                                ? e.terrain_chunks[ref.chunk_id.value]
-                                    .triangle_count()
-                                : 0u,
-                            .first_splat = chunk.first_splat,
-                            .far_splat_count = chunk.splat_count,
-                            .far_splat_selected = true,
-                        };
-                    }
+                const TerrainFarSplatChunk* chunk =
+                    find_terrain_far_splat_chunk(
+                        e,
+                        ref.chunk_id,
+                        ref.lod_id);
+                if (chunk && chunk->splat_count > 0u) {
+                    return ResolvedTerrainDrawResource{
+                        .gpu_resource = chunk->gpu_resource,
+                        .program = e.program,
+                        .render_program = e.render_program,
+                        .terrain_lighting = e.terrain_lighting,
+                        .terrain_target_pixels_per_triangle =
+                            e.terrain_target_pixels_per_triangle,
+                        .source_triangle_count =
+                            ref.chunk_id.value < e.terrain_chunks.size()
+                            ? e.terrain_chunks[ref.chunk_id.value]
+                                .triangle_count()
+                            : 0u,
+                        .first_splat = chunk->first_splat,
+                        .far_splat_count = chunk->splat_count,
+                        .far_splat_selected = true,
+                    };
                 }
                 return std::nullopt;
             }
@@ -575,6 +634,40 @@ namespace wz::engine::rendering
             budget_target_triangles);
         if (budget_missed)
             ++terrain_stats_.budget_misses;
+    }
+
+    void RenderResourceResolver::record_terrain_submit_cpu_profile(
+        double total_us,
+        double resolve_us,
+        double resource_us,
+        double constants_us,
+        double bind_us,
+        double draw_us,
+        double stats_us,
+        uint64_t surfel_draw_calls,
+        uint64_t mesh_draw_calls,
+        uint64_t fallback_mesh_draw_calls,
+        uint64_t surfel_fallbacks) const noexcept
+    {
+        terrain_stats_.terrain_submit_cpu_us += (std::max)(0.0, total_us);
+        terrain_stats_.terrain_submit_resolve_cpu_us +=
+            (std::max)(0.0, resolve_us);
+        terrain_stats_.terrain_submit_resource_cpu_us +=
+            (std::max)(0.0, resource_us);
+        terrain_stats_.terrain_submit_constants_cpu_us +=
+            (std::max)(0.0, constants_us);
+        terrain_stats_.terrain_submit_bind_cpu_us +=
+            (std::max)(0.0, bind_us);
+        terrain_stats_.terrain_submit_draw_cpu_us +=
+            (std::max)(0.0, draw_us);
+        terrain_stats_.terrain_submit_stats_cpu_us +=
+            (std::max)(0.0, stats_us);
+        terrain_stats_.terrain_submit_surfel_draw_calls +=
+            surfel_draw_calls;
+        terrain_stats_.terrain_submit_mesh_draw_calls += mesh_draw_calls;
+        terrain_stats_.terrain_submit_fallback_mesh_draw_calls +=
+            fallback_mesh_draw_calls;
+        terrain_stats_.terrain_submit_surfel_fallbacks += surfel_fallbacks;
     }
 
     TerrainRenderStats RenderResourceResolver::terrain_render_stats()

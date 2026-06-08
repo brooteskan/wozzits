@@ -151,6 +151,11 @@ namespace wz::scene {
         bool enable_lod_transitions = false;
         bool enable_surfel_lods = false;
         float surfel_target_coverage_px = 1.0f;
+        // 0 disables density rejection. Asset density is source triangles per
+        // proxy XZ unit squared; screen density is selected triangles per
+        // projected pixel.
+        float max_asset_triangle_density = 0.0f;
+        float max_screen_triangle_density = 0.0f;
     };
 
     struct TerrainLodChoice {
@@ -161,6 +166,8 @@ namespace wz::scene {
         wz::engine::assets::TerrainLodId lod_id{};
         float projected_error_px = 0.0f;
         float projected_area_px = 0.0f;
+        float asset_triangle_density = 0.0f;
+        float screen_triangle_density = 0.0f;
         float priority = 0.0f;
     };
 

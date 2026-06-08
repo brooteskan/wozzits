@@ -454,6 +454,8 @@ namespace wz::engine::assets
                 fp.mix_value(style.target_pixels_per_triangle);
                 fp.mix_value(style.enable_surfel_lods);
                 fp.mix_value(style.surfel_target_coverage_px);
+                fp.mix_value(style.max_asset_triangle_density);
+                fp.mix_value(style.max_screen_triangle_density);
                 fp.mix_value(style.visual_chunk_count);
             }
 

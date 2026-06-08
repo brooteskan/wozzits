@@ -354,6 +354,39 @@ namespace wz::scene
             return fallback;
         }
 
+        float screen_triangle_density(
+            const VisibleChunk& chunk,
+            uint32_t triangle_count) noexcept
+        {
+            if (chunk.projected_area_px <= 0.0f) {
+                return 0.0f;
+            }
+            return static_cast<float>(triangle_count)
+                / chunk.projected_area_px;
+        }
+
+        bool exceeds_density_limits(
+            const VisibleChunk& chunk,
+            const TerrainLodSelectionParams& params,
+            uint32_t selected_triangle_count) noexcept
+        {
+            if (params.max_asset_triangle_density > 0.0f
+                && chunk.info.asset_triangle_density
+                    > params.max_asset_triangle_density)
+            {
+                return true;
+            }
+
+            if (params.max_screen_triangle_density > 0.0f
+                && screen_triangle_density(chunk, selected_triangle_count)
+                    > params.max_screen_triangle_density)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         TerrainLodChoice make_choice(
             const VisibleChunk& chunk,
             const TerrainLodSelectionParams& params)
@@ -373,6 +406,12 @@ namespace wz::scene
                     .lod_id = surfel->density_id,
                     .projected_error_px = chunk.errors_px[chunk.selected],
                     .projected_area_px = chunk.projected_area_px,
+                    .asset_triangle_density =
+                        chunk.info.asset_triangle_density,
+                    .screen_triangle_density =
+                        screen_triangle_density(
+                            chunk,
+                            surfel->equivalent_triangle_cost),
                     .priority = wz::math::lod_priority(
                         chunk.errors_px[chunk.selected],
                         chunk.projected_area_px,
@@ -387,6 +426,10 @@ namespace wz::scene
                 .lod_id = lod->lod_id,
                 .projected_error_px = chunk.errors_px[chunk.selected],
                 .projected_area_px = chunk.projected_area_px,
+                .asset_triangle_density =
+                    chunk.info.asset_triangle_density,
+                .screen_triangle_density =
+                    screen_triangle_density(chunk, lod_triangles(lod)),
                 .priority = wz::math::lod_priority(
                     chunk.errors_px[chunk.selected],
                     chunk.projected_area_px,
@@ -582,6 +625,15 @@ namespace wz::scene
 
         out.reserve(visible.size());
         for (const VisibleChunk& chunk : visible) {
+            const uint32_t selected_triangles =
+                lod_triangles(chunk.lods[chunk.selected]);
+            if (exceeds_density_limits(
+                    chunk,
+                    params,
+                    selected_triangles))
+            {
+                continue;
+            }
             out.push_back(make_choice(chunk, params));
         }
         return out;

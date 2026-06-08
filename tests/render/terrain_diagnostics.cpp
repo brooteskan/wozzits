@@ -154,6 +154,49 @@ TEST(TerrainDiagnostics, ExplicitZeroSubmittedDrawCallsDoesNotFallbackToChunks)
     EXPECT_EQ(diagnostics.representation_counts.surfel_clouds, 3u);
 }
 
+TEST(TerrainDiagnostics, ResolverRecordsTerrainSubmitCpuProfile)
+{
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    resolver.record_terrain_submit_cpu_profile(
+        100.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        7u,
+        3u,
+        2u,
+        1u);
+    resolver.record_terrain_submit_cpu_profile(
+        50.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        5u,
+        4u,
+        3u,
+        2u);
+
+    const auto stats = resolver.terrain_render_stats();
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_cpu_us, 150.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_resolve_cpu_us, 11.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_resource_cpu_us, 13.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_constants_cpu_us, 15.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_bind_cpu_us, 17.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_draw_cpu_us, 19.0);
+    EXPECT_DOUBLE_EQ(stats.terrain_submit_stats_cpu_us, 21.0);
+    EXPECT_EQ(stats.terrain_submit_surfel_draw_calls, 12u);
+    EXPECT_EQ(stats.terrain_submit_mesh_draw_calls, 7u);
+    EXPECT_EQ(stats.terrain_submit_fallback_mesh_draw_calls, 5u);
+    EXPECT_EQ(stats.terrain_submit_surfel_fallbacks, 3u);
+}
+
 TEST(TerrainDiagnostics, ResolverExposesProxyWideDiagnostics)
 {
     using namespace wz::engine::assets;

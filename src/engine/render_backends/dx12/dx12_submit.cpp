@@ -6,9 +6,11 @@
 #include <gpu/dx12/dx12_internal.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace wz::render::backend::dx12
@@ -17,6 +19,14 @@ namespace wz::render::backend::dx12
     {
         using wz::engine::assets::BuiltinRenderProgram;
         using wz::math::Mat4;
+        using SubmitClock = std::chrono::steady_clock;
+
+        double elapsed_us(
+            SubmitClock::time_point a,
+            SubmitClock::time_point b)
+        {
+            return std::chrono::duration<double, std::micro>(b - a).count();
+        }
 
         struct TerrainLightingConstants
         {
@@ -191,6 +201,44 @@ namespace wz::render::backend::dx12
 
         UINT root_constant_count_for_program(BuiltinRenderProgram program);
 
+        struct TerrainSubmitCpuProfile
+        {
+            double total_us = 0.0;
+            double resolve_us = 0.0;
+            double resource_us = 0.0;
+            double constants_us = 0.0;
+            double bind_us = 0.0;
+            double draw_us = 0.0;
+            double stats_us = 0.0;
+            uint64_t surfel_draw_calls = 0;
+            uint64_t mesh_draw_calls = 0;
+            uint64_t fallback_mesh_draw_calls = 0;
+            uint64_t surfel_fallbacks = 0;
+
+            // Surfel failure diagnostics
+            uint64_t surfel_fail_resolve = 0;
+            uint64_t surfel_fail_pipeline = 0;
+            uint64_t surfel_fail_cloud = 0;
+            uint64_t surfel_fail_splats = 0;
+        };
+
+        struct TerrainMeshDrawBindings
+        {
+            const wz::gpu::dx12::internal::DX12GraphicsPipeline* pipeline =
+                nullptr;
+            const wz::gpu::dx12::internal::DX12MeshResource* mesh = nullptr;
+            size_t terrain_instance_index =
+                (std::numeric_limits<size_t>::max)();
+
+            void invalidate() noexcept
+            {
+                pipeline = nullptr;
+                mesh = nullptr;
+                terrain_instance_index =
+                    (std::numeric_limits<size_t>::max)();
+            }
+        };
+
         bool draw_terrain_ref_mesh(
             wz::gpu::Device& device,
             ID3D12GraphicsCommandList* cmdList,
@@ -200,6 +248,8 @@ namespace wz::render::backend::dx12
             const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
             const wz::engine::rendering::RenderResourceResolver& resolver,
             const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache,
+            TerrainMeshDrawBindings& bindings,
+            TerrainSubmitCpuProfile& profile,
             bool mesh_fallback = false)
         {
             if (ref.representation_kind
@@ -209,15 +259,19 @@ namespace wz::render::backend::dx12
                     return false;
             }
 
+            const auto resolve_t0 = SubmitClock::now();
             const auto resolved =
                 mesh_fallback
                 ? resolver.resolve_terrain_draw_mesh_fallback(
                     instance.terrain_proxy_id,
                     ref)
                 : resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
+            const auto resolve_t1 = SubmitClock::now();
+            profile.resolve_us += elapsed_us(resolve_t0, resolve_t1);
             if (!resolved || !is_terrain_surface_program(resolved->program))
                 return false;
 
+            const auto resource_t0 = SubmitClock::now();
             wz::gpu::GPUHandle pipeline_handle;
             if (render_program_cache && resolved->render_program.valid()) {
                 pipeline_handle =
@@ -237,43 +291,80 @@ namespace wz::render::backend::dx12
             const auto* mesh = wz::gpu::dx12::internal::get_mesh(
                 device,
                 resolved->gpu_resource);
+            const auto resource_t1 = SubmitClock::now();
+            profile.resource_us += elapsed_us(resource_t0, resource_t1);
             if (!mesh || !mesh->vertex_buffer)
                 return false;
 
-            float constants[48] = {};
-            for (int i = 0; i < 16; ++i)
-                constants[i] = instance.world.m[i];
-            for (int i = 0; i < 16; ++i)
-                constants[16 + i] = frame.view.view_projection.m[i];
+            const auto bind_t0 = SubmitClock::now();
 
-            const TerrainLightingConstants lighting =
-                terrain_lighting_from_renderable(
-                    resolved->terrain_lighting,
-                    frame.lights);
-            for (int i = 0; i < 4; ++i) {
-                constants[32 + i] = lighting.light_position[i];
-                constants[36 + i] = lighting.light_direction[i];
-                constants[40 + i] = lighting.light_color_intensity[i];
-                constants[44 + i] = lighting.lighting_params[i];
+            if (bindings.pipeline != pl) {
+                cmdList->SetGraphicsRootSignature(pl->root_sig);
+                cmdList->SetPipelineState(pl->pso);
+                cmdList->IASetPrimitiveTopology(
+                    D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                bindings.pipeline = pl;
+                bindings.mesh = nullptr;
+                bindings.terrain_instance_index =
+                    (std::numeric_limits<size_t>::max)();
             }
 
-            cmdList->SetGraphicsRootSignature(pl->root_sig);
-            cmdList->SetPipelineState(pl->pso);
-            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmdList->SetGraphicsRoot32BitConstants(
-                0,
-                root_constant_count_for_program(resolved->program),
-                constants,
-                0);
-            cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
-            cmdList->IASetIndexBuffer(&mesh->index_view);
+            if (bindings.terrain_instance_index
+                != ref.terrain_instance_index)
+            {
+                const auto constants_t0 = SubmitClock::now();
+                float constants[48] = {};
+                for (int i = 0; i < 16; ++i)
+                    constants[i] = instance.world.m[i];
+                for (int i = 0; i < 16; ++i)
+                    constants[16 + i] = frame.view.view_projection.m[i];
+
+                const TerrainLightingConstants lighting =
+                    terrain_lighting_from_renderable(
+                        resolved->terrain_lighting,
+                        frame.lights);
+                for (int i = 0; i < 4; ++i) {
+                    constants[32 + i] = lighting.light_position[i];
+                    constants[36 + i] = lighting.light_direction[i];
+                    constants[40 + i] = lighting.light_color_intensity[i];
+                    constants[44 + i] = lighting.lighting_params[i];
+                }
+                const auto constants_t1 = SubmitClock::now();
+                profile.constants_us +=
+                    elapsed_us(constants_t0, constants_t1);
+
+                cmdList->SetGraphicsRoot32BitConstants(
+                    0,
+                    root_constant_count_for_program(resolved->program),
+                    constants,
+                    0);
+                bindings.terrain_instance_index =
+                    ref.terrain_instance_index;
+            }
+
+            if (bindings.mesh != mesh) {
+                cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
+                cmdList->IASetIndexBuffer(&mesh->index_view);
+                bindings.mesh = mesh;
+            }
+
+            const auto bind_t1 = SubmitClock::now();
+            profile.bind_us += elapsed_us(bind_t0, bind_t1);
+
+            const auto draw_t0 = SubmitClock::now();
             cmdList->DrawIndexedInstanced(
                 resolved->index_count,
                 1,
                 resolved->first_index,
                 0,
                 0);
+            const auto draw_t1 = SubmitClock::now();
+            profile.draw_us += elapsed_us(draw_t0, draw_t1);
+            ++profile.mesh_draw_calls;
+            if (mesh_fallback)
+                ++profile.fallback_mesh_draw_calls;
 
+            const auto stats_t0 = SubmitClock::now();
             resolver.record_terrain_render_stats(
                 0u,
                 1u,
@@ -315,6 +406,8 @@ namespace wz::render::backend::dx12
                         ::MeshChunks
                     : ref.representation_kind,
                 1u);
+            const auto stats_t1 = SubmitClock::now();
+            profile.stats_us += elapsed_us(stats_t0, stats_t1);
             return true;
         }
 
@@ -367,22 +460,38 @@ namespace wz::render::backend::dx12
             return true;
         }
 
-        struct ResolvedTerrainSurfelDraw
+        struct TerrainSurfelDrawBindings
         {
-            TerrainDrawRef ref{};
-            wz::engine::rendering::ResolvedTerrainDrawResource resolved{};
+            const wz::gpu::dx12::internal::DX12GraphicsPipeline* pipeline =
+                nullptr;
             const wz::gpu::dx12::internal::DX12GaussianSplatCloudResource*
                 cloud = nullptr;
-            uint32_t first_splat = 0u;
-            uint32_t splat_count = 0u;
+            size_t terrain_instance_index =
+                (std::numeric_limits<size_t>::max)();
+            bool pipeline_bound = false;
+
+            void invalidate() noexcept
+            {
+                pipeline_bound = false;
+                pipeline = nullptr;
+                cloud = nullptr;
+                terrain_instance_index =
+                    (std::numeric_limits<size_t>::max)();
+            }
         };
 
-        bool resolve_terrain_surfel_draw(
+        bool draw_terrain_ref_surfel(
             wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
             const TerrainDrawRef& ref,
             const TerrainVisualInstance& instance,
+            const RenderFrameView& frame,
+            const wz::gpu::dx12::internal::DX12GraphicsPipeline* pl,
             const wz::engine::rendering::RenderResourceResolver& resolver,
-            ResolvedTerrainSurfelDraw& out)
+            TerrainSurfelDrawBindings& bindings,
+            TerrainSubmitCpuProfile& profile,
+            std::optional<wz::engine::rendering::ResolvedTerrainDrawResource>*
+                out_resolved = nullptr)
         {
             if (ref.representation_kind
                 != wz::engine::assets::TerrainVisualRepresentationKind
@@ -391,16 +500,31 @@ namespace wz::render::backend::dx12
                 return false;
             }
 
+            const auto resolve_t0 = SubmitClock::now();
             const auto resolved =
                 resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
+            const auto resolve_t1 = SubmitClock::now();
+            profile.resolve_us += elapsed_us(resolve_t0, resolve_t1);
+            if (out_resolved)
+                *out_resolved = resolved;
             if (!resolved || !resolved->far_splat_selected) {
+                ++profile.surfel_fail_resolve;
                 return false;
             }
 
+            if (!pl || !pl->valid()) {
+                ++profile.surfel_fail_pipeline;
+                return false;
+            }
+
+            const auto resource_t0 = SubmitClock::now();
             const auto* cloud = wz::gpu::dx12::internal::get_gaussian_splat_cloud(
                 device,
                 resolved->gpu_resource);
+            const auto resource_t1 = SubmitClock::now();
+            profile.resource_us += elapsed_us(resource_t0, resource_t1);
             if (!cloud || !cloud->valid_for_vertex_instanced()) {
+                ++profile.surfel_fail_cloud;
                 return false;
             }
 
@@ -411,111 +535,69 @@ namespace wz::render::backend::dx12
             const uint32_t draw_splats =
                 (std::min)(resolved->far_splat_count, available_splats);
             if (draw_splats == 0u) {
+                ++profile.surfel_fail_splats;
                 return false;
             }
 
-            out.ref = ref;
-            out.resolved = *resolved;
-            out.cloud = cloud;
-            out.first_splat = resolved->first_splat;
-            out.splat_count = draw_splats;
-            return true;
-        }
+            const auto bind_t0 = SubmitClock::now();
+            if (!bindings.pipeline_bound || bindings.pipeline != pl) {
+                cmdList->SetGraphicsRootSignature(pl->root_sig);
+                cmdList->SetPipelineState(pl->pso);
+                cmdList->IASetPrimitiveTopology(
+                    D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                bindings.pipeline = pl;
+                bindings.cloud = nullptr;
+                bindings.terrain_instance_index =
+                    (std::numeric_limits<size_t>::max)();
+                bindings.pipeline_bound = true;
+            }
 
-        bool terrain_surfel_draws_can_merge(
-            const ResolvedTerrainSurfelDraw& a,
-            const ResolvedTerrainSurfelDraw& b) noexcept
-        {
-            return a.ref.terrain_instance_index == b.ref.terrain_instance_index
-                && a.ref.lod_id == b.ref.lod_id
-                && a.ref.representation_kind == b.ref.representation_kind
-                && a.resolved.gpu_resource == b.resolved.gpu_resource
-                && a.first_splat + a.splat_count == b.first_splat
-                && a.resolved.terrain_target_pixels_per_triangle
-                    == b.resolved.terrain_target_pixels_per_triangle;
-        }
-
-        bool draw_terrain_surfel_batch(
-            wz::gpu::Device& device,
-            ID3D12GraphicsCommandList* cmdList,
-            const TerrainVisualInstance& instance,
-            const RenderFrameView& frame,
-            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
-            const wz::engine::rendering::RenderResourceResolver& resolver,
-            const ResolvedTerrainSurfelDraw& first,
-            uint32_t batch_splat_count,
-            uint32_t batch_chunk_count)
-        {
-            if (!first.cloud || batch_splat_count == 0u
-                || batch_chunk_count == 0u)
+            if (bindings.terrain_instance_index
+                != ref.terrain_instance_index)
             {
-                return false;
+                const auto constants_t0 = SubmitClock::now();
+                const float vp_w = frame.view.terrain_lod.viewport_width;
+                const float vp_h = frame.view.terrain_lod.viewport_height;
+
+                float constants[36] = {};
+                for (int i = 0; i < 16; ++i)
+                    constants[i] = instance.world.m[i];
+                for (int i = 0; i < 16; ++i)
+                    constants[16 + i] = frame.view.view_projection.m[i];
+                constants[32] = vp_w;
+                constants[33] = vp_h;
+                constants[34] = 0.55f;
+                constants[35] = 0.0f;
+
+                cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+                bindings.terrain_instance_index =
+                    ref.terrain_instance_index;
+                const auto constants_t1 = SubmitClock::now();
+                profile.constants_us +=
+                    elapsed_us(constants_t0, constants_t1);
             }
 
-            const wz::gpu::GPUHandle pipeline_handle = pipeline_cache.get(
-                BuiltinRenderProgram::GaussianSplatDebug);
-            const auto* pl =
-                wz::gpu::dx12::internal::get_graphics_pipeline(
-                    device,
-                    pipeline_handle);
-            if (!pl || !pl->valid()) {
-                return false;
+            if (bindings.cloud != cloud) {
+                cmdList->IASetVertexBuffers(0, 1, &cloud->vertex_view);
+                bindings.cloud = cloud;
             }
+            const auto bind_t1 = SubmitClock::now();
+            profile.bind_us += elapsed_us(bind_t0, bind_t1);
 
-            const float vp_w = frame.view.terrain_lod.viewport_width;
-            const float vp_h = frame.view.terrain_lod.viewport_height;
-
-            float constants[36] = {};
-            for (int i = 0; i < 16; ++i)
-                constants[i] = instance.world.m[i];
-            for (int i = 0; i < 16; ++i)
-                constants[16 + i] = frame.view.view_projection.m[i];
-            constants[32] = vp_w;
-            constants[33] = vp_h;
-            constants[34] = 1.0f;
-            constants[35] = 0.0f;
-
-            cmdList->SetGraphicsRootSignature(pl->root_sig);
-            cmdList->SetPipelineState(pl->pso);
-            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-            cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
-            cmdList->IASetVertexBuffers(0, 1, &first.cloud->vertex_view);
+            const auto draw_t0 = SubmitClock::now();
             cmdList->DrawInstanced(
                 4,
-                batch_splat_count,
+                draw_splats,
                 0,
-                first.first_splat);
+                resolved->first_splat);
+            const auto draw_t1 = SubmitClock::now();
+            profile.draw_us += elapsed_us(draw_t0, draw_t1);
+            ++profile.surfel_draw_calls;
 
-            resolver.record_terrain_render_stats(
-                0u,
-                batch_chunk_count,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                batch_chunk_count,
-                batch_splat_count,
-                first.resolved.terrain_target_pixels_per_triangle,
-                0.0f,
-                0.0f,
-                0.0,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                0u,
-                first.ref.lod_id.value,
-                first.ref.representation_kind,
-                1u);
+            const auto stats_t0 = SubmitClock::now();
+            record_terrain_ref_surfel_stats(ref, *resolved, resolver, 1u);
+            const auto stats_t1 = SubmitClock::now();
+            profile.stats_us += elapsed_us(stats_t0, stats_t1);
             return true;
         }
 
@@ -528,6 +610,8 @@ namespace wz::render::backend::dx12
         {
             auto* cmdList =
                 wz::gpu::dx12::internal::get_command_list(device);
+            TerrainSubmitCpuProfile profile{};
+            const auto total_t0 = SubmitClock::now();
 
             for (const TerrainVisualInstance& instance :
                 frame.terrain_instances)
@@ -544,11 +628,10 @@ namespace wz::render::backend::dx12
                         diagnostics->source_triangles);
             }
 
-            for (size_t terrain_ref_index = 0u;
-                 terrain_ref_index < frame.terrain.size();
-                 ++terrain_ref_index)
-            {
-                const TerrainDrawRef& ref = frame.terrain[terrain_ref_index];
+            TerrainSurfelDrawBindings surfel_bindings{};
+            TerrainMeshDrawBindings mesh_bindings{};
+
+            for (const TerrainDrawRef& ref : frame.terrain) {
                 if (ref.terrain_instance_index
                     >= frame.terrain_instances.size())
                 {
@@ -563,93 +646,31 @@ namespace wz::render::backend::dx12
                 if (ref.kind == TerrainDrawRefKind::ChunkLod) {
                     resolver.record_terrain_visible_chunks(1u);
                 }
+
+                std::optional<
+                    wz::engine::rendering::ResolvedTerrainDrawResource>
+                    surfel_resolved;
+
                 if (ref.representation_kind
                     == wz::engine::assets::TerrainVisualRepresentationKind
                         ::SurfelCloud)
                 {
-                    ResolvedTerrainSurfelDraw first_surfel{};
-                    if (resolve_terrain_surfel_draw(
-                        device,
-                        ref,
-                        instance,
-                        resolver,
-                        first_surfel))
+                    const auto resolve_t0 = SubmitClock::now();
+                    surfel_resolved = resolver.resolve_terrain_draw(
+                        instance.terrain_proxy_id,
+                        ref);
+                    const auto resolve_t1 = SubmitClock::now();
+                    profile.resolve_us += elapsed_us(resolve_t0, resolve_t1);
+                    if (surfel_resolved
+                        && surfel_resolved->far_splat_selected)
                     {
-                        uint32_t batch_splat_count =
-                            first_surfel.splat_count;
-                        uint32_t batch_chunk_count = 1u;
-
-                        while (terrain_ref_index + 1u < frame.terrain.size()) {
-                            const TerrainDrawRef& next_ref =
-                                frame.terrain[terrain_ref_index + 1u];
-                            if (next_ref.representation_kind
-                                    != wz::engine::assets
-                                        ::TerrainVisualRepresentationKind
-                                        ::SurfelCloud
-                                || next_ref.terrain_instance_index
-                                    >= frame.terrain_instances.size())
-                            {
-                                break;
-                            }
-
-                            const TerrainVisualInstance& next_instance =
-                                frame.terrain_instances[
-                                    next_ref.terrain_instance_index];
-                            if (!next_instance.visible
-                                || next_ref.terrain_instance_index
-                                    != ref.terrain_instance_index)
-                            {
-                                break;
-                            }
-
-                            ResolvedTerrainSurfelDraw next_surfel{};
-                            if (!resolve_terrain_surfel_draw(
-                                    device,
-                                    next_ref,
-                                    next_instance,
-                                    resolver,
-                                    next_surfel)
-                                || !terrain_surfel_draws_can_merge(
-                                    first_surfel,
-                                    next_surfel))
-                            {
-                                break;
-                            }
-
-                            if (next_ref.kind == TerrainDrawRefKind::ChunkLod) {
-                                resolver.record_terrain_visible_chunks(1u);
-                            }
-                            batch_splat_count += next_surfel.splat_count;
-                            ++batch_chunk_count;
-                            ++terrain_ref_index;
-                        }
-
-                        if (draw_terrain_surfel_batch(
-                                device,
-                                cmdList,
-                                instance,
-                                frame,
-                                pipeline_cache,
-                                resolver,
-                                first_surfel,
-                                batch_splat_count,
-                                batch_chunk_count))
-                        {
-                            continue;
-                        }
-                    }
-
-                    const auto resolved =
-                        resolver.resolve_terrain_draw(
-                            instance.terrain_proxy_id,
-                            ref);
-                    if (resolved && resolved->far_splat_selected) {
                         record_terrain_ref_surfel_stats(
                             ref,
-                            *resolved,
+                            *surfel_resolved,
                             resolver,
                             0u);
                     }
+                    ++profile.surfel_fallbacks;
                     draw_terrain_ref_mesh(
                         device,
                         cmdList,
@@ -659,7 +680,10 @@ namespace wz::render::backend::dx12
                         pipeline_cache,
                         resolver,
                         render_program_cache,
+                        mesh_bindings,
+                        profile,
                         true);
+                    surfel_bindings.invalidate();
                     continue;
                 }
 
@@ -671,7 +695,49 @@ namespace wz::render::backend::dx12
                     frame,
                     pipeline_cache,
                     resolver,
-                    render_program_cache);
+                    render_program_cache,
+                    mesh_bindings,
+                    profile);
+                surfel_bindings.invalidate();
+            }
+            const auto total_t1 = SubmitClock::now();
+            profile.total_us = elapsed_us(total_t0, total_t1);
+            resolver.record_terrain_submit_cpu_profile(
+                profile.total_us,
+                profile.resolve_us,
+                profile.resource_us,
+                profile.constants_us,
+                profile.bind_us,
+                profile.draw_us,
+                profile.stats_us,
+                profile.surfel_draw_calls,
+                profile.mesh_draw_calls,
+                profile.fallback_mesh_draw_calls,
+                profile.surfel_fallbacks);
+
+            // Periodic diagnostic: log surfel failure breakdown
+            {
+                static uint64_t diag_frame = 0;
+                if ((diag_frame++ % 300) == 0
+                    && (profile.surfel_fallbacks > 0
+                        || profile.surfel_draw_calls > 0))
+                {
+                    std::cerr
+                        << "[terrain_submit] surfel="
+                        << profile.surfel_draw_calls
+                        << " mesh=" << profile.mesh_draw_calls
+                        << " fallback=" << profile.fallback_mesh_draw_calls
+                        << " fail:resolve="
+                        << profile.surfel_fail_resolve
+                        << " fail:pipeline="
+                        << profile.surfel_fail_pipeline
+                        << " fail:cloud="
+                        << profile.surfel_fail_cloud
+                        << " fail:splats="
+                        << profile.surfel_fail_splats
+                        << " surfel_pipeline=disabled"
+                        << "\n";
+                }
             }
         }
 

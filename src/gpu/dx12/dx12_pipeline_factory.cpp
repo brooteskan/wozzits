@@ -277,6 +277,7 @@ namespace wz::gpu::dx12::internal
         case P::TerrainMeshSurface:
             return create_terrain_mesh_surface_root_sig(device);
         case P::GaussianSplatDebug:
+        case P::TerrainSurfelSurface:
             return create_gaussian_splat_root_sig(device);
         case P::SkySurface:
             return create_sky_surface_root_sig(device);
@@ -578,6 +579,86 @@ namespace wz::gpu::dx12::internal
         return pso;
     }
 
+    static ID3D12PipelineState* create_terrain_surfel_pso(
+        Device& device,
+        ID3D12RootSignature* root_sig,
+        GPUHandle vertex_shader,
+        GPUHandle pixel_shader)
+    {
+        const DX12Shader* vs = get_shader(device, vertex_shader);
+        const DX12Shader* ps = get_shader(device, pixel_shader);
+
+        assert(vs && vs->blob);
+        assert(ps && ps->blob);
+
+        // Same vertex layout as GaussianSplatDebug.
+        D3D12_INPUT_ELEMENT_DESC layout[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, position)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "OPACITY",  0, DXGI_FORMAT_R32_FLOAT,           0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, opacity)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "SCALE",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, scale)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "ROTATION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT,  0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, rotation)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+            { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT,     0,
+              static_cast<UINT>(offsetof(DX12GaussianSplatVertex, color)),
+              D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+        };
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+        desc.pRootSignature   = root_sig;
+        desc.VS               = { vs->blob->GetBufferPointer(), vs->blob->GetBufferSize() };
+        desc.PS               = { ps->blob->GetBufferPointer(), ps->blob->GetBufferSize() };
+        desc.InputLayout      = { layout, static_cast<UINT>(std::size(layout)) };
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        desc.RasterizerState  = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+        desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+        rt.BlendEnable           = TRUE;
+        rt.LogicOpEnable         = FALSE;
+        rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
+        rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+        rt.BlendOp               = D3D12_BLEND_OP_ADD;
+        rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+        rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+        rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+        rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+        desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState.DepthEnable    = TRUE;
+        desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        desc.DSVFormat         = DXGI_FORMAT_D32_FLOAT;
+
+        desc.NumRenderTargets  = 1;
+        desc.RTVFormats[0]     = get_backbuffer_format();
+        desc.SampleMask        = UINT_MAX;
+        desc.SampleDesc.Count  = 1;
+
+        ID3D12PipelineState* pso = nullptr;
+        HRESULT hr = get_device(device)->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pso));
+
+        if (FAILED(hr))
+        {
+            char buf[256];
+            sprintf_s(buf,
+                "create_pso_for_program(TerrainSurfelSurface) failed: 0x%08X\n",
+                static_cast<unsigned>(hr));
+            OutputDebugStringA(buf);
+            return nullptr;
+        }
+        return pso;
+    }
+
     static ID3D12PipelineState* create_sky_surface_pso(
         Device& device,
         ID3D12RootSignature* root_sig,
@@ -690,6 +771,8 @@ namespace wz::gpu::dx12::internal
                 false);
         case P::GaussianSplatDebug:
             return create_gaussian_splat_pso(device, root_sig, vertex_shader, pixel_shader);
+        case P::TerrainSurfelSurface:
+            return create_terrain_surfel_pso(device, root_sig, vertex_shader, pixel_shader);
         case P::SkySurface:
             return create_sky_surface_pso(device, root_sig, vertex_shader, pixel_shader);
         default:

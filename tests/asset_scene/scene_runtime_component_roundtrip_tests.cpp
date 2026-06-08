@@ -573,6 +573,8 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
         .target_pixels_per_triangle = 3.5f,
         .enable_surfel_lods = true,
         .surfel_target_coverage_px = 4.0f,
+        .max_asset_triangle_density = 9.25f,
+        .max_screen_triangle_density = 0.75f,
         .visual_chunk_count = 2048u,
     };
     authored.nodes.push_back(std::move(node));
@@ -594,6 +596,12 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"visual_chunk_count\""), std::string::npos);
     EXPECT_NE(exported.find("\"enable_surfel_lods\""), std::string::npos);
     EXPECT_NE(exported.find("\"surfel_target_coverage_px\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"max_asset_triangle_density\""),
+        std::string::npos);
+    EXPECT_NE(
+        exported.find("\"max_screen_triangle_density\""),
+        std::string::npos);
     EXPECT_NE(exported.find("\"asset\""), std::string::npos);
     EXPECT_NE(exported.find("\"visual_proxy\""), std::string::npos);
     EXPECT_NE(exported.find("\"constraint_surface\""), std::string::npos);
@@ -675,6 +683,12 @@ TEST(SceneAssetModule, TerrainComponentRoundTripsThroughSceneJSON)
     EXPECT_FLOAT_EQ(
         scene_data->nodes[0].terrain_render_style->surfel_target_coverage_px,
         4.0f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->max_asset_triangle_density,
+        9.25f);
+    EXPECT_FLOAT_EQ(
+        scene_data->nodes[0].terrain_render_style->max_screen_triangle_density,
+        0.75f);
 
     auto result = instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;

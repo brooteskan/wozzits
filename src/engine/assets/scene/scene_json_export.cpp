@@ -845,6 +845,10 @@ namespace wz::engine::assets
                 bool_value(style.enable_surfel_lods));
             add_member(*obj, "surfel_target_coverage_px",
                 number_value(style.surfel_target_coverage_px));
+            add_member(*obj, "max_asset_triangle_density",
+                number_value(style.max_asset_triangle_density));
+            add_member(*obj, "max_screen_triangle_density",
+                number_value(style.max_screen_triangle_density));
             add_member(*obj, "visual_chunk_count",
                 number_value(style.visual_chunk_count));
             return obj;

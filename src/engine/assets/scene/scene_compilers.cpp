@@ -2156,6 +2156,36 @@ namespace wz::engine::assets::internal
                     style.surfel_target_coverage_px =
                         static_cast<float>(*surfel_target_coverage_px);
                 }
+                auto max_asset_triangle_density = read_number(
+                    *terrain_render_style,
+                    "max_asset_triangle_density");
+                if (max_asset_triangle_density) {
+                    if (*max_asset_triangle_density < 0.0
+                        || !std::isfinite(*max_asset_triangle_density))
+                    {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid max_asset_triangle_density");
+                        return std::nullopt;
+                    }
+                    style.max_asset_triangle_density =
+                        static_cast<float>(*max_asset_triangle_density);
+                }
+                auto max_screen_triangle_density = read_number(
+                    *terrain_render_style,
+                    "max_screen_triangle_density");
+                if (max_screen_triangle_density) {
+                    if (*max_screen_triangle_density < 0.0
+                        || !std::isfinite(*max_screen_triangle_density))
+                    {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid max_screen_triangle_density");
+                        return std::nullopt;
+                    }
+                    style.max_screen_triangle_density =
+                        static_cast<float>(*max_screen_triangle_density);
+                }
                 auto visual_chunk_count = read_number(
                     *terrain_render_style,
                     "visual_chunk_count");

@@ -177,7 +177,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:55ee32cac02baaa8:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000006:0000000000000000:d99198caa52f3654:5b11cfee35900216"
+        "asset": "asset-key:55ee32cac2fa27d4:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000006:0000000000000000:d99198caa52f3654:5b11cfee35900216"
       },
       "terrain": {
         "asset": "asset-key:547c06c37e08660b:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000004:0000000000000000:236178699b1b52e3:5578d804d61c780c",
@@ -204,9 +204,9 @@
         "sky_visibility_strength": 0.54000002145767212,
         "normal_lighting_strength": 0.93000000715255737,
         "terrain_bounce_strength": 0.079999998211860657,
-        "target_pixels_per_triangle": 30.219999313354492,
+        "target_pixels_per_triangle": 324.42001342773438,
         "enable_surfel_lods": true,
-        "surfel_target_coverage_px": 1,
+        "surfel_target_coverage_px": 4.0999999046325684,
         "visual_chunk_count": 4096
       },
       "terrain_mesh_source": {
@@ -1021,10 +1021,10 @@
         51.288600921630859
       ],
       "orientation": [
-        0.37350344657897949,
-        -0.00089027651119977236,
-        -0.015253748744726181,
-        0.92750304937362671
+        0.084201648831367493,
+        -0.90648776292800903,
+        0.23660749197006226,
+        0.33942151069641113
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

@@ -38,6 +38,7 @@ namespace wz::engine::assets
         MeshSurfaceAlpha,
         TerrainMeshSurface,
         GaussianSplatDebug,
+        TerrainSurfelSurface,    // IA-based splat with depth R/W for terrain
         ScalarFieldDebug,
         GaussianSplatPullDebug,  // pull-based splat: no IA, SRV at t0
         GaussianSplatNeighborhoodColorBlend,  // SplatPull + LOD color blend modes

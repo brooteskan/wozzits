@@ -14,6 +14,7 @@ namespace wz::scene
         wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
             wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
         AABB world_bounds{};
+        float asset_triangle_density = 0.0f;
         wz::engine::assets::TerrainVisualChunkBoundaryMetadata boundary{};
         std::span<
             const wz::engine::assets::TerrainVisualProxySurfelDensityLevel>

@@ -327,6 +327,10 @@ namespace wz::engine::assets
                 : ":no_surfel_lods";
             out += ":surfel_target_px:"
                 + std::to_string(style.surfel_target_coverage_px);
+            out += ":max_asset_density:"
+                + std::to_string(style.max_asset_triangle_density);
+            out += ":max_screen_density:"
+                + std::to_string(style.max_screen_triangle_density);
             out += ":visual_chunk_count:"
                 + std::to_string(style.visual_chunk_count);
             return out;

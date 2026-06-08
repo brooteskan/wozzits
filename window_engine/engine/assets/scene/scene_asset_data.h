@@ -383,6 +383,8 @@ namespace wz::engine::assets
         float target_pixels_per_triangle = 2.0f;
         bool enable_surfel_lods = false;
         float surfel_target_coverage_px = 1.0f;
+        float max_asset_triangle_density = 0.0f;
+        float max_screen_triangle_density = 0.0f;
         uint32_t visual_chunk_count = 4096;
     };
 

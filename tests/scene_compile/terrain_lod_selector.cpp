@@ -71,6 +71,17 @@ namespace
         };
     }
 
+    TerrainChunkInfo dense_chunk(
+        uint32_t chunk_id,
+        AABB bounds,
+        float asset_triangle_density,
+        std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods)
+    {
+        TerrainChunkInfo out = chunk(chunk_id, bounds, lods);
+        out.asset_triangle_density = asset_triangle_density;
+        return out;
+    }
+
     wz::engine::assets::TerrainVisualProxySurfelDensityLevel surfel_level(
         uint32_t density_id,
         uint32_t count,
@@ -293,6 +304,71 @@ TEST(TerrainLodSelector, SingleLodChunkIsSelectedWhenBudgetAllows)
 
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(choices[0].lod_id.value, 0u);
+}
+
+TEST(TerrainLodSelector, AssetDensityThresholdMasksDenseChunks)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 10u, 0.0f),
+    };
+    const std::vector chunks{
+        dense_chunk(
+            0u,
+            box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f),
+            12.0f,
+            lods),
+        dense_chunk(
+            1u,
+            box(2.0f, -1.0f, 10.0f, 4.0f, 1.0f, 11.0f),
+            3.0f,
+            lods),
+    };
+    ViewData view = test_view();
+    view.terrain_lod.max_asset_triangle_density = 5.0f;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].chunk_id.value, 1u);
+    EXPECT_FLOAT_EQ(choices[0].asset_triangle_density, 3.0f);
+}
+
+TEST(TerrainLodSelector, ScreenDensityThresholdMasksOverdenseChunks)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 10u, 0.0f),
+    };
+    const std::vector chunks{
+        dense_chunk(
+            0u,
+            box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f),
+            2.0f,
+            lods),
+    };
+    ViewData view = test_view();
+
+    const std::vector<TerrainLodChoice> baseline =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+    ASSERT_EQ(baseline.size(), 1u);
+    ASSERT_GT(baseline[0].screen_triangle_density, 0.0f);
+
+    view.terrain_lod.max_screen_triangle_density =
+        baseline[0].screen_triangle_density * 0.5f;
+    const std::vector<TerrainLodChoice> masked =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+    EXPECT_TRUE(masked.empty());
+
+    view.terrain_lod.max_screen_triangle_density =
+        baseline[0].screen_triangle_density * 2.0f;
+    const std::vector<TerrainLodChoice> allowed =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+    ASSERT_EQ(allowed.size(), 1u);
+    EXPECT_FLOAT_EQ(
+        allowed[0].screen_triangle_density,
+        baseline[0].screen_triangle_density);
 }
 
 TEST(TerrainLodSelector, SurfelLevelsAreOptIn)
