@@ -1,5 +1,94 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+TEST(SceneAssetModule, MeshWaveletAnalysisComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_wavelet_analysis_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_wavelet_analysis_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_source": {
+        "kind": "procedural_cube"
+      },
+      "mesh_wavelet_analysis": {
+        "enabled": true,
+        "function": "builtin_detail_heat_v0",
+        "scale_count": 5,
+        "lambda_max_estimate": 3.5,
+        "gamma": 0.75
+      },
+      "mesh_render_style": {
+        "field_visualization_enabled": true,
+        "field_visualization_channel_id": 4608
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_wavelet_analysis.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_wavelet_analysis",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_wavelet_analysis.has_value());
+    EXPECT_TRUE(node.mesh_wavelet_analysis->enabled);
+    EXPECT_EQ(
+        node.mesh_wavelet_analysis->function,
+        SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0);
+    EXPECT_EQ(node.mesh_wavelet_analysis->scale_count, 5u);
+    EXPECT_FLOAT_EQ(
+        node.mesh_wavelet_analysis->lambda_max_estimate,
+        3.5f);
+    EXPECT_FLOAT_EQ(node.mesh_wavelet_analysis->gamma, 0.75f);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_wavelet_analyses, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_wavelet_analyses, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"mesh_wavelet_analysis\""), std::string::npos);
+    EXPECT_NE(exported.find("\"builtin_detail_heat_v0\""), std::string::npos);
+    EXPECT_NE(exported.find("\"scale_count\""), std::string::npos);
+    EXPECT_NE(exported.find("\"lambda_max_estimate\""), std::string::npos);
+    EXPECT_NE(exported.find("\"gamma\""), std::string::npos);
+    EXPECT_EQ(exported.find("\"field_asset\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

@@ -142,6 +142,16 @@ namespace wz::engine::assets
             return "unknown";
         }
 
+        const char* mesh_wavelet_analysis_function_name(
+            SceneMeshWaveletAnalysisFunction function)
+        {
+            switch (function) {
+            case SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0:
+                return "builtin_detail_heat_v0";
+            }
+            return "builtin_detail_heat_v0";
+        }
+
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
         {
             switch (path) {
@@ -721,6 +731,22 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_wavelet_analysis_value(
+            const SceneMeshWaveletAnalysisAsset& analysis)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(analysis.enabled));
+            add_member(*obj, "function",
+                string_value(mesh_wavelet_analysis_function_name(
+                    analysis.function)));
+            add_member(*obj, "scale_count",
+                number_value(analysis.scale_count));
+            add_member(*obj, "lambda_max_estimate",
+                number_value(analysis.lambda_max_estimate));
+            add_member(*obj, "gamma", number_value(analysis.gamma));
+            return obj;
+        }
+
         JSONValuePtr scalar_field_source_value(
             const SceneScalarFieldSourceAsset& source)
         {
@@ -1136,6 +1162,11 @@ namespace wz::engine::assets
             if (node.mesh_processing) {
                 add_member(*obj, "mesh_processing",
                     mesh_processing_value(*node.mesh_processing));
+            }
+            if (node.mesh_wavelet_analysis) {
+                add_member(*obj, "mesh_wavelet_analysis",
+                    mesh_wavelet_analysis_value(
+                        *node.mesh_wavelet_analysis));
             }
             if (node.mesh_render_style) {
                 add_member(*obj, "mesh_render_style",

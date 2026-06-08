@@ -2,12 +2,17 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/key_factories/mesh_derived_field.h>
+#include <gpu/gpu.h>
+#include <window/window2.h>
 
 #include <algorithm>
 #include <cstring>
 #include <numeric>
 #include <string>
 #include <vector>
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 namespace
 {
@@ -160,6 +165,38 @@ namespace
         (void)mesh;
         return assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
     }
+
+    struct MeshWaveletGpuFixture : public ::testing::Test
+    {
+        wz::Logger logger;
+        wz::window::WindowHandle window{};
+        wz::gpu::Device device{};
+
+        void SetUp() override
+        {
+            wz::window::WindowDesc desc{};
+            desc.title = "mesh_wavelet_gpu_test";
+            desc.width = 64;
+            desc.height = 64;
+            desc.resizable = false;
+
+            window = wz::window::create_window(desc);
+            ASSERT_TRUE(window.native);
+
+            device = wz::gpu::create_device(window);
+            ASSERT_TRUE(device.impl);
+        }
+
+        void TearDown() override
+        {
+            if (device.impl) {
+                wz::gpu::destroy_device(device);
+            }
+            if (window.native) {
+                wz::window::destroy_window(window);
+            }
+        }
+    };
 }
 
 TEST(MeshDerivedFieldAssetModule, DefaultAssetAndHandleAreInvalid)
@@ -421,6 +458,125 @@ TEST(MeshDerivedFieldAssetModule, ResolvesWaveletAnalysisVertexField)
     EXPECT_EQ(
         data->values.size(),
         kExpectedChannelCount * expected_byte_count);
+}
+
+TEST_F(MeshWaveletGpuFixture, ResolvesWaveletAnalysisThroughGpuPath)
+{
+    using namespace wz::engine::assets;
+
+    auto assets = make_assets_no_disk_cache(
+        device,
+        logger,
+        "wavelet_gpu_path");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field = assets.mesh_derived_fields().create_wavelet_analysis({
+        .name = "cube_wavelet_gpu",
+        .source_mesh = mesh,
+        .scale_count = 3u,
+        .lambda_max_estimate = 2.0f,
+        .gamma = 1.0f,
+    });
+    ASSERT_TRUE(field.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->source_mesh_key, mesh.output);
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Vertex);
+    EXPECT_EQ(data->element_count, 8u);
+    ASSERT_EQ(data->channels.size(), 7u);
+
+    const auto* detail =
+        find_channel(*data, MeshWaveletChannelID::kDetailCost);
+    ASSERT_NE(detail, nullptr);
+    EXPECT_EQ(detail->value_type, MeshDerivedFieldValueType::Float1);
+    EXPECT_EQ(detail->byte_count, data->element_count * sizeof(float));
+
+    const std::vector<float> detail_values =
+        read_float_channel(*data, MeshWaveletChannelID::kDetailCost);
+    EXPECT_NE(
+        std::max_element(detail_values.begin(), detail_values.end()),
+        detail_values.end());
+    EXPECT_GT(
+        *std::max_element(detail_values.begin(), detail_values.end()),
+        0.0f);
+}
+
+TEST_F(MeshWaveletGpuFixture, WaveletGpuDetailRespondsToParameters)
+{
+    using namespace wz::engine::assets;
+
+    auto assets = make_assets_no_disk_cache(
+        device,
+        logger,
+        "wavelet_gpu_parameter_response");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto base = assets.mesh_derived_fields().create_wavelet_analysis({
+        .name = "cube_wavelet_base",
+        .source_mesh = mesh,
+        .scale_count = 2u,
+        .lambda_max_estimate = 0.75f,
+        .gamma = 1.0f,
+    });
+    const auto changed = assets.mesh_derived_fields().create_wavelet_analysis({
+        .name = "cube_wavelet_changed",
+        .source_mesh = mesh,
+        .scale_count = 4u,
+        .lambda_max_estimate = 3.0f,
+        .gamma = 0.45f,
+    });
+    ASSERT_TRUE(base.valid());
+    ASSERT_TRUE(changed.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto read_detail =
+        [&assets](MeshDerivedFieldAsset field) -> std::vector<float> {
+            const auto handle =
+                assets.mesh_derived_fields().get_mesh_derived_field(field);
+            EXPECT_TRUE(handle.valid());
+            const auto* data =
+                assets.mesh_derived_fields().get_mesh_derived_field_data(
+                    handle);
+            EXPECT_NE(data, nullptr);
+            return data
+                ? read_float_channel(*data, MeshWaveletChannelID::kDetailCost)
+                : std::vector<float>{};
+        };
+
+    const std::vector<float> base_detail = read_detail(base);
+    const std::vector<float> changed_detail = read_detail(changed);
+    ASSERT_EQ(base_detail.size(), changed_detail.size());
+    ASSERT_FALSE(base_detail.empty());
+
+    float max_delta = 0.0f;
+    for (size_t i = 0; i < base_detail.size(); ++i) {
+        max_delta = (std::max)(
+            max_delta,
+            std::abs(base_detail[i] - changed_detail[i]));
+    }
+    EXPECT_GT(max_delta, 0.001f);
 }
 
 TEST(MeshDerivedFieldAssetModule, WaveletAnalysisTriangleReferenceIsZero)

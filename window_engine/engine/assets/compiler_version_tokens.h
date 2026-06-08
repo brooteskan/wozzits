@@ -40,7 +40,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kTOMLDocumentCompilerVersion = 1;
     inline constexpr uint64_t kMeshCompilerVersion = 2;
     inline constexpr uint64_t kMeshDerivedFieldCompilerVersion = 1;
-    inline constexpr uint64_t kMeshWaveletAnalysisCompilerVersion = 1;
+    inline constexpr uint64_t kMeshWaveletAnalysisCompilerVersion = 2;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
     inline constexpr uint64_t kInlineDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTableResampleTimeSeriesCompilerVersion = 1;

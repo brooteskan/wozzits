@@ -1,5 +1,7 @@
 ﻿#include "scene_authoring_materialize_test_support.h"
 
+#include <algorithm>
+
 TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
 {
     using namespace wz::engine::assets;
@@ -104,6 +106,95 @@ TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
+}
+
+TEST(SceneAuthoringMaterialize, MeshWaveletAnalysisFeedsHeatmapRenderable)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_wavelet_analysis_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_wavelet_analysis";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_wavelet_analysis = SceneMeshWaveletAnalysisAsset{
+        .enabled = true,
+        .function = SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0,
+        .scale_count = 5,
+        .lambda_max_estimate = 3.5f,
+        .gamma = 0.75f,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+        .field_visualization_enabled = true,
+        .field_visualization_channel_id = MeshWaveletChannelID::kDetailCost,
+        .field_visualization_value_min = 0.0f,
+        .field_visualization_value_max = 1.0f,
+        .field_visualization_gamma = 0.75f,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_wavelet_analysis.has_value());
+    EXPECT_NE(
+        scene.nodes[0].mesh_render_style->field_visualization_asset,
+        wz::asset::AssetKey{});
+    EXPECT_EQ(
+        scene.nodes[0].mesh_wavelet_analysis->field_asset,
+        scene.nodes[0].mesh_render_style->field_visualization_asset);
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldAsset field{
+        .output =
+            scene.nodes[0].mesh_render_style->field_visualization_asset,
+    };
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    EXPECT_EQ(field_data->domain, MeshDerivedFieldDomain::Vertex);
+    EXPECT_EQ(field_data->element_count, 8u);
+
+    const auto detail_channel = std::find_if(
+        field_data->channels.begin(),
+        field_data->channels.end(),
+        [](const MeshDerivedFieldChannel& channel) {
+            return channel.channel_id == MeshWaveletChannelID::kDetailCost;
+        });
+    ASSERT_NE(detail_channel, field_data->channels.end());
+    EXPECT_EQ(detail_channel->value_type, MeshDerivedFieldValueType::Float1);
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(
+        renderable_data->mesh_field_visualization_asset,
+        field.output);
+    EXPECT_TRUE(renderable_data->mesh_style.field_visualization.enabled);
 }
 
 TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)

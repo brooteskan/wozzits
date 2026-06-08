@@ -214,6 +214,18 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshWaveletAnalysisFunction>
+        parse_mesh_wavelet_analysis_function(std::string_view text)
+        {
+            if (text == "builtin_detail_heat_v0"
+                || text == "gpu_detail_heat_v0"
+                || text == "wavelet_heatmap_v0")
+            {
+                return SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -1589,6 +1601,40 @@ namespace wz::engine::assets::internal
                             (std::max)(0.0001, *field_gamma));
                 }
                 node.mesh_render_style = style;
+            }
+
+            const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");
+            if (mwa && mwa->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshWaveletAnalysisAsset analysis{};
+                if (auto enabled = read_bool(*mwa, "enabled")) {
+                    analysis.enabled = *enabled;
+                }
+                if (auto function = read_string(*mwa, "function")) {
+                    auto parsed_function =
+                        parse_mesh_wavelet_analysis_function(*function);
+                    if (!parsed_function) {
+                        logger.error("mesh_wavelet_analysis on node '"
+                            + node.id + "' has unknown function '"
+                            + std::string(*function) + "'");
+                        return std::nullopt;
+                    }
+                    analysis.function = *parsed_function;
+                }
+                if (auto scale_count = read_number(*mwa, "scale_count")) {
+                    analysis.scale_count = static_cast<uint32_t>(
+                        (std::clamp)(*scale_count, 1.0, 8.0));
+                }
+                if (auto lambda =
+                        read_number(*mwa, "lambda_max_estimate"))
+                {
+                    analysis.lambda_max_estimate = static_cast<float>(
+                        (std::max)(0.0001, *lambda));
+                }
+                if (auto gamma = read_number(*mwa, "gamma")) {
+                    analysis.gamma = static_cast<float>(
+                        (std::max)(0.0001, *gamma));
+                }
+                node.mesh_wavelet_analysis = analysis;
             }
 
             const auto* sfs = find_member(node_val, "scalar_field_source");

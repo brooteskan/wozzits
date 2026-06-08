@@ -126,6 +126,8 @@ namespace wz::engine::assets
             const bool has_mesh_source = node.mesh_source.has_value();
             const bool has_mesh_processing =
                 node.mesh_processing.has_value();
+            const bool has_mesh_wavelet_analysis =
+                node.mesh_wavelet_analysis.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
             const bool has_scalar_field_source =
@@ -158,6 +160,7 @@ namespace wz::engine::assets
             fp.mix_value(has_imported_node);
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_processing);
+            fp.mix_value(has_mesh_wavelet_analysis);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
@@ -316,6 +319,15 @@ namespace wz::engine::assets
                 fp.mix_value(processing.max_valence);
                 fp.mix_value(processing.normal_deviation);
                 fp.mix_value(processing.hausdorff_error);
+            }
+
+            if (node.mesh_wavelet_analysis) {
+                const auto& analysis = *node.mesh_wavelet_analysis;
+                fp.mix_value(analysis.enabled);
+                fp.mix_value(analysis.function);
+                fp.mix_value(analysis.scale_count);
+                fp.mix_value(analysis.lambda_max_estimate);
+                fp.mix_value(analysis.gamma);
             }
 
             if (node.mesh_render_style) {

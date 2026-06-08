@@ -8,11 +8,17 @@
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <logging/logger.h>
 
+namespace wz::gpu
+{
+    struct Device;
+}
+
 namespace wz::engine::assets::internal
 {
     void register_mesh_derived_field_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
+        wz::gpu::Device& device,
         MeshTable& mesh_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
         const EngineAssetCacheSettings& cache_settings);

@@ -300,6 +300,22 @@ namespace wz::engine::assets
                     : ":no_field_visualization");
         }
 
+        std::string mesh_wavelet_analysis_cache_key(
+            const SceneMeshWaveletAnalysisAsset* analysis)
+        {
+            if (!analysis) {
+                return ":wavelet_default";
+            }
+            return std::string(":wavelet")
+                + (analysis->enabled ? ":on" : ":off")
+                + ":fn:"
+                + std::to_string(static_cast<uint32_t>(analysis->function))
+                + ":scales:" + std::to_string(analysis->scale_count)
+                + ":lambda:"
+                + std::to_string(analysis->lambda_max_estimate)
+                + ":gamma:" + std::to_string(analysis->gamma);
+        }
+
         uint32_t policy_flags_for_terrain_render_style(
             const SceneTerrainRenderStyleAsset& style,
             bool wireframe)
@@ -1162,6 +1178,7 @@ namespace wz::engine::assets
             const std::string& name,
             MeshAsset mesh,
             SceneMeshRenderStyleAsset& style,
+            SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -1172,34 +1189,58 @@ namespace wz::engine::assets
                 return true;
             }
 
+            SceneMeshRenderStyleAsset effective_style = style;
+            if (effective_style.field_visualization_enabled
+                && wavelet_analysis
+                && !wavelet_analysis->enabled)
+            {
+                effective_style.field_visualization_enabled = false;
+                effective_style.field_visualization_asset = {};
+            }
+
             MeshRenderStyleAsset style_asset{};
-            if (style.style_asset == wz::asset::AssetKey{}) {
+            if (effective_style.style_asset == wz::asset::AssetKey{}) {
                 style_asset =
                     assets.mesh_render_styles().create_mesh_render_style({
                         .name = name + "_style",
-                        .style = mesh_render_style_data_for_scene_style(style),
+                        .style = mesh_render_style_data_for_scene_style(
+                            effective_style),
                     });
                 if (!style_asset.valid()) {
                     return false;
                 }
                 style.style_asset = style_asset.output;
+                effective_style.style_asset = style_asset.output;
             }
             else {
-                style_asset = MeshRenderStyleAsset{ .output = style.style_asset };
+                style_asset =
+                    MeshRenderStyleAsset{ .output = effective_style.style_asset };
             }
 
-            if (style.field_visualization_enabled
-                && style.field_visualization_asset == wz::asset::AssetKey{})
+            if (effective_style.field_visualization_enabled
+                && effective_style.field_visualization_asset
+                    == wz::asset::AssetKey{})
             {
+                const SceneMeshWaveletAnalysisAsset analysis =
+                    wavelet_analysis ? *wavelet_analysis
+                                     : SceneMeshWaveletAnalysisAsset{};
                 MeshDerivedFieldAsset field_asset =
                     assets.mesh_derived_fields().create_wavelet_analysis({
                         .name = name + "_wavelet_field",
                         .source_mesh = mesh,
+                        .scale_count = analysis.scale_count,
+                        .lambda_max_estimate =
+                            analysis.lambda_max_estimate,
+                        .gamma = analysis.gamma,
                     });
                 if (!field_asset.valid()) {
                     return false;
                 }
                 style.field_visualization_asset = field_asset.output;
+                effective_style.field_visualization_asset = field_asset.output;
+                if (wavelet_analysis) {
+                    wavelet_analysis->field_asset = field_asset.output;
+                }
             }
 
             RenderableAsset renderable =
@@ -1208,10 +1249,10 @@ namespace wz::engine::assets
                     .mesh = mesh,
                     .style = style_asset,
                     .mesh_field_visualization =
-                        style.field_visualization_enabled
+                        effective_style.field_visualization_enabled
                             ? MeshDerivedFieldAsset{
                                 .output =
-                                    style.field_visualization_asset,
+                                    effective_style.field_visualization_asset,
                             }
                             : MeshDerivedFieldAsset{},
                 });
@@ -1412,6 +1453,7 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
             const SceneMeshProcessingAsset* processing,
+            SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
@@ -1421,7 +1463,12 @@ namespace wz::engine::assets
         {
             const std::string source_key = mesh_cache_key(source, processing);
             const std::string key =
-                source_key + ":" + mesh_render_style_cache_key(style);
+                source_key + ":"
+                + mesh_render_style_cache_key(style)
+                + mesh_wavelet_analysis_cache_key(
+                    style.field_visualization_enabled
+                        ? wavelet_analysis
+                        : nullptr);
             if (const auto found = renderables.find(key);
                 found != renderables.end())
             {
@@ -1451,6 +1498,7 @@ namespace wz::engine::assets
                     "scene_editor/" + key + "_wireframe",
                     out_mesh,
                     style,
+                    wavelet_analysis,
                     renderables,
                     out))
             {
@@ -1914,6 +1962,9 @@ namespace wz::engine::assets
                 node.mesh_render_style.value_or(default_render_style);
             render_style.style_asset = {};
             render_style.field_visualization_asset = {};
+            if (node.mesh_wavelet_analysis) {
+                node.mesh_wavelet_analysis->field_asset = {};
+            }
 
             if (options.create_preview_renderables && node.visible) {
                 RenderableAsset renderable{};
@@ -1922,6 +1973,9 @@ namespace wz::engine::assets
                         *node.mesh_source,
                         node.mesh_processing
                             ? &*node.mesh_processing
+                            : nullptr,
+                        node.mesh_wavelet_analysis
+                            ? &*node.mesh_wavelet_analysis
                             : nullptr,
                         render_style,
                         renderables,

@@ -351,6 +351,22 @@ namespace wz::engine::assets
         wz::asset::AssetKey field_visualization_asset{};
     };
 
+    enum class SceneMeshWaveletAnalysisFunction : uint8_t
+    {
+        BuiltinDetailHeatV0 = 0,
+    };
+
+    struct SceneMeshWaveletAnalysisAsset
+    {
+        bool enabled = true;
+        SceneMeshWaveletAnalysisFunction function =
+            SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0;
+        uint32_t scale_count = 3;
+        float lambda_max_estimate = 2.0f;
+        float gamma = 1.0f;
+        wz::asset::AssetKey field_asset{};
+    };
+
     enum class SceneTerrainRenderPath : uint8_t
     {
         Auto = 0,
@@ -614,6 +630,7 @@ namespace wz::engine::assets
         std::optional<SceneImportedNodeAsset> imported_node;
         std::optional<SceneMeshSourceAsset> mesh_source;
         std::optional<SceneMeshProcessingAsset> mesh_processing;
+        std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
@@ -686,6 +703,7 @@ namespace wz::engine::assets
         uint32_t scene_import_sources = 0;
         uint32_t mesh_sources = 0;
         uint32_t mesh_processing = 0;
+        uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
@@ -914,6 +932,13 @@ namespace wz::engine::assets
         node.mesh_render_style = style;
     }
 
+    inline void attach_mesh_wavelet_analysis(
+        SceneNodeAsset& node,
+        SceneMeshWaveletAnalysisAsset analysis = {})
+    {
+        node.mesh_wavelet_analysis = analysis;
+    }
+
     inline void attach_scalar_field_source(
         SceneNodeAsset& node,
         SceneScalarFieldSourceAsset source = {})
@@ -1031,6 +1056,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_source) {
             out.push_back(Kind::MeshSource);
+        }
+        if (node.mesh_wavelet_analysis) {
+            out.push_back(Kind::MeshWaveletAnalysis);
         }
         if (node.mesh_render_style) {
             out.push_back(Kind::MeshRenderStyle);
@@ -1252,6 +1280,7 @@ namespace wz::engine::assets
         return node.scene_import_source.has_value()
             || node.mesh_source.has_value()
             || node.mesh_processing.has_value()
+            || node.mesh_wavelet_analysis.has_value()
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
@@ -1312,6 +1341,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_processing) {
                 ++out.mesh_processing;
+                ++out.total_recipes;
+            }
+            if (node.mesh_wavelet_analysis) {
+                ++out.mesh_wavelet_analyses;
                 ++out.total_recipes;
             }
             if (node.mesh_render_style) {
@@ -1415,6 +1448,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_source) {
                 ++out.mesh_sources;
+            }
+            if (node.mesh_wavelet_analysis) {
+                ++out.mesh_wavelet_analyses;
             }
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;
