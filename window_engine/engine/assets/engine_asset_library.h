@@ -57,6 +57,7 @@
 #include <engine/assets/renderable_asset_module.h>
 
 #include <engine/assets/render_program/render_program_asset_module.h>
+#include <engine/assets/compute_pipeline_asset_module.h>
 
 #include <engine/assets/light/light.h>
 #include <engine/assets/light_asset_module.h>
@@ -204,6 +205,9 @@ namespace wz::engine::assets
         RenderProgramAssetModule&       render_programs()       { return render_programs_; }
         const RenderProgramAssetModule& render_programs() const { return render_programs_; }
 
+        ComputePipelineAssetModule&       compute_pipelines()       { return compute_pipelines_; }
+        const ComputePipelineAssetModule& compute_pipelines() const { return compute_pipelines_; }
+
         LightAssetModule&       lights()       { return lights_; }
         const LightAssetModule& lights() const { return lights_; }
 
@@ -250,6 +254,7 @@ namespace wz::engine::assets
         MeshRenderStyleTable        mesh_render_style_table_;
         RenderableAssetTable        renderable_table_;
         RenderProgramTable          render_program_table_;
+        ComputePipelineTable        compute_pipeline_table_;
         DirectLightTable            direct_light_table_;
         AmbientLightingTable        ambient_lighting_table_;
         HDRIEnvironmentTable        hdri_environment_table_;
@@ -278,6 +283,7 @@ namespace wz::engine::assets
         MeshRenderStyleAssetModule  mesh_render_styles_;
         RenderableAssetModule       renderables_;
         RenderProgramAssetModule    render_programs_;
+        ComputePipelineAssetModule  compute_pipelines_;
         LightAssetModule            lights_;
         SceneAssetModule            scenes_;
 

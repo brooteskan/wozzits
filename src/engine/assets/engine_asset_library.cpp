@@ -128,6 +128,7 @@ namespace wz::engine::assets
         , mesh_render_style_table_{}
         , renderable_table_{}
         , render_program_table_{}
+        , compute_pipeline_table_{}
         , direct_light_table_{}
         , ambient_lighting_table_{}
         , hdri_environment_table_{}
@@ -155,6 +156,7 @@ namespace wz::engine::assets
                 .mesh_render_style_table = mesh_render_style_table_,
                 .renderable_table    = renderable_table_,
                 .render_program_table = render_program_table_,
+                .compute_pipeline_table = compute_pipeline_table_,
                 .direct_light_table = direct_light_table_,
                 .ambient_lighting_table = ambient_lighting_table_,
                 .hdri_environment_table = hdri_environment_table_,
@@ -182,6 +184,7 @@ namespace wz::engine::assets
         , mesh_render_styles_(system_, logger_, mesh_render_style_table_)
         , renderables_(system_, logger_, renderable_table_)
         , render_programs_(system_, render_program_table_)
+        , compute_pipelines_(system_, compute_pipeline_table_)
         , lights_(
             system_,
             logger_,

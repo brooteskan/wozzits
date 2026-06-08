@@ -57,6 +57,35 @@ namespace wz::engine::assets
 
     // ─── ShaderAssetModule ────────────────────────────────────────────────────────
 
+    struct ComputeShaderDesc
+    {
+        std::string name;
+        wz::fs::Path path;
+
+        std::string entry = "main";
+        std::string target = "cs_5_0";
+    };
+
+    struct ComputeShaderAsset
+    {
+        wz::asset::AssetKey shader{};
+
+        bool valid() const noexcept
+        {
+            return shader != wz::asset::AssetKey{};
+        }
+    };
+
+    struct ComputeShaderHandle
+    {
+        wz::gpu::GPUHandle shader{};
+
+        bool valid() const noexcept
+        {
+            return shader.valid();
+        }
+    };
+
     class ShaderAssetModule
     {
     public:
@@ -68,6 +97,11 @@ namespace wz::engine::assets
 
         ShaderPairAsset   create_shader_pair(const ShaderPairDesc& desc);
         ShaderPairHandles get_shader_pair(const ShaderPairAsset& asset) const;
+
+        ComputeShaderAsset create_compute_shader(
+            const ComputeShaderDesc& desc);
+        ComputeShaderHandle get_compute_shader(
+            const ComputeShaderAsset& asset) const;
 
     private:
         wz::asset::AssetSystem& system_;

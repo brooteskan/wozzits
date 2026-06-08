@@ -89,6 +89,12 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000101ull
     };
 
+    // CPU-side declaration for a compute kernel pipeline: compiled compute
+    // shader dependency, binding layout, root constants, and dispatch group size.
+    inline constexpr wz::asset::SchemaID kComputePipelineSchema{
+    0xF11E'CA55'E7'000102ull
+    };
+
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types

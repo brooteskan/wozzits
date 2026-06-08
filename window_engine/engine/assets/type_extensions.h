@@ -531,6 +531,12 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeRenderProgram =
         static_cast<wz::asset::AssetType>(1049);
 
+    // Implemented compute pipeline description asset.
+    // CPU-side declaration of a compute shader, binding layout, root constants,
+    // and dispatch group size. Realizes later into kAssetTypeGPUComputePipeline.
+    inline constexpr wz::asset::AssetType kAssetTypeComputePipeline =
+        static_cast<wz::asset::AssetType>(1050);
+
 
 
     // ─── Material asset types: 1060–1099 ─────────────────────────────────────────

@@ -117,6 +117,10 @@ target_sources(window_engine PRIVATE
     assets/render_program/render_program_asset_module.cpp
     assets/render_program/render_program_compilers.cpp
 
+    assets/compute_pipeline/compute_pipeline.cpp
+    assets/compute_pipeline_asset_module.cpp
+    assets/compute_pipeline/compute_pipeline_compilers.cpp
+
     assets/light/light.cpp
     assets/light/light_compilers.cpp
     assets/light_asset_module.cpp

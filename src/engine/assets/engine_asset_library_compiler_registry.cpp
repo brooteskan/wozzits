@@ -48,6 +48,7 @@ namespace wz::engine::assets::internal
         register_mesh_render_style_compilers(registry, ctx.logger, ctx.mesh_render_style_table);
         register_renderable_compilers(registry, ctx);
         register_render_program_compilers(registry, ctx.logger, ctx.render_program_table);
+        register_compute_pipeline_compilers(registry, ctx.logger, ctx.compute_pipeline_table);
         register_light_compilers(
             registry,
             ctx.logger,

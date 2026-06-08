@@ -38,6 +38,8 @@
 #include <engine/assets/mesh_render_style/mesh_render_style_compilers.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_compilers.h>
+#include <engine/assets/compute_pipeline/compute_pipeline.h>
+#include <engine/assets/compute_pipeline/compute_pipeline_compilers.h>
 #include <engine/assets/light/light.h>
 #include <engine/assets/light/light_compilers.h>
 #include <engine/assets/scene/scene.h>
@@ -76,6 +78,7 @@ namespace wz::engine::assets::internal {
         MeshRenderStyleTable&               mesh_render_style_table;
         RenderableAssetTable&               renderable_table;
         RenderProgramTable&                 render_program_table;
+        ComputePipelineTable&               compute_pipeline_table;
         DirectLightTable&                   direct_light_table;
         AmbientLightingTable&               ambient_lighting_table;
         HDRIEnvironmentTable&               hdri_environment_table;
