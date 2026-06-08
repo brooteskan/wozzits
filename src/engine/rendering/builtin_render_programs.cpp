@@ -51,6 +51,18 @@ namespace wz::engine::rendering
             };
             return true;
 
+        case BuiltinRenderProgram::MeshFieldHeatmap:
+            out = ShaderPairDesc{
+                .name = "mesh_field_heatmap",
+                .vertex_path = "shaders/mesh_field_heatmap/mesh_field_heatmap_vs.hlsl",
+                .pixel_path = "shaders/mesh_field_heatmap/mesh_field_heatmap_ps.hlsl",
+                .vertex_entry = "main",
+                .pixel_entry = "main",
+                .vertex_target = "vs_5_0",
+                .pixel_target = "ps_5_0",
+            };
+            return true;
+
         case BuiltinRenderProgram::TerrainMeshSurface:
             out = ShaderPairDesc{
                 .name = "terrain_mesh_surface",

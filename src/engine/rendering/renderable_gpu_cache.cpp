@@ -3,11 +3,13 @@
 #include <engine/rendering/renderable_gpu_cache.h>
 
 #include <gpu/mesh.h>
+#include <gpu/mesh_field_visualization.h>
 #include <gpu/gaussian_splat.h>
 #include <gpu/scalar_field.h>
 #include <gpu/vector_field.h>
 
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_derived_field_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
@@ -53,8 +55,43 @@ namespace wz::engine::rendering
         // ScopedGPUHandle destructors automatically queue deferred release
         // for all GPU resources — no manual release logic needed here.
         entries_.clear();
+        mesh_field_entries_.clear();
         terrain_mesh_chunk_entries_.clear();
         terrain_far_splat_entries_.clear();
+    }
+
+    const RenderableGpuCache::MeshFieldVisualizationEntry*
+    RenderableGpuCache::find_mesh_field_visualization(
+        wz::asset::AssetKey field_asset,
+        uint32_t channel_id) const
+    {
+        for (const MeshFieldVisualizationEntry& entry : mesh_field_entries_) {
+            if (entry.field_asset == field_asset
+                && entry.channel_id == channel_id)
+            {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    void RenderableGpuCache::add_mesh_field_visualization(
+        wz::asset::AssetKey field_asset,
+        uint32_t channel_id,
+        wz::gpu::ScopedGPUHandle gpu_resource)
+    {
+        if (field_asset == wz::asset::AssetKey{}
+            || channel_id == 0u
+            || !gpu_resource.valid())
+        {
+            return;
+        }
+
+        mesh_field_entries_.push_back(MeshFieldVisualizationEntry{
+            .field_asset = field_asset,
+            .channel_id = channel_id,
+            .gpu_resource = std::move(gpu_resource),
+            });
     }
 
     PreparedRenderable RenderableGpuCache::find_mesh_data(
@@ -230,7 +267,12 @@ namespace wz::engine::rendering
 
         if (const Entry* cached = find(renderable.source_asset, renderable.kind)) {
             out.gpu_resource = cached->gpu_resource.get();
-            return out;
+            if (renderable.kind != wz::engine::assets::RenderableKind::Mesh
+                || renderable.mesh_field_visualization_asset
+                    == wz::asset::AssetKey{})
+            {
+                return out;
+            }
         }
 
         switch (renderable.kind)
@@ -253,15 +295,66 @@ namespace wz::engine::rendering
             if (!mesh_data || !mesh_data->valid())
                 return {};
 
-            wz::gpu::ScopedGPUHandle gpu_mesh(
-                release_queue_,
-                wz::gpu::upload_mesh(device, *mesh_data));
+            if (!out.gpu_resource.valid()) {
+                wz::gpu::ScopedGPUHandle gpu_mesh(
+                    release_queue_,
+                    wz::gpu::upload_mesh(device, *mesh_data));
 
-            if (!gpu_mesh.valid())
-                return {};
+                if (!gpu_mesh.valid())
+                    return {};
 
-            out.gpu_resource = gpu_mesh.get();
-            add(renderable.source_asset, renderable.kind, std::move(gpu_mesh));
+                out.gpu_resource = gpu_mesh.get();
+                add(renderable.source_asset, renderable.kind, std::move(gpu_mesh));
+            }
+
+            if (!(renderable.mesh_field_visualization_asset
+                    == wz::asset::AssetKey{}))
+            {
+                const uint32_t channel_id =
+                    renderable.mesh_style.field_visualization.channel_id;
+                if (const MeshFieldVisualizationEntry* cached_field =
+                        find_mesh_field_visualization(
+                            renderable.mesh_field_visualization_asset,
+                            channel_id))
+                {
+                    out.mesh_field_visualization_resource =
+                        cached_field->gpu_resource.get();
+                }
+                else {
+                    const wz::engine::assets::MeshDerivedFieldAsset field_asset{
+                        .output = renderable.mesh_field_visualization_asset,
+                    };
+                    const wz::engine::assets::MeshDerivedFieldHandle field_handle =
+                        assets.mesh_derived_fields().get_mesh_derived_field(
+                            field_asset);
+                    if (!field_handle.valid())
+                        return {};
+
+                    const wz::engine::assets::MeshDerivedFieldData* field_data =
+                        assets.mesh_derived_fields()
+                            .get_mesh_derived_field_data(field_handle);
+                    if (!field_data || !field_data->valid())
+                        return {};
+
+                    wz::gpu::ScopedGPUHandle gpu_field(
+                        release_queue_,
+                        wz::gpu::upload_mesh_field_visualization(
+                            device,
+                            wz::gpu::MeshFieldVisualizationUploadDesc{
+                                .mesh = mesh_data,
+                                .field = field_data,
+                                .channel_id = channel_id,
+                            }));
+                    if (!gpu_field.valid())
+                        return {};
+
+                    out.mesh_field_visualization_resource = gpu_field.get();
+                    add_mesh_field_visualization(
+                        renderable.mesh_field_visualization_asset,
+                        channel_id,
+                        std::move(gpu_field));
+                }
+            }
             return out;
         }
 

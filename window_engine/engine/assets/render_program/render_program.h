@@ -90,6 +90,7 @@ namespace wz::engine::assets
         SplatCloud,
         SortedSplatIndices,
         ScalarFieldTexture,
+        MeshFieldVisualization,
     };
 
     struct DescriptorBinding

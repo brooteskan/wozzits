@@ -5,6 +5,7 @@
 #include <asset/types.h>
 
 #include <engine/assets/light/light.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/vector_field/vector_field.h>
 
 #include <scene/scene_ecs.h>
@@ -341,6 +342,13 @@ namespace wz::engine::assets
         bool depth_write = false;
         bool double_sided = true;
         bool hidden_line_prepass = true;
+        bool field_visualization_enabled = false;
+        uint32_t field_visualization_channel_id =
+            MeshWaveletChannelID::kDetailCost;
+        float field_visualization_value_min = 0.0f;
+        float field_visualization_value_max = 1.0f;
+        float field_visualization_gamma = 1.0f;
+        wz::asset::AssetKey field_visualization_asset{};
     };
 
     enum class SceneTerrainRenderPath : uint8_t

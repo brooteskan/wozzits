@@ -708,6 +708,16 @@ namespace wz::engine::assets
             add_member(*obj, "double_sided", bool_value(style.double_sided));
             add_member(*obj, "hidden_line_prepass",
                 bool_value(style.hidden_line_prepass));
+            add_member(*obj, "field_visualization_enabled",
+                bool_value(style.field_visualization_enabled));
+            add_member(*obj, "field_visualization_channel_id",
+                number_value(style.field_visualization_channel_id));
+            add_member(*obj, "field_visualization_value_min",
+                number_value(style.field_visualization_value_min));
+            add_member(*obj, "field_visualization_value_max",
+                number_value(style.field_visualization_value_max));
+            add_member(*obj, "field_visualization_gamma",
+                number_value(style.field_visualization_gamma));
             return obj;
         }
 

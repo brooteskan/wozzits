@@ -247,6 +247,16 @@ namespace wz::engine::assets
             out.depth_write = style.depth_write;
             out.double_sided = style.double_sided;
             out.hidden_line_prepass = style.hidden_line_prepass;
+            out.field_visualization.enabled =
+                style.field_visualization_enabled;
+            out.field_visualization.channel_id =
+                style.field_visualization_channel_id;
+            out.field_visualization.value_min =
+                style.field_visualization_value_min;
+            out.field_visualization.value_max =
+                style.field_visualization_value_max;
+            out.field_visualization.gamma =
+                style.field_visualization_gamma;
             return out;
         }
 
@@ -274,7 +284,20 @@ namespace wz::engine::assets
                 + (style.double_sided ? ":double_sided" : ":single_sided")
                 + (style.hidden_line_prepass
                     ? ":hidden_line_prepass"
-                    : ":no_hidden_line_prepass");
+                    : ":no_hidden_line_prepass")
+                + (style.field_visualization_enabled
+                    ? ":field_visualization:"
+                        + std::to_string(style.field_visualization_channel_id)
+                        + ":min:"
+                        + std::to_string(
+                            style.field_visualization_value_min)
+                        + ":max:"
+                        + std::to_string(
+                            style.field_visualization_value_max)
+                        + ":gamma:"
+                        + std::to_string(
+                            style.field_visualization_gamma)
+                    : ":no_field_visualization");
         }
 
         uint32_t policy_flags_for_terrain_render_style(
@@ -1165,11 +1188,32 @@ namespace wz::engine::assets
                 style_asset = MeshRenderStyleAsset{ .output = style.style_asset };
             }
 
+            if (style.field_visualization_enabled
+                && style.field_visualization_asset == wz::asset::AssetKey{})
+            {
+                MeshDerivedFieldAsset field_asset =
+                    assets.mesh_derived_fields().create_wavelet_analysis({
+                        .name = name + "_wavelet_field",
+                        .source_mesh = mesh,
+                    });
+                if (!field_asset.valid()) {
+                    return false;
+                }
+                style.field_visualization_asset = field_asset.output;
+            }
+
             RenderableAsset renderable =
                 assets.renderables().create_mesh_styled({
                     .name = name,
                     .mesh = mesh,
                     .style = style_asset,
+                    .mesh_field_visualization =
+                        style.field_visualization_enabled
+                            ? MeshDerivedFieldAsset{
+                                .output =
+                                    style.field_visualization_asset,
+                            }
+                            : MeshDerivedFieldAsset{},
                 });
 
             if (!renderable.valid()) {
@@ -1869,6 +1913,7 @@ namespace wz::engine::assets
             SceneMeshRenderStyleAsset render_style =
                 node.mesh_render_style.value_or(default_render_style);
             render_style.style_asset = {};
+            render_style.field_visualization_asset = {};
 
             if (options.create_preview_renderables && node.visible) {
                 RenderableAsset renderable{};

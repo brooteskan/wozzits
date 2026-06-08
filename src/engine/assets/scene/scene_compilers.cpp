@@ -1556,7 +1556,38 @@ namespace wz::engine::assets::internal
                 if (hidden_line_prepass) {
                     style.hidden_line_prepass = *hidden_line_prepass;
                 }
-
+                auto field_visualization_enabled =
+                    read_bool(*mrs, "field_visualization_enabled");
+                if (field_visualization_enabled) {
+                    style.field_visualization_enabled =
+                        *field_visualization_enabled;
+                }
+                auto field_channel =
+                    read_number(*mrs, "field_visualization_channel_id");
+                if (field_channel) {
+                    style.field_visualization_channel_id =
+                        static_cast<uint32_t>(
+                            (std::max)(0.0, *field_channel));
+                }
+                auto field_min =
+                    read_number(*mrs, "field_visualization_value_min");
+                if (field_min) {
+                    style.field_visualization_value_min =
+                        static_cast<float>(*field_min);
+                }
+                auto field_max =
+                    read_number(*mrs, "field_visualization_value_max");
+                if (field_max) {
+                    style.field_visualization_value_max =
+                        static_cast<float>(*field_max);
+                }
+                auto field_gamma =
+                    read_number(*mrs, "field_visualization_gamma");
+                if (field_gamma) {
+                    style.field_visualization_gamma =
+                        static_cast<float>(
+                            (std::max)(0.0001, *field_gamma));
+                }
                 node.mesh_render_style = style;
             }
 

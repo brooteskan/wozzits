@@ -92,6 +92,7 @@ namespace wz::engine::rendering
             e.terrain_lighting,
             e.terrain_target_pixels_per_triangle,
             e.mesh_style,
+            e.mesh_field_visualization_resource,
             e.terrain_chunks,
             e.terrain_far_splat_chunks };
     }
@@ -129,7 +130,8 @@ namespace wz::engine::rendering
         wz::engine::assets::MeshRenderStyleData  mesh_style,
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks,
         std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks,
-        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges)
+        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges,
+        wz::gpu::GPUHandle                       mesh_field_visualization_resource)
     {
         const auto index =
             static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
@@ -141,6 +143,8 @@ namespace wz::engine::rendering
         entry.terrain_target_pixels_per_triangle =
             terrain_target_pixels_per_triangle;
         entry.mesh_style = mesh_style;
+        entry.mesh_field_visualization_resource =
+            mesh_field_visualization_resource;
         entry.terrain_chunks.assign(
             terrain_chunks.begin(),
             terrain_chunks.end());
@@ -165,7 +169,8 @@ namespace wz::engine::rendering
         wz::engine::assets::MeshRenderStyleData  mesh_style,
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks,
         std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks,
-        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges)
+        std::span<const TerrainTransitionDrawRange> terrain_transition_ranges,
+        wz::gpu::GPUHandle                       mesh_field_visualization_resource)
     {
         if (!terrain_proxy_id.valid()
             || !gpu_resource.valid()
@@ -182,6 +187,8 @@ namespace wz::engine::rendering
         entry.terrain_target_pixels_per_triangle =
             terrain_target_pixels_per_triangle;
         entry.mesh_style = mesh_style;
+        entry.mesh_field_visualization_resource =
+            mesh_field_visualization_resource;
         entry.terrain_chunks.assign(
             terrain_chunks.begin(),
             terrain_chunks.end());
@@ -223,6 +230,7 @@ namespace wz::engine::rendering
             e.terrain_lighting,
             e.terrain_target_pixels_per_triangle,
             e.mesh_style,
+            e.mesh_field_visualization_resource,
             e.terrain_chunks,
             e.terrain_far_splat_chunks };
     }
@@ -244,6 +252,7 @@ namespace wz::engine::rendering
                     e.terrain_lighting,
                     e.terrain_target_pixels_per_triangle,
                     e.mesh_style,
+                    e.mesh_field_visualization_resource,
                     e.terrain_chunks,
                     e.terrain_far_splat_chunks };
             }

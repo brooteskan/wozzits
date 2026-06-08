@@ -129,6 +129,11 @@ namespace wz::gpu::dx12::internal {
 
 namespace wz::engine::assets {
     struct MeshData;
+    struct MeshDerivedFieldData;
+}
+
+namespace wz::gpu {
+    struct MeshFieldVisualizationUploadDesc;
 }
 
 namespace wz::gpu::dx12::internal {
@@ -184,6 +189,55 @@ namespace wz::gpu::dx12::internal {
         Device& device,
         GPUHandle handle
     );
+
+    struct DX12MeshFieldVisualizationResource
+    {
+        ID3D12Resource* values_buffer = nullptr;
+        uint32_t element_count = 0;
+        wz::gpu::dx12::DX12DescriptorTable srv_table{};
+
+        bool valid() const noexcept
+        {
+            return values_buffer != nullptr
+                && element_count > 0u
+                && srv_table.valid();
+        }
+    };
+
+    class DX12MeshFieldVisualizationTable
+    {
+    public:
+        DX12MeshFieldVisualizationTable();
+
+        GPUHandle add(DX12MeshFieldVisualizationResource resource);
+        const DX12MeshFieldVisualizationResource* get(
+            GPUHandle handle) const;
+        bool release(GPUHandle handle);
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            DX12MeshFieldVisualizationResource resource{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    GPUHandle upload_mesh_field_visualization_dx12(
+        Device& device,
+        const wz::gpu::MeshFieldVisualizationUploadDesc& desc);
+
+    const DX12MeshFieldVisualizationResource*
+    get_mesh_field_visualization(
+        Device& device,
+        GPUHandle handle);
+
+    bool release_mesh_field_visualization_dx12(
+        Device& device,
+        GPUHandle handle);
 }
 
 

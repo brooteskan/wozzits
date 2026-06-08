@@ -188,6 +188,18 @@ namespace wz::render::backend::dx12
             write_mesh_layer_style_constants(constants, style.surface, style.alpha);
         }
 
+        void write_mesh_field_heatmap_style_constants(
+            float constants[40],
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            write_mesh_layer_style_constants(constants, style.surface, style.alpha);
+            constants[37] = style.field_visualization.value_min;
+            constants[38] = style.field_visualization.value_max;
+            constants[39] = (std::max)(
+                style.field_visualization.gamma,
+                0.0001f);
+        }
+
         bool mesh_wireframe_wants_prepass(
             const wz::engine::assets::MeshRenderStyleData& style)
         {
@@ -754,6 +766,11 @@ namespace wz::render::backend::dx12
                 || program == BuiltinRenderProgram::MeshSurfaceAlpha;
         }
 
+        bool is_mesh_field_heatmap_program(BuiltinRenderProgram program)
+        {
+            return program == BuiltinRenderProgram::MeshFieldHeatmap;
+        }
+
         UINT root_constant_count_for_program(BuiltinRenderProgram program)
         {
             if (is_terrain_surface_program(program)) {
@@ -761,12 +778,43 @@ namespace wz::render::backend::dx12
             }
 
             if (is_mesh_wireframe_program(program)
-                || is_mesh_surface_program(program))
+                || is_mesh_surface_program(program)
+                || is_mesh_field_heatmap_program(program))
             {
                 return 40;
             }
 
             return 32;
+        }
+
+        bool bind_mesh_field_heatmap_resource(
+            wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved)
+        {
+            if (!is_mesh_field_heatmap_program(resolved.program)) {
+                return true;
+            }
+
+            const auto* field =
+                wz::gpu::dx12::internal::get_mesh_field_visualization(
+                    device,
+                    resolved.mesh_field_visualization_resource);
+            if (!field || !field->valid()) {
+                return false;
+            }
+
+            auto* srv_heap =
+                wz::gpu::dx12::internal::get_srv_cbv_uav_heap(device);
+            if (!srv_heap) {
+                return false;
+            }
+
+            cmdList->SetDescriptorHeaps(1, &srv_heap);
+            cmdList->SetGraphicsRootDescriptorTable(
+                1,
+                field->srv_table.gpu_at(0));
+            return true;
         }
 
         void draw_mesh_surface_wireframe_overlay(
@@ -881,6 +929,8 @@ namespace wz::render::backend::dx12
                     is_mesh_wireframe_program(resolved->program);
                 const bool mesh_surface =
                     is_mesh_surface_program(resolved->program);
+                const bool mesh_field_heatmap =
+                    is_mesh_field_heatmap_program(resolved->program);
 
                 if (mesh_wireframe) {
                     write_mesh_wireframe_style_constants(
@@ -889,6 +939,11 @@ namespace wz::render::backend::dx12
                 }
                 else if (mesh_surface) {
                     write_mesh_surface_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
+                else if (mesh_field_heatmap) {
+                    write_mesh_field_heatmap_style_constants(
                         constants,
                         resolved->mesh_style);
                 }
@@ -922,11 +977,18 @@ namespace wz::render::backend::dx12
                     root_constant_count_for_program(resolved->program),
                     constants,
                     0);
+                if (!bind_mesh_field_heatmap_resource(
+                        device,
+                        cmdList,
+                        *resolved))
+                {
+                    continue;
+                }
                 cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
                 cmdList->IASetIndexBuffer(&mesh->index_view);
                 cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
-                if (mesh_surface) {
+                if (mesh_surface || mesh_field_heatmap) {
                     draw_mesh_surface_wireframe_overlay(
                         device,
                         pipeline_cache,
@@ -1447,6 +1509,8 @@ namespace wz::render::backend::dx12
                 is_mesh_wireframe_program(resolved->program);
             const bool mesh_surface =
                 is_mesh_surface_program(resolved->program);
+            const bool mesh_field_heatmap =
+                is_mesh_field_heatmap_program(resolved->program);
             if (mesh_wireframe) {
                 write_mesh_wireframe_style_constants(
                     constants,
@@ -1454,6 +1518,11 @@ namespace wz::render::backend::dx12
             }
             else if (mesh_surface) {
                 write_mesh_surface_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
+            else if (mesh_field_heatmap) {
+                write_mesh_field_heatmap_style_constants(
                     constants,
                     resolved->mesh_style);
             }
@@ -1488,11 +1557,18 @@ namespace wz::render::backend::dx12
                 root_constant_count_for_program(resolved->program),
                 constants,
                 0);
+            if (!bind_mesh_field_heatmap_resource(
+                    device,
+                    cmdList,
+                    *resolved))
+            {
+                continue;
+            }
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
-            if (mesh_surface) {
+            if (mesh_surface || mesh_field_heatmap) {
                 draw_mesh_surface_wireframe_overlay(
                     device,
                     pipeline_cache,
@@ -1623,6 +1699,8 @@ namespace wz::render::backend::dx12
                 is_mesh_wireframe_program(resolved->program);
             const bool mesh_surface =
                 is_mesh_surface_program(resolved->program);
+            const bool mesh_field_heatmap =
+                is_mesh_field_heatmap_program(resolved->program);
             if (mesh_wireframe) {
                 write_mesh_wireframe_style_constants(
                     constants,
@@ -1630,6 +1708,11 @@ namespace wz::render::backend::dx12
             }
             else if (mesh_surface) {
                 write_mesh_surface_style_constants(
+                    constants,
+                    resolved->mesh_style);
+            }
+            else if (mesh_field_heatmap) {
+                write_mesh_field_heatmap_style_constants(
                     constants,
                     resolved->mesh_style);
             }
@@ -1664,11 +1747,18 @@ namespace wz::render::backend::dx12
                 root_constant_count_for_program(resolved->program),
                 constants,
                 0);
+            if (!bind_mesh_field_heatmap_resource(
+                    device,
+                    cmdList,
+                    *resolved))
+            {
+                continue;
+            }
             cmdList->IASetVertexBuffers(0, 1, &mesh->vertex_view);
             cmdList->IASetIndexBuffer(&mesh->index_view);
             cmdList->DrawIndexedInstanced(mesh->index_count, 1, 0, 0, 0);
 
-            if (mesh_surface) {
+            if (mesh_surface || mesh_field_heatmap) {
                 draw_mesh_surface_wireframe_overlay(
                     device,
                     pipeline_cache,

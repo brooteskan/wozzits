@@ -647,7 +647,7 @@ TEST(RenderableAssetModule, StyledMeshCanBindVertexDerivedFieldVisualization)
     EXPECT_EQ(data->kind, RenderableKind::Mesh);
     EXPECT_EQ(data->source_asset, mesh.output);
     EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshFieldHeatmap);
     EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
     EXPECT_EQ(
         data->mesh_style.field_visualization.channel_id,

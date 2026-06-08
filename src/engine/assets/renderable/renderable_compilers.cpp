@@ -541,9 +541,11 @@ namespace wz::engine::assets::internal
                                 "mesh surface renderables are currently two-sided; treating style as double-sided");
                             effective_style.double_sided = true;
                         }
-                        data.program = transparent
-                            ? BuiltinRenderProgram::MeshSurfaceAlpha
-                            : BuiltinRenderProgram::MeshSurface;
+                        data.program = wants_field_visualization
+                            ? BuiltinRenderProgram::MeshFieldHeatmap
+                            : transparent
+                                ? BuiltinRenderProgram::MeshSurfaceAlpha
+                                : BuiltinRenderProgram::MeshSurface;
                         data.domain = transparent
                             ? RenderDomain::Transparent
                             : RenderDomain::Opaque;
@@ -557,13 +559,19 @@ namespace wz::engine::assets::internal
                 if (data.program != BuiltinRenderProgram::MeshSurface
                     && data.program != BuiltinRenderProgram::MeshSurfaceAlpha)
                 {
-                    data.program = transparent
+                    data.program = wants_field_visualization
+                        ? BuiltinRenderProgram::MeshFieldHeatmap
+                        : transparent
                         ? BuiltinRenderProgram::MeshWireframeAlpha
                         : BuiltinRenderProgram::MeshWireframeDepthDebug;
-                    data.domain = transparent
+                    data.domain = wants_field_visualization
+                        ? RenderDomain::Opaque
+                        : transparent
                         ? RenderDomain::Transparent
                         : RenderDomain::Opaque;
-                    data.policy_flags = transparent
+                    data.policy_flags = wants_field_visualization
+                        ? RenderPolicy_None
+                        : transparent
                         ? RenderPolicy_Wireframe | RenderPolicy_AlphaBlend
                         : RenderPolicy_Wireframe;
                     apply_depth_policy();

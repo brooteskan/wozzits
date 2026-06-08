@@ -3,8 +3,10 @@
 #include <gpu/gpu_resource_lifecycle.h>
 
 #include <gpu/mesh.h>
+#include <gpu/mesh_field_visualization.h>
 #include <gpu/gaussian_splat.h>
 #include <asset/types.h>
+#include <engine/assets/type_extensions.h>
 
 namespace wz::gpu
 {
@@ -19,6 +21,9 @@ namespace wz::gpu
 
         case GPUResourceType::GaussianSplatCloud:
             return release_gaussian_splat_cloud(device, handle);
+
+        case wz::engine::assets::kAssetTypeGPUMeshFieldBuffer:
+            return release_mesh_field_visualization(device, handle);
 
         default:
             return false;

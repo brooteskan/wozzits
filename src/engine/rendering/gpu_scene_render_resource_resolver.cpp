@@ -3,11 +3,13 @@
 #include <engine/rendering/gpu_scene_render_resource_resolver.h>
 
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_derived_field_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
 #include <engine/assets/compiler_version_tokens.h>
 #include <gpu/gaussian_splat.h>
 #include <gpu/mesh.h>
+#include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <array>
@@ -1086,6 +1088,7 @@ namespace wz::engine::rendering
         wz::engine::assets::MeshData preview_mesh{};
         const wz::engine::assets::MeshData* mesh_data = nullptr;
         wz::gpu::GPUHandle cached_mesh{};
+        wz::gpu::GPUHandle mesh_field_visualization_resource{};
 
         const bool is_terrain_surface =
             renderable.kind == wz::engine::assets::RenderableKind::Mesh
@@ -1324,6 +1327,8 @@ namespace wz::engine::rendering
                     return false;
                 }
                 cached_mesh = prepared.gpu_resource;
+                mesh_field_visualization_resource =
+                    prepared.mesh_field_visualization_resource;
             }
             else {
                 const wz::engine::assets::MeshAsset mesh_asset{
@@ -1391,6 +1396,50 @@ namespace wz::engine::rendering
         if (!gpu_mesh.valid())
             return false;
 
+        if (!mesh_field_visualization_resource.valid()
+            && !(renderable.mesh_field_visualization_asset
+                == wz::asset::AssetKey{}))
+        {
+            if (!mesh_data || !mesh_data->valid()) {
+                return false;
+            }
+
+            const wz::engine::assets::MeshDerivedFieldAsset field_asset{
+                .output = renderable.mesh_field_visualization_asset,
+            };
+            const wz::engine::assets::MeshDerivedFieldHandle field_handle =
+                assets_.mesh_derived_fields().get_mesh_derived_field(
+                    field_asset);
+            if (!field_handle.valid()) {
+                return false;
+            }
+
+            const wz::engine::assets::MeshDerivedFieldData* field_data =
+                assets_.mesh_derived_fields().get_mesh_derived_field_data(
+                    field_handle);
+            if (!field_data || !field_data->valid()) {
+                return false;
+            }
+
+            mesh_field_visualization_resource =
+                wz::gpu::upload_mesh_field_visualization(
+                    device_,
+                    wz::gpu::MeshFieldVisualizationUploadDesc{
+                        .mesh = mesh_data,
+                        .field = field_data,
+                        .channel_id =
+                            renderable.mesh_style
+                                .field_visualization.channel_id,
+                    });
+            if (!mesh_field_visualization_resource.valid()) {
+                return false;
+            }
+
+            preview_gpu_resources_.emplace_back(
+                preview_release_queue_,
+                mesh_field_visualization_resource);
+        }
+
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
         std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
         std::span<const TerrainTransitionDrawRange> terrain_transition_ranges{};
@@ -1410,7 +1459,8 @@ namespace wz::engine::rendering
                 renderable.mesh_style,
                 terrain_chunks,
                 terrain_far_splat_chunks,
-                terrain_transition_ranges);
+                terrain_transition_ranges,
+                mesh_field_visualization_resource);
 
         descriptor.mesh = scene_mesh;
         if (renderable.program

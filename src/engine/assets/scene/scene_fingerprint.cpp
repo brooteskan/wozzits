@@ -336,6 +336,12 @@ namespace wz::engine::assets
                 fp.mix_value(style.depth_write);
                 fp.mix_value(style.double_sided);
                 fp.mix_value(style.hidden_line_prepass);
+                fp.mix_value(style.field_visualization_enabled);
+                fp.mix_value(style.field_visualization_channel_id);
+                fp.mix_value(style.field_visualization_value_min);
+                fp.mix_value(style.field_visualization_value_max);
+                fp.mix_value(style.field_visualization_gamma);
+                mix_asset_key(fp, style.field_visualization_asset);
             }
 
             if (node.scalar_field_source) {

@@ -48,6 +48,7 @@ namespace wz::engine::rendering
         }
 
         case BuiltinRenderProgram::MeshDepthPrepassDebug:
+        case BuiltinRenderProgram::MeshFieldHeatmap:
         case BuiltinRenderProgram::TerrainMeshSurface:
             return false;
 

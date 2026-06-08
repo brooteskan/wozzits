@@ -4,6 +4,7 @@ target_sources(window_engine PRIVATE
     vector_field_texture.cpp
     hdr_image_texture.cpp
     mesh.cpp
+    mesh_field_visualization.cpp
     gaussian_splat.cpp
     gpu_resource_lifecycle.cpp
 
@@ -17,6 +18,7 @@ target_sources(window_engine PRIVATE
     dx12/dx12_hdr_image_texture.cpp
     dx12/dx12_scalar_field_debug.cpp
     dx12/dx12_mesh.cpp
+    dx12/dx12_mesh_field_visualization.cpp
     dx12/dx12_mesh_wireframe_debug.cpp
     dx12/dx12_gaussian_splat.cpp
     dx12/dx12_gaussian_splat_debug.cpp

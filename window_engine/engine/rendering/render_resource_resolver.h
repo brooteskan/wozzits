@@ -63,6 +63,7 @@ namespace wz::engine::rendering
         wz::engine::assets::TerrainLightingData  terrain_lighting{};
         float                                   terrain_target_pixels_per_triangle = 0.0f;
         wz::engine::assets::MeshRenderStyleData  mesh_style{};
+        wz::gpu::GPUHandle                       mesh_field_visualization_resource{};
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
         std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
     };
@@ -190,7 +191,8 @@ namespace wz::engine::rendering
             wz::engine::assets::MeshRenderStyleData  mesh_style = {},
             std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
             std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {},
-            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {});
+            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {},
+            wz::gpu::GPUHandle                       mesh_field_visualization_resource = {});
 
         bool register_terrain_proxy(
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
@@ -202,7 +204,8 @@ namespace wz::engine::rendering
             wz::engine::assets::MeshRenderStyleData  mesh_style = {},
             std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks = {},
             std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks = {},
-            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {});
+            std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {},
+            wz::gpu::GPUHandle                       mesh_field_visualization_resource = {});
 
         // Resolve a MeshHandle.
         // Returns nullopt if the handle is out-of-range or INVALID_MESH.
@@ -305,6 +308,7 @@ namespace wz::engine::rendering
             wz::engine::assets::TerrainLightingData  terrain_lighting{};
             float                                   terrain_target_pixels_per_triangle = 0.0f;
             wz::engine::assets::MeshRenderStyleData  mesh_style{};
+            wz::gpu::GPUHandle                       mesh_field_visualization_resource{};
             std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
             std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks{};
             std::vector<TerrainFarSplatLookup> terrain_far_splat_lookup{};

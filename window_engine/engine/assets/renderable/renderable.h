@@ -36,6 +36,7 @@ namespace wz::engine::assets
         MeshWireframeAlpha,
         MeshSurface,
         MeshSurfaceAlpha,
+        MeshFieldHeatmap,
         TerrainMeshSurface,
         GaussianSplatDebug,
         TerrainSurfelSurface,    // IA-based splat with depth R/W for terrain

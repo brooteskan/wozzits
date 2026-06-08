@@ -133,6 +133,34 @@ namespace wz::engine::assets::internal
                 }};
                 return true;
 
+            case BuiltinRenderProgram::MeshFieldHeatmap:
+                out.binding_model        = RenderBindingModel::MeshIA;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Opaque;
+                out.default_policy_flags =
+                    RenderPolicy_DepthTest
+                    | RenderPolicy_DepthWrite;
+                out.input_layout = InputLayoutKind::MeshPositionNormalUV;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 40,
+                }};
+                out.descriptor_bindings = {{
+                    .kind             = DescriptorKind::StructuredBufferSRV,
+                    .visibility       = ShaderVisibility::Vertex,
+                    .semantic         =
+                        DescriptorSemantic::MeshFieldVisualization,
+                    .shader_register  = 0,
+                    .register_space   = 0,
+                    .descriptor_count = 1,
+                }};
+                return true;
+
             case BuiltinRenderProgram::TerrainMeshSurface:
                 out.binding_model        = RenderBindingModel::MeshIA;
                 out.topology             = RenderPrimitiveTopology::TriangleList;

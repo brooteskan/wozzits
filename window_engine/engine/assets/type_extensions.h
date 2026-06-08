@@ -447,6 +447,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeGPUSplatRenderPipeline =
         static_cast<wz::asset::AssetType>(535);
 
+    // Implemented: backend-owned mesh-derived-field visualization buffer.
+    // Currently uploads one vertex-domain Float1 channel as a StructuredBuffer.
+    inline constexpr wz::asset::AssetType kAssetTypeGPUMeshFieldBuffer =
+        static_cast<wz::asset::AssetType>(536);
+
 
     // ─── Shader / pipeline / render-state descriptions: 1024–1059 ───────────────
     // Shader and pipeline descriptions that are not necessarily backend-owned GPU
