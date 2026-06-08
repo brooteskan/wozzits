@@ -95,7 +95,8 @@ namespace wz::engine::rendering
 
         void add_terrain_far_splat_chunks(
             wz::asset::AssetKey terrain_asset,
-            std::vector<TerrainFarSplatChunk> chunks);
+            std::vector<TerrainFarSplatChunk> chunks,
+            std::vector<wz::gpu::GPUHandle> gpu_resources = {});
 
         // Forget all cached entries. RAII handles automatically queue their
         // GPU resources for deferred release — no manual release needed.

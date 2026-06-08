@@ -113,6 +113,47 @@ TEST(TerrainDiagnostics, ResolverProjectsFrameDiagnosticsFromRenderStats)
         diagnostics.representation_counts.grid_tiles);
 }
 
+TEST(TerrainDiagnostics, ExplicitZeroSubmittedDrawCallsDoesNotFallbackToChunks)
+{
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    resolver.record_terrain_render_stats(
+        0u,
+        3u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        3u,
+        42u,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        0u,
+        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud,
+        0u);
+
+    const TerrainFrameDiagnostics diagnostics =
+        resolver.terrain_frame_diagnostics();
+    EXPECT_EQ(diagnostics.submitted_draw_calls, 0u);
+    EXPECT_EQ(diagnostics.representation_counts.surfel_clouds, 3u);
+}
+
 TEST(TerrainDiagnostics, ResolverExposesProxyWideDiagnostics)
 {
     using namespace wz::engine::assets;

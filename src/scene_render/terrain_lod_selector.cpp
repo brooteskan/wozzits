@@ -14,6 +14,7 @@ namespace wz::scene
     {
         using wz::engine::assets::TerrainChunkId;
         using wz::engine::assets::TerrainVisualProxyLodRecord;
+        using wz::engine::assets::TerrainVisualProxySurfelDensityLevel;
 
         struct VisibleChunk
         {
@@ -57,6 +58,23 @@ namespace wz::scene
             const TerrainVisualProxyLodRecord* lod) noexcept
         {
             return lod ? lod->triangle_count : 0u;
+        }
+
+        uint32_t coarsest_surfel_cost(const TerrainChunkInfo& chunk) noexcept
+        {
+            for (uint32_t i =
+                     static_cast<uint32_t>(
+                         chunk.surfel_density_levels.size());
+                 i > 0u;
+                 --i)
+            {
+                const TerrainVisualProxySurfelDensityLevel& level =
+                    chunk.surfel_density_levels[i - 1u];
+                if (level.valid()) {
+                    return level.equivalent_triangle_cost;
+                }
+            }
+            return 0u;
         }
 
         float lod_error(
@@ -295,10 +313,73 @@ namespace wz::scene
             }
         }
 
-        TerrainLodChoice make_choice(const VisibleChunk& chunk)
+        const TerrainVisualProxySurfelDensityLevel* select_surfel_density(
+            const VisibleChunk& chunk,
+            const TerrainLodSelectionParams& params) noexcept
+        {
+            if (!params.enable_surfel_lods
+                || chunk.info.surfel_density_levels.empty()
+                || chunk.lods.empty()
+                || chunk.selected + 1u != chunk.lods.size()
+                || chunk.errors_px[chunk.selected]
+                    > params.pixel_error_threshold)
+            {
+                return nullptr;
+            }
+
+            const float radius_depth =
+                chunk.projection.farthest_depth > 0.0f
+                    ? chunk.projection.farthest_depth
+                    : chunk.projection.nearest_depth;
+            const float min_projected_radius_px =
+                (std::max)(1.0f, params.surfel_target_coverage_px);
+            const TerrainVisualProxySurfelDensityLevel* fallback = nullptr;
+            for (const TerrainVisualProxySurfelDensityLevel& level :
+                 chunk.info.surfel_density_levels)
+            {
+                if (!level.valid()) {
+                    continue;
+                }
+                fallback = &level;
+                const float projected_radius_px =
+                    wz::math::world_error_to_pixels(
+                        level.representative_radius,
+                        radius_depth,
+                        params.viewport_height,
+                        params.fov_y_radians);
+                if (projected_radius_px >= min_projected_radius_px) {
+                    return &level;
+                }
+            }
+            return fallback;
+        }
+
+        TerrainLodChoice make_choice(
+            const VisibleChunk& chunk,
+            const TerrainLodSelectionParams& params)
         {
             const TerrainVisualProxyLodRecord* lod =
                 chunk.lods[chunk.selected];
+            if (const TerrainVisualProxySurfelDensityLevel* surfel =
+                    select_surfel_density(chunk, params))
+            {
+                return TerrainLodChoice{
+                    .terrain_instance_index =
+                        chunk.info.terrain_instance_index,
+                    .chunk_id = chunk.info.chunk_id,
+                    .representation_kind =
+                        wz::engine::assets
+                            ::TerrainVisualRepresentationKind::SurfelCloud,
+                    .lod_id = surfel->density_id,
+                    .projected_error_px = chunk.errors_px[chunk.selected],
+                    .projected_area_px = chunk.projected_area_px,
+                    .priority = wz::math::lod_priority(
+                        chunk.errors_px[chunk.selected],
+                        chunk.projected_area_px,
+                        static_cast<float>(
+                            surfel->equivalent_triangle_cost)),
+                };
+            }
             return TerrainLodChoice{
                 .terrain_instance_index = chunk.info.terrain_instance_index,
                 .chunk_id = chunk.info.chunk_id,
@@ -424,8 +505,16 @@ namespace wz::scene
 
             visible_chunk.selected =
                 static_cast<uint32_t>(visible_chunk.lods.size() - 1u);
-            const uint32_t base_cost =
+            const uint32_t base_mesh_cost =
                 lod_triangles(visible_chunk.lods[visible_chunk.selected]);
+            const uint32_t base_surfel_cost =
+                params.enable_surfel_lods
+                    ? coarsest_surfel_cost(visible_chunk.info)
+                    : 0u;
+            const uint32_t base_cost =
+                base_surfel_cost > 0u
+                    ? (std::min)(base_mesh_cost, base_surfel_cost)
+                    : base_mesh_cost;
             total_triangles += base_cost;
             visible.push_back(std::move(visible_chunk));
         }
@@ -493,7 +582,7 @@ namespace wz::scene
 
         out.reserve(visible.size());
         for (const VisibleChunk& chunk : visible) {
-            out.push_back(make_choice(chunk));
+            out.push_back(make_choice(chunk, params));
         }
         return out;
     }

@@ -70,6 +70,26 @@ namespace
             .lods = lods,
         };
     }
+
+    wz::engine::assets::TerrainVisualProxySurfelDensityLevel surfel_level(
+        uint32_t density_id,
+        uint32_t count,
+        float spacing,
+        float radius)
+    {
+        return wz::engine::assets::TerrainVisualProxySurfelDensityLevel{
+            .density_id = wz::engine::assets::TerrainLodId{ density_id },
+            .spacing = spacing,
+            .representative_radius = radius,
+            .first_surfel = 0u,
+            .surfel_count = count,
+            .equivalent_triangle_cost = count * 2u,
+            .bounds = wz::engine::assets::TerrainVisualProxyBounds{
+                .min = { -1.0f, -1.0f, 10.0f },
+                .max = { 1.0f, 1.0f, 11.0f },
+            },
+        };
+    }
 }
 
 TEST(TerrainLodSelector, ZeroBudgetSelectsNoChunks)
@@ -272,6 +292,146 @@ TEST(TerrainLodSelector, SingleLodChunkIsSelectedWhenBudgetAllows)
         select_terrain_lods(chunks, view.terrain_lod, view);
 
     ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices[0].lod_id.value, 0u);
+}
+
+TEST(TerrainLodSelector, SurfelLevelsAreOptIn)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 4u, 0.0f),
+    };
+    const std::vector surfels{
+        surfel_level(0u, 4u, 1.0f, 0.25f),
+        surfel_level(1u, 1u, 2.0f, 1.0f),
+    };
+    TerrainChunkInfo terrain_chunk =
+        chunk(0u, box(-1.0f, -1.0f, 40.0f, 1.0f, 1.0f, 41.0f), lods);
+    terrain_chunk.surfel_density_levels = surfels;
+    const std::vector chunks{ terrain_chunk };
+    ViewData view = test_view();
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(
+        choices[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
+    EXPECT_EQ(choices[0].lod_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, FarFieldChoosesSurfelDensityWhenEnabled)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 4u, 0.0f),
+    };
+    const std::vector surfels{
+        surfel_level(0u, 4u, 1.0f, 0.25f),
+        surfel_level(1u, 2u, 2.0f, 0.5f),
+        surfel_level(2u, 1u, 4.0f, 1.0f),
+    };
+    TerrainChunkInfo terrain_chunk =
+        chunk(0u, box(-1.0f, -1.0f, 40.0f, 1.0f, 1.0f, 41.0f), lods);
+    terrain_chunk.surfel_density_levels = surfels;
+    const std::vector chunks{ terrain_chunk };
+    ViewData view = test_view();
+    view.terrain_lod.enable_surfel_lods = true;
+    view.terrain_lod.surfel_target_coverage_px = 64.0f;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(
+        choices[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+    EXPECT_EQ(choices[0].lod_id.value, 2u);
+}
+
+TEST(TerrainLodSelector, ProjectedRadiusCanSelectMiddleSurfelDensity)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 4u, 0.0f),
+    };
+    const std::vector surfels{
+        surfel_level(0u, 4u, 1.0f, 0.25f),
+        surfel_level(1u, 2u, 2.0f, 0.5f),
+        surfel_level(2u, 1u, 4.0f, 1.0f),
+    };
+    TerrainChunkInfo terrain_chunk =
+        chunk(0u, box(-1.0f, -1.0f, 20.0f, 1.0f, 1.0f, 21.0f), lods);
+    terrain_chunk.surfel_density_levels = surfels;
+    const std::vector chunks{ terrain_chunk };
+    ViewData view = test_view();
+    view.terrain_lod.enable_surfel_lods = true;
+    view.terrain_lod.surfel_target_coverage_px = 1.0f;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(
+        choices[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+    EXPECT_EQ(choices[0].lod_id.value, 1u);
+}
+
+TEST(TerrainLodSelector, SurfelFallbackParticipatesInCoarseBudget)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 4u, 0.0f),
+    };
+    const std::vector surfels{
+        surfel_level(0u, 4u, 1.0f, 0.25f),
+        surfel_level(1u, 2u, 2.0f, 0.5f),
+        surfel_level(2u, 1u, 4.0f, 1.0f),
+    };
+    TerrainChunkInfo terrain_chunk =
+        chunk(0u, box(-1.0f, -1.0f, 40.0f, 1.0f, 1.0f, 41.0f), lods);
+    terrain_chunk.surfel_density_levels = surfels;
+    const std::vector chunks{ terrain_chunk };
+    ViewData view = test_view();
+    view.terrain_lod.enable_surfel_lods = true;
+    view.terrain_lod.triangle_budget = 2u;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(
+        choices[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+    EXPECT_EQ(choices[0].lod_id.value, 2u);
+}
+
+TEST(TerrainLodSelector, SurfelSelectionKeepsMeshWhenCoarseErrorIsTooHigh)
+{
+    const std::vector lods{
+        lod(0u, 100u, 0.0f),
+        lod(1u, 4u, 8.0f),
+    };
+    const std::vector surfels{
+        surfel_level(0u, 4u, 1.0f, 0.25f),
+        surfel_level(1u, 1u, 2.0f, 1.0f),
+    };
+    TerrainChunkInfo terrain_chunk =
+        chunk(0u, box(-1.0f, -1.0f, 10.0f, 1.0f, 1.0f, 11.0f), lods);
+    terrain_chunk.surfel_density_levels = surfels;
+    const std::vector chunks{ terrain_chunk };
+    ViewData view = test_view();
+    view.terrain_lod.enable_surfel_lods = true;
+
+    const std::vector<TerrainLodChoice> choices =
+        select_terrain_lods(chunks, view.terrain_lod, view);
+
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(
+        choices[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_EQ(choices[0].lod_id.value, 0u);
 }
 

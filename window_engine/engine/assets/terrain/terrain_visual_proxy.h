@@ -16,7 +16,7 @@
 
 namespace wz::engine::assets
 {
-    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 4;
+    inline constexpr uint32_t kTerrainVisualProxySchemaVersion = 5;
 
     enum class TerrainVisualRepresentationKind : uint8_t
     {
@@ -218,6 +218,41 @@ namespace wz::engine::assets
         }
     };
 
+    struct TerrainVisualProxySurfel
+    {
+        float position[3]{ 0.0f, 0.0f, 0.0f };
+        float normal[3]{ 0.0f, 1.0f, 0.0f };
+        float radius = 0.0f;
+        float albedo[3]{ 1.0f, 1.0f, 1.0f };
+        float roughness = 0.0f;
+        uint32_t material_id = 0u;
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return radius > 0.0f && roughness >= 0.0f;
+        }
+    };
+
+    struct TerrainVisualProxySurfelDensityLevel
+    {
+        TerrainLodId density_id{};
+        float spacing = 0.0f;
+        float representative_radius = 0.0f;
+        uint32_t first_surfel = 0u;
+        uint32_t surfel_count = 0u;
+        uint32_t equivalent_triangle_cost = 0u;
+        TerrainVisualProxyBounds bounds{};
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return spacing > 0.0f
+                && representative_radius > 0.0f
+                && surfel_count > 0u
+                && equivalent_triangle_cost > 0u
+                && bounds.valid();
+        }
+    };
+
     struct TerrainVisualProxyLodRecord
     {
         TerrainLodId lod_id{};
@@ -265,6 +300,9 @@ namespace wz::engine::assets
 
         TerrainVisualProxyAggregate aggregate{};
         TerrainVisualChunkBoundaryMetadata boundary{};
+        std::vector<TerrainVisualProxySurfelDensityLevel>
+            surfel_density_levels;
+        std::vector<TerrainVisualProxySurfel> surfels;
         std::vector<TerrainVisualProxyLodRecord> lods;
         std::vector<TerrainVisualProxyTransitionStrip> transition_strips;
 
@@ -282,6 +320,22 @@ namespace wz::engine::assets
                  transition_strips)
             {
                 if (!strip.valid()) {
+                    return false;
+                }
+            }
+
+            for (const TerrainVisualProxySurfelDensityLevel& level :
+                 surfel_density_levels)
+            {
+                if (!level.valid()
+                    || level.first_surfel + level.surfel_count
+                        > surfels.size())
+                {
+                    return false;
+                }
+            }
+            for (const TerrainVisualProxySurfel& surfel : surfels) {
+                if (!surfel.valid()) {
                     return false;
                 }
             }
@@ -349,6 +403,15 @@ namespace wz::engine::assets
             for (const TerrainVisualProxyChunkRecord& chunk : chunks) {
                 count +=
                     static_cast<uint32_t>(chunk.transition_strips.size());
+            }
+            return count;
+        }
+
+        [[nodiscard]] uint32_t surfel_count() const noexcept
+        {
+            uint32_t count = 0;
+            for (const TerrainVisualProxyChunkRecord& chunk : chunks) {
+                count += static_cast<uint32_t>(chunk.surfels.size());
             }
             return count;
         }

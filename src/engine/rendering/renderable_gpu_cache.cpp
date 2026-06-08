@@ -159,18 +159,33 @@ namespace wz::engine::rendering
 
     void RenderableGpuCache::add_terrain_far_splat_chunks(
         wz::asset::AssetKey terrain_asset,
-        std::vector<TerrainFarSplatChunk> chunks)
+        std::vector<TerrainFarSplatChunk> chunks,
+        std::vector<wz::gpu::GPUHandle> gpu_resources)
     {
         if (terrain_asset == wz::asset::AssetKey{} || chunks.empty()) {
             return;
         }
 
+        std::vector<wz::gpu::ScopedGPUHandle> scoped_resources;
+        scoped_resources.reserve(gpu_resources.size());
+        for (wz::gpu::GPUHandle handle : gpu_resources) {
+            if (handle.valid()) {
+                scoped_resources.emplace_back(release_queue_, handle);
+            }
+        }
+
+        for (auto& entry : terrain_far_splat_entries_) {
+            if (entry.terrain_asset == terrain_asset) {
+                entry.gpu_resources = std::move(scoped_resources);
+                entry.chunks = std::move(chunks);
+                return;
+            }
+        }
+
         TerrainFarSplatEntry entry{};
         entry.terrain_asset = terrain_asset;
+        entry.gpu_resources = std::move(scoped_resources);
         entry.chunks = std::move(chunks);
-        // Note: gpu_resources for splat chunks are managed separately by
-        // the gpu_scene_render_resource_resolver which stores ScopedGPUHandles
-        // for any uploaded splat cloud resources.
         terrain_far_splat_entries_.push_back(std::move(entry));
     }
 

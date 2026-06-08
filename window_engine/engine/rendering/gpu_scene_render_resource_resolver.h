@@ -12,6 +12,9 @@
 #include <engine/assets/engine_asset_library.h>
 
 #include <gpu/gpu.h>
+#include <gpu/scoped_gpu_handle.h>
+
+#include <vector>
 
 namespace wz::engine::rendering
 {
@@ -24,6 +27,7 @@ namespace wz::engine::rendering
             wz::engine::assets::EngineAssetLibrary& assets,
             RenderResourceResolver& render_resolver,
             RenderableGpuCache* cache = nullptr);
+        ~GpuSceneRenderResourceResolver() override;
 
         bool realize_renderable_descriptor(
             const wz::engine::assets::RenderableAssetData& renderable,
@@ -34,5 +38,7 @@ namespace wz::engine::rendering
         wz::engine::assets::EngineAssetLibrary& assets_;
         RenderResourceResolver& render_resolver_;
         RenderableGpuCache* cache_ = nullptr;
+        mutable wz::gpu::DeferredReleaseQueue preview_release_queue_{};
+        mutable std::vector<wz::gpu::ScopedGPUHandle> preview_gpu_resources_{};
     };
 }

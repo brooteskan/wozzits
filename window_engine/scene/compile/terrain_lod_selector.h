@@ -15,6 +15,9 @@ namespace wz::scene
             wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
         AABB world_bounds{};
         wz::engine::assets::TerrainVisualChunkBoundaryMetadata boundary{};
+        std::span<
+            const wz::engine::assets::TerrainVisualProxySurfelDensityLevel>
+            surfel_density_levels;
         std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods;
     };
 

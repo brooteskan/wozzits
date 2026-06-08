@@ -403,6 +403,36 @@ TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)
     EXPECT_NE(ir.terrain[0].chunk_id, ir.terrain[1].chunk_id);
 }
 
+TEST(RenderIRSpec, TerrainDrawRefsPreserveSurfelRepresentation)
+{
+    auto cs = make_terrain_scene();
+    std::vector<TerrainLodChoice> choices{
+        TerrainLodChoice{
+            .terrain_instance_index = 0u,
+            .chunk_id = wz::engine::assets::TerrainChunkId{ 7 },
+            .representation_kind =
+                wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud,
+            .lod_id = wz::engine::assets::TerrainLodId{ 2 },
+            .projected_error_px = 0.25f,
+            .projected_area_px = 32.0f,
+            .priority = 4.0f,
+        },
+    };
+
+    CompiledSceneView scene = cs.scene;
+    scene.terrain_lod_choices = std::span<const TerrainLodChoice>(choices);
+
+    RenderIRStorage ir_storage;
+    const RenderIRView ir = build_render_ir(ir_storage, scene);
+
+    ASSERT_EQ(ir.terrain.size(), 1u);
+    EXPECT_EQ(ir.terrain[0].kind, TerrainDrawRefKind::ChunkLod);
+    EXPECT_EQ(
+        ir.terrain[0].representation_kind,
+        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+    EXPECT_EQ(ir.terrain[0].lod_id.value, 2u);
+}
+
 TEST(RenderIRSpec, TerrainDrawRefsIncludeSelectedMixedLodTransition)
 {
     auto cs = make_transition_terrain_scene();

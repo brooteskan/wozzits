@@ -24,7 +24,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kTerrainVisualProxyDiskCacheMagic = 0x56505a57u;
-        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 4u;
+        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 5u;
         constexpr uint32_t kTerrainVisualProxyTargetLodCount = 4u;
         constexpr float kTerrainVisualProxyEdgeEpsilon = 1e-5f;
 
@@ -776,6 +776,323 @@ namespace wz::engine::assets::internal
             return out;
         }
 
+        uint32_t dominant_material_id(
+            const TerrainVisualProxySourceRegionAggregate& source)
+        {
+            uint32_t material_id = 0u;
+            float best_coverage = -1.0f;
+            for (const TerrainMaterialCoverage& coverage :
+                 source.material_histogram)
+            {
+                if (coverage.coverage > best_coverage) {
+                    best_coverage = coverage.coverage;
+                    material_id = coverage.material_id;
+                }
+            }
+            return material_id;
+        }
+
+        void triangle_normal(
+            const float a[3],
+            const float b[3],
+            const float c[3],
+            float normal[3])
+        {
+            const float ab[3]{ b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+            const float ac[3]{ c[0] - a[0], c[1] - a[1], c[2] - a[2] };
+            normal[0] = ab[1] * ac[2] - ab[2] * ac[1];
+            normal[1] = ab[2] * ac[0] - ab[0] * ac[2];
+            normal[2] = ab[0] * ac[1] - ab[1] * ac[0];
+            normalize_or_up(normal);
+        }
+
+        struct SurfelCellAccumulator
+        {
+            uint32_t vertex_count = 0u;
+            uint32_t triangle_count = 0u;
+            float position_sum[3]{ 0.0f, 0.0f, 0.0f };
+            float normal_sum[3]{ 0.0f, 0.0f, 0.0f };
+        };
+
+        bool xz_in_range(
+            const float position[3],
+            float min_x,
+            float max_x,
+            float min_z,
+            float max_z) noexcept
+        {
+            return position[0] >= min_x - kTerrainVisualProxyEdgeEpsilon
+                && position[0] <= max_x + kTerrainVisualProxyEdgeEpsilon
+                && position[2] >= min_z - kTerrainVisualProxyEdgeEpsilon
+                && position[2] <= max_z + kTerrainVisualProxyEdgeEpsilon;
+        }
+
+        const float* nearest_chunk_vertex(
+            const TerrainAssetData& terrain,
+            const ChunkVertexMap& chunk_vertices,
+            const float target[3])
+        {
+            const float* best = nullptr;
+            float best_distance = (std::numeric_limits<float>::max)();
+            for (uint32_t source_vertex : chunk_vertices.unique_vertices) {
+                const float* position =
+                    terrain.mesh_surface_points.data() + source_vertex * 3u;
+                const float dx = position[0] - target[0];
+                const float dz = position[2] - target[2];
+                const float distance = dx * dx + dz * dz;
+                if (distance < best_distance) {
+                    best_distance = distance;
+                    best = position;
+                }
+            }
+            return best;
+        }
+
+        void accumulate_surfel_cell(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& chunk,
+            const ChunkVertexMap& chunk_vertices,
+            float min_x,
+            float max_x,
+            float min_z,
+            float max_z,
+            SurfelCellAccumulator& acc)
+        {
+            for (uint32_t source_vertex : chunk_vertices.unique_vertices) {
+                const float* position =
+                    terrain.mesh_surface_points.data() + source_vertex * 3u;
+                if (!xz_in_range(position, min_x, max_x, min_z, max_z)) {
+                    continue;
+                }
+                for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                    acc.position_sum[axis] += position[axis];
+                }
+                ++acc.vertex_count;
+            }
+
+            for (uint32_t i = 0u; i + 2u < chunk.index_count; i += 3u) {
+                const uint32_t base = chunk.first_index + i;
+                if (base + 2u >= terrain.mesh_visual_indices.size()) {
+                    continue;
+                }
+                const uint32_t indices[3]{
+                    terrain.mesh_visual_indices[base + 0u],
+                    terrain.mesh_visual_indices[base + 1u],
+                    terrain.mesh_visual_indices[base + 2u],
+                };
+                if (indices[0] * 3u + 2u >= terrain.mesh_surface_points.size()
+                    || indices[1] * 3u + 2u
+                        >= terrain.mesh_surface_points.size()
+                    || indices[2] * 3u + 2u
+                        >= terrain.mesh_surface_points.size())
+                {
+                    continue;
+                }
+                const float* a =
+                    terrain.mesh_surface_points.data() + indices[0] * 3u;
+                const float* b =
+                    terrain.mesh_surface_points.data() + indices[1] * 3u;
+                const float* c =
+                    terrain.mesh_surface_points.data() + indices[2] * 3u;
+                const float centroid[3]{
+                    (a[0] + b[0] + c[0]) / 3.0f,
+                    (a[1] + b[1] + c[1]) / 3.0f,
+                    (a[2] + b[2] + c[2]) / 3.0f,
+                };
+                if (!xz_in_range(centroid, min_x, max_x, min_z, max_z)) {
+                    continue;
+                }
+                float normal[3]{};
+                triangle_normal(a, b, c, normal);
+                for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                    acc.normal_sum[axis] += normal[axis];
+                }
+                ++acc.triangle_count;
+            }
+        }
+
+        float surfel_roughness_from_lod(
+            const TerrainVisualProxyLodRecord& lod)
+        {
+            return std::clamp(
+                lod.source_region_aggregate.roughness
+                    + std::sqrt(lod.lost_detail_aggregate.normal_variance),
+                0.0f,
+                1.0f);
+        }
+
+        void append_surfel_density_level(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& source,
+            const ChunkVertexMap& chunk_vertices,
+            const TerrainVisualProxyLodRecord& appearance_lod,
+            uint32_t density_id,
+            uint32_t grid_cells,
+            float radius_scale,
+            TerrainVisualProxyChunkRecord& chunk)
+        {
+            const float extent_x = source.bounds_max[0] - source.bounds_min[0];
+            const float extent_z = source.bounds_max[2] - source.bounds_min[2];
+            if (extent_x <= kTerrainVisualProxyEdgeEpsilon
+                || extent_z <= kTerrainVisualProxyEdgeEpsilon
+                || grid_cells == 0u)
+            {
+                return;
+            }
+
+            TerrainVisualProxySurfelDensityLevel level{};
+            level.density_id = TerrainLodId{ density_id };
+            level.spacing = std::max(extent_x, extent_z)
+                / static_cast<float>(grid_cells);
+            level.first_surfel =
+                static_cast<uint32_t>(chunk.surfels.size());
+            level.bounds = empty_bounds();
+            const float cell_x = extent_x / static_cast<float>(grid_cells);
+            const float cell_z = extent_z / static_cast<float>(grid_cells);
+            const float radius =
+                std::sqrt(cell_x * cell_x + cell_z * cell_z)
+                * 0.5f
+                * radius_scale;
+            level.representative_radius = std::max(
+                kTerrainVisualProxyEdgeEpsilon,
+                radius);
+            const uint32_t material_id =
+                dominant_material_id(
+                    appearance_lod.source_region_aggregate);
+
+            for (uint32_t z = 0u; z < grid_cells; ++z) {
+                for (uint32_t x = 0u; x < grid_cells; ++x) {
+                    const float min_x =
+                        source.bounds_min[0] + cell_x * static_cast<float>(x);
+                    const float max_x =
+                        x + 1u == grid_cells
+                            ? source.bounds_max[0]
+                            : min_x + cell_x;
+                    const float min_z =
+                        source.bounds_min[2] + cell_z * static_cast<float>(z);
+                    const float max_z =
+                        z + 1u == grid_cells
+                            ? source.bounds_max[2]
+                            : min_z + cell_z;
+
+                    SurfelCellAccumulator acc{};
+                    accumulate_surfel_cell(
+                        terrain,
+                        source,
+                        chunk_vertices,
+                        min_x,
+                        max_x,
+                        min_z,
+                        max_z,
+                        acc);
+
+                    TerrainVisualProxySurfel surfel{};
+                    if (acc.vertex_count > 0u) {
+                        const float inv =
+                            1.0f / static_cast<float>(acc.vertex_count);
+                        for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                            surfel.position[axis] =
+                                acc.position_sum[axis] * inv;
+                        }
+                    }
+                    else {
+                        float target[3]{
+                            (min_x + max_x) * 0.5f,
+                            chunk.aggregate.mean_height,
+                            (min_z + max_z) * 0.5f,
+                        };
+                        if (const float* nearest =
+                                nearest_chunk_vertex(
+                                    terrain,
+                                    chunk_vertices,
+                                    target))
+                        {
+                            for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                                surfel.position[axis] = nearest[axis];
+                            }
+                        }
+                        else {
+                            for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                                surfel.position[axis] = target[axis];
+                            }
+                        }
+                    }
+
+                    if (acc.triangle_count > 0u) {
+                        for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                            surfel.normal[axis] = acc.normal_sum[axis];
+                        }
+                    }
+                    else {
+                        for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                            surfel.normal[axis] =
+                                appearance_lod.source_region_aggregate
+                                    .dominant_normal[axis];
+                        }
+                    }
+                    normalize_or_up(surfel.normal);
+                    surfel.radius = level.representative_radius;
+                    for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                        surfel.albedo[axis] =
+                            chunk.aggregate.albedo_mean[axis];
+                    }
+                    surfel.roughness =
+                        surfel_roughness_from_lod(appearance_lod);
+                    surfel.material_id = material_id;
+
+                    expand_bounds(level.bounds, surfel.position);
+                    chunk.surfels.push_back(surfel);
+                    ++level.surfel_count;
+                }
+            }
+
+            if (level.surfel_count == 0u) {
+                chunk.surfels.resize(level.first_surfel);
+                return;
+            }
+            level.equivalent_triangle_cost = level.surfel_count * 2u;
+            chunk.surfel_density_levels.push_back(level);
+        }
+
+        void generate_chunk_surfels(
+            const TerrainAssetData& terrain,
+            const TerrainVisualChunk& source,
+            const ChunkVertexMap& chunk_vertices,
+            TerrainVisualProxyChunkRecord& chunk)
+        {
+            if (chunk.lods.empty()) {
+                return;
+            }
+            const TerrainVisualProxyLodRecord& coarsest = chunk.lods.back();
+            append_surfel_density_level(
+                terrain,
+                source,
+                chunk_vertices,
+                coarsest,
+                0u,
+                2u,
+                1.0f,
+                chunk);
+            append_surfel_density_level(
+                terrain,
+                source,
+                chunk_vertices,
+                coarsest,
+                1u,
+                1u,
+                1.0f,
+                chunk);
+            append_surfel_density_level(
+                terrain,
+                source,
+                chunk_vertices,
+                coarsest,
+                2u,
+                1u,
+                2.0f,
+                chunk);
+        }
+
         SimplifiedChunkLod simplify_chunk_for_grid(
             const TerrainAssetData& terrain,
             const TerrainVisualChunk& chunk,
@@ -1346,6 +1663,12 @@ namespace wz::engine::assets::internal
                     chunk.lods.push_back(std::move(coarse));
                 }
 
+                generate_chunk_surfels(
+                    terrain,
+                    source,
+                    chunk_vertices,
+                    chunk);
+
                 proxy.chunks.push_back(std::move(chunk));
             }
 
@@ -1619,6 +1942,58 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        void append_surfel(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxySurfel& surfel)
+        {
+            append_float_array(out, surfel.position, 3u);
+            append_float_array(out, surfel.normal, 3u);
+            append_scalar(out, surfel.radius);
+            append_float_array(out, surfel.albedo, 3u);
+            append_scalar(out, surfel.roughness);
+            append_scalar(out, surfel.material_id);
+        }
+
+        bool read_surfel(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxySurfel& surfel)
+        {
+            return read_float_array(bytes, offset, surfel.position, 3u)
+                && read_float_array(bytes, offset, surfel.normal, 3u)
+                && read_scalar(bytes, offset, surfel.radius)
+                && read_float_array(bytes, offset, surfel.albedo, 3u)
+                && read_scalar(bytes, offset, surfel.roughness)
+                && read_scalar(bytes, offset, surfel.material_id);
+        }
+
+        void append_surfel_density_level(
+            std::vector<uint8_t>& out,
+            const TerrainVisualProxySurfelDensityLevel& level)
+        {
+            append_scalar(out, level.density_id.value);
+            append_scalar(out, level.spacing);
+            append_scalar(out, level.representative_radius);
+            append_scalar(out, level.first_surfel);
+            append_scalar(out, level.surfel_count);
+            append_scalar(out, level.equivalent_triangle_cost);
+            append_bounds(out, level.bounds);
+        }
+
+        bool read_surfel_density_level(
+            const std::vector<uint8_t>& bytes,
+            size_t& offset,
+            TerrainVisualProxySurfelDensityLevel& level)
+        {
+            return read_scalar(bytes, offset, level.density_id.value)
+                && read_scalar(bytes, offset, level.spacing)
+                && read_scalar(bytes, offset, level.representative_radius)
+                && read_scalar(bytes, offset, level.first_surfel)
+                && read_scalar(bytes, offset, level.surfel_count)
+                && read_scalar(bytes, offset, level.equivalent_triangle_cost)
+                && read_bounds(bytes, offset, level.bounds);
+        }
+
         void append_lod(
             std::vector<uint8_t>& out,
             const TerrainVisualProxyLodRecord& lod)
@@ -1710,6 +2085,17 @@ namespace wz::engine::assets::internal
                 append_scalar(out, chunk.boundary.positive_x_neighbor.value);
                 append_scalar(out, chunk.boundary.negative_z_neighbor.value);
                 append_scalar(out, chunk.boundary.positive_z_neighbor.value);
+                append_scalar(
+                    out,
+                    static_cast<uint64_t>(
+                        chunk.surfel_density_levels.size()));
+                for (const auto& level : chunk.surfel_density_levels) {
+                    append_surfel_density_level(out, level);
+                }
+                append_scalar(out, static_cast<uint64_t>(chunk.surfels.size()));
+                for (const auto& surfel : chunk.surfels) {
+                    append_surfel(out, surfel);
+                }
                 append_scalar(out, static_cast<uint64_t>(chunk.lods.size()));
                 for (const auto& lod : chunk.lods) {
                     append_lod(out, lod);
@@ -1763,6 +2149,8 @@ namespace wz::engine::assets::internal
             data.chunks.resize(static_cast<size_t>(chunk_count));
             for (auto& chunk : data.chunks) {
                 uint8_t chunk_kind = 0u;
+                uint64_t surfel_density_level_count = 0u;
+                uint64_t surfel_count = 0u;
                 uint64_t lod_count = 0u;
                 uint64_t transition_count = 0u;
                 if (!read_scalar(bytes, offset, chunk.chunk_id.value)
@@ -1779,12 +2167,44 @@ namespace wz::engine::assets::internal
                     || !read_scalar(bytes, offset, chunk.boundary.positive_x_neighbor.value)
                     || !read_scalar(bytes, offset, chunk.boundary.negative_z_neighbor.value)
                     || !read_scalar(bytes, offset, chunk.boundary.positive_z_neighbor.value)
-                    || !read_scalar(bytes, offset, lod_count))
+                    || !read_scalar(bytes, offset, surfel_density_level_count)
+                    || surfel_density_level_count > 1024u)
+                {
+                    return false;
+                }
+                chunk.surfel_density_levels.resize(
+                    static_cast<size_t>(surfel_density_level_count));
+                for (auto& level : chunk.surfel_density_levels) {
+                    if (!read_surfel_density_level(bytes, offset, level)) {
+                        return false;
+                    }
+                }
+                if (!read_scalar(bytes, offset, surfel_count)
+                    || surfel_count > 1000000u)
+                {
+                    return false;
+                }
+                chunk.surfels.resize(static_cast<size_t>(surfel_count));
+                for (auto& surfel : chunk.surfels) {
+                    if (!read_surfel(bytes, offset, surfel)) {
+                        return false;
+                    }
+                }
+                if (!read_scalar(bytes, offset, lod_count))
                 {
                     return false;
                 }
                 if (lod_count == 0u || lod_count > 1024u) {
                     return false;
+                }
+                for (const TerrainVisualProxySurfelDensityLevel& level :
+                     chunk.surfel_density_levels)
+                {
+                    if (level.first_surfel + level.surfel_count
+                        > chunk.surfels.size())
+                    {
+                        return false;
+                    }
                 }
                 chunk.representation_kind =
                     static_cast<TerrainVisualRepresentationKind>(chunk_kind);

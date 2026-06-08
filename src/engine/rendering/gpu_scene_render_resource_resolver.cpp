@@ -980,6 +980,85 @@ namespace wz::engine::rendering
             mesh.has_uv0 = true;
             return mesh;
         }
+
+        std::vector<TerrainFarSplatChunk> make_terrain_far_splat_chunks(
+            const wz::engine::assets::TerrainVisualProxyData& proxy,
+            std::span<const wz::gpu::GPUHandle> gpu_resources = {})
+        {
+            std::vector<TerrainFarSplatChunk> out;
+            std::vector<wz::engine::assets::TerrainLodId> density_ids;
+            for (const auto& chunk : proxy.chunks) {
+                for (const auto& level : chunk.surfel_density_levels) {
+                    if (!level.valid()) {
+                        continue;
+                    }
+                    const auto existing = std::find_if(
+                        density_ids.begin(),
+                        density_ids.end(),
+                        [&](wz::engine::assets::TerrainLodId id)
+                        {
+                            return id == level.density_id;
+                        });
+                    if (existing == density_ids.end()) {
+                        density_ids.push_back(level.density_id);
+                    }
+                }
+            }
+            std::sort(
+                density_ids.begin(),
+                density_ids.end(),
+                [](wz::engine::assets::TerrainLodId a,
+                   wz::engine::assets::TerrainLodId b)
+                {
+                    return a.value < b.value;
+                });
+
+            for (size_t density_index = 0;
+                 density_index < density_ids.size();
+                 ++density_index)
+            {
+                const auto density_id = density_ids[density_index];
+                const wz::gpu::GPUHandle gpu_resource =
+                    density_index < gpu_resources.size()
+                    ? gpu_resources[density_index]
+                    : wz::gpu::GPUHandle{};
+                uint32_t first_splat = 0u;
+
+                for (const auto& chunk : proxy.chunks) {
+                    for (const auto& level : chunk.surfel_density_levels) {
+                        if (!level.valid()
+                            || !(level.density_id == density_id))
+                        {
+                            continue;
+                        }
+                        out.push_back(TerrainFarSplatChunk{
+                            .chunk_id = chunk.chunk_id,
+                            .density_id = level.density_id,
+                            .gpu_resource = gpu_resource,
+                            .first_splat = first_splat,
+                            .splat_count = level.surfel_count,
+                        });
+                        first_splat += level.surfel_count;
+                        break;
+                    }
+                }
+            }
+            return out;
+        }
+
+        std::vector<wz::gpu::GPUHandle> upload_terrain_far_splat_clouds(
+            wz::gpu::Device& device,
+            std::span<const wz::engine::assets::GaussianSplatCloudData> clouds)
+        {
+            std::vector<wz::gpu::GPUHandle> out;
+            out.reserve(clouds.size());
+            for (const auto& cloud : clouds) {
+                out.push_back(wz::gpu::upload_gaussian_splat_cloud(
+                    device,
+                    cloud));
+            }
+            return out;
+        }
     }
 
     GpuSceneRenderResourceResolver::GpuSceneRenderResourceResolver(
@@ -992,6 +1071,12 @@ namespace wz::engine::rendering
         , render_resolver_(render_resolver)
         , cache_(cache)
     {
+    }
+
+    GpuSceneRenderResourceResolver::~GpuSceneRenderResourceResolver()
+    {
+        preview_gpu_resources_.clear();
+        preview_release_queue_.flush(device_);
     }
 
     bool GpuSceneRenderResourceResolver::realize_renderable_descriptor(
@@ -1012,6 +1097,7 @@ namespace wz::engine::rendering
         const wz::engine::assets::TerrainVisualProxyData* terrain_visual_proxy_data =
             nullptr;
         std::vector<wz::engine::assets::TerrainVisualChunk> terrain_chunks_storage;
+        std::vector<TerrainFarSplatChunk> terrain_far_splat_chunks_storage;
         std::vector<TerrainTransitionDrawRange> terrain_transition_ranges_storage;
 
         if (renderable.kind == wz::engine::assets::RenderableKind::Mesh) {
@@ -1088,6 +1174,13 @@ namespace wz::engine::rendering
                                 terrain_transition_ranges_storage =
                                     *cached_transition_ranges;
                             }
+                            if (const auto* cached_far_splats =
+                                    cache_->find_terrain_far_splat_chunks(
+                                        renderable.companion_asset))
+                            {
+                                terrain_far_splat_chunks_storage =
+                                    *cached_far_splats;
+                            }
                         }
                     }
 
@@ -1149,6 +1242,23 @@ namespace wz::engine::rendering
                             renderable.companion_asset,
                             terrain_transition_ranges_storage);
                     }
+
+                    if (terrain_far_splat_chunks_storage.empty()
+                        && !renderable.terrain_far_splat_chunks.empty())
+                    {
+                        std::vector<wz::gpu::GPUHandle> far_splat_handles =
+                            upload_terrain_far_splat_clouds(
+                                device_,
+                                renderable.terrain_far_splat_chunks);
+                        terrain_far_splat_chunks_storage =
+                            make_terrain_far_splat_chunks(
+                                *visual_proxy,
+                                far_splat_handles);
+                        cache_->add_terrain_far_splat_chunks(
+                            renderable.companion_asset,
+                            terrain_far_splat_chunks_storage,
+                            std::move(far_splat_handles));
+                    }
                 }
                 else {
                     const auto& cache_settings = assets_.cache_settings();
@@ -1188,6 +1298,23 @@ namespace wz::engine::rendering
                         return false;
                     }
                     mesh_data = &preview_mesh;
+                    if (!renderable.terrain_far_splat_chunks.empty()) {
+                        std::vector<wz::gpu::GPUHandle> far_splat_handles =
+                            upload_terrain_far_splat_clouds(
+                                device_,
+                                renderable.terrain_far_splat_chunks);
+                        terrain_far_splat_chunks_storage =
+                            make_terrain_far_splat_chunks(
+                                *visual_proxy,
+                                far_splat_handles);
+                        for (wz::gpu::GPUHandle handle : far_splat_handles) {
+                            if (handle.valid()) {
+                                preview_gpu_resources_.emplace_back(
+                                    preview_release_queue_,
+                                    handle);
+                            }
+                        }
+                    }
                 }
             }
             else if (cache_) {
@@ -1265,9 +1392,11 @@ namespace wz::engine::rendering
             return false;
 
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};
+        std::span<const TerrainFarSplatChunk> terrain_far_splat_chunks{};
         std::span<const TerrainTransitionDrawRange> terrain_transition_ranges{};
         if (terrain_data) {
             terrain_chunks = terrain_chunks_storage;
+            terrain_far_splat_chunks = terrain_far_splat_chunks_storage;
             terrain_transition_ranges = terrain_transition_ranges_storage;
         }
 
@@ -1280,7 +1409,7 @@ namespace wz::engine::rendering
                 renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style,
                 terrain_chunks,
-                {},
+                terrain_far_splat_chunks,
                 terrain_transition_ranges);
 
         descriptor.mesh = scene_mesh;
@@ -1299,7 +1428,7 @@ namespace wz::engine::rendering
                 renderable.terrain_target_pixels_per_triangle,
                 renderable.mesh_style,
                 terrain_chunks,
-                {},
+                terrain_far_splat_chunks,
                 terrain_transition_ranges);
             descriptor.terrain_visual_proxy_asset =
                 renderable.companion_asset;

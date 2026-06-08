@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <any>
 #include <chrono>
+#include <cmath>
 #include <span>
 #include <string>
 
@@ -47,6 +48,157 @@ namespace wz::engine::assets::internal
             }
         }
 
+        float logit(float value) noexcept
+        {
+            const float clamped = std::clamp(value, 0.001f, 0.999f);
+            return std::log(clamped / (1.0f - clamped));
+        }
+
+        float sh_dc_from_linear(float value) noexcept
+        {
+            constexpr float kSH_C0 = 0.28209479177387814f;
+            return (std::clamp(value, 0.0f, 1.0f) - 0.5f) / kSH_C0;
+        }
+
+        void expand_splat_bounds(
+            GaussianSplatBounds& bounds,
+            const float position[3]) noexcept
+        {
+            if (!bounds.valid) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    bounds.min[axis] = position[axis];
+                    bounds.max[axis] = position[axis];
+                }
+                bounds.valid = true;
+                return;
+            }
+
+            for (int axis = 0; axis < 3; ++axis) {
+                bounds.min[axis] = std::min(bounds.min[axis], position[axis]);
+                bounds.max[axis] = std::max(bounds.max[axis], position[axis]);
+            }
+        }
+
+        GaussianSplat splat_from_terrain_surfel(
+            const TerrainVisualProxySurfel& surfel)
+        {
+            GaussianSplat splat{};
+            for (int axis = 0; axis < 3; ++axis) {
+                splat.position[axis] = surfel.position[axis];
+                splat.color_dc[axis] = sh_dc_from_linear(surfel.albedo[axis]);
+            }
+
+            const float radius = std::max(0.001f, surfel.radius);
+            splat.scale[0] = std::log(radius);
+            splat.scale[1] = std::log(std::max(0.001f, radius * 0.1f));
+            splat.scale[2] = std::log(radius);
+            splat.opacity = logit(0.85f);
+
+            // Identity orientation is sufficient for the initial GPU path:
+            // the selected far surfels render as stable coverage discs, while
+            // normal-oriented splat frames can land with the dedicated shader
+            // work that consumes surfel normals/material data directly.
+            splat.rotation[0] = 1.0f;
+            splat.rotation[1] = 0.0f;
+            splat.rotation[2] = 0.0f;
+            splat.rotation[3] = 0.0f;
+            return splat;
+        }
+
+        void append_surfel_density_cloud(
+            GaussianSplatCloudData& cloud,
+            const TerrainVisualProxyChunkRecord& chunk,
+            const TerrainVisualProxySurfelDensityLevel& level)
+        {
+            if (!level.valid()
+                || level.first_surfel + level.surfel_count
+                    > chunk.surfels.size())
+            {
+                return;
+            }
+
+            cloud.splats.reserve(cloud.splats.size() + level.surfel_count);
+            for (uint32_t i = 0u; i < level.surfel_count; ++i) {
+                const TerrainVisualProxySurfel& surfel =
+                    chunk.surfels[level.first_surfel + i];
+                if (!surfel.valid()) {
+                    continue;
+                }
+                GaussianSplat splat = splat_from_terrain_surfel(surfel);
+                expand_splat_bounds(cloud.bounds, splat.position);
+                cloud.splats.push_back(std::move(splat));
+            }
+
+            cloud.opacity_min = 0.85f;
+            cloud.opacity_max = 0.85f;
+            cloud.scale_min = cloud.scale_min <= 0.0f
+                ? level.representative_radius
+                : std::min(cloud.scale_min, level.representative_radius);
+            cloud.scale_max =
+                std::max(cloud.scale_max, level.representative_radius);
+        }
+
+        std::vector<TerrainLodId> terrain_surfel_density_ids(
+            const TerrainVisualProxyData& proxy)
+        {
+            std::vector<TerrainLodId> density_ids;
+            for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
+                for (const TerrainVisualProxySurfelDensityLevel& level :
+                     chunk.surfel_density_levels)
+                {
+                    if (!level.valid()) {
+                        continue;
+                    }
+                    const auto existing = std::find_if(
+                        density_ids.begin(),
+                        density_ids.end(),
+                        [&](TerrainLodId id)
+                        {
+                            return id == level.density_id;
+                        });
+                    if (existing == density_ids.end()) {
+                        density_ids.push_back(level.density_id);
+                    }
+                }
+            }
+            std::sort(
+                density_ids.begin(),
+                density_ids.end(),
+                [](TerrainLodId a, TerrainLodId b)
+                {
+                    return a.value < b.value;
+                });
+            return density_ids;
+        }
+
+        std::vector<GaussianSplatCloudData> make_terrain_far_splat_clouds(
+            const TerrainVisualProxyData& proxy)
+        {
+            std::vector<GaussianSplatCloudData> clouds;
+            const std::vector<TerrainLodId> density_ids =
+                terrain_surfel_density_ids(proxy);
+            clouds.reserve(density_ids.size());
+            for (TerrainLodId density_id : density_ids) {
+                GaussianSplatCloudData cloud{};
+                for (const TerrainVisualProxyChunkRecord& chunk :
+                     proxy.chunks)
+                {
+                    for (const TerrainVisualProxySurfelDensityLevel& level :
+                         chunk.surfel_density_levels)
+                    {
+                        if (level.density_id == density_id) {
+                            append_surfel_density_cloud(cloud, chunk, level);
+                            break;
+                        }
+                    }
+                }
+                if (cloud.valid()) {
+                    clouds.push_back(std::move(cloud));
+                }
+            }
+            return clouds;
+        }
+
     }
 
     void register_renderable_compilers(
@@ -57,6 +209,7 @@ namespace wz::engine::assets::internal
         auto* mesh_table = &ctx.mesh_table;
         auto* mesh_render_style_table = &ctx.mesh_render_style_table;
         auto* terrain_table = &ctx.terrain_table;
+        auto* terrain_visual_proxy_table = &ctx.terrain_visual_proxy_table;
         auto* scalar_fields_table = &ctx.scalar_fields_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
         auto* renderable_table = &ctx.renderable_table;
@@ -365,7 +518,8 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainSurfaceRenderableSchema,
             .output_type = kAssetTypeRenderable,
-            .compile = [logger, terrain_table, renderable_table](
+            .compile = [logger, terrain_table, terrain_visual_proxy_table,
+                        renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -418,6 +572,13 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                const TerrainVisualProxyData* visual_proxy =
+                    terrain_visual_proxy_table->get(dep_handles[1]);
+                if (!visual_proxy || !visual_proxy->valid()) {
+                    logger->error("terrain surface renderable visual proxy is invalid");
+                    return compile_failed_node(input);
+                }
+
                 RenderableAssetData data{};
                 data.kind = RenderableKind::Mesh;
                 data.source_asset = terrain->mesh;
@@ -428,6 +589,8 @@ namespace wz::engine::assets::internal
                 data.terrain_lighting = desc->lighting;
                 data.terrain_target_pixels_per_triangle =
                     (std::max)(0.0f, desc->target_pixels_per_triangle);
+                data.terrain_far_splat_chunks =
+                    make_terrain_far_splat_clouds(*visual_proxy);
 
                 copy_bounds(
                     data.bounds_min,

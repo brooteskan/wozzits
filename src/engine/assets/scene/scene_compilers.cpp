@@ -2135,6 +2135,27 @@ namespace wz::engine::assets::internal
                     style.target_pixels_per_triangle =
                         static_cast<float>(*target_pixels_per_triangle);
                 }
+                auto enable_surfel_lods = read_bool(
+                    *terrain_render_style,
+                    "enable_surfel_lods");
+                if (enable_surfel_lods) {
+                    style.enable_surfel_lods = *enable_surfel_lods;
+                }
+                auto surfel_target_coverage_px = read_number(
+                    *terrain_render_style,
+                    "surfel_target_coverage_px");
+                if (surfel_target_coverage_px) {
+                    if (*surfel_target_coverage_px < 1.0
+                        || !std::isfinite(*surfel_target_coverage_px))
+                    {
+                        logger.error("terrain_render_style on node '"
+                            + node.id
+                            + "' has invalid surfel_target_coverage_px");
+                        return std::nullopt;
+                    }
+                    style.surfel_target_coverage_px =
+                        static_cast<float>(*surfel_target_coverage_px);
+                }
                 auto visual_chunk_count = read_number(
                     *terrain_render_style,
                     "visual_chunk_count");

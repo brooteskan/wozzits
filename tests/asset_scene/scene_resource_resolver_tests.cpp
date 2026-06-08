@@ -641,17 +641,22 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     chunks[1].aggregate.triangle_count = 1u;
 
     wz::engine::rendering::TerrainFarSplatChunk far_chunks[2]{};
+    far_chunks[0].chunk_id = TerrainChunkId{ 0u };
+    far_chunks[0].density_id = TerrainLodId{ 0u };
     far_chunks[0].gpu_resource = wz::gpu::GPUHandle{
         .id = 8u,
         .epoch = 1u,
         .type = wz::gpu::GPUResourceType::GaussianSplatCloud,
     };
     far_chunks[0].splat_count = 16u;
+    far_chunks[1].chunk_id = TerrainChunkId{ 1u };
+    far_chunks[1].density_id = TerrainLodId{ 2u };
     far_chunks[1].gpu_resource = wz::gpu::GPUHandle{
         .id = 9u,
         .epoch = 1u,
         .type = wz::gpu::GPUResourceType::GaussianSplatCloud,
     };
+    far_chunks[1].first_splat = 16u;
     far_chunks[1].splat_count = 24u;
 
     const wz::gpu::GPUHandle gpu_mesh{
@@ -684,7 +689,21 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
     EXPECT_EQ(resolved->terrain_chunks[1].first_index, 6u);
     EXPECT_EQ(resolved->terrain_chunks[1].index_count, 3u);
     ASSERT_EQ(resolved->terrain_far_splat_chunks.size(), 2u);
+    EXPECT_EQ(
+        resolved->terrain_far_splat_chunks[0].chunk_id,
+        TerrainChunkId{ 0u });
+    EXPECT_EQ(
+        resolved->terrain_far_splat_chunks[0].density_id,
+        TerrainLodId{ 0u });
+    EXPECT_EQ(resolved->terrain_far_splat_chunks[0].first_splat, 0u);
     EXPECT_EQ(resolved->terrain_far_splat_chunks[0].splat_count, 16u);
+    EXPECT_EQ(
+        resolved->terrain_far_splat_chunks[1].chunk_id,
+        TerrainChunkId{ 1u });
+    EXPECT_EQ(
+        resolved->terrain_far_splat_chunks[1].density_id,
+        TerrainLodId{ 2u });
+    EXPECT_EQ(resolved->terrain_far_splat_chunks[1].first_splat, 16u);
     EXPECT_EQ(resolved->terrain_far_splat_chunks[1].splat_count, 24u);
 
     resolver.record_terrain_render_stats(
@@ -834,6 +853,17 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     transition_ranges[0].first_index = 36u;
     transition_ranges[0].index_count = 6u;
 
+    wz::engine::rendering::TerrainFarSplatChunk far_chunks[1]{};
+    far_chunks[0].chunk_id = TerrainChunkId{ 0u };
+    far_chunks[0].density_id = TerrainLodId{ 2u };
+    far_chunks[0].gpu_resource = wz::gpu::GPUHandle{
+        .id = 18u,
+        .epoch = 1u,
+        .type = wz::gpu::GPUResourceType::GaussianSplatCloud,
+    };
+    far_chunks[0].first_splat = 12u;
+    far_chunks[0].splat_count = 5u;
+
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
@@ -843,7 +873,9 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
         8.0f,
         {},
         std::span<const TerrainVisualChunk>(chunks, 1u),
-        {},
+        std::span<const wz::engine::rendering::TerrainFarSplatChunk>(
+            far_chunks,
+            1u),
         std::span<const wz::engine::rendering::TerrainTransitionDrawRange>(
             transition_ranges,
             1u)));
@@ -896,6 +928,32 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     EXPECT_EQ(draw->index_count, 6u);
     EXPECT_TRUE(draw->transition_selected);
     EXPECT_FALSE(draw->lod_replacement_available);
+
+    wz::render::TerrainDrawRef surfel_ref{};
+    surfel_ref.chunk_id = TerrainChunkId{ 0u };
+    surfel_ref.representation_kind =
+        TerrainVisualRepresentationKind::SurfelCloud;
+    surfel_ref.lod_id = TerrainLodId{ 2u };
+
+    draw = resolver.resolve_terrain_draw(proxy_id, surfel_ref);
+    ASSERT_TRUE(draw.has_value());
+    EXPECT_EQ(draw->gpu_resource, far_chunks[0].gpu_resource);
+    EXPECT_EQ(draw->source_triangle_count, 2u);
+    EXPECT_EQ(draw->first_splat, 12u);
+    EXPECT_EQ(draw->far_splat_count, 5u);
+    EXPECT_TRUE(draw->far_splat_selected);
+    EXPECT_FALSE(draw->transition_selected);
+
+    auto fallback = resolver.resolve_terrain_draw_mesh_fallback(
+        proxy_id,
+        surfel_ref);
+    ASSERT_TRUE(fallback.has_value());
+    EXPECT_EQ(fallback->gpu_resource, gpu_mesh);
+    EXPECT_EQ(fallback->first_index, 30u);
+    EXPECT_EQ(fallback->index_count, 3u);
+    EXPECT_TRUE(fallback->lod_replacement_available);
+    EXPECT_TRUE(fallback->lod_replacement_selected);
+    EXPECT_FALSE(fallback->far_splat_selected);
 
     TerrainVisualChunk updated[1]{};
     updated[0].first_index = 24u;

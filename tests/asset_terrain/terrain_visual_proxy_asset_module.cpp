@@ -118,6 +118,15 @@ namespace
         return 0.0f;
     }
 
+    float normal_delta(
+        const wz::engine::assets::TerrainVisualProxySurfel& a,
+        const wz::engine::assets::TerrainVisualProxySurfel& b)
+    {
+        return std::abs(a.normal[0] - b.normal[0])
+            + std::abs(a.normal[1] - b.normal[1])
+            + std::abs(a.normal[2] - b.normal[2]);
+    }
+
     bool contains_parameter(const std::vector<float>& values, float parameter)
     {
         return std::any_of(
@@ -290,11 +299,14 @@ TEST(TerrainVisualProxyAssetModule, CompilesMultiLodProxyFromMeshTerrain)
         TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_GT(proxy.chunk_count(), 0u);
     EXPECT_GT(proxy.lod_record_count(), proxy.chunk_count());
+    EXPECT_GT(proxy.surfel_count(), 0u);
     EXPECT_EQ(proxy.transition_strip_count(), 0u);
 
     uint32_t combined_boundary_flags = TerrainVisualChunkBoundary_None;
     for (const TerrainVisualProxyChunkRecord& chunk : proxy.chunks) {
         ASSERT_GE(chunk.lods.size(), 1u);
+        ASSERT_GE(chunk.surfel_density_levels.size(), 3u);
+        ASSERT_FALSE(chunk.surfels.empty());
         const TerrainVisualProxyLodRecord& lod = chunk.lods.front();
         EXPECT_EQ(lod.lod_id, TerrainLodId{ 0u });
         EXPECT_EQ(lod.representation_kind, TerrainVisualRepresentationKind::MeshChunks);
@@ -367,8 +379,15 @@ TEST(TerrainVisualProxyAssetModule, UsesProjectDiskCache)
     EXPECT_EQ(second.chunk_count(), first.chunk_count());
     EXPECT_EQ(second.lod_record_count(), first.lod_record_count());
     EXPECT_EQ(second.transition_strip_count(), first.transition_strip_count());
+    EXPECT_EQ(second.surfel_count(), first.surfel_count());
     ASSERT_FALSE(second.chunks.empty());
     ASSERT_EQ(second.chunks.front().lods.size(), first.chunks.front().lods.size());
+    ASSERT_EQ(
+        second.chunks.front().surfel_density_levels.size(),
+        first.chunks.front().surfel_density_levels.size());
+    ASSERT_EQ(
+        second.chunks.front().surfels.size(),
+        first.chunks.front().surfels.size());
     EXPECT_EQ(
         second.chunks.front().lods.front().triangle_count,
         first.chunks.front().lods.front().triangle_count);
@@ -393,6 +412,22 @@ TEST(TerrainVisualProxyAssetModule, UsesProjectDiskCache)
             .lost_detail_aggregate.height_detail,
         first.chunks.front().lods.back()
             .lost_detail_aggregate.height_detail);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().surfel_density_levels.front().spacing,
+        first.chunks.front().surfel_density_levels.front().spacing);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front()
+            .surfel_density_levels.front()
+            .representative_radius,
+        first.chunks.front()
+            .surfel_density_levels.front()
+            .representative_radius);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().surfels.front().radius,
+        first.chunks.front().surfels.front().radius);
+    EXPECT_FLOAT_EQ(
+        second.chunks.front().surfels.front().roughness,
+        first.chunks.front().surfels.front().roughness);
 }
 
 TEST(TerrainVisualProxyAssetModule, ComputesPrefilterAggregatesPerLod)
@@ -510,6 +545,122 @@ TEST(TerrainVisualProxyAssetModule, FlatPlaneHasNoLostPrefilterDetail)
         EXPECT_NEAR(lod.lost_detail_aggregate.normal_variance, 0.0f, 1e-5f);
         EXPECT_NEAR(lod.lost_detail_aggregate.height_detail, 0.0f, 1e-5f);
     }
+}
+
+TEST(TerrainVisualProxyAssetModule, FlatPlaneCompilesFarFieldSurfels)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("flat_plane");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2920u),
+            test_key(2940u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 1u);
+    const TerrainVisualProxyChunkRecord& chunk = proxy.chunks.front();
+    ASSERT_GE(chunk.surfel_density_levels.size(), 3u);
+    ASSERT_GE(chunk.surfels.size(), 6u);
+
+    uint32_t previous_count = UINT32_MAX;
+    float previous_spacing = 0.0f;
+    for (const TerrainVisualProxySurfelDensityLevel& level :
+         chunk.surfel_density_levels)
+    {
+        EXPECT_TRUE(level.valid());
+        EXPECT_LE(level.surfel_count, previous_count);
+        EXPECT_GE(level.spacing, previous_spacing);
+        EXPECT_LE(level.first_surfel + level.surfel_count, chunk.surfels.size());
+        EXPECT_GT(level.representative_radius, 0.0f);
+        const uint32_t grid_cells =
+            std::max(
+                1u,
+                static_cast<uint32_t>(
+                    std::sqrt(static_cast<float>(level.surfel_count))));
+        const float cell_x =
+            (chunk.bounds.max[0] - chunk.bounds.min[0])
+            / static_cast<float>(grid_cells);
+        const float cell_z =
+            (chunk.bounds.max[2] - chunk.bounds.min[2])
+            / static_cast<float>(grid_cells);
+        const float cell_half_diagonal =
+            std::sqrt(cell_x * cell_x + cell_z * cell_z) * 0.5f;
+        EXPECT_GE(level.representative_radius, cell_half_diagonal - 1e-5f);
+        for (uint32_t i = 0u; i < level.surfel_count; ++i) {
+            const TerrainVisualProxySurfel& surfel =
+                chunk.surfels[level.first_surfel + i];
+            EXPECT_FLOAT_EQ(surfel.radius, level.representative_radius);
+        }
+        previous_count = level.surfel_count;
+        previous_spacing = level.spacing;
+    }
+
+    for (const TerrainVisualProxySurfel& surfel : chunk.surfels) {
+        EXPECT_TRUE(surfel.valid());
+        EXPECT_NEAR(surfel.normal[0], 0.0f, 1e-5f);
+        EXPECT_NEAR(surfel.normal[1], 1.0f, 1e-5f);
+        EXPECT_NEAR(surfel.normal[2], 0.0f, 1e-5f);
+        EXPECT_NEAR(surfel.roughness, 0.0f, 1e-5f);
+        EXPECT_EQ(surfel.material_id, 0u);
+    }
+}
+
+TEST(TerrainVisualProxyAssetModule, NoiseTerrainSurfelsCarryPrefilteredRoughness)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData flat_terrain = load_fixture_terrain("flat_plane");
+    const TerrainAssetData noise_terrain = load_fixture_terrain("noise_terrain");
+    ASSERT_TRUE(flat_terrain.valid());
+    ASSERT_TRUE(noise_terrain.valid());
+    const TerrainVisualProxyData flat_proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(2960u),
+            test_key(2980u),
+            flat_terrain);
+    const TerrainVisualProxyData noise_proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(3020u),
+            test_key(3040u),
+            noise_terrain);
+
+    ASSERT_TRUE(flat_proxy.valid());
+    ASSERT_TRUE(noise_proxy.valid());
+    ASSERT_FALSE(flat_proxy.chunks.front().surfels.empty());
+    ASSERT_FALSE(noise_proxy.chunks.front().surfels.empty());
+    EXPECT_GT(
+        noise_proxy.chunks.front().surfels.front().roughness,
+        flat_proxy.chunks.front().surfels.front().roughness);
+}
+
+TEST(TerrainVisualProxyAssetModule, SmoothHemisphereSurfelsHaveVaryingNormals)
+{
+    using namespace wz::engine::assets;
+    using namespace wz::engine::assets::test;
+
+    const TerrainAssetData terrain = load_fixture_terrain("smooth_hemisphere");
+    ASSERT_TRUE(terrain.valid());
+    const TerrainVisualProxyData proxy =
+        internal::compile_terrain_visual_proxy_for_tests(
+            test_key(3060u),
+            test_key(3080u),
+            terrain);
+
+    ASSERT_TRUE(proxy.valid());
+    ASSERT_EQ(proxy.chunks.size(), 1u);
+    const auto& surfels = proxy.chunks.front().surfels;
+    ASSERT_GE(surfels.size(), 4u);
+
+    float max_delta = 0.0f;
+    for (size_t i = 1u; i < surfels.size(); ++i) {
+        max_delta = std::max(max_delta, normal_delta(surfels.front(), surfels[i]));
+    }
+    EXPECT_GT(max_delta, 0.05f);
 }
 
 TEST(TerrainVisualProxyAssetModule, ResamplesAndBlendsPrefilterAggregates)

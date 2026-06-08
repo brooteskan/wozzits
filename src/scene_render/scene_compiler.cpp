@@ -335,6 +335,8 @@ namespace wz::scene {
                             terrain_proxy_bounds_to_aabb(chunk.bounds),
                             instance.world),
                         .boundary = chunk.boundary,
+                        .surfel_density_levels =
+                            chunk.surfel_density_levels,
                         .lods = chunk.lods,
                     });
                 }

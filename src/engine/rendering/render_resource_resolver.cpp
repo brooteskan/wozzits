@@ -196,10 +196,7 @@ namespace wz::engine::rendering
         wz::engine::assets::TerrainProxyId terrain_proxy_id,
         const wz::render::TerrainDrawRef& ref) const noexcept
     {
-        if (!terrain_proxy_id.valid()
-            || ref.representation_kind
-                != wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks)
-        {
+        if (!terrain_proxy_id.valid()) {
             return std::nullopt;
         }
 
@@ -209,6 +206,12 @@ namespace wz::engine::rendering
 
             const Entry& e = registered.second;
             if (ref.kind == wz::render::TerrainDrawRefKind::LodTransition) {
+                if (ref.representation_kind
+                    != wz::engine::assets::TerrainVisualRepresentationKind
+                        ::MeshChunks)
+                {
+                    return std::nullopt;
+                }
                 for (const TerrainTransitionDrawRange& range :
                      e.terrain_transition_ranges)
                 {
@@ -220,20 +223,58 @@ namespace wz::engine::rendering
                         && range.index_count > 0u)
                     {
                         return ResolvedTerrainDrawResource{
-                            e.gpu_resource,
-                            e.program,
-                            e.render_program,
-                            e.terrain_lighting,
-                            e.terrain_target_pixels_per_triangle,
-                            range.first_index,
-                            range.index_count,
-                            range.triangle_count(),
-                            false,
-                            false,
-                            true,
+                            .gpu_resource = e.gpu_resource,
+                            .program = e.program,
+                            .render_program = e.render_program,
+                            .terrain_lighting = e.terrain_lighting,
+                            .terrain_target_pixels_per_triangle =
+                                e.terrain_target_pixels_per_triangle,
+                            .first_index = range.first_index,
+                            .index_count = range.index_count,
+                            .source_triangle_count = range.triangle_count(),
+                            .transition_selected = true,
                         };
                     }
                 }
+                return std::nullopt;
+            }
+
+            if (ref.representation_kind
+                == wz::engine::assets::TerrainVisualRepresentationKind
+                    ::SurfelCloud)
+            {
+                for (const TerrainFarSplatChunk& chunk :
+                     e.terrain_far_splat_chunks)
+                {
+                    if (chunk.chunk_id == ref.chunk_id
+                        && chunk.density_id == ref.lod_id
+                        && chunk.splat_count > 0u)
+                    {
+                        return ResolvedTerrainDrawResource{
+                            .gpu_resource = chunk.gpu_resource,
+                            .program = e.program,
+                            .render_program = e.render_program,
+                            .terrain_lighting = e.terrain_lighting,
+                            .terrain_target_pixels_per_triangle =
+                                e.terrain_target_pixels_per_triangle,
+                            .source_triangle_count =
+                                ref.chunk_id.value < e.terrain_chunks.size()
+                                ? e.terrain_chunks[ref.chunk_id.value]
+                                    .triangle_count()
+                                : 0u,
+                            .first_splat = chunk.first_splat,
+                            .far_splat_count = chunk.splat_count,
+                            .far_splat_selected = true,
+                        };
+                    }
+                }
+                return std::nullopt;
+            }
+
+            if (ref.representation_kind
+                != wz::engine::assets::TerrainVisualRepresentationKind
+                    ::MeshChunks)
+            {
                 return std::nullopt;
             }
 
@@ -251,21 +292,72 @@ namespace wz::engine::rendering
                 ref.lod_id.value > 0u && replacement_available;
 
             return ResolvedTerrainDrawResource{
-                e.gpu_resource,
-                e.program,
-                e.render_program,
-                e.terrain_lighting,
-                e.terrain_target_pixels_per_triangle,
-                replacement_selected
+                .gpu_resource = e.gpu_resource,
+                .program = e.program,
+                .render_program = e.render_program,
+                .terrain_lighting = e.terrain_lighting,
+                .terrain_target_pixels_per_triangle =
+                    e.terrain_target_pixels_per_triangle,
+                .first_index = replacement_selected
                     ? chunk.replacement_first_index
                     : chunk.first_index,
-                replacement_selected
+                .index_count = replacement_selected
                     ? chunk.replacement_index_count
                     : chunk.index_count,
-                chunk.triangle_count(),
-                replacement_available,
-                replacement_selected,
-                false,
+                .source_triangle_count = chunk.triangle_count(),
+                .lod_replacement_available = replacement_available,
+                .lod_replacement_selected = replacement_selected,
+            };
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<ResolvedTerrainDrawResource>
+    RenderResourceResolver::resolve_terrain_draw_mesh_fallback(
+        wz::engine::assets::TerrainProxyId terrain_proxy_id,
+        const wz::render::TerrainDrawRef& ref) const noexcept
+    {
+        if (!terrain_proxy_id.valid()) {
+            return std::nullopt;
+        }
+
+        if (ref.kind != wz::render::TerrainDrawRefKind::ChunkLod) {
+            return std::nullopt;
+        }
+
+        for (const auto& registered : terrain_proxy_entries_) {
+            if (registered.first != terrain_proxy_id)
+                continue;
+
+            const Entry& e = registered.second;
+            if (ref.chunk_id.value >= e.terrain_chunks.size())
+                return std::nullopt;
+
+            const auto& chunk = e.terrain_chunks[ref.chunk_id.value];
+            if (chunk.index_count == 0u)
+                return std::nullopt;
+
+            const bool replacement_available =
+                chunk.replacement_index_count > 0u
+                && chunk.replacement_index_count < chunk.index_count;
+
+            return ResolvedTerrainDrawResource{
+                .gpu_resource = e.gpu_resource,
+                .program = e.program,
+                .render_program = e.render_program,
+                .terrain_lighting = e.terrain_lighting,
+                .terrain_target_pixels_per_triangle =
+                    e.terrain_target_pixels_per_triangle,
+                .first_index = replacement_available
+                    ? chunk.replacement_first_index
+                    : chunk.first_index,
+                .index_count = replacement_available
+                    ? chunk.replacement_index_count
+                    : chunk.index_count,
+                .source_triangle_count = chunk.triangle_count(),
+                .lod_replacement_available = replacement_available,
+                .lod_replacement_selected = replacement_available,
             };
         }
 
@@ -346,9 +438,11 @@ namespace wz::engine::rendering
         terrain_stats_.submitted_chunks += submitted_chunks;
         terrain_stats_.total_triangles += total_triangles;
         terrain_stats_.submitted_triangles += submitted_triangles;
-        terrain_stats_.submitted_draw_calls += submitted_draw_calls > 0
-            ? submitted_draw_calls
-            : submitted_chunks;
+        terrain_stats_.submitted_draw_calls +=
+            submitted_draw_calls
+                == kTerrainSubmittedDrawCallsUseSubmittedChunks
+            ? submitted_chunks
+            : submitted_draw_calls;
         const uint32_t lod_bucket = (std::min)(
             lod_level,
             wz::render::kTerrainDiagnosticLodHistogramSize - 1u);

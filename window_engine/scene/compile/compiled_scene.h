@@ -149,6 +149,8 @@ namespace wz::scene {
         bool enforce_neighbor_lod_delta = false;
         uint32_t max_neighbor_lod_delta = 1;
         bool enable_lod_transitions = false;
+        bool enable_surfel_lods = false;
+        float surfel_target_coverage_px = 1.0f;
     };
 
     struct TerrainLodChoice {

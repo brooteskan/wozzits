@@ -381,6 +381,8 @@ namespace wz::engine::assets
         float normal_lighting_strength = 1.0f;
         float terrain_bounce_strength = 0.0f;
         float target_pixels_per_triangle = 2.0f;
+        bool enable_surfel_lods = false;
+        float surfel_target_coverage_px = 1.0f;
         uint32_t visual_chunk_count = 4096;
     };
 

@@ -15,15 +15,22 @@
 #include <render/ir/render_ir.h>
 #include <render/diagnostics/terrain_diagnostics.h>
 
+#include <limits>
 #include <optional>
 #include <span>
 #include <vector>
 
 namespace wz::engine::rendering
 {
+    inline constexpr uint64_t kTerrainSubmittedDrawCallsUseSubmittedChunks =
+        (std::numeric_limits<uint64_t>::max)();
+
     struct TerrainFarSplatChunk
     {
+        wz::engine::assets::TerrainChunkId chunk_id{};
+        wz::engine::assets::TerrainLodId density_id{};
         wz::gpu::GPUHandle gpu_resource{};
+        uint32_t first_splat = 0;
         uint32_t splat_count = 0;
     };
 
@@ -70,9 +77,12 @@ namespace wz::engine::rendering
         uint32_t                                first_index = 0;
         uint32_t                                index_count = 0;
         uint32_t                                source_triangle_count = 0;
+        uint32_t                                first_splat = 0;
+        uint32_t                                far_splat_count = 0;
         bool                                    lod_replacement_available = false;
         bool                                    lod_replacement_selected = false;
         bool                                    transition_selected = false;
+        bool                                    far_splat_selected = false;
     };
 
     struct TerrainRenderStats
@@ -197,6 +207,11 @@ namespace wz::engine::rendering
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
             const wz::render::TerrainDrawRef& ref) const noexcept;
 
+        std::optional<ResolvedTerrainDrawResource>
+        resolve_terrain_draw_mesh_fallback(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id,
+            const wz::render::TerrainDrawRef& ref) const noexcept;
+
         std::optional<wz::render::TerrainFrameDiagnostics>
         resolve_terrain_proxy_diagnostics(
             wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept;
@@ -232,7 +247,8 @@ namespace wz::engine::rendering
             uint32_t lod_level = 0,
             wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
                 wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            uint64_t submitted_draw_calls = 0) const noexcept;
+            uint64_t submitted_draw_calls =
+                kTerrainSubmittedDrawCallsUseSubmittedChunks) const noexcept;
         void record_terrain_source_totals(
             uint64_t proxy_chunks,
             uint64_t source_triangles)

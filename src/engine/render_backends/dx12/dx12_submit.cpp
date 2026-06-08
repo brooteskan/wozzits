@@ -199,16 +199,22 @@ namespace wz::render::backend::dx12
             const RenderFrameView& frame,
             const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
             const wz::engine::rendering::RenderResourceResolver& resolver,
-            const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache)
+            const wz::engine::rendering::RenderProgramPipelineCache* render_program_cache,
+            bool mesh_fallback = false)
         {
             if (ref.representation_kind
                 != wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks)
             {
-                return false;
+                if (!mesh_fallback)
+                    return false;
             }
 
             const auto resolved =
-                resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
+                mesh_fallback
+                ? resolver.resolve_terrain_draw_mesh_fallback(
+                    instance.terrain_proxy_id,
+                    ref)
+                : resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
             if (!resolved || !is_terrain_surface_program(resolved->program))
                 return false;
 
@@ -303,8 +309,212 @@ namespace wz::render::backend::dx12
                 0u,
                 0u,
                 0u,
+                mesh_fallback ? 0u : ref.lod_id.value,
+                mesh_fallback
+                    ? wz::engine::assets::TerrainVisualRepresentationKind
+                        ::MeshChunks
+                    : ref.representation_kind,
+                1u);
+            return true;
+        }
+
+        bool record_terrain_ref_surfel_stats(
+            const TerrainDrawRef& ref,
+            const wz::engine::rendering::ResolvedTerrainDrawResource& resolved,
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            uint64_t submitted_draw_calls)
+        {
+            if (ref.representation_kind
+                != wz::engine::assets::TerrainVisualRepresentationKind
+                    ::SurfelCloud)
+            {
+                return false;
+            }
+
+            if (!resolved.far_splat_selected)
+                return false;
+
+            resolver.record_terrain_render_stats(
+                0u,
+                1u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                1u,
+                resolved.far_splat_count,
+                resolved.terrain_target_pixels_per_triangle,
+                0.0f,
+                0.0f,
+                0.0,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
                 ref.lod_id.value,
                 ref.representation_kind,
+                submitted_draw_calls);
+            return true;
+        }
+
+        struct ResolvedTerrainSurfelDraw
+        {
+            TerrainDrawRef ref{};
+            wz::engine::rendering::ResolvedTerrainDrawResource resolved{};
+            const wz::gpu::dx12::internal::DX12GaussianSplatCloudResource*
+                cloud = nullptr;
+            uint32_t first_splat = 0u;
+            uint32_t splat_count = 0u;
+        };
+
+        bool resolve_terrain_surfel_draw(
+            wz::gpu::Device& device,
+            const TerrainDrawRef& ref,
+            const TerrainVisualInstance& instance,
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            ResolvedTerrainSurfelDraw& out)
+        {
+            if (ref.representation_kind
+                != wz::engine::assets::TerrainVisualRepresentationKind
+                    ::SurfelCloud)
+            {
+                return false;
+            }
+
+            const auto resolved =
+                resolver.resolve_terrain_draw(instance.terrain_proxy_id, ref);
+            if (!resolved || !resolved->far_splat_selected) {
+                return false;
+            }
+
+            const auto* cloud = wz::gpu::dx12::internal::get_gaussian_splat_cloud(
+                device,
+                resolved->gpu_resource);
+            if (!cloud || !cloud->valid_for_vertex_instanced()) {
+                return false;
+            }
+
+            const uint32_t available_splats =
+                resolved->first_splat < cloud->splat_count
+                ? cloud->splat_count - resolved->first_splat
+                : 0u;
+            const uint32_t draw_splats =
+                (std::min)(resolved->far_splat_count, available_splats);
+            if (draw_splats == 0u) {
+                return false;
+            }
+
+            out.ref = ref;
+            out.resolved = *resolved;
+            out.cloud = cloud;
+            out.first_splat = resolved->first_splat;
+            out.splat_count = draw_splats;
+            return true;
+        }
+
+        bool terrain_surfel_draws_can_merge(
+            const ResolvedTerrainSurfelDraw& a,
+            const ResolvedTerrainSurfelDraw& b) noexcept
+        {
+            return a.ref.terrain_instance_index == b.ref.terrain_instance_index
+                && a.ref.lod_id == b.ref.lod_id
+                && a.ref.representation_kind == b.ref.representation_kind
+                && a.resolved.gpu_resource == b.resolved.gpu_resource
+                && a.first_splat + a.splat_count == b.first_splat
+                && a.resolved.terrain_target_pixels_per_triangle
+                    == b.resolved.terrain_target_pixels_per_triangle;
+        }
+
+        bool draw_terrain_surfel_batch(
+            wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
+            const TerrainVisualInstance& instance,
+            const RenderFrameView& frame,
+            const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
+            const wz::engine::rendering::RenderResourceResolver& resolver,
+            const ResolvedTerrainSurfelDraw& first,
+            uint32_t batch_splat_count,
+            uint32_t batch_chunk_count)
+        {
+            if (!first.cloud || batch_splat_count == 0u
+                || batch_chunk_count == 0u)
+            {
+                return false;
+            }
+
+            const wz::gpu::GPUHandle pipeline_handle = pipeline_cache.get(
+                BuiltinRenderProgram::GaussianSplatDebug);
+            const auto* pl =
+                wz::gpu::dx12::internal::get_graphics_pipeline(
+                    device,
+                    pipeline_handle);
+            if (!pl || !pl->valid()) {
+                return false;
+            }
+
+            const float vp_w = frame.view.terrain_lod.viewport_width;
+            const float vp_h = frame.view.terrain_lod.viewport_height;
+
+            float constants[36] = {};
+            for (int i = 0; i < 16; ++i)
+                constants[i] = instance.world.m[i];
+            for (int i = 0; i < 16; ++i)
+                constants[16 + i] = frame.view.view_projection.m[i];
+            constants[32] = vp_w;
+            constants[33] = vp_h;
+            constants[34] = 1.0f;
+            constants[35] = 0.0f;
+
+            cmdList->SetGraphicsRootSignature(pl->root_sig);
+            cmdList->SetPipelineState(pl->pso);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+            cmdList->SetGraphicsRoot32BitConstants(0, 36, constants, 0);
+            cmdList->IASetVertexBuffers(0, 1, &first.cloud->vertex_view);
+            cmdList->DrawInstanced(
+                4,
+                batch_splat_count,
+                0,
+                first.first_splat);
+
+            resolver.record_terrain_render_stats(
+                0u,
+                batch_chunk_count,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                batch_chunk_count,
+                batch_splat_count,
+                first.resolved.terrain_target_pixels_per_triangle,
+                0.0f,
+                0.0f,
+                0.0,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                0u,
+                first.ref.lod_id.value,
+                first.ref.representation_kind,
                 1u);
             return true;
         }
@@ -334,7 +544,11 @@ namespace wz::render::backend::dx12
                         diagnostics->source_triangles);
             }
 
-            for (const TerrainDrawRef& ref : frame.terrain) {
+            for (size_t terrain_ref_index = 0u;
+                 terrain_ref_index < frame.terrain.size();
+                 ++terrain_ref_index)
+            {
+                const TerrainDrawRef& ref = frame.terrain[terrain_ref_index];
                 if (ref.terrain_instance_index
                     >= frame.terrain_instances.size())
                 {
@@ -349,6 +563,106 @@ namespace wz::render::backend::dx12
                 if (ref.kind == TerrainDrawRefKind::ChunkLod) {
                     resolver.record_terrain_visible_chunks(1u);
                 }
+                if (ref.representation_kind
+                    == wz::engine::assets::TerrainVisualRepresentationKind
+                        ::SurfelCloud)
+                {
+                    ResolvedTerrainSurfelDraw first_surfel{};
+                    if (resolve_terrain_surfel_draw(
+                        device,
+                        ref,
+                        instance,
+                        resolver,
+                        first_surfel))
+                    {
+                        uint32_t batch_splat_count =
+                            first_surfel.splat_count;
+                        uint32_t batch_chunk_count = 1u;
+
+                        while (terrain_ref_index + 1u < frame.terrain.size()) {
+                            const TerrainDrawRef& next_ref =
+                                frame.terrain[terrain_ref_index + 1u];
+                            if (next_ref.representation_kind
+                                    != wz::engine::assets
+                                        ::TerrainVisualRepresentationKind
+                                        ::SurfelCloud
+                                || next_ref.terrain_instance_index
+                                    >= frame.terrain_instances.size())
+                            {
+                                break;
+                            }
+
+                            const TerrainVisualInstance& next_instance =
+                                frame.terrain_instances[
+                                    next_ref.terrain_instance_index];
+                            if (!next_instance.visible
+                                || next_ref.terrain_instance_index
+                                    != ref.terrain_instance_index)
+                            {
+                                break;
+                            }
+
+                            ResolvedTerrainSurfelDraw next_surfel{};
+                            if (!resolve_terrain_surfel_draw(
+                                    device,
+                                    next_ref,
+                                    next_instance,
+                                    resolver,
+                                    next_surfel)
+                                || !terrain_surfel_draws_can_merge(
+                                    first_surfel,
+                                    next_surfel))
+                            {
+                                break;
+                            }
+
+                            if (next_ref.kind == TerrainDrawRefKind::ChunkLod) {
+                                resolver.record_terrain_visible_chunks(1u);
+                            }
+                            batch_splat_count += next_surfel.splat_count;
+                            ++batch_chunk_count;
+                            ++terrain_ref_index;
+                        }
+
+                        if (draw_terrain_surfel_batch(
+                                device,
+                                cmdList,
+                                instance,
+                                frame,
+                                pipeline_cache,
+                                resolver,
+                                first_surfel,
+                                batch_splat_count,
+                                batch_chunk_count))
+                        {
+                            continue;
+                        }
+                    }
+
+                    const auto resolved =
+                        resolver.resolve_terrain_draw(
+                            instance.terrain_proxy_id,
+                            ref);
+                    if (resolved && resolved->far_splat_selected) {
+                        record_terrain_ref_surfel_stats(
+                            ref,
+                            *resolved,
+                            resolver,
+                            0u);
+                    }
+                    draw_terrain_ref_mesh(
+                        device,
+                        cmdList,
+                        ref,
+                        instance,
+                        frame,
+                        pipeline_cache,
+                        resolver,
+                        render_program_cache,
+                        true);
+                    continue;
+                }
+
                 draw_terrain_ref_mesh(
                     device,
                     cmdList,

@@ -322,6 +322,11 @@ namespace wz::engine::assets
             out += ":terrain_bounce:" + std::to_string(style.terrain_bounce_strength);
             out += ":target_pixels_per_triangle:"
                 + std::to_string(style.target_pixels_per_triangle);
+            out += style.enable_surfel_lods
+                ? ":surfel_lods"
+                : ":no_surfel_lods";
+            out += ":surfel_target_px:"
+                + std::to_string(style.surfel_target_coverage_px);
             out += ":visual_chunk_count:"
                 + std::to_string(style.visual_chunk_count);
             return out;
