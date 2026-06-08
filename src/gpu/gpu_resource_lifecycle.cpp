@@ -5,6 +5,7 @@
 #include <gpu/mesh.h>
 #include <gpu/mesh_field_visualization.h>
 #include <gpu/gaussian_splat.h>
+#include <gpu/compute.h>
 #include <asset/types.h>
 #include <engine/assets/type_extensions.h>
 
@@ -24,6 +25,12 @@ namespace wz::gpu
 
         case wz::engine::assets::kAssetTypeGPUMeshFieldBuffer:
             return release_mesh_field_visualization(device, handle);
+
+        case wz::engine::assets::kAssetTypeGPUBuffer:
+            return release_compute_buffer(device, handle);
+
+        case wz::engine::assets::kAssetTypeGPUComputePipeline:
+            return release_compute_pipeline(device, handle);
 
         default:
             return false;

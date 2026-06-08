@@ -17,6 +17,7 @@
 #include <d3dcompiler.h>
 #include <d3d12.h>
 #include <engine/assets/render_program/render_program.h>
+#include <engine/assets/compute_pipeline/compute_pipeline.h>
 
 struct ID3D12Device;
 struct ID3D12GraphicsCommandList;
@@ -491,4 +492,94 @@ namespace wz::gpu::dx12::internal {
     // any SetGraphicsRootDescriptorTable call that references it.
     // Returns nullptr if the device is not initialized.
     ID3D12DescriptorHeap* get_srv_cbv_uav_heap(Device& device);
+}
+
+namespace wz::gpu {
+    struct ComputeBufferDesc;
+    struct ComputeDispatchDesc;
+}
+
+namespace wz::gpu::dx12::internal {
+
+    struct DX12ComputeBuffer
+    {
+        ID3D12Resource* resource = nullptr;
+        uint32_t element_count = 0;
+        uint32_t stride_bytes = 0;
+        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+
+        bool valid() const noexcept
+        {
+            return resource != nullptr
+                && element_count > 0u
+                && stride_bytes > 0u;
+        }
+    };
+
+    class DX12ComputeBufferTable
+    {
+    public:
+        DX12ComputeBufferTable();
+
+        GPUHandle add(DX12ComputeBuffer buffer);
+        DX12ComputeBuffer* get(GPUHandle handle);
+        const DX12ComputeBuffer* get(GPUHandle handle) const;
+        bool release(GPUHandle handle);
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            DX12ComputeBuffer buffer{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    struct DX12ComputePipeline
+    {
+        ID3D12RootSignature* root_sig = nullptr;
+        ID3D12PipelineState* pso = nullptr;
+        wz::engine::assets::ComputePipelineData data{};
+
+        bool valid() const noexcept { return root_sig && pso && data.valid(); }
+    };
+
+    class DX12ComputePipelineTable
+    {
+    public:
+        DX12ComputePipelineTable();
+
+        GPUHandle add(DX12ComputePipeline pipeline);
+        const DX12ComputePipeline* get(GPUHandle handle) const;
+        bool release(GPUHandle handle);
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t epoch = 0;
+            bool occupied = false;
+            DX12ComputePipeline pipeline{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    GPUHandle create_structured_buffer_dx12(
+        Device& device,
+        const wz::gpu::ComputeBufferDesc& desc,
+        bool allow_unordered_access);
+
+    GPUHandle create_compute_pipeline_dx12(
+        Device& device,
+        const wz::engine::assets::ComputePipelineData& data,
+        GPUHandle compute_shader);
+
+    bool dispatch_compute_dx12(Device& device, const wz::gpu::ComputeDispatchDesc& desc);
+    std::vector<std::byte> readback_buffer_dx12(Device& device, GPUHandle buffer);
+    bool release_compute_buffer_dx12(Device& device, GPUHandle handle);
+    bool release_compute_pipeline_dx12(Device& device, GPUHandle handle);
 }

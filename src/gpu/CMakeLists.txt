@@ -6,6 +6,7 @@ target_sources(window_engine PRIVATE
     mesh.cpp
     mesh_field_visualization.cpp
     gaussian_splat.cpp
+    compute.cpp
     gpu_resource_lifecycle.cpp
 
     dx12/dx12_device.cpp
@@ -22,6 +23,7 @@ target_sources(window_engine PRIVATE
     dx12/dx12_mesh_wireframe_debug.cpp
     dx12/dx12_gaussian_splat.cpp
     dx12/dx12_gaussian_splat_debug.cpp
+    dx12/dx12_compute.cpp
     dx12/dx12_terrain_field_accum.cpp
     dx12/dx12_terrain_surface_mesh.cpp
     dx12/dx12_gpu_timer.cpp

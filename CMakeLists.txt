@@ -455,6 +455,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(gpu gpu_mesh)
     rs_add_test_group(gpu dx12_descriptor_allocator)
+    rs_add_test_group(gpu compute_dispatch)
 
     rs_add_test_group(asset_data_table data_table)
     rs_add_test_group(asset_data_table data_table_asset_module)

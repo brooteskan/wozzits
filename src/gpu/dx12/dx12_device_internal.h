@@ -96,6 +96,8 @@ namespace wz::gpu::dx12
         wz::gpu::dx12::internal::DX12MeshFieldVisualizationTable mesh_field_visualizations;
         wz::gpu::dx12::internal::DX12GaussianSplatCloudTable gaussian_splat_clouds;
         wz::gpu::dx12::internal::DX12GraphicsPipelineTable graphics_pipelines;
+        wz::gpu::dx12::internal::DX12ComputeBufferTable compute_buffers;
+        wz::gpu::dx12::internal::DX12ComputePipelineTable compute_pipelines;
 
         // General-purpose shader-visible CBV/SRV/UAV heap.
         // Used for SRV descriptor tables (e.g., SplatPull StructuredBuffer).
