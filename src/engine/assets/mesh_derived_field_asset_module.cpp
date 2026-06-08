@@ -72,9 +72,12 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
         node.meta = desc;
 
-        if (!system_.register_asset(
-                std::move(node),
-                { desc.source_mesh.output }))
+        std::vector<wz::asset::AssetKey> deps{ desc.source_mesh.output };
+        if (desc.compute_pipeline.valid()) {
+            deps.push_back(desc.compute_pipeline.key);
+        }
+
+        if (!system_.register_asset(std::move(node), deps))
         {
             return MeshDerivedFieldAsset{ .output = field_key };
         }

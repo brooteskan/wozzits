@@ -33,6 +33,7 @@ namespace wz::engine::assets::internal
             ctx.logger,
             ctx.device,
             ctx.mesh_table,
+            ctx.compute_pipeline_table,
             ctx.mesh_derived_field_table,
             ctx.cache_settings);
         register_terrain_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.cache_settings);

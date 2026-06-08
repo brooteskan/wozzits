@@ -316,6 +316,53 @@ namespace wz::engine::assets
                 + ":gamma:" + std::to_string(analysis->gamma);
         }
 
+        ComputePipelineAsset create_builtin_mesh_wavelet_pipeline(
+            EngineAssetLibrary& assets)
+        {
+            if (!assets.gpu_device_valid()) {
+                return {};
+            }
+
+            const ComputeShaderAsset shader =
+                assets.shaders().create_compute_shader({
+                    .name = "mesh_wavelet/detail_heat",
+                    .path = "shaders/mesh_wavelet/detail_heat_cs.hlsl",
+                    .entry = "main",
+                    .target = "cs_5_0",
+                });
+            if (!shader.valid()) {
+                return {};
+            }
+
+            return assets.compute_pipelines().create_compute_pipeline({
+                .name = "mesh_wavelet/detail_heat_pipeline",
+                .compute_shader = shader.shader,
+                .bindings = {
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::MeshVertices,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float) * 6u,
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic =
+                            ComputeBindingSemantic::MeshDerivedFieldValues,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float),
+                    },
+                },
+                .root_constant_dwords = 12,
+                .thread_group_size_x = 128,
+                .thread_group_size_y = 1,
+                .thread_group_size_z = 1,
+            });
+        }
+
         uint32_t policy_flags_for_terrain_render_style(
             const SceneTerrainRenderStyleAsset& style,
             bool wireframe)
@@ -1224,10 +1271,13 @@ namespace wz::engine::assets
                 const SceneMeshWaveletAnalysisAsset analysis =
                     wavelet_analysis ? *wavelet_analysis
                                      : SceneMeshWaveletAnalysisAsset{};
+                const ComputePipelineAsset wavelet_pipeline =
+                    create_builtin_mesh_wavelet_pipeline(assets);
                 MeshDerivedFieldAsset field_asset =
                     assets.mesh_derived_fields().create_wavelet_analysis({
                         .name = name + "_wavelet_field",
                         .source_mesh = mesh,
+                        .compute_pipeline = wavelet_pipeline,
                         .scale_count = analysis.scale_count,
                         .lambda_max_estimate =
                             analysis.lambda_max_estimate,

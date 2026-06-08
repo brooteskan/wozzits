@@ -11,7 +11,6 @@
 #include <engine/assets/type_extensions.h>
 #include <file/filesystem.h>
 #include <gpu/compute.h>
-#include <gpu/shader.h>
 
 #include <algorithm>
 #include <array>
@@ -64,81 +63,6 @@ namespace wz::engine::assets::internal
             uint32_t bits = 0;
             std::memcpy(&bits, &value, sizeof(bits));
             return bits;
-        }
-
-        const char* wavelet_detail_heat_gpu_kernel()
-        {
-            return R"(
-struct VertexSignal
-{
-    float3 position;
-    float3 normal;
-};
-
-StructuredBuffer<VertexSignal> Vertices : register(t0);
-RWStructuredBuffer<float> Values : register(u0);
-
-cbuffer Params : register(b0)
-{
-    uint VertexCount;
-    uint ScaleCount;
-    float LambdaMax;
-    float Gamma;
-    float3 BoundsMin;
-    float BoundsRangeY;
-    float3 BoundsMax;
-    uint _Pad0;
-};
-
-float saturate01(float v)
-{
-    return min(max(v, 0.0), 1.0);
-}
-
-float apply_gamma(float v)
-{
-    return pow(saturate01(v), max(Gamma, 0.0001));
-}
-
-[numthreads(128, 1, 1)]
-void main(uint3 id : SV_DispatchThreadID)
-{
-    const uint vertex_id = id.x;
-    if (vertex_id >= VertexCount) {
-        return;
-    }
-
-    const VertexSignal signal = Vertices[vertex_id];
-    const float3 n = normalize(signal.normal);
-    const float height01 = saturate01(
-        (signal.position.y - BoundsMin.y) / max(BoundsRangeY, 0.0001));
-    const float slope = saturate01(1.0 - abs(n.y));
-    const float terrain_signal = saturate01(
-        0.65 * height01 + 0.35 * slope);
-    float detail_sum = 0.0;
-
-    [loop]
-    for (uint scale = 0; scale < ScaleCount; ++scale) {
-        const float scale_weight =
-            (float(scale) + 1.0) / max(float(ScaleCount), 1.0);
-        const float frequency =
-            max(LambdaMax, 0.0001) * (float(scale) + 1.0);
-        const float wave =
-            0.5 + 0.5 * sin(terrain_signal * frequency * 6.28318530718);
-        const float position_energy = apply_gamma(
-            abs(height01 - 0.5) * 2.0 * (0.25 + 0.75 * wave));
-        const float normal_energy = apply_gamma(
-            slope * (0.35 + 0.65 * scale_weight) * (0.35 + 0.65 * wave));
-
-        Values[scale * 2u * VertexCount + vertex_id] = position_energy;
-        Values[(scale * 2u + 1u) * VertexCount + vertex_id] = normal_energy;
-        detail_sum += 0.5 * position_energy + 0.5 * normal_energy;
-    }
-
-    Values[(ScaleCount * 2u) * VertexCount + vertex_id] =
-        detail_sum / max(float(ScaleCount), 1.0);
-}
-)";
         }
 
         void append_raw_bytes(
@@ -893,11 +817,13 @@ void main(uint3 id : SV_DispatchThreadID)
         bool compile_wavelet_gpu_detail_heat(
             const MeshWaveletAnalysisDesc& desc,
             const MeshData& mesh,
+            const ComputePipelineData& pipeline_data,
             wz::gpu::Device& device,
             wz::Logger& logger,
             MeshDerivedFieldData& out)
         {
             if (!device.impl
+                || !pipeline_data.valid()
                 || !mesh.valid()
                 || !desc.source_mesh.valid()
                 || desc.scale_count == 0u
@@ -934,66 +860,11 @@ void main(uint3 id : SV_DispatchThreadID)
                 signals.push_back(signal);
             }
 
-            const std::string source = wavelet_detail_heat_gpu_kernel();
-            const std::span<const uint8_t> source_span{
-                reinterpret_cast<const uint8_t*>(source.data()),
-                source.size(),
-            };
-            const std::array<std::span<const uint8_t>, 1> sources{
-                source_span,
-            };
-            const wz::gpu::GPUHandle shader = wz::gpu::compile_hlsl(
-                device,
-                sources,
-                wz::gpu::HLSLCompileDesc{
-                    .stage = wz::gpu::ShaderStage::Compute,
-                    .entry = "main",
-                    .target = "cs_5_0",
-                    .primary_source_index = 0,
-                });
-            if (!shader.valid()) {
-                logger.warn(
-                    "mesh wavelet GPU compile failed; using reference path");
-                return false;
-            }
-
-            const wz::asset::ResourceHandle shader_handle{
-                .id = 1,
-                .epoch = 1,
-                .type = wz::asset::AssetType::Shader,
-            };
-            const ComputePipelineData pipeline_data{
-                .name = "mesh_wavelet/detail_heat_gpu_v0",
-                .bindings = {
-                    ComputeBindingDesc{
-                        .kind = ComputeBindingKind::StructuredBufferSRV,
-                        .semantic = ComputeBindingSemantic::MeshVertices,
-                        .shader_register = 0,
-                        .register_space = 0,
-                        .descriptor_count = 1,
-                        .stride_bytes =
-                            static_cast<uint32_t>(
-                                sizeof(WaveletGpuVertexSignal)),
-                    },
-                    ComputeBindingDesc{
-                        .kind = ComputeBindingKind::StructuredBufferUAV,
-                        .semantic =
-                            ComputeBindingSemantic::MeshDerivedFieldValues,
-                        .shader_register = 0,
-                        .register_space = 0,
-                        .descriptor_count = 1,
-                        .stride_bytes = sizeof(float),
-                    },
-                },
-                .root_constant_dwords = 12,
-                .thread_group_size_x = kWaveletGpuThreadGroupSize,
-                .thread_group_size_y = 1,
-                .thread_group_size_z = 1,
-                .compute_shader = shader_handle,
-            };
-
             const wz::gpu::GPUHandle pipeline =
-                wz::gpu::create_compute_pipeline(device, pipeline_data, shader);
+                wz::gpu::create_compute_pipeline(
+                    device,
+                    pipeline_data,
+                    pipeline_data.compute_shader);
             if (!pipeline.valid()) {
                 logger.warn(
                     "mesh wavelet GPU pipeline creation failed; using reference path");
@@ -1289,12 +1160,15 @@ void main(uint3 id : SV_DispatchThreadID)
             wz::Logger& logger,
             wz::gpu::Device& device,
             MeshTable& mesh_table,
+            ComputePipelineTable& compute_pipeline_table,
             MeshDerivedFieldTable& field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
             const auto* desc =
                 std::any_cast<MeshWaveletAnalysisDesc>(&input.meta);
-            if (!desc || dep_handles.size() != 1u) {
+            if (!desc
+                || (dep_handles.size() != 1u && dep_handles.size() != 2u))
+            {
                 logger.error("mesh wavelet analysis node missing desc");
                 return compile_failed_node(input);
             }
@@ -1303,6 +1177,15 @@ void main(uint3 id : SV_DispatchThreadID)
             if (!source_mesh) {
                 logger.error("mesh wavelet analysis source mesh handle invalid");
                 return compile_failed_node(input);
+            }
+
+            const ComputePipelineData* compute_pipeline =
+                dep_handles.size() == 2u
+                    ? compute_pipeline_table.get(dep_handles[1])
+                    : nullptr;
+            if (dep_handles.size() == 2u && !compute_pipeline) {
+                logger.warn(
+                    "mesh wavelet analysis compute pipeline dependency invalid; using reference path");
             }
 
             MeshDerivedFieldData cached{};
@@ -1329,12 +1212,14 @@ void main(uint3 id : SV_DispatchThreadID)
             }
 
             MeshDerivedFieldData field{};
-            if (!compile_wavelet_gpu_detail_heat(
+            if (!(compute_pipeline
+                    && compile_wavelet_gpu_detail_heat(
                     *desc,
                     *source_mesh,
+                    *compute_pipeline,
                     device,
                     logger,
-                    field)
+                    field))
                 && !compile_wavelet_reference(
                     *desc,
                     *source_mesh,
@@ -1365,6 +1250,7 @@ void main(uint3 id : SV_DispatchThreadID)
         wz::Logger& logger,
         wz::gpu::Device& device,
         MeshTable& mesh_table,
+        ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
         const EngineAssetCacheSettings& cache_settings)
     {
@@ -1398,6 +1284,7 @@ void main(uint3 id : SV_DispatchThreadID)
                 &logger,
                 &device,
                 &mesh_table,
+                &compute_pipeline_table,
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
@@ -1411,6 +1298,7 @@ void main(uint3 id : SV_DispatchThreadID)
                     logger,
                     device,
                     mesh_table,
+                    compute_pipeline_table,
                     mesh_derived_field_table,
                     cache_settings);
             }

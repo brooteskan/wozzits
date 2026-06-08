@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -171,9 +173,31 @@ namespace
         wz::Logger logger;
         wz::window::WindowHandle window{};
         wz::gpu::Device device{};
+        std::filesystem::path root;
 
         void SetUp() override
         {
+            root = std::filesystem::temp_directory_path()
+                / ("wozzits_mesh_wavelet_gpu_tests_"
+                    + std::to_string(::GetCurrentProcessId()));
+            std::error_code ec;
+            std::filesystem::remove_all(root, ec);
+            std::filesystem::create_directories(
+                root / "shaders" / "mesh_wavelet");
+            const std::filesystem::path source_root =
+                std::filesystem::current_path().parent_path().parent_path();
+            std::filesystem::copy_file(
+                source_root
+                    / "window_engine"
+                    / "resources"
+                    / "shaders"
+                    / "mesh_wavelet"
+                    / "detail_heat_cs.hlsl",
+                root / "shaders" / "mesh_wavelet" / "detail_heat_cs.hlsl",
+                std::filesystem::copy_options::overwrite_existing,
+                ec);
+            ASSERT_FALSE(ec);
+
             wz::window::WindowDesc desc{};
             desc.title = "mesh_wavelet_gpu_test";
             desc.width = 64;
@@ -195,8 +219,61 @@ namespace
             if (window.native) {
                 wz::window::destroy_window(window);
             }
+            std::error_code ec;
+            std::filesystem::remove_all(root, ec);
         }
+
+        wz::fs::Path resource_root() const { return root.string(); }
     };
+
+    wz::engine::assets::ComputePipelineAsset create_test_wavelet_pipeline(
+        wz::engine::assets::EngineAssetLibrary& assets)
+    {
+        using namespace wz::engine::assets;
+
+        const ComputeShaderAsset shader =
+            assets.shaders().create_compute_shader({
+                .name = "mesh_wavelet/detail_heat",
+                .path = "shaders/mesh_wavelet/detail_heat_cs.hlsl",
+                .entry = "main",
+                .target = "cs_5_0",
+            });
+        EXPECT_TRUE(shader.valid());
+        if (!shader.valid()) {
+            return {};
+        }
+
+        ComputePipelineAsset pipeline =
+            assets.compute_pipelines().create_compute_pipeline({
+                .name = "mesh_wavelet/detail_heat_pipeline",
+                .compute_shader = shader.shader,
+                .bindings = {
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::MeshVertices,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float) * 6u,
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic =
+                            ComputeBindingSemantic::MeshDerivedFieldValues,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float),
+                    },
+                },
+                .root_constant_dwords = 12,
+                .thread_group_size_x = 128,
+                .thread_group_size_y = 1,
+                .thread_group_size_z = 1,
+            });
+        EXPECT_TRUE(pipeline.valid());
+        return pipeline;
+    }
 }
 
 TEST(MeshDerivedFieldAssetModule, DefaultAssetAndHandleAreInvalid)
@@ -464,10 +541,14 @@ TEST_F(MeshWaveletGpuFixture, ResolvesWaveletAnalysisThroughGpuPath)
 {
     using namespace wz::engine::assets;
 
-    auto assets = make_assets_no_disk_cache(
+    EngineAssetLibrary assets{
         device,
         logger,
-        "wavelet_gpu_path");
+        resource_root(),
+        EngineAssetCacheSettings{
+            .root = resource_root(),
+            .enabled = false,
+        }};
 
     const auto mesh = assets.meshes().create_procedural_mesh({
         .name = "cube",
@@ -475,9 +556,13 @@ TEST_F(MeshWaveletGpuFixture, ResolvesWaveletAnalysisThroughGpuPath)
     });
     ASSERT_TRUE(mesh.valid());
 
+    const ComputePipelineAsset pipeline = create_test_wavelet_pipeline(assets);
+    ASSERT_TRUE(pipeline.valid());
+
     const auto field = assets.mesh_derived_fields().create_wavelet_analysis({
         .name = "cube_wavelet_gpu",
         .source_mesh = mesh,
+        .compute_pipeline = pipeline,
         .scale_count = 3u,
         .lambda_max_estimate = 2.0f,
         .gamma = 1.0f,
@@ -520,10 +605,14 @@ TEST_F(MeshWaveletGpuFixture, WaveletGpuDetailRespondsToParameters)
 {
     using namespace wz::engine::assets;
 
-    auto assets = make_assets_no_disk_cache(
+    EngineAssetLibrary assets{
         device,
         logger,
-        "wavelet_gpu_parameter_response");
+        resource_root(),
+        EngineAssetCacheSettings{
+            .root = resource_root(),
+            .enabled = false,
+        }};
 
     const auto mesh = assets.meshes().create_procedural_mesh({
         .name = "cube",
@@ -531,9 +620,13 @@ TEST_F(MeshWaveletGpuFixture, WaveletGpuDetailRespondsToParameters)
     });
     ASSERT_TRUE(mesh.valid());
 
+    const ComputePipelineAsset pipeline = create_test_wavelet_pipeline(assets);
+    ASSERT_TRUE(pipeline.valid());
+
     const auto base = assets.mesh_derived_fields().create_wavelet_analysis({
         .name = "cube_wavelet_base",
         .source_mesh = mesh,
+        .compute_pipeline = pipeline,
         .scale_count = 2u,
         .lambda_max_estimate = 0.75f,
         .gamma = 1.0f,
@@ -541,6 +634,7 @@ TEST_F(MeshWaveletGpuFixture, WaveletGpuDetailRespondsToParameters)
     const auto changed = assets.mesh_derived_fields().create_wavelet_analysis({
         .name = "cube_wavelet_changed",
         .source_mesh = mesh,
+        .compute_pipeline = pipeline,
         .scale_count = 4u,
         .lambda_max_estimate = 3.0f,
         .gamma = 0.45f,

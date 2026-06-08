@@ -4,6 +4,7 @@
 
 #include <asset/compiler.h>
 #include <engine/assets/asset_cache_settings.h>
+#include <engine/assets/compute_pipeline/compute_pipeline.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <logging/logger.h>
@@ -20,6 +21,7 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         wz::gpu::Device& device,
         MeshTable& mesh_table,
+        ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
         const EngineAssetCacheSettings& cache_settings);
 

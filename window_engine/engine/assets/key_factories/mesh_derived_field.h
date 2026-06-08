@@ -82,7 +82,11 @@ namespace wz::engine::assets
             .schema_hash = detail::hash_u64(kMeshWaveletAnalysisSchema.value),
             .compiler_hash = detail::hash_u64(
                 kMeshWaveletAnalysisCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(source_mesh_key),
+            .deps_hash = desc.compute_pipeline.valid()
+                ? detail::combine_dep_hashes(
+                    detail::key_to_dep_hash(source_mesh_key),
+                    detail::key_to_dep_hash(desc.compute_pipeline.key))
+                : detail::key_to_dep_hash(source_mesh_key),
         };
     }
 }

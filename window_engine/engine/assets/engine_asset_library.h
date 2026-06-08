@@ -219,6 +219,8 @@ namespace wz::engine::assets
         wz::asset::AssetSystem&       system()       { return system_; }
         const wz::asset::AssetSystem& system() const { return system_; }
 
+        bool gpu_device_valid() const { return device_.valid(); }
+
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.
         //

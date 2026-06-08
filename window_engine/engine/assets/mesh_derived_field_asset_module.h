@@ -3,6 +3,7 @@
 // engine/assets/mesh_derived_field_asset_module.h
 
 #include <asset/system.h>
+#include <engine/assets/compute_pipeline_asset_module.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 
@@ -24,6 +25,7 @@ namespace wz::engine::assets
     {
         std::string name;
         MeshAsset source_mesh;
+        ComputePipelineAsset compute_pipeline{};
         uint32_t scale_count = 3;
         float lambda_max_estimate = 2.0f;
         float gamma = 1.0f;
