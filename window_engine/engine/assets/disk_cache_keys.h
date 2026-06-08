@@ -40,4 +40,10 @@ namespace wz::engine::assets::internal
         0xe7037ed1b5f41a29ull,
         0x9f86d081884c7d65ull,
     };
+
+    inline constexpr DiskCacheKeySpec kMeshDerivedFieldDiskCacheKey{
+        "mesh_derived_field",
+        0x7c9e3a41d62f5b18ull,
+        0x4f1bbcdc9a5e2743ull,
+    };
 }

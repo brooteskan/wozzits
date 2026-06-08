@@ -159,6 +159,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000405ull
     };
 
+    // Explicit/test mesh-derived field payload. Compiled from one
+    // kAssetTypeMesh dependency and produces kAssetTypeMeshDerivedField.
+    inline constexpr wz::asset::SchemaID kMeshDerivedFieldExplicitSchema{
+        0xF11E'CA55'E7'000406ull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

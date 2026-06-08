@@ -12,6 +12,8 @@
 #include <engine/assets/json/json.h>
 #include <engine/assets/toml/toml.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_compilers.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
@@ -61,6 +63,7 @@ namespace wz::engine::assets::internal {
         JSONTable&                  json_table;
         TOMLTable&                  toml_table;
         MeshTable&                  mesh_table;
+        MeshDerivedFieldTable&      mesh_derived_field_table;
         TerrainAssetTable&          terrain_table;
         TerrainVisualProxyTable&     terrain_visual_proxy_table;
         CollisionAssetTable&        collision_table;

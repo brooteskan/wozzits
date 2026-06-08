@@ -28,6 +28,12 @@ namespace wz::engine::assets::internal
         register_json_compilers(registry, ctx.logger, ctx.json_table);
         register_toml_compilers(registry, ctx.logger, ctx.toml_table);
         register_mesh_compilers(registry, ctx.logger, ctx.mesh_table, ctx.cache_settings);
+        register_mesh_derived_field_compilers(
+            registry,
+            ctx.logger,
+            ctx.mesh_table,
+            ctx.mesh_derived_field_table,
+            ctx.cache_settings);
         register_terrain_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.cache_settings);
         register_terrain_visual_proxy_compilers(registry, ctx.logger, ctx.terrain_table, ctx.terrain_visual_proxy_table, ctx.cache_settings);
         register_collision_compilers(registry, ctx.logger, ctx.mesh_table, ctx.terrain_table, ctx.collision_table, ctx.cache_settings);

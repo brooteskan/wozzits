@@ -32,6 +32,8 @@
 
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_derived_field_asset_module.h>
 
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain_asset_module.h>
@@ -163,6 +165,9 @@ namespace wz::engine::assets
         MeshAssetModule&               meshes()         { return meshes_; }
         const MeshAssetModule&         meshes()   const { return meshes_; }
 
+        MeshDerivedFieldAssetModule&       mesh_derived_fields()       { return mesh_derived_fields_; }
+        const MeshDerivedFieldAssetModule& mesh_derived_fields() const { return mesh_derived_fields_; }
+
         TerrainAssetModule&            terrains()       { return terrains_; }
         const TerrainAssetModule&      terrains() const { return terrains_; }
 
@@ -232,6 +237,7 @@ namespace wz::engine::assets
         JSONTable                   json_table_;
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
+        MeshDerivedFieldTable       mesh_derived_field_table_;
         TerrainAssetTable           terrain_table_;
         TerrainVisualProxyTable      terrain_visual_proxy_table_;
         CollisionAssetTable         collision_table_;
@@ -259,6 +265,7 @@ namespace wz::engine::assets
         JSONAssetModule             json_;
         TOMLAssetModule             toml_;
         MeshAssetModule             meshes_;
+        MeshDerivedFieldAssetModule mesh_derived_fields_;
         TerrainAssetModule          terrains_;
         TerrainVisualProxyAssetModule terrain_visual_proxies_;
         CollisionAssetModule        collisions_;

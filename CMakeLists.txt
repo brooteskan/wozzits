@@ -421,6 +421,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_mesh mesh_asset_module_interface)
     rs_add_test_group(asset_mesh procedural_mesh)
     rs_add_test_group(asset_mesh mesh_asset_module) 
+    rs_add_test_group(asset_mesh_derived_field mesh_derived_field_asset_module)
     rs_add_test_group(mesh_processing mesh_processing_pmp)
 
     rs_add_test_group(asset_terrain terrain_asset_module)

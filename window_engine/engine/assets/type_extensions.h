@@ -151,6 +151,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeTerrainVisualProxy =
         static_cast<wz::asset::AssetType>(153);
 
+    // Implemented: CPU-side values over an exact source mesh domain.
+    // Runtime data is owned by MeshDerivedFieldTable.
+    inline constexpr wz::asset::AssetType kAssetTypeMeshDerivedField =
+        static_cast<wz::asset::AssetType>(154);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);
