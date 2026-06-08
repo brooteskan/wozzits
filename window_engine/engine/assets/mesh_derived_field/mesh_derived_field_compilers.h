@@ -22,4 +22,10 @@ namespace wz::engine::assets::internal
         const wz::asset::AssetKey& key,
         wz::Logger& logger,
         MeshDerivedFieldData& field);
+
+    bool load_cached_mesh_wavelet_analysis_field(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshDerivedFieldData& field);
 }

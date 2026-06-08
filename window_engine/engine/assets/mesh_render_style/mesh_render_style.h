@@ -19,6 +19,17 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    struct MeshFieldVisualizationStyle
+    {
+        bool enabled = false;
+        uint32_t channel_id = 0;
+        float value_min = 0.0f;
+        float value_max = 1.0f;
+        float gamma = 1.0f;
+
+        bool valid() const noexcept;
+    };
+
     struct MeshRenderStyleData
     {
         MeshRenderLayerStyle wireframe{
@@ -36,6 +47,7 @@ namespace wz::engine::assets
         bool depth_write = false;
         bool double_sided = true;
         bool hidden_line_prepass = true;
+        MeshFieldVisualizationStyle field_visualization{};
 
         bool valid() const noexcept;
     };

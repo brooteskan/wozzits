@@ -7,6 +7,7 @@
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_render_style_asset_module.h>
+#include <engine/assets/mesh_derived_field_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
@@ -33,6 +34,7 @@ namespace wz::engine::assets
         std::string name;
         MeshAsset mesh{};
         MeshRenderStyleAsset style{};
+        MeshDerivedFieldAsset mesh_field_visualization{};
     };
 
     struct GaussianSplatDebugRenderableDesc

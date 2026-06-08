@@ -1,5 +1,19 @@
 ﻿#include "renderable_asset_module_test_support.h"
 
+#include <cstddef>
+#include <cstring>
+#include <vector>
+
+namespace
+{
+    std::vector<std::byte> float_bytes(std::initializer_list<float> values)
+    {
+        std::vector<std::byte> bytes(values.size() * sizeof(float));
+        std::memcpy(bytes.data(), values.begin(), bytes.size());
+        return bytes;
+    }
+}
+
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
 {
     const wz::fs::Path root =
@@ -547,6 +561,177 @@ TEST(RenderableAssetModule, NearOpaqueSurfaceAlphaResolvesOpaqueDepthWritingRend
     EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthTest) != 0);
     EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
     EXPECT_FLOAT_EQ(data->mesh_style.alpha, 1.0f);
+}
+
+TEST(RenderableAssetModule, StyledMeshCanBindVertexDerivedFieldVisualization)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mesh_field_visualization_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/field_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/field_quad_detail",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = 4u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = MeshWaveletChannelID::kDetailCost,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = float_bytes({ 0.0f, 0.25f, 0.75f, 1.0f }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = true;
+    style.field_visualization.enabled = true;
+    style.field_visualization.channel_id = MeshWaveletChannelID::kDetailCost;
+    style.field_visualization.value_min = 0.0f;
+    style.field_visualization.value_max = 1.0f;
+    style.field_visualization.gamma = 0.8f;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/wavelet_detail_heat",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/field_quad_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->kind, RenderableKind::Mesh);
+    EXPECT_EQ(data->source_asset, mesh.output);
+    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
+    EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
+    EXPECT_EQ(
+        data->mesh_style.field_visualization.channel_id,
+        MeshWaveletChannelID::kDetailCost);
+    EXPECT_FLOAT_EQ(data->mesh_style.field_visualization.gamma, 0.8f);
+}
+
+TEST(RenderableAssetModule, StyledMeshRejectsMismatchedFieldVisualization)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_bad_mesh_field_visualization_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/bad_field_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/bad_field_quad_detail",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Face,
+            .element_count = 2u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = MeshWaveletChannelID::kDetailCost,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = float_bytes({ 0.0f, 1.0f }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.field_visualization.enabled = true;
+    style.field_visualization.channel_id = MeshWaveletChannelID::kDetailCost;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/bad_wavelet_detail_heat",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/bad_field_quad_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_FALSE(report.ok());
+    int renderable_failures = 0;
+    for (const auto& failure : report.failures) {
+        if (failure.key == renderable.output
+            && failure.error == wz::asset::ResolveError::CompileFailed)
+        {
+            ++renderable_failures;
+        }
+    }
+    EXPECT_EQ(renderable_failures, 1);
+    EXPECT_FALSE(assets.renderables().get_renderable(renderable).valid());
 }
 
 TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersDoesNotEmitRenderable)

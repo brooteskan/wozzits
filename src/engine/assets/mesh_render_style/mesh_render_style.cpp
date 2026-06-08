@@ -27,13 +27,28 @@ namespace wz::engine::assets
         return true;
     }
 
+    bool MeshFieldVisualizationStyle::valid() const noexcept
+    {
+        if (!enabled) {
+            return true;
+        }
+
+        return channel_id != 0u
+            && std::isfinite(value_min)
+            && std::isfinite(value_max)
+            && value_min < value_max
+            && std::isfinite(gamma)
+            && gamma > 0.0f;
+    }
+
     bool MeshRenderStyleData::valid() const noexcept
     {
         return wireframe.valid()
             && surface.valid()
             && std::isfinite(alpha)
             && alpha >= 0.0f
-            && alpha <= 1.0f;
+            && alpha <= 1.0f
+            && field_visualization.valid();
     }
 
     wz::asset::ResourceHandle MeshRenderStyleTable::add(

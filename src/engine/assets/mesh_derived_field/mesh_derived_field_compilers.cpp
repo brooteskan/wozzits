@@ -14,9 +14,12 @@
 #include <algorithm>
 #include <any>
 #include <chrono>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -119,20 +122,73 @@ namespace wz::engine::assets::internal
                 && read_scalar(bytes, offset, hash.hi);
         }
 
+        struct RefVec3
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+        };
+
+        RefVec3 operator+(RefVec3 a, RefVec3 b) noexcept
+        {
+            return RefVec3{ a.x + b.x, a.y + b.y, a.z + b.z };
+        }
+
+        RefVec3 operator-(RefVec3 a, RefVec3 b) noexcept
+        {
+            return RefVec3{ a.x - b.x, a.y - b.y, a.z - b.z };
+        }
+
+        RefVec3 operator*(float s, RefVec3 v) noexcept
+        {
+            return RefVec3{ s * v.x, s * v.y, s * v.z };
+        }
+
+        float length(RefVec3 v) noexcept
+        {
+            return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        }
+
+        RefVec3 cross(RefVec3 a, RefVec3 b) noexcept
+        {
+            return RefVec3{
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x,
+            };
+        }
+
+        RefVec3 normalize(RefVec3 v) noexcept
+        {
+            const float len = length(v);
+            if (len <= 0.0f) {
+                return {};
+            }
+            return (1.0f / len) * v;
+        }
+
+        uint64_t directed_edge_key(uint32_t from, uint32_t to) noexcept
+        {
+            return (static_cast<uint64_t>(from) << 32u)
+                | static_cast<uint64_t>(to);
+        }
+
         wz::fs::Path mesh_derived_field_cache_path(
             const EngineAssetCacheSettings& cache,
+            const DiskCacheKeySpec& cache_key,
             const wz::asset::AssetKey& key)
         {
             return disk_cache_asset_path(
                 cache,
-                kMeshDerivedFieldDiskCacheKey.subdirectory,
+                cache_key.subdirectory,
                 key,
-                kMeshDerivedFieldDiskCacheKey.seed_lo,
-                kMeshDerivedFieldDiskCacheKey.seed_hi);
+                cache_key.seed_lo,
+                cache_key.seed_hi);
         }
 
         std::vector<uint8_t> serialize_mesh_derived_field_asset(
             const wz::asset::AssetKey& key,
+            uint64_t compiler_version,
             const MeshDerivedFieldData& field)
         {
             std::vector<uint8_t> out;
@@ -140,7 +196,7 @@ namespace wz::engine::assets::internal
                 + field.channels.size() * sizeof(MeshDerivedFieldChannel));
             append_scalar(out, kMeshDerivedFieldDiskCacheMagic);
             append_scalar(out, kMeshDerivedFieldDiskCacheVersion);
-            append_scalar(out, kMeshDerivedFieldCompilerVersion);
+            append_scalar(out, compiler_version);
             append_asset_key(out, key);
             append_asset_key(out, field.source_mesh_key);
             append_hash(out, field.source_topology_hash);
@@ -161,6 +217,7 @@ namespace wz::engine::assets::internal
         bool deserialize_mesh_derived_field_asset(
             const std::vector<uint8_t>& bytes,
             const wz::asset::AssetKey& expected_key,
+            uint64_t expected_compiler_version,
             MeshDerivedFieldData& field)
         {
             size_t offset = 0;
@@ -172,7 +229,7 @@ namespace wz::engine::assets::internal
                 || !read_scalar(bytes, offset, compiler_version)
                 || magic != kMeshDerivedFieldDiskCacheMagic
                 || version != kMeshDerivedFieldDiskCacheVersion
-                || compiler_version != kMeshDerivedFieldCompilerVersion)
+                || compiler_version != expected_compiler_version)
             {
                 return false;
             }
@@ -234,7 +291,9 @@ namespace wz::engine::assets::internal
 
         bool store_cached_mesh_derived_field(
             const EngineAssetCacheSettings& cache,
+            const DiskCacheKeySpec& cache_key,
             const wz::asset::AssetKey& key,
+            uint64_t compiler_version,
             const MeshDerivedFieldData& field,
             wz::Logger& logger)
         {
@@ -244,16 +303,19 @@ namespace wz::engine::assets::internal
 
             const wz::fs::Path dir = disk_cache_asset_directory(
                 cache,
-                kMeshDerivedFieldDiskCacheKey.subdirectory);
+                cache_key.subdirectory);
             const wz::fs::FileError dir_err = wz::fs::create_directories(dir);
             if (dir_err != wz::fs::FileError::None) {
                 return false;
             }
 
             const wz::fs::Path path =
-                mesh_derived_field_cache_path(cache, key);
+                mesh_derived_field_cache_path(cache, cache_key, key);
             const std::vector<uint8_t> bytes =
-                serialize_mesh_derived_field_asset(key, field);
+                serialize_mesh_derived_field_asset(
+                    key,
+                    compiler_version,
+                    field);
             const wz::fs::FileError write_err =
                 wz::fs::write_file(path, bytes);
             if (write_err != wz::fs::FileError::None) {
@@ -264,6 +326,53 @@ namespace wz::engine::assets::internal
             }
             logger.info(
                 "asset disk cache stored: mesh derived field " + path);
+            return true;
+        }
+
+        bool load_cached_mesh_derived_field_with_key(
+            const EngineAssetCacheSettings& cache,
+            const DiskCacheKeySpec& cache_key,
+            const wz::asset::AssetKey& key,
+            uint64_t compiler_version,
+            wz::Logger& logger,
+            MeshDerivedFieldData& field)
+        {
+            if (!cache.enabled || cache.root.empty()) {
+                return false;
+            }
+
+            const wz::fs::Path path =
+                mesh_derived_field_cache_path(cache, cache_key, key);
+            const auto started = std::chrono::steady_clock::now();
+            const auto bytes = wz::fs::read_file(path);
+            if (!bytes) {
+                logger.info(
+                    "asset disk cache miss: mesh derived field " + path);
+                return false;
+            }
+
+            MeshDerivedFieldData loaded{};
+            if (!deserialize_mesh_derived_field_asset(
+                    bytes.value,
+                    key,
+                    compiler_version,
+                    loaded))
+            {
+                logger.warn(
+                    "asset disk cache ignored invalid mesh derived field: "
+                    + path);
+                return false;
+            }
+
+            const auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            field = std::move(loaded);
+            logger.info(
+                "asset disk cache hit: mesh derived field "
+                + path
+                + " ms="
+                + std::to_string(elapsed));
             return true;
         }
 
@@ -370,6 +479,325 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        std::vector<uint32_t> build_vertex_csr(
+            const MeshData& mesh,
+            std::vector<uint32_t>& offsets)
+        {
+            std::vector<uint64_t> edges;
+            edges.reserve(mesh.indices.size() * 2u);
+            for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
+                const uint32_t a = mesh.indices[i + 0u];
+                const uint32_t b = mesh.indices[i + 1u];
+                const uint32_t c = mesh.indices[i + 2u];
+                edges.push_back(directed_edge_key(a, b));
+                edges.push_back(directed_edge_key(b, a));
+                edges.push_back(directed_edge_key(b, c));
+                edges.push_back(directed_edge_key(c, b));
+                edges.push_back(directed_edge_key(c, a));
+                edges.push_back(directed_edge_key(a, c));
+            }
+            std::sort(edges.begin(), edges.end());
+            edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
+
+            offsets.assign(mesh.vertex_count() + 1u, 0u);
+            for (const uint64_t edge : edges) {
+                const uint32_t from = static_cast<uint32_t>(edge >> 32u);
+                if (from + 1u < offsets.size()) {
+                    ++offsets[from + 1u];
+                }
+            }
+            for (size_t i = 1; i < offsets.size(); ++i) {
+                offsets[i] += offsets[i - 1u];
+            }
+
+            std::vector<uint32_t> neighbors(edges.size(), 0u);
+            std::vector<uint32_t> cursor = offsets;
+            for (const uint64_t edge : edges) {
+                const uint32_t from = static_cast<uint32_t>(edge >> 32u);
+                const uint32_t to = static_cast<uint32_t>(edge & 0xffffffffu);
+                if (from < mesh.vertex_count()) {
+                    neighbors[cursor[from]++] = to;
+                }
+            }
+            return neighbors;
+        }
+
+        std::vector<RefVec3> mesh_position_signal(const MeshData& mesh)
+        {
+            std::vector<RefVec3> out(mesh.vertices.size());
+            for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+                out[i] = RefVec3{
+                    mesh.vertices[i].position[0],
+                    mesh.vertices[i].position[1],
+                    mesh.vertices[i].position[2],
+                };
+            }
+            return out;
+        }
+
+        std::vector<RefVec3> mesh_normal_signal(const MeshData& mesh)
+        {
+            std::vector<RefVec3> out(mesh.vertices.size());
+            if (mesh.has_normals) {
+                for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+                    out[i] = normalize(RefVec3{
+                        mesh.vertices[i].normal[0],
+                        mesh.vertices[i].normal[1],
+                        mesh.vertices[i].normal[2],
+                    });
+                }
+                return out;
+            }
+
+            for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
+                const uint32_t ia = mesh.indices[i + 0u];
+                const uint32_t ib = mesh.indices[i + 1u];
+                const uint32_t ic = mesh.indices[i + 2u];
+                const RefVec3 a = RefVec3{
+                    mesh.vertices[ia].position[0],
+                    mesh.vertices[ia].position[1],
+                    mesh.vertices[ia].position[2],
+                };
+                const RefVec3 b = RefVec3{
+                    mesh.vertices[ib].position[0],
+                    mesh.vertices[ib].position[1],
+                    mesh.vertices[ib].position[2],
+                };
+                const RefVec3 c = RefVec3{
+                    mesh.vertices[ic].position[0],
+                    mesh.vertices[ic].position[1],
+                    mesh.vertices[ic].position[2],
+                };
+                const RefVec3 n = cross(b - a, c - a);
+                out[ia] = out[ia] + n;
+                out[ib] = out[ib] + n;
+                out[ic] = out[ic] + n;
+            }
+            for (RefVec3& n : out) {
+                n = normalize(n);
+            }
+            return out;
+        }
+
+        std::vector<RefVec3> apply_normalized_laplacian(
+            const std::vector<RefVec3>& signal,
+            const std::vector<uint32_t>& offsets,
+            const std::vector<uint32_t>& neighbors)
+        {
+            std::vector<RefVec3> out(signal.size());
+            for (uint32_t i = 0; i < static_cast<uint32_t>(signal.size()); ++i) {
+                const uint32_t degree_i = offsets[i + 1u] - offsets[i];
+                RefVec3 sum{};
+                if (degree_i > 0u) {
+                    for (uint32_t e = offsets[i]; e < offsets[i + 1u]; ++e) {
+                        const uint32_t j = neighbors[e];
+                        const uint32_t degree_j =
+                            offsets[j + 1u] - offsets[j];
+                        if (degree_j == 0u) {
+                            continue;
+                        }
+                        const float weight =
+                            1.0f / std::sqrt(
+                                static_cast<float>(degree_i * degree_j));
+                        sum = sum + weight * signal[j];
+                    }
+                }
+                out[i] = signal[i] - sum;
+            }
+            return out;
+        }
+
+        std::vector<RefVec3> apply_rescaled_laplacian(
+            const std::vector<RefVec3>& signal,
+            const std::vector<uint32_t>& offsets,
+            const std::vector<uint32_t>& neighbors,
+            float lambda_max_estimate)
+        {
+            std::vector<RefVec3> lap =
+                apply_normalized_laplacian(signal, offsets, neighbors);
+            std::vector<RefVec3> out(signal.size());
+            const float scale = 2.0f / lambda_max_estimate;
+            for (size_t i = 0; i < signal.size(); ++i) {
+                out[i] = scale * lap[i] - signal[i];
+            }
+            return out;
+        }
+
+        std::vector<float> normalize_energy(
+            std::vector<float> values,
+            float gamma)
+        {
+            if (values.empty()) {
+                return values;
+            }
+            const auto [min_it, max_it] =
+                std::minmax_element(values.begin(), values.end());
+            const float min_value = *min_it;
+            const float max_value = *max_it;
+            const float range = max_value - min_value;
+            if (range <= std::numeric_limits<float>::epsilon()) {
+                std::fill(values.begin(), values.end(), 0.0f);
+                return values;
+            }
+            for (float& value : values) {
+                value = std::pow(
+                    (std::clamp)((value - min_value) / range, 0.0f, 1.0f),
+                    gamma);
+            }
+            return values;
+        }
+
+        std::vector<float> wavelet_energy_for_scale(
+            const std::vector<RefVec3>& signal,
+            const std::vector<uint32_t>& offsets,
+            const std::vector<uint32_t>& neighbors,
+            uint32_t scale_index,
+            float lambda_max_estimate,
+            float gamma)
+        {
+            if (signal.size() <= 3u) {
+                return std::vector<float>(signal.size(), 0.0f);
+            }
+
+            std::vector<RefVec3> t_prev = signal;
+            std::vector<RefVec3> t_curr = apply_rescaled_laplacian(
+                signal,
+                offsets,
+                neighbors,
+                lambda_max_estimate);
+            std::vector<RefVec3> coeff(signal.size());
+
+            const uint32_t degree = 2u + scale_index;
+            for (uint32_t k = 1; k <= degree; ++k) {
+                const float c =
+                    1.0f / static_cast<float>((scale_index + 1u) * (k + 1u));
+                for (size_t i = 0; i < coeff.size(); ++i) {
+                    coeff[i] = coeff[i] + c * t_curr[i];
+                }
+                if (k == degree) {
+                    break;
+                }
+                const std::vector<RefVec3> lt = apply_rescaled_laplacian(
+                    t_curr,
+                    offsets,
+                    neighbors,
+                    lambda_max_estimate);
+                std::vector<RefVec3> t_next(signal.size());
+                for (size_t i = 0; i < signal.size(); ++i) {
+                    t_next[i] = 2.0f * lt[i] - t_prev[i];
+                }
+                t_prev = std::move(t_curr);
+                t_curr = std::move(t_next);
+            }
+
+            std::vector<float> energy(signal.size(), 0.0f);
+            for (size_t i = 0; i < coeff.size(); ++i) {
+                energy[i] = length(coeff[i]);
+            }
+            return normalize_energy(std::move(energy), gamma);
+        }
+
+        void append_float_channel(
+            MeshDerivedFieldData& out,
+            uint32_t channel_id,
+            const std::vector<float>& values)
+        {
+            const uint32_t byte_offset =
+                static_cast<uint32_t>(out.values.size());
+            const uint32_t byte_count =
+                static_cast<uint32_t>(values.size() * sizeof(float));
+            out.channels.push_back(MeshDerivedFieldChannel{
+                .channel_id = channel_id,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .byte_offset = byte_offset,
+                .byte_count = byte_count,
+            });
+            const auto* bytes = reinterpret_cast<const std::byte*>(
+                values.data());
+            out.values.insert(out.values.end(), bytes, bytes + byte_count);
+        }
+
+        bool compile_wavelet_reference(
+            const MeshWaveletAnalysisDesc& desc,
+            const MeshData& mesh,
+            wz::Logger& logger,
+            MeshDerivedFieldData& out)
+        {
+            if (!mesh.valid()
+                || !desc.source_mesh.valid()
+                || desc.scale_count == 0u
+                || desc.lambda_max_estimate <= 0.0f
+                || desc.gamma <= 0.0f)
+            {
+                logger.error("mesh wavelet analysis desc is invalid");
+                return false;
+            }
+
+            std::vector<uint32_t> offsets;
+            const std::vector<uint32_t> neighbors =
+                build_vertex_csr(mesh, offsets);
+            const std::vector<RefVec3> position = mesh_position_signal(mesh);
+            const std::vector<RefVec3> normal = mesh_normal_signal(mesh);
+
+            out = MeshDerivedFieldData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = compute_mesh_topology_hash(mesh),
+                .domain = MeshDerivedFieldDomain::Vertex,
+                .element_count = mesh.vertex_count(),
+            };
+
+            std::vector<std::vector<float>> position_channels;
+            std::vector<std::vector<float>> normal_channels;
+            position_channels.reserve(desc.scale_count);
+            normal_channels.reserve(desc.scale_count);
+
+            for (uint32_t scale = 0; scale < desc.scale_count; ++scale) {
+                position_channels.push_back(wavelet_energy_for_scale(
+                    position,
+                    offsets,
+                    neighbors,
+                    scale,
+                    desc.lambda_max_estimate,
+                    desc.gamma));
+                append_float_channel(
+                    out,
+                    MeshWaveletChannelID::kPositionEnergyBase + scale,
+                    position_channels.back());
+
+                normal_channels.push_back(wavelet_energy_for_scale(
+                    normal,
+                    offsets,
+                    neighbors,
+                    scale,
+                    desc.lambda_max_estimate,
+                    desc.gamma));
+                append_float_channel(
+                    out,
+                    MeshWaveletChannelID::kNormalEnergyBase + scale,
+                    normal_channels.back());
+            }
+
+            std::vector<float> detail(mesh.vertex_count(), 0.0f);
+            for (uint32_t scale = 0; scale < desc.scale_count; ++scale) {
+                for (uint32_t i = 0; i < mesh.vertex_count(); ++i) {
+                    detail[i] = (std::max)(
+                        detail[i],
+                        0.5f * position_channels[scale][i]
+                            + 0.5f * normal_channels[scale][i]);
+                }
+            }
+            append_float_channel(
+                out,
+                MeshWaveletChannelID::kDetailCost,
+                detail);
+
+            if (!out.valid()) {
+                logger.error("mesh wavelet analysis output is invalid");
+                return false;
+            }
+            return true;
+        }
+
         bool cached_field_matches_source(
             const MeshDerivedFieldData& field,
             const ExplicitMeshDerivedFieldDesc& desc,
@@ -381,6 +809,60 @@ namespace wz::engine::assets::internal
                     == compute_mesh_topology_hash(source_mesh)
                 && field.domain == desc.domain
                 && field.element_count == desc.element_count;
+        }
+
+        bool cached_wavelet_field_matches_source(
+            const MeshDerivedFieldData& field,
+            const MeshWaveletAnalysisDesc& desc,
+            const MeshData& source_mesh) noexcept
+        {
+            if (!field.valid()
+                || field.source_mesh_key != desc.source_mesh.output
+                || field.source_topology_hash
+                    != compute_mesh_topology_hash(source_mesh)
+                || field.domain != MeshDerivedFieldDomain::Vertex
+                || field.element_count != source_mesh.vertex_count()
+                || field.channels.size()
+                    != static_cast<size_t>(desc.scale_count) * 2u + 1u)
+            {
+                return false;
+            }
+
+            const uint32_t channel_bytes =
+                field.element_count * sizeof(float);
+            uint32_t expected_offset = 0u;
+            for (uint32_t scale = 0; scale < desc.scale_count; ++scale) {
+                const MeshDerivedFieldChannel& position =
+                    field.channels[scale * 2u + 0u];
+                if (position.channel_id
+                        != MeshWaveletChannelID::kPositionEnergyBase + scale
+                    || position.value_type
+                        != MeshDerivedFieldValueType::Float1
+                    || position.byte_offset != expected_offset
+                    || position.byte_count != channel_bytes)
+                {
+                    return false;
+                }
+                expected_offset += channel_bytes;
+
+                const MeshDerivedFieldChannel& normal =
+                    field.channels[scale * 2u + 1u];
+                if (normal.channel_id
+                        != MeshWaveletChannelID::kNormalEnergyBase + scale
+                    || normal.value_type != MeshDerivedFieldValueType::Float1
+                    || normal.byte_offset != expected_offset
+                    || normal.byte_count != channel_bytes)
+                {
+                    return false;
+                }
+                expected_offset += channel_bytes;
+            }
+
+            const MeshDerivedFieldChannel& detail = field.channels.back();
+            return detail.channel_id == MeshWaveletChannelID::kDetailCost
+                && detail.value_type == MeshDerivedFieldValueType::Float1
+                && detail.byte_offset == expected_offset
+                && detail.byte_count == channel_bytes;
         }
 
         wz::asset::AssetNode compile_explicit_mesh_derived_field_node(
@@ -405,9 +887,11 @@ namespace wz::engine::assets::internal
             }
 
             MeshDerivedFieldData cached{};
-            if (load_cached_mesh_derived_field(
+            if (load_cached_mesh_derived_field_with_key(
                     cache_settings,
+                    kMeshDerivedFieldDiskCacheKey,
                     input.key,
+                    kMeshDerivedFieldCompilerVersion,
                     logger,
                     cached))
             {
@@ -435,7 +919,78 @@ namespace wz::engine::assets::internal
 
             store_cached_mesh_derived_field(
                 cache_settings,
+                kMeshDerivedFieldDiskCacheKey,
                 input.key,
+                kMeshDerivedFieldCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
+
+        wz::asset::AssetNode compile_mesh_wavelet_analysis_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<MeshWaveletAnalysisDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 1u) {
+                logger.error("mesh wavelet analysis node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error("mesh wavelet analysis source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshWaveletAnalysisDiskCacheKey,
+                    input.key,
+                    kMeshWaveletAnalysisCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_wavelet_field_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn("asset disk cache ignored stale mesh wavelet field");
+            }
+
+            MeshDerivedFieldData field{};
+            if (!compile_wavelet_reference(
+                    *desc,
+                    *source_mesh,
+                    logger,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshWaveletAnalysisDiskCacheKey,
+                input.key,
+                kMeshWaveletAnalysisCompilerVersion,
                 field,
                 logger);
 
@@ -476,6 +1031,29 @@ namespace wz::engine::assets::internal
                     cache_settings);
             }
         });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshWaveletAnalysisSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_wavelet_analysis_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table,
+                    cache_settings);
+            }
+        });
     }
 
     bool load_cached_mesh_derived_field(
@@ -484,37 +1062,27 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         MeshDerivedFieldData& field)
     {
-        if (!cache.enabled || cache.root.empty()) {
-            return false;
-        }
+        return load_cached_mesh_derived_field_with_key(
+            cache,
+            kMeshDerivedFieldDiskCacheKey,
+            key,
+            kMeshDerivedFieldCompilerVersion,
+            logger,
+            field);
+    }
 
-        const wz::fs::Path path =
-            mesh_derived_field_cache_path(cache, key);
-        const auto started = std::chrono::steady_clock::now();
-        const auto bytes = wz::fs::read_file(path);
-        if (!bytes) {
-            logger.info(
-                "asset disk cache miss: mesh derived field " + path);
-            return false;
-        }
-
-        MeshDerivedFieldData loaded{};
-        if (!deserialize_mesh_derived_field_asset(bytes.value, key, loaded)) {
-            logger.warn(
-                "asset disk cache ignored invalid mesh derived field: "
-                + path);
-            return false;
-        }
-
-        const auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - started).count();
-        field = std::move(loaded);
-        logger.info(
-            "asset disk cache hit: mesh derived field "
-            + path
-            + " ms="
-            + std::to_string(elapsed));
-        return true;
+    bool load_cached_mesh_wavelet_analysis_field(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshDerivedFieldData& field)
+    {
+        return load_cached_mesh_derived_field_with_key(
+            cache,
+            kMeshWaveletAnalysisDiskCacheKey,
+            key,
+            kMeshWaveletAnalysisCompilerVersion,
+            logger,
+            field);
     }
 }

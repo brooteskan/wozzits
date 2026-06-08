@@ -20,6 +20,15 @@ namespace wz::engine::assets
         std::vector<MeshDerivedFieldChannelDesc> channels;
     };
 
+    struct MeshWaveletAnalysisDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        uint32_t scale_count = 3;
+        float lambda_max_estimate = 2.0f;
+        float gamma = 1.0f;
+    };
+
     struct MeshDerivedFieldAsset
     {
         wz::asset::AssetKey output{};
@@ -49,6 +58,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_explicit_field(
             const ExplicitMeshDerivedFieldDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_wavelet_analysis(
+            const MeshWaveletAnalysisDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

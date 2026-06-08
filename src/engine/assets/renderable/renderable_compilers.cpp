@@ -211,6 +211,7 @@ namespace wz::engine::assets::internal
         auto* terrain_table = &ctx.terrain_table;
         auto* terrain_visual_proxy_table = &ctx.terrain_visual_proxy_table;
         auto* scalar_fields_table = &ctx.scalar_fields_table;
+        auto* mesh_derived_field_table = &ctx.mesh_derived_field_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
         auto* renderable_table = &ctx.renderable_table;
 
@@ -373,6 +374,7 @@ namespace wz::engine::assets::internal
             .compile = [logger,
                          mesh_table,
                          mesh_render_style_table,
+                         mesh_derived_field_table,
                          renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -388,9 +390,9 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                if (dep_handles.size() != 2) {
+                if (dep_handles.size() < 2 || dep_handles.size() > 3) {
                     logger->error(
-                        "mesh styled renderable requires mesh and style dependencies");
+                        "mesh styled renderable requires mesh and style dependencies, with optional mesh field dependency");
                     return compile_failed_node(input);
                 }
 
@@ -407,10 +409,91 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                const bool wants_field_visualization =
+                    style->field_visualization.enabled;
+
+                if (wants_field_visualization) {
+                    if (desc->mesh_field_visualization_asset
+                        == wz::asset::AssetKey{})
+                    {
+                        logger->error(
+                            "mesh styled renderable field visualization has no field asset");
+                        return compile_failed_node(input);
+                    }
+                    if (dep_handles.size() != 3) {
+                        logger->error(
+                            "mesh styled renderable field visualization requires mesh field dependency");
+                        return compile_failed_node(input);
+                    }
+
+                    const MeshDerivedFieldData* field =
+                        mesh_derived_field_table->get(dep_handles[2]);
+                    if (!field || !field->valid()) {
+                        logger->error(
+                            "mesh styled renderable field visualization data is invalid");
+                        return compile_failed_node(input);
+                    }
+                    if (field->source_mesh_key != desc->mesh_asset) {
+                        logger->error(
+                            "mesh styled renderable field visualization source mesh mismatch");
+                        return compile_failed_node(input);
+                    }
+                    if (field->domain != MeshDerivedFieldDomain::Vertex) {
+                        logger->error(
+                            "mesh styled renderable field visualization currently requires vertex-domain field data");
+                        return compile_failed_node(input);
+                    }
+                    if (field->element_count != mesh->vertex_count()) {
+                        logger->error(
+                            "mesh styled renderable field visualization vertex count mismatch");
+                        return compile_failed_node(input);
+                    }
+
+                    const auto channel_found = std::find_if(
+                        field->channels.begin(),
+                        field->channels.end(),
+                        [&](const MeshDerivedFieldChannel& channel)
+                        {
+                            return channel.channel_id
+                                == style->field_visualization.channel_id;
+                        });
+
+                    if (channel_found == field->channels.end()) {
+                        logger->error(
+                            "mesh styled renderable field visualization channel not found");
+                        return compile_failed_node(input);
+                    }
+                    if (channel_found->value_type
+                        != MeshDerivedFieldValueType::Float1)
+                    {
+                        logger->error(
+                            "mesh styled renderable field visualization currently requires Float1 channel data");
+                        return compile_failed_node(input);
+                    }
+                    const uint32_t expected_bytes =
+                        field->element_count
+                        * mesh_derived_field_value_stride(
+                            channel_found->value_type);
+                    if (channel_found->byte_count != expected_bytes) {
+                        logger->error(
+                            "mesh styled renderable field visualization channel byte count mismatch");
+                        return compile_failed_node(input);
+                    }
+                }
+                else if (!(desc->mesh_field_visualization_asset
+                         == wz::asset::AssetKey{}))
+                {
+                    logger->error(
+                        "mesh styled renderable has field asset but style field visualization is disabled");
+                    return compile_failed_node(input);
+                }
+
                 RenderableAssetData data{};
                 data.kind = RenderableKind::Mesh;
                 data.source_asset = desc->mesh_asset;
                 data.companion_asset = desc->style_asset;
+                data.mesh_field_visualization_asset =
+                    desc->mesh_field_visualization_asset;
                 data.program = BuiltinRenderProgram::MeshWireframeDebug;
                 data.domain = RenderDomain::Opaque;
                 data.policy_flags = RenderPolicy_Wireframe;

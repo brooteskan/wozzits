@@ -95,6 +95,10 @@ namespace wz::engine::assets
         // and pass through derived data to the upload pipeline.
         wz::asset::AssetKey companion_asset{};
 
+        // Optional mesh-derived field used by mesh field visualization styles.
+        // Empty when the mesh style uses only constant wire/surface colors.
+        wz::asset::AssetKey mesh_field_visualization_asset{};
+
         BuiltinRenderProgram program{};
         RenderDomain domain{};
         uint32_t policy_flags = RenderPolicy_None;
@@ -142,6 +146,7 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey mesh_asset{};
         wz::asset::AssetKey style_asset{};
+        wz::asset::AssetKey mesh_field_visualization_asset{};
     };
 
     struct GaussianSplatDebugRenderableCompileDesc

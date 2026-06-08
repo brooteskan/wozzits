@@ -165,11 +165,17 @@ namespace wz::engine::assets
             return {};
         }
 
+        const wz::asset::AssetKey mesh_field_visualization_key =
+            desc.mesh_field_visualization.valid()
+                ? desc.mesh_field_visualization.output
+                : wz::asset::AssetKey{};
+
         const wz::asset::AssetKey key =
             make_mesh_styled_renderable_key(
                 desc.name,
                 desc.mesh.output,
-                desc.style.output);
+                desc.style.output,
+                mesh_field_visualization_key);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -180,11 +186,19 @@ namespace wz::engine::assets
         node.meta = MeshStyledRenderableCompileDesc{
             .mesh_asset = desc.mesh.output,
             .style_asset = desc.style.output,
+            .mesh_field_visualization_asset =
+                mesh_field_visualization_key,
         };
 
-        if (!system_.register_asset(
-                std::move(node),
-                { desc.mesh.output, desc.style.output }))
+        std::vector<wz::asset::AssetKey> deps{
+            desc.mesh.output,
+            desc.style.output,
+        };
+        if (!(mesh_field_visualization_key == wz::asset::AssetKey{})) {
+            deps.push_back(mesh_field_visualization_key);
+        }
+
+        if (!system_.register_asset(std::move(node), std::move(deps)))
         {
             return RenderableAsset{ .output = key };
         }

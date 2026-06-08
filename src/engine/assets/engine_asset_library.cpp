@@ -331,6 +331,7 @@ namespace wz::engine::assets
             logger_,
             scalar_fields_table_,
             mesh_table_,
+            mesh_derived_field_table_,
             terrain_table_,
             terrain_visual_proxy_table_,
             collision_table_,

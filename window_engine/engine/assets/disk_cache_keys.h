@@ -46,4 +46,10 @@ namespace wz::engine::assets::internal
         0x7c9e3a41d62f5b18ull,
         0x4f1bbcdc9a5e2743ull,
     };
+
+    inline constexpr DiskCacheKeySpec kMeshWaveletAnalysisDiskCacheKey{
+        "mesh_wavelet_analysis",
+        0x2bd7a14f69c80355ull,
+        0xb44f7a9dc13e6821ull,
+    };
 }

@@ -4,6 +4,7 @@
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/mesh/mesh_compilers.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/terrain/terrain_compilers.h>
@@ -25,17 +26,19 @@ namespace wz::engine::assets
     }
 
     EngineDiskCacheProvider::EngineDiskCacheProvider(
-        const EngineAssetCacheSettings& cache_settings,
-        wz::Logger& logger,
-        ScalarFieldTable& scalar_fields,
-        MeshTable& meshes,
-        TerrainAssetTable& terrains,
-        TerrainVisualProxyTable& terrain_visual_proxies,
-        CollisionAssetTable& collisions)
+            const EngineAssetCacheSettings& cache_settings,
+            wz::Logger& logger,
+            ScalarFieldTable& scalar_fields,
+            MeshTable& meshes,
+            MeshDerivedFieldTable& mesh_derived_fields,
+            TerrainAssetTable& terrains,
+            TerrainVisualProxyTable& terrain_visual_proxies,
+            CollisionAssetTable& collisions)
         : cache_settings_(cache_settings)
         , logger_(logger)
         , scalar_fields_(scalar_fields)
         , meshes_(meshes)
+        , mesh_derived_fields_(mesh_derived_fields)
         , terrains_(terrains)
         , terrain_visual_proxies_(terrain_visual_proxies)
         , collisions_(collisions)
@@ -74,6 +77,26 @@ namespace wz::engine::assets
                 key,
                 internal::kMeshTerrainDiskCacheKey.seed_lo,
                 internal::kMeshTerrainDiskCacheKey.seed_hi);
+        }
+        if (schema == kMeshDerivedFieldExplicitSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            return internal::disk_cache_asset_exists(
+                cache_settings_,
+                internal::kMeshDerivedFieldDiskCacheKey.subdirectory,
+                key,
+                internal::kMeshDerivedFieldDiskCacheKey.seed_lo,
+                internal::kMeshDerivedFieldDiskCacheKey.seed_hi);
+        }
+        if (schema == kMeshWaveletAnalysisSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            return internal::disk_cache_asset_exists(
+                cache_settings_,
+                internal::kMeshWaveletAnalysisDiskCacheKey.subdirectory,
+                key,
+                internal::kMeshWaveletAnalysisDiskCacheKey.seed_lo,
+                internal::kMeshWaveletAnalysisDiskCacheKey.seed_hi);
         }
         if (schema == kTerrainVisualProxySchema
             && type == kAssetTypeTerrainVisualProxy)
@@ -148,6 +171,44 @@ namespace wz::engine::assets
                 return std::nullopt;
             }
             wz::asset::ResourceHandle handle = terrains_.add(std::move(data));
+            return handle.valid()
+                ? std::optional<wz::asset::ResourceHandle>{ handle }
+                : std::nullopt;
+        }
+
+        if (schema == kMeshDerivedFieldExplicitSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            MeshDerivedFieldData data{};
+            if (!internal::load_cached_mesh_derived_field(
+                    cache_settings_,
+                    key,
+                    logger_,
+                    data))
+            {
+                return std::nullopt;
+            }
+            wz::asset::ResourceHandle handle =
+                mesh_derived_fields_.add(std::move(data));
+            return handle.valid()
+                ? std::optional<wz::asset::ResourceHandle>{ handle }
+                : std::nullopt;
+        }
+
+        if (schema == kMeshWaveletAnalysisSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            MeshDerivedFieldData data{};
+            if (!internal::load_cached_mesh_wavelet_analysis_field(
+                    cache_settings_,
+                    key,
+                    logger_,
+                    data))
+            {
+                return std::nullopt;
+            }
+            wz::asset::ResourceHandle handle =
+                mesh_derived_fields_.add(std::move(data));
             return handle.valid()
                 ? std::optional<wz::asset::ResourceHandle>{ handle }
                 : std::nullopt;

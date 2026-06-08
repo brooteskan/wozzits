@@ -48,6 +48,40 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_wavelet_analysis(
+        const MeshWaveletAnalysisDesc& desc)
+    {
+        if (!desc.source_mesh.valid()
+            || desc.scale_count == 0u
+            || desc.lambda_max_estimate <= 0.0f
+            || desc.gamma <= 0.0f)
+        {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_mesh_wavelet_analysis_field_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kMeshWaveletAnalysisSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.source_mesh.output }))
+        {
+            return MeshDerivedFieldAsset{ .output = field_key };
+        }
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldHandle
     MeshDerivedFieldAssetModule::get_mesh_derived_field(
         const MeshDerivedFieldAsset& asset) const

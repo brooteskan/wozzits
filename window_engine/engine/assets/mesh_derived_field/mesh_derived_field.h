@@ -11,6 +11,13 @@
 
 namespace wz::engine::assets
 {
+    namespace MeshWaveletChannelID
+    {
+        inline constexpr uint32_t kPositionEnergyBase = 0x1000u;
+        inline constexpr uint32_t kNormalEnergyBase = 0x1100u;
+        inline constexpr uint32_t kDetailCost = 0x1200u;
+    }
+
     enum class MeshDerivedFieldDomain : uint8_t
     {
         Vertex,

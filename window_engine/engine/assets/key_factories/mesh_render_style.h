@@ -44,6 +44,23 @@ namespace wz::engine::assets
         h = detail::mix64(h, style.depth_write ? 1ull : 0ull);
         h = detail::mix64(h, style.double_sided ? 1ull : 0ull);
         h = detail::mix64(h, style.hidden_line_prepass ? 1ull : 0ull);
+        h = detail::mix64(
+            h,
+            style.field_visualization.enabled ? 1ull : 0ull);
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(style.field_visualization.channel_id));
+        h = detail::mix64(
+            h,
+            mesh_render_style_float_bits(
+                style.field_visualization.value_min));
+        h = detail::mix64(
+            h,
+            mesh_render_style_float_bits(
+                style.field_visualization.value_max));
+        h = detail::mix64(
+            h,
+            mesh_render_style_float_bits(style.field_visualization.gamma));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

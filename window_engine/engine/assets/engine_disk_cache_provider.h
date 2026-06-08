@@ -4,6 +4,7 @@
 #include <engine/assets/asset_cache_settings.h>
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
@@ -21,6 +22,7 @@ namespace wz::engine::assets
             wz::Logger& logger,
             ScalarFieldTable& scalar_fields,
             MeshTable& meshes,
+            MeshDerivedFieldTable& mesh_derived_fields,
             TerrainAssetTable& terrains,
             TerrainVisualProxyTable& terrain_visual_proxies,
             CollisionAssetTable& collisions);
@@ -40,6 +42,7 @@ namespace wz::engine::assets
         wz::Logger& logger_;
         ScalarFieldTable& scalar_fields_;
         MeshTable& meshes_;
+        MeshDerivedFieldTable& mesh_derived_fields_;
         TerrainAssetTable& terrains_;
         TerrainVisualProxyTable& terrain_visual_proxies_;
         CollisionAssetTable& collisions_;

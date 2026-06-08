@@ -165,6 +165,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000406ull
     };
 
+    // CPU reference graph-wavelet analysis over a source mesh. Produces a
+    // vertex-domain kAssetTypeMeshDerivedField for validation/debug use.
+    inline constexpr wz::asset::SchemaID kMeshWaveletAnalysisSchema{
+        0xF11E'CA55'E7'000407ull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{
