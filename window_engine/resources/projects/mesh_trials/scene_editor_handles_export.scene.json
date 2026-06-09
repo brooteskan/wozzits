@@ -135,18 +135,7 @@
             "gpu.compute.*"
           ]
         }
-      ],
-      "compute_kernel": {
-        "kernel_id": "project/debug_multiply_u32",
-        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
-        "entry": "main",
-        "target": "cs_5_0",
-        "thread_group_size": [
-          4,
-          1,
-          1
-        ]
-      }
+      ]
     }
   ],
   "defaults": {

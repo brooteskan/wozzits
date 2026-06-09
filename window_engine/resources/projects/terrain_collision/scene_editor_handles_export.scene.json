@@ -26,85 +26,13 @@
       "visible": true
     },
     {
-      "id": "mesh_1",
+      "id": "camera_01",
       "parent": "root",
-      "name": "rock mesh",
-      "transform": {
-        "translation": [
-          -4.9499998092651367,
-          164.64999389648438,
-          3.5499999523162842
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:dc418f2e7f42b779:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:c57b009403a50e4f:e80a4cea9078cc3e"
-      },
-      "mesh_source": {
-        "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\low_poly_rock.glb",
-        "mesh_index": 0
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:e0af2a42c46825b4:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": true,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": false,
-          "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": true,
-        "hidden_line_prepass": true
-      },
-      "debug_visual": {
-        "kind": "axes",
-        "scale": 1,
-        "visible": true
-      },
-      "editor_handle": {
-        "kind": "transform",
-        "enabled": true,
-        "visible": true,
-        "size": 1
-      }
-    },
-    {
-      "id": "empty_1",
-      "parent": "empty_2",
-      "name": "terrain mesh source",
       "transform": {
         "translation": [
           0,
-          1.7999999523162842,
-          0
+          2,
+          -8
         ],
         "rotation_quat": [
           0,
@@ -119,44 +47,17 @@
         ]
       },
       "visible": false,
-      "mesh_source": {
-        "kind": "glb",
-        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
-        "mesh_index": 0
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:d5b13ca6ca9d6953:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": true,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": false,
-          "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": true,
-        "hidden_line_prepass": true
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
       }
     },
     {
-      "id": "empty_2",
+      "id": "empty_1",
       "parent": "root",
-      "name": "terrain",
+      "name": "mesh",
       "transform": {
         "translation": [
           0,
@@ -177,364 +78,24 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:55ee32cac2fa27d4:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000006:0000000000000000:d99198caa52f3654:5b11cfee35900216"
-      },
-      "terrain": {
-        "asset": "asset-key:547c06c37e08660b:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000004:0000000000000000:236178699b1b52e3:5578d804d61c780c",
-        "visual_proxy": {
-          "asset": "asset-key:bb932696543f5eda:0000000000000000:f11eca55e7000a02:0000000000000000:0000000000000005:0000000000000000:df45cf7efa52b5b5:d96361ff7869686e"
-        },
-        "constraint_surface": {
-          "asset": "asset-key:f1dafcc24f526a6e:0000000000000000:f11eca55e7000b01:0000000000000000:0000000000000002:0000000000000000:df45cf7efa52b5b5:d96361ff7869686e"
-        },
-        "calculate_constraint_surface": true,
-        "visible": true,
-        "queryable": true,
-        "constrain_movement": true
-      },
-      "terrain_render_style": {
-        "path": "surface",
-        "depth_test": true,
-        "depth_write": true,
-        "lighting_source": "environment_node",
-        "directional_light_node": "directional_light_2",
-        "ambient_light_node": "ambient_lighting_1",
-        "environment_node": "hdri_environment_1",
-        "ambient_strength": 0.27000001072883606,
-        "sky_visibility_strength": 0.54000002145767212,
-        "normal_lighting_strength": 0.93000000715255737,
-        "terrain_bounce_strength": 0.079999998211860657,
-        "target_pixels_per_triangle": 324.42001342773438,
-        "enable_surfel_lods": true,
-        "surfel_target_coverage_px": 4.0999999046325684,
-        "visual_chunk_count": 4096
-      },
-      "terrain_mesh_source": {
-        "mode": "scene_node",
-        "source_node": "empty_1",
-        "asset": "asset-key:d32f0b9d5e0b79d6:0000000000000000:f11eca55e7000403:0000000000000000:0000000000000002:0000000000000000:f90f3c0b1753645a:d974617c784f67aa",
-        "height_policy": "highest_accepted_surface",
-        "min_surface_normal_y": 0.20000000298023224,
-        "include_backfaces": true
-      }
-    },
-    {
-      "id": "empty_3",
-      "parent": "root",
-      "name": "another rock",
-      "transform": {
-        "translation": [
-          0,
-          162.39999389648438,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:b6c63f90e0e3b239:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:e0fcad82e754b828:4ac179bb3a2e5357"
+        "asset": "asset-key:6f1c228001f51f65:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:ba10f3ee1bdf06a3:22dbb55e4b02317d"
       },
       "mesh_source": {
-        "kind": "placeholder",
-        "path": "",
+        "kind": "glb",
+        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
         "mesh_index": 0
       },
-      "editor_handle": {
-        "kind": "transform",
+      "mesh_wavelet_analysis": {
         "enabled": true,
-        "visible": true,
-        "size": 1
-      }
-    },
-    {
-      "id": "empty_4",
-      "parent": "root",
-      "name": "yet another rock",
-      "transform": {
-        "translation": [
-          0,
-          168.80000305175781,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:820cdb058ef37d78:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:a28af14335f22ae3:4ac179bb3a2e5357"
-      },
-      "mesh_source": {
-        "kind": "procedural_cube",
-        "path": "",
-        "mesh_index": 0
-      }
-    },
-    {
-      "id": "ambient_lighting_1",
-      "parent": "root",
-      "name": "Ambient Lighting",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "ambient_lighting": {
-        "asset": "asset-key:19deb891ec36ea4b:ca11af3a4bb6ea9f:f11eca55e7001001:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "mode": "constant",
-        "color": [
-          0.14509804546833038,
-          0.050980392843484879,
-          0.34509804844856262
-        ],
-        "intensity": 0.34999999403953552,
-        "domain_mapping": "terrain_uv"
-      },
-      "editor_handle": {
-        "kind": "transform",
-        "enabled": true,
-        "visible": false,
-        "size": 1
-      }
-    },
-    {
-      "id": "directional_light_2",
-      "parent": "root",
-      "name": "Directional Light",
-      "transform": {
-        "translation": [
-          0,
-          4,
-          0
-        ],
-        "rotation_quat": [
-          -0.11135085672140121,
-          0,
-          0.32338637113571167,
-          0.93969261646270752
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "direct_light_source": {
-        "asset": "asset-key:50a3781257a090c7:12674604d4444650:f11eca55e7001000:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "kind": "directional",
-        "color": [
-          1,
-          0.95999997854232788,
-          0.81999999284744263
-        ],
-        "intensity": 2.2999999523162842,
-        "range": 1,
-        "inner_cone_radians": 0.40000000596046448,
-        "outer_cone_radians": 0.80000001192092896
-      },
-      "debug_visual": {
-        "kind": "axes",
-        "scale": 1,
-        "visible": true
-      },
-      "editor_handle": {
-        "kind": "rotate",
-        "enabled": true,
-        "visible": false,
-        "size": 1
-      }
-    },
-    {
-      "id": "hdri_environment_1",
-      "parent": "root",
-      "name": "HDRI Environment",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": false,
-      "hdri_environment": {
-        "asset": "asset-key:ef830c1e17b0e540:4a2782bdad32afe6:f11eca55e7001002:0000000000000000:0000000000000004:0000000000000000:f175c91f3859d74b:346c2c4442e03753",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\hdri\\HdrOutdoorFieldBaseballDayClear001_HDR_8K.exr",
-        "format": "openexr",
-        "exposure": 0.15999999642372131,
-        "rotation_x_radians": 0,
-        "rotation_y_radians": 1.7976891994476318,
-        "rotation_z_radians": 0,
-        "lighting_intensity": 1.309999942779541,
-        "reflection_intensity": 0.81999999284744263,
-        "background_intensity": 0,
-        "lighting_sample_resolution": 1024,
-        "environment_light_color": [
-          0.93630927801132202,
-          1.0058219432830811,
-          1.1298731565475464
-        ],
-        "environment_light_intensity": 0.82771134376525879,
-        "dominant_light_direction": [
-          0.43004876375198364,
-          -0.8971552848815918,
-          -0.10084925591945648
-        ],
-        "dominant_light_color": [
-          0.91904127597808838,
-          1.0068072080612183,
-          1.1709587574005127
-        ],
-        "dominant_light_intensity": 1.1172851324081421,
-        "dominant_light_confidence": 1
-      },
-      "editor_handle": {
-        "kind": "rotate",
-        "enabled": true,
-        "visible": true,
-        "size": 1
-      }
-    },
-    {
-      "id": "sky_surface_1",
-      "parent": "root",
-      "name": "Sky Surface",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "sky_visual": {
-        "kind": "gradient",
-        "solid_color": [
-          0.4847654402256012,
-          0.60053837299346924,
-          0.7549019455909729
-        ],
-        "gradient_top_color": [
-          0.054354086518287659,
-          0.15205593407154083,
-          0.38235294818878174
-        ],
-        "gradient_bottom_color": [
-          0.71828144788742065,
-          0.81684494018554688,
-          0.92156863212585449
-        ],
-        "scalar_field_node": "sky_surface_1",
-        "exposure": 1.5700000524520874,
-        "rotation_x_radians": 0.26616272330284119,
-        "rotation_y_radians": 0,
-        "rotation_z_radians": 0
-      },
-      "sky_surface": {
-        "projection": "sphere",
-        "radius": 7.0999999046325684,
-        "visible_to_camera": true
-      },
-      "scalar_field_source": {
-        "kind": "procedural_checkerboard",
-        "asset": "asset-key:f45fc01edd5959bf:fdad852953f068f8:f11eca55e7000201:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "path": "",
-        "width": 4096,
-        "height": 4096,
-        "depth": 1,
-        "frequency": 1,
-        "amplitude": 1
-      }
-    },
-    {
-      "id": "empty_5",
-      "parent": "root",
-      "name": "vehicle",
-      "transform": {
-        "translation": [
-          109.94999694824219,
-          84.449996948242188,
-          -0.05000000074505806
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:2e1232316c17dbd9:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:5deb7984bb7b4040:4ac179bb3a2e5357"
-      },
-      "mesh_source": {
-        "kind": "placeholder",
-        "path": "",
-        "mesh_index": 0
+        "function": "builtin_detail_heat_v0",
+        "scale_count": 1,
+        "lambda_max_estimate": 2.9300000667572021,
+        "gamma": 0.64999997615814209
       },
       "mesh_render_style": {
-        "asset": "asset-key:f9ee18d4c123dc75:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:48d49c8c13bdfacf:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
-          "enabled": true,
+          "enabled": false,
           "color": [
             0,
             1,
@@ -547,8 +108,8 @@
           "enabled": true,
           "color": [
             0.25,
-            0.26911783218383789,
             0.89999997615814209,
+            0.34999999403953552,
             1
           ],
           "emissive_strength": 0
@@ -556,51 +117,30 @@
         "alpha": 1,
         "depth_test": true,
         "depth_write": true,
-        "double_sided": false,
-        "hidden_line_prepass": false
-      },
-      "collision": {
-        "asset": "asset-key:e6eecd7d8d567eaf:0000000000000000:f11eca55e7000b00:0000000000000000:0000000000000001:0000000000000000:eada519cd432e7ad:6fec39f84e4ce07a",
-        "layer_mask": 1,
-        "collides_with_mask": 4294967295,
-        "is_trigger": true,
-        "enabled": true
-      },
-      "event_listener": {
-        "channels": [
-          "collision.enter",
-          "collision.exit",
-          "collision.stay"
-        ]
-      },
-      "behavior": {
-        "module": "test_behavior",
-        "name": "",
-        "enabled": true,
-        "apply_in_editor": false
-      },
-      "editor_handle": {
-        "kind": "transform",
-        "enabled": true,
-        "visible": true,
-        "size": 1
+        "double_sided": true,
+        "hidden_line_prepass": false,
+        "field_visualization_enabled": true,
+        "field_visualization_channel_id": 4608,
+        "field_visualization_value_min": 0,
+        "field_visualization_value_max": 1,
+        "field_visualization_gamma": 1
       }
     },
     {
-      "id": "empty_6",
+      "id": "empty_2",
       "parent": "root",
-      "name": "tank",
+      "name": "compute behavior",
       "transform": {
         "translation": [
-          -42.849998474121094,
-          160.89999389648438,
-          84.449996948242188
+          0,
+          0,
+          0
         ],
         "rotation_quat": [
-          -7.5497901264043321e-08,
-          1,
-          -7.5497901264043321e-08,
-          5.6999333062442061e-15
+          0,
+          0,
+          0,
+          1
         ],
         "scale": [
           1,
@@ -609,406 +149,23 @@
         ]
       },
       "visible": true,
-      "scene_import_source": {
-        "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
-        "import_prefix": ""
-      },
-      "motion": {
-        "linear_velocity": [
-          0,
-          0,
-          0
-        ],
-        "angular_velocity": [
-          0,
-          0,
-          0
-        ],
-        "space": "world",
-        "terrain_constrained": true,
-        "terrain_ride_height": 0.20000000298023224,
-        "terrain_footprint_radius": 0.60000002384185791,
-        "terrain_align_to_surface": true,
-        "terrain_alignment_strength": 0.30500000715255737,
-        "enabled": true
-      },
       "behaviors": [
         {
-          "label": "Input",
-          "module": "tank_controller",
-          "name": "",
+          "id": "empty_2_behavior_0",
+          "label": "gpu_test_beharoiv",
+          "module": "debug",
+          "name": "log_collision_events",
           "enabled": true,
-          "apply_in_editor": true,
+          "apply_in_editor": false,
           "events": [
-            "input.*",
-            "frame.update"
+            "collision.*"
           ]
         }
-      ],
-      "editor_handle": {
-        "kind": "transform",
-        "enabled": true,
-        "visible": true,
-        "size": 1
-      }
-    },
-    {
-      "id": "empty_6/tank1/body",
-      "parent": "empty_6",
-      "name": "body",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1.6399999856948853,
-          0.33000004291534424,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:bfec1621680d46a3:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:86e5abbcb7a9c592:1fcfd47f532d9d7f"
-      },
-      "imported_node": {
-        "anchor_node": "empty_6",
-        "import_prefix": "empty_6/tank1",
-        "source_node": "body",
-        "missing_source": false
-      },
-      "mesh_source": {
-        "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
-        "mesh_index": 2
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:56518eb38d5e2b34:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": true,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": true,
-          "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": true,
-        "hidden_line_prepass": false
-      }
-    },
-    {
-      "id": "empty_6/tank1/turret",
-      "parent": "empty_6/tank1/body",
-      "name": "turret",
-      "transform": {
-        "translation": [
-          0,
-          1.6363635063171387,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          0.48170742392539978,
-          0.75757569074630737,
-          0.79000002145767212
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:489bf0306d8b9b1a:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:905f01d04186c5fc:1fcfd47f532d9d7f"
-      },
-      "imported_node": {
-        "anchor_node": "empty_6",
-        "import_prefix": "empty_6/tank1",
-        "source_node": "turret",
-        "missing_source": false
-      },
-      "mesh_source": {
-        "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
-        "mesh_index": 1
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:f826bfc48c81719b:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": true,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": true,
-          "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": true,
-        "hidden_line_prepass": false
-      }
-    },
-    {
-      "id": "empty_6/tank1/gun",
-      "parent": "empty_6/tank1/turret",
-      "name": "gun",
-      "transform": {
-        "translation": [
-          -0.54270660877227783,
-          -0.14254975318908691,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0.53237670660018921,
-          0.84650766849517822
-        ],
-        "scale": [
-          0.50190979242324829,
-          1.642006516456604,
-          0.16455695033073425
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:2a4bb1fd8d7e7515:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:26c7bf9a8b28ee8f:1fcfd47f532d9d7f"
-      },
-      "imported_node": {
-        "anchor_node": "empty_6",
-        "import_prefix": "empty_6/tank1",
-        "source_node": "gun",
-        "missing_source": false
-      },
-      "mesh_source": {
-        "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\tank1.glb",
-        "mesh_index": 0
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:6bd6d97bd9569a24:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": true,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": true,
-          "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": true,
-        "hidden_line_prepass": false
-      }
-    },
-    {
-      "id": "empty_7",
-      "parent": "empty_6",
-      "name": "camera",
-      "transform": {
-        "translation": [
-          6.4499998092651367,
-          1.5,
-          0
-        ],
-        "rotation_quat": [
-          1.0677194950403646e-07,
-          -0.70709449052810669,
-          1.0677194950403646e-07,
-          0.7071191668510437
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:b6c63f90e0e3b239:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:e0fcad82e754b828:4ac179bb3a2e5357"
-      },
-      "camera": {
-        "fov_y": 1.0471999645233154,
-        "near": 0.10000000149011612,
-        "far": 1000,
-        "aspect": 1.7777777910232544
-      },
-      "mesh_source": {
-        "kind": "placeholder",
-        "path": "",
-        "mesh_index": 0
-      }
-    }
-  ],
-  "lights": [
-    {
-      "node_id": "empty_5",
-      "light": {
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "direction": [
-          0,
-          0,
-          0
-        ],
-        "color": [
-          1,
-          1,
-          1
-        ],
-        "type": "ambient",
-        "intensity": 0.73000001907348633,
-        "range": 10
-      }
-    },
-    {
-      "node_id": "root",
-      "light": {
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "direction": [
-          0,
-          -1,
-          0
-        ],
-        "color": [
-          1,
-          1,
-          1
-        ],
-        "type": "point",
-        "intensity": 1,
-        "range": 10
-      }
-    },
-    {
-      "node_id": "empty_6",
-      "light": {
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "direction": [
-          0,
-          -1,
-          0
-        ],
-        "color": [
-          1,
-          1,
-          1
-        ],
-        "type": "point",
-        "intensity": 1,
-        "range": 10
-      }
-    },
-    {
-      "node_id": "directional_light_2",
-      "light": {
-        "position": [
-          0,
-          4,
-          0
-        ],
-        "direction": [
-          0.60776758193969727,
-          -0.7660444974899292,
-          0.20927116274833679
-        ],
-        "color": [
-          1,
-          0.95999997854232788,
-          0.81999999284744263
-        ],
-        "type": "directional",
-        "intensity": 2.2999999523162842,
-        "range": 1
-      }
-    },
-    {
-      "node_id": "ambient_lighting_1",
-      "light": {
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "direction": [
-          0,
-          0,
-          0
-        ],
-        "color": [
-          0.14509804546833038,
-          0.050980392843484879,
-          0.34509804844856262
-        ],
-        "type": "ambient",
-        "intensity": 0.34999999403953552,
-        "range": 10
-      }
+      ]
     }
   ],
   "defaults": {
-    "active_camera": "empty_7"
+    "active_camera": "camera_01"
   },
   "scene_editor_metadata": {
     "schema": "wozzits.scene_editor_metadata.v1",
@@ -1016,15 +173,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        99.327735900878906,
-        157.15730285644531,
-        51.288600921630859
+        433.8837890625,
+        118.76979827880859,
+        232.85890197753906
       ],
       "orientation": [
-        0.084201648831367493,
-        -0.90648776292800903,
-        0.23660749197006226,
-        0.33942151069641113
+        0.034803491085767746,
+        0.86226958036422729,
+        -0.15948621928691864,
+        -0.47942039370536804
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
