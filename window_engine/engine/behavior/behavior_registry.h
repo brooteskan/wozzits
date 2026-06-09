@@ -3,6 +3,7 @@
 // engine/behavior/behavior_registry.h
 
 #include <engine/behavior/behavior_commands.h>
+#include <engine/behavior/behavior_gpu_compute.h>
 #include <engine/behavior/event_channels.h>
 #include <engine/behavior/behavior_plugin_abi.h>
 #include <engine/engine.h>
@@ -51,8 +52,12 @@ namespace wz::engine::behavior
         wz::engine::assets::SceneInstance* scene = nullptr;
         wz::engine::assets::BehaviorStateStorage* behavior_state = nullptr;
         const wz::engine::assets::BehaviorComponent* active_behavior = nullptr;
+        wz::scene::RuntimeEntityId active_entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
         const WzInputEventPayload* active_input_payload = nullptr;
+        const WzGpuComputeEventPayload* active_gpu_compute_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
+        BehaviorGpuComputeBuffer* gpu_compute = nullptr;
         wz::Logger* logger = nullptr;
         BehaviorSurfaceRayQueryStats* surface_ray_stats = nullptr;
     };

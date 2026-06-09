@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #if defined(_WIN32)
 #define WZ_BEHAVIOR_MODULE_EXPORT __declspec(dllexport)
@@ -79,6 +80,186 @@
         };                                                                  \
         return api->register_module_desc(api->user, &desc);                 \
     }
+
+// The stack helper keeps jobs small and easy to author. The engine-side queue
+// accepts more ports for generated/adapted jobs, but hand-written behavior
+// modules should fit comfortably inside this helper limit.
+#define WZ_GPU_MAX_JOB_PORTS 16u
+
+typedef struct WzGpuJob
+{
+    WzGpuComputeJobDesc desc;
+    WzGpuPortValue ports[WZ_GPU_MAX_JOB_PORTS];
+} WzGpuJob;
+
+static inline void wz_gpu_job_clear(WzGpuJob* job)
+{
+    if (!job) {
+        return;
+    }
+    memset(job, 0, sizeof(*job));
+    job->desc.ports = job->ports;
+    job->desc.group_count_x = 1u;
+    job->desc.group_count_y = 1u;
+    job->desc.group_count_z = 1u;
+}
+
+static inline uint8_t wz_gpu_begin(WzGpuJob* job, const char* kernel)
+{
+    if (!job || !kernel || !kernel[0]) {
+        return 0u;
+    }
+    wz_gpu_job_clear(job);
+    job->desc.kernel = kernel;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_set_groups(
+    WzGpuJob* job,
+    uint32_t x,
+    uint32_t y,
+    uint32_t z)
+{
+    if (!job || x == 0u || y == 0u || z == 0u) {
+        return 0u;
+    }
+    job->desc.group_count_x = x;
+    job->desc.group_count_y = y;
+    job->desc.group_count_z = z;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_set_request_tag(
+    WzGpuJob* job,
+    uint64_t request_tag)
+{
+    if (!job) {
+        return 0u;
+    }
+    job->desc.request_tag = request_tag;
+    return 1u;
+}
+
+static inline WzGpuPortValue* wz_gpu_add_port(
+    WzGpuJob* job,
+    const char* name,
+    WzGpuPortKind kind,
+    WzGpuPortDirection direction)
+{
+    if (!job || !name || !name[0]
+        || kind == WZ_GPU_PORT_NONE
+        || direction == 0u
+        || job->desc.port_count >= WZ_GPU_MAX_JOB_PORTS)
+    {
+        return 0;
+    }
+
+    WzGpuPortValue* port = &job->ports[job->desc.port_count++];
+    memset(port, 0, sizeof(*port));
+    port->name = name;
+    port->kind = kind;
+    port->direction = direction;
+    return port;
+}
+
+static inline uint8_t wz_gpu_set_structured_input(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t element_count,
+    uint32_t stride_bytes,
+    const void* initial_data,
+    uint64_t initial_data_bytes)
+{
+    if (element_count == 0u || stride_bytes == 0u
+        || (!initial_data && initial_data_bytes != 0u))
+    {
+        return 0u;
+    }
+
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->element_count = element_count;
+    port->stride_bytes = stride_bytes;
+    port->initial_data = initial_data;
+    port->initial_data_bytes = initial_data_bytes;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_set_structured_output(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t element_count,
+    uint32_t stride_bytes)
+{
+    if (element_count == 0u || stride_bytes == 0u) {
+        return 0u;
+    }
+
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_OUTPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->element_count = element_count;
+    port->stride_bytes = stride_bytes;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_set_u32(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t value)
+{
+    WzGpuPortValue* port =
+        wz_gpu_add_port(job, name, WZ_GPU_PORT_U32, WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->u32[0] = value;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_set_f32(
+    WzGpuJob* job,
+    const char* name,
+    float value)
+{
+    WzGpuPortValue* port =
+        wz_gpu_add_port(job, name, WZ_GPU_PORT_F32, WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->f32[0] = value;
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_submit(
+    const WzBehaviorFrameFacts* facts,
+    const WzGpuJob* job,
+    WzGpuWorkId* out_work)
+{
+    if (!facts || !facts->submit_gpu_compute || !job
+        || !job->desc.kernel || !job->desc.kernel[0])
+    {
+        return 0u;
+    }
+
+    WzGpuComputeJobDesc desc = job->desc;
+    desc.ports = job->ports;
+    return facts->submit_gpu_compute(
+        facts->gpu_compute_user,
+        &desc,
+        out_work);
+}
 
 static inline uint8_t wz_key_down(
     const WzBehaviorFrameFacts* facts,
@@ -715,6 +896,44 @@ static inline float wz_input_event_controller_axis_value(
     return facts && facts->active_input_event
         ? facts->active_input_event->value
         : 0.0f;
+}
+
+static inline uint8_t wz_gpu_compute_event_active(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_gpu_compute_event ? 1u : 0u;
+}
+
+static inline WzGpuWorkId wz_gpu_compute_event_work(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_gpu_compute_event
+        ? facts->active_gpu_compute_event->work
+        : WzGpuWorkId{ 0u };
+}
+
+static inline WzGpuComputeStatus wz_gpu_compute_event_status(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_gpu_compute_event
+        ? facts->active_gpu_compute_event->status
+        : WZ_GPU_COMPUTE_STATUS_NONE;
+}
+
+static inline uint64_t wz_gpu_compute_event_request_tag(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_gpu_compute_event
+        ? facts->active_gpu_compute_event->request_tag
+        : 0u;
+}
+
+static inline uint32_t wz_gpu_compute_event_output_count(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_gpu_compute_event
+        ? facts->active_gpu_compute_event->output_count
+        : 0u;
 }
 
 static inline uint8_t wz_self_is_trigger(const WzBehaviorEvent* event)
@@ -1422,6 +1641,10 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "input.controller_button.released";
     case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
         return "input.controller_axis.changed";
+    case WZ_EVENT_GPU_COMPUTE_COMPLETED:
+        return "gpu.compute.completed";
+    case WZ_EVENT_GPU_COMPUTE_FAILED:
+        return "gpu.compute.failed";
     default:
         return "unknown";
     }

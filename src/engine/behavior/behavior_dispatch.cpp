@@ -55,23 +55,41 @@ namespace wz::engine::behavior
             }
         }
 
+        WzBehaviorEventKind gpu_compute_event_kind(
+            WzBehaviorEventKind kind) noexcept
+        {
+            switch (kind) {
+            case WZ_EVENT_GPU_COMPUTE_COMPLETED:
+            case WZ_EVENT_GPU_COMPUTE_FAILED:
+                return kind;
+            default:
+                return WZ_EVENT_NONE;
+            }
+        }
+
         struct ActiveBehaviorScope
         {
             BehaviorFrameContext& context;
             const wz::engine::assets::BehaviorComponent* previous = nullptr;
+            wz::scene::RuntimeEntityId previous_entity =
+                wz::scene::INVALID_RUNTIME_ENTITY;
 
             ActiveBehaviorScope(
                 BehaviorFrameContext& context_in,
-                const wz::engine::assets::BehaviorComponent& behavior)
+                const wz::engine::assets::BehaviorComponent& behavior,
+                wz::scene::RuntimeEntityId entity)
                 : context(context_in)
                 , previous(context_in.active_behavior)
+                , previous_entity(context_in.active_entity)
             {
                 context.active_behavior = &behavior;
+                context.active_entity = entity;
             }
 
             ~ActiveBehaviorScope()
             {
                 context.active_behavior = previous;
+                context.active_entity = previous_entity;
             }
         };
 
@@ -92,6 +110,26 @@ namespace wz::engine::behavior
             ~ActiveInputPayloadScope()
             {
                 context.active_input_payload = previous;
+            }
+        };
+
+        struct ActiveGpuComputePayloadScope
+        {
+            BehaviorFrameContext& context;
+            const WzGpuComputeEventPayload* previous = nullptr;
+
+            ActiveGpuComputePayloadScope(
+                BehaviorFrameContext& context_in,
+                const WzGpuComputeEventPayload& payload)
+                : context(context_in)
+                , previous(context_in.active_gpu_compute_payload)
+            {
+                context.active_gpu_compute_payload = &payload;
+            }
+
+            ~ActiveGpuComputePayloadScope()
+            {
+                context.active_gpu_compute_payload = previous;
             }
         };
 
@@ -143,7 +181,10 @@ namespace wz::engine::behavior
                 return;
             }
 
-            ActiveBehaviorScope active_behavior(context, component);
+            ActiveBehaviorScope active_behavior(
+                context,
+                component,
+                event.entity);
             module->on_event(context, event, module->user_data);
         }
 
@@ -327,6 +368,44 @@ namespace wz::engine::behavior
                 }
             }
         }
+
+        void dispatch_gpu_compute_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            if (!context.gpu_compute) {
+                return;
+            }
+
+            std::vector<BehaviorGpuComputeEvent> events;
+            events.swap(context.gpu_compute->events);
+            for (const auto& gpu_event : events) {
+                const BehaviorEvent event{
+                    .kind = gpu_compute_event_kind(gpu_event.kind),
+                    .entity = gpu_event.entity,
+                    .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                    .self_is_trigger = false,
+                };
+                if (event.kind == WZ_EVENT_NONE) {
+                    continue;
+                }
+
+                ActiveGpuComputePayloadScope active_payload(
+                    context,
+                    gpu_event.payload);
+                for (const auto& record : scene.behaviors) {
+                    if (record.node != gpu_event.entity) {
+                        continue;
+                    }
+                    dispatch_matching_module_event(
+                        registry,
+                        context,
+                        record.component,
+                        event);
+                }
+            }
+        }
     }
 
     void initialize_behaviors(
@@ -364,7 +443,10 @@ namespace wz::engine::behavior
                     continue;
                 }
 
-                ActiveBehaviorScope active_behavior(context, component);
+                ActiveBehaviorScope active_behavior(
+                    context,
+                    component,
+                    record.node);
                 module->on_init(context, record.node, module->user_data);
             }
         }
@@ -387,6 +469,9 @@ namespace wz::engine::behavior
         }
 
         context.commands->clear();
+        if (context.gpu_compute) {
+            context.gpu_compute->clear_jobs();
+        }
         // Command order is deterministic: subscribed module frame.update
         // events, routed input/collision/proximity module events, then legacy
         // named functions.
@@ -394,6 +479,7 @@ namespace wz::engine::behavior
         dispatch_input_events_to_modules(scene, registry, context);
         dispatch_collision_events_to_modules(scene, registry, context);
         dispatch_proximity_events_to_modules(scene, registry, context);
+        dispatch_gpu_compute_events_to_modules(scene, registry, context);
 
         for (const auto& record : scene.behaviors) {
             const auto& component = record.component;
@@ -414,7 +500,10 @@ namespace wz::engine::behavior
                 continue;
             }
 
-            ActiveBehaviorScope active_behavior(context, component);
+            ActiveBehaviorScope active_behavior(
+                context,
+                component,
+                record.node);
             registration->function(
                 context,
                 record.node,

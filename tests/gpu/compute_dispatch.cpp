@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/compute_pipeline_asset_module.h>
+#include <engine/behavior/behavior_gpu_compute_executor.h>
+#include <engine/behavior/behavior_module_api.h>
 #include <engine/assets/engine_asset_library.h>
 #include <gpu/compute.h>
 #include <gpu/gpu.h>
@@ -105,6 +107,7 @@ namespace
         std::memcpy(out.data(), bytes.data(), sizeof(out));
         return out;
     }
+
 }
 
 TEST_F(ComputeDispatchFixture, MultiplyKernelDispatchesAndReadsBack)
@@ -226,5 +229,180 @@ TEST_F(ComputeDispatchFixture, MultiplyKernelDispatchesAndReadsBack)
 
     EXPECT_TRUE(wz::gpu::release_compute_buffer(device, input_buffer));
     EXPECT_TRUE(wz::gpu::release_compute_buffer(device, output_buffer));
+    EXPECT_TRUE(wz::gpu::release_compute_pipeline(device, gpu_pipeline));
+}
+
+TEST_F(ComputeDispatchFixture, BehaviorGpuNamedPortsDispatchAdHocResource)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shader = assets.shaders().create_compute_shader({
+        .name = "compute/multiply_uint",
+        .path = "shaders/compute/multiply_uint_cs.hlsl",
+        .entry = "main",
+        .target = "cs_5_0",
+    });
+    ASSERT_TRUE(shader.valid());
+
+    const auto pipeline_asset =
+        assets.compute_pipelines().create_compute_pipeline({
+            .name = "compute/multiply_uint_pipeline",
+            .compute_shader = shader.shader,
+            .bindings = {
+                {
+                    .kind = ComputeBindingKind::StructuredBufferSRV,
+                    .semantic = ComputeBindingSemantic::Scratch,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(uint32_t),
+                },
+                {
+                    .kind = ComputeBindingKind::StructuredBufferUAV,
+                    .semantic = ComputeBindingSemantic::Scratch,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(uint32_t),
+                },
+            },
+            .root_constant_dwords = 4,
+            .thread_group_size_x = 4,
+            .thread_group_size_y = 1,
+            .thread_group_size_z = 1,
+        });
+    ASSERT_TRUE(pipeline_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto shader_handle = assets.shaders().get_compute_shader(shader);
+    ASSERT_TRUE(shader_handle.valid());
+
+    const auto pipeline_handle =
+        assets.compute_pipelines().get_compute_pipeline(pipeline_asset);
+    ASSERT_TRUE(pipeline_handle.valid());
+
+    const auto* pipeline_data =
+        assets.compute_pipelines().get_compute_pipeline_data(pipeline_handle);
+    ASSERT_NE(pipeline_data, nullptr);
+
+    const wz::gpu::GPUHandle gpu_pipeline =
+        wz::gpu::create_compute_pipeline(
+            device,
+            *pipeline_data,
+            shader_handle.shader);
+    ASSERT_TRUE(gpu_pipeline.valid());
+
+    const std::array<uint32_t, 4> input{ 3, 4, 5, 6 };
+    WzGpuJob job{};
+    WzGpuWorkId work{};
+    ASSERT_EQ(wz_gpu_begin(&job, "compute/multiply_uint"), 1u);
+    ASSERT_EQ(wz_gpu_set_request_tag(&job, 777u), 1u);
+    ASSERT_EQ(wz_gpu_set_groups(&job, 1u, 1u, 1u), 1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_input(
+            &job,
+            "input",
+            static_cast<uint32_t>(input.size()),
+            sizeof(uint32_t),
+            input.data(),
+            sizeof(input)),
+        1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_output(
+            &job,
+            "output",
+            static_cast<uint32_t>(input.size()),
+            sizeof(uint32_t)),
+        1u);
+    ASSERT_EQ(wz_gpu_set_u32(&job, "factor", 5u), 1u);
+    ASSERT_EQ(wz_gpu_set_u32(&job, "count", 4u), 1u);
+
+    wz::engine::behavior::BehaviorGpuComputeBuffer queue{};
+    ASSERT_TRUE(queue.submit(12u, job.desc, &work));
+    EXPECT_EQ(work.value, 1u);
+
+    const std::vector<wz::engine::behavior::BehaviorGpuKernelBinding>
+        kernels{
+            {
+                .name = "compute/multiply_uint",
+                .pipeline = gpu_pipeline,
+                .root_constant_dwords = 4u,
+                .ports = {
+                    {
+                        .name = "input",
+                        .port_kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                        .direction = WZ_GPU_PORT_INPUT,
+                        .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::BufferBinding,
+                        .binding_kind = ComputeBindingKind::StructuredBufferSRV,
+                        .shader_register = 0u,
+                    },
+                    {
+                        .name = "output",
+                        .port_kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                        .direction = WZ_GPU_PORT_OUTPUT,
+                        .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::BufferBinding,
+                        .binding_kind = ComputeBindingKind::StructuredBufferUAV,
+                        .shader_register = 0u,
+                    },
+                    {
+                        .name = "factor",
+                        .port_kind = WZ_GPU_PORT_U32,
+                        .direction = WZ_GPU_PORT_INPUT,
+                        .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::RootConstant,
+                        .root_constant_offset = 0u,
+                        .root_constant_dwords = 1u,
+                    },
+                    {
+                        .name = "count",
+                        .port_kind = WZ_GPU_PORT_U32,
+                        .direction = WZ_GPU_PORT_INPUT,
+                        .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::RootConstant,
+                        .root_constant_offset = 1u,
+                        .root_constant_dwords = 1u,
+                    },
+                },
+            },
+        };
+
+    const auto dispatch_report =
+        wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            queue.jobs,
+            kernels);
+    EXPECT_EQ(dispatch_report.submitted, 1u);
+    EXPECT_EQ(dispatch_report.dispatched, 1u);
+    EXPECT_EQ(dispatch_report.failed, 0u);
+    ASSERT_EQ(dispatch_report.readbacks.size(), 1u);
+    EXPECT_EQ(dispatch_report.readbacks[0].work.value, work.value);
+    EXPECT_EQ(dispatch_report.readbacks[0].port_name, "output");
+    ASSERT_EQ(
+        dispatch_report.readbacks[0].bytes.size(),
+        sizeof(std::array<uint32_t, 4>));
+    EXPECT_EQ(
+        read_u32x4(dispatch_report.readbacks[0].bytes),
+        (std::array<uint32_t, 4>{ 15, 20, 25, 30 }));
+    ASSERT_EQ(dispatch_report.completed_work.size(), 1u);
+    EXPECT_EQ(dispatch_report.completed_work[0].value, work.value);
+    EXPECT_TRUE(dispatch_report.failed_work.empty());
+
+    const uint32_t posted =
+        wz::engine::behavior::post_behavior_gpu_compute_events(
+            queue,
+            queue.jobs,
+            dispatch_report);
+    EXPECT_EQ(posted, 1u);
+    ASSERT_EQ(queue.events.size(), 1u);
+    EXPECT_EQ(queue.events[0].kind, WZ_EVENT_GPU_COMPUTE_COMPLETED);
+    EXPECT_EQ(queue.events[0].entity, 12u);
+    EXPECT_EQ(queue.events[0].payload.work.value, work.value);
+    EXPECT_EQ(queue.events[0].payload.status, WZ_GPU_COMPUTE_STATUS_COMPLETED);
+    EXPECT_EQ(queue.events[0].payload.request_tag, 777u);
+    EXPECT_EQ(queue.events[0].payload.output_count, 1u);
+
     EXPECT_TRUE(wz::gpu::release_compute_pipeline(device, gpu_pipeline));
 }

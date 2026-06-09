@@ -38,6 +38,103 @@ TEST(BehaviorModuleApi, LogInfofFormatsThroughLogCallback)
     EXPECT_EQ(message, "unchanged");
 }
 
+TEST(BehaviorModuleApi, GpuJobHelpersBuildNamedPortDispatch)
+{
+    struct Probe
+    {
+        uint32_t calls = 0;
+        WzGpuComputeJobDesc job{};
+        WzGpuPortValue ports[4]{};
+    } probe;
+
+    WzBehaviorFrameFacts facts{
+        .gpu_compute_user = &probe,
+        .submit_gpu_compute =
+            [](void* user,
+               const WzGpuComputeJobDesc* job,
+               WzGpuWorkId* out_work) -> uint8_t
+            {
+                auto* probe = static_cast<Probe*>(user);
+                if (!probe || !job || !job->ports) {
+                    return 0u;
+                }
+                ++probe->calls;
+                probe->job = *job;
+                for (uint32_t i = 0; i < job->port_count && i < 4u; ++i) {
+                    probe->ports[i] = job->ports[i];
+                }
+                if (out_work) {
+                    out_work->value = 42u;
+                }
+                return 1u;
+            },
+    };
+
+    const uint32_t input[4]{ 1u, 2u, 3u, 4u };
+    WzGpuJob job{};
+    WzGpuWorkId work{};
+    ASSERT_EQ(wz_gpu_begin(&job, "test/multiply"), 1u);
+    ASSERT_EQ(wz_gpu_set_groups(&job, 2u, 1u, 1u), 1u);
+    ASSERT_EQ(wz_gpu_set_request_tag(&job, 99u), 1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_input(
+            &job,
+            "input",
+            4u,
+            sizeof(uint32_t),
+            input,
+            sizeof(input)),
+        1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_output(
+            &job,
+            "output",
+            4u,
+            sizeof(uint32_t)),
+        1u);
+    ASSERT_EQ(wz_gpu_set_u32(&job, "factor", 3u), 1u);
+
+    ASSERT_EQ(wz_gpu_submit(&facts, &job, &work), 1u);
+
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_STREQ(probe.job.kernel, "test/multiply");
+    EXPECT_EQ(probe.job.port_count, 3u);
+    EXPECT_EQ(probe.job.group_count_x, 2u);
+    EXPECT_EQ(probe.job.request_tag, 99u);
+    EXPECT_EQ(work.value, 42u);
+    EXPECT_STREQ(probe.ports[0].name, "input");
+    EXPECT_EQ(probe.ports[0].kind, WZ_GPU_PORT_STRUCTURED_BUFFER);
+    EXPECT_EQ(probe.ports[0].direction, WZ_GPU_PORT_INPUT);
+    EXPECT_EQ(probe.ports[0].initial_data, input);
+    EXPECT_STREQ(probe.ports[1].name, "output");
+    EXPECT_EQ(probe.ports[1].direction, WZ_GPU_PORT_OUTPUT);
+    EXPECT_STREQ(probe.ports[2].name, "factor");
+    EXPECT_EQ(probe.ports[2].kind, WZ_GPU_PORT_U32);
+    EXPECT_EQ(probe.ports[2].u32[0], 3u);
+}
+
+TEST(BehaviorModuleApi, GpuJobHelpersRejectInvalidJobs)
+{
+    WzGpuJob job{};
+    EXPECT_EQ(wz_gpu_begin(nullptr, "x"), 0u);
+    EXPECT_EQ(wz_gpu_begin(&job, ""), 0u);
+    ASSERT_EQ(wz_gpu_begin(&job, "x"), 1u);
+    EXPECT_EQ(wz_gpu_set_groups(&job, 0u, 1u, 1u), 0u);
+    EXPECT_EQ(
+        wz_gpu_set_structured_input(
+            &job,
+            "bad",
+            1u,
+            sizeof(uint32_t),
+            nullptr,
+            sizeof(uint32_t)),
+        0u);
+    EXPECT_EQ(wz_gpu_submit(nullptr, &job, nullptr), 0u);
+
+    WzBehaviorFrameFacts facts{};
+    EXPECT_EQ(wz_gpu_submit(&facts, &job, nullptr), 0u);
+}
+
 namespace
 {
     wz::engine::assets::CollisionTriangleBounds triangle_bounds(
@@ -204,6 +301,124 @@ TEST(BehaviorModuleApi, SelfAddLocalTranslationWritesCommandForEventEntity)
     EXPECT_FLOAT_EQ(command.values[2], 6.0f);
 
     g_module_helper_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, GpuSubmitHelperQueuesNamedPortJobForEventEntity)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    GpuSubmitProbe probe{};
+    g_gpu_submit_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_gpu_submit_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "gpu_submit_test",
+        "");
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.collision.routed_entity_events = {
+        wz::engine::collision::CollisionEntityEvent{
+            .entity = 4u,
+            .other = 9u,
+            .kind = wz::engine::collision::CollisionEventKind::Enter,
+        },
+    };
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+        .gpu_compute = &frame_storage.behavior_gpu_compute,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.submit_result, 1u);
+    EXPECT_EQ(probe.work.value, 1u);
+    ASSERT_EQ(frame_storage.behavior_gpu_compute.jobs.size(), 1u);
+
+    const auto& job = frame_storage.behavior_gpu_compute.jobs[0];
+    EXPECT_EQ(job.work.value, 1u);
+    EXPECT_EQ(job.entity, 4u);
+    EXPECT_EQ(job.kernel, "test/multiply");
+    EXPECT_EQ(job.request_tag, 1234u);
+    EXPECT_EQ(job.group_count_x, 1u);
+    ASSERT_EQ(job.ports.size(), 3u);
+    EXPECT_EQ(job.ports[0].name, "input");
+    EXPECT_EQ(job.ports[0].kind, WZ_GPU_PORT_STRUCTURED_BUFFER);
+    EXPECT_EQ(job.ports[0].direction, WZ_GPU_PORT_INPUT);
+    EXPECT_EQ(job.ports[0].initial_data.size(), 4u * sizeof(uint32_t));
+
+    std::array<uint32_t, 4> copied_input{};
+    std::memcpy(
+        copied_input.data(),
+        job.ports[0].initial_data.data(),
+        job.ports[0].initial_data.size());
+    EXPECT_EQ(copied_input, (std::array<uint32_t, 4>{ 8u, 9u, 10u, 11u }));
+    EXPECT_EQ(job.ports[1].name, "output");
+    EXPECT_EQ(job.ports[1].direction, WZ_GPU_PORT_OUTPUT);
+    EXPECT_EQ(job.ports[2].name, "factor");
+    EXPECT_EQ(job.ports[2].u32[0], 6u);
+
+    g_gpu_submit_probe = nullptr;
+}
+
+TEST(BehaviorModuleApi, GpuComputeCompletionEventRoutesWithActivePayload)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    GpuEventProbe probe{};
+    g_gpu_event_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_gpu_event_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "gpu_event_test",
+        "");
+    scene.behaviors[0].component.events = { "gpu.compute.*" };
+    scene.behaviors[0].component.channel_mask =
+        wz::engine::behavior::compile_channel_mask(
+            scene.behaviors[0].component.events).mask;
+
+    wz::engine::FrameStorage frame_storage{};
+    frame_storage.behavior_gpu_compute.add_event(
+        4u,
+        WZ_EVENT_GPU_COMPUTE_COMPLETED,
+        WzGpuComputeEventPayload{
+            .work = WzGpuWorkId{ 77u },
+            .status = WZ_GPU_COMPUTE_STATUS_COMPLETED,
+            .request_tag = 1234u,
+            .output_count = 1u,
+        });
+
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+        .gpu_compute = &frame_storage.behavior_gpu_compute,
+    };
+
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.last_kind, WZ_EVENT_GPU_COMPUTE_COMPLETED);
+    EXPECT_EQ(probe.last_entity, 4u);
+    EXPECT_EQ(probe.active, 1u);
+    EXPECT_EQ(probe.work.value, 77u);
+    EXPECT_EQ(probe.status, WZ_GPU_COMPUTE_STATUS_COMPLETED);
+    EXPECT_EQ(probe.request_tag, 1234u);
+    EXPECT_EQ(probe.output_count, 1u);
+    EXPECT_TRUE(frame_storage.behavior_gpu_compute.jobs.empty());
+    EXPECT_TRUE(frame_storage.behavior_gpu_compute.events.empty());
+
+    dispatch_behaviors(scene, registry, context);
+    EXPECT_EQ(probe.calls, 1u);
+
+    g_gpu_event_probe = nullptr;
 }
 
 TEST(BehaviorModuleApi, InputHelpersReadFrameSnapshotAndWriteVelocity)

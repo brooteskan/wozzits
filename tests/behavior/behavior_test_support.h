@@ -25,7 +25,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -466,6 +468,124 @@ namespace
             "module_helper_test",
             module_helper_event_handler,
             g_module_helper_probe);
+    }
+
+    struct GpuSubmitProbe
+    {
+        uint32_t calls = 0;
+        uint8_t submit_result = 0;
+        WzGpuWorkId work{};
+    };
+
+    GpuSubmitProbe* g_gpu_submit_probe = nullptr;
+
+    void gpu_submit_event_handler(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<GpuSubmitProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+        ASSERT_NE(event, nullptr);
+
+        ++probe->calls;
+        if (!wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
+            return;
+        }
+
+        const uint32_t input[4]{ 8u, 9u, 10u, 11u };
+        WzGpuJob job{};
+        ASSERT_EQ(wz_gpu_begin(&job, "test/multiply"), 1u);
+        ASSERT_EQ(wz_gpu_set_request_tag(&job, 1234u), 1u);
+        ASSERT_EQ(
+            wz_gpu_set_structured_input(
+                &job,
+                "input",
+                4u,
+                sizeof(uint32_t),
+                input,
+                sizeof(input)),
+            1u);
+        ASSERT_EQ(
+            wz_gpu_set_structured_output(
+                &job,
+                "output",
+                4u,
+                sizeof(uint32_t)),
+            1u);
+        ASSERT_EQ(wz_gpu_set_u32(&job, "factor", 6u), 1u);
+
+        probe->submit_result = wz_gpu_submit(facts, &job, &probe->work);
+    }
+
+    uint8_t register_gpu_submit_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || !api->register_module || !g_gpu_submit_probe) {
+            return 0;
+        }
+
+        return api->register_module(
+            api->user,
+            "gpu_submit_test",
+            gpu_submit_event_handler,
+            g_gpu_submit_probe);
+    }
+
+    struct GpuEventProbe
+    {
+        uint32_t calls = 0;
+        WzBehaviorEventKind last_kind = WZ_EVENT_NONE;
+        WzBehaviorEntityId last_entity = WZ_INVALID_BEHAVIOR_ENTITY;
+        uint8_t active = 0;
+        WzGpuWorkId work{};
+        WzGpuComputeStatus status = WZ_GPU_COMPUTE_STATUS_NONE;
+        uint64_t request_tag = 0u;
+        uint32_t output_count = 0u;
+    };
+
+    GpuEventProbe* g_gpu_event_probe = nullptr;
+
+    void gpu_event_handler(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<GpuEventProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+        ASSERT_NE(event, nullptr);
+
+        ++probe->calls;
+        probe->last_kind = wz_event_kind(event);
+        probe->last_entity = wz_self(event);
+        probe->active = wz_gpu_compute_event_active(facts);
+        probe->work = wz_gpu_compute_event_work(facts);
+        probe->status = wz_gpu_compute_event_status(facts);
+        probe->request_tag = wz_gpu_compute_event_request_tag(facts);
+        probe->output_count = wz_gpu_compute_event_output_count(facts);
+    }
+
+    uint8_t register_gpu_event_pack(WzBehaviorPluginApi* api)
+    {
+        static const char* events[] = {
+            "gpu.compute.*",
+        };
+        if (!api || !api->register_module_desc || !g_gpu_event_probe) {
+            return 0;
+        }
+
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "gpu_event_test",
+            .on_event = gpu_event_handler,
+            .event_channels = events,
+            .event_channel_count =
+                static_cast<uint32_t>(
+                    sizeof(events) / sizeof(events[0])),
+            .module_user_data = g_gpu_event_probe,
+        };
+        return api->register_module_desc(api->user, &desc);
     }
 
     struct InputHelperProbe

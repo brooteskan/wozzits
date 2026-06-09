@@ -898,6 +898,7 @@ namespace wz::app
             if (!data->scene || !data->registry || !data->fctx)
             {
                 data->frame->behavior_commands.clear();
+                data->frame->behavior_gpu_compute.clear();
                 return;
             }
 
@@ -907,6 +908,7 @@ namespace wz::app
                 .scene = data->scene,
                 .behavior_state = &data->scene->behavior_state,
                 .commands = &data->frame->behavior_commands,
+                .gpu_compute = &data->frame->behavior_gpu_compute,
                 .logger = data->logger,
             };
             wz::engine::behavior::dispatch_behaviors(

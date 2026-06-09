@@ -1383,6 +1383,28 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t submit_gpu_compute_job(
+            void* user,
+            const WzGpuComputeJobDesc* job,
+            WzGpuWorkId* out_work)
+        {
+            if (!user || !job) {
+                return 0u;
+            }
+
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context->gpu_compute) {
+                return 0u;
+            }
+
+            return context->gpu_compute->submit(
+                context->active_entity,
+                *job,
+                out_work)
+                ? uint8_t{ 1 }
+                : uint8_t{ 0 };
+        }
+
         void log_info(void* user, const char* message)
         {
             auto* logger = static_cast<wz::Logger*>(user);
@@ -1453,9 +1475,13 @@ namespace wz::engine::behavior
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
                 .active_input_event = context.active_input_payload,
+                .active_gpu_compute_event =
+                    context.active_gpu_compute_payload,
                 .behavior_state_user = &context,
                 .get_instance_state = get_instance_state,
                 .find_shared_state = find_shared_state,
+                .gpu_compute_user = &context,
+                .submit_gpu_compute = submit_gpu_compute_job,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1515,9 +1541,13 @@ namespace wz::engine::behavior
                 .get_config_number = get_config_number,
                 .get_config_string = get_config_string,
                 .active_input_event = context.active_input_payload,
+                .active_gpu_compute_event =
+                    context.active_gpu_compute_payload,
                 .behavior_state_user = &context,
                 .get_instance_state = get_instance_state,
                 .find_shared_state = find_shared_state,
+                .gpu_compute_user = &context,
+                .submit_gpu_compute = submit_gpu_compute_job,
             };
         }
 

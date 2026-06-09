@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 13u
+#define WZ_BEHAVIOR_ABI_VERSION 15u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -68,6 +68,8 @@ enum
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED = 304u,
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED = 305u,
     WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED = 306u,
+    WZ_EVENT_GPU_COMPUTE_COMPLETED = 400u,
+    WZ_EVENT_GPU_COMPUTE_FAILED = 401u,
 };
 
 enum
@@ -235,6 +237,79 @@ typedef uint8_t (*WzWriteBehaviorCommandFn)(
     void* user,
     const WzBehaviorCommand* command);
 
+typedef struct WzGpuWorkId
+{
+    uint64_t value;
+} WzGpuWorkId;
+
+typedef uint32_t WzGpuPortKind;
+enum
+{
+    WZ_GPU_PORT_NONE = 0u,
+    WZ_GPU_PORT_STRUCTURED_BUFFER = 1u,
+    WZ_GPU_PORT_U32 = 2u,
+    WZ_GPU_PORT_F32 = 3u,
+};
+
+typedef uint32_t WzGpuPortDirection;
+enum
+{
+    WZ_GPU_PORT_INPUT = 1u,
+    WZ_GPU_PORT_OUTPUT = 2u,
+    WZ_GPU_PORT_INPUT_OUTPUT = 3u,
+};
+
+typedef struct WzGpuResourceRef
+{
+    uint64_t value;
+} WzGpuResourceRef;
+
+typedef struct WzGpuPortValue
+{
+    const char* name;
+    WzGpuPortKind kind;
+    WzGpuPortDirection direction;
+    uint32_t element_count;
+    uint32_t stride_bytes;
+    const void* initial_data;
+    uint64_t initial_data_bytes;
+    WzGpuResourceRef resource;
+    uint32_t u32[4];
+    float f32[4];
+} WzGpuPortValue;
+
+typedef struct WzGpuComputeJobDesc
+{
+    const char* kernel;
+    const WzGpuPortValue* ports;
+    uint32_t port_count;
+    uint32_t group_count_x;
+    uint32_t group_count_y;
+    uint32_t group_count_z;
+    uint64_t request_tag;
+} WzGpuComputeJobDesc;
+
+typedef uint8_t (*WzSubmitGpuComputeJobFn)(
+    void* user,
+    const WzGpuComputeJobDesc* job,
+    WzGpuWorkId* out_work);
+
+typedef uint32_t WzGpuComputeStatus;
+enum
+{
+    WZ_GPU_COMPUTE_STATUS_NONE = 0u,
+    WZ_GPU_COMPUTE_STATUS_COMPLETED = 1u,
+    WZ_GPU_COMPUTE_STATUS_FAILED = 2u,
+};
+
+typedef struct WzGpuComputeEventPayload
+{
+    WzGpuWorkId work;
+    WzGpuComputeStatus status;
+    uint64_t request_tag;
+    uint32_t output_count;
+} WzGpuComputeEventPayload;
+
 typedef void (*WzBehaviorLogFn)(
     void* user,
     const char* message);
@@ -364,10 +439,14 @@ typedef struct WzBehaviorFrameFacts
     WzGetBehaviorConfigStringFn get_config_string;
 
     const WzInputEventPayload* active_input_event;
+    const WzGpuComputeEventPayload* active_gpu_compute_event;
 
     void* behavior_state_user;
     WzGetBehaviorStateFn get_instance_state;
     WzFindSharedBehaviorStateFn find_shared_state;
+
+    void* gpu_compute_user;
+    WzSubmitGpuComputeJobFn submit_gpu_compute;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

@@ -36,6 +36,12 @@ TEST(EventChannels, CompilesExactKnownTokens)
     EXPECT_EQ(
         compile({ "input.controller_axis.changed" }).mask,
         EventChannelInputControllerAxisChanged);
+    EXPECT_EQ(
+        compile({ "gpu.compute.completed" }).mask,
+        EventChannelGpuComputeCompleted);
+    EXPECT_EQ(
+        compile({ "gpu.compute.failed" }).mask,
+        EventChannelGpuComputeFailed);
     EXPECT_EQ(compile({ "scene.loaded" }).mask, EventChannelSceneLoaded);
 }
 
@@ -46,6 +52,7 @@ TEST(EventChannels, CompilesFamilyAliases)
     EXPECT_EQ(compile({ "collision.*" }).mask, kCollisionEventChannels);
     EXPECT_EQ(compile({ "proximity.*" }).mask, kProximityEventChannels);
     EXPECT_EQ(compile({ "input.*" }).mask, kInputEventChannels);
+    EXPECT_EQ(compile({ "gpu.compute.*" }).mask, kGpuComputeEventChannels);
 }
 
 TEST(EventChannels, RedundantTokensDoNotChangeMask)
@@ -109,5 +116,11 @@ TEST(EventChannels, EventKindMappingUsesDenseChannelBits)
     EXPECT_EQ(
         event_kind_to_channel_bit(WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED),
         EventChannelInputControllerAxisChanged);
+    EXPECT_EQ(
+        event_kind_to_channel_bit(WZ_EVENT_GPU_COMPUTE_COMPLETED),
+        EventChannelGpuComputeCompleted);
+    EXPECT_EQ(
+        event_kind_to_channel_bit(WZ_EVENT_GPU_COMPUTE_FAILED),
+        EventChannelGpuComputeFailed);
     EXPECT_EQ(event_kind_to_channel_bit(WZ_EVENT_NONE), 0u);
 }
