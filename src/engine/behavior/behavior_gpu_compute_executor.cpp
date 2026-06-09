@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <unordered_set>
 
 namespace wz::engine::behavior
 {
@@ -72,6 +74,92 @@ namespace wz::engine::behavior
             }
             return true;
         }
+
+        void set_error(std::string* error, std::string message)
+        {
+            if (error) {
+                *error = std::move(message);
+            }
+        }
+
+        WzGpuPortKind behavior_port_kind(
+            wz::engine::assets::SceneComputeKernelPortKind kind)
+        {
+            using wz::engine::assets::SceneComputeKernelPortKind;
+
+            switch (kind) {
+            case SceneComputeKernelPortKind::StructuredBuffer:
+                return WZ_GPU_PORT_STRUCTURED_BUFFER;
+            case SceneComputeKernelPortKind::U32:
+                return WZ_GPU_PORT_U32;
+            case SceneComputeKernelPortKind::F32:
+                return WZ_GPU_PORT_F32;
+            }
+            return WZ_GPU_PORT_NONE;
+        }
+
+        WzGpuPortDirection behavior_port_direction(
+            wz::engine::assets::SceneComputeKernelPortDirection direction)
+        {
+            using wz::engine::assets::SceneComputeKernelPortDirection;
+
+            switch (direction) {
+            case SceneComputeKernelPortDirection::Input:
+                return WZ_GPU_PORT_INPUT;
+            case SceneComputeKernelPortDirection::Output:
+                return WZ_GPU_PORT_OUTPUT;
+            }
+            return 0u;
+        }
+
+        wz::engine::assets::ComputeBindingKind behavior_binding_kind(
+            wz::engine::assets::SceneComputeKernelBindingKind kind)
+        {
+            using wz::engine::assets::ComputeBindingKind;
+            using wz::engine::assets::SceneComputeKernelBindingKind;
+
+            switch (kind) {
+            case SceneComputeKernelBindingKind::SRV:
+                return ComputeBindingKind::StructuredBufferSRV;
+            case SceneComputeKernelBindingKind::UAV:
+                return ComputeBindingKind::StructuredBufferUAV;
+            }
+            return ComputeBindingKind::StructuredBufferSRV;
+        }
+
+        BehaviorGpuKernelPortBinding make_port_binding(
+            const wz::engine::assets::SceneComputeKernelPortAsset& port)
+        {
+            using wz::engine::assets::SceneComputeKernelPortKind;
+
+            BehaviorGpuKernelPortBinding binding{};
+            binding.name = port.name;
+            binding.port_kind = behavior_port_kind(port.kind);
+            binding.direction = behavior_port_direction(port.direction);
+
+            if (port.kind == SceneComputeKernelPortKind::StructuredBuffer) {
+                binding.target =
+                    BehaviorGpuKernelPortTarget::BufferBinding;
+                binding.binding_kind = behavior_binding_kind(
+                    port.binding_kind);
+                binding.shader_register = port.shader_register;
+                binding.register_space = port.register_space;
+            }
+            else {
+                binding.target =
+                    BehaviorGpuKernelPortTarget::RootConstant;
+                binding.root_constant_offset = port.root_constant_offset;
+                binding.root_constant_dwords = port.root_constant_dwords;
+            }
+
+            return binding;
+        }
+    }
+
+    const BehaviorGpuKernelBinding* BehaviorGpuKernelLibrary::find(
+        const std::string& name) const
+    {
+        return find_kernel(kernels, name);
     }
 
     BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
@@ -231,6 +319,140 @@ namespace wz::engine::behavior
         }
 
         return report;
+    }
+
+    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+        wz::gpu::Device& device,
+        std::span<const BehaviorGpuComputeJob> jobs,
+        const BehaviorGpuKernelLibrary& library)
+    {
+        return dispatch_behavior_gpu_compute_jobs(
+            device,
+            jobs,
+            library.kernels);
+    }
+
+    bool build_kernel_library_from_scene(
+        wz::gpu::Device& device,
+        const wz::engine::assets::SceneAssetData& scene,
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        BehaviorGpuKernelLibrary& out_library,
+        std::string* error)
+    {
+        using namespace wz::engine::assets;
+
+        release_behavior_gpu_kernel_library(device, out_library);
+
+        std::unordered_set<std::string> kernel_names;
+        BehaviorGpuKernelLibrary library{};
+
+        for (const SceneNodeAsset& node : scene.nodes) {
+            if (!node.compute_kernel) {
+                continue;
+            }
+
+            const SceneComputeKernelAsset& kernel = *node.compute_kernel;
+            if (kernel.kernel_id.empty()) {
+                set_error(error, "compute kernel has empty kernel_id");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+            if (!kernel_names.insert(kernel.kernel_id).second) {
+                set_error(
+                    error,
+                    "duplicate compute kernel id '" + kernel.kernel_id + "'");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+            if (kernel.compute_shader_asset == wz::asset::AssetKey{}
+                || kernel.compute_pipeline_asset == wz::asset::AssetKey{})
+            {
+                set_error(
+                    error,
+                    "compute kernel '" + kernel.kernel_id
+                    + "' has not been materialized");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+
+            const ComputeShaderHandle shader =
+                assets.shaders().get_compute_shader(
+                    ComputeShaderAsset{
+                        .shader = kernel.compute_shader_asset,
+                    });
+            if (!shader.valid()) {
+                set_error(
+                    error,
+                    "compute shader for kernel '" + kernel.kernel_id
+                    + "' is unresolved");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+
+            const auto pipeline_handle =
+                assets.compute_pipelines().get_compute_pipeline(
+                    ComputePipelineAsset{
+                        .key = kernel.compute_pipeline_asset,
+                    });
+            const ComputePipelineData* pipeline_data =
+                assets.compute_pipelines().get_compute_pipeline_data(
+                    pipeline_handle);
+            if (!pipeline_handle.valid() || !pipeline_data) {
+                set_error(
+                    error,
+                    "compute pipeline for kernel '" + kernel.kernel_id
+                    + "' is unresolved");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+
+            const wz::gpu::GPUHandle pipeline =
+                wz::gpu::create_compute_pipeline(
+                    device,
+                    *pipeline_data,
+                    shader.shader);
+            if (!pipeline.valid()) {
+                set_error(
+                    error,
+                    "GPU pipeline creation failed for kernel '"
+                    + kernel.kernel_id + "'");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+
+            BehaviorGpuKernelBinding binding{};
+            binding.name = kernel.kernel_id;
+            binding.pipeline = pipeline;
+            binding.root_constant_dwords =
+                pipeline_data->root_constant_dwords;
+            binding.ports.reserve(kernel.ports.size());
+            for (const SceneComputeKernelPortAsset& port : kernel.ports) {
+                binding.ports.push_back(make_port_binding(port));
+            }
+            library.kernels.push_back(std::move(binding));
+        }
+
+        out_library = std::move(library);
+        return true;
+    }
+
+    uint32_t release_behavior_gpu_kernel_library(
+        wz::gpu::Device& device,
+        BehaviorGpuKernelLibrary& library)
+    {
+        uint32_t released = 0u;
+        for (BehaviorGpuKernelBinding& kernel : library.kernels) {
+            if (kernel.pipeline.valid()
+                && wz::gpu::release_compute_pipeline(
+                    device,
+                    kernel.pipeline))
+            {
+                ++released;
+            }
+            kernel.pipeline = {};
+        }
+        library.kernels.clear();
+        return released;
     }
 
     uint32_t post_behavior_gpu_compute_events(

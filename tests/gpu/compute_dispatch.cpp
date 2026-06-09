@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/compute_pipeline_asset_module.h>
+#include <engine/assets/scene/scene_authoring_materialize.h>
 #include <engine/behavior/behavior_gpu_compute_executor.h>
 #include <engine/behavior/behavior_module_api.h>
 #include <engine/assets/engine_asset_library.h>
@@ -66,6 +67,64 @@ namespace
                 << "    }\n"
                 << "}\n";
         }
+
+        void write_scene_kernel_json() const
+        {
+            std::ofstream out(
+                root / "scene_compute_kernel.scene.json",
+                std::ios::binary);
+            out
+                << R"({
+  "schema": "wozzits.scene.v0",
+  "name": "scene_compute_kernel_dispatch",
+  "nodes": [
+    {
+      "id": "debug_multiply_kernel",
+      "compute_kernel": {
+        "kernel_id": "project/debug_multiply_u32",
+        "hlsl_path": "shaders/compute/multiply_uint_cs.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [4, 1, 1],
+        "ports": [
+          {
+            "name": "input",
+            "kind": "structured_buffer",
+            "direction": "input",
+            "binding_kind": "srv",
+            "shader_register": 0,
+            "register_space": 0,
+            "stride_bytes": 4
+          },
+          {
+            "name": "output",
+            "kind": "structured_buffer",
+            "direction": "output",
+            "binding_kind": "uav",
+            "shader_register": 0,
+            "register_space": 0,
+            "stride_bytes": 4
+          },
+          {
+            "name": "factor",
+            "kind": "u32",
+            "direction": "input",
+            "root_constant_offset": 0,
+            "root_constant_dwords": 1
+          },
+          {
+            "name": "count",
+            "kind": "u32",
+            "direction": "input",
+            "root_constant_offset": 1,
+            "root_constant_dwords": 1
+          }
+        ]
+      }
+    }
+  ]
+})";
+        }
     };
 
     struct ComputeDispatchFixture : public ::testing::Test
@@ -78,6 +137,7 @@ namespace
         void SetUp() override
         {
             resources.write_multiply_shader();
+            resources.write_scene_kernel_json();
 
             wz::window::WindowDesc desc{};
             desc.title = "compute_dispatch_test";
@@ -405,4 +465,110 @@ TEST_F(ComputeDispatchFixture, BehaviorGpuNamedPortsDispatchAdHocResource)
     EXPECT_EQ(queue.events[0].payload.output_count, 1u);
 
     EXPECT_TRUE(wz::gpu::release_compute_pipeline(device, gpu_pipeline));
+}
+
+TEST_F(ComputeDispatchFixture, SceneAuthoredKernelBuildsLibraryAndPostsEvent)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "scene_compute_kernel_dispatch",
+            .path = "scene_compute_kernel.scene.json",
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* parsed_scene =
+        assets.scenes().get_scene_data(
+            assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(parsed_scene, nullptr);
+
+    SceneAssetData scene = *parsed_scene;
+    const auto materialize_report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(materialize_report.ok) << materialize_report.error;
+    ASSERT_TRUE(assets.commit());
+    const auto resolve_report = assets.resolve_all();
+    ASSERT_TRUE(resolve_report.ok());
+
+    wz::engine::behavior::BehaviorGpuKernelLibrary library{};
+    std::string library_error;
+    ASSERT_TRUE(
+        wz::engine::behavior::build_kernel_library_from_scene(
+            device,
+            scene,
+            assets,
+            library,
+            &library_error))
+        << library_error;
+    ASSERT_EQ(library.kernels.size(), 1u);
+    ASSERT_NE(library.find("project/debug_multiply_u32"), nullptr);
+
+    const std::array<uint32_t, 4> input{ 7, 8, 9, 10 };
+    WzGpuJob job{};
+    WzGpuWorkId work{};
+    ASSERT_EQ(wz_gpu_begin(&job, "project/debug_multiply_u32"), 1u);
+    ASSERT_EQ(wz_gpu_set_request_tag(&job, 4242u), 1u);
+    ASSERT_EQ(wz_gpu_set_groups(&job, 1u, 1u, 1u), 1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_input(
+            &job,
+            "input",
+            static_cast<uint32_t>(input.size()),
+            sizeof(uint32_t),
+            input.data(),
+            sizeof(input)),
+        1u);
+    ASSERT_EQ(
+        wz_gpu_set_structured_output(
+            &job,
+            "output",
+            static_cast<uint32_t>(input.size()),
+            sizeof(uint32_t)),
+        1u);
+    ASSERT_EQ(wz_gpu_set_u32(&job, "factor", 3u), 1u);
+    ASSERT_EQ(wz_gpu_set_u32(&job, "count", 4u), 1u);
+
+    wz::engine::behavior::BehaviorGpuComputeBuffer queue{};
+    ASSERT_TRUE(queue.submit(24u, job.desc, &work));
+
+    const auto dispatch_report =
+        wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            queue.jobs,
+            library);
+    EXPECT_EQ(dispatch_report.submitted, 1u);
+    EXPECT_EQ(dispatch_report.dispatched, 1u);
+    EXPECT_EQ(dispatch_report.failed, 0u);
+
+    const uint32_t posted =
+        wz::engine::behavior::post_behavior_gpu_compute_events(
+            queue,
+            queue.jobs,
+            dispatch_report);
+    EXPECT_EQ(posted, 1u);
+    ASSERT_EQ(queue.events.size(), 1u);
+    EXPECT_EQ(queue.events[0].kind, WZ_EVENT_GPU_COMPUTE_COMPLETED);
+    EXPECT_EQ(queue.events[0].entity, 24u);
+    EXPECT_EQ(queue.events[0].payload.work.value, work.value);
+    EXPECT_EQ(queue.events[0].payload.request_tag, 4242u);
+    EXPECT_EQ(queue.events[0].payload.output_count, 1u);
+    ASSERT_EQ(queue.events[0].outputs.size(), 1u);
+    ASSERT_EQ(
+        queue.events[0].outputs[0].initial_data.size(),
+        sizeof(std::array<uint32_t, 4>));
+    EXPECT_EQ(
+        read_u32x4(queue.events[0].outputs[0].initial_data),
+        (std::array<uint32_t, 4>{ 21, 24, 27, 30 }));
+
+    EXPECT_EQ(
+        wz::engine::behavior::release_behavior_gpu_kernel_library(
+            device,
+            library),
+        1u);
 }

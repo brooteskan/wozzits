@@ -123,8 +123,11 @@ namespace wz::app
         {
             wz::engine::FrameStorage* frame = nullptr;
             const wz::engine::FrameContext* fctx = nullptr;
+            wz::gpu::Device* device = nullptr;
             wz::engine::assets::SceneInstance* scene = nullptr;
             const wz::engine::behavior::BehaviorRegistry* registry = nullptr;
+            const wz::engine::behavior::BehaviorGpuKernelLibrary*
+                gpu_kernels = nullptr;
             wz::Logger* logger = nullptr;
         };
 
@@ -915,6 +918,21 @@ namespace wz::app
                 *data->scene,
                 *data->registry,
                 behavior_ctx);
+
+            data->frame->behavior_gpu_compute.clear_events();
+            if (data->device && data->gpu_kernels
+                && !data->frame->behavior_gpu_compute.jobs.empty())
+            {
+                const auto report =
+                    wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
+                        *data->device,
+                        data->frame->behavior_gpu_compute.jobs,
+                        *data->gpu_kernels);
+                (void)wz::engine::behavior::post_behavior_gpu_compute_events(
+                    data->frame->behavior_gpu_compute,
+                    data->frame->behavior_gpu_compute.jobs,
+                    report);
+            }
         }
 
         void job_apply_behavior_commands(wz::jobs::JobContext& ctx)
@@ -1390,11 +1408,13 @@ namespace wz::app
         BehaviorDispatchJobData behavior_dispatch_data{
             .frame = &app.frame,
             .fctx = &fctx,
+            .device = &app.ctx.device,
             .scene =
                 app.debug_object.collision_scene_valid
                 ? &app.debug_object.collision_scene
                 : nullptr,
             .registry = &app.behavior_registry,
+            .gpu_kernels = &app.behavior_gpu_kernels,
             .logger = &app.ctx.logger,
         };
 
@@ -1575,6 +1595,11 @@ namespace wz::app
 
     void shutdown(GameApp& app)
     {
+        if (app.ctx.device.valid()) {
+            (void)wz::engine::behavior::release_behavior_gpu_kernel_library(
+                app.ctx.device,
+                app.behavior_gpu_kernels);
+        }
         wz::engine::shutdown(app.ctx);
     }
 }

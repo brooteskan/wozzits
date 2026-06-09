@@ -3,7 +3,9 @@
 // engine/behavior/behavior_gpu_compute_executor.h
 
 #include <engine/behavior/behavior_gpu_compute.h>
+#include <engine/assets/engine_asset_library.h>
 #include <engine/assets/compute_pipeline/compute_pipeline.h>
+#include <engine/assets/scene/scene_asset_data.h>
 #include <gpu/compute.h>
 
 #include <cstddef>
@@ -42,6 +44,14 @@ namespace wz::engine::behavior
         std::vector<BehaviorGpuKernelPortBinding> ports;
     };
 
+    struct BehaviorGpuKernelLibrary
+    {
+        std::vector<BehaviorGpuKernelBinding> kernels;
+
+        [[nodiscard]] const BehaviorGpuKernelBinding* find(
+            const std::string& name) const;
+    };
+
     struct BehaviorGpuOutputReadback
     {
         WzGpuWorkId work{};
@@ -66,6 +76,22 @@ namespace wz::engine::behavior
         wz::gpu::Device& device,
         std::span<const BehaviorGpuComputeJob> jobs,
         std::span<const BehaviorGpuKernelBinding> kernels);
+
+    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+        wz::gpu::Device& device,
+        std::span<const BehaviorGpuComputeJob> jobs,
+        const BehaviorGpuKernelLibrary& library);
+
+    bool build_kernel_library_from_scene(
+        wz::gpu::Device& device,
+        const wz::engine::assets::SceneAssetData& scene,
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        BehaviorGpuKernelLibrary& out_library,
+        std::string* error = nullptr);
+
+    uint32_t release_behavior_gpu_kernel_library(
+        wz::gpu::Device& device,
+        BehaviorGpuKernelLibrary& library);
 
     uint32_t post_behavior_gpu_compute_events(
         BehaviorGpuComputeBuffer& buffer,
