@@ -193,10 +193,8 @@ namespace wz::engine::assets
         std::vector<wz::asset::AssetKey> deps{
             desc.mesh.output,
             desc.style.output,
+            mesh_field_visualization_key,
         };
-        if (!(mesh_field_visualization_key == wz::asset::AssetKey{})) {
-            deps.push_back(mesh_field_visualization_key);
-        }
 
         if (!system_.register_asset(std::move(node), std::move(deps)))
         {

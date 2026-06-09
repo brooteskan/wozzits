@@ -1005,6 +1005,9 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
         .mode = SceneTerrainHeightFieldSourceMode::ScalarFieldAsset,
         .scalar_field_asset = scalar_key,
     };
+    node.event_trigger = SceneEventTriggerAsset{
+        .event = "editor.authoring.preview",
+    };
 
     EXPECT_FALSE(has_runtime_relevant_components(node));
     EXPECT_TRUE(has_asset_authoring_recipes(node));
@@ -1020,7 +1023,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     const auto recipe_summary =
         summarize_scene_asset_authoring_recipes(scene);
     EXPECT_EQ(recipe_summary.nodes_with_recipes, 1u);
-    EXPECT_EQ(recipe_summary.total_recipes, 8u);
+    EXPECT_EQ(recipe_summary.total_recipes, 9u);
     EXPECT_EQ(recipe_summary.scene_import_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.mesh_render_styles, 1u);
@@ -1031,6 +1034,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(recipe_summary.terrain_render_styles, 1u);
     EXPECT_EQ(recipe_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(recipe_summary.terrain_height_field_sources, 1u);
+    EXPECT_EQ(recipe_summary.event_triggers, 1u);
 
     const auto authored_summary = summarize_authored_scene_components(scene);
     EXPECT_EQ(authored_summary.scene_import_sources, 1u);
@@ -1041,6 +1045,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     EXPECT_EQ(authored_summary.terrain_render_styles, 1u);
     EXPECT_EQ(authored_summary.terrain_mesh_sources, 1u);
     EXPECT_EQ(authored_summary.terrain_height_field_sources, 1u);
+    EXPECT_EQ(authored_summary.event_triggers, 1u);
 
     auto result = instantiate_scene(scene);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -1049,6 +1054,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.terrains, 0u);
     EXPECT_EQ(runtime_summary.renderable_descriptor_slots, 1u);
+    EXPECT_EQ(runtime_summary.event_listeners, 0u);
     EXPECT_TRUE(result.instance.input_receivers.empty());
     EXPECT_TRUE(result.instance.ground_boundaries.empty());
     EXPECT_TRUE(result.instance.auxiliary_visuals.empty());

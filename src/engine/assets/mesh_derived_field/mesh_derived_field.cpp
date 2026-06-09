@@ -2,6 +2,7 @@
 
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/type_extensions.h>
+#include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <limits>
@@ -198,5 +199,72 @@ namespace wz::engine::assets
     {
         slots_.clear();
         slots_.emplace_back();
+    }
+
+    bool GpuResidentFieldEntry::valid() const noexcept
+    {
+        return field_key != wz::asset::AssetKey{}
+            && channel_id != 0u
+            && gpu_resource.valid();
+    }
+
+    bool GpuResidentFieldTable::add(GpuResidentFieldEntry entry)
+    {
+        if (!entry.valid()) {
+            return false;
+        }
+
+        for (GpuResidentFieldEntry& existing : entries_) {
+            if (existing.field_key == entry.field_key
+                && existing.channel_id == entry.channel_id)
+            {
+                return false;
+            }
+        }
+
+        entries_.push_back(entry);
+        return true;
+    }
+
+    wz::gpu::GPUHandle GpuResidentFieldTable::find(
+        wz::asset::AssetKey field_key,
+        uint32_t channel_id) const
+    {
+        if (field_key == wz::asset::AssetKey{} || channel_id == 0u) {
+            return {};
+        }
+
+        for (const GpuResidentFieldEntry& entry : entries_) {
+            if (entry.field_key == field_key
+                && entry.channel_id == channel_id
+                && entry.gpu_resource.valid())
+            {
+                return entry.gpu_resource;
+            }
+        }
+        return {};
+    }
+
+    void GpuResidentFieldTable::clear()
+    {
+        entries_.clear();
+    }
+
+    void GpuResidentFieldTable::destroy(wz::gpu::Device& device)
+    {
+        for (GpuResidentFieldEntry& entry : entries_) {
+            if (entry.gpu_resource.valid()) {
+                wz::gpu::release_mesh_field_visualization(
+                    device,
+                    entry.gpu_resource);
+                entry.gpu_resource = {};
+            }
+        }
+        entries_.clear();
+    }
+
+    size_t GpuResidentFieldTable::size() const noexcept
+    {
+        return entries_.size();
     }
 }

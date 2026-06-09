@@ -72,10 +72,12 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
         node.meta = desc;
 
-        std::vector<wz::asset::AssetKey> deps{ desc.source_mesh.output };
-        if (desc.compute_pipeline.valid()) {
-            deps.push_back(desc.compute_pipeline.key);
-        }
+        const std::vector<wz::asset::AssetKey> deps{
+            desc.source_mesh.output,
+            desc.compute_pipeline.valid()
+                ? desc.compute_pipeline.key
+                : wz::asset::AssetKey{},
+        };
 
         if (!system_.register_asset(std::move(node), deps))
         {

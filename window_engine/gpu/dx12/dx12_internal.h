@@ -231,6 +231,13 @@ namespace wz::gpu::dx12::internal {
         Device& device,
         const wz::gpu::MeshFieldVisualizationUploadDesc& desc);
 
+    GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(
+        Device& device,
+        GPUHandle source_buffer,
+        uint64_t byte_offset,
+        uint32_t element_count,
+        uint32_t stride_bytes);
+
     const DX12MeshFieldVisualizationResource*
     get_mesh_field_visualization(
         Device& device,
@@ -429,12 +436,11 @@ namespace wz::gpu::dx12::internal {
 // ── Graphics pipeline table ───────────────────────────────────────
 //
 // Stores PSO + root signature pairs created by RenderablePipelineCache.
-// Keyed by GPUHandle of type kAssetTypeGPUGraphicsPipeline (532).
+// Keyed by GPUHandle of type kGPUGraphicsPipelineResourceType.
 // The debug context singletons are separate; this table is for the
 // production pipeline cache path.
 
 #include <engine/assets/renderable/renderable.h>
-#include <engine/assets/type_extensions.h>
 
 namespace wz::gpu::dx12::internal {
 

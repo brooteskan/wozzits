@@ -320,6 +320,14 @@ namespace wz::engine::rendering
                     out.mesh_field_visualization_resource =
                         cached_field->gpu_resource.get();
                 }
+                else if (const wz::gpu::GPUHandle resident_field =
+                        assets.gpu_resident_fields().find(
+                            renderable.mesh_field_visualization_asset,
+                            channel_id);
+                    resident_field.valid())
+                {
+                    out.mesh_field_visualization_resource = resident_field;
+                }
                 else {
                     const wz::engine::assets::MeshDerivedFieldAsset field_asset{
                         .output = renderable.mesh_field_visualization_asset,

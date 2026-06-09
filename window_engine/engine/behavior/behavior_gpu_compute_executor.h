@@ -30,7 +30,7 @@ namespace wz::engine::behavior
         WzGpuPortDirection direction = 0u;
         BehaviorGpuKernelPortTarget target =
             BehaviorGpuKernelPortTarget::BufferBinding;
-        wz::engine::assets::ComputeBindingKind binding_kind{};
+        wz::gpu::ComputeBindingKind binding_kind{};
         uint32_t shader_register = 0u;
         uint32_t register_space = 0u;
         uint32_t stride_bytes = 0u;

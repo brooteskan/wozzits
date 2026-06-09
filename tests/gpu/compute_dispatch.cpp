@@ -7,6 +7,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <gpu/compute.h>
 #include <gpu/gpu.h>
+#include <gpu/mesh_field_visualization.h>
 #include <logging/logger.h>
 #include <window/window2.h>
 
@@ -225,13 +226,13 @@ TEST_F(ComputeDispatchFixture, MultiplyKernelDispatchesAndReadsBack)
     const std::array<uint32_t, 4> root_constants{ 2, 4, 0, 0 };
     const std::array<wz::gpu::ComputeDispatchBinding, 2> bindings{{
         {
-            .kind = ComputeBindingKind::StructuredBufferSRV,
+            .kind = wz::gpu::ComputeBindingKind::StructuredBufferSRV,
             .shader_register = 0,
             .register_space = 0,
             .buffer = input_buffer,
         },
         {
-            .kind = ComputeBindingKind::StructuredBufferUAV,
+            .kind = wz::gpu::ComputeBindingKind::StructuredBufferUAV,
             .shader_register = 0,
             .register_space = 0,
             .buffer = output_buffer,
@@ -256,6 +257,33 @@ TEST_F(ComputeDispatchFixture, MultiplyKernelDispatchesAndReadsBack)
     EXPECT_TRUE(wz::gpu::release_compute_buffer(device, input_buffer));
     EXPECT_TRUE(wz::gpu::release_compute_buffer(device, output_buffer));
     EXPECT_TRUE(wz::gpu::release_compute_pipeline(device, gpu_pipeline));
+}
+
+TEST_F(ComputeDispatchFixture, MeshFieldVisualizationCanCopyGpuBufferRegion)
+{
+    const std::array<float, 4> values{ 1.0f, 2.0f, 3.0f, 4.0f };
+    const wz::gpu::GPUHandle source =
+        wz::gpu::create_rw_structured_buffer(device, {
+            .element_count = static_cast<uint32_t>(values.size()),
+            .stride_bytes = sizeof(float),
+            .initial_data = values.data(),
+            .initial_data_bytes = sizeof(values),
+        });
+    ASSERT_TRUE(source.valid());
+
+    const wz::gpu::GPUHandle field =
+        wz::gpu::create_mesh_field_visualization_from_gpu_source(
+            device,
+            source,
+            sizeof(float),
+            2u,
+            sizeof(float));
+    EXPECT_TRUE(field.valid());
+
+    if (field.valid()) {
+        EXPECT_TRUE(wz::gpu::release_mesh_field_visualization(device, field));
+    }
+    EXPECT_TRUE(wz::gpu::release_compute_buffer(device, source));
 }
 
 TEST_F(ComputeDispatchFixture, BehaviorGpuNamedPortsDispatchAdHocResource)
@@ -364,7 +392,7 @@ TEST_F(ComputeDispatchFixture, BehaviorGpuNamedPortsDispatchAdHocResource)
                         .port_kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
                         .direction = WZ_GPU_PORT_INPUT,
                         .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::BufferBinding,
-                        .binding_kind = ComputeBindingKind::StructuredBufferSRV,
+                        .binding_kind = wz::gpu::ComputeBindingKind::StructuredBufferSRV,
                         .shader_register = 0u,
                     },
                     {
@@ -372,7 +400,7 @@ TEST_F(ComputeDispatchFixture, BehaviorGpuNamedPortsDispatchAdHocResource)
                         .port_kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
                         .direction = WZ_GPU_PORT_OUTPUT,
                         .target = wz::engine::behavior::BehaviorGpuKernelPortTarget::BufferBinding,
-                        .binding_kind = ComputeBindingKind::StructuredBufferUAV,
+                        .binding_kind = wz::gpu::ComputeBindingKind::StructuredBufferUAV,
                         .shader_register = 0u,
                     },
                     {

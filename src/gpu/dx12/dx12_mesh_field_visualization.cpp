@@ -2,12 +2,13 @@
 
 #include "dx12_device_internal.h"
 
-#include <engine/assets/type_extensions.h>
+#include <gpu/gpu_resource_types.h>
 #include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <limits>
 
 namespace wz::gpu::dx12::internal
 {
@@ -90,6 +91,99 @@ namespace wz::gpu::dx12::internal
             resource.element_count = 0;
             resource.srv_table = {};
         }
+
+        void transition_resource(
+            ID3D12GraphicsCommandList* cmd,
+            ID3D12Resource* resource,
+            D3D12_RESOURCE_STATES before,
+            D3D12_RESOURCE_STATES after)
+        {
+            if (!cmd || !resource || before == after) {
+                return;
+            }
+
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = resource;
+            barrier.Transition.StateBefore = before;
+            barrier.Transition.StateAfter = after;
+            barrier.Transition.Subresource =
+                D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            cmd->ResourceBarrier(1, &barrier);
+        }
+
+        bool execute_and_wait(
+            DX12Device* impl,
+            ID3D12CommandAllocator* allocator,
+            ID3D12GraphicsCommandList* cmd)
+        {
+            if (!impl || !allocator || !cmd) {
+                return false;
+            }
+
+            HRESULT hr = cmd->Close();
+            if (FAILED(hr)) {
+                return false;
+            }
+
+            ID3D12CommandList* lists[] = { cmd };
+            impl->queue->ExecuteCommandLists(1, lists);
+
+            const UINT64 fence_value = impl->fence_value;
+            hr = impl->queue->Signal(impl->fence, fence_value);
+            if (FAILED(hr)) {
+                return false;
+            }
+
+            if (impl->fence->GetCompletedValue() < fence_value) {
+                hr = impl->fence->SetEventOnCompletion(
+                    fence_value,
+                    impl->fence_event);
+                if (FAILED(hr)) {
+                    return false;
+                }
+                WaitForSingleObject(impl->fence_event, INFINITE);
+            }
+
+            ++impl->fence_value;
+            return true;
+        }
+
+        bool create_one_shot_command_list(
+            DX12Device* impl,
+            ID3D12CommandAllocator** out_allocator,
+            ID3D12GraphicsCommandList** out_cmd)
+        {
+            assert(out_allocator);
+            assert(out_cmd);
+            *out_allocator = nullptr;
+            *out_cmd = nullptr;
+
+            if (!impl || !impl->device) {
+                return false;
+            }
+
+            HRESULT hr = impl->device->CreateCommandAllocator(
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                IID_PPV_ARGS(out_allocator));
+            if (FAILED(hr)) {
+                return false;
+            }
+
+            hr = impl->device->CreateCommandList(
+                0,
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                *out_allocator,
+                nullptr,
+                IID_PPV_ARGS(out_cmd));
+            if (FAILED(hr)) {
+                (*out_allocator)->Release();
+                *out_allocator = nullptr;
+                return false;
+            }
+
+            return true;
+        }
     }
 
     DX12MeshFieldVisualizationTable::DX12MeshFieldVisualizationTable()
@@ -119,7 +213,7 @@ namespace wz::gpu::dx12::internal
             return GPUHandle{
                 .id = id,
                 .epoch = slot.epoch,
-                .type = wz::engine::assets::kAssetTypeGPUMeshFieldBuffer,
+                .type = kGPUMeshFieldBufferResourceType,
             };
         }
 
@@ -132,7 +226,7 @@ namespace wz::gpu::dx12::internal
         return GPUHandle{
             .id = static_cast<uint32_t>(slots_.size() - 1u),
             .epoch = slot.epoch,
-            .type = wz::engine::assets::kAssetTypeGPUMeshFieldBuffer,
+            .type = kGPUMeshFieldBufferResourceType,
         };
     }
 
@@ -140,8 +234,7 @@ namespace wz::gpu::dx12::internal
     DX12MeshFieldVisualizationTable::get(GPUHandle handle) const
     {
         if (!handle.valid()
-            || handle.type
-                != wz::engine::assets::kAssetTypeGPUMeshFieldBuffer
+            || handle.type != kGPUMeshFieldBufferResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {
@@ -158,8 +251,7 @@ namespace wz::gpu::dx12::internal
     bool DX12MeshFieldVisualizationTable::release(GPUHandle handle)
     {
         if (!handle.valid()
-            || handle.type
-                != wz::engine::assets::kAssetTypeGPUMeshFieldBuffer
+            || handle.type != kGPUMeshFieldBufferResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {
@@ -239,6 +331,118 @@ namespace wz::gpu::dx12::internal
             resource.values_buffer,
             resource.element_count,
             sizeof(float));
+
+        return impl->mesh_field_visualizations.add(resource);
+    }
+
+    GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(
+        Device& device,
+        GPUHandle source_buffer,
+        uint64_t byte_offset,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl
+            || !impl->device
+            || !source_buffer.valid()
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return {};
+        }
+
+        DX12ComputeBuffer* source =
+            impl->compute_buffers.get(source_buffer);
+        if (!source || !source->valid()) {
+            return {};
+        }
+
+        const uint64_t byte_count =
+            static_cast<uint64_t>(element_count)
+            * static_cast<uint64_t>(stride_bytes);
+        const uint64_t source_byte_count =
+            static_cast<uint64_t>(source->element_count)
+            * static_cast<uint64_t>(source->stride_bytes);
+        if (byte_count == 0u
+            || byte_offset > source_byte_count
+            || byte_count > source_byte_count - byte_offset
+            || byte_count > (std::numeric_limits<size_t>::max)())
+        {
+            return {};
+        }
+
+        const D3D12_HEAP_PROPERTIES default_heap =
+            CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        const D3D12_RESOURCE_DESC buffer_desc =
+            CD3DX12_RESOURCE_DESC::Buffer(byte_count);
+
+        ID3D12Resource* destination = nullptr;
+        HRESULT hr = impl->device->CreateCommittedResource(
+            &default_heap,
+            D3D12_HEAP_FLAG_NONE,
+            &buffer_desc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&destination));
+        if (FAILED(hr)) {
+            return {};
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        if (!create_one_shot_command_list(impl, &allocator, &cmd)) {
+            destination->Release();
+            return {};
+        }
+
+        const D3D12_RESOURCE_STATES before = source->state;
+        transition_resource(
+            cmd,
+            source->resource,
+            before,
+            D3D12_RESOURCE_STATE_COPY_SOURCE);
+        cmd->CopyBufferRegion(
+            destination,
+            0,
+            source->resource,
+            byte_offset,
+            byte_count);
+        transition_resource(
+            cmd,
+            destination,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        transition_resource(
+            cmd,
+            source->resource,
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            before);
+        source->state = before;
+
+        const bool copied = execute_and_wait(impl, allocator, cmd);
+        cmd->Release();
+        allocator->Release();
+        if (!copied) {
+            destination->Release();
+            return {};
+        }
+
+        DX12MeshFieldVisualizationResource resource{};
+        resource.values_buffer = destination;
+        resource.element_count = element_count;
+        resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
+        if (!resource.srv_table.valid()) {
+            release_mesh_field_visualization_resource(resource);
+            return {};
+        }
+
+        impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+            resource.srv_table,
+            0,
+            resource.values_buffer,
+            resource.element_count,
+            stride_bytes);
 
         return impl->mesh_field_visualizations.add(resource);
     }

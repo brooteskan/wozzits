@@ -13,11 +13,18 @@
 namespace wz::engine::assets
 {
     struct ComputePipelineData;
-    enum class ComputeBindingKind : uint8_t;
 }
 
 namespace wz::gpu
 {
+    enum class ComputeBindingKind : uint8_t
+    {
+        StructuredBufferSRV,
+        StructuredBufferUAV,
+        ByteAddressBufferSRV,
+        ByteAddressBufferUAV,
+    };
+
     struct ComputeBufferDesc
     {
         uint32_t element_count = 0;
@@ -33,7 +40,7 @@ namespace wz::gpu
 
     struct ComputeDispatchBinding
     {
-        wz::engine::assets::ComputeBindingKind kind{};
+        ComputeBindingKind kind{};
         uint32_t shader_register = 0;
         uint32_t register_space = 0;
         GPUHandle buffer{};

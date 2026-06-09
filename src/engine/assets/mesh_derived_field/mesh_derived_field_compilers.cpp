@@ -11,6 +11,7 @@
 #include <engine/assets/type_extensions.h>
 #include <file/filesystem.h>
 #include <gpu/compute.h>
+#include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <array>
@@ -815,11 +816,13 @@ namespace wz::engine::assets::internal
         }
 
         bool compile_wavelet_gpu_detail_heat(
+            const wz::asset::AssetKey& field_key,
             const MeshWaveletAnalysisDesc& desc,
             const MeshData& mesh,
             const ComputePipelineData& pipeline_data,
             wz::gpu::Device& device,
             wz::Logger& logger,
+            GpuResidentFieldTable& gpu_resident_field_table,
             MeshDerivedFieldData& out)
         {
             if (!device.impl
@@ -928,13 +931,13 @@ namespace wz::engine::assets::internal
             };
             const std::array<wz::gpu::ComputeDispatchBinding, 2> bindings{{
                 {
-                    .kind = ComputeBindingKind::StructuredBufferSRV,
+                    .kind = wz::gpu::ComputeBindingKind::StructuredBufferSRV,
                     .shader_register = 0,
                     .register_space = 0,
                     .buffer = input_buffer,
                 },
                 {
-                    .kind = ComputeBindingKind::StructuredBufferUAV,
+                    .kind = wz::gpu::ComputeBindingKind::StructuredBufferUAV,
                     .shader_register = 0,
                     .register_space = 0,
                     .buffer = output_buffer,
@@ -955,6 +958,91 @@ namespace wz::engine::assets::internal
             std::vector<std::byte> bytes;
             if (dispatched) {
                 bytes = wz::gpu::readback_buffer(device, output_buffer);
+
+                if (bytes.size() == output_float_count * sizeof(float)) {
+                    const uint64_t channel_byte_count =
+                        static_cast<uint64_t>(mesh.vertex_count())
+                        * sizeof(float);
+                    for (uint32_t scale = 0; scale < desc.scale_count; ++scale) {
+                        const uint64_t position_offset =
+                            static_cast<uint64_t>(scale)
+                            * 2u
+                            * channel_byte_count;
+                        const wz::gpu::GPUHandle position_resource =
+                            wz::gpu::create_mesh_field_visualization_from_gpu_source(
+                                device,
+                                output_buffer,
+                                position_offset,
+                                mesh.vertex_count(),
+                                sizeof(float));
+                        if (position_resource.valid()) {
+                            const bool added = gpu_resident_field_table.add(
+                                GpuResidentFieldEntry{
+                                .field_key = field_key,
+                                .channel_id =
+                                    MeshWaveletChannelID::kPositionEnergyBase
+                                    + scale,
+                                .gpu_resource = position_resource,
+                            });
+                            if (!added) {
+                                wz::gpu::release_mesh_field_visualization(
+                                    device,
+                                    position_resource);
+                            }
+                        }
+
+                        const uint64_t normal_offset =
+                            (static_cast<uint64_t>(scale) * 2u + 1u)
+                            * channel_byte_count;
+                        const wz::gpu::GPUHandle normal_resource =
+                            wz::gpu::create_mesh_field_visualization_from_gpu_source(
+                                device,
+                                output_buffer,
+                                normal_offset,
+                                mesh.vertex_count(),
+                                sizeof(float));
+                        if (normal_resource.valid()) {
+                            const bool added = gpu_resident_field_table.add(
+                                GpuResidentFieldEntry{
+                                .field_key = field_key,
+                                .channel_id =
+                                    MeshWaveletChannelID::kNormalEnergyBase
+                                    + scale,
+                                .gpu_resource = normal_resource,
+                            });
+                            if (!added) {
+                                wz::gpu::release_mesh_field_visualization(
+                                    device,
+                                    normal_resource);
+                            }
+                        }
+                    }
+
+                    const uint64_t detail_offset =
+                        static_cast<uint64_t>(desc.scale_count)
+                        * 2u
+                        * channel_byte_count;
+                    const wz::gpu::GPUHandle detail_resource =
+                        wz::gpu::create_mesh_field_visualization_from_gpu_source(
+                            device,
+                            output_buffer,
+                            detail_offset,
+                            mesh.vertex_count(),
+                            sizeof(float));
+                    if (detail_resource.valid()) {
+                        const bool added = gpu_resident_field_table.add(
+                            GpuResidentFieldEntry{
+                            .field_key = field_key,
+                            .channel_id = MeshWaveletChannelID::kDetailCost,
+                            .gpu_resource = detail_resource,
+                        });
+                        if (!added) {
+                            wz::gpu::release_mesh_field_visualization(
+                                device,
+                                detail_resource);
+                        }
+                    }
+                }
             }
 
             wz::gpu::release_compute_buffer(device, input_buffer);
@@ -1162,6 +1250,7 @@ namespace wz::engine::assets::internal
             MeshTable& mesh_table,
             ComputePipelineTable& compute_pipeline_table,
             MeshDerivedFieldTable& field_table,
+            GpuResidentFieldTable& gpu_resident_field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
             const auto* desc =
@@ -1213,12 +1302,14 @@ namespace wz::engine::assets::internal
 
             MeshDerivedFieldData field{};
             if (!(compute_pipeline
-                    && compile_wavelet_gpu_detail_heat(
+                && compile_wavelet_gpu_detail_heat(
+                    input.key,
                     *desc,
                     *source_mesh,
                     *compute_pipeline,
                     device,
                     logger,
+                    gpu_resident_field_table,
                     field))
                 && !compile_wavelet_reference(
                     *desc,
@@ -1252,6 +1343,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
+        GpuResidentFieldTable& gpu_resident_field_table,
         const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
@@ -1286,6 +1378,7 @@ namespace wz::engine::assets::internal
                 &mesh_table,
                 &compute_pipeline_table,
                 &mesh_derived_field_table,
+                &gpu_resident_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode>,
@@ -1300,6 +1393,7 @@ namespace wz::engine::assets::internal
                     mesh_table,
                     compute_pipeline_table,
                     mesh_derived_field_table,
+                    gpu_resident_field_table,
                     cache_settings);
             }
         });

@@ -125,10 +125,29 @@ namespace wz::engine::behavior
             return 0u;
         }
 
-        wz::engine::assets::ComputeBindingKind behavior_binding_kind(
+        wz::gpu::ComputeBindingKind gpu_binding_kind(
+            wz::engine::assets::ComputeBindingKind kind)
+        {
+            using AssetKind = wz::engine::assets::ComputeBindingKind;
+            using GpuKind = wz::gpu::ComputeBindingKind;
+
+            switch (kind) {
+            case AssetKind::StructuredBufferSRV:
+                return GpuKind::StructuredBufferSRV;
+            case AssetKind::StructuredBufferUAV:
+                return GpuKind::StructuredBufferUAV;
+            case AssetKind::ByteAddressBufferSRV:
+                return GpuKind::ByteAddressBufferSRV;
+            case AssetKind::ByteAddressBufferUAV:
+                return GpuKind::ByteAddressBufferUAV;
+            }
+            return GpuKind::StructuredBufferSRV;
+        }
+
+        wz::gpu::ComputeBindingKind behavior_binding_kind(
             wz::engine::assets::SceneComputeKernelBindingKind kind)
         {
-            using wz::engine::assets::ComputeBindingKind;
+            using wz::gpu::ComputeBindingKind;
             using wz::engine::assets::SceneComputeKernelBindingKind;
 
             switch (kind) {
@@ -182,7 +201,7 @@ namespace wz::engine::behavior
             if (port.target == HlslBindingPortTarget::Buffer) {
                 binding.target =
                     BehaviorGpuKernelPortTarget::BufferBinding;
-                binding.binding_kind = port.binding_kind;
+                binding.binding_kind = gpu_binding_kind(port.binding_kind);
                 binding.shader_register = port.shader_register;
                 binding.register_space = port.register_space;
                 binding.stride_bytes = port.stride_bytes;

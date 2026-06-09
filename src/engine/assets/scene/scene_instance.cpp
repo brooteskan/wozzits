@@ -384,6 +384,7 @@ namespace wz::engine::assets
                 instance.motions.size()),
             .behaviors = static_cast<uint32_t>(
                 instance.behaviors.size()),
+            .compute_kernels = instance.compute_kernels,
             .auxiliary_visuals = static_cast<uint32_t>(
                 instance.auxiliary_visuals.size()),
         };
@@ -757,6 +758,10 @@ namespace wz::engine::assets
                         behavior,
                         binding_id),
                 });
+            }
+
+            if (node.compute_kernel) {
+                ++inst.compute_kernels;
             }
 
             if (node.debug_visual) {

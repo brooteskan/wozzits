@@ -6,8 +6,8 @@
 #include <gpu/mesh_field_visualization.h>
 #include <gpu/gaussian_splat.h>
 #include <gpu/compute.h>
+#include <gpu/gpu_resource_types.h>
 #include <asset/types.h>
-#include <engine/assets/type_extensions.h>
 
 namespace wz::gpu
 {
@@ -23,13 +23,13 @@ namespace wz::gpu
         case GPUResourceType::GaussianSplatCloud:
             return release_gaussian_splat_cloud(device, handle);
 
-        case wz::engine::assets::kAssetTypeGPUMeshFieldBuffer:
+        case kGPUMeshFieldBufferResourceType:
             return release_mesh_field_visualization(device, handle);
 
-        case wz::engine::assets::kAssetTypeGPUBuffer:
+        case kGPUBufferResourceType:
             return release_compute_buffer(device, handle);
 
-        case wz::engine::assets::kAssetTypeGPUComputePipeline:
+        case kGPUComputePipelineResourceType:
             return release_compute_pipeline(device, handle);
 
         default:

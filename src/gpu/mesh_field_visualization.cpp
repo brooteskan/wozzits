@@ -56,6 +56,30 @@ namespace wz::gpu
             desc);
     }
 
+    GPUHandle create_mesh_field_visualization_from_gpu_source(
+        Device& device,
+        GPUHandle source_buffer,
+        uint64_t byte_offset,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        if (!device.valid()
+            || !source_buffer.valid()
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return {};
+        }
+
+        return dx12::internal
+            ::create_mesh_field_visualization_from_gpu_source_dx12(
+                device,
+                source_buffer,
+                byte_offset,
+                element_count,
+                stride_bytes);
+    }
+
     bool release_mesh_field_visualization(
         Device& device,
         GPUHandle handle)

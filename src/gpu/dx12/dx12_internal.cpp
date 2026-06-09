@@ -2,6 +2,7 @@
 
 #include <gpu/dx12/dx12_internal.h>
 #include <gpu/dx12/dx12_pipeline_factory.h>
+#include <gpu/gpu_resource_types.h>
 #include "dx12_device_internal.h"
 
 namespace wz::gpu::dx12::internal {
@@ -267,7 +268,7 @@ namespace wz::gpu::dx12::internal {
         return GPUHandle{
             .id    = static_cast<uint32_t>(slots_.size() - 1),
             .epoch = slot.epoch,
-            .type  = wz::engine::assets::kAssetTypeGPUGraphicsPipeline,
+            .type  = kGPUGraphicsPipelineResourceType,
         };
     }
 
@@ -276,7 +277,7 @@ namespace wz::gpu::dx12::internal {
         if (!handle.valid())
             return nullptr;
 
-        if (handle.type != wz::engine::assets::kAssetTypeGPUGraphicsPipeline)
+        if (handle.type != kGPUGraphicsPipelineResourceType)
             return nullptr;
 
         if (handle.id == 0 || handle.id >= slots_.size())

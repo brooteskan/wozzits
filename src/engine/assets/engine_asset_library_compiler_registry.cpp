@@ -35,6 +35,7 @@ namespace wz::engine::assets::internal
             ctx.mesh_table,
             ctx.compute_pipeline_table,
             ctx.mesh_derived_field_table,
+            ctx.gpu_resident_field_table,
             ctx.cache_settings);
         register_terrain_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.cache_settings);
         register_terrain_visual_proxy_compilers(registry, ctx.logger, ctx.terrain_table, ctx.terrain_visual_proxy_table, ctx.cache_settings);

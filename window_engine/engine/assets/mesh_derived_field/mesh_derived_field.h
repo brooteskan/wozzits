@@ -4,10 +4,16 @@
 
 #include <asset/types.h>
 #include <engine/assets/mesh/mesh.h>
+#include <gpu/gpu_types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+namespace wz::gpu
+{
+    struct Device;
+}
 
 namespace wz::engine::assets
 {
@@ -96,5 +102,29 @@ namespace wz::engine::assets
         };
 
         std::vector<Slot> slots_;
+    };
+
+    struct GpuResidentFieldEntry
+    {
+        wz::asset::AssetKey field_key{};
+        uint32_t channel_id = 0;
+        wz::gpu::GPUHandle gpu_resource{};
+
+        bool valid() const noexcept;
+    };
+
+    class GpuResidentFieldTable
+    {
+    public:
+        bool add(GpuResidentFieldEntry entry);
+        wz::gpu::GPUHandle find(
+            wz::asset::AssetKey field_key,
+            uint32_t channel_id) const;
+        void clear();
+        void destroy(wz::gpu::Device& device);
+        size_t size() const noexcept;
+
+    private:
+        std::vector<GpuResidentFieldEntry> entries_;
     };
 }

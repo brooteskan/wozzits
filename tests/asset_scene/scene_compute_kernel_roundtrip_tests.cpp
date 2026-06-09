@@ -145,6 +145,12 @@ TEST(SceneAssetModule, ComputeKernelComponentRoundTripsThroughSceneJSON)
         summarize_authored_scene_components(*scene_data);
     EXPECT_EQ(authored_summary.compute_kernels, 1u);
 
+    auto instance_result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(instance_result.ok()) << instance_result.error_detail;
+    const auto runtime_summary =
+        summarize_scene_instance_components(instance_result.instance);
+    EXPECT_EQ(runtime_summary.compute_kernels, 1u);
+
     const uint64_t original_fingerprint =
         scene_asset_fingerprint(*scene_data);
 

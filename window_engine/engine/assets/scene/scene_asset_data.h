@@ -777,6 +777,7 @@ namespace wz::engine::assets
         uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
+        uint32_t event_triggers = 0;
         uint32_t compute_kernels = 0;
     };
 
@@ -1361,6 +1362,7 @@ namespace wz::engine::assets
             || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value()
+            || node.event_trigger.has_value()
             || node.compute_kernel.has_value();
     }
 
@@ -1382,7 +1384,6 @@ namespace wz::engine::assets
             || node.terrain.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
-            || node.event_trigger.has_value()
             || node.proximity.has_value()
             || node.motion.has_value()
             || node.behavior.has_value()
@@ -1461,6 +1462,10 @@ namespace wz::engine::assets
             }
             if (node.terrain_height_field_source) {
                 ++out.terrain_height_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.event_trigger) {
+                ++out.event_triggers;
                 ++out.total_recipes;
             }
             if (node.compute_kernel) {

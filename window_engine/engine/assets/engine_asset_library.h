@@ -115,6 +115,8 @@ namespace wz::engine::assets
         EngineAssetLibrary(EngineAssetLibrary&&) = delete;
         EngineAssetLibrary& operator=(EngineAssetLibrary&&) = delete;
 
+        ~EngineAssetLibrary();
+
         // ── Graph lifecycle ───────────────────────────────────────────────────────
 
         bool          commit();
@@ -219,6 +221,9 @@ namespace wz::engine::assets
         wz::asset::AssetSystem&       system()       { return system_; }
         const wz::asset::AssetSystem& system() const { return system_; }
 
+        GpuResidentFieldTable&       gpu_resident_fields()       { return gpu_resident_field_table_; }
+        const GpuResidentFieldTable& gpu_resident_fields() const { return gpu_resident_field_table_; }
+
         bool gpu_device_valid() const { return device_.valid(); }
 
     private:
@@ -244,6 +249,7 @@ namespace wz::engine::assets
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
         MeshDerivedFieldTable       mesh_derived_field_table_;
+        GpuResidentFieldTable       gpu_resident_field_table_;
         TerrainAssetTable           terrain_table_;
         TerrainVisualProxyTable      terrain_visual_proxy_table_;
         CollisionAssetTable         collision_table_;

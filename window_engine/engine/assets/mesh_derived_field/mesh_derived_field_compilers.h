@@ -23,6 +23,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
+        GpuResidentFieldTable& gpu_resident_field_table,
         const EngineAssetCacheSettings& cache_settings);
 
     bool load_cached_mesh_derived_field(

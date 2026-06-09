@@ -222,6 +222,7 @@ namespace wz::scene
         uint32_t proximities = 0;
         uint32_t motions = 0;
         uint32_t behaviors = 0;
+        uint32_t compute_kernels = 0;
         uint32_t auxiliary_visuals = 0;
     };
 

@@ -226,12 +226,12 @@ namespace wz::engine::assets {
 
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypeTerrainLayer =
-        static_cast<wz::asset::AssetType>(149);
+        static_cast<wz::asset::AssetType>(155);
 
     // Implemented: parsed CSV document (headers + ragged rows of raw strings).
     // Runtime data is owned by CSVTable.
     inline constexpr wz::asset::AssetType kAssetTypeCSVTable =
-        static_cast<wz::asset::AssetType>(150);
+        static_cast<wz::asset::AssetType>(156);
 
     // Implemented: parsed JSON document.
     // Runtime data is owned by JSONTable.

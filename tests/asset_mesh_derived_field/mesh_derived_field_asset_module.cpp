@@ -3,6 +3,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/key_factories/mesh_derived_field.h>
 #include <gpu/gpu.h>
+#include <gpu/gpu_resource_types.h>
 #include <window/window2.h>
 
 #include <algorithm>
@@ -1106,4 +1107,56 @@ TEST(MeshDerivedFieldAssetModule, MeshDomainElementCountsMatchQuad)
     EXPECT_EQ(
         mesh_domain_element_count(quad, MeshDerivedFieldDomain::Edge),
         5u);
+}
+
+TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)
+{
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey field_key{
+        .content_hash = { 1u, 2u },
+        .schema_hash = { 3u, 4u },
+        .compiler_hash = { 5u, 6u },
+        .deps_hash = { 7u, 8u },
+    };
+    const wz::gpu::GPUHandle handle{
+        .id = 11u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
+    const wz::gpu::GPUHandle replacement{
+        .id = 12u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
+
+    GpuResidentFieldTable table{};
+    EXPECT_FALSE(table.add({}));
+    EXPECT_TRUE(table.add(GpuResidentFieldEntry{
+        .field_key = field_key,
+        .channel_id = MeshWaveletChannelID::kDetailCost,
+        .gpu_resource = handle,
+    }));
+    EXPECT_EQ(table.size(), 1u);
+    EXPECT_EQ(
+        table.find(field_key, MeshWaveletChannelID::kDetailCost),
+        handle);
+    EXPECT_EQ(table.find(field_key, MeshWaveletChannelID::kDetailCost + 1u),
+              wz::gpu::GPUHandle{});
+
+    EXPECT_FALSE(table.add(GpuResidentFieldEntry{
+        .field_key = field_key,
+        .channel_id = MeshWaveletChannelID::kDetailCost,
+        .gpu_resource = replacement,
+    }));
+    EXPECT_EQ(table.size(), 1u);
+    EXPECT_EQ(
+        table.find(field_key, MeshWaveletChannelID::kDetailCost),
+        handle);
+
+    table.clear();
+    EXPECT_EQ(table.size(), 0u);
+    EXPECT_EQ(
+        table.find(field_key, MeshWaveletChannelID::kDetailCost),
+        wz::gpu::GPUHandle{});
 }

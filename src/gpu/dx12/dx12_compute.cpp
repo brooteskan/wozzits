@@ -1,9 +1,8 @@
 #include <gpu/compute.h>
 #include <gpu/dx12/dx12_internal.h>
+#include <gpu/gpu_resource_types.h>
 
 #include "dx12_device_internal.h"
-
-#include <engine/assets/type_extensions.h>
 
 #include <algorithm>
 #include <cassert>
@@ -15,7 +14,7 @@ namespace wz::gpu::dx12::internal
 {
     namespace
     {
-        using ComputeBindingKind = wz::engine::assets::ComputeBindingKind;
+        using ComputeBindingKind = wz::gpu::ComputeBindingKind;
 
         uint64_t buffer_byte_count(const DX12ComputeBuffer& buffer) noexcept
         {
@@ -66,6 +65,24 @@ namespace wz::gpu::dx12::internal
             return is_srv(kind)
                 ? D3D12_ROOT_PARAMETER_TYPE_SRV
                 : D3D12_ROOT_PARAMETER_TYPE_UAV;
+        }
+
+        ComputeBindingKind gpu_binding_kind(
+            wz::engine::assets::ComputeBindingKind kind) noexcept
+        {
+            using AssetKind = wz::engine::assets::ComputeBindingKind;
+
+            switch (kind) {
+            case AssetKind::StructuredBufferSRV:
+                return ComputeBindingKind::StructuredBufferSRV;
+            case AssetKind::StructuredBufferUAV:
+                return ComputeBindingKind::StructuredBufferUAV;
+            case AssetKind::ByteAddressBufferSRV:
+                return ComputeBindingKind::ByteAddressBufferSRV;
+            case AssetKind::ByteAddressBufferUAV:
+                return ComputeBindingKind::ByteAddressBufferUAV;
+            }
+            return ComputeBindingKind::StructuredBufferSRV;
         }
 
         bool execute_and_wait(
@@ -174,7 +191,7 @@ namespace wz::gpu::dx12::internal
                 data.bindings.end(),
                 [&binding](const wz::engine::assets::ComputeBindingDesc& declared)
                 {
-                    return declared.kind == binding.kind
+                    return gpu_binding_kind(declared.kind) == binding.kind
                         && declared.shader_register == binding.shader_register
                         && declared.register_space == binding.register_space;
                 });
@@ -219,7 +236,8 @@ namespace wz::gpu::dx12::internal
 
             for (const auto& binding : data.bindings) {
                 D3D12_ROOT_PARAMETER param{};
-                param.ParameterType = root_parameter_type(binding.kind);
+                param.ParameterType =
+                    root_parameter_type(gpu_binding_kind(binding.kind));
                 param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
                 param.Descriptor.ShaderRegister = binding.shader_register;
                 param.Descriptor.RegisterSpace = binding.register_space;
@@ -318,7 +336,7 @@ namespace wz::gpu::dx12::internal
             return GPUHandle{
                 .id = id,
                 .epoch = slot.epoch,
-                .type = wz::engine::assets::kAssetTypeGPUBuffer,
+                .type = kGPUBufferResourceType,
             };
         }
 
@@ -331,7 +349,7 @@ namespace wz::gpu::dx12::internal
         return GPUHandle{
             .id = static_cast<uint32_t>(slots_.size() - 1u),
             .epoch = slot.epoch,
-            .type = wz::engine::assets::kAssetTypeGPUBuffer,
+            .type = kGPUBufferResourceType,
         };
     }
 
@@ -345,7 +363,7 @@ namespace wz::gpu::dx12::internal
         GPUHandle handle) const
     {
         if (!handle.valid()
-            || handle.type != wz::engine::assets::kAssetTypeGPUBuffer
+            || handle.type != kGPUBufferResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {
@@ -362,7 +380,7 @@ namespace wz::gpu::dx12::internal
     bool DX12ComputeBufferTable::release(GPUHandle handle)
     {
         if (!handle.valid()
-            || handle.type != wz::engine::assets::kAssetTypeGPUBuffer
+            || handle.type != kGPUBufferResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {
@@ -417,7 +435,7 @@ namespace wz::gpu::dx12::internal
         return GPUHandle{
             .id = static_cast<uint32_t>(slots_.size() - 1u),
             .epoch = 1u,
-            .type = wz::engine::assets::kAssetTypeGPUComputePipeline,
+            .type = kGPUComputePipelineResourceType,
         };
     }
 
@@ -425,7 +443,7 @@ namespace wz::gpu::dx12::internal
         GPUHandle handle) const
     {
         if (!handle.valid()
-            || handle.type != wz::engine::assets::kAssetTypeGPUComputePipeline
+            || handle.type != kGPUComputePipelineResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {
@@ -442,7 +460,7 @@ namespace wz::gpu::dx12::internal
     bool DX12ComputePipelineTable::release(GPUHandle handle)
     {
         if (!handle.valid()
-            || handle.type != wz::engine::assets::kAssetTypeGPUComputePipeline
+            || handle.type != kGPUComputePipelineResourceType
             || handle.id == 0u
             || handle.id >= slots_.size())
         {

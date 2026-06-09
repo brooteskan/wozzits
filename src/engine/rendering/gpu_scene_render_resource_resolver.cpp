@@ -1400,6 +1400,21 @@ namespace wz::engine::rendering
             && !(renderable.mesh_field_visualization_asset
                 == wz::asset::AssetKey{}))
         {
+            const uint32_t channel_id =
+                renderable.mesh_style.field_visualization.channel_id;
+            const wz::gpu::GPUHandle resident_field =
+                assets_.gpu_resident_fields().find(
+                    renderable.mesh_field_visualization_asset,
+                    channel_id);
+            if (resident_field.valid()) {
+                mesh_field_visualization_resource = resident_field;
+            }
+        }
+
+        if (!mesh_field_visualization_resource.valid()
+            && !(renderable.mesh_field_visualization_asset
+                == wz::asset::AssetKey{}))
+        {
             if (!mesh_data || !mesh_data->valid()) {
                 return false;
             }
