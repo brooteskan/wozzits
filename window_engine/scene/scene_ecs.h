@@ -73,6 +73,7 @@ namespace wz::scene
         Proximity,
         Motion,
         Behavior,
+        ComputeKernel,
     };
 
     constexpr SceneComponentDomain scene_component_domain(
@@ -93,6 +94,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::SkyVisual:
         case SceneAuthoredComponentKind::SkySurface:
         case SceneAuthoredComponentKind::AuxiliaryVisual:
+        case SceneAuthoredComponentKind::ComputeKernel:
             return SceneComponentDomain::Exportable;
 
         case SceneAuthoredComponentKind::SceneImportSource:
@@ -195,6 +197,7 @@ namespace wz::scene
         uint32_t proximities = 0;
         uint32_t motions = 0;
         uint32_t behaviors = 0;
+        uint32_t compute_kernels = 0;
         uint32_t auxiliary_visuals = 0;
         uint32_t editor_handles = 0;
     };

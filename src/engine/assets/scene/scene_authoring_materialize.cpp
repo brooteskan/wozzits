@@ -363,6 +363,110 @@ namespace wz::engine::assets
             });
         }
 
+        ComputeBindingKind compute_binding_kind_for_scene_port(
+            const SceneComputeKernelPortAsset& port)
+        {
+            if (port.binding_kind == SceneComputeKernelBindingKind::UAV) {
+                return ComputeBindingKind::StructuredBufferUAV;
+            }
+            return ComputeBindingKind::StructuredBufferSRV;
+        }
+
+        uint32_t compute_kernel_root_constant_dwords(
+            const SceneComputeKernelAsset& kernel)
+        {
+            uint32_t total = 0;
+            for (const auto& port : kernel.ports) {
+                if (port.kind
+                    == SceneComputeKernelPortKind::StructuredBuffer)
+                {
+                    continue;
+                }
+
+                const uint64_t end =
+                    static_cast<uint64_t>(port.root_constant_offset)
+                    + static_cast<uint64_t>(port.root_constant_dwords);
+                if (end > static_cast<uint64_t>(total)) {
+                    total = static_cast<uint32_t>(end);
+                }
+            }
+            return total;
+        }
+
+        bool materialize_compute_kernel(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            std::string& error)
+        {
+            if (!node.compute_kernel) {
+                return true;
+            }
+
+            SceneComputeKernelAsset& kernel = *node.compute_kernel;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (kernel.kernel_id.empty()) {
+                error = "compute kernel missing kernel_id for " + node_name;
+                return false;
+            }
+            if (kernel.hlsl_path.empty()) {
+                error = "compute kernel missing hlsl_path for " + node_name;
+                return false;
+            }
+
+            std::vector<ComputeBindingDesc> bindings;
+            bindings.reserve(kernel.ports.size());
+            for (const auto& port : kernel.ports) {
+                if (port.kind
+                    != SceneComputeKernelPortKind::StructuredBuffer)
+                {
+                    continue;
+                }
+
+                bindings.push_back(ComputeBindingDesc{
+                    .kind = compute_binding_kind_for_scene_port(port),
+                    .semantic = ComputeBindingSemantic::Unknown,
+                    .shader_register = port.shader_register,
+                    .register_space = port.register_space,
+                    .descriptor_count = 1,
+                    .stride_bytes = port.stride_bytes,
+                });
+            }
+
+            const ComputeShaderAsset shader =
+                assets.shaders().create_compute_shader({
+                    .name = kernel.kernel_id,
+                    .path = kernel.hlsl_path,
+                    .entry = kernel.entry,
+                    .target = kernel.target,
+                });
+            if (!shader.valid()) {
+                error = "compute shader unavailable for " + node_name;
+                return false;
+            }
+
+            const ComputePipelineAsset pipeline =
+                assets.compute_pipelines().create_compute_pipeline({
+                    .name = kernel.kernel_id,
+                    .compute_shader = shader.shader,
+                    .bindings = std::move(bindings),
+                    .root_constant_dwords =
+                        compute_kernel_root_constant_dwords(kernel),
+                    .thread_group_size_x = kernel.thread_group_size_x,
+                    .thread_group_size_y = kernel.thread_group_size_y,
+                    .thread_group_size_z = kernel.thread_group_size_z,
+                });
+            if (!pipeline.valid()) {
+                error = "compute pipeline unavailable for " + node_name;
+                return false;
+            }
+
+            kernel.compute_shader_asset = shader.shader;
+            kernel.compute_pipeline_asset = pipeline.key;
+            return true;
+        }
+
         uint32_t policy_flags_for_terrain_render_style(
             const SceneTerrainRenderStyleAsset& style,
             bool wireframe)
@@ -1813,6 +1917,21 @@ namespace wz::engine::assets
             scalar_field_assets_by_node,
             vector_field_assets_by_node);
         log_phase("fields_and_sky", elapsed_ms_since(fields_started));
+
+        const auto compute_kernels_started = std::chrono::steady_clock::now();
+        for (auto& node : scene.nodes) {
+            if (!materialize_compute_kernel(assets, node, report.error)) {
+                if (report.error.empty()) {
+                    report.error =
+                        "compute kernel materialization failed for "
+                        + node_log_name(node);
+                }
+                return report;
+            }
+        }
+        log_phase(
+            "compute_kernels",
+            elapsed_ms_since(compute_kernels_started));
 
         const auto lights_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {

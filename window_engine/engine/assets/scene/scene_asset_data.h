@@ -597,6 +597,61 @@ namespace wz::engine::assets
         std::vector<SceneBehaviorConfigValue> config;
     };
 
+    enum class SceneComputeKernelPortKind : uint8_t
+    {
+        StructuredBuffer = 0,
+        U32,
+        F32,
+    };
+
+    enum class SceneComputeKernelPortDirection : uint8_t
+    {
+        Input = 0,
+        Output,
+    };
+
+    enum class SceneComputeKernelBindingKind : uint8_t
+    {
+        SRV = 0,
+        UAV,
+    };
+
+    struct SceneComputeKernelPortAsset
+    {
+        std::string name;
+        SceneComputeKernelPortKind kind =
+            SceneComputeKernelPortKind::StructuredBuffer;
+        SceneComputeKernelPortDirection direction =
+            SceneComputeKernelPortDirection::Input;
+
+        // Buffer ports use binding_kind/register/stride fields. Root constant
+        // ports use root_constant_offset/root_constant_dwords.
+        SceneComputeKernelBindingKind binding_kind =
+            SceneComputeKernelBindingKind::SRV;
+        uint32_t shader_register = 0;
+        uint32_t register_space = 0;
+        uint32_t stride_bytes = 0;
+        uint32_t root_constant_offset = 0;
+        uint32_t root_constant_dwords = 0;
+    };
+
+    struct SceneComputeKernelAsset
+    {
+        std::string kernel_id;
+        std::string hlsl_path;
+        std::string entry = "main";
+        std::string target = "cs_5_0";
+        uint32_t thread_group_size_x = 1;
+        uint32_t thread_group_size_y = 1;
+        uint32_t thread_group_size_z = 1;
+        std::vector<SceneComputeKernelPortAsset> ports;
+
+        // Materialized asset keys derived from the authored kernel contract.
+        // These are not authored JSON fields.
+        wz::asset::AssetKey compute_shader_asset{};
+        wz::asset::AssetKey compute_pipeline_asset{};
+    };
+
     // ─────────────────────────────────────────────────────────────────────
 
     struct SceneNodeAsset
@@ -652,6 +707,7 @@ namespace wz::engine::assets
         std::optional<SceneMotionAsset> motion;
         std::optional<SceneBehaviorAsset> behavior;
         std::vector<SceneBehaviorAsset> behaviors;
+        std::optional<SceneComputeKernelAsset> compute_kernel;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
@@ -721,6 +777,7 @@ namespace wz::engine::assets
         uint32_t terrain_render_styles = 0;
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
+        uint32_t compute_kernels = 0;
     };
 
     inline SceneNodeAsset make_scene_node(
@@ -1108,6 +1165,9 @@ namespace wz::engine::assets
         if (node.behavior || !node.behaviors.empty()) {
             out.push_back(Kind::Behavior);
         }
+        if (node.compute_kernel) {
+            out.push_back(Kind::ComputeKernel);
+        }
         if (node.debug_visual) {
             out.push_back(Kind::AuxiliaryVisual);
         }
@@ -1300,7 +1360,8 @@ namespace wz::engine::assets
             || node.sky_surface.has_value()
             || node.terrain_render_style.has_value()
             || node.terrain_mesh_source.has_value()
-            || node.terrain_height_field_source.has_value();
+            || node.terrain_height_field_source.has_value()
+            || node.compute_kernel.has_value();
     }
 
     inline bool has_runtime_relevant_components(
@@ -1326,6 +1387,7 @@ namespace wz::engine::assets
             || node.motion.has_value()
             || node.behavior.has_value()
             || !node.behaviors.empty()
+            || node.compute_kernel.has_value()
             || node.debug_visual.has_value();
     }
 
@@ -1399,6 +1461,10 @@ namespace wz::engine::assets
             }
             if (node.terrain_height_field_source) {
                 ++out.terrain_height_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.compute_kernel) {
+                ++out.compute_kernels;
                 ++out.total_recipes;
             }
         }
@@ -1505,6 +1571,9 @@ namespace wz::engine::assets
                 ++out.behaviors;
             }
             out.behaviors += static_cast<uint32_t>(node.behaviors.size());
+            if (node.compute_kernel) {
+                ++out.compute_kernels;
+            }
             if (node.debug_visual) {
                 ++out.auxiliary_visuals;
             }

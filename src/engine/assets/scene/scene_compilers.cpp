@@ -463,6 +463,45 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneComputeKernelPortKind>
+        parse_compute_kernel_port_kind(std::string_view text)
+        {
+            if (text == "structured_buffer") {
+                return SceneComputeKernelPortKind::StructuredBuffer;
+            }
+            if (text == "u32") {
+                return SceneComputeKernelPortKind::U32;
+            }
+            if (text == "f32") {
+                return SceneComputeKernelPortKind::F32;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneComputeKernelPortDirection>
+        parse_compute_kernel_port_direction(std::string_view text)
+        {
+            if (text == "input") {
+                return SceneComputeKernelPortDirection::Input;
+            }
+            if (text == "output") {
+                return SceneComputeKernelPortDirection::Output;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneComputeKernelBindingKind>
+        parse_compute_kernel_binding_kind(std::string_view text)
+        {
+            if (text == "srv") {
+                return SceneComputeKernelBindingKind::SRV;
+            }
+            if (text == "uav") {
+                return SceneComputeKernelBindingKind::UAV;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneTerrainMeshHeightPolicy>
         parse_terrain_mesh_height_policy(std::string_view text)
         {
@@ -1850,6 +1889,350 @@ namespace wz::engine::assets::internal
                 }
 
                 node.vector_field_source = source;
+            }
+
+            const auto* compute_kernel =
+                find_member(node_val, "compute_kernel");
+            if (compute_kernel
+                && compute_kernel->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneComputeKernelAsset component{};
+
+                auto kernel_id = read_string(*compute_kernel, "kernel_id");
+                if (!kernel_id || kernel_id->empty()) {
+                    logger.error("compute_kernel on node '" + node.id
+                        + "' missing kernel_id");
+                    return std::nullopt;
+                }
+                component.kernel_id = std::string(*kernel_id);
+
+                auto hlsl_path = read_string(*compute_kernel, "hlsl_path");
+                if (!hlsl_path || hlsl_path->empty()) {
+                    logger.error("compute_kernel on node '" + node.id
+                        + "' missing hlsl_path");
+                    return std::nullopt;
+                }
+                component.hlsl_path = std::string(*hlsl_path);
+
+                if (auto entry = read_string(*compute_kernel, "entry")) {
+                    component.entry = std::string(*entry);
+                }
+                if (component.entry.empty()) {
+                    logger.error("compute_kernel on node '" + node.id
+                        + "' has empty entry");
+                    return std::nullopt;
+                }
+
+                if (auto target = read_string(*compute_kernel, "target")) {
+                    component.target = std::string(*target);
+                }
+                if (component.target.empty()) {
+                    logger.error("compute_kernel on node '" + node.id
+                        + "' has empty target");
+                    return std::nullopt;
+                }
+
+                auto read_u32 =
+                    [&](const wz::json::JSONValue& obj,
+                        const char* field_name,
+                        uint32_t& out,
+                        bool require_positive) -> bool
+                {
+                    auto value = read_number(obj, field_name);
+                    if (!value) {
+                        return true;
+                    }
+                    if (!std::isfinite(*value)
+                        || *value < 0.0
+                        || *value > 4294967295.0)
+                    {
+                        logger.error("compute_kernel on node '" + node.id
+                            + "' has invalid " + std::string(field_name));
+                        return false;
+                    }
+                    const uint32_t parsed = static_cast<uint32_t>(*value);
+                    if (static_cast<double>(parsed) != *value
+                        || (require_positive && parsed == 0u))
+                    {
+                        logger.error("compute_kernel on node '" + node.id
+                            + "' has invalid " + std::string(field_name));
+                        return false;
+                    }
+                    out = parsed;
+                    return true;
+                };
+
+                const auto* group =
+                    find_member(*compute_kernel, "thread_group_size");
+                if (group) {
+                    if (group->kind != wz::json::JSONValueKind::Array
+                        || group->array_values.size() < 3)
+                    {
+                        logger.error("compute_kernel on node '" + node.id
+                            + "' has invalid thread_group_size");
+                        return std::nullopt;
+                    }
+                    uint32_t* out[3]{
+                        &component.thread_group_size_x,
+                        &component.thread_group_size_y,
+                        &component.thread_group_size_z,
+                    };
+                    for (size_t i = 0; i < 3; ++i) {
+                        const auto& element = group->array_values[i];
+                        if (!element
+                            || element->kind
+                                != wz::json::JSONValueKind::Number
+                            || !std::isfinite(element->number_value)
+                            || element->number_value <= 0.0
+                            || element->number_value > 4294967295.0)
+                        {
+                            logger.error("compute_kernel on node '" + node.id
+                                + "' has invalid thread_group_size");
+                            return std::nullopt;
+                        }
+                        const uint32_t parsed =
+                            static_cast<uint32_t>(element->number_value);
+                        if (static_cast<double>(parsed)
+                            != element->number_value)
+                        {
+                            logger.error("compute_kernel on node '" + node.id
+                                + "' has invalid thread_group_size");
+                            return std::nullopt;
+                        }
+                        *out[i] = parsed;
+                    }
+                }
+                else {
+                    if (!read_u32(
+                            *compute_kernel,
+                            "thread_group_size_x",
+                            component.thread_group_size_x,
+                            true)
+                        || !read_u32(
+                            *compute_kernel,
+                            "thread_group_size_y",
+                            component.thread_group_size_y,
+                            true)
+                        || !read_u32(
+                            *compute_kernel,
+                            "thread_group_size_z",
+                            component.thread_group_size_z,
+                            true))
+                    {
+                        return std::nullopt;
+                    }
+                }
+
+                const auto* ports = find_member(*compute_kernel, "ports");
+                if (ports) {
+                    if (ports->kind != wz::json::JSONValueKind::Array) {
+                        logger.error("compute_kernel on node '" + node.id
+                            + "' has invalid ports");
+                        return std::nullopt;
+                    }
+                    for (const auto& port_value : ports->array_values) {
+                        if (!port_value
+                            || port_value->kind
+                                != wz::json::JSONValueKind::Object)
+                        {
+                            logger.error("compute_kernel on node '" + node.id
+                                + "' has invalid port");
+                            return std::nullopt;
+                        }
+
+                        SceneComputeKernelPortAsset port{};
+                        auto name = read_string(*port_value, "name");
+                        if (!name || name->empty()) {
+                            logger.error("compute_kernel on node '" + node.id
+                                + "' has port missing name");
+                            return std::nullopt;
+                        }
+                        port.name = std::string(*name);
+
+                        auto kind = read_string(*port_value, "kind");
+                        if (!kind) {
+                            logger.error("compute_kernel port '" + port.name
+                                + "' on node '" + node.id
+                                + "' missing kind");
+                            return std::nullopt;
+                        }
+                        auto parsed_kind =
+                            parse_compute_kernel_port_kind(*kind);
+                        if (!parsed_kind) {
+                            logger.error("compute_kernel port '" + port.name
+                                + "' on node '" + node.id
+                                + "' has unknown kind '"
+                                + std::string(*kind) + "'");
+                            return std::nullopt;
+                        }
+                        port.kind = *parsed_kind;
+
+                        auto direction =
+                            read_string(*port_value, "direction");
+                        if (!direction) {
+                            logger.error("compute_kernel port '" + port.name
+                                + "' on node '" + node.id
+                                + "' missing direction");
+                            return std::nullopt;
+                        }
+                        auto parsed_direction =
+                            parse_compute_kernel_port_direction(*direction);
+                        if (!parsed_direction) {
+                            logger.error("compute_kernel port '" + port.name
+                                + "' on node '" + node.id
+                                + "' has unknown direction '"
+                                + std::string(*direction) + "'");
+                            return std::nullopt;
+                        }
+                        port.direction = *parsed_direction;
+
+                        const bool is_buffer =
+                            port.kind
+                            == SceneComputeKernelPortKind::StructuredBuffer;
+                        if (is_buffer) {
+                            if (auto binding_kind =
+                                    read_string(*port_value, "binding_kind"))
+                            {
+                                auto parsed_binding =
+                                    parse_compute_kernel_binding_kind(
+                                        *binding_kind);
+                                if (!parsed_binding) {
+                                    logger.error("compute_kernel port '"
+                                        + port.name + "' on node '" + node.id
+                                        + "' has unknown binding_kind '"
+                                        + std::string(*binding_kind) + "'");
+                                    return std::nullopt;
+                                }
+                                port.binding_kind = *parsed_binding;
+                            }
+                            if (!read_u32(
+                                    *port_value,
+                                    "shader_register",
+                                    port.shader_register,
+                                    false)
+                                || !read_u32(
+                                    *port_value,
+                                    "register_space",
+                                    port.register_space,
+                                    false)
+                                || !read_u32(
+                                    *port_value,
+                                    "stride_bytes",
+                                    port.stride_bytes,
+                                    false))
+                            {
+                                return std::nullopt;
+                            }
+                            if (find_member(
+                                    *port_value,
+                                    "root_constant_offset")
+                                || find_member(
+                                    *port_value,
+                                    "root_constant_dwords")
+                                || find_member(*port_value, "offset")
+                                || find_member(*port_value, "dword_count"))
+                            {
+                                logger.error("compute_kernel buffer port '"
+                                    + port.name + "' on node '" + node.id
+                                    + "' has root constant fields");
+                                return std::nullopt;
+                            }
+                        }
+                        else {
+                            if (find_member(*port_value, "binding_kind")
+                                || find_member(
+                                    *port_value,
+                                    "shader_register")
+                                || find_member(
+                                    *port_value,
+                                    "register_space")
+                                || find_member(*port_value, "stride_bytes"))
+                            {
+                                logger.error("compute_kernel root constant port '"
+                                    + port.name + "' on node '" + node.id
+                                    + "' has buffer binding fields");
+                                return std::nullopt;
+                            }
+                            if (!read_u32(
+                                    *port_value,
+                                    "root_constant_offset",
+                                    port.root_constant_offset,
+                                    false)
+                                || !read_u32(
+                                    *port_value,
+                                    "root_constant_dwords",
+                                    port.root_constant_dwords,
+                                    true))
+                            {
+                                return std::nullopt;
+                            }
+                            if (auto offset =
+                                    read_number(*port_value, "offset"))
+                            {
+                                if (!std::isfinite(*offset)
+                                    || *offset < 0.0
+                                    || *offset > 4294967295.0)
+                                {
+                                    logger.error("compute_kernel port '"
+                                        + port.name + "' on node '" + node.id
+                                        + "' has invalid offset");
+                                    return std::nullopt;
+                                }
+                                const uint32_t parsed_offset =
+                                    static_cast<uint32_t>(*offset);
+                                if (static_cast<double>(parsed_offset)
+                                    != *offset)
+                                {
+                                    logger.error("compute_kernel port '"
+                                        + port.name + "' on node '" + node.id
+                                        + "' has invalid offset");
+                                    return std::nullopt;
+                                }
+                                port.root_constant_offset = parsed_offset;
+                            }
+                            if (auto dwords =
+                                    read_number(*port_value, "dword_count"))
+                            {
+                                if (!std::isfinite(*dwords)
+                                    || *dwords <= 0.0
+                                    || *dwords > 4294967295.0)
+                                {
+                                    logger.error("compute_kernel port '"
+                                        + port.name + "' on node '" + node.id
+                                        + "' has invalid dword_count");
+                                    return std::nullopt;
+                                }
+                                const uint32_t parsed_dwords =
+                                    static_cast<uint32_t>(*dwords);
+                                if (static_cast<double>(parsed_dwords)
+                                    != *dwords)
+                                {
+                                    logger.error("compute_kernel port '"
+                                        + port.name + "' on node '" + node.id
+                                        + "' has invalid dword_count");
+                                    return std::nullopt;
+                                }
+                                port.root_constant_dwords = parsed_dwords;
+                            }
+                            if (port.root_constant_dwords == 0u) {
+                                logger.error("compute_kernel port '"
+                                    + port.name + "' on node '" + node.id
+                                    + "' missing root constant dword count");
+                                return std::nullopt;
+                            }
+                            if (port.root_constant_dwords > 4u) {
+                                logger.error("compute_kernel port '"
+                                    + port.name + "' on node '" + node.id
+                                    + "' has root constant dword count above 4");
+                                return std::nullopt;
+                            }
+                        }
+
+                        component.ports.push_back(std::move(port));
+                    }
+                }
+
+                node.compute_kernel = std::move(component);
             }
 
             std::optional<wz::asset::AssetKey> collision_asset;

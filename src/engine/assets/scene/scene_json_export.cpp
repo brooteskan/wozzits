@@ -308,6 +308,44 @@ namespace wz::engine::assets
             return "raw_f32";
         }
 
+        const char* compute_kernel_port_kind_name(
+            SceneComputeKernelPortKind kind)
+        {
+            switch (kind) {
+            case SceneComputeKernelPortKind::StructuredBuffer:
+                return "structured_buffer";
+            case SceneComputeKernelPortKind::U32:
+                return "u32";
+            case SceneComputeKernelPortKind::F32:
+                return "f32";
+            }
+            return "structured_buffer";
+        }
+
+        const char* compute_kernel_port_direction_name(
+            SceneComputeKernelPortDirection direction)
+        {
+            switch (direction) {
+            case SceneComputeKernelPortDirection::Input:
+                return "input";
+            case SceneComputeKernelPortDirection::Output:
+                return "output";
+            }
+            return "input";
+        }
+
+        const char* compute_kernel_binding_kind_name(
+            SceneComputeKernelBindingKind kind)
+        {
+            switch (kind) {
+            case SceneComputeKernelBindingKind::SRV:
+                return "srv";
+            case SceneComputeKernelBindingKind::UAV:
+                return "uav";
+            }
+            return "srv";
+        }
+
         const char* terrain_mesh_height_policy_name(
             SceneTerrainMeshHeightPolicy policy)
         {
@@ -791,6 +829,79 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr compute_kernel_value(
+            const SceneComputeKernelAsset& kernel)
+        {
+            auto obj = object_value();
+            add_member(*obj, "kernel_id", string_value(kernel.kernel_id));
+            add_member(*obj, "hlsl_path", string_value(kernel.hlsl_path));
+            add_member(*obj, "entry", string_value(kernel.entry));
+            add_member(*obj, "target", string_value(kernel.target));
+
+            auto thread_group_size = array_value();
+            thread_group_size->array_values.push_back(
+                number_value(kernel.thread_group_size_x));
+            thread_group_size->array_values.push_back(
+                number_value(kernel.thread_group_size_y));
+            thread_group_size->array_values.push_back(
+                number_value(kernel.thread_group_size_z));
+            add_member(
+                *obj,
+                "thread_group_size",
+                std::move(thread_group_size));
+
+            auto ports = array_value();
+            for (const auto& port : kernel.ports) {
+                auto port_obj = object_value();
+                add_member(*port_obj, "name", string_value(port.name));
+                add_member(
+                    *port_obj,
+                    "kind",
+                    string_value(compute_kernel_port_kind_name(port.kind)));
+                add_member(
+                    *port_obj,
+                    "direction",
+                    string_value(compute_kernel_port_direction_name(
+                        port.direction)));
+
+                if (port.kind
+                    == SceneComputeKernelPortKind::StructuredBuffer)
+                {
+                    add_member(
+                        *port_obj,
+                        "binding_kind",
+                        string_value(compute_kernel_binding_kind_name(
+                            port.binding_kind)));
+                    add_member(
+                        *port_obj,
+                        "shader_register",
+                        number_value(port.shader_register));
+                    add_member(
+                        *port_obj,
+                        "register_space",
+                        number_value(port.register_space));
+                    add_member(
+                        *port_obj,
+                        "stride_bytes",
+                        number_value(port.stride_bytes));
+                }
+                else {
+                    add_member(
+                        *port_obj,
+                        "root_constant_offset",
+                        number_value(port.root_constant_offset));
+                    add_member(
+                        *port_obj,
+                        "root_constant_dwords",
+                        number_value(port.root_constant_dwords));
+                }
+
+                ports->array_values.push_back(std::move(port_obj));
+            }
+            add_member(*obj, "ports", std::move(ports));
+            return obj;
+        }
+
         JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
         {
             auto obj = object_value();
@@ -1244,6 +1355,10 @@ namespace wz::engine::assets
                         behavior_value(behavior));
                 }
                 add_member(*obj, "behaviors", std::move(behaviors));
+            }
+            if (node.compute_kernel) {
+                add_member(*obj, "compute_kernel",
+                    compute_kernel_value(*node.compute_kernel));
             }
             if (node.debug_visual
                 && node.debug_visual->kind != SceneDebugVisualKind::None)

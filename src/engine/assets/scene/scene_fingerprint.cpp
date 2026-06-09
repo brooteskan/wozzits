@@ -146,6 +146,7 @@ namespace wz::engine::assets
                 node.terrain_height_field_source.has_value();
             const bool has_behavior = node.behavior.has_value();
             const bool has_behaviors = !node.behaviors.empty();
+            const bool has_compute_kernel = node.compute_kernel.has_value();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
@@ -173,6 +174,7 @@ namespace wz::engine::assets
             fp.mix_value(has_terrain_height_field_source);
             fp.mix_value(has_behavior);
             fp.mix_value(has_behaviors);
+            fp.mix_value(has_compute_kernel);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -518,6 +520,29 @@ namespace wz::engine::assets
             fp.mix_value(node.behaviors.size());
             for (const auto& behavior : node.behaviors) {
                 mix_behavior(fp, behavior);
+            }
+
+            if (node.compute_kernel) {
+                const auto& kernel = *node.compute_kernel;
+                fp.mix_string(kernel.kernel_id);
+                fp.mix_string(kernel.hlsl_path);
+                fp.mix_string(kernel.entry);
+                fp.mix_string(kernel.target);
+                fp.mix_value(kernel.thread_group_size_x);
+                fp.mix_value(kernel.thread_group_size_y);
+                fp.mix_value(kernel.thread_group_size_z);
+                fp.mix_value(kernel.ports.size());
+                for (const auto& port : kernel.ports) {
+                    fp.mix_string(port.name);
+                    fp.mix_value(port.kind);
+                    fp.mix_value(port.direction);
+                    fp.mix_value(port.binding_kind);
+                    fp.mix_value(port.shader_register);
+                    fp.mix_value(port.register_space);
+                    fp.mix_value(port.stride_bytes);
+                    fp.mix_value(port.root_constant_offset);
+                    fp.mix_value(port.root_constant_dwords);
+                }
             }
 
             if (node.debug_visual) {
