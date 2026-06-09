@@ -2235,6 +2235,70 @@ namespace wz::engine::assets::internal
                 node.compute_kernel = std::move(component);
             }
 
+            const auto* render_shader =
+                find_member(node_val, "render_shader");
+            if (render_shader
+                && render_shader->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneRenderShaderAsset component{};
+
+                auto program_id = read_string(*render_shader, "program_id");
+                if (!program_id || program_id->empty()) {
+                    logger.error("render_shader on node '" + node.id
+                        + "' missing program_id");
+                    return std::nullopt;
+                }
+                component.program_id = std::string(*program_id);
+
+                auto vertex_hlsl_path =
+                    read_string(*render_shader, "vertex_hlsl_path");
+                if (!vertex_hlsl_path || vertex_hlsl_path->empty()) {
+                    logger.error("render_shader on node '" + node.id
+                        + "' missing vertex_hlsl_path");
+                    return std::nullopt;
+                }
+                component.vertex_hlsl_path = std::string(*vertex_hlsl_path);
+
+                auto pixel_hlsl_path =
+                    read_string(*render_shader, "pixel_hlsl_path");
+                if (!pixel_hlsl_path || pixel_hlsl_path->empty()) {
+                    logger.error("render_shader on node '" + node.id
+                        + "' missing pixel_hlsl_path");
+                    return std::nullopt;
+                }
+                component.pixel_hlsl_path = std::string(*pixel_hlsl_path);
+
+                if (auto v = read_string(*render_shader, "vertex_entry")) {
+                    component.vertex_entry = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "pixel_entry")) {
+                    component.pixel_entry = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "vertex_target")) {
+                    component.vertex_target = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "pixel_target")) {
+                    component.pixel_target = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "binding_model")) {
+                    component.binding_model = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "input_layout")) {
+                    component.input_layout = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "blend")) {
+                    component.blend = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "depth")) {
+                    component.depth = std::string(*v);
+                }
+                if (auto v = read_string(*render_shader, "raster")) {
+                    component.raster = std::string(*v);
+                }
+
+                node.render_shader = std::move(component);
+            }
+
             std::optional<wz::asset::AssetKey> collision_asset;
             if (!parse_asset_reference_object(
                     node_val,

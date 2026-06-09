@@ -904,6 +904,33 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr render_shader_value(
+            const SceneRenderShaderAsset& shader)
+        {
+            auto obj = object_value();
+            add_member(*obj, "program_id", string_value(shader.program_id));
+            add_member(*obj, "vertex_hlsl_path",
+                string_value(shader.vertex_hlsl_path));
+            add_member(*obj, "pixel_hlsl_path",
+                string_value(shader.pixel_hlsl_path));
+            add_member(*obj, "vertex_entry",
+                string_value(shader.vertex_entry));
+            add_member(*obj, "pixel_entry",
+                string_value(shader.pixel_entry));
+            add_member(*obj, "vertex_target",
+                string_value(shader.vertex_target));
+            add_member(*obj, "pixel_target",
+                string_value(shader.pixel_target));
+            add_member(*obj, "binding_model",
+                string_value(shader.binding_model));
+            add_member(*obj, "input_layout",
+                string_value(shader.input_layout));
+            add_member(*obj, "blend", string_value(shader.blend));
+            add_member(*obj, "depth", string_value(shader.depth));
+            add_member(*obj, "raster", string_value(shader.raster));
+            return obj;
+        }
+
         JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
         {
             auto obj = object_value();
@@ -1361,6 +1388,10 @@ namespace wz::engine::assets
             if (node.compute_kernel) {
                 add_member(*obj, "compute_kernel",
                     compute_kernel_value(*node.compute_kernel));
+            }
+            if (node.render_shader) {
+                add_member(*obj, "render_shader",
+                    render_shader_value(*node.render_shader));
             }
             if (node.debug_visual
                 && node.debug_visual->kind != SceneDebugVisualKind::None)

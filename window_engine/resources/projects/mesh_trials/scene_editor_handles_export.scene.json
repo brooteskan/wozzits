@@ -78,12 +78,26 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:b37d2ac47194d73e:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:143f687513e35d49:2b873f4de344b5fd"
+        "asset": "asset-key:97cd611c6b39d2f6:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:d22cbf4873a33686:bd063bee836ed08c"
       },
       "mesh_source": {
         "kind": "placeholder",
         "path": "",
         "mesh_index": 0
+      },
+      "render_shader": {
+        "program_id": "mesh/custom_surface",
+        "vertex_hlsl_path": "shaders/render/custom_mesh_vs.hlsl",
+        "pixel_hlsl_path": "shaders/render/custom_mesh_ps.hlsl",
+        "vertex_entry": "main",
+        "pixel_entry": "main",
+        "vertex_target": "vs_5_0",
+        "pixel_target": "ps_5_0",
+        "binding_model": "mesh_ia",
+        "input_layout": "mesh_position_normal_uv",
+        "blend": "opaque",
+        "depth": "test_write",
+        "raster": "solid_cull_none"
       }
     },
     {
@@ -112,17 +126,6 @@
       "event_trigger": {
         "event": "gpu.compute.request"
       },
-      "compute_kernel": {
-        "kernel_id": "debug/multiply_u32",
-        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
-        "entry": "main",
-        "target": "cs_5_0",
-        "thread_group_size": [
-          4,
-          1,
-          1
-        ]
-      },
       "behaviors": [
         {
           "id": "empty_2_behavior_0",
@@ -135,7 +138,18 @@
             "gpu.compute.*"
           ]
         }
-      ]
+      ],
+      "compute_kernel": {
+        "kernel_id": "debug/multiply_u32",
+        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [
+          4,
+          1,
+          1
+        ]
+      }
     }
   ],
   "defaults": {

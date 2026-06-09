@@ -35,6 +35,7 @@ namespace wz::engine::assets
         MeshAsset mesh{};
         MeshRenderStyleAsset style{};
         MeshDerivedFieldAsset mesh_field_visualization{};
+        wz::asset::AssetKey render_program_asset{};
     };
 
     struct GaussianSplatDebugRenderableDesc

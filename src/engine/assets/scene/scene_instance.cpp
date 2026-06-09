@@ -385,6 +385,7 @@ namespace wz::engine::assets
             .behaviors = static_cast<uint32_t>(
                 instance.behaviors.size()),
             .compute_kernels = instance.compute_kernels,
+            .render_shaders = instance.render_shaders,
             .auxiliary_visuals = static_cast<uint32_t>(
                 instance.auxiliary_visuals.size()),
         };
@@ -762,6 +763,10 @@ namespace wz::engine::assets
 
             if (node.compute_kernel) {
                 ++inst.compute_kernels;
+            }
+
+            if (node.render_shader) {
+                ++inst.render_shaders;
             }
 
             if (node.debug_visual) {

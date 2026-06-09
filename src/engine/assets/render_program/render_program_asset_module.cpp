@@ -61,6 +61,36 @@ namespace wz::engine::assets
         return RenderProgramAsset{ key };
     }
 
+    RenderProgramAsset RenderProgramAssetModule::create_custom(
+        CustomRenderProgramDesc desc)
+    {
+        if (!system_)
+            return {};
+
+        if (desc.name.empty())
+            return {};
+
+        if (desc.vertex_shader == wz::asset::AssetKey{} ||
+            desc.pixel_shader  == wz::asset::AssetKey{})
+            return {};
+
+        const wz::asset::AssetKey key = make_custom_render_program_key(desc);
+
+        wz::asset::AssetNode node{};
+        node.key = key;
+        node.type = kAssetTypeRenderProgram;
+        node.schema = kCustomRenderProgramSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = std::move(desc);
+
+        const auto& d = std::any_cast<const CustomRenderProgramDesc&>(node.meta);
+        if (!system_->register_asset(node, { d.vertex_shader, d.pixel_shader }))
+            return {};
+
+        return RenderProgramAsset{ key };
+    }
+
     wz::asset::ResourceHandle RenderProgramAssetModule::get_render_program(
         RenderProgramAsset asset) const
     {

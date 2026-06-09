@@ -175,7 +175,8 @@ namespace wz::engine::assets
                 desc.name,
                 desc.mesh.output,
                 desc.style.output,
-                mesh_field_visualization_key);
+                mesh_field_visualization_key,
+                desc.render_program_asset);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -188,12 +189,16 @@ namespace wz::engine::assets
             .style_asset = desc.style.output,
             .mesh_field_visualization_asset =
                 mesh_field_visualization_key,
+            .render_program_asset = desc.render_program_asset,
         };
 
+        // Keep this order in sync with the mesh styled compiler's optional
+        // dependency indexing: mesh, style, field visualization, render program.
         std::vector<wz::asset::AssetKey> deps{
             desc.mesh.output,
             desc.style.output,
             mesh_field_visualization_key,
+            desc.render_program_asset,
         };
 
         if (!system_.register_asset(std::move(node), std::move(deps)))

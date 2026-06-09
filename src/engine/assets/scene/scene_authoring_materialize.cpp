@@ -317,6 +317,27 @@ namespace wz::engine::assets
                 + ":gamma:" + std::to_string(analysis->gamma);
         }
 
+        std::string render_shader_cache_key(
+            const SceneRenderShaderAsset* shader)
+        {
+            if (!shader) {
+                return ":render_shader_default";
+            }
+            return std::string(":render_shader:")
+                + shader->program_id
+                + ":vs:" + shader->vertex_hlsl_path
+                + ":" + shader->vertex_entry
+                + ":" + shader->vertex_target
+                + ":ps:" + shader->pixel_hlsl_path
+                + ":" + shader->pixel_entry
+                + ":" + shader->pixel_target
+                + ":binding:" + shader->binding_model
+                + ":layout:" + shader->input_layout
+                + ":blend:" + shader->blend
+                + ":depth:" + shader->depth
+                + ":raster:" + shader->raster;
+        }
+
         ComputePipelineAsset create_builtin_mesh_wavelet_pipeline(
             EngineAssetLibrary& assets)
         {
@@ -514,6 +535,132 @@ namespace wz::engine::assets
 
             kernel.compute_shader_asset = shader.shader;
             kernel.compute_pipeline_asset = pipeline.key;
+            return true;
+        }
+
+        bool validate_render_shader_token(
+            std::string_view actual,
+            std::string_view expected,
+            std::string_view field,
+            const std::string& node_name,
+            std::string& error)
+        {
+            if (actual == expected) {
+                return true;
+            }
+            error = "render shader " + std::string(field)
+                + " unsupported for " + node_name
+                + ": expected '" + std::string(expected)
+                + "', got '" + std::string(actual) + "'";
+            return false;
+        }
+
+        bool materialize_render_shader(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            std::string& error)
+        {
+            if (!node.render_shader) {
+                return true;
+            }
+
+            SceneRenderShaderAsset& shader = *node.render_shader;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (shader.program_id.empty()) {
+                error = "render shader missing program_id for " + node_name;
+                return false;
+            }
+            if (shader.vertex_hlsl_path.empty()) {
+                error =
+                    "render shader missing vertex_hlsl_path for "
+                    + node_name;
+                return false;
+            }
+            if (shader.pixel_hlsl_path.empty()) {
+                error =
+                    "render shader missing pixel_hlsl_path for " + node_name;
+                return false;
+            }
+
+            if (!validate_render_shader_token(
+                    shader.binding_model,
+                    "mesh_ia",
+                    "binding_model",
+                    node_name,
+                    error)
+                || !validate_render_shader_token(
+                    shader.input_layout,
+                    "mesh_position_normal_uv",
+                    "input_layout",
+                    node_name,
+                    error)
+                || !validate_render_shader_token(
+                    shader.blend,
+                    "opaque",
+                    "blend",
+                    node_name,
+                    error)
+                || !validate_render_shader_token(
+                    shader.depth,
+                    "test_write",
+                    "depth",
+                    node_name,
+                    error)
+                || !validate_render_shader_token(
+                    shader.raster,
+                    "solid_cull_none",
+                    "raster",
+                    node_name,
+                    error))
+            {
+                return false;
+            }
+
+            const ShaderPairAsset shader_pair =
+                assets.shaders().create_shader_pair({
+                    .name = shader.program_id,
+                    .vertex_path = shader.vertex_hlsl_path,
+                    .pixel_path = shader.pixel_hlsl_path,
+                    .vertex_entry = shader.vertex_entry,
+                    .pixel_entry = shader.pixel_entry,
+                    .vertex_target = shader.vertex_target,
+                    .pixel_target = shader.pixel_target,
+                });
+            if (!shader_pair.valid()) {
+                error = "render shader pair unavailable for " + node_name;
+                return false;
+            }
+
+            const RenderProgramAsset program =
+                assets.render_programs().create_custom({
+                    .name = shader.program_id,
+                    .vertex_shader = shader_pair.vertex_shader,
+                    .pixel_shader = shader_pair.pixel_shader,
+                    .binding_model = RenderBindingModel::MeshIA,
+                    .topology = RenderPrimitiveTopology::TriangleList,
+                    .default_domain = RenderDomain::Opaque,
+                    .default_policy_flags =
+                        RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+                    .input_layout = InputLayoutKind::MeshPositionNormalUV,
+                    .blend_mode = BlendMode::Opaque,
+                    .depth_mode = DepthMode::TestWrite,
+                    .raster_mode = RasterMode::SolidCullNone,
+                    .root_constants = {{
+                        .visibility = ShaderVisibility::All,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .value_count = 40,
+                    }},
+                    .descriptor_bindings = {},
+                });
+            if (!program.valid()) {
+                error = "render program unavailable for " + node_name;
+                return false;
+            }
+
+            shader.render_program_asset = program.key;
             return true;
         }
 
@@ -1380,6 +1527,7 @@ namespace wz::engine::assets
             MeshAsset mesh,
             SceneMeshRenderStyleAsset& style,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
+            SceneRenderShaderAsset* render_shader,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -1459,6 +1607,10 @@ namespace wz::engine::assets
                                     effective_style.field_visualization_asset,
                             }
                             : MeshDerivedFieldAsset{},
+                    .render_program_asset =
+                        render_shader
+                            ? render_shader->render_program_asset
+                            : wz::asset::AssetKey{},
                 });
 
             if (!renderable.valid()) {
@@ -1658,6 +1810,7 @@ namespace wz::engine::assets
             const SceneMeshSourceAsset& source,
             const SceneMeshProcessingAsset* processing,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
+            SceneRenderShaderAsset* render_shader,
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
@@ -1672,7 +1825,8 @@ namespace wz::engine::assets
                 + mesh_wavelet_analysis_cache_key(
                     style.field_visualization_enabled
                         ? wavelet_analysis
-                        : nullptr);
+                        : nullptr)
+                + render_shader_cache_key(render_shader);
             if (const auto found = renderables.find(key);
                 found != renderables.end())
             {
@@ -1703,6 +1857,7 @@ namespace wz::engine::assets
                     out_mesh,
                     style,
                     wavelet_analysis,
+                    render_shader,
                     renderables,
                     out))
             {
@@ -1983,6 +2138,21 @@ namespace wz::engine::assets
             "compute_kernels",
             elapsed_ms_since(compute_kernels_started));
 
+        const auto render_shaders_started = std::chrono::steady_clock::now();
+        for (auto& node : scene.nodes) {
+            if (!materialize_render_shader(assets, node, report.error)) {
+                if (report.error.empty()) {
+                    report.error =
+                        "render shader materialization failed for "
+                        + node_log_name(node);
+                }
+                return report;
+            }
+        }
+        log_phase(
+            "render_shaders",
+            elapsed_ms_since(render_shaders_started));
+
         const auto lights_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             if (!node.direct_light_source) {
@@ -2181,6 +2351,12 @@ namespace wz::engine::assets
                 node.mesh_render_style.value_or(default_render_style);
             render_style.style_asset = {};
             render_style.field_visualization_asset = {};
+            if (node.render_shader) {
+                render_style.surface.enabled = true;
+                render_style.wireframe.enabled = false;
+                render_style.depth_test = true;
+                render_style.depth_write = true;
+            }
             if (node.mesh_wavelet_analysis) {
                 node.mesh_wavelet_analysis->field_asset = {};
             }
@@ -2195,6 +2371,9 @@ namespace wz::engine::assets
                             : nullptr,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
+                            : nullptr,
+                        node.render_shader
+                            ? &*node.render_shader
                             : nullptr,
                         render_style,
                         renderables,

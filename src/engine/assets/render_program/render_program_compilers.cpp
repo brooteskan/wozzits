@@ -421,5 +421,59 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kCustomRenderProgramSchema,
+            .output_type = kAssetTypeRenderProgram,
+            .compile = [&logger, &table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                const auto* desc =
+                    std::any_cast<CustomRenderProgramDesc>(&input.meta);
+
+                if (!desc) {
+                    logger.error("render program missing CustomRenderProgramDesc");
+                    return compile_failed_node(input);
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger.error("custom render program requires exactly two shader dependencies (vertex, pixel)");
+                    return compile_failed_node(input);
+                }
+
+                if (!dep_handles[0].valid() || !dep_handles[1].valid()) {
+                    logger.error("custom render program shader dependencies did not resolve");
+                    return compile_failed_node(input);
+                }
+
+                RenderProgramData data{};
+                data.binding_model    = desc->binding_model;
+                data.topology         = desc->topology;
+                data.default_domain   = desc->default_domain;
+                data.default_policy_flags = desc->default_policy_flags;
+                data.input_layout     = desc->input_layout;
+                data.blend_mode       = desc->blend_mode;
+                data.depth_mode       = desc->depth_mode;
+                data.raster_mode      = desc->raster_mode;
+                data.root_constants   = desc->root_constants;
+                data.descriptor_bindings = desc->descriptor_bindings;
+                data.vertex_shader    = dep_handles[0];
+                data.pixel_shader     = dep_handles[1];
+
+                wz::asset::ResourceHandle handle = table.add(std::move(data));
+                if (!handle.valid()) {
+                    logger.error("failed to store custom render program");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
     }
 }

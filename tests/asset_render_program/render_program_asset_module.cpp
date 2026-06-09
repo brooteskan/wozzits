@@ -127,6 +127,37 @@ TEST(RenderProgramAssetModule, CreateBuiltinRejectsEmptyName)
     EXPECT_FALSE(program.valid());
 }
 
+TEST(RenderProgramAssetModule, CreateCustomRejectsEmptyName)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    const wz::fs::Path root = wz::fs::join(
+        wz::fs::temp_directory_path(), "wozzits_rp_custom_reject_tests");
+    wz::fs::create_directories(root);
+
+    wz::engine::assets::EngineAssetLibrary assets(device, logger, root);
+
+    wz::asset::AssetKey dummy_key{
+        .content_hash  = {1, 0},
+        .schema_hash   = {1, 0},
+        .compiler_hash = {1, 0},
+        .deps_hash     = {0, 0},
+    };
+
+    const auto program = assets.render_programs().create_custom({
+        .name = "",
+        .vertex_shader = dummy_key,
+        .pixel_shader  = dummy_key,
+        .binding_model = wz::engine::assets::RenderBindingModel::MeshIA,
+        .input_layout  = wz::engine::assets::InputLayoutKind::MeshPositionNormalUV,
+        .blend_mode    = wz::engine::assets::BlendMode::Opaque,
+        .depth_mode    = wz::engine::assets::DepthMode::TestWrite,
+        .raster_mode   = wz::engine::assets::RasterMode::SolidCullNone,
+        });
+
+    EXPECT_FALSE(program.valid());
+}
+
 TEST(RenderProgramAssetModule, CreateBuiltinRejectsCountProgram)
 {
     wz::Logger logger;
@@ -457,4 +488,88 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinTerrainMeshSurface)
     EXPECT_EQ(data->root_constants[0].value_count, 32u);
 
     EXPECT_TRUE(data->descriptor_bindings.empty());
+}
+
+TEST_F(RenderProgramGpuFixture, ResolvesCustomMeshSurface)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name        = "stub/custom_mesh_surface",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path  = "shaders/stub/stub_ps.hlsl",
+        });
+
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_custom({
+        .name          = "custom/mesh_surface",
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader  = shaders.pixel_shader,
+        .binding_model = RenderBindingModel::MeshIA,
+        .topology      = RenderPrimitiveTopology::TriangleList,
+        .default_domain     = RenderDomain::Opaque,
+        .default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+        .input_layout  = InputLayoutKind::MeshPositionNormalUV,
+        .blend_mode    = BlendMode::Opaque,
+        .depth_mode    = DepthMode::TestWrite,
+        .raster_mode   = RasterMode::SolidCullNone,
+        .root_constants = {{
+            .visibility      = ShaderVisibility::All,
+            .shader_register = 0,
+            .register_space  = 0,
+            .value_count     = 40,
+        }},
+        });
+
+    ASSERT_TRUE(program.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    if (!report.ok()) {
+        ADD_FAILURE() << "resolve_all failed with "
+                      << report.failures.size() << " failure(s)";
+        for (const auto& f : report.failures)
+            ADD_FAILURE() << "  error=" << static_cast<int>(f.error);
+    }
+    ASSERT_TRUE(report.ok());
+
+    const auto handle = assets.render_programs().get_render_program(program);
+    ASSERT_TRUE(handle.valid());
+    EXPECT_EQ(handle.type, kAssetTypeRenderProgram);
+
+    const auto* data = assets.render_programs().get_render_program_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->builtin_program, BuiltinRenderProgram{});
+    EXPECT_EQ(data->binding_model,   RenderBindingModel::MeshIA);
+    EXPECT_EQ(data->topology,        RenderPrimitiveTopology::TriangleList);
+    EXPECT_EQ(data->default_domain,  RenderDomain::Opaque);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthTest, 0u);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthWrite, 0u);
+
+    EXPECT_TRUE(data->vertex_shader.valid());
+    EXPECT_TRUE(data->pixel_shader.valid());
+
+    EXPECT_EQ(data->input_layout, InputLayoutKind::MeshPositionNormalUV);
+    EXPECT_EQ(data->blend_mode,   BlendMode::Opaque);
+    EXPECT_EQ(data->depth_mode,   DepthMode::TestWrite);
+    EXPECT_EQ(data->raster_mode,  RasterMode::SolidCullNone);
+
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility,      ShaderVisibility::All);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space,  0u);
+    EXPECT_EQ(data->root_constants[0].value_count,     40u);
+
+    EXPECT_TRUE(data->descriptor_bindings.empty());
+
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_FALSE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
 }

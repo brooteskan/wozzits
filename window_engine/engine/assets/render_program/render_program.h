@@ -112,6 +112,29 @@ namespace wz::engine::assets
         wz::asset::AssetKey pixel_shader{};
     };
 
+    // dep[0] = vertex_shader key, dep[1] = pixel_shader key.
+    // All pipeline state is explicitly authored — no builtin enum lookup.
+    struct CustomRenderProgramDesc
+    {
+        std::string name;
+        wz::asset::AssetKey vertex_shader{};
+        wz::asset::AssetKey pixel_shader{};
+
+        RenderBindingModel    binding_model{};
+        RenderPrimitiveTopology topology = RenderPrimitiveTopology::TriangleList;
+
+        RenderDomain default_domain{};
+        uint32_t default_policy_flags = RenderPolicy_None;
+
+        InputLayoutKind input_layout{};
+        BlendMode       blend_mode{};
+        DepthMode       depth_mode{};
+        RasterMode      raster_mode{};
+
+        std::vector<RootConstantBinding> root_constants;
+        std::vector<DescriptorBinding>   descriptor_bindings;
+    };
+
     struct RenderProgramData
     {
         BuiltinRenderProgram builtin_program{};

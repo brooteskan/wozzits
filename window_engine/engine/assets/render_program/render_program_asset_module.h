@@ -30,6 +30,7 @@ namespace wz::engine::assets
             RenderProgramTable& table);
 
         RenderProgramAsset create_builtin(BuiltinRenderProgramDesc desc);
+        RenderProgramAsset create_custom(CustomRenderProgramDesc desc);
 
         wz::asset::ResourceHandle get_render_program(
             RenderProgramAsset asset) const;

@@ -148,6 +148,7 @@ namespace wz::engine::assets
         wz::asset::AssetKey mesh_asset{};
         wz::asset::AssetKey style_asset{};
         wz::asset::AssetKey mesh_field_visualization_asset{};
+        wz::asset::AssetKey render_program_asset{};
     };
 
     struct GaussianSplatDebugRenderableCompileDesc

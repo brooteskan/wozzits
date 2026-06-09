@@ -95,6 +95,13 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000102ull
     };
 
+    // CPU-side declaration of a fully-authored custom render program:
+    // binding model, topology, declarative PSO state, root constants,
+    // descriptor bindings, and shader pair.  No BuiltinRenderProgram lookup.
+    inline constexpr wz::asset::SchemaID kCustomRenderProgramSchema{
+    0xF11E'CA55'E7'000103ull
+    };
+
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types

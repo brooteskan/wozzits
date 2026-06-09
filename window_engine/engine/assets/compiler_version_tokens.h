@@ -47,7 +47,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kCSVExportCompilerVersion = 1;
     inline constexpr uint64_t kMeshRenderStyleCompilerVersion = 1;
     inline constexpr uint64_t kMeshWireframeRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 2;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;
@@ -56,6 +56,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kBuiltinRenderProgramCompilerVersion = 4;
+    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 1;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatColorLODCompilerVersion = 1;

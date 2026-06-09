@@ -113,7 +113,8 @@ namespace wz::engine::assets
         std::string_view name,
         const wz::asset::AssetKey& mesh_key,
         const wz::asset::AssetKey& style_key,
-        const wz::asset::AssetKey& mesh_field_visualization_key = {}) noexcept
+        const wz::asset::AssetKey& mesh_field_visualization_key = {},
+        const wz::asset::AssetKey& render_program_key = {}) noexcept
     {
         const uint64_t h = detail::fnv1a_64(name);
         const wz::asset::Hash mesh_dep = detail::key_to_dep_hash(mesh_key);
@@ -122,6 +123,10 @@ namespace wz::engine::assets
             (mesh_field_visualization_key == wz::asset::AssetKey{})
                 ? wz::asset::Hash{}
                 : detail::key_to_dep_hash(mesh_field_visualization_key);
+        const wz::asset::Hash program_dep =
+            (render_program_key == wz::asset::AssetKey{})
+                ? wz::asset::Hash{}
+                : detail::key_to_dep_hash(render_program_key);
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
@@ -129,11 +134,15 @@ namespace wz::engine::assets
             .compiler_hash = detail::hash_u64(kMeshStyledRenderableCompilerVersion),
             .deps_hash = wz::asset::Hash{
                 detail::mix64(
-                    detail::mix64(mesh_dep.lo, style_dep.lo),
-                    field_dep.lo),
+                    detail::mix64(
+                        detail::mix64(mesh_dep.lo, style_dep.lo),
+                        field_dep.lo),
+                    program_dep.lo),
                 detail::mix64(
-                    detail::mix64(mesh_dep.hi, style_dep.hi),
-                    field_dep.hi),
+                    detail::mix64(
+                        detail::mix64(mesh_dep.hi, style_dep.hi),
+                        field_dep.hi),
+                    program_dep.hi),
             },
         };
     }

@@ -74,6 +74,7 @@ namespace wz::scene
         Motion,
         Behavior,
         ComputeKernel,
+        RenderShader,
     };
 
     constexpr SceneComponentDomain scene_component_domain(
@@ -95,6 +96,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::SkySurface:
         case SceneAuthoredComponentKind::AuxiliaryVisual:
         case SceneAuthoredComponentKind::ComputeKernel:
+        case SceneAuthoredComponentKind::RenderShader:
             return SceneComponentDomain::Exportable;
 
         case SceneAuthoredComponentKind::SceneImportSource:
@@ -198,6 +200,7 @@ namespace wz::scene
         uint32_t motions = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
+        uint32_t render_shaders = 0;
         uint32_t auxiliary_visuals = 0;
         uint32_t editor_handles = 0;
     };
@@ -223,6 +226,7 @@ namespace wz::scene
         uint32_t motions = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
+        uint32_t render_shaders = 0;
         uint32_t auxiliary_visuals = 0;
     };
 

@@ -390,9 +390,9 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                if (dep_handles.size() < 2 || dep_handles.size() > 3) {
+                if (dep_handles.size() < 2 || dep_handles.size() > 4) {
                     logger->error(
-                        "mesh styled renderable requires mesh and style dependencies, with optional mesh field dependency");
+                        "mesh styled renderable requires mesh and style dependencies, with optional mesh field and render program dependencies");
                     return compile_failed_node(input);
                 }
 
@@ -420,7 +420,7 @@ namespace wz::engine::assets::internal
                             "mesh styled renderable field visualization has no field asset");
                         return compile_failed_node(input);
                     }
-                    if (dep_handles.size() != 3) {
+                    if (dep_handles.size() < 3) {
                         logger->error(
                             "mesh styled renderable field visualization requires mesh field dependency");
                         return compile_failed_node(input);
@@ -497,6 +497,24 @@ namespace wz::engine::assets::internal
                 data.program = BuiltinRenderProgram::MeshWireframeDebug;
                 data.domain = RenderDomain::Opaque;
                 data.policy_flags = RenderPolicy_Wireframe;
+                if (!(desc->render_program_asset == wz::asset::AssetKey{})) {
+                    const size_t program_dep_index =
+                        desc->mesh_field_visualization_asset
+                            == wz::asset::AssetKey{}
+                            ? 2u
+                            : 3u;
+                    if (dep_handles.size() <= program_dep_index) {
+                        logger->error(
+                            "mesh styled renderable render program dependency is missing");
+                        return compile_failed_node(input);
+                    }
+                    data.render_program = dep_handles[program_dep_index];
+                    if (!data.render_program.valid()) {
+                        logger->error(
+                            "mesh styled renderable render program dependency is invalid");
+                        return compile_failed_node(input);
+                    }
+                }
                 MeshRenderStyleData effective_style = *style;
                 const bool transparent = is_mesh_render_style_transparent(*style);
                 if (!transparent) {
