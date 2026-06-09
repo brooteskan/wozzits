@@ -85,41 +85,7 @@ namespace
         "hlsl_path": "shaders/compute/multiply_uint_cs.hlsl",
         "entry": "main",
         "target": "cs_5_0",
-        "thread_group_size": [4, 1, 1],
-        "ports": [
-          {
-            "name": "input",
-            "kind": "structured_buffer",
-            "direction": "input",
-            "binding_kind": "srv",
-            "shader_register": 0,
-            "register_space": 0,
-            "stride_bytes": 4
-          },
-          {
-            "name": "output",
-            "kind": "structured_buffer",
-            "direction": "output",
-            "binding_kind": "uav",
-            "shader_register": 0,
-            "register_space": 0,
-            "stride_bytes": 4
-          },
-          {
-            "name": "factor",
-            "kind": "u32",
-            "direction": "input",
-            "root_constant_offset": 0,
-            "root_constant_dwords": 1
-          },
-          {
-            "name": "count",
-            "kind": "u32",
-            "direction": "input",
-            "root_constant_offset": 1,
-            "root_constant_dwords": 1
-          }
-        ]
+        "thread_group_size": [4, 1, 1]
       }
     }
   ]

@@ -85,6 +85,68 @@
 // accepts more ports for generated/adapted jobs, but hand-written behavior
 // modules should fit comfortably inside this helper limit.
 #define WZ_GPU_MAX_JOB_PORTS 16u
+#define WZ_GPU_MAX_KERNEL_CONTRACT_PORTS 16u
+
+#define WZ_GPU_KERNEL(var, kernel_id_string)                                \
+    WzGpuKernelPortContractDesc var##_ports[WZ_GPU_MAX_KERNEL_CONTRACT_PORTS] = {}; \
+    uint32_t var##_port_count = 0u;                                          \
+    const char* var##_kernel_id = kernel_id_string;
+
+#define WZ_GPU_STRUCTURED_INPUT(var, name, element_type)                    \
+    do {                                                                    \
+        if (var##_port_count < WZ_GPU_MAX_KERNEL_CONTRACT_PORTS) {          \
+            var##_ports[var##_port_count++] = WzGpuKernelPortContractDesc{  \
+                name,                                                       \
+                WZ_GPU_PORT_STRUCTURED_BUFFER,                              \
+                WZ_GPU_PORT_INPUT,                                          \
+                (uint32_t)sizeof(element_type),                             \
+            };                                                              \
+        }                                                                   \
+    } while (0)
+
+#define WZ_GPU_STRUCTURED_OUTPUT(var, name, element_type)                   \
+    do {                                                                    \
+        if (var##_port_count < WZ_GPU_MAX_KERNEL_CONTRACT_PORTS) {          \
+            var##_ports[var##_port_count++] = WzGpuKernelPortContractDesc{  \
+                name,                                                       \
+                WZ_GPU_PORT_STRUCTURED_BUFFER,                              \
+                WZ_GPU_PORT_OUTPUT,                                         \
+                (uint32_t)sizeof(element_type),                             \
+            };                                                              \
+        }                                                                   \
+    } while (0)
+
+#define WZ_GPU_U32(var, name)                                               \
+    do {                                                                    \
+        if (var##_port_count < WZ_GPU_MAX_KERNEL_CONTRACT_PORTS) {          \
+            var##_ports[var##_port_count++] = WzGpuKernelPortContractDesc{  \
+                name, WZ_GPU_PORT_U32, WZ_GPU_PORT_INPUT, 0u,               \
+            };                                                              \
+        }                                                                   \
+    } while (0)
+
+#define WZ_GPU_F32(var, name)                                               \
+    do {                                                                    \
+        if (var##_port_count < WZ_GPU_MAX_KERNEL_CONTRACT_PORTS) {          \
+            var##_ports[var##_port_count++] = WzGpuKernelPortContractDesc{  \
+                name, WZ_GPU_PORT_F32, WZ_GPU_PORT_INPUT, 0u,               \
+            };                                                              \
+        }                                                                   \
+    } while (0)
+
+#define WZ_GPU_KERNEL_END(api, var)                                         \
+    do {                                                                    \
+        if ((api) && (api)->register_gpu_kernel_contract) {                 \
+            const WzGpuKernelContractDesc var##_desc = {                    \
+                var##_kernel_id,                                            \
+                var##_ports,                                                \
+                var##_port_count,                                           \
+            };                                                              \
+            (void)(api)->register_gpu_kernel_contract(                      \
+                (api)->user,                                                \
+                &var##_desc);                                               \
+        }                                                                   \
+    } while (0)
 
 typedef struct WzGpuJob
 {

@@ -1,6 +1,7 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/compute_pipeline/hlsl_binding_extract.h>
 #include <engine/assets/gltf/gltf_importer.h>
 #include <engine/assets/hdri/hdri_image_loader.h>
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
@@ -393,6 +394,50 @@ namespace wz::engine::assets
             return total;
         }
 
+        std::vector<ComputeBindingDesc> compute_bindings_from_hlsl(
+            const HlslBindingExtraction& extraction)
+        {
+            std::vector<ComputeBindingDesc> bindings;
+            for (const HlslBindingPort& port : extraction.ports) {
+                if (port.target != HlslBindingPortTarget::Buffer) {
+                    continue;
+                }
+                bindings.push_back(ComputeBindingDesc{
+                    .kind = port.binding_kind,
+                    .semantic = ComputeBindingSemantic::Unknown,
+                    .shader_register = port.shader_register,
+                    .register_space = port.register_space,
+                    .descriptor_count = 1,
+                    .stride_bytes = port.stride_bytes,
+                });
+            }
+            return bindings;
+        }
+
+        std::vector<ComputeBindingDesc> compute_bindings_from_scene_ports(
+            const SceneComputeKernelAsset& kernel)
+        {
+            std::vector<ComputeBindingDesc> bindings;
+            bindings.reserve(kernel.ports.size());
+            for (const auto& port : kernel.ports) {
+                if (port.kind
+                    != SceneComputeKernelPortKind::StructuredBuffer)
+                {
+                    continue;
+                }
+
+                bindings.push_back(ComputeBindingDesc{
+                    .kind = compute_binding_kind_for_scene_port(port),
+                    .semantic = ComputeBindingSemantic::Unknown,
+                    .shader_register = port.shader_register,
+                    .register_space = port.register_space,
+                    .descriptor_count = 1,
+                    .stride_bytes = port.stride_bytes,
+                });
+            }
+            return bindings;
+        }
+
         bool materialize_compute_kernel(
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
@@ -416,22 +461,28 @@ namespace wz::engine::assets
             }
 
             std::vector<ComputeBindingDesc> bindings;
-            bindings.reserve(kernel.ports.size());
-            for (const auto& port : kernel.ports) {
-                if (port.kind
-                    != SceneComputeKernelPortKind::StructuredBuffer)
-                {
-                    continue;
+            uint32_t root_constant_dwords = 0u;
+            if (kernel.ports.empty()) {
+                const std::string shader_path =
+                    wz::fs::is_absolute(kernel.hlsl_path)
+                        ? kernel.hlsl_path
+                        : wz::fs::join(
+                            assets.resource_root(),
+                            kernel.hlsl_path);
+                const HlslBindingExtraction extraction =
+                    extract_hlsl_bindings_from_file(shader_path);
+                if (!extraction.ok()) {
+                    error = "compute kernel shader binding extraction failed for "
+                        + node_name + ": " + extraction.diagnostics.front();
+                    return false;
                 }
-
-                bindings.push_back(ComputeBindingDesc{
-                    .kind = compute_binding_kind_for_scene_port(port),
-                    .semantic = ComputeBindingSemantic::Unknown,
-                    .shader_register = port.shader_register,
-                    .register_space = port.register_space,
-                    .descriptor_count = 1,
-                    .stride_bytes = port.stride_bytes,
-                });
+                bindings = compute_bindings_from_hlsl(extraction);
+                root_constant_dwords = extraction.root_constant_dwords;
+            }
+            else {
+                bindings = compute_bindings_from_scene_ports(kernel);
+                root_constant_dwords =
+                    compute_kernel_root_constant_dwords(kernel);
             }
 
             const ComputeShaderAsset shader =
@@ -451,8 +502,7 @@ namespace wz::engine::assets
                     .name = kernel.kernel_id,
                     .compute_shader = shader.shader,
                     .bindings = std::move(bindings),
-                    .root_constant_dwords =
-                        compute_kernel_root_constant_dwords(kernel),
+                    .root_constant_dwords = root_constant_dwords,
                     .thread_group_size_x = kernel.thread_group_size_x,
                     .thread_group_size_y = kernel.thread_group_size_y,
                     .thread_group_size_z = kernel.thread_group_size_z,

@@ -71,3 +71,32 @@ TEST(BehaviorRegistry, RegistersBuiltinDebugBehaviorPack)
     ASSERT_TRUE(found_bounce.has_value());
 }
 
+TEST(BehaviorRegistry, RegistersGpuKernelContract)
+{
+    BehaviorRegistry registry;
+
+    BehaviorGpuKernelContract contract{};
+    contract.kernel_id = "debug/multiply_u32";
+    contract.ports.push_back({
+        .name = "input",
+        .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+        .direction = WZ_GPU_PORT_INPUT,
+        .stride_bytes = sizeof(uint32_t),
+    });
+    contract.ports.push_back({
+        .name = "factor",
+        .kind = WZ_GPU_PORT_U32,
+        .direction = WZ_GPU_PORT_INPUT,
+    });
+
+    ASSERT_TRUE(registry.register_gpu_kernel_contract(std::move(contract)));
+    ASSERT_EQ(registry.gpu_kernel_contracts().size(), 1u);
+    EXPECT_EQ(
+        registry.gpu_kernel_contracts()[0].kernel_id,
+        "debug/multiply_u32");
+    ASSERT_EQ(registry.gpu_kernel_contracts()[0].ports.size(), 2u);
+    EXPECT_EQ(
+        registry.gpu_kernel_contracts()[0].ports[0].stride_bytes,
+        sizeof(uint32_t));
+}
+

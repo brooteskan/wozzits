@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 17u
+#define WZ_BEHAVIOR_ABI_VERSION 18u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -290,6 +290,21 @@ typedef struct WzGpuComputeJobDesc
     uint64_t request_tag;
 } WzGpuComputeJobDesc;
 
+typedef struct WzGpuKernelPortContractDesc
+{
+    const char* name;
+    WzGpuPortKind kind;
+    WzGpuPortDirection direction;
+    uint32_t stride_bytes;
+} WzGpuKernelPortContractDesc;
+
+typedef struct WzGpuKernelContractDesc
+{
+    const char* kernel_id;
+    const WzGpuKernelPortContractDesc* ports;
+    uint32_t port_count;
+} WzGpuKernelContractDesc;
+
 typedef uint8_t (*WzSubmitGpuComputeJobFn)(
     void* user,
     const WzGpuComputeJobDesc* job,
@@ -533,6 +548,10 @@ typedef uint8_t (*WzRegisterBehaviorModuleDescFn)(
     void* user,
     const WzBehaviorModuleDesc* desc);
 
+typedef uint8_t (*WzRegisterGpuKernelContractFn)(
+    void* user,
+    const WzGpuKernelContractDesc* desc);
+
 typedef struct WzBehaviorPluginApi
 {
     uint32_t version;
@@ -540,6 +559,7 @@ typedef struct WzBehaviorPluginApi
     WzRegisterBehaviorFn register_behavior;
     WzRegisterBehaviorModuleFn register_module;
     WzRegisterBehaviorModuleDescFn register_module_desc;
+    WzRegisterGpuKernelContractFn register_gpu_kernel_contract;
 } WzBehaviorPluginApi;
 
 typedef uint8_t (*WzRegisterBehaviorPluginFn)(

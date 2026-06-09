@@ -119,6 +119,20 @@ namespace wz::engine::behavior
         void* user_data = nullptr;
     };
 
+    struct BehaviorGpuKernelPortContract
+    {
+        std::string name;
+        WzGpuPortKind kind = WZ_GPU_PORT_NONE;
+        WzGpuPortDirection direction = 0u;
+        uint32_t stride_bytes = 0u;
+    };
+
+    struct BehaviorGpuKernelContract
+    {
+        std::string kernel_id;
+        std::vector<BehaviorGpuKernelPortContract> ports;
+    };
+
     class BehaviorRegistry
     {
     public:
@@ -153,6 +167,9 @@ namespace wz::engine::behavior
             BehaviorModuleEventFn on_event,
             void* user_data = nullptr);
 
+        bool register_gpu_kernel_contract(
+            BehaviorGpuKernelContract contract);
+
         [[nodiscard]] std::optional<BehaviorHandle> find(
             std::string_view module,
             std::string_view name) const noexcept;
@@ -178,10 +195,17 @@ namespace wz::engine::behavior
             return modules_;
         }
 
+        [[nodiscard]] std::span<const BehaviorGpuKernelContract>
+        gpu_kernel_contracts() const noexcept
+        {
+            return gpu_kernel_contracts_;
+        }
+
         void clear();
 
     private:
         std::vector<BehaviorRegistration> registrations_;
         std::vector<BehaviorModuleRegistration> modules_;
+        std::vector<BehaviorGpuKernelContract> gpu_kernel_contracts_;
     };
 }

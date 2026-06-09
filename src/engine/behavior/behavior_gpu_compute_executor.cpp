@@ -1,5 +1,8 @@
 #include <engine/behavior/behavior_gpu_compute_executor.h>
 
+#include <engine/assets/compute_pipeline/hlsl_binding_extract.h>
+#include <file/filesystem.h>
+
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -41,8 +44,18 @@ namespace wz::engine::behavior
             const BehaviorGpuPortValue& port,
             const BehaviorGpuKernelPortBinding& binding)
         {
-            return port.kind == binding.port_kind
-                && port.direction == binding.direction;
+            if (port.kind != binding.port_kind
+                || port.direction != binding.direction)
+            {
+                return false;
+            }
+            if (binding.port_kind == WZ_GPU_PORT_STRUCTURED_BUFFER
+                && binding.stride_bytes != 0u
+                && port.stride_bytes != binding.stride_bytes)
+            {
+                return false;
+            }
+            return true;
         }
 
         bool write_root_constant(
@@ -144,6 +157,7 @@ namespace wz::engine::behavior
                     port.binding_kind);
                 binding.shader_register = port.shader_register;
                 binding.register_space = port.register_space;
+                binding.stride_bytes = port.stride_bytes;
             }
             else {
                 binding.target =
@@ -153,6 +167,143 @@ namespace wz::engine::behavior
             }
 
             return binding;
+        }
+
+        BehaviorGpuKernelPortBinding make_port_binding(
+            const wz::engine::assets::HlslBindingPort& port)
+        {
+            using wz::engine::assets::HlslBindingPortTarget;
+
+            BehaviorGpuKernelPortBinding binding{};
+            binding.name = port.name;
+            binding.port_kind = port.port_kind;
+            binding.direction = port.direction;
+
+            if (port.target == HlslBindingPortTarget::Buffer) {
+                binding.target =
+                    BehaviorGpuKernelPortTarget::BufferBinding;
+                binding.binding_kind = port.binding_kind;
+                binding.shader_register = port.shader_register;
+                binding.register_space = port.register_space;
+                binding.stride_bytes = port.stride_bytes;
+            }
+            else {
+                binding.target =
+                    BehaviorGpuKernelPortTarget::RootConstant;
+                binding.root_constant_offset = port.root_constant_offset;
+                binding.root_constant_dwords = port.root_constant_dwords;
+            }
+
+            return binding;
+        }
+
+        std::vector<BehaviorGpuKernelPortBinding> derive_port_bindings(
+            const wz::engine::assets::SceneComputeKernelAsset& kernel,
+            const wz::engine::assets::EngineAssetLibrary& assets,
+            std::string* error)
+        {
+            using namespace wz::engine::assets;
+
+            if (!kernel.ports.empty()) {
+                std::vector<BehaviorGpuKernelPortBinding> out;
+                out.reserve(kernel.ports.size());
+                for (const SceneComputeKernelPortAsset& port : kernel.ports) {
+                    out.push_back(make_port_binding(port));
+                }
+                return out;
+            }
+
+            const std::string shader_path =
+                wz::fs::is_absolute(kernel.hlsl_path)
+                    ? kernel.hlsl_path
+                    : wz::fs::join(assets.resource_root(), kernel.hlsl_path);
+            const HlslBindingExtraction extraction =
+                extract_hlsl_bindings_from_file(shader_path);
+            if (!extraction.ok()) {
+                set_error(
+                    error,
+                    "compute kernel '" + kernel.kernel_id
+                    + "' shader binding extraction failed: "
+                    + extraction.diagnostics.front());
+                return {};
+            }
+
+            std::vector<BehaviorGpuKernelPortBinding> out;
+            out.reserve(extraction.ports.size());
+            for (const HlslBindingPort& port : extraction.ports) {
+                out.push_back(make_port_binding(port));
+            }
+            return out;
+        }
+
+        const BehaviorGpuKernelContract* find_contract(
+            std::span<const BehaviorGpuKernelContract> contracts,
+            const std::string& kernel_id)
+        {
+            const auto it = std::find_if(
+                contracts.begin(),
+                contracts.end(),
+                [&kernel_id](const BehaviorGpuKernelContract& contract)
+                {
+                    return contract.kernel_id == kernel_id;
+                });
+            return it == contracts.end() ? nullptr : &*it;
+        }
+
+        bool validate_contract(
+            const BehaviorGpuKernelBinding& binding,
+            const BehaviorGpuKernelContract* contract,
+            std::string* error)
+        {
+            if (!contract) {
+                return true;
+            }
+
+            for (const BehaviorGpuKernelPortContract& expected :
+                contract->ports)
+            {
+                const std::string expected_name =
+                    wz::engine::assets::normalize_hlsl_port_name(
+                        expected.name);
+                const auto it = std::find_if(
+                    binding.ports.begin(),
+                    binding.ports.end(),
+                    [&expected_name](
+                        const BehaviorGpuKernelPortBinding& actual)
+                    {
+                        return actual.name == expected_name;
+                    });
+                if (it == binding.ports.end()) {
+                    set_error(
+                        error,
+                        "GPU kernel contract for '" + binding.name
+                        + "' expects missing port '" + expected.name + "'");
+                    return false;
+                }
+                if (it->port_kind != expected.kind
+                    || it->direction != expected.direction)
+                {
+                    set_error(
+                        error,
+                        "GPU kernel contract for '" + binding.name
+                        + "' has incompatible port '" + expected.name + "'");
+                    return false;
+                }
+                if (expected.kind == WZ_GPU_PORT_STRUCTURED_BUFFER
+                    && expected.stride_bytes != 0u
+                    && it->stride_bytes != 0u
+                    && expected.stride_bytes != it->stride_bytes)
+                {
+                    set_error(
+                        error,
+                        "GPU kernel contract for '" + binding.name
+                        + "' has stride mismatch for port '"
+                        + expected.name + "'");
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 
@@ -336,6 +487,7 @@ namespace wz::engine::behavior
         wz::gpu::Device& device,
         const wz::engine::assets::SceneAssetData& scene,
         const wz::engine::assets::EngineAssetLibrary& assets,
+        std::span<const BehaviorGpuKernelContract> contracts,
         BehaviorGpuKernelLibrary& out_library,
         std::string* error)
     {
@@ -425,15 +577,48 @@ namespace wz::engine::behavior
             binding.pipeline = pipeline;
             binding.root_constant_dwords =
                 pipeline_data->root_constant_dwords;
-            binding.ports.reserve(kernel.ports.size());
-            for (const SceneComputeKernelPortAsset& port : kernel.ports) {
-                binding.ports.push_back(make_port_binding(port));
+            binding.ports = derive_port_bindings(kernel, assets, error);
+            if (binding.ports.empty() && !kernel.ports.empty()) {
+                set_error(
+                    error,
+                    "compute kernel '" + kernel.kernel_id
+                    + "' has no runtime port bindings");
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+            if (binding.ports.empty()) {
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
+            }
+            if (!validate_contract(
+                    binding,
+                    find_contract(contracts, kernel.kernel_id),
+                    error))
+            {
+                release_behavior_gpu_kernel_library(device, library);
+                return false;
             }
             library.kernels.push_back(std::move(binding));
         }
 
         out_library = std::move(library);
         return true;
+    }
+
+    bool build_kernel_library_from_scene(
+        wz::gpu::Device& device,
+        const wz::engine::assets::SceneAssetData& scene,
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        BehaviorGpuKernelLibrary& out_library,
+        std::string* error)
+    {
+        return build_kernel_library_from_scene(
+            device,
+            scene,
+            assets,
+            std::span<const BehaviorGpuKernelContract>{},
+            out_library,
+            error);
     }
 
     uint32_t release_behavior_gpu_kernel_library(

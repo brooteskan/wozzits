@@ -107,4 +107,34 @@ namespace
     }
 }
 
-WZ_BEHAVIOR_MODULE_INIT("gpu_trial", gpu_init, on_event, kEvents)
+extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(
+    WzBehaviorPluginApi* api)
+{
+    if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+        || !api->register_module_desc)
+    {
+        return 0u;
+    }
+
+    const WzBehaviorModuleDesc desc = {
+        sizeof(WzBehaviorModuleDesc),
+        "gpu_trial",
+        on_event,
+        gpu_init,
+        kEvents,
+        (uint32_t)(sizeof(kEvents) / sizeof(kEvents[0])),
+        nullptr,
+    };
+    if (!api->register_module_desc(api->user, &desc)) {
+        return 0u;
+    }
+
+    WZ_GPU_KERNEL(multiply_kernel, "debug/multiply_u32")
+    WZ_GPU_STRUCTURED_INPUT(multiply_kernel, "input", uint32_t);
+    WZ_GPU_STRUCTURED_OUTPUT(multiply_kernel, "output", uint32_t);
+    WZ_GPU_U32(multiply_kernel, "factor");
+    WZ_GPU_U32(multiply_kernel, "count");
+    WZ_GPU_KERNEL_END(api, multiply_kernel);
+
+    return 1u;
+}

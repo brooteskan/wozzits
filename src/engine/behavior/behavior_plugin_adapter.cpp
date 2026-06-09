@@ -1762,6 +1762,43 @@ namespace wz::engine::behavior
                     binding_ptr);
             return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
         }
+
+        uint8_t register_gpu_kernel_contract(
+            void* user,
+            const WzGpuKernelContractDesc* desc)
+        {
+            auto* context = static_cast<RegisterContext*>(user);
+            if (!context || !context->registry || !desc
+                || !desc->kernel_id || !desc->kernel_id[0]
+                || !desc->ports || desc->port_count == 0u)
+            {
+                return 0;
+            }
+
+            BehaviorGpuKernelContract contract{};
+            contract.kernel_id = desc->kernel_id;
+            contract.ports.reserve(desc->port_count);
+            for (uint32_t i = 0; i < desc->port_count; ++i) {
+                const WzGpuKernelPortContractDesc& src = desc->ports[i];
+                if (!src.name || !src.name[0]
+                    || src.kind == WZ_GPU_PORT_NONE
+                    || src.direction == 0u)
+                {
+                    return 0;
+                }
+                contract.ports.push_back({
+                    .name = src.name,
+                    .kind = src.kind,
+                    .direction = src.direction,
+                    .stride_bytes = src.stride_bytes,
+                });
+            }
+
+            return context->registry->register_gpu_kernel_contract(
+                std::move(contract))
+                ? uint8_t{ 1 }
+                : uint8_t{ 0 };
+        }
     }
 
     BehaviorPluginHost::~BehaviorPluginHost()
@@ -1790,6 +1827,8 @@ namespace wz::engine::behavior
             .register_behavior = register_behavior,
             .register_module = register_module,
             .register_module_desc = register_module_desc,
+            .register_gpu_kernel_contract =
+                register_gpu_kernel_contract,
         };
 
         return register_plugin(&api) != 0;

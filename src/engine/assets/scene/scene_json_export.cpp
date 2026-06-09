@@ -850,55 +850,57 @@ namespace wz::engine::assets
                 "thread_group_size",
                 std::move(thread_group_size));
 
-            auto ports = array_value();
-            for (const auto& port : kernel.ports) {
-                auto port_obj = object_value();
-                add_member(*port_obj, "name", string_value(port.name));
-                add_member(
-                    *port_obj,
-                    "kind",
-                    string_value(compute_kernel_port_kind_name(port.kind)));
-                add_member(
-                    *port_obj,
-                    "direction",
-                    string_value(compute_kernel_port_direction_name(
-                        port.direction)));
+            if (!kernel.ports.empty()) {
+                auto ports = array_value();
+                for (const auto& port : kernel.ports) {
+                    auto port_obj = object_value();
+                    add_member(*port_obj, "name", string_value(port.name));
+                    add_member(
+                        *port_obj,
+                        "kind",
+                        string_value(compute_kernel_port_kind_name(port.kind)));
+                    add_member(
+                        *port_obj,
+                        "direction",
+                        string_value(compute_kernel_port_direction_name(
+                            port.direction)));
 
-                if (port.kind
-                    == SceneComputeKernelPortKind::StructuredBuffer)
-                {
-                    add_member(
-                        *port_obj,
-                        "binding_kind",
-                        string_value(compute_kernel_binding_kind_name(
-                            port.binding_kind)));
-                    add_member(
-                        *port_obj,
-                        "shader_register",
-                        number_value(port.shader_register));
-                    add_member(
-                        *port_obj,
-                        "register_space",
-                        number_value(port.register_space));
-                    add_member(
-                        *port_obj,
-                        "stride_bytes",
-                        number_value(port.stride_bytes));
-                }
-                else {
-                    add_member(
-                        *port_obj,
-                        "root_constant_offset",
-                        number_value(port.root_constant_offset));
-                    add_member(
-                        *port_obj,
-                        "root_constant_dwords",
-                        number_value(port.root_constant_dwords));
-                }
+                    if (port.kind
+                        == SceneComputeKernelPortKind::StructuredBuffer)
+                    {
+                        add_member(
+                            *port_obj,
+                            "binding_kind",
+                            string_value(compute_kernel_binding_kind_name(
+                                port.binding_kind)));
+                        add_member(
+                            *port_obj,
+                            "shader_register",
+                            number_value(port.shader_register));
+                        add_member(
+                            *port_obj,
+                            "register_space",
+                            number_value(port.register_space));
+                        add_member(
+                            *port_obj,
+                            "stride_bytes",
+                            number_value(port.stride_bytes));
+                    }
+                    else {
+                        add_member(
+                            *port_obj,
+                            "root_constant_offset",
+                            number_value(port.root_constant_offset));
+                        add_member(
+                            *port_obj,
+                            "root_constant_dwords",
+                            number_value(port.root_constant_dwords));
+                    }
 
-                ports->array_values.push_back(std::move(port_obj));
+                    ports->array_values.push_back(std::move(port_obj));
+                }
+                add_member(*obj, "ports", std::move(ports));
             }
-            add_member(*obj, "ports", std::move(ports));
             return obj;
         }
 

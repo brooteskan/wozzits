@@ -107,6 +107,32 @@ namespace wz::engine::behavior
             user_data);
     }
 
+    bool BehaviorRegistry::register_gpu_kernel_contract(
+        BehaviorGpuKernelContract contract)
+    {
+        if (contract.kernel_id.empty() || contract.ports.empty()) {
+            return false;
+        }
+        for (const auto& port : contract.ports) {
+            if (port.name.empty()
+                || port.kind == WZ_GPU_PORT_NONE
+                || port.direction == 0u)
+            {
+                return false;
+            }
+        }
+
+        for (auto& existing : gpu_kernel_contracts_) {
+            if (existing.kernel_id == contract.kernel_id) {
+                existing = std::move(contract);
+                return true;
+            }
+        }
+
+        gpu_kernel_contracts_.push_back(std::move(contract));
+        return true;
+    }
+
     std::optional<BehaviorHandle> BehaviorRegistry::find(
         std::string_view module,
         std::string_view name) const noexcept
@@ -155,5 +181,6 @@ namespace wz::engine::behavior
     {
         registrations_.clear();
         modules_.clear();
+        gpu_kernel_contracts_.clear();
     }
 }

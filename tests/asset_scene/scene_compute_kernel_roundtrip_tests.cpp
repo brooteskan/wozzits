@@ -254,6 +254,61 @@ TEST(SceneAssetModule, ComputeKernelThreadGroupArrayBeatsFallbackFields)
     EXPECT_EQ(kernel.thread_group_size_z, 1u);
 }
 
+TEST(SceneAssetModule, ComputeKernelPortsAreOptionalAndExportOmitted)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_compute_kernel_optional_ports_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "compute_kernel_optional_ports",
+  "nodes": [
+    {
+      "id": "kernel",
+      "compute_kernel": {
+        "kernel_id": "project/kernel",
+        "hlsl_path": "shaders/compute/kernel.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [8, 1, 1]
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "compute_kernel_optional_ports.scene.json", scene_json);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "compute_kernel_optional_ports",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].compute_kernel.has_value());
+    EXPECT_TRUE(scene_data->nodes[0].compute_kernel->ports.empty());
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"compute_kernel\""), std::string::npos);
+    EXPECT_EQ(exported.find("\"ports\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, ComputeKernelRejectsWideRootConstantPorts)
 {
     using namespace wz::engine::assets;

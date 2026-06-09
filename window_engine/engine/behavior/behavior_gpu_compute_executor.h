@@ -3,6 +3,7 @@
 // engine/behavior/behavior_gpu_compute_executor.h
 
 #include <engine/behavior/behavior_gpu_compute.h>
+#include <engine/behavior/behavior_registry.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/compute_pipeline/compute_pipeline.h>
 #include <engine/assets/scene/scene_asset_data.h>
@@ -32,6 +33,7 @@ namespace wz::engine::behavior
         wz::engine::assets::ComputeBindingKind binding_kind{};
         uint32_t shader_register = 0u;
         uint32_t register_space = 0u;
+        uint32_t stride_bytes = 0u;
         uint32_t root_constant_offset = 0u;
         uint32_t root_constant_dwords = 0u;
     };
@@ -81,6 +83,14 @@ namespace wz::engine::behavior
         wz::gpu::Device& device,
         std::span<const BehaviorGpuComputeJob> jobs,
         const BehaviorGpuKernelLibrary& library);
+
+    bool build_kernel_library_from_scene(
+        wz::gpu::Device& device,
+        const wz::engine::assets::SceneAssetData& scene,
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        std::span<const BehaviorGpuKernelContract> contracts,
+        BehaviorGpuKernelLibrary& out_library,
+        std::string* error = nullptr);
 
     bool build_kernel_library_from_scene(
         wz::gpu::Device& device,

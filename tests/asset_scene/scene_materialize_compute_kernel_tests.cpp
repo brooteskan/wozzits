@@ -192,3 +192,63 @@ TEST_F(
     EXPECT_EQ(pipeline_data->bindings[1].descriptor_count, 1u);
     EXPECT_EQ(pipeline_data->bindings[1].stride_bytes, 4u);
 }
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    ComputeKernelMaterializesDerivedShaderBindingsWithoutAuthoredPorts)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "compute_kernel_derived_materialize";
+
+    SceneNodeAsset node = make_scene_node("kernel");
+    node.compute_kernel = SceneComputeKernelAsset{
+        .kernel_id = "project/debug_multiply_u32",
+        .hlsl_path = "shaders/compute/debug_multiply_u32_cs.hlsl",
+        .entry = "main",
+        .target = "cs_5_0",
+        .thread_group_size_x = 64,
+        .thread_group_size_y = 1,
+        .thread_group_size_z = 1,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_EQ(scene.nodes.size(), 1u);
+    ASSERT_TRUE(scene.nodes[0].compute_kernel.has_value());
+
+    const auto& kernel = *scene.nodes[0].compute_kernel;
+    EXPECT_TRUE(kernel.ports.empty());
+    EXPECT_NE(kernel.compute_shader_asset, wz::asset::AssetKey{});
+    EXPECT_NE(kernel.compute_pipeline_asset, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    const auto resolve_report = assets.resolve_all();
+    ASSERT_TRUE(resolve_report.ok());
+
+    const auto pipeline_handle =
+        assets.compute_pipelines().get_compute_pipeline(
+            ComputePipelineAsset{ .key = kernel.compute_pipeline_asset });
+    ASSERT_TRUE(pipeline_handle.valid());
+
+    const ComputePipelineData* pipeline_data =
+        assets.compute_pipelines().get_compute_pipeline_data(
+            pipeline_handle);
+    ASSERT_NE(pipeline_data, nullptr);
+
+    EXPECT_EQ(pipeline_data->root_constant_dwords, 2u);
+    ASSERT_EQ(pipeline_data->bindings.size(), 2u);
+    EXPECT_EQ(
+        pipeline_data->bindings[0].kind,
+        ComputeBindingKind::StructuredBufferSRV);
+    EXPECT_EQ(pipeline_data->bindings[0].stride_bytes, 4u);
+    EXPECT_EQ(
+        pipeline_data->bindings[1].kind,
+        ComputeBindingKind::StructuredBufferUAV);
+    EXPECT_EQ(pipeline_data->bindings[1].stride_bytes, 4u);
+}
