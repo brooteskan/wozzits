@@ -326,6 +326,7 @@ namespace wz::engine::behavior
                 find_kernel(kernels, job.kernel);
             if (!kernel || !kernel->pipeline.valid()) {
                 ++report.failed;
+                report.failed_work.push_back(job.work);
                 continue;
             }
 

@@ -112,6 +112,17 @@
       "event_trigger": {
         "event": "gpu.compute.request"
       },
+      "compute_kernel": {
+        "kernel_id": "debug/multiply_u32",
+        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [
+          4,
+          1,
+          1
+        ]
+      },
       "behaviors": [
         {
           "id": "empty_2_behavior_0",
@@ -121,11 +132,21 @@
           "enabled": true,
           "apply_in_editor": false,
           "events": [
-            "gpu.compute.request",
             "gpu.compute.*"
           ]
         }
-      ]
+      ],
+      "compute_kernel": {
+        "kernel_id": "project/debug_multiply_u32",
+        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [
+          4,
+          1,
+          1
+        ]
+      }
     }
   ],
   "defaults": {
