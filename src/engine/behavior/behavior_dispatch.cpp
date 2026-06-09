@@ -381,6 +381,28 @@ namespace wz::engine::behavior
             std::vector<BehaviorGpuComputeEvent> events;
             events.swap(context.gpu_compute->events);
             for (const auto& gpu_event : events) {
+                std::vector<WzGpuComputeOutputView> output_views;
+                output_views.reserve(gpu_event.outputs.size());
+                for (const BehaviorGpuPortValue& output :
+                    gpu_event.outputs)
+                {
+                    output_views.push_back(WzGpuComputeOutputView{
+                        .name = output.name.c_str(),
+                        .kind = output.kind,
+                        .element_count = output.element_count,
+                        .stride_bytes = output.stride_bytes,
+                        .bytes = output.initial_data.data(),
+                        .byte_count =
+                            static_cast<uint64_t>(
+                                output.initial_data.size()),
+                    });
+                }
+                WzGpuComputeEventPayload payload = gpu_event.payload;
+                payload.output_count =
+                    static_cast<uint32_t>(output_views.size());
+                payload.outputs = output_views.empty()
+                    ? nullptr
+                    : output_views.data();
                 const BehaviorEvent event{
                     .kind = gpu_compute_event_kind(gpu_event.kind),
                     .entity = gpu_event.entity,
@@ -393,7 +415,7 @@ namespace wz::engine::behavior
 
                 ActiveGpuComputePayloadScope active_payload(
                     context,
-                    gpu_event.payload);
+                    payload);
                 for (const auto& record : scene.behaviors) {
                     if (record.node != gpu_event.entity) {
                         continue;
@@ -404,6 +426,30 @@ namespace wz::engine::behavior
                         record.component,
                         event);
                 }
+            }
+        }
+
+        void dispatch_event_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context,
+            const BehaviorEvent& event)
+        {
+            if (event.kind == WZ_EVENT_NONE
+                || event.entity == wz::scene::INVALID_RUNTIME_ENTITY)
+            {
+                return;
+            }
+
+            for (const auto& record : scene.behaviors) {
+                if (record.node != event.entity) {
+                    continue;
+                }
+                dispatch_matching_module_event(
+                    registry,
+                    context,
+                    record.component,
+                    event);
             }
         }
     }
@@ -507,7 +553,36 @@ namespace wz::engine::behavior
             registration->function(
                 context,
                 record.node,
-                registration->user_data);
+            registration->user_data);
         }
+    }
+
+    void dispatch_behavior_gpu_compute_events(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context)
+    {
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
+        }
+        dispatch_gpu_compute_events_to_modules(scene, registry, context);
+    }
+
+    void dispatch_behavior_event(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context,
+        BehaviorEvent event)
+    {
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
+        }
+        dispatch_event_to_modules(scene, registry, context, event);
     }
 }

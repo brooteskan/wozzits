@@ -102,6 +102,9 @@ namespace wz::engine::behavior
             struct OutputBuffer
             {
                 std::string name;
+                WzGpuPortKind kind = WZ_GPU_PORT_NONE;
+                uint32_t element_count = 0u;
+                uint32_t stride_bytes = 0u;
                 wz::gpu::GPUHandle buffer{};
             };
             std::vector<OutputBuffer> output_buffers;
@@ -164,6 +167,9 @@ namespace wz::engine::behavior
                     if (buffer.valid()) {
                         output_buffers.push_back({
                             .name = port->name,
+                            .kind = port->kind,
+                            .element_count = port->element_count,
+                            .stride_bytes = port->stride_bytes,
                             .buffer = buffer,
                         });
                     }
@@ -203,6 +209,9 @@ namespace wz::engine::behavior
                     report.readbacks.push_back({
                         .work = job.work,
                         .port_name = output.name,
+                        .kind = output.kind,
+                        .element_count = output.element_count,
+                        .stride_bytes = output.stride_bytes,
                         .bytes = wz::gpu::readback_buffer(
                             device,
                             output.buffer),
@@ -253,6 +262,23 @@ namespace wz::engine::behavior
                         {
                             return readback.work.value == job.work.value;
                         }));
+            std::vector<BehaviorGpuPortValue> outputs;
+            outputs.reserve(output_count);
+            for (const BehaviorGpuOutputReadback& readback :
+                report.readbacks)
+            {
+                if (readback.work.value != job.work.value) {
+                    continue;
+                }
+                outputs.push_back(BehaviorGpuPortValue{
+                    .name = readback.port_name,
+                    .kind = readback.kind,
+                    .direction = WZ_GPU_PORT_OUTPUT,
+                    .element_count = readback.element_count,
+                    .stride_bytes = readback.stride_bytes,
+                    .initial_data = readback.bytes,
+                });
+            }
             buffer.add_event(
                 job.entity,
                 WZ_EVENT_GPU_COMPUTE_COMPLETED,
@@ -261,7 +287,8 @@ namespace wz::engine::behavior
                     .status = WZ_GPU_COMPUTE_STATUS_COMPLETED,
                     .request_tag = job.request_tag,
                     .output_count = output_count,
-                });
+                },
+                std::move(outputs));
             ++posted;
         }
 

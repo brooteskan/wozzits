@@ -949,6 +949,14 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr event_trigger_value(
+            const SceneEventTriggerAsset& trigger)
+        {
+            auto obj = object_value();
+            add_member(*obj, "event", string_value(trigger.event));
+            return obj;
+        }
+
         JSONValuePtr proximity_value(const SceneProximityAsset& proximity)
         {
             auto obj = object_value();
@@ -1213,6 +1221,10 @@ namespace wz::engine::assets
             if (node.event_listener) {
                 add_member(*obj, "event_listener",
                     event_listener_value(*node.event_listener));
+            }
+            if (node.event_trigger) {
+                add_member(*obj, "event_trigger",
+                    event_trigger_value(*node.event_trigger));
             }
             if (node.proximity) {
                 add_member(*obj, "proximity",

@@ -46,6 +46,7 @@ namespace wz::engine::behavior
         wz::scene::RuntimeEntityId entity =
             wz::scene::INVALID_RUNTIME_ENTITY;
         WzGpuComputeEventPayload payload{};
+        std::vector<BehaviorGpuPortValue> outputs;
     };
 
     struct BehaviorGpuComputeBuffer
@@ -65,7 +66,8 @@ namespace wz::engine::behavior
         void add_event(
             wz::scene::RuntimeEntityId entity,
             WzBehaviorEventKind kind,
-            WzGpuComputeEventPayload payload)
+            WzGpuComputeEventPayload payload,
+            std::vector<BehaviorGpuPortValue> outputs = {})
         {
             if (kind != WZ_EVENT_GPU_COMPUTE_COMPLETED
                 && kind != WZ_EVENT_GPU_COMPUTE_FAILED)
@@ -76,6 +78,7 @@ namespace wz::engine::behavior
                 .kind = kind,
                 .entity = entity,
                 .payload = payload,
+                .outputs = std::move(outputs),
             });
         }
 

@@ -317,6 +317,10 @@ TEST(BehaviorModuleApi, GpuSubmitHelperQueuesNamedPortJobForEventEntity)
         4u,
         "gpu_submit_test",
         "");
+    scene.behaviors[0].component.events = { "collision.enter" };
+    scene.behaviors[0].component.channel_mask =
+        wz::engine::behavior::compile_channel_mask(
+            scene.behaviors[0].component.events).mask;
     wz::engine::FrameStorage frame_storage{};
     frame_storage.collision.routed_entity_events = {
         wz::engine::collision::CollisionEntityEvent{
@@ -334,7 +338,7 @@ TEST(BehaviorModuleApi, GpuSubmitHelperQueuesNamedPortJobForEventEntity)
 
     dispatch_behaviors(scene, registry, context);
 
-    EXPECT_EQ(probe.calls, 2u);
+    EXPECT_EQ(probe.calls, 1u);
     EXPECT_EQ(probe.submit_result, 1u);
     EXPECT_EQ(probe.work.value, 1u);
     ASSERT_EQ(frame_storage.behavior_gpu_compute.jobs.size(), 1u);
@@ -365,6 +369,50 @@ TEST(BehaviorModuleApi, GpuSubmitHelperQueuesNamedPortJobForEventEntity)
     g_gpu_submit_probe = nullptr;
 }
 
+TEST(BehaviorModuleApi, DirectGpuComputeRequestQueuesNamedPortJob)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    GpuSubmitProbe probe{};
+    g_gpu_submit_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_gpu_submit_pack));
+
+    SceneInstance scene = scene_with_behavior(
+        4u,
+        "gpu_submit_test",
+        "");
+    scene.behaviors[0].component.events = { "gpu.compute.request" };
+    scene.behaviors[0].component.channel_mask =
+        wz::engine::behavior::compile_channel_mask(
+            scene.behaviors[0].component.events).mask;
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+        .gpu_compute = &frame_storage.behavior_gpu_compute,
+    };
+
+    dispatch_behavior_event(
+        scene,
+        registry,
+        context,
+        BehaviorEvent{
+            .kind = WZ_EVENT_GPU_COMPUTE_REQUEST,
+            .entity = 4u,
+        });
+
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.submit_result, 1u);
+    ASSERT_EQ(frame_storage.behavior_gpu_compute.jobs.size(), 1u);
+    EXPECT_EQ(frame_storage.behavior_gpu_compute.jobs[0].entity, 4u);
+    EXPECT_EQ(frame_storage.behavior_gpu_compute.jobs[0].kernel, "test/multiply");
+
+    g_gpu_submit_probe = nullptr;
+}
+
 TEST(BehaviorModuleApi, GpuComputeCompletionEventRoutesWithActivePayload)
 {
     BehaviorRegistry registry;
@@ -385,6 +433,15 @@ TEST(BehaviorModuleApi, GpuComputeCompletionEventRoutesWithActivePayload)
             scene.behaviors[0].component.events).mask;
 
     wz::engine::FrameStorage frame_storage{};
+    wz::engine::behavior::BehaviorGpuPortValue output{};
+    output.name = "output";
+    output.kind = WZ_GPU_PORT_STRUCTURED_BUFFER;
+    output.direction = WZ_GPU_PORT_OUTPUT;
+    output.element_count = 4u;
+    output.stride_bytes = sizeof(uint32_t);
+    const uint32_t values[4]{ 5u, 10u, 15u, 20u };
+    const auto* bytes = reinterpret_cast<const std::byte*>(values);
+    output.initial_data.assign(bytes, bytes + sizeof(values));
     frame_storage.behavior_gpu_compute.add_event(
         4u,
         WZ_EVENT_GPU_COMPUTE_COMPLETED,
@@ -393,7 +450,8 @@ TEST(BehaviorModuleApi, GpuComputeCompletionEventRoutesWithActivePayload)
             .status = WZ_GPU_COMPUTE_STATUS_COMPLETED,
             .request_tag = 1234u,
             .output_count = 1u,
-        });
+        },
+        { std::move(output) });
 
     BehaviorFrameContext context{
         .frame_storage = &frame_storage,
@@ -412,6 +470,14 @@ TEST(BehaviorModuleApi, GpuComputeCompletionEventRoutesWithActivePayload)
     EXPECT_EQ(probe.status, WZ_GPU_COMPUTE_STATUS_COMPLETED);
     EXPECT_EQ(probe.request_tag, 1234u);
     EXPECT_EQ(probe.output_count, 1u);
+    EXPECT_EQ(probe.output_elements, 4u);
+    EXPECT_EQ(probe.output_stride, sizeof(uint32_t));
+    EXPECT_EQ(probe.output_bytes, sizeof(values));
+    EXPECT_EQ(probe.read_output, 1u);
+    EXPECT_EQ(probe.output_values[0], 5u);
+    EXPECT_EQ(probe.output_values[1], 10u);
+    EXPECT_EQ(probe.output_values[2], 15u);
+    EXPECT_EQ(probe.output_values[3], 20u);
     EXPECT_TRUE(frame_storage.behavior_gpu_compute.jobs.empty());
     EXPECT_TRUE(frame_storage.behavior_gpu_compute.events.empty());
 

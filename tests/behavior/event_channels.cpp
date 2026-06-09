@@ -37,6 +37,9 @@ TEST(EventChannels, CompilesExactKnownTokens)
         compile({ "input.controller_axis.changed" }).mask,
         EventChannelInputControllerAxisChanged);
     EXPECT_EQ(
+        compile({ "gpu.compute.request" }).mask,
+        EventChannelGpuComputeRequest);
+    EXPECT_EQ(
         compile({ "gpu.compute.completed" }).mask,
         EventChannelGpuComputeCompleted);
     EXPECT_EQ(
@@ -116,6 +119,9 @@ TEST(EventChannels, EventKindMappingUsesDenseChannelBits)
     EXPECT_EQ(
         event_kind_to_channel_bit(WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED),
         EventChannelInputControllerAxisChanged);
+    EXPECT_EQ(
+        event_kind_to_channel_bit(WZ_EVENT_GPU_COMPUTE_REQUEST),
+        EventChannelGpuComputeRequest);
     EXPECT_EQ(
         event_kind_to_channel_bit(WZ_EVENT_GPU_COMPUTE_COMPLETED),
         EventChannelGpuComputeCompleted);

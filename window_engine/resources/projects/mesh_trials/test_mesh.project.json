@@ -1,0 +1,8 @@
+{
+  "schema": "wozzits.scene_editor.project.v1",
+  "version": 1,
+  "name": "mesh_trials",
+  "scene": "scene_editor_handles_export.scene.json",
+  "behavior_project_folder": "behavior",
+  "behavior_module_folder": "behavior/build/clang-debug"
+}

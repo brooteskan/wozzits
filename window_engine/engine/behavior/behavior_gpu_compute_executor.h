@@ -46,6 +46,9 @@ namespace wz::engine::behavior
     {
         WzGpuWorkId work{};
         std::string port_name;
+        WzGpuPortKind kind = WZ_GPU_PORT_NONE;
+        uint32_t element_count = 0u;
+        uint32_t stride_bytes = 0u;
         std::vector<std::byte> bytes;
     };
 

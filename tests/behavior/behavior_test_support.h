@@ -490,7 +490,9 @@ namespace
         ASSERT_NE(event, nullptr);
 
         ++probe->calls;
-        if (!wz_is_event(event, WZ_EVENT_COLLISION_ENTER)) {
+        if (!wz_is_event(event, WZ_EVENT_COLLISION_ENTER)
+            && !wz_is_event(event, WZ_EVENT_GPU_COMPUTE_REQUEST))
+        {
             return;
         }
 
@@ -521,15 +523,25 @@ namespace
 
     uint8_t register_gpu_submit_pack(WzBehaviorPluginApi* api)
     {
-        if (!api || !api->register_module || !g_gpu_submit_probe) {
+        if (!api || !api->register_module_desc || !g_gpu_submit_probe) {
             return 0;
         }
 
-        return api->register_module(
-            api->user,
-            "gpu_submit_test",
-            gpu_submit_event_handler,
-            g_gpu_submit_probe);
+        static const char* events[] = {
+            "collision.enter",
+            "gpu.compute.request",
+        };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "gpu_submit_test",
+            .on_event = gpu_submit_event_handler,
+            .event_channels = events,
+            .event_channel_count =
+                static_cast<uint32_t>(
+                    sizeof(events) / sizeof(events[0])),
+            .module_user_data = g_gpu_submit_probe,
+        };
+        return api->register_module_desc(api->user, &desc);
     }
 
     struct GpuEventProbe
@@ -542,6 +554,11 @@ namespace
         WzGpuComputeStatus status = WZ_GPU_COMPUTE_STATUS_NONE;
         uint64_t request_tag = 0u;
         uint32_t output_count = 0u;
+        uint32_t output_elements = 0u;
+        uint32_t output_stride = 0u;
+        uint64_t output_bytes = 0u;
+        uint8_t read_output = 0u;
+        uint32_t output_values[4]{};
     };
 
     GpuEventProbe* g_gpu_event_probe = nullptr;
@@ -564,6 +581,21 @@ namespace
         probe->status = wz_gpu_compute_event_status(facts);
         probe->request_tag = wz_gpu_compute_event_request_tag(facts);
         probe->output_count = wz_gpu_compute_event_output_count(facts);
+        probe->output_elements =
+            wz_gpu_compute_output_element_count(facts, "output");
+        probe->output_stride =
+            wz_gpu_compute_output_stride_bytes(facts, "output");
+        probe->output_bytes =
+            wz_gpu_compute_output_byte_count(facts, "output");
+        probe->read_output = 1u;
+        for (uint32_t i = 0; i < 4u; ++i) {
+            probe->read_output &=
+                wz_gpu_compute_read_output_u32(
+                    facts,
+                    "output",
+                    i,
+                    &probe->output_values[i]);
+        }
     }
 
     uint8_t register_gpu_event_pack(WzBehaviorPluginApi* api)

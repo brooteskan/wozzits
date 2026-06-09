@@ -508,6 +508,9 @@ namespace wz::engine::assets
                     fp.mix_string(channel);
                 }
             }
+            if (node.event_trigger) {
+                fp.mix_string(node.event_trigger->event);
+            }
 
             if (node.behavior) {
                 mix_behavior(fp, *node.behavior);

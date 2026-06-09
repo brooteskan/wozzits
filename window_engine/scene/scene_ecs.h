@@ -67,6 +67,7 @@ namespace wz::scene
         TerrainHeightFieldSource,
         AudioListener,
         EventListener,
+        EventTrigger,
         AuxiliaryVisual,
         EditorHandle,
         Proximity,
@@ -103,6 +104,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::TerrainRenderStyle:
         case SceneAuthoredComponentKind::TerrainMeshSource:
         case SceneAuthoredComponentKind::TerrainHeightFieldSource:
+        case SceneAuthoredComponentKind::EventTrigger:
             return SceneComponentDomain::EditorAuthoring;
 
         case SceneAuthoredComponentKind::InputReceiver:
@@ -189,6 +191,7 @@ namespace wz::scene
         uint32_t terrain_height_field_sources = 0;
         uint32_t audio_listeners = 0;
         uint32_t event_listeners = 0;
+        uint32_t event_triggers = 0;
         uint32_t proximities = 0;
         uint32_t motions = 0;
         uint32_t behaviors = 0;

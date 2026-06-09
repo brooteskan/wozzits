@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 15u
+#define WZ_BEHAVIOR_ABI_VERSION 17u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -68,6 +68,7 @@ enum
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED = 304u,
     WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED = 305u,
     WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED = 306u,
+    WZ_EVENT_GPU_COMPUTE_REQUEST = 399u,
     WZ_EVENT_GPU_COMPUTE_COMPLETED = 400u,
     WZ_EVENT_GPU_COMPUTE_FAILED = 401u,
 };
@@ -302,12 +303,23 @@ enum
     WZ_GPU_COMPUTE_STATUS_FAILED = 2u,
 };
 
+typedef struct WzGpuComputeOutputView
+{
+    const char* name;
+    WzGpuPortKind kind;
+    uint32_t element_count;
+    uint32_t stride_bytes;
+    const void* bytes;
+    uint64_t byte_count;
+} WzGpuComputeOutputView;
+
 typedef struct WzGpuComputeEventPayload
 {
     WzGpuWorkId work;
     WzGpuComputeStatus status;
     uint64_t request_tag;
     uint32_t output_count;
+    const WzGpuComputeOutputView* outputs;
 } WzGpuComputeEventPayload;
 
 typedef void (*WzBehaviorLogFn)(

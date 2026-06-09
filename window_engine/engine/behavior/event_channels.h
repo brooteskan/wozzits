@@ -30,6 +30,7 @@ namespace wz::engine::behavior
         EventChannelInputControllerAxisChanged = 1u << 14,
         EventChannelGpuComputeCompleted = 1u << 15,
         EventChannelGpuComputeFailed = 1u << 16,
+        EventChannelGpuComputeRequest = 1u << 17,
     };
 
     constexpr EventChannelMask kCollisionEventChannels =
@@ -52,6 +53,8 @@ namespace wz::engine::behavior
         | EventChannelInputControllerAxisChanged;
 
     constexpr EventChannelMask kGpuComputeEventChannels =
+        EventChannelGpuComputeRequest
+        |
         EventChannelGpuComputeCompleted
         | EventChannelGpuComputeFailed;
 
@@ -125,6 +128,9 @@ namespace wz::engine::behavior
         if (channel == "gpu.compute.failed") {
             return EventChannelGpuComputeFailed;
         }
+        if (channel == "gpu.compute.request") {
+            return EventChannelGpuComputeRequest;
+        }
         if (channel == "gpu.compute.*") {
             return kGpuComputeEventChannels;
         }
@@ -165,6 +171,8 @@ namespace wz::engine::behavior
             return EventChannelInputControllerButtonReleased;
         case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
             return EventChannelInputControllerAxisChanged;
+        case WZ_EVENT_GPU_COMPUTE_REQUEST:
+            return EventChannelGpuComputeRequest;
         case WZ_EVENT_GPU_COMPUTE_COMPLETED:
             return EventChannelGpuComputeCompleted;
         case WZ_EVENT_GPU_COMPUTE_FAILED:

@@ -936,6 +936,122 @@ static inline uint32_t wz_gpu_compute_event_output_count(
         : 0u;
 }
 
+static inline const WzGpuComputeOutputView* wz_gpu_compute_event_output(
+    const WzBehaviorFrameFacts* facts,
+    uint32_t index)
+{
+    if (!facts
+        || !facts->active_gpu_compute_event
+        || !facts->active_gpu_compute_event->outputs
+        || index >= facts->active_gpu_compute_event->output_count)
+    {
+        return 0;
+    }
+    return &facts->active_gpu_compute_event->outputs[index];
+}
+
+static inline const WzGpuComputeOutputView* wz_gpu_compute_event_find_output(
+    const WzBehaviorFrameFacts* facts,
+    const char* name)
+{
+    if (!facts
+        || !facts->active_gpu_compute_event
+        || !facts->active_gpu_compute_event->outputs
+        || !name
+        || !name[0])
+    {
+        return 0;
+    }
+
+    const WzGpuComputeEventPayload* event =
+        facts->active_gpu_compute_event;
+    for (uint32_t i = 0; i < event->output_count; ++i) {
+        const WzGpuComputeOutputView* output = &event->outputs[i];
+        if (output->name && strcmp(output->name, name) == 0) {
+            return output;
+        }
+    }
+    return 0;
+}
+
+static inline uint32_t wz_gpu_compute_output_element_count(
+    const WzBehaviorFrameFacts* facts,
+    const char* name)
+{
+    const WzGpuComputeOutputView* output =
+        wz_gpu_compute_event_find_output(facts, name);
+    return output ? output->element_count : 0u;
+}
+
+static inline uint32_t wz_gpu_compute_output_stride_bytes(
+    const WzBehaviorFrameFacts* facts,
+    const char* name)
+{
+    const WzGpuComputeOutputView* output =
+        wz_gpu_compute_event_find_output(facts, name);
+    return output ? output->stride_bytes : 0u;
+}
+
+static inline uint64_t wz_gpu_compute_output_byte_count(
+    const WzBehaviorFrameFacts* facts,
+    const char* name)
+{
+    const WzGpuComputeOutputView* output =
+        wz_gpu_compute_event_find_output(facts, name);
+    return output ? output->byte_count : 0u;
+}
+
+static inline uint8_t wz_gpu_compute_read_output(
+    const WzBehaviorFrameFacts* facts,
+    const char* name,
+    void* out_bytes,
+    uint64_t out_byte_capacity,
+    uint64_t* out_required_bytes)
+{
+    const WzGpuComputeOutputView* output =
+        wz_gpu_compute_event_find_output(facts, name);
+    if (!output || !output->bytes) {
+        if (out_required_bytes) {
+            *out_required_bytes = 0u;
+        }
+        return 0u;
+    }
+    if (out_required_bytes) {
+        *out_required_bytes = output->byte_count;
+    }
+    if (!out_bytes || out_byte_capacity < output->byte_count) {
+        return 0u;
+    }
+    memcpy(out_bytes, output->bytes, (size_t)output->byte_count);
+    return 1u;
+}
+
+static inline uint8_t wz_gpu_compute_read_output_u32(
+    const WzBehaviorFrameFacts* facts,
+    const char* name,
+    uint32_t index,
+    uint32_t* out_value)
+{
+    const WzGpuComputeOutputView* output =
+        wz_gpu_compute_event_find_output(facts, name);
+    if (!output
+        || !out_value
+        || output->kind != WZ_GPU_PORT_STRUCTURED_BUFFER
+        || output->stride_bytes != sizeof(uint32_t)
+        || index >= output->element_count
+        || !output->bytes
+        || output->byte_count
+            < ((uint64_t)index + 1u) * sizeof(uint32_t))
+    {
+        return 0u;
+    }
+
+    const uint8_t* bytes = (const uint8_t*)output->bytes;
+    memcpy(out_value, bytes + (uint64_t)index * sizeof(uint32_t),
+        sizeof(uint32_t));
+    return 1u;
+}
+
 static inline uint8_t wz_self_is_trigger(const WzBehaviorEvent* event)
 {
     return event ? event->self_is_trigger : 0u;
@@ -1641,6 +1757,8 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "input.controller_button.released";
     case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
         return "input.controller_axis.changed";
+    case WZ_EVENT_GPU_COMPUTE_REQUEST:
+        return "gpu.compute.request";
     case WZ_EVENT_GPU_COMPUTE_COMPLETED:
         return "gpu.compute.completed";
     case WZ_EVENT_GPU_COMPUTE_FAILED:

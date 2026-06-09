@@ -16,4 +16,15 @@ namespace wz::engine::behavior
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context);
+
+    void dispatch_behavior_gpu_compute_events(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context);
+
+    void dispatch_behavior_event(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context,
+        BehaviorEvent event);
 }

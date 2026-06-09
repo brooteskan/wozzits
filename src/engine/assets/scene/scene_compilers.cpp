@@ -2504,6 +2504,16 @@ namespace wz::engine::assets::internal
                 }
             }
 
+            const auto* et = find_member(node_val, "event_trigger");
+            if (et && et->kind == wz::json::JSONValueKind::Object) {
+                SceneEventTriggerAsset trigger{};
+                auto event = read_string(*et, "event");
+                if (event && !event->empty()) {
+                    trigger.event = std::string(*event);
+                }
+                node.event_trigger = std::move(trigger);
+            }
+
             // ── Debug/editor visual descriptor ───────────────────────
 
             const auto* behavior = find_member(node_val, "behavior");

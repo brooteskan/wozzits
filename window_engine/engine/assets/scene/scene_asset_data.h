@@ -536,6 +536,11 @@ namespace wz::engine::assets
         std::vector<std::string> channels;
     };
 
+    struct SceneEventTriggerAsset
+    {
+        std::string event = "gpu.compute.request";
+    };
+
     struct SceneProximityAsset
     {
         float radius = 1.0f;
@@ -642,6 +647,7 @@ namespace wz::engine::assets
             terrain_height_field_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
         std::optional<SceneEventListenerAsset> event_listener;
+        std::optional<SceneEventTriggerAsset> event_trigger;
         std::optional<SceneProximityAsset> proximity;
         std::optional<SceneMotionAsset> motion;
         std::optional<SceneBehaviorAsset> behavior;
@@ -1090,6 +1096,9 @@ namespace wz::engine::assets
         if (node.event_listener) {
             out.push_back(Kind::EventListener);
         }
+        if (node.event_trigger) {
+            out.push_back(Kind::EventTrigger);
+        }
         if (node.proximity) {
             out.push_back(Kind::Proximity);
         }
@@ -1312,6 +1321,7 @@ namespace wz::engine::assets
             || node.terrain.has_value()
             || node.audio_listener.has_value()
             || node.event_listener.has_value()
+            || node.event_trigger.has_value()
             || node.proximity.has_value()
             || node.motion.has_value()
             || node.behavior.has_value()
@@ -1481,6 +1491,9 @@ namespace wz::engine::assets
             }
             if (node.event_listener) {
                 ++out.event_listeners;
+            }
+            if (node.event_trigger) {
+                ++out.event_triggers;
             }
             if (node.proximity) {
                 ++out.proximities;

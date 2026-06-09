@@ -1,0 +1,156 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "scene_editor_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          2,
+          -8
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "empty_1",
+      "parent": "root",
+      "name": "mesh",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:b37d2ac47194d73e:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000001:0000000000000000:143f687513e35d49:2b873f4de344b5fd"
+      },
+      "mesh_source": {
+        "kind": "placeholder",
+        "path": "",
+        "mesh_index": 0
+      }
+    },
+    {
+      "id": "empty_2",
+      "parent": "root",
+      "name": "gpu behavior node",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "event_trigger": {
+        "event": "gpu.compute.request"
+      },
+      "behaviors": [
+        {
+          "id": "empty_2_behavior_0",
+          "label": "Debug collision logger",
+          "module": "gpu_trial",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "gpu.compute.request",
+            "gpu.compute.*"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  },
+  "scene_editor_metadata": {
+    "schema": "wozzits.scene_editor_metadata.v1",
+    "version": 1,
+    "note": "Editor-only metadata; not part of the authored game scene.",
+    "camera": {
+      "position": [
+        0,
+        2,
+        -18
+      ],
+      "orientation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "move_speed": 8,
+      "look_speed": 0.00050000002374872565,
+      "boost_multiplier": 4,
+      "roll_speed": 1.5
+    }
+  }
+}
