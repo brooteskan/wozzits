@@ -62,14 +62,19 @@ namespace {
 
         descs_out.resize(5);
         descs_out[root]     = { classify_legacy_renderable(RenderPipeline::None) };
-        descs_out[opaque]   = { classify_legacy_renderable(RenderPipeline::OpaqueGeometry),      0u, 0u,
-                                unit_box(), {}, true };
-        descs_out[transp]   = { classify_legacy_renderable(RenderPipeline::TransparentGeometry), 1u, 1u,
-                                unit_box(), {}, true };
-        descs_out[splat]    = { classify_legacy_renderable(RenderPipeline::Splat), INVALID_MESH, INVALID_MATERIAL,
-                                {}, SplatDescriptor{{1,2,3},{0,0,0,1},{1,0,0},0.8f}, true };
-        descs_out[particle] = { classify_legacy_renderable(RenderPipeline::Particle), 2u, 2u,
-                                unit_box(), {}, true };
+        descs_out[opaque]   = { .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+                                .mesh = 0u, .material = 0u,
+                                .local_bounds = unit_box(), .visible = true };
+        descs_out[transp]   = { .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+                                .mesh = 1u, .material = 1u,
+                                .local_bounds = unit_box(), .visible = true };
+        descs_out[splat]    = { .node_class = classify_legacy_renderable(RenderPipeline::Splat),
+                                .mesh = INVALID_MESH, .material = INVALID_MATERIAL,
+                                .splat_data = SplatDescriptor{{1,2,3},{0,0,0,1},{1,0,0},0.8f},
+                                .visible = true };
+        descs_out[particle] = { .node_class = classify_legacy_renderable(RenderPipeline::Particle),
+                                .mesh = 2u, .material = 2u,
+                                .local_bounds = unit_box(), .visible = true };
 
         return std::move(*storage);
     }

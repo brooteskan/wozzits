@@ -105,8 +105,9 @@ TEST(Adversarial, RecompileShrinkingSceneMetadata)
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 3; ++i)
         descs[children[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     CompiledSceneStorage storage{};
 
@@ -170,7 +171,7 @@ TEST(Adversarial, MaskedSurfaceRoutesToOpaque)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        SceneNodeClass{
+        .node_class = SceneNodeClass{
             .role            = SceneRole::Renderable,
             .producer        = ProducerKind::Mesh,
             .default_surface = SurfaceClass::Masked,
@@ -178,7 +179,7 @@ TEST(Adversarial, MaskedSurfaceRoutesToOpaque)
             .compile         = CompileBehavior::Static,
             .domains         = RenderDomain::Surface | RenderDomain::Shadow,
         },
-        /*mesh=*/5u, /*material=*/3u, unit_box(), {}, true
+        .mesh = 5u, .material = 3u, .local_bounds = unit_box(), .visible = true
     };
 
     CompiledSceneStorage storage{};
@@ -219,8 +220,9 @@ TEST(Adversarial, ParticleWithInvalidMeshExcluded)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        classify_legacy_renderable(RenderPipeline::Particle),
-        INVALID_MESH, 0u, unit_box(), {}, true
+        .node_class = classify_legacy_renderable(RenderPipeline::Particle),
+        .mesh = INVALID_MESH, .material = 0u,
+        .local_bounds = unit_box(), .visible = true
     };
 
     CompiledSceneStorage storage{};
@@ -263,8 +265,9 @@ TEST(Adversarial, ExplicitDirtyNodesMatchesAllDirty)
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < N; ++i)
         descs[children[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -334,8 +337,8 @@ TEST(Adversarial, UpdateFrameViewIdempotent)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-        1u, 1u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+        .mesh = 1u, .material = 1u, .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -481,8 +484,8 @@ TEST(Adversarial, RecompileAfterTransformUpdateProducesValidMetadata)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-        7u, 3u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+        .mesh = 7u, .material = 3u, .local_bounds = unit_box(), .visible = true };
 
     CompiledSceneStorage storage{};
     compile(storage, result->polytree, descs, {}, identity_view());
@@ -561,20 +564,22 @@ TEST(Adversarial, MixedPipelineCountsEndToEnd)
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 2; ++i)
         descs[op[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), static_cast<MaterialHandle>(i),
-            unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i),
+            .material = static_cast<MaterialHandle>(i),
+            .local_bounds = unit_box(), .visible = true };
     descs[tr] = {
-        classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-        10u, 10u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+        .mesh = 10u, .material = 10u, .local_bounds = unit_box(), .visible = true };
     for (int i = 0; i < 2; ++i)
         descs[sp[i]] = {
-            classify_legacy_renderable(RenderPipeline::Splat),
-            INVALID_MESH, INVALID_MATERIAL, {},
-            SplatDescriptor{{1,1,1},{0,0,0,1},{1,1,1},1.f}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::Splat),
+            .mesh = INVALID_MESH, .material = INVALID_MATERIAL,
+            .splat_data = SplatDescriptor{{1,1,1},{0,0,0,1},{1,1,1},1.f},
+            .visible = true };
     descs[pa] = {
-        classify_legacy_renderable(RenderPipeline::Particle),
-        20u, 20u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::Particle),
+        .mesh = 20u, .material = 20u, .local_bounds = unit_box(), .visible = true };
 
     LightRecord sun{};
     sun.type = LightType::Directional;
@@ -642,9 +647,9 @@ TEST(Adversarial, SplatCloudHandleUpdatedByDescriptorPatch)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        classify_legacy_renderable(RenderPipeline::Splat),
-        INVALID_MESH, INVALID_MATERIAL, {},
-        SplatDescriptor{
+        .node_class = classify_legacy_renderable(RenderPipeline::Splat),
+        .mesh = INVALID_MESH, .material = INVALID_MATERIAL,
+        .splat_data = SplatDescriptor{
             .scale        = { 1.f, 1.f, 1.f },
             .rotation     = { 0.f, 0.f, 0.f, 1.f },
             .color        = { 1.f, 0.f, 0.f },
@@ -652,7 +657,7 @@ TEST(Adversarial, SplatCloudHandleUpdatedByDescriptorPatch)
             .cloud_handle = 42u,
             .cloud_local_index = 7u,
         },
-        true
+        .visible = true
     };
 
     CompiledSceneStorage storage{};
@@ -703,8 +708,8 @@ TEST(Adversarial, TransformAndViewDirtyProducesCorrectDepth)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-        1u, 1u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+        .mesh = 1u, .material = 1u, .local_bounds = unit_box(), .visible = true };
 
     auto view0 = wide_view_at(0.f);
     CompiledSceneStorage storage{};
@@ -765,8 +770,11 @@ TEST(Adversarial, AllInvisibleProducesEmptyPipeline)
     // All visible=false
     for (int i = 0; i < N; ++i)
         descs[children[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, /*visible=*/false };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i),
+            .material = 0u,
+            .local_bounds = unit_box(),
+            .visible = false };
 
     CompiledSceneStorage cs{};
     compile(cs, result->polytree, descs, {}, identity_view());
@@ -818,8 +826,9 @@ TEST(Adversarial, EquidistantTransparentsPreserved)
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 2; ++i)
         descs[tr[i]] = {
-            classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -866,12 +875,12 @@ TEST(Adversarial, MeshWithSurfaceNoneExcluded)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        SceneNodeClass{
+        .node_class = SceneNodeClass{
             .role            = SceneRole::Renderable,
             .producer        = ProducerKind::Mesh,
             .default_surface = SurfaceClass::None,   // ← no surface class
         },
-        1u, 1u, unit_box(), {}, true
+        .mesh = 1u, .material = 1u, .local_bounds = unit_box(), .visible = true
     };
 
     CompiledSceneStorage storage{};
@@ -907,7 +916,7 @@ TEST(Adversarial, AdditiveSurfaceRoutesToTransparent)
     std::vector<RenderableDescriptor> descs(node_count(result->polytree));
     descs[root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[obj] = {
-        SceneNodeClass{
+        .node_class = SceneNodeClass{
             .role            = SceneRole::Renderable,
             .producer        = ProducerKind::Mesh,
             .default_surface = SurfaceClass::Additive,
@@ -915,7 +924,7 @@ TEST(Adversarial, AdditiveSurfaceRoutesToTransparent)
             .compile         = CompileBehavior::Static,
             .domains         = RenderDomain::Surface | RenderDomain::Transparent,
         },
-        1u, 1u, unit_box(), {}, true
+        .mesh = 1u, .material = 1u, .local_bounds = unit_box(), .visible = true
     };
 
     CompiledSceneStorage storage{};
