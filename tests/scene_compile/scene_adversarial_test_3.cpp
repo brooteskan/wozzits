@@ -151,8 +151,9 @@ TEST(Adversarial3, WideHierarchy100Siblings)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < N; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -246,8 +247,9 @@ TEST(Adversarial3, AllCulledProducesEmptyFrame)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < N; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     CompiledSceneStorage cs{};
     compile(cs, scene.graph(), descs, {}, identity_view());
@@ -289,27 +291,33 @@ TEST(Adversarial3, MixedPipelinePartialVisibility)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
 
     // Opaque: ch[0] visible, ch[1] visible, ch[2] hidden
-    descs[ch[0]] = { classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-                     0u, 0u, unit_box(), {}, true };
-    descs[ch[1]] = { classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-                     1u, 0u, unit_box(), {}, true };
-    descs[ch[2]] = { classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-                     2u, 0u, unit_box(), {}, false };
+    descs[ch[0]] = { .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+                     .mesh = 0u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = true };
+    descs[ch[1]] = { .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+                     .mesh = 1u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = true };
+    descs[ch[2]] = { .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+                     .mesh = 2u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = false };
 
     // Transparent: ch[3] visible, ch[4] hidden
-    descs[ch[3]] = { classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-                     3u, 0u, unit_box(), {}, true };
-    descs[ch[4]] = { classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-                     4u, 0u, unit_box(), {}, false };
+    descs[ch[3]] = { .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+                     .mesh = 3u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = true };
+    descs[ch[4]] = { .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+                     .mesh = 4u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = false };
 
     // Splat: ch[5] visible
-    descs[ch[5]] = { classify_legacy_renderable(RenderPipeline::Splat),
-                     INVALID_MESH, INVALID_MATERIAL, {},
-                     SplatDescriptor{}, true };
+    descs[ch[5]] = { .node_class = classify_legacy_renderable(RenderPipeline::Splat),
+                     .mesh = INVALID_MESH, .material = INVALID_MATERIAL,
+                     .splat_data = SplatDescriptor{}, .visible = true };
 
     // Particle: ch[6] hidden
-    descs[ch[6]] = { classify_legacy_renderable(RenderPipeline::Particle),
-                     6u, 0u, unit_box(), {}, false };
+    descs[ch[6]] = { .node_class = classify_legacy_renderable(RenderPipeline::Particle),
+                     .mesh = 6u, .material = 0u, .local_bounds = unit_box(),
+                     .visible = false };
 
     auto view = wide_view_at(0.f);
     CompiledSceneStorage cs{};
@@ -471,8 +479,8 @@ TEST(Adversarial3, CompiledTransformPreservesScale)
     std::vector<RenderableDescriptor> descs(node_count(scene.graph()));
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[ch[0]] = {
-        classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-        0u, 0u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+        .mesh = 0u, .material = 0u, .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
     CompiledSceneStorage cs{};
@@ -512,8 +520,9 @@ TEST(Adversarial3, GrowShrinkGrowStorageReuse)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 10; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -588,8 +597,9 @@ TEST(Adversarial3, TenFrameIncrementalUpdateCycle)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 3; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::TransparentGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::TransparentGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -648,9 +658,9 @@ TEST(Adversarial3, SplatOnlySceneEndToEnd)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < N; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::Splat),
-            INVALID_MESH, INVALID_MATERIAL, {},
-            SplatDescriptor{}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::Splat),
+            .mesh = INVALID_MESH, .material = INVALID_MATERIAL,
+            .splat_data = SplatDescriptor{}, .visible = true };
 
     auto view = wide_view_at(0.f);
 
@@ -700,8 +710,9 @@ TEST(Adversarial3, EmptyDirtyListMeansAllDirty)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < 2; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i), 0u, unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i), .material = 0u,
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
     CompiledSceneStorage storage{};
@@ -743,8 +754,8 @@ TEST(Adversarial3, CompiledBoundsReflectWorldScale)
     std::vector<RenderableDescriptor> descs(node_count(scene.graph()));
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     descs[ch[0]] = {
-        classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-        0u, 0u, unit_box(), {}, true };
+        .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+        .mesh = 0u, .material = 0u, .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
     CompiledSceneStorage cs{};
@@ -851,10 +862,10 @@ TEST(Adversarial3, DoubleCompileProducesIdenticalResult)
     descs[scene.root] = { classify_legacy_renderable(RenderPipeline::None) };
     for (int i = 0; i < N; ++i)
         descs[ch[i]] = {
-            classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
-            static_cast<MeshHandle>(i),
-            static_cast<MaterialHandle>(N - i),
-            unit_box(), {}, true };
+            .node_class = classify_legacy_renderable(RenderPipeline::OpaqueGeometry),
+            .mesh = static_cast<MeshHandle>(i),
+            .material = static_cast<MaterialHandle>(N - i),
+            .local_bounds = unit_box(), .visible = true };
 
     auto view = wide_view_at(0.f);
     CompiledSceneStorage storage{};
