@@ -4,8 +4,15 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 .claude
+.codex/
 .wozzits/
 build/
+
+# AI-agent scratch files (issue drafts, plans, reports) — never commit.
+# Catches .tmp_issue.md style names and mangled absolute-path filenames
+# (e.g. "C:UsersdavidAppDataLocalTemp..." written as a literal filename).
+*.tmp_*
+*AppDataLocalTemp*
 CmakeUserPresets.json
 CMakeSettings.json
 /Testing/
