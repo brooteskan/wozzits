@@ -117,6 +117,65 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    namespace
+    {
+        bool compute_derived_field_desc_valid(
+            const MeshComputeDerivedFieldDesc& desc)
+        {
+            if (!desc.source_mesh.valid()
+                || !desc.compute_pipeline.valid()
+                || desc.channels.empty())
+            {
+                return false;
+            }
+            for (size_t i = 0; i < desc.channels.size(); ++i) {
+                if (desc.channels[i].channel_id == 0u
+                    || !desc.channels[i].values.empty())
+                {
+                    return false;
+                }
+                for (size_t j = i + 1; j < desc.channels.size(); ++j) {
+                    if (desc.channels[i].channel_id
+                        == desc.channels[j].channel_id)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_compute_derived_field(
+        const MeshComputeDerivedFieldDesc& desc)
+    {
+        if (!compute_derived_field_desc_valid(desc)) {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_mesh_compute_derived_field_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kMeshComputeDerivedFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        // register_asset() returns false when the key is already registered;
+        // re-materializing the same scene is expected to hit that, so treat
+        // it as success and hand back the existing key.
+        (void)system_.register_asset(
+            std::move(node),
+            { desc.source_mesh.output, desc.compute_pipeline.key });
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldHandle
     MeshDerivedFieldAssetModule::get_mesh_derived_field(
         const MeshDerivedFieldAsset& asset) const

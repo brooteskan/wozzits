@@ -47,6 +47,7 @@ namespace wz::scene
         SceneImportSource,
         MeshSource,
         MeshWaveletAnalysis,
+        MeshComputeField,
         MeshRenderStyle,
         ScalarFieldSource,
         VectorFieldSource,
@@ -102,6 +103,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::SceneImportSource:
         case SceneAuthoredComponentKind::MeshSource:
         case SceneAuthoredComponentKind::MeshWaveletAnalysis:
+        case SceneAuthoredComponentKind::MeshComputeField:
         case SceneAuthoredComponentKind::MeshRenderStyle:
         case SceneAuthoredComponentKind::ScalarFieldSource:
         case SceneAuthoredComponentKind::VectorFieldSource:
@@ -175,6 +177,7 @@ namespace wz::scene
         uint32_t scene_import_sources = 0;
         uint32_t mesh_sources = 0;
         uint32_t mesh_wavelet_analyses = 0;
+        uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;

@@ -227,6 +227,192 @@ namespace
         wz::fs::Path resource_root() const { return root.string(); }
     };
 
+    uint32_t f32_bits(float value)
+    {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return bits;
+    }
+
+    struct MeshComputeFieldGpuFixture : public ::testing::Test
+    {
+        wz::Logger logger;
+        wz::window::WindowHandle window{};
+        wz::gpu::Device device{};
+        std::filesystem::path root;
+
+        void SetUp() override
+        {
+            root = std::filesystem::temp_directory_path()
+                / ("wozzits_mesh_compute_field_gpu_tests_"
+                    + std::to_string(::GetCurrentProcessId()));
+            std::error_code ec;
+            std::filesystem::remove_all(root, ec);
+            std::filesystem::create_directories(root / "shaders" / "compute");
+
+            // Writes channel 0 = position.y * Scale and channel 1 =
+            // position.x into the packed output buffer; the first three
+            // root constants are engine-filled.
+            std::ofstream scaled_height(
+                root / "shaders" / "compute" / "scaled_height_cs.hlsl");
+            scaled_height <<
+                "StructuredBuffer<float3> Positions : register(t0);\n"
+                "RWStructuredBuffer<float> Output : register(u0);\n"
+                "cbuffer Constants : register(b0) {\n"
+                "    uint VertexCount;\n"
+                "    uint IndexCount;\n"
+                "    uint TriangleCount;\n"
+                "    float Scale;\n"
+                "};\n"
+                "[numthreads(64, 1, 1)]\n"
+                "void main(uint3 id : SV_DispatchThreadID) {\n"
+                "    if (id.x < VertexCount) {\n"
+                "        Output[id.x] = Positions[id.x].y * Scale;\n"
+                "        Output[VertexCount + id.x] = Positions[id.x].x;\n"
+                "    }\n"
+                "}\n";
+            scaled_height.close();
+
+            std::ofstream normal_y(
+                root / "shaders" / "compute" / "normal_y_cs.hlsl");
+            normal_y <<
+                "StructuredBuffer<float3> Normals : register(t0);\n"
+                "RWStructuredBuffer<float> Output : register(u0);\n"
+                "cbuffer Constants : register(b0) {\n"
+                "    uint VertexCount;\n"
+                "    uint IndexCount;\n"
+                "    uint TriangleCount;\n"
+                "};\n"
+                "[numthreads(64, 1, 1)]\n"
+                "void main(uint3 id : SV_DispatchThreadID) {\n"
+                "    if (id.x < VertexCount) {\n"
+                "        Output[id.x] = Normals[id.x].y;\n"
+                "    }\n"
+                "}\n";
+            normal_y.close();
+
+            wz::window::WindowDesc desc{};
+            desc.title = "mesh_compute_field_gpu_test";
+            desc.width = 64;
+            desc.height = 64;
+            desc.resizable = false;
+
+            window = wz::window::create_window(desc);
+            ASSERT_TRUE(window.native);
+
+            device = wz::gpu::create_device(window);
+            ASSERT_TRUE(device.impl);
+        }
+
+        void TearDown() override
+        {
+            if (device.impl) {
+                wz::gpu::destroy_device(device);
+            }
+            if (window.native) {
+                wz::window::destroy_window(window);
+            }
+            std::error_code ec;
+            std::filesystem::remove_all(root, ec);
+        }
+
+        wz::fs::Path resource_root() const { return root.string(); }
+    };
+
+    wz::engine::assets::ComputePipelineAsset
+    create_scaled_height_compute_pipeline(
+        wz::engine::assets::EngineAssetLibrary& assets)
+    {
+        using namespace wz::engine::assets;
+
+        const ComputeShaderAsset shader =
+            assets.shaders().create_compute_shader({
+                .name = "project/scaled_height",
+                .path = "shaders/compute/scaled_height_cs.hlsl",
+                .entry = "main",
+                .target = "cs_5_0",
+            });
+        EXPECT_TRUE(shader.valid());
+        if (!shader.valid()) {
+            return {};
+        }
+
+        return assets.compute_pipelines().create_compute_pipeline({
+            .name = "project/scaled_height_pipeline",
+            .compute_shader = shader.shader,
+            .bindings = {
+                ComputeBindingDesc{
+                    .kind = ComputeBindingKind::StructuredBufferSRV,
+                    .semantic = ComputeBindingSemantic::Unknown,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(float) * 3u,
+                },
+                ComputeBindingDesc{
+                    .kind = ComputeBindingKind::StructuredBufferUAV,
+                    .semantic =
+                        ComputeBindingSemantic::MeshDerivedFieldValues,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(float),
+                },
+            },
+            .root_constant_dwords = 4,
+            .thread_group_size_x = 64,
+            .thread_group_size_y = 1,
+            .thread_group_size_z = 1,
+        });
+    }
+
+    wz::engine::assets::ComputePipelineAsset
+    create_normal_y_compute_pipeline(
+        wz::engine::assets::EngineAssetLibrary& assets)
+    {
+        using namespace wz::engine::assets;
+
+        const ComputeShaderAsset shader =
+            assets.shaders().create_compute_shader({
+                .name = "project/normal_y",
+                .path = "shaders/compute/normal_y_cs.hlsl",
+                .entry = "main",
+                .target = "cs_5_0",
+            });
+        EXPECT_TRUE(shader.valid());
+        if (!shader.valid()) {
+            return {};
+        }
+
+        return assets.compute_pipelines().create_compute_pipeline({
+            .name = "project/normal_y_pipeline",
+            .compute_shader = shader.shader,
+            .bindings = {
+                ComputeBindingDesc{
+                    .kind = ComputeBindingKind::StructuredBufferSRV,
+                    .semantic = ComputeBindingSemantic::Unknown,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(float) * 3u,
+                },
+                ComputeBindingDesc{
+                    .kind = ComputeBindingKind::StructuredBufferUAV,
+                    .semantic =
+                        ComputeBindingSemantic::MeshDerivedFieldValues,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .descriptor_count = 1,
+                    .stride_bytes = sizeof(float),
+                },
+            },
+            .root_constant_dwords = 3,
+            .thread_group_size_x = 64,
+            .thread_group_size_y = 1,
+            .thread_group_size_z = 1,
+        });
+    }
+
     wz::engine::assets::ComputePipelineAsset create_test_wavelet_pipeline(
         wz::engine::assets::EngineAssetLibrary& assets)
     {
@@ -1107,6 +1293,410 @@ TEST(MeshDerivedFieldAssetModule, MeshDomainElementCountsMatchQuad)
     EXPECT_EQ(
         mesh_domain_element_count(quad, MeshDerivedFieldDomain::Edge),
         5u);
+}
+
+TEST(MeshDerivedFieldAssetModule, ComputeDerivedFieldIdentityIncludesRecipeAndDeps)
+{
+    using namespace wz::engine::assets;
+
+    const MeshAsset mesh{
+        .output = wz::asset::AssetKey{
+            .content_hash = { 1u, 2u },
+            .schema_hash = { 3u, 4u },
+            .compiler_hash = { 5u, 6u },
+            .deps_hash = { 7u, 8u },
+        },
+    };
+    const ComputePipelineAsset pipeline{
+        .key = wz::asset::AssetKey{
+            .content_hash = { 11u, 12u },
+            .schema_hash = { 13u, 14u },
+            .compiler_hash = { 15u, 16u },
+            .deps_hash = { 17u, 18u },
+        },
+    };
+
+    const MeshComputeDerivedFieldDesc first{
+        .name = "compute_field",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2000u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+            },
+        },
+        .inputs = { MeshComputeInput::Positions },
+        .root_constants = { 42u },
+    };
+    MeshComputeDerivedFieldDesc second = first;
+
+    MeshComputeDerivedFieldDesc changed_params = first;
+    changed_params.root_constants = { 43u };
+    MeshComputeDerivedFieldDesc changed_channel = first;
+    changed_channel.channels[0].channel_id = 0x2001u;
+    MeshComputeDerivedFieldDesc changed_inputs = first;
+    changed_inputs.inputs = { MeshComputeInput::Normals };
+    MeshComputeDerivedFieldDesc changed_pipeline = first;
+    changed_pipeline.compute_pipeline.key.content_hash = { 99u, 98u };
+
+    const auto base_key =
+        make_mesh_compute_derived_field_key(mesh.output, first);
+    EXPECT_EQ(
+        base_key,
+        make_mesh_compute_derived_field_key(mesh.output, second));
+    EXPECT_NE(
+        base_key,
+        make_mesh_compute_derived_field_key(mesh.output, changed_params));
+    EXPECT_NE(
+        base_key,
+        make_mesh_compute_derived_field_key(mesh.output, changed_channel));
+    EXPECT_NE(
+        base_key,
+        make_mesh_compute_derived_field_key(mesh.output, changed_inputs));
+
+    // Swapping the kernel pipeline or the source mesh changes only deps.
+    const auto changed_pipeline_key =
+        make_mesh_compute_derived_field_key(mesh.output, changed_pipeline);
+    EXPECT_NE(base_key, changed_pipeline_key);
+    EXPECT_EQ(base_key.content_hash, changed_pipeline_key.content_hash);
+
+    wz::asset::AssetKey other_mesh_key = mesh.output;
+    other_mesh_key.content_hash = { 77u, 78u };
+    const auto changed_mesh_key =
+        make_mesh_compute_derived_field_key(other_mesh_key, first);
+    EXPECT_NE(base_key, changed_mesh_key);
+    EXPECT_EQ(base_key.content_hash, changed_mesh_key.content_hash);
+}
+
+TEST(MeshDerivedFieldAssetModule, RejectsInvalidComputeDerivedFieldDesc)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "compute_invalid_desc");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const ComputePipelineAsset pipeline{
+        .key = wz::asset::AssetKey{
+            .content_hash = { 11u, 12u },
+            .schema_hash = { 13u, 14u },
+            .compiler_hash = { 15u, 16u },
+            .deps_hash = { 17u, 18u },
+        },
+    };
+    const std::vector<MeshDerivedFieldChannelDesc> valid_channels{
+        MeshDerivedFieldChannelDesc{
+            .channel_id = 0x2000u,
+            .value_type = MeshDerivedFieldValueType::Float1,
+        },
+    };
+
+    EXPECT_FALSE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "no_pipeline",
+        .source_mesh = mesh,
+        .channels = valid_channels,
+    }).valid());
+    EXPECT_FALSE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "no_channels",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+    }).valid());
+    EXPECT_FALSE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "zero_channel_id",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+        .channels = {
+            MeshDerivedFieldChannelDesc{ .channel_id = 0u },
+        },
+    }).valid());
+    EXPECT_FALSE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "duplicate_channel_ids",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+        .channels = {
+            MeshDerivedFieldChannelDesc{ .channel_id = 0x2000u },
+            MeshDerivedFieldChannelDesc{ .channel_id = 0x2000u },
+        },
+    }).valid());
+    EXPECT_FALSE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "channel_payload_not_allowed",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2000u,
+                .values = float_values({ 1.0f }),
+            },
+        },
+    }).valid());
+
+    EXPECT_TRUE(assets.mesh_derived_fields().create_compute_derived_field({
+        .name = "valid",
+        .source_mesh = mesh,
+        .compute_pipeline = pipeline,
+        .channels = valid_channels,
+    }).valid());
+}
+
+TEST_F(MeshComputeFieldGpuFixture, ResolvesComputeDerivedFieldThroughGpuPath)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{
+        device,
+        logger,
+        resource_root(),
+        EngineAssetCacheSettings{
+            .root = resource_root(),
+            .enabled = false,
+        }};
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const ComputePipelineAsset pipeline =
+        create_scaled_height_compute_pipeline(assets);
+    ASSERT_TRUE(pipeline.valid());
+
+    constexpr float kScale = 1.5f;
+    constexpr uint32_t kHeightChannel = 0x2000u;
+    constexpr uint32_t kXChannel = 0x2001u;
+    const auto field =
+        assets.mesh_derived_fields().create_compute_derived_field({
+            .name = "cube_scaled_height",
+            .source_mesh = mesh,
+            .compute_pipeline = pipeline,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = kHeightChannel,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                },
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = kXChannel,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                },
+            },
+            .inputs = { MeshComputeInput::Positions },
+            .root_constants = { f32_bits(kScale) },
+        });
+    ASSERT_TRUE(field.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->source_mesh_key, mesh.output);
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Vertex);
+    EXPECT_EQ(data->element_count, 8u);
+    ASSERT_EQ(data->channels.size(), 2u);
+    EXPECT_EQ(data->channels[0].channel_id, kHeightChannel);
+    EXPECT_EQ(data->channels[0].byte_offset, 0u);
+    EXPECT_EQ(data->channels[0].byte_count, 8u * sizeof(float));
+    EXPECT_EQ(data->channels[1].channel_id, kXChannel);
+    EXPECT_EQ(data->channels[1].byte_offset, 8u * sizeof(float));
+    EXPECT_EQ(data->channels[1].byte_count, 8u * sizeof(float));
+
+    const auto* mesh_data =
+        assets.meshes().get_mesh_data(assets.meshes().get_mesh(mesh));
+    ASSERT_NE(mesh_data, nullptr);
+    ASSERT_EQ(mesh_data->vertex_count(), 8u);
+
+    const std::vector<float> heights =
+        read_float_channel(*data, kHeightChannel);
+    const std::vector<float> xs = read_float_channel(*data, kXChannel);
+    for (uint32_t i = 0; i < 8u; ++i) {
+        EXPECT_FLOAT_EQ(
+            heights[i],
+            mesh_data->vertices[i].position[1] * kScale);
+        EXPECT_FLOAT_EQ(xs[i], mesh_data->vertices[i].position[0]);
+    }
+
+    // Compiled channels stay GPU-resident for downstream visualization.
+    EXPECT_TRUE(
+        assets.gpu_resident_fields().find(field.output, kHeightChannel)
+            .valid());
+    EXPECT_TRUE(
+        assets.gpu_resident_fields().find(field.output, kXChannel).valid());
+}
+
+TEST_F(MeshComputeFieldGpuFixture, ComputeDerivedFieldSecondResolveIsDiskCacheHit)
+{
+    using namespace wz::engine::assets;
+
+    constexpr uint32_t kHeightChannel = 0x2000u;
+    std::vector<float> first_heights;
+    {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            resource_root(),
+            EngineAssetCacheSettings{
+                .root = resource_root(),
+                .enabled = true,
+            }};
+
+        const auto mesh = assets.meshes().create_procedural_mesh({
+            .name = "cube",
+            .kind = ProceduralMeshKind::Cube,
+        });
+        ASSERT_TRUE(mesh.valid());
+        const ComputePipelineAsset pipeline =
+            create_scaled_height_compute_pipeline(assets);
+        ASSERT_TRUE(pipeline.valid());
+
+        const auto field =
+            assets.mesh_derived_fields().create_compute_derived_field({
+                .name = "cube_scaled_height",
+                .source_mesh = mesh,
+                .compute_pipeline = pipeline,
+                .channels = {
+                    MeshDerivedFieldChannelDesc{
+                        .channel_id = kHeightChannel,
+                        .value_type = MeshDerivedFieldValueType::Float1,
+                    },
+                },
+                .inputs = { MeshComputeInput::Positions },
+                .root_constants = { f32_bits(2.0f) },
+            });
+        ASSERT_TRUE(field.valid());
+
+        ASSERT_TRUE(assets.commit());
+        ASSERT_TRUE(assets.resolve_all().ok());
+
+        const auto* data =
+            assets.mesh_derived_fields().get_mesh_derived_field_data(
+                assets.mesh_derived_fields().get_mesh_derived_field(field));
+        ASSERT_NE(data, nullptr);
+        first_heights = read_float_channel(*data, kHeightChannel);
+    }
+
+    // Demand-resolve against the disk cache with no GPU device bound: a
+    // cache hit short-circuits the compile, so no dispatch can occur and
+    // the source mesh never needs to be compiled.
+    wz::Logger cached_logger;
+    wz::gpu::Device null_device{};
+    EngineAssetLibrary cached_assets{
+        null_device,
+        cached_logger,
+        resource_root(),
+        EngineAssetCacheSettings{
+            .root = resource_root(),
+            .enabled = true,
+        }};
+
+    const auto cached_mesh = cached_assets.meshes().create_procedural_mesh({
+        .name = "cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(cached_mesh.valid());
+    const ComputePipelineAsset cached_pipeline =
+        create_scaled_height_compute_pipeline(cached_assets);
+    ASSERT_TRUE(cached_pipeline.valid());
+
+    const auto cached_field =
+        cached_assets.mesh_derived_fields().create_compute_derived_field({
+            .name = "cube_scaled_height",
+            .source_mesh = cached_mesh,
+            .compute_pipeline = cached_pipeline,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = kHeightChannel,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                },
+            },
+            .inputs = { MeshComputeInput::Positions },
+            .root_constants = { f32_bits(2.0f) },
+        });
+    ASSERT_TRUE(cached_field.valid());
+    ASSERT_TRUE(cached_assets.system().register_demand_root(
+        wz::asset::DemandRoot::GPURuntime,
+        { cached_field.output }));
+
+    ASSERT_TRUE(cached_assets.commit());
+    const auto report = cached_assets.resolve_demanded(
+        wz::asset::ResolvePolicy::CachePreferred);
+    ASSERT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 1u);
+    EXPECT_FALSE(cached_assets.meshes().get_mesh(cached_mesh).valid());
+
+    const auto* data =
+        cached_assets.mesh_derived_fields().get_mesh_derived_field_data(
+            cached_assets.mesh_derived_fields().get_mesh_derived_field(
+                cached_field));
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(read_float_channel(*data, kHeightChannel), first_heights);
+}
+
+TEST_F(MeshComputeFieldGpuFixture, ComputeDerivedFieldMissingNormalsFailsCompile)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{
+        device,
+        logger,
+        resource_root(),
+        EngineAssetCacheSettings{
+            .root = resource_root(),
+            .enabled = false,
+        }};
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* const_mesh_data =
+        assets.meshes().get_mesh_data(assets.meshes().get_mesh(mesh));
+    ASSERT_NE(const_mesh_data, nullptr);
+    const_cast<MeshData*>(const_mesh_data)->has_normals = false;
+
+    const ComputePipelineAsset pipeline =
+        create_normal_y_compute_pipeline(assets);
+    ASSERT_TRUE(pipeline.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_compute_derived_field({
+            .name = "quad_normal_y",
+            .source_mesh = mesh,
+            .compute_pipeline = pipeline,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x2000u,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                },
+            },
+            .inputs = { MeshComputeInput::Normals },
+        });
+    ASSERT_TRUE(field.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_FALSE(report.ok());
+    ASSERT_EQ(report.failures.size(), 1u);
+    EXPECT_EQ(report.failures[0].key, field.output);
+    EXPECT_FALSE(
+        assets.mesh_derived_fields().get_mesh_derived_field(field).valid());
 }
 
 TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)

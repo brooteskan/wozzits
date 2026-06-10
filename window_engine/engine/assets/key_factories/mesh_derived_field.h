@@ -81,6 +81,45 @@ namespace wz::engine::assets
         };
     }
 
+    // Identity: params + output channel layout + declared mesh inputs in
+    // content_hash; source mesh + compute pipeline in deps_hash, so editing
+    // the kernel HLSL or swapping the mesh rebuilds the field and nothing
+    // else does. Channel payload bytes are kernel output, not identity.
+    [[nodiscard]] inline wz::asset::AssetKey
+    make_mesh_compute_derived_field_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const MeshComputeDerivedFieldDesc& desc) noexcept
+    {
+        uint64_t h = kMeshComputeDerivedFieldSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.domain));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.channels.size()));
+        for (const MeshDerivedFieldChannelDesc& channel : desc.channels) {
+            h = detail::mix64(h, static_cast<uint64_t>(channel.channel_id));
+            h = detail::mix64(h, static_cast<uint64_t>(channel.value_type));
+        }
+        h = detail::mix64(h, static_cast<uint64_t>(desc.inputs.size()));
+        for (const MeshComputeInput input : desc.inputs) {
+            h = detail::mix64(h, static_cast<uint64_t>(input));
+        }
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(desc.root_constants.size()));
+        for (const uint32_t constant : desc.root_constants) {
+            h = detail::mix64(h, static_cast<uint64_t>(constant));
+        }
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kMeshComputeDerivedFieldSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kMeshComputeDerivedFieldCompilerVersion),
+            .deps_hash = detail::combine_dep_hashes(
+                detail::key_to_dep_hash(source_mesh_key),
+                detail::key_to_dep_hash(desc.compute_pipeline.key)),
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey
     make_mesh_wavelet_analysis_field_key(
         const wz::asset::AssetKey& source_mesh_key,

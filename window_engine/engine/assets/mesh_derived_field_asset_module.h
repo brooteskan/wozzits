@@ -39,6 +39,24 @@ namespace wz::engine::assets
         uint32_t channel_id = 0;
     };
 
+    // Project-authored compute kernel compiled into a cached field asset.
+    // GPU compute accelerates the compile step only; nothing here runs per
+    // frame. The dispatch root-constant layout is three engine-filled dwords
+    // (vertex_count, index_count, triangle_count) followed by the authored
+    // root_constants. channels declares the output layout only; channel
+    // payload bytes are produced by the kernel, so each
+    // MeshDerivedFieldChannelDesc::values must be empty.
+    struct MeshComputeDerivedFieldDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        ComputePipelineAsset compute_pipeline{};
+        MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Vertex;
+        std::vector<MeshDerivedFieldChannelDesc> channels;
+        std::vector<MeshComputeInput> inputs;
+        std::vector<uint32_t> root_constants;
+    };
+
     struct MeshDerivedFieldAsset
     {
         wz::asset::AssetKey output{};
@@ -74,6 +92,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_behavior_field_placeholder(
             const BehaviorFieldPlaceholderDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_compute_derived_field(
+            const MeshComputeDerivedFieldDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

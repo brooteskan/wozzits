@@ -128,6 +128,8 @@ namespace wz::engine::assets
                 node.mesh_processing.has_value();
             const bool has_mesh_wavelet_analysis =
                 node.mesh_wavelet_analysis.has_value();
+            const bool has_mesh_compute_field =
+                node.mesh_compute_field.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
             const bool has_scalar_field_source =
@@ -163,6 +165,7 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_source);
             fp.mix_value(has_mesh_processing);
             fp.mix_value(has_mesh_wavelet_analysis);
+            fp.mix_value(has_mesh_compute_field);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
@@ -332,6 +335,31 @@ namespace wz::engine::assets
                 fp.mix_value(analysis.scale_count);
                 fp.mix_value(analysis.lambda_max_estimate);
                 fp.mix_value(analysis.gamma);
+            }
+
+            if (node.mesh_compute_field) {
+                const auto& field = *node.mesh_compute_field;
+                fp.mix_value(field.enabled);
+                fp.mix_string(field.kernel_id);
+                fp.mix_string(field.hlsl_path);
+                fp.mix_string(field.entry);
+                fp.mix_string(field.target);
+                fp.mix_value(field.thread_group_size_x);
+                fp.mix_value(field.thread_group_size_y);
+                fp.mix_value(field.thread_group_size_z);
+                fp.mix_value(field.inputs.size());
+                for (const MeshComputeInput input : field.inputs) {
+                    fp.mix_value(input);
+                }
+                fp.mix_value(field.channels.size());
+                for (const auto& channel : field.channels) {
+                    fp.mix_value(channel.channel_id);
+                    fp.mix_value(channel.value_type);
+                }
+                fp.mix_value(field.params.size());
+                for (const uint32_t param : field.params) {
+                    fp.mix_value(param);
+                }
             }
 
             if (node.mesh_render_style) {

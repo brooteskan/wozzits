@@ -28,6 +28,18 @@ namespace wz::engine::assets
         Corner,
     };
 
+    // Mesh data the engine extracts and binds as compute-kernel SRV inputs.
+    // Inputs are bound in declared order at shader registers t0..tN-1,
+    // register space 0; the packed output buffer is always bound at u0.
+    enum class MeshComputeInput : uint8_t
+    {
+        Positions = 0,   // StructuredBuffer<float3>, always available
+        Normals,         // StructuredBuffer<float3>, requires has_normals
+        UV0,             // StructuredBuffer<float2>, requires has_uv0
+        Indices,         // StructuredBuffer<uint>, triangle list
+        Vertices,        // StructuredBuffer of interleaved MeshVertex
+    };
+
     enum class MeshDerivedFieldValueType : uint8_t
     {
         Float1,

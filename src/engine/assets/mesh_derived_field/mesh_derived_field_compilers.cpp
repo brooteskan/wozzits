@@ -1103,6 +1103,400 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        const char* mesh_compute_input_name(MeshComputeInput input) noexcept
+        {
+            switch (input) {
+            case MeshComputeInput::Positions: return "positions";
+            case MeshComputeInput::Normals: return "normals";
+            case MeshComputeInput::UV0: return "uv0";
+            case MeshComputeInput::Indices: return "indices";
+            case MeshComputeInput::Vertices: return "vertices";
+            }
+            return "unknown";
+        }
+
+        struct MeshComputeInputBuffer
+        {
+            std::vector<std::byte> bytes;
+            uint32_t element_count = 0;
+            uint32_t stride_bytes = 0;
+        };
+
+        bool extract_mesh_compute_input(
+            const MeshData& mesh,
+            MeshComputeInput input,
+            MeshComputeInputBuffer& out,
+            std::string& diagnostic)
+        {
+            switch (input) {
+            case MeshComputeInput::Positions: {
+                out.element_count = mesh.vertex_count();
+                out.stride_bytes = sizeof(float) * 3u;
+                out.bytes.resize(
+                    static_cast<size_t>(out.element_count)
+                    * out.stride_bytes);
+                for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+                    std::memcpy(
+                        out.bytes.data() + i * out.stride_bytes,
+                        mesh.vertices[i].position,
+                        out.stride_bytes);
+                }
+                return true;
+            }
+            case MeshComputeInput::Normals: {
+                if (!mesh.has_normals) {
+                    diagnostic = "source mesh has no normals";
+                    return false;
+                }
+                out.element_count = mesh.vertex_count();
+                out.stride_bytes = sizeof(float) * 3u;
+                out.bytes.resize(
+                    static_cast<size_t>(out.element_count)
+                    * out.stride_bytes);
+                for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+                    std::memcpy(
+                        out.bytes.data() + i * out.stride_bytes,
+                        mesh.vertices[i].normal,
+                        out.stride_bytes);
+                }
+                return true;
+            }
+            case MeshComputeInput::UV0: {
+                if (!mesh.has_uv0) {
+                    diagnostic = "source mesh has no uv0";
+                    return false;
+                }
+                out.element_count = mesh.vertex_count();
+                out.stride_bytes = sizeof(float) * 2u;
+                out.bytes.resize(
+                    static_cast<size_t>(out.element_count)
+                    * out.stride_bytes);
+                for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+                    std::memcpy(
+                        out.bytes.data() + i * out.stride_bytes,
+                        mesh.vertices[i].uv,
+                        out.stride_bytes);
+                }
+                return true;
+            }
+            case MeshComputeInput::Indices: {
+                if (mesh.indices.empty()) {
+                    diagnostic = "source mesh has no indices";
+                    return false;
+                }
+                out.element_count = mesh.index_count();
+                out.stride_bytes = sizeof(uint32_t);
+                out.bytes.resize(
+                    static_cast<size_t>(out.element_count)
+                    * out.stride_bytes);
+                std::memcpy(
+                    out.bytes.data(),
+                    mesh.indices.data(),
+                    out.bytes.size());
+                return true;
+            }
+            case MeshComputeInput::Vertices: {
+                out.element_count = mesh.vertex_count();
+                out.stride_bytes = sizeof(MeshVertex);
+                out.bytes.resize(
+                    static_cast<size_t>(out.element_count)
+                    * out.stride_bytes);
+                std::memcpy(
+                    out.bytes.data(),
+                    mesh.vertices.data(),
+                    out.bytes.size());
+                return true;
+            }
+            }
+            diagnostic = "unknown mesh compute input";
+            return false;
+        }
+
+        bool compute_derived_field_channels_valid(
+            const std::vector<MeshDerivedFieldChannelDesc>& channels)
+        {
+            if (channels.empty()) {
+                return false;
+            }
+            std::vector<uint32_t> ids;
+            ids.reserve(channels.size());
+            for (const MeshDerivedFieldChannelDesc& channel : channels) {
+                if (channel.channel_id == 0u
+                    || !channel.values.empty()
+                    || mesh_derived_field_value_stride(channel.value_type)
+                        == 0u)
+                {
+                    return false;
+                }
+                ids.push_back(channel.channel_id);
+            }
+            std::sort(ids.begin(), ids.end());
+            return std::adjacent_find(ids.begin(), ids.end()) == ids.end();
+        }
+
+        bool compile_mesh_compute_derived_field(
+            const wz::asset::AssetKey& field_key,
+            const MeshComputeDerivedFieldDesc& desc,
+            const MeshData& mesh,
+            const ComputePipelineData& pipeline_data,
+            MeshFieldComputeBackend& compute,
+            wz::Logger& logger,
+            GpuResidentFieldTable& gpu_resident_field_table,
+            MeshDerivedFieldData& out)
+        {
+            if (!mesh.valid()
+                || !desc.source_mesh.valid()
+                || !compute_derived_field_channels_valid(desc.channels))
+            {
+                logger.error("mesh compute derived field desc is invalid");
+                return false;
+            }
+            if (!compute.available()) {
+                logger.error(
+                    "mesh compute derived field requires a GPU device; "
+                    "no usable device is bound");
+                return false;
+            }
+            if (!pipeline_data.valid()
+                || pipeline_data.thread_group_size_x == 0u)
+            {
+                logger.error(
+                    "mesh compute derived field compute pipeline is invalid");
+                return false;
+            }
+
+            const uint32_t element_count =
+                mesh_domain_element_count(mesh, desc.domain);
+            if (element_count == 0u) {
+                logger.error(
+                    "mesh compute derived field element count is zero");
+                return false;
+            }
+
+            uint64_t total_bytes = 0;
+            for (const MeshDerivedFieldChannelDesc& channel : desc.channels) {
+                total_bytes +=
+                    static_cast<uint64_t>(element_count)
+                    * mesh_derived_field_value_stride(channel.value_type);
+            }
+            if (total_bytes == 0u || total_bytes > UINT32_MAX) {
+                logger.error(
+                    "mesh compute derived field output size is invalid");
+                return false;
+            }
+
+            std::vector<MeshComputeInputBuffer> inputs;
+            inputs.reserve(desc.inputs.size());
+            for (const MeshComputeInput input : desc.inputs) {
+                MeshComputeInputBuffer buffer{};
+                std::string diagnostic;
+                if (!extract_mesh_compute_input(
+                        mesh,
+                        input,
+                        buffer,
+                        diagnostic))
+                {
+                    logger.error(
+                        std::string("mesh compute derived field input '")
+                        + mesh_compute_input_name(input)
+                        + "' unavailable: " + diagnostic);
+                    return false;
+                }
+                inputs.push_back(std::move(buffer));
+            }
+
+            const wz::asset::ResourceHandle pipeline =
+                compute.create_compute_pipeline(
+                    pipeline_data,
+                    pipeline_data.compute_shader);
+            if (!pipeline.valid()) {
+                logger.error(
+                    "mesh compute derived field pipeline creation failed");
+                return false;
+            }
+
+            std::vector<wz::asset::ResourceHandle> input_buffers;
+            input_buffers.reserve(inputs.size());
+            bool buffers_ok = true;
+            for (const MeshComputeInputBuffer& input : inputs) {
+                const wz::asset::ResourceHandle buffer =
+                    compute.create_structured_buffer({
+                        .element_count = input.element_count,
+                        .stride_bytes = input.stride_bytes,
+                        .initial_data = input.bytes.data(),
+                        .initial_data_bytes =
+                            static_cast<uint64_t>(input.bytes.size()),
+                    });
+                if (!buffer.valid()) {
+                    buffers_ok = false;
+                    break;
+                }
+                input_buffers.push_back(buffer);
+            }
+
+            const uint32_t output_dword_count =
+                static_cast<uint32_t>(total_bytes / sizeof(uint32_t));
+            std::vector<uint32_t> zeroes(output_dword_count, 0u);
+            const wz::asset::ResourceHandle output_buffer =
+                buffers_ok
+                    ? compute.create_rw_structured_buffer({
+                        .element_count = output_dword_count,
+                        .stride_bytes = sizeof(uint32_t),
+                        .initial_data = zeroes.data(),
+                        .initial_data_bytes =
+                            static_cast<uint64_t>(
+                                zeroes.size() * sizeof(uint32_t)),
+                    })
+                    : wz::asset::ResourceHandle{};
+
+            const auto release_resources = [&]()
+            {
+                for (const wz::asset::ResourceHandle buffer : input_buffers) {
+                    compute.release_buffer(buffer);
+                }
+                if (output_buffer.valid()) {
+                    compute.release_buffer(output_buffer);
+                }
+                compute.release_pipeline(pipeline);
+            };
+
+            if (!buffers_ok || !output_buffer.valid()) {
+                release_resources();
+                logger.error(
+                    "mesh compute derived field buffer creation failed");
+                return false;
+            }
+
+            std::vector<uint32_t> root_constants;
+            root_constants.reserve(3u + desc.root_constants.size());
+            root_constants.push_back(mesh.vertex_count());
+            root_constants.push_back(mesh.index_count());
+            root_constants.push_back(mesh.index_count() / 3u);
+            root_constants.insert(
+                root_constants.end(),
+                desc.root_constants.begin(),
+                desc.root_constants.end());
+
+            std::vector<MeshFieldComputeBackend::DispatchBinding> bindings;
+            bindings.reserve(input_buffers.size() + 1u);
+            for (uint32_t i = 0;
+                i < static_cast<uint32_t>(input_buffers.size());
+                ++i)
+            {
+                bindings.push_back({
+                    .kind = MeshFieldComputeBackend::BindingKind
+                        ::StructuredBufferSRV,
+                    .shader_register = i,
+                    .register_space = 0,
+                    .buffer = input_buffers[i],
+                });
+            }
+            bindings.push_back({
+                .kind = MeshFieldComputeBackend::BindingKind
+                    ::StructuredBufferUAV,
+                .shader_register = 0,
+                .register_space = 0,
+                .buffer = output_buffer,
+            });
+
+            const uint32_t group_size = pipeline_data.thread_group_size_x;
+            const bool dispatched = compute.dispatch({
+                .pipeline = pipeline,
+                .bindings = bindings,
+                .root_constants = root_constants,
+                .group_count_x =
+                    (element_count + group_size - 1u) / group_size,
+                .group_count_y = 1,
+                .group_count_z = 1,
+            });
+
+            std::vector<std::byte> bytes;
+            if (dispatched) {
+                bytes = compute.readback_buffer(output_buffer);
+
+                if (bytes.size() == total_bytes) {
+                    // Register channels in the GPU-resident table while the
+                    // output is still device-resident so consumers skip the
+                    // later re-upload. Visualization sampling is Float1-only.
+                    uint64_t channel_offset = 0;
+                    for (const MeshDerivedFieldChannelDesc& channel :
+                        desc.channels)
+                    {
+                        const uint32_t stride =
+                            mesh_derived_field_value_stride(
+                                channel.value_type);
+                        if (channel.value_type
+                            == MeshDerivedFieldValueType::Float1)
+                        {
+                            const wz::asset::ResourceHandle resource =
+                                compute
+                                    .create_field_visualization_from_gpu_source(
+                                        output_buffer,
+                                        channel_offset,
+                                        element_count,
+                                        stride);
+                            if (resource.valid()) {
+                                const bool added =
+                                    gpu_resident_field_table.add(
+                                        GpuResidentFieldEntry{
+                                        .field_key = field_key,
+                                        .channel_id = channel.channel_id,
+                                        .gpu_resource = resource,
+                                    });
+                                if (!added) {
+                                    compute.release_field_visualization(
+                                        resource);
+                                }
+                            }
+                        }
+                        channel_offset +=
+                            static_cast<uint64_t>(element_count) * stride;
+                    }
+                }
+            }
+
+            release_resources();
+
+            if (!dispatched || bytes.size() != total_bytes) {
+                logger.error(
+                    "mesh compute derived field dispatch/readback failed");
+                return false;
+            }
+
+            out = MeshDerivedFieldData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = compute_mesh_topology_hash(mesh),
+                .domain = desc.domain,
+                .element_count = element_count,
+            };
+            uint32_t byte_offset = 0;
+            for (const MeshDerivedFieldChannelDesc& channel : desc.channels) {
+                const uint32_t byte_count =
+                    element_count
+                    * mesh_derived_field_value_stride(channel.value_type);
+                out.channels.push_back(MeshDerivedFieldChannel{
+                    .channel_id = channel.channel_id,
+                    .value_type = channel.value_type,
+                    .byte_offset = byte_offset,
+                    .byte_count = byte_count,
+                });
+                byte_offset += byte_count;
+            }
+            out.values = std::move(bytes);
+
+            if (!out.valid()) {
+                logger.error(
+                    "mesh compute derived field output is invalid");
+                return false;
+            }
+
+            logger.info(
+                "mesh compute derived field GPU compile complete elements="
+                + std::to_string(element_count)
+                + " channels=" + std::to_string(desc.channels.size()));
+            return true;
+        }
+
         bool cached_field_matches_source(
             const MeshDerivedFieldData& field,
             const ExplicitMeshDerivedFieldDesc& desc,
@@ -1168,6 +1562,129 @@ namespace wz::engine::assets::internal
                 && detail.value_type == MeshDerivedFieldValueType::Float1
                 && detail.byte_offset == expected_offset
                 && detail.byte_count == channel_bytes;
+        }
+
+        bool cached_compute_field_matches_source(
+            const MeshDerivedFieldData& field,
+            const MeshComputeDerivedFieldDesc& desc,
+            const MeshData& source_mesh) noexcept
+        {
+            if (!field.valid()
+                || field.source_mesh_key != desc.source_mesh.output
+                || field.source_topology_hash
+                    != compute_mesh_topology_hash(source_mesh)
+                || field.domain != desc.domain
+                || field.element_count
+                    != mesh_domain_element_count(source_mesh, desc.domain)
+                || field.channels.size() != desc.channels.size())
+            {
+                return false;
+            }
+
+            uint32_t expected_offset = 0u;
+            for (size_t i = 0; i < desc.channels.size(); ++i) {
+                const MeshDerivedFieldChannel& channel = field.channels[i];
+                const uint32_t expected_bytes =
+                    field.element_count
+                    * mesh_derived_field_value_stride(
+                        desc.channels[i].value_type);
+                if (channel.channel_id != desc.channels[i].channel_id
+                    || channel.value_type != desc.channels[i].value_type
+                    || channel.byte_offset != expected_offset
+                    || channel.byte_count != expected_bytes)
+                {
+                    return false;
+                }
+                expected_offset += expected_bytes;
+            }
+            return true;
+        }
+
+        wz::asset::AssetNode compile_mesh_compute_derived_field_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshFieldComputeBackend& mesh_field_compute,
+            MeshTable& mesh_table,
+            ComputePipelineTable& compute_pipeline_table,
+            MeshDerivedFieldTable& field_table,
+            GpuResidentFieldTable& gpu_resident_field_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<MeshComputeDerivedFieldDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 2u) {
+                logger.error(
+                    "mesh compute derived field node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error(
+                    "mesh compute derived field source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshComputeDerivedFieldDiskCacheKey,
+                    input.key,
+                    kMeshComputeDerivedFieldCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_compute_field_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn(
+                    "asset disk cache ignored stale mesh compute derived field");
+            }
+
+            const ComputePipelineData* compute_pipeline =
+                compute_pipeline_table.get(dep_handles[1]);
+            if (!compute_pipeline) {
+                logger.error(
+                    "mesh compute derived field compute pipeline dependency invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData field{};
+            if (!compile_mesh_compute_derived_field(
+                    input.key,
+                    *desc,
+                    *source_mesh,
+                    *compute_pipeline,
+                    mesh_field_compute,
+                    logger,
+                    gpu_resident_field_table,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshComputeDerivedFieldDiskCacheKey,
+                input.key,
+                kMeshComputeDerivedFieldCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
         }
 
         wz::asset::AssetNode compile_explicit_mesh_derived_field_node(
@@ -1452,6 +1969,35 @@ namespace wz::engine::assets::internal
         });
 
         registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshComputeDerivedFieldSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_field_compute,
+                &mesh_table,
+                &compute_pipeline_table,
+                &mesh_derived_field_table,
+                &gpu_resident_field_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_compute_derived_field_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_field_compute,
+                    mesh_table,
+                    compute_pipeline_table,
+                    mesh_derived_field_table,
+                    gpu_resident_field_table,
+                    cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kBehaviorFieldPlaceholderSchema,
             .output_type = kAssetTypeMeshDerivedField,
             .compile = [
@@ -1499,6 +2045,21 @@ namespace wz::engine::assets::internal
             kMeshWaveletAnalysisDiskCacheKey,
             key,
             kMeshWaveletAnalysisCompilerVersion,
+            logger,
+            field);
+    }
+
+    bool load_cached_mesh_compute_derived_field(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshDerivedFieldData& field)
+    {
+        return load_cached_mesh_derived_field_with_key(
+            cache,
+            kMeshComputeDerivedFieldDiskCacheKey,
+            key,
+            kMeshComputeDerivedFieldCompilerVersion,
             logger,
             field);
     }

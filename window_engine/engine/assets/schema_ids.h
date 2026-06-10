@@ -192,6 +192,15 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000408ull
     };
 
+    // Project-authored GPU compute kernel deriving per-mesh data offline.
+    // Dispatches the authored compute pipeline over declared mesh inputs at
+    // compile time, reads results back, and produces a disk-cached
+    // kAssetTypeMeshDerivedField. A recipe within the MeshDerivedField
+    // format, not a new asset type (see issue #150 design rule).
+    inline constexpr wz::asset::SchemaID kMeshComputeDerivedFieldSchema{
+        0xF11E'CA55'E7'000409ull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

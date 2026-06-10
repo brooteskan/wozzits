@@ -785,6 +785,98 @@ namespace wz::engine::assets
             return obj;
         }
 
+        const char* mesh_compute_input_name(MeshComputeInput input)
+        {
+            switch (input) {
+            case MeshComputeInput::Positions:
+                return "positions";
+            case MeshComputeInput::Normals:
+                return "normals";
+            case MeshComputeInput::UV0:
+                return "uv0";
+            case MeshComputeInput::Indices:
+                return "indices";
+            case MeshComputeInput::Vertices:
+                return "vertices";
+            }
+            return "positions";
+        }
+
+        const char* mesh_derived_field_value_type_name(
+            MeshDerivedFieldValueType value_type)
+        {
+            switch (value_type) {
+            case MeshDerivedFieldValueType::Float1:
+                return "float1";
+            case MeshDerivedFieldValueType::Float2:
+                return "float2";
+            case MeshDerivedFieldValueType::Float3:
+                return "float3";
+            case MeshDerivedFieldValueType::Float4:
+                return "float4";
+            case MeshDerivedFieldValueType::UInt1:
+                return "uint1";
+            }
+            return "float1";
+        }
+
+        JSONValuePtr mesh_compute_field_value(
+            const SceneMeshComputeFieldAsset& field)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(field.enabled));
+            add_member(*obj, "kernel_id", string_value(field.kernel_id));
+            add_member(*obj, "hlsl_path", string_value(field.hlsl_path));
+            add_member(*obj, "entry", string_value(field.entry));
+            add_member(*obj, "target", string_value(field.target));
+
+            auto thread_group_size = array_value();
+            thread_group_size->array_values.push_back(
+                number_value(field.thread_group_size_x));
+            thread_group_size->array_values.push_back(
+                number_value(field.thread_group_size_y));
+            thread_group_size->array_values.push_back(
+                number_value(field.thread_group_size_z));
+            add_member(
+                *obj,
+                "thread_group_size",
+                std::move(thread_group_size));
+
+            if (!field.inputs.empty()) {
+                auto inputs = array_value();
+                for (const MeshComputeInput input : field.inputs) {
+                    inputs->array_values.push_back(
+                        string_value(mesh_compute_input_name(input)));
+                }
+                add_member(*obj, "inputs", std::move(inputs));
+            }
+
+            auto channels = array_value();
+            for (const auto& channel : field.channels) {
+                auto channel_obj = object_value();
+                add_member(
+                    *channel_obj,
+                    "channel_id",
+                    number_value(channel.channel_id));
+                add_member(
+                    *channel_obj,
+                    "value_type",
+                    string_value(mesh_derived_field_value_type_name(
+                        channel.value_type)));
+                channels->array_values.push_back(std::move(channel_obj));
+            }
+            add_member(*obj, "channels", std::move(channels));
+
+            if (!field.params.empty()) {
+                auto params = array_value();
+                for (const uint32_t param : field.params) {
+                    params->array_values.push_back(number_value(param));
+                }
+                add_member(*obj, "params", std::move(params));
+            }
+            return obj;
+        }
+
         JSONValuePtr scalar_field_source_value(
             const SceneScalarFieldSourceAsset& source)
         {
@@ -1351,6 +1443,10 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_wavelet_analysis",
                     mesh_wavelet_analysis_value(
                         *node.mesh_wavelet_analysis));
+            }
+            if (node.mesh_compute_field) {
+                add_member(*obj, "mesh_compute_field",
+                    mesh_compute_field_value(*node.mesh_compute_field));
             }
             if (node.mesh_render_style) {
                 add_member(*obj, "mesh_render_style",

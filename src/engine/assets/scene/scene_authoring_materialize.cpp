@@ -317,6 +317,39 @@ namespace wz::engine::assets
                 + ":gamma:" + std::to_string(analysis->gamma);
         }
 
+        std::string mesh_compute_field_cache_key(
+            const SceneMeshComputeFieldAsset* field)
+        {
+            if (!field) {
+                return ":compute_field_none";
+            }
+            std::string key = std::string(":compute_field")
+                + (field->enabled ? ":on" : ":off")
+                + ":" + field->kernel_id
+                + ":" + field->hlsl_path
+                + ":" + field->entry
+                + ":" + field->target
+                + ":tg:" + std::to_string(field->thread_group_size_x)
+                + ":" + std::to_string(field->thread_group_size_y)
+                + ":" + std::to_string(field->thread_group_size_z);
+            key += ":inputs:" + std::to_string(field->inputs.size());
+            for (const MeshComputeInput input : field->inputs) {
+                key += ":" + std::to_string(static_cast<uint32_t>(input));
+            }
+            key += ":channels:" + std::to_string(field->channels.size());
+            for (const auto& channel : field->channels) {
+                key += ":" + std::to_string(channel.channel_id)
+                    + ":"
+                    + std::to_string(
+                        static_cast<uint32_t>(channel.value_type));
+            }
+            key += ":params:" + std::to_string(field->params.size());
+            for (const uint32_t param : field->params) {
+                key += ":" + std::to_string(param);
+            }
+            return key;
+        }
+
         std::string render_shader_cache_key(
             const SceneRenderShaderAsset* shader)
         {
@@ -546,6 +579,159 @@ namespace wz::engine::assets
 
             kernel.compute_shader_asset = shader.shader;
             kernel.compute_pipeline_asset = pipeline.key;
+            return true;
+        }
+
+        ComputeBindingDesc compute_binding_for_mesh_compute_input(
+            MeshComputeInput input,
+            uint32_t shader_register)
+        {
+            ComputeBindingDesc binding{
+                .kind = ComputeBindingKind::StructuredBufferSRV,
+                .semantic = ComputeBindingSemantic::Unknown,
+                .shader_register = shader_register,
+                .register_space = 0,
+                .descriptor_count = 1,
+                .stride_bytes = 0,
+            };
+            switch (input) {
+            case MeshComputeInput::Positions:
+            case MeshComputeInput::Normals:
+                binding.stride_bytes = sizeof(float) * 3u;
+                break;
+            case MeshComputeInput::UV0:
+                binding.stride_bytes = sizeof(float) * 2u;
+                break;
+            case MeshComputeInput::Indices:
+                binding.semantic = ComputeBindingSemantic::MeshIndices;
+                binding.stride_bytes = sizeof(uint32_t);
+                break;
+            case MeshComputeInput::Vertices:
+                binding.semantic = ComputeBindingSemantic::MeshVertices;
+                binding.stride_bytes = sizeof(MeshVertex);
+                break;
+            }
+            return binding;
+        }
+
+        // Materializes an authored mesh_compute_field component into a
+        // registered compute-derived-field asset on the node's mesh. The
+        // produced field is a first-class cached asset regardless of whether
+        // the node's render style visualizes one of its channels.
+        bool materialize_mesh_compute_field(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            std::string& error)
+        {
+            if (!node.mesh_compute_field
+                || !node.mesh_compute_field->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshComputeFieldAsset& field = *node.mesh_compute_field;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (field.kernel_id.empty()) {
+                error = "mesh compute field missing kernel_id for "
+                    + node_name;
+                return false;
+            }
+            if (field.hlsl_path.empty()) {
+                error = "mesh compute field missing hlsl_path for "
+                    + node_name;
+                return false;
+            }
+            if (field.channels.empty()) {
+                error = "mesh compute field missing channels for "
+                    + node_name;
+                return false;
+            }
+            if (!mesh.valid()) {
+                error = "mesh compute field requires a mesh for "
+                    + node_name;
+                return false;
+            }
+
+            const ComputeShaderAsset shader =
+                assets.shaders().create_compute_shader({
+                    .name = field.kernel_id,
+                    .path = field.hlsl_path,
+                    .entry = field.entry,
+                    .target = field.target,
+                });
+            if (!shader.valid()) {
+                error = "mesh compute field shader unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            std::vector<ComputeBindingDesc> bindings;
+            bindings.reserve(field.inputs.size() + 1u);
+            for (uint32_t i = 0;
+                i < static_cast<uint32_t>(field.inputs.size());
+                ++i)
+            {
+                bindings.push_back(compute_binding_for_mesh_compute_input(
+                    field.inputs[i],
+                    i));
+            }
+            bindings.push_back(ComputeBindingDesc{
+                .kind = ComputeBindingKind::StructuredBufferUAV,
+                .semantic = ComputeBindingSemantic::MeshDerivedFieldValues,
+                .shader_register = 0,
+                .register_space = 0,
+                .descriptor_count = 1,
+                .stride_bytes = sizeof(uint32_t),
+            });
+
+            // Three engine-filled dwords (vertex_count, index_count,
+            // triangle_count) precede the authored params at dispatch.
+            const ComputePipelineAsset pipeline =
+                assets.compute_pipelines().create_compute_pipeline({
+                    .name = field.kernel_id,
+                    .compute_shader = shader.shader,
+                    .bindings = std::move(bindings),
+                    .root_constant_dwords =
+                        3u + static_cast<uint32_t>(field.params.size()),
+                    .thread_group_size_x = field.thread_group_size_x,
+                    .thread_group_size_y = field.thread_group_size_y,
+                    .thread_group_size_z = field.thread_group_size_z,
+                });
+            if (!pipeline.valid()) {
+                error = "mesh compute field pipeline unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            std::vector<MeshDerivedFieldChannelDesc> channels;
+            channels.reserve(field.channels.size());
+            for (const auto& channel : field.channels) {
+                channels.push_back(MeshDerivedFieldChannelDesc{
+                    .channel_id = channel.channel_id,
+                    .value_type = channel.value_type,
+                });
+            }
+
+            const MeshDerivedFieldAsset field_asset =
+                assets.mesh_derived_fields().create_compute_derived_field({
+                    .name = node_name + "_compute_field",
+                    .source_mesh = mesh,
+                    .compute_pipeline = pipeline,
+                    .domain = MeshDerivedFieldDomain::Vertex,
+                    .channels = std::move(channels),
+                    .inputs = field.inputs,
+                    .root_constants = field.params,
+                });
+            if (!field_asset.valid()) {
+                error = "mesh compute field asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            field.field_asset = field_asset.output;
             return true;
         }
 
@@ -1687,6 +1873,7 @@ namespace wz::engine::assets
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             SceneRenderShaderAsset* render_shader,
             bool has_behavior_field_source,
+            bool has_compute_field_source,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -1701,7 +1888,8 @@ namespace wz::engine::assets
             if (effective_style.field_visualization_enabled
                 && wavelet_analysis
                 && !wavelet_analysis->enabled
-                && !has_behavior_field_source)
+                && !has_behavior_field_source
+                && !has_compute_field_source)
             {
                 effective_style.field_visualization_enabled = false;
                 effective_style.field_visualization_asset = {};
@@ -1990,6 +2178,7 @@ namespace wz::engine::assets
             const SceneMeshSourceAsset& source,
             const SceneMeshProcessingAsset* processing,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
+            const SceneMeshComputeFieldAsset* compute_field,
             SceneRenderShaderAsset* render_shader,
             bool has_behavior_field_source,
             SceneMeshRenderStyleAsset& style,
@@ -1999,6 +2188,8 @@ namespace wz::engine::assets
             MeshAsset& out_mesh,
             std::string& error)
         {
+            const bool has_compute_field_source =
+                compute_field && compute_field->enabled;
             const std::string source_key = mesh_cache_key(source, processing);
             const std::string key =
                 source_key + ":"
@@ -2007,6 +2198,7 @@ namespace wz::engine::assets
                     style.field_visualization_enabled
                         ? wavelet_analysis
                         : nullptr)
+                + mesh_compute_field_cache_key(compute_field)
                 + render_shader_cache_key(render_shader)
                 + (has_behavior_field_source
                     ? ":behavior_field" : "");
@@ -2042,6 +2234,7 @@ namespace wz::engine::assets
                     wavelet_analysis,
                     render_shader,
                     has_behavior_field_source,
+                    has_compute_field_source,
                     renderables,
                     out))
             {
@@ -2551,6 +2744,50 @@ namespace wz::engine::assets
             if (node.mesh_wavelet_analysis) {
                 node.mesh_wavelet_analysis->field_asset = {};
             }
+            if (node.mesh_compute_field) {
+                node.mesh_compute_field->field_asset = {};
+            }
+
+            const bool compute_field_source =
+                node.mesh_compute_field
+                && node.mesh_compute_field->enabled;
+            if (compute_field_source) {
+                // The compute-derived field is a first-class asset on the
+                // node's mesh, materialized whether or not a preview
+                // renderable visualizes one of its channels.
+                if (!ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_compute_field(
+                        assets,
+                        node,
+                        mesh,
+                        report.error))
+                {
+                    return report;
+                }
+                if (render_style.field_visualization_enabled
+                    && render_style.field_visualization_asset
+                        == wz::asset::AssetKey{})
+                {
+                    render_style.field_visualization_asset =
+                        node.mesh_compute_field->field_asset;
+                }
+            }
 
             if (options.create_preview_renderables && node.visible) {
                 RenderableAsset renderable{};
@@ -2562,6 +2799,9 @@ namespace wz::engine::assets
                             : nullptr,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
+                            : nullptr,
+                        node.mesh_compute_field
+                            ? &*node.mesh_compute_field
                             : nullptr,
                         node.render_shader
                             ? &*node.render_shader
@@ -2584,7 +2824,10 @@ namespace wz::engine::assets
 
                 node.renderable.reset();
                 attach_renderable_asset(node, renderable.output);
-                if (has_authored_render_style || behavior_field_source) {
+                if (has_authored_render_style
+                    || behavior_field_source
+                    || compute_field_source)
+                {
                     node.mesh_render_style = render_style;
                 }
                 append_unique_renderable(report, renderable.output);

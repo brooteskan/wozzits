@@ -367,6 +367,39 @@ namespace wz::engine::assets
         wz::asset::AssetKey field_asset{};
     };
 
+    struct SceneMeshComputeFieldChannelAsset
+    {
+        uint32_t channel_id = 0;
+        MeshDerivedFieldValueType value_type =
+            MeshDerivedFieldValueType::Float1;
+    };
+
+    // Editor/import recipe compiling a project-authored compute kernel into
+    // a cached MeshDerivedField asset on the node's mesh. The kernel
+    // reference reuses the compute_kernel authoring shape
+    // (hlsl_path/entry/target/thread_group_size); declared inputs are
+    // engine-extracted mesh data bound as SRVs in declared order, and params
+    // are authored root-constant dwords appended after the engine-filled
+    // vertex_count/index_count/triangle_count constants.
+    struct SceneMeshComputeFieldAsset
+    {
+        bool enabled = true;
+        std::string kernel_id;
+        std::string hlsl_path;
+        std::string entry = "main";
+        std::string target = "cs_5_0";
+        uint32_t thread_group_size_x = 1;
+        uint32_t thread_group_size_y = 1;
+        uint32_t thread_group_size_z = 1;
+        std::vector<MeshComputeInput> inputs;
+        std::vector<SceneMeshComputeFieldChannelAsset> channels;
+        std::vector<uint32_t> params;
+
+        // Materialized asset key derived from the authored recipe.
+        // Not an authored JSON field.
+        wz::asset::AssetKey field_asset{};
+    };
+
     enum class SceneTerrainRenderPath : uint8_t
     {
         Auto = 0,
@@ -719,6 +752,7 @@ namespace wz::engine::assets
         std::optional<SceneMeshSourceAsset> mesh_source;
         std::optional<SceneMeshProcessingAsset> mesh_processing;
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
+        std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
@@ -795,6 +829,7 @@ namespace wz::engine::assets
         uint32_t mesh_sources = 0;
         uint32_t mesh_processing = 0;
         uint32_t mesh_wavelet_analyses = 0;
+        uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
@@ -1033,6 +1068,13 @@ namespace wz::engine::assets
         node.mesh_wavelet_analysis = analysis;
     }
 
+    inline void attach_mesh_compute_field(
+        SceneNodeAsset& node,
+        SceneMeshComputeFieldAsset field = {})
+    {
+        node.mesh_compute_field = std::move(field);
+    }
+
     inline void attach_scalar_field_source(
         SceneNodeAsset& node,
         SceneScalarFieldSourceAsset source = {})
@@ -1153,6 +1195,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_wavelet_analysis) {
             out.push_back(Kind::MeshWaveletAnalysis);
+        }
+        if (node.mesh_compute_field) {
+            out.push_back(Kind::MeshComputeField);
         }
         if (node.mesh_render_style) {
             out.push_back(Kind::MeshRenderStyle);
@@ -1384,6 +1429,7 @@ namespace wz::engine::assets
             || node.mesh_source.has_value()
             || node.mesh_processing.has_value()
             || node.mesh_wavelet_analysis.has_value()
+            || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
@@ -1452,6 +1498,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;
+                ++out.total_recipes;
+            }
+            if (node.mesh_compute_field) {
+                ++out.mesh_compute_fields;
                 ++out.total_recipes;
             }
             if (node.mesh_render_style) {
@@ -1570,6 +1620,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;
+            }
+            if (node.mesh_compute_field) {
+                ++out.mesh_compute_fields;
             }
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;

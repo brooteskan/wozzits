@@ -98,6 +98,16 @@ namespace wz::engine::assets
                 internal::kMeshWaveletAnalysisDiskCacheKey.seed_lo,
                 internal::kMeshWaveletAnalysisDiskCacheKey.seed_hi);
         }
+        if (schema == kMeshComputeDerivedFieldSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            return internal::disk_cache_asset_exists(
+                cache_settings_,
+                internal::kMeshComputeDerivedFieldDiskCacheKey.subdirectory,
+                key,
+                internal::kMeshComputeDerivedFieldDiskCacheKey.seed_lo,
+                internal::kMeshComputeDerivedFieldDiskCacheKey.seed_hi);
+        }
         if (schema == kTerrainVisualProxySchema
             && type == kAssetTypeTerrainVisualProxy)
         {
@@ -200,6 +210,25 @@ namespace wz::engine::assets
         {
             MeshDerivedFieldData data{};
             if (!internal::load_cached_mesh_wavelet_analysis_field(
+                    cache_settings_,
+                    key,
+                    logger_,
+                    data))
+            {
+                return std::nullopt;
+            }
+            wz::asset::ResourceHandle handle =
+                mesh_derived_fields_.add(std::move(data));
+            return handle.valid()
+                ? std::optional<wz::asset::ResourceHandle>{ handle }
+                : std::nullopt;
+        }
+
+        if (schema == kMeshComputeDerivedFieldSchema
+            && type == kAssetTypeMeshDerivedField)
+        {
+            MeshDerivedFieldData data{};
+            if (!internal::load_cached_mesh_compute_derived_field(
                     cache_settings_,
                     key,
                     logger_,

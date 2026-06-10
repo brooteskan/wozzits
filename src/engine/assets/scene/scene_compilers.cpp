@@ -226,6 +226,48 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<MeshComputeInput> parse_mesh_compute_input(
+            std::string_view text)
+        {
+            if (text == "positions") {
+                return MeshComputeInput::Positions;
+            }
+            if (text == "normals") {
+                return MeshComputeInput::Normals;
+            }
+            if (text == "uv0") {
+                return MeshComputeInput::UV0;
+            }
+            if (text == "indices") {
+                return MeshComputeInput::Indices;
+            }
+            if (text == "vertices") {
+                return MeshComputeInput::Vertices;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<MeshDerivedFieldValueType>
+        parse_mesh_derived_field_value_type(std::string_view text)
+        {
+            if (text == "float1") {
+                return MeshDerivedFieldValueType::Float1;
+            }
+            if (text == "float2") {
+                return MeshDerivedFieldValueType::Float2;
+            }
+            if (text == "float3") {
+                return MeshDerivedFieldValueType::Float3;
+            }
+            if (text == "float4") {
+                return MeshDerivedFieldValueType::Float4;
+            }
+            if (text == "uint1") {
+                return MeshDerivedFieldValueType::UInt1;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -1676,6 +1718,206 @@ namespace wz::engine::assets::internal
                         (std::max)(0.0001, *gamma));
                 }
                 node.mesh_wavelet_analysis = analysis;
+            }
+
+            const auto* mcf = find_member(node_val, "mesh_compute_field");
+            if (mcf && mcf->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshComputeFieldAsset component{};
+
+                if (auto enabled = read_bool(*mcf, "enabled")) {
+                    component.enabled = *enabled;
+                }
+
+                auto kernel_id = read_string(*mcf, "kernel_id");
+                if (!kernel_id || kernel_id->empty()) {
+                    logger.error("mesh_compute_field on node '" + node.id
+                        + "' missing kernel_id");
+                    return std::nullopt;
+                }
+                component.kernel_id = std::string(*kernel_id);
+
+                auto hlsl_path = read_string(*mcf, "hlsl_path");
+                if (!hlsl_path || hlsl_path->empty()) {
+                    logger.error("mesh_compute_field on node '" + node.id
+                        + "' missing hlsl_path");
+                    return std::nullopt;
+                }
+                component.hlsl_path = std::string(*hlsl_path);
+
+                if (auto entry = read_string(*mcf, "entry")) {
+                    component.entry = std::string(*entry);
+                }
+                if (component.entry.empty()) {
+                    logger.error("mesh_compute_field on node '" + node.id
+                        + "' has empty entry");
+                    return std::nullopt;
+                }
+
+                if (auto target = read_string(*mcf, "target")) {
+                    component.target = std::string(*target);
+                }
+                if (component.target.empty()) {
+                    logger.error("mesh_compute_field on node '" + node.id
+                        + "' has empty target");
+                    return std::nullopt;
+                }
+
+                const auto* group =
+                    find_member(*mcf, "thread_group_size");
+                if (group) {
+                    if (group->kind != wz::json::JSONValueKind::Array
+                        || group->array_values.size() < 3)
+                    {
+                        logger.error("mesh_compute_field on node '" + node.id
+                            + "' has invalid thread_group_size");
+                        return std::nullopt;
+                    }
+                    uint32_t* out[3]{
+                        &component.thread_group_size_x,
+                        &component.thread_group_size_y,
+                        &component.thread_group_size_z,
+                    };
+                    for (size_t i = 0; i < 3; ++i) {
+                        const auto& element = group->array_values[i];
+                        if (!element
+                            || element->kind
+                                != wz::json::JSONValueKind::Number
+                            || !std::isfinite(element->number_value)
+                            || element->number_value <= 0.0
+                            || element->number_value > 4294967295.0
+                            || static_cast<double>(
+                                static_cast<uint32_t>(element->number_value))
+                                != element->number_value)
+                        {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id
+                                + "' has invalid thread_group_size");
+                            return std::nullopt;
+                        }
+                        *out[i] =
+                            static_cast<uint32_t>(element->number_value);
+                    }
+                }
+
+                const auto* inputs = find_member(*mcf, "inputs");
+                if (inputs) {
+                    if (inputs->kind != wz::json::JSONValueKind::Array) {
+                        logger.error("mesh_compute_field on node '" + node.id
+                            + "' has invalid inputs");
+                        return std::nullopt;
+                    }
+                    for (const auto& input_value : inputs->array_values) {
+                        if (!input_value
+                            || input_value->kind
+                                != wz::json::JSONValueKind::String)
+                        {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id + "' has invalid input");
+                            return std::nullopt;
+                        }
+                        auto parsed_input = parse_mesh_compute_input(
+                            input_value->string_value);
+                        if (!parsed_input) {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id + "' has unknown input '"
+                                + input_value->string_value + "'");
+                            return std::nullopt;
+                        }
+                        component.inputs.push_back(*parsed_input);
+                    }
+                }
+
+                const auto* channels = find_member(*mcf, "channels");
+                if (!channels
+                    || channels->kind != wz::json::JSONValueKind::Array
+                    || channels->array_values.empty())
+                {
+                    logger.error("mesh_compute_field on node '" + node.id
+                        + "' missing channels");
+                    return std::nullopt;
+                }
+                for (const auto& channel_value : channels->array_values) {
+                    if (!channel_value
+                        || channel_value->kind
+                            != wz::json::JSONValueKind::Object)
+                    {
+                        logger.error("mesh_compute_field on node '" + node.id
+                            + "' has invalid channel");
+                        return std::nullopt;
+                    }
+
+                    SceneMeshComputeFieldChannelAsset channel{};
+                    auto channel_id =
+                        read_number(*channel_value, "channel_id");
+                    if (!channel_id
+                        || !std::isfinite(*channel_id)
+                        || *channel_id <= 0.0
+                        || *channel_id > 4294967295.0
+                        || static_cast<double>(
+                            static_cast<uint32_t>(*channel_id))
+                            != *channel_id)
+                    {
+                        logger.error("mesh_compute_field on node '" + node.id
+                            + "' has invalid channel_id");
+                        return std::nullopt;
+                    }
+                    channel.channel_id =
+                        static_cast<uint32_t>(*channel_id);
+
+                    if (auto value_type =
+                            read_string(*channel_value, "value_type"))
+                    {
+                        auto parsed_value_type =
+                            parse_mesh_derived_field_value_type(*value_type);
+                        if (!parsed_value_type) {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id + "' has unknown value_type '"
+                                + std::string(*value_type) + "'");
+                            return std::nullopt;
+                        }
+                        channel.value_type = *parsed_value_type;
+                    }
+
+                    for (const auto& existing : component.channels) {
+                        if (existing.channel_id == channel.channel_id) {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id + "' has duplicate channel_id");
+                            return std::nullopt;
+                        }
+                    }
+                    component.channels.push_back(channel);
+                }
+
+                const auto* params = find_member(*mcf, "params");
+                if (params) {
+                    if (params->kind != wz::json::JSONValueKind::Array) {
+                        logger.error("mesh_compute_field on node '" + node.id
+                            + "' has invalid params");
+                        return std::nullopt;
+                    }
+                    for (const auto& param_value : params->array_values) {
+                        if (!param_value
+                            || param_value->kind
+                                != wz::json::JSONValueKind::Number
+                            || !std::isfinite(param_value->number_value)
+                            || param_value->number_value < 0.0
+                            || param_value->number_value > 4294967295.0
+                            || static_cast<double>(
+                                static_cast<uint32_t>(
+                                    param_value->number_value))
+                                != param_value->number_value)
+                        {
+                            logger.error("mesh_compute_field on node '"
+                                + node.id + "' has invalid param");
+                            return std::nullopt;
+                        }
+                        component.params.push_back(
+                            static_cast<uint32_t>(
+                                param_value->number_value));
+                    }
+                }
+
+                node.mesh_compute_field = std::move(component);
             }
 
             const auto* sfs = find_member(node_val, "scalar_field_source");

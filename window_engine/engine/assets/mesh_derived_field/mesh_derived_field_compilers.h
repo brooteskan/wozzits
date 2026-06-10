@@ -33,4 +33,10 @@ namespace wz::engine::assets::internal
         const wz::asset::AssetKey& key,
         wz::Logger& logger,
         MeshDerivedFieldData& field);
+
+    bool load_cached_mesh_compute_derived_field(
+        const EngineAssetCacheSettings& cache,
+        const wz::asset::AssetKey& key,
+        wz::Logger& logger,
+        MeshDerivedFieldData& field);
 }
