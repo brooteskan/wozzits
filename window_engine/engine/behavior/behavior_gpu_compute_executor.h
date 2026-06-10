@@ -43,6 +43,12 @@ namespace wz::engine::behavior
         std::string name;
         wz::gpu::GPUHandle pipeline{};
         uint32_t root_constant_dwords = 0u;
+        // Authored compute thread group size; used to derive the dispatch
+        // group count when a job leaves group_count_x at 0 and the element
+        // count was resolved by the engine (mesh-bound ports).
+        uint32_t thread_group_size_x = 0u;
+        uint32_t thread_group_size_y = 0u;
+        uint32_t thread_group_size_z = 0u;
         std::vector<BehaviorGpuKernelPortBinding> ports;
     };
 
@@ -64,12 +70,25 @@ namespace wz::engine::behavior
         std::vector<std::byte> bytes;
     };
 
+    // A mesh-field publish that was requested by an output port (via
+    // WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION) but could not be
+    // completed. The dispatch itself still succeeds; callers should surface
+    // `reason` so misconfigured jobs are not silently invisible.
+    struct BehaviorGpuPublishFailure
+    {
+        WzGpuWorkId work{};
+        std::string port_name;
+        std::string reason;
+    };
+
     struct BehaviorGpuDispatchReport
     {
         uint32_t submitted = 0u;
         uint32_t dispatched = 0u;
         uint32_t failed = 0u;
+        uint32_t published_mesh_fields = 0u;
         std::vector<BehaviorGpuOutputReadback> readbacks;
+        std::vector<BehaviorGpuPublishFailure> publish_failures;
         std::vector<WzGpuWorkId> completed_work;
         std::vector<WzGpuWorkId> failed_work;
     };
@@ -81,6 +100,13 @@ namespace wz::engine::behavior
 
     BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
         wz::gpu::Device& device,
+        std::span<const BehaviorGpuComputeJob> jobs,
+        const BehaviorGpuKernelLibrary& library);
+
+    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+        wz::gpu::Device& device,
+        wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::SceneInstance& scene,
         std::span<const BehaviorGpuComputeJob> jobs,
         const BehaviorGpuKernelLibrary& library);
 

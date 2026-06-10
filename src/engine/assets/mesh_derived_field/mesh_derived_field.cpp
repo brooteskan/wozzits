@@ -226,6 +226,32 @@ namespace wz::engine::assets
         return true;
     }
 
+    bool GpuResidentFieldTable::replace(
+        wz::gpu::Device& device,
+        GpuResidentFieldEntry entry)
+    {
+        if (!entry.valid()) {
+            return false;
+        }
+
+        for (GpuResidentFieldEntry& existing : entries_) {
+            if (existing.field_key == entry.field_key
+                && existing.channel_id == entry.channel_id)
+            {
+                if (existing.gpu_resource.valid()) {
+                    wz::gpu::release_mesh_field_visualization(
+                        device,
+                        existing.gpu_resource);
+                }
+                existing.gpu_resource = entry.gpu_resource;
+                return true;
+            }
+        }
+
+        entries_.push_back(entry);
+        return true;
+    }
+
     wz::gpu::GPUHandle GpuResidentFieldTable::find(
         wz::asset::AssetKey field_key,
         uint32_t channel_id) const

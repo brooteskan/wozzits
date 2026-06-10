@@ -87,11 +87,13 @@ namespace wz::engine::behavior
             const WzGpuComputeJobDesc& desc,
             WzGpuWorkId* out_work)
         {
+            // group_count_x == 0 requests an engine-derived dispatch size
+            // from mesh-resolved port element counts (see
+            // wz_gpu_set_groups_from_mesh).
             if (!desc.kernel || desc.kernel[0] == '\0'
                 || !desc.ports
                 || desc.port_count == 0u
                 || desc.port_count > 64u
-                || desc.group_count_x == 0u
                 || desc.group_count_y == 0u
                 || desc.group_count_z == 0u)
             {
@@ -116,13 +118,21 @@ namespace wz::engine::behavior
                 {
                     return false;
                 }
-                if (src.kind == WZ_GPU_PORT_STRUCTURED_BUFFER
-                    && (src.element_count == 0u
+                if (src.kind == WZ_GPU_PORT_STRUCTURED_BUFFER) {
+                    // Mesh-resolved ports may leave element_count at 0; the
+                    // executor fills it from the entity's mesh.
+                    const bool engine_sized =
+                        src.resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS
+                        || src.resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION;
+                    if ((src.element_count == 0u && !engine_sized)
                         || src.stride_bytes == 0u
                         || (!src.initial_data
-                            && src.initial_data_bytes != 0u)))
-                {
-                    return false;
+                            && src.initial_data_bytes != 0u))
+                    {
+                        return false;
+                    }
                 }
 
                 BehaviorGpuPortValue port{};

@@ -652,6 +652,16 @@ namespace wz::engine::assets
         wz::asset::AssetKey compute_pipeline_asset{};
     };
 
+    struct SceneDescriptorBindingAsset
+    {
+        std::string kind;
+        std::string visibility;
+        std::string semantic;
+        uint32_t shader_register = 0;
+        uint32_t register_space = 0;
+        uint32_t descriptor_count = 1;
+    };
+
     struct SceneRenderShaderAsset
     {
         std::string program_id;
@@ -666,6 +676,7 @@ namespace wz::engine::assets
         std::string blend = "opaque";
         std::string depth = "test_write";
         std::string raster = "solid_cull_none";
+        std::vector<SceneDescriptorBindingAsset> descriptor_bindings;
         wz::asset::AssetKey render_program_asset{};
     };
 

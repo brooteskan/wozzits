@@ -12,6 +12,7 @@ namespace
         uint8_t submitted = 0;
         uint8_t completed = 0;
         WzGpuWorkId work{};
+        uint32_t frame_count = 0u;
     };
 
     void gpu_init(
@@ -32,6 +33,53 @@ namespace
         }
     }
 
+    void submit_landscape_field(
+        const WzBehaviorFrameFacts* facts,
+        GpuTrialState* state)
+    {
+        if (!state) {
+            return;
+        }
+
+        WzGpuJob job{};
+        if (!wz_gpu_begin(&job, "project/landscape_field")) {
+            return;
+        }
+
+        // The engine resolves everything mesh-shaped: vertex positions are
+        // bound at t0, the output buffer is sized to the target field's
+        // element count, the vertex-count constant is filled from the mesh,
+        // and the dispatch group count is derived from the kernel's thread
+        // group size. No vertex counts are authored anywhere.
+        wz_gpu_set_groups_from_mesh(&job);
+        wz_gpu_set_request_tag(&job, 2001u);
+
+        wz_gpu_set_structured_input_mesh_positions(&job, "positions");
+
+        // Output: per-vertex float, published as mesh field visualization.
+        // Channel 0 tells the executor to use the target's default
+        // channel_id (field_visualization_channel_id from mesh_render_style);
+        // element count 0 lets the engine size the buffer.
+        wz_gpu_set_structured_output_mesh_field(&job, "output", 0u, 0u);
+
+        // Root constants: vertex_count (u32, engine-filled), phase (f32),
+        // frequency (f32), bias (f32).
+        wz_gpu_set_u32_mesh_vertex_count(&job, "vertex_count");
+
+        const float phase =
+            facts->timing
+                ? static_cast<float>(facts->timing->elapsed_seconds) * 0.8f
+                : 0.0f;
+        wz_gpu_set_f32(&job, "phase", phase);
+        wz_gpu_set_f32(&job, "frequency", 47.0f);
+        wz_gpu_set_f32(&job, "bias", 0.5f);
+
+        if (wz_gpu_submit(facts, &job, &state->work)) {
+            state->submitted = 1u;
+            state->completed = 0u;
+        }
+    }
+
     void on_event(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
@@ -43,62 +91,35 @@ namespace
 
         switch (wz_event_kind(event)) {
         case WZ_EVENT_GPU_COMPUTE_REQUEST: {
-            auto* state = static_cast<GpuTrialState*>(wz_get_instance_state(facts));
-
-
-            const uint32_t input[] = { 1u, 2u, 3u, 4u };
-
-            WzGpuJob job{};
-            if (!wz_gpu_begin(&job, "debug/multiply_u32")) {
-                break;
-            }
-
-            wz_gpu_set_groups(&job, 1u, 1u, 1u);
-            wz_gpu_set_request_tag(&job, 1001u);
-            wz_gpu_set_structured_input(&job, "input", 4u, sizeof(uint32_t), input, sizeof(input));
-            wz_gpu_set_structured_output(&job, "output", 4u, sizeof(uint32_t));
-            wz_gpu_set_u32(&job, "factor", 7u);
-            wz_gpu_set_u32(&job, "count", 4u);
-
-            if (wz_gpu_submit(facts, &job, &state->work)) {
-                state->submitted = 1u;
-                state->completed = 0u;
-                wz_log_infof(facts, "gpu submitted work=%u", state->work.value);
-            }
+            auto* state = static_cast<GpuTrialState*>(
+                wz_get_instance_state(facts));
+            submit_landscape_field(facts, state);
             break;
         }
 
         case WZ_EVENT_GPU_COMPUTE_COMPLETED: {
-            auto* state = static_cast<GpuTrialState*>(wz_get_instance_state(facts));
-            if (state && !state->completed) {
-                uint32_t output[4]{};
-                const uint8_t read_ok =
-                    wz_gpu_compute_read_output_u32(facts, "output", 0u, &output[0])
-                    && wz_gpu_compute_read_output_u32(facts, "output", 1u, &output[1])
-                    && wz_gpu_compute_read_output_u32(facts, "output", 2u, &output[2])
-                    && wz_gpu_compute_read_output_u32(facts, "output", 3u, &output[3]);
-                wz_log_infof(
-                    facts,
-                    "gpu completed work=%u tag=%llu outputs=%u values=%s %u %u %u %u",
-                    wz_gpu_compute_event_work(facts).value,
-                    (unsigned long long)wz_gpu_compute_event_request_tag(facts),
-                    wz_gpu_compute_event_output_count(facts),
-                    read_ok ? "ok" : "missing",
-                    output[0],
-                    output[1],
-                    output[2],
-                    output[3]);
+            auto* state = static_cast<GpuTrialState*>(
+                wz_get_instance_state(facts));
+            if (state) {
                 state->completed = 1u;
                 state->submitted = 0u;
-            }
+                state->frame_count++;
 
+                if (state->frame_count % 120u == 0u) {
+                    wz_log_infof(
+                        facts,
+                        "landscape_field: %u dispatches completed",
+                        state->frame_count);
+                }
+
+                // Re-submit for the next frame to animate the field.
+                submit_landscape_field(facts, state);
+            }
             break;
         }
 
         case WZ_EVENT_GPU_COMPUTE_FAILED: {
-            auto* state = static_cast<GpuTrialState*>(wz_get_instance_state(facts));
-
-            wz_log_info(facts,"behavior: WZ_EVENT_GPU_COMPUTE_FAILED");
+            wz_log_info(facts, "landscape_field: dispatch failed");
             break;
         }
         default:
@@ -129,12 +150,16 @@ extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(
         return 0u;
     }
 
-    WZ_GPU_KERNEL(multiply_kernel, "debug/multiply_u32")
-    WZ_GPU_STRUCTURED_INPUT(multiply_kernel, "input", uint32_t);
-    WZ_GPU_STRUCTURED_OUTPUT(multiply_kernel, "output", uint32_t);
-    WZ_GPU_U32(multiply_kernel, "factor");
-    WZ_GPU_U32(multiply_kernel, "count");
-    WZ_GPU_KERNEL_END(api, multiply_kernel);
+    struct WzFloat3 { float x, y, z; };
+
+    WZ_GPU_KERNEL(landscape_kernel, "project/landscape_field")
+    WZ_GPU_STRUCTURED_INPUT(landscape_kernel, "positions", WzFloat3);
+    WZ_GPU_STRUCTURED_OUTPUT(landscape_kernel, "output", float);
+    WZ_GPU_U32(landscape_kernel, "vertex_count");
+    WZ_GPU_F32(landscape_kernel, "phase");
+    WZ_GPU_F32(landscape_kernel, "frequency");
+    WZ_GPU_F32(landscape_kernel, "bias");
+    WZ_GPU_KERNEL_END(api, landscape_kernel);
 
     return 1u;
 }

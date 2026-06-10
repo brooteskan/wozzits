@@ -790,12 +790,9 @@ namespace wz::render::backend::dx12
         bool bind_mesh_field_heatmap_resource(
             wz::gpu::Device& device,
             ID3D12GraphicsCommandList* cmdList,
-            const wz::engine::rendering::ResolvedRenderableResource& resolved)
+            const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            uint32_t root_parameter_index)
         {
-            if (!is_mesh_field_heatmap_program(resolved.program)) {
-                return true;
-            }
-
             const auto* field =
                 wz::gpu::dx12::internal::get_mesh_field_visualization(
                     device,
@@ -812,8 +809,66 @@ namespace wz::render::backend::dx12
 
             cmdList->SetDescriptorHeaps(1, &srv_heap);
             cmdList->SetGraphicsRootDescriptorTable(
-                1,
+                root_parameter_index,
                 field->srv_table.gpu_at(0));
+            return true;
+        }
+
+        bool bind_builtin_mesh_field_heatmap_resource(
+            wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved)
+        {
+            if (!is_mesh_field_heatmap_program(resolved.program)) {
+                return true;
+            }
+
+            return bind_mesh_field_heatmap_resource(
+                device,
+                cmdList,
+                resolved,
+                1u);
+        }
+
+        bool bind_custom_render_program_descriptor_resources(
+            wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            const wz::engine::rendering::RenderProgramPipelineCache*
+                render_program_cache)
+        {
+            if (!render_program_cache || !resolved.render_program.valid()) {
+                return true;
+            }
+
+            const auto* layout =
+                render_program_cache->get_binding_layout(
+                    resolved.render_program);
+            if (!layout) {
+                return false;
+            }
+
+            for (const auto& descriptor : layout->descriptors) {
+                switch (descriptor.semantic) {
+                case wz::engine::assets::DescriptorSemantic
+                    ::MeshFieldVisualization:
+                    if (descriptor.descriptor_table_offset != 0u) {
+                        return false;
+                    }
+                    if (!bind_mesh_field_heatmap_resource(
+                            device,
+                            cmdList,
+                            resolved,
+                            descriptor.root_parameter_index))
+                    {
+                        return false;
+                    }
+                    break;
+                default:
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -977,7 +1032,16 @@ namespace wz::render::backend::dx12
                     root_constant_count_for_program(resolved->program),
                     constants,
                     0);
-                if (!bind_mesh_field_heatmap_resource(
+                if (!bind_custom_render_program_descriptor_resources(
+                        device,
+                        cmdList,
+                        *resolved,
+                        render_program_cache))
+                {
+                    continue;
+                }
+                if (!resolved->render_program.valid()
+                    && !bind_builtin_mesh_field_heatmap_resource(
                         device,
                         cmdList,
                         *resolved))
@@ -1557,7 +1621,7 @@ namespace wz::render::backend::dx12
                 root_constant_count_for_program(resolved->program),
                 constants,
                 0);
-            if (!bind_mesh_field_heatmap_resource(
+            if (!bind_builtin_mesh_field_heatmap_resource(
                     device,
                     cmdList,
                     *resolved))
@@ -1747,7 +1811,16 @@ namespace wz::render::backend::dx12
                 root_constant_count_for_program(resolved->program),
                 constants,
                 0);
-            if (!bind_mesh_field_heatmap_resource(
+            if (!bind_custom_render_program_descriptor_resources(
+                    device,
+                    cmdList,
+                    *resolved,
+                    &render_program_cache))
+            {
+                continue;
+            }
+            if (!resolved->render_program.valid()
+                && !bind_builtin_mesh_field_heatmap_resource(
                     device,
                     cmdList,
                     *resolved))

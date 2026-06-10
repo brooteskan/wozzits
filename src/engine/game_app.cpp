@@ -124,6 +124,7 @@ namespace wz::app
             wz::engine::FrameStorage* frame = nullptr;
             const wz::engine::FrameContext* fctx = nullptr;
             wz::gpu::Device* device = nullptr;
+            wz::engine::assets::EngineAssetLibrary* assets = nullptr;
             wz::engine::assets::SceneInstance* scene = nullptr;
             const wz::engine::behavior::BehaviorRegistry* registry = nullptr;
             const wz::engine::behavior::BehaviorGpuKernelLibrary*
@@ -924,7 +925,14 @@ namespace wz::app
                 && !data->frame->behavior_gpu_compute.jobs.empty())
             {
                 const auto report =
-                    wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
+                    data->assets && data->scene
+                    ? wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
+                        *data->device,
+                        *data->assets,
+                        *data->scene,
+                        data->frame->behavior_gpu_compute.jobs,
+                        *data->gpu_kernels)
+                    : wz::engine::behavior::dispatch_behavior_gpu_compute_jobs(
                         *data->device,
                         data->frame->behavior_gpu_compute.jobs,
                         *data->gpu_kernels);
@@ -1409,6 +1417,7 @@ namespace wz::app
             .frame = &app.frame,
             .fctx = &fctx,
             .device = &app.ctx.device,
+            .assets = app.ctx.assets.get(),
             .scene =
                 app.debug_object.collision_scene_valid
                 ? &app.debug_object.collision_scene

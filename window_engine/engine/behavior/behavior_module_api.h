@@ -191,6 +191,23 @@ static inline uint8_t wz_gpu_set_groups(
     return 1u;
 }
 
+/*
+ * Request that the engine derive the dispatch group count from the kernel's
+ * authored thread group size and the element count of engine-resolved mesh
+ * ports (vertex positions input, mesh field output, vertex count constant).
+ * Only meaningful for jobs that use at least one such port.
+ */
+static inline uint8_t wz_gpu_set_groups_from_mesh(WzGpuJob* job)
+{
+    if (!job) {
+        return 0u;
+    }
+    job->desc.group_count_x = 0u;
+    job->desc.group_count_y = 1u;
+    job->desc.group_count_z = 1u;
+    return 1u;
+}
+
 static inline uint8_t wz_gpu_set_request_tag(
     WzGpuJob* job,
     uint64_t request_tag)
@@ -273,6 +290,84 @@ static inline uint8_t wz_gpu_set_structured_output(
     }
     port->element_count = element_count;
     port->stride_bytes = stride_bytes;
+    return 1u;
+}
+
+/*
+ * Declare a structured float output that the engine publishes as the
+ * entity's GPU-resident mesh field visualization buffer after dispatch.
+ * channel_id 0 selects the entity's authored visualization channel.
+ * element_count 0 lets the engine size the buffer from the target field's
+ * element count (the mesh vertex count for vertex-domain fields).
+ *
+ * Published outputs are NOT read back into the completion event — the data
+ * stays GPU-resident for rendering. If the publish fails (wrong element
+ * count, no visualization target on the entity, ...), the readback happens
+ * as usual and the failure reason is surfaced in the dispatch report.
+ */
+static inline uint8_t wz_gpu_set_structured_output_mesh_field(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t element_count,
+    uint32_t channel_id)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_OUTPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->element_count = element_count;
+    port->stride_bytes = sizeof(float);
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION;
+    port->u32[0] = channel_id;
+    return 1u;
+}
+
+/*
+ * Declare a structured input the engine fills with the entity's mesh vertex
+ * positions (float3 per vertex, stride 12). The plugin uploads nothing; the
+ * element count is the mesh vertex count, resolved through the entity's
+ * mesh field visualization target.
+ */
+static inline uint8_t wz_gpu_set_structured_input_mesh_positions(
+    WzGpuJob* job,
+    const char* name)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->stride_bytes = 3u * sizeof(float);
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS;
+    return 1u;
+}
+
+/*
+ * Declare a u32 root-constant port the engine fills with the entity's mesh
+ * vertex count (resolved through the entity's mesh field visualization
+ * target). Use this instead of authoring the vertex count in behavior
+ * config.
+ */
+static inline uint8_t wz_gpu_set_u32_mesh_vertex_count(
+    WzGpuJob* job,
+    const char* name)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_U32,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT;
     return 1u;
 }
 

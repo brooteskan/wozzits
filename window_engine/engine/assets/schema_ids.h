@@ -184,6 +184,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000407ull
     };
 
+    // Behavior field placeholder. Creates a zeroed single-channel
+    // vertex-domain MeshDerivedField whose element_count is discovered
+    // from the source mesh at compile time. Used when a behavior compute
+    // kernel publishes mesh field data without wavelet analysis.
+    inline constexpr wz::asset::SchemaID kBehaviorFieldPlaceholderSchema{
+        0xF11E'CA55'E7'000408ull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

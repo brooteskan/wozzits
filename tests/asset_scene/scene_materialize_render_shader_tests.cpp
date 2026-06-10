@@ -1,5 +1,6 @@
 #include "scene_authoring_materialize_test_support.h"
 
+#include <engine/rendering/render_program_pipeline_cache.h>
 #include <window/window2.h>
 
 namespace
@@ -39,11 +40,13 @@ namespace
                     "    float3 pos : POSITION;\n"
                     "    float3 normal : NORMAL;\n"
                     "    float2 uv : TEXCOORD0;\n"
+                    "    uint vertex_id : SV_VertexID;\n"
                     "};\n"
                     "struct VSOut {\n"
                     "    float4 pos : SV_Position;\n"
                     "    float3 normal : NORMAL;\n"
                     "    float2 uv : TEXCOORD0;\n"
+                    "    nointerpolation uint vertex_id : TEXCOORD1;\n"
                     "};\n"
                     "VSOut main(VSIn input) {\n"
                     "    VSOut output;\n"
@@ -51,6 +54,7 @@ namespace
                     "    output.pos = mul(ViewProj, world_pos);\n"
                     "    output.normal = input.normal;\n"
                     "    output.uv = input.uv;\n"
+                    "    output.vertex_id = input.vertex_id;\n"
                     "    return output;\n"
                     "}\n"),
                 wz::fs::FileError::None);
@@ -62,10 +66,29 @@ namespace
                     "    float4 pos : SV_Position;\n"
                     "    float3 normal : NORMAL;\n"
                     "    float2 uv : TEXCOORD0;\n"
+                    "    nointerpolation uint vertex_id : TEXCOORD1;\n"
                     "};\n"
                     "float4 main(PSIn input) : SV_Target {\n"
                     "    const float shade = saturate(input.normal.y * 0.5 + 0.5);\n"
                     "    return float4(input.uv.x, shade, input.uv.y, 1.0);\n"
+                    "}\n"),
+                wz::fs::FileError::None);
+
+            ASSERT_EQ(
+                wz::fs::write_file_text(
+                    wz::fs::join(
+                        root,
+                        "shaders/render/custom_mesh_field_ps.hlsl"),
+                    "StructuredBuffer<float> MeshFieldValues : register(t0);\n"
+                    "struct PSIn {\n"
+                    "    float4 pos : SV_Position;\n"
+                    "    float3 normal : NORMAL;\n"
+                    "    float2 uv : TEXCOORD0;\n"
+                    "    nointerpolation uint vertex_id : TEXCOORD1;\n"
+                    "};\n"
+                    "float4 main(PSIn input) : SV_Target {\n"
+                    "    const float value = saturate(MeshFieldValues[input.vertex_id]);\n"
+                    "    return float4(value, input.uv.x, 1.0 - value, 1.0);\n"
                     "}\n"),
                 wz::fs::FileError::None);
 
@@ -264,6 +287,15 @@ TEST_F(
     EXPECT_TRUE(program_data->descriptor_bindings.empty());
     EXPECT_TRUE(program_data->vertex_shader.valid());
     EXPECT_TRUE(program_data->pixel_shader.valid());
+
+    SceneAssetData rebuilt_scene = *parsed_scene;
+    const auto rebuilt_report =
+        materialize_scene_authoring_components(rebuilt_scene, assets);
+    ASSERT_TRUE(rebuilt_report.ok) << rebuilt_report.error;
+    ASSERT_TRUE(rebuilt_scene.nodes[0].render_shader.has_value());
+    EXPECT_EQ(
+        rebuilt_scene.nodes[0].render_shader->render_program_asset,
+        scene.nodes[0].render_shader->render_program_asset);
 }
 
 TEST_F(
@@ -301,7 +333,15 @@ TEST_F(
     node.render_shader = SceneRenderShaderAsset{
         .program_id = "mesh/custom_surface_with_field",
         .vertex_hlsl_path = "shaders/render/custom_mesh_vs.hlsl",
-        .pixel_hlsl_path = "shaders/render/custom_mesh_ps.hlsl",
+        .pixel_hlsl_path = "shaders/render/custom_mesh_field_ps.hlsl",
+        .descriptor_bindings = {{
+            .kind = "structured_buffer_srv",
+            .visibility = "pixel",
+            .semantic = "mesh_field_visualization",
+            .shader_register = 0,
+            .register_space = 0,
+            .descriptor_count = 1,
+        }},
     };
     scene.nodes.push_back(std::move(node));
 
@@ -349,4 +389,77 @@ TEST_F(
     EXPECT_EQ(
         program_data->input_layout,
         InputLayoutKind::MeshPositionNormalUV);
+    ASSERT_EQ(program_data->descriptor_bindings.size(), 1u);
+    EXPECT_EQ(
+        program_data->descriptor_bindings[0].kind,
+        DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(
+        program_data->descriptor_bindings[0].visibility,
+        ShaderVisibility::Pixel);
+    EXPECT_EQ(
+        program_data->descriptor_bindings[0].semantic,
+        DescriptorSemantic::MeshFieldVisualization);
+    EXPECT_EQ(program_data->descriptor_bindings[0].shader_register, 0u);
+    EXPECT_EQ(program_data->descriptor_bindings[0].register_space, 0u);
+    EXPECT_EQ(program_data->descriptor_bindings[0].descriptor_count, 1u);
+
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    ASSERT_TRUE(
+        pipeline_cache.realize(
+            device,
+            assets.render_programs().table(),
+            renderable_data->render_program));
+    const auto* layout =
+        pipeline_cache.get_binding_layout(renderable_data->render_program);
+    ASSERT_NE(layout, nullptr);
+    ASSERT_EQ(layout->root_constants.size(), 1u);
+    EXPECT_EQ(layout->root_constants[0].root_parameter_index, 0u);
+    ASSERT_EQ(layout->desc_tables.size(), 1u);
+    EXPECT_EQ(layout->desc_tables[0].root_parameter_index, 1u);
+    EXPECT_EQ(layout->desc_tables[0].heap_start_slot, 0u);
+    EXPECT_EQ(layout->desc_tables[0].slot_count, 1u);
+    ASSERT_EQ(layout->descriptors.size(), 1u);
+    EXPECT_EQ(
+        layout->descriptors[0].semantic,
+        DescriptorSemantic::MeshFieldVisualization);
+    EXPECT_EQ(layout->descriptors[0].root_parameter_index, 1u);
+    EXPECT_EQ(layout->descriptors[0].descriptor_table_offset, 0u);
+}
+
+TEST_F(
+    SceneRenderShaderMaterializeGpuFixture,
+    MeshRenderShaderFieldDescriptorRequiresEnabledFieldVisualization)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "render_shader_field_visualization_reject";
+
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.render_shader = SceneRenderShaderAsset{
+        .program_id = "mesh/custom_surface_with_field",
+        .vertex_hlsl_path = "shaders/render/custom_mesh_vs.hlsl",
+        .pixel_hlsl_path = "shaders/render/custom_mesh_field_ps.hlsl",
+        .descriptor_bindings = {{
+            .kind = "structured_buffer_srv",
+            .visibility = "pixel",
+            .semantic = "mesh_field_visualization",
+            .shader_register = 0,
+            .register_space = 0,
+            .descriptor_count = 1,
+        }},
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    EXPECT_FALSE(report.ok);
+    EXPECT_NE(
+        report.error.find("field visualization"),
+        std::string::npos);
 }

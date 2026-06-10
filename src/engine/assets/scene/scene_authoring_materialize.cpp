@@ -323,7 +323,7 @@ namespace wz::engine::assets
             if (!shader) {
                 return ":render_shader_default";
             }
-            return std::string(":render_shader:")
+            std::string key = std::string(":render_shader:")
                 + shader->program_id
                 + ":vs:" + shader->vertex_hlsl_path
                 + ":" + shader->vertex_entry
@@ -336,6 +336,17 @@ namespace wz::engine::assets
                 + ":blend:" + shader->blend
                 + ":depth:" + shader->depth
                 + ":raster:" + shader->raster;
+            key += ":descriptors:"
+                + std::to_string(shader->descriptor_bindings.size());
+            for (const auto& binding : shader->descriptor_bindings) {
+                key += ":" + binding.kind
+                    + ":" + binding.visibility
+                    + ":" + binding.semantic
+                    + ":t" + std::to_string(binding.shader_register)
+                    + ":space" + std::to_string(binding.register_space)
+                    + ":count" + std::to_string(binding.descriptor_count);
+            }
+            return key;
         }
 
         ComputePipelineAsset create_builtin_mesh_wavelet_pipeline(
@@ -555,6 +566,142 @@ namespace wz::engine::assets
             return false;
         }
 
+        std::optional<DescriptorKind> parse_render_descriptor_kind(
+            std::string_view value) noexcept
+        {
+            if (value == "structured_buffer_srv") {
+                return DescriptorKind::StructuredBufferSRV;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<ShaderVisibility> parse_render_descriptor_visibility(
+            std::string_view value) noexcept
+        {
+            if (value == "all") {
+                return ShaderVisibility::All;
+            }
+            if (value == "vertex") {
+                return ShaderVisibility::Vertex;
+            }
+            if (value == "pixel") {
+                return ShaderVisibility::Pixel;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<DescriptorSemantic> parse_render_descriptor_semantic(
+            std::string_view value) noexcept
+        {
+            if (value == "mesh_field_visualization") {
+                return DescriptorSemantic::MeshFieldVisualization;
+            }
+            return std::nullopt;
+        }
+
+        bool render_shader_requests_mesh_field(const SceneNodeAsset& node)
+        {
+            if (!node.render_shader) {
+                return false;
+            }
+            return std::any_of(
+                node.render_shader->descriptor_bindings.begin(),
+                node.render_shader->descriptor_bindings.end(),
+                [](const SceneDescriptorBindingAsset& binding)
+                {
+                    return binding.semantic == "mesh_field_visualization";
+                });
+        }
+
+        // A node is a behavior mesh-field source when a compute kernel is
+        // present and the author signalled field-visualization intent: either
+        // the render shader binds the mesh_field_visualization semantic or the
+        // authored render style enables field visualization. Compute kernels
+        // without that intent must not grow render styles or field assets.
+        bool node_has_behavior_field_source(const SceneNodeAsset& node)
+        {
+            if (!node.compute_kernel) {
+                return false;
+            }
+            return render_shader_requests_mesh_field(node)
+                || (node.mesh_render_style
+                    && node.mesh_render_style->field_visualization_enabled);
+        }
+
+        bool convert_render_shader_descriptor_bindings(
+            const SceneRenderShaderAsset& shader,
+            const SceneNodeAsset& node,
+            const std::string& node_name,
+            std::vector<DescriptorBinding>& out,
+            std::string& error)
+        {
+            out.clear();
+            out.reserve(shader.descriptor_bindings.size());
+
+            for (const auto& binding : shader.descriptor_bindings) {
+                const auto kind =
+                    parse_render_descriptor_kind(binding.kind);
+                if (!kind.has_value()) {
+                    error = "render shader descriptor kind unsupported for "
+                        + node_name + ": " + binding.kind;
+                    return false;
+                }
+
+                const auto visibility =
+                    parse_render_descriptor_visibility(binding.visibility);
+                if (!visibility.has_value()) {
+                    error =
+                        "render shader descriptor visibility unsupported for "
+                        + node_name + ": " + binding.visibility;
+                    return false;
+                }
+
+                const auto semantic =
+                    parse_render_descriptor_semantic(binding.semantic);
+                if (!semantic.has_value()) {
+                    error =
+                        "render shader descriptor semantic unsupported for "
+                        + node_name + ": " + binding.semantic;
+                    return false;
+                }
+
+                if (binding.descriptor_count != 1u) {
+                    error =
+                        "render shader descriptor_count unsupported for "
+                        + node_name + ": expected 1";
+                    return false;
+                }
+
+                if (*semantic == DescriptorSemantic::MeshFieldVisualization) {
+                    const bool has_field_viz =
+                        node.mesh_render_style
+                        && node.mesh_render_style
+                            ->field_visualization_enabled;
+                    const bool has_behavior_field =
+                        node.compute_kernel.has_value();
+                    if (!has_field_viz && !has_behavior_field) {
+                        error =
+                            "render shader descriptor semantic requires "
+                            "mesh_render_style field visualization or "
+                            "compute_kernel for "
+                            + node_name + ": " + binding.semantic;
+                        return false;
+                    }
+                }
+
+                out.push_back(DescriptorBinding{
+                    .kind = *kind,
+                    .visibility = *visibility,
+                    .semantic = *semantic,
+                    .shader_register = binding.shader_register,
+                    .register_space = binding.register_space,
+                    .descriptor_count = binding.descriptor_count,
+                });
+            }
+
+            return true;
+        }
+
         bool materialize_render_shader(
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
@@ -618,6 +765,17 @@ namespace wz::engine::assets
                 return false;
             }
 
+            std::vector<DescriptorBinding> descriptor_bindings;
+            if (!convert_render_shader_descriptor_bindings(
+                    shader,
+                    node,
+                    node_name,
+                    descriptor_bindings,
+                    error))
+            {
+                return false;
+            }
+
             const ShaderPairAsset shader_pair =
                 assets.shaders().create_shader_pair({
                     .name = shader.program_id,
@@ -653,7 +811,7 @@ namespace wz::engine::assets
                         .register_space = 0,
                         .value_count = 40,
                     }},
-                    .descriptor_bindings = {},
+                    .descriptor_bindings = std::move(descriptor_bindings),
                 });
             if (!program.valid()) {
                 error = "render program unavailable for " + node_name;
@@ -1528,6 +1686,7 @@ namespace wz::engine::assets
             SceneMeshRenderStyleAsset& style,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             SceneRenderShaderAsset* render_shader,
+            bool has_behavior_field_source,
             RenderableCache& renderables,
             RenderableAsset& out)
         {
@@ -1541,7 +1700,8 @@ namespace wz::engine::assets
             SceneMeshRenderStyleAsset effective_style = style;
             if (effective_style.field_visualization_enabled
                 && wavelet_analysis
-                && !wavelet_analysis->enabled)
+                && !wavelet_analysis->enabled
+                && !has_behavior_field_source)
             {
                 effective_style.field_visualization_enabled = false;
                 effective_style.field_visualization_asset = {};
@@ -1570,21 +1730,41 @@ namespace wz::engine::assets
                 && effective_style.field_visualization_asset
                     == wz::asset::AssetKey{})
             {
-                const SceneMeshWaveletAnalysisAsset analysis =
-                    wavelet_analysis ? *wavelet_analysis
-                                     : SceneMeshWaveletAnalysisAsset{};
-                const ComputePipelineAsset wavelet_pipeline =
-                    create_builtin_mesh_wavelet_pipeline(assets);
-                MeshDerivedFieldAsset field_asset =
-                    assets.mesh_derived_fields().create_wavelet_analysis({
-                        .name = name + "_wavelet_field",
-                        .source_mesh = mesh,
-                        .compute_pipeline = wavelet_pipeline,
-                        .scale_count = analysis.scale_count,
-                        .lambda_max_estimate =
-                            analysis.lambda_max_estimate,
-                        .gamma = analysis.gamma,
-                    });
+                const bool use_wavelet =
+                    !has_behavior_field_source
+                    || (wavelet_analysis && wavelet_analysis->enabled);
+
+                MeshDerivedFieldAsset field_asset{};
+                if (use_wavelet) {
+                    const SceneMeshWaveletAnalysisAsset analysis =
+                        wavelet_analysis ? *wavelet_analysis
+                                         : SceneMeshWaveletAnalysisAsset{};
+                    const ComputePipelineAsset wavelet_pipeline =
+                        create_builtin_mesh_wavelet_pipeline(assets);
+                    field_asset =
+                        assets.mesh_derived_fields().create_wavelet_analysis({
+                            .name = name + "_wavelet_field",
+                            .source_mesh = mesh,
+                            .compute_pipeline = wavelet_pipeline,
+                            .scale_count = analysis.scale_count,
+                            .lambda_max_estimate =
+                                analysis.lambda_max_estimate,
+                            .gamma = analysis.gamma,
+                        });
+                }
+                else {
+                    field_asset =
+                        assets.mesh_derived_fields()
+                            .create_behavior_field_placeholder({
+                                .name = name + "_behavior_field",
+                                .source_mesh = mesh,
+                                .domain = MeshDerivedFieldDomain::Vertex,
+                                .channel_id =
+                                    effective_style
+                                        .field_visualization_channel_id,
+                            });
+                }
+
                 if (!field_asset.valid()) {
                     return false;
                 }
@@ -1811,6 +1991,7 @@ namespace wz::engine::assets
             const SceneMeshProcessingAsset* processing,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             SceneRenderShaderAsset* render_shader,
+            bool has_behavior_field_source,
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
@@ -1826,7 +2007,9 @@ namespace wz::engine::assets
                     style.field_visualization_enabled
                         ? wavelet_analysis
                         : nullptr)
-                + render_shader_cache_key(render_shader);
+                + render_shader_cache_key(render_shader)
+                + (has_behavior_field_source
+                    ? ":behavior_field" : "");
             if (const auto found = renderables.find(key);
                 found != renderables.end())
             {
@@ -1858,6 +2041,7 @@ namespace wz::engine::assets
                     style,
                     wavelet_analysis,
                     render_shader,
+                    has_behavior_field_source,
                     renderables,
                     out))
             {
@@ -2357,6 +2541,13 @@ namespace wz::engine::assets
                 render_style.depth_test = true;
                 render_style.depth_write = true;
             }
+            const bool behavior_field_source =
+                node_has_behavior_field_source(node);
+            if (behavior_field_source
+                && !render_style.field_visualization_enabled)
+            {
+                render_style.field_visualization_enabled = true;
+            }
             if (node.mesh_wavelet_analysis) {
                 node.mesh_wavelet_analysis->field_asset = {};
             }
@@ -2375,6 +2566,7 @@ namespace wz::engine::assets
                         node.render_shader
                             ? &*node.render_shader
                             : nullptr,
+                        behavior_field_source,
                         render_style,
                         renderables,
                         meshes,
@@ -2392,7 +2584,7 @@ namespace wz::engine::assets
 
                 node.renderable.reset();
                 attach_renderable_asset(node, renderable.output);
-                if (has_authored_render_style) {
+                if (has_authored_render_style || behavior_field_source) {
                     node.mesh_render_style = render_style;
                 }
                 append_unique_renderable(report, renderable.output);

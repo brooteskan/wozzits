@@ -35,7 +35,17 @@ TEST(SceneAssetModule, RenderShaderComponentRoundTripsThroughSceneJSON)
         "input_layout": "mesh_position_normal_uv",
         "blend": "opaque",
         "depth": "test_write",
-        "raster": "solid_cull_none"
+        "raster": "solid_cull_none",
+        "descriptor_bindings": [
+          {
+            "kind": "structured_buffer_srv",
+            "visibility": "pixel",
+            "semantic": "mesh_field_visualization",
+            "shader_register": 0,
+            "register_space": 0,
+            "descriptor_count": 1
+          }
+        ]
       }
     }
   ]
@@ -76,6 +86,15 @@ TEST(SceneAssetModule, RenderShaderComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(shader.blend, "opaque");
     EXPECT_EQ(shader.depth, "test_write");
     EXPECT_EQ(shader.raster, "solid_cull_none");
+    ASSERT_EQ(shader.descriptor_bindings.size(), 1u);
+    EXPECT_EQ(shader.descriptor_bindings[0].kind, "structured_buffer_srv");
+    EXPECT_EQ(shader.descriptor_bindings[0].visibility, "pixel");
+    EXPECT_EQ(
+        shader.descriptor_bindings[0].semantic,
+        "mesh_field_visualization");
+    EXPECT_EQ(shader.descriptor_bindings[0].shader_register, 0u);
+    EXPECT_EQ(shader.descriptor_bindings[0].register_space, 0u);
+    EXPECT_EQ(shader.descriptor_bindings[0].descriptor_count, 1u);
 
     const auto components = authored_components_for_node(node);
     EXPECT_EQ(std::count(
@@ -111,6 +130,10 @@ TEST(SceneAssetModule, RenderShaderComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"pixel_hlsl_path\""), std::string::npos);
     EXPECT_NE(exported.find("\"binding_model\""), std::string::npos);
     EXPECT_NE(exported.find("\"solid_cull_none\""), std::string::npos);
+    EXPECT_NE(exported.find("\"descriptor_bindings\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"mesh_field_visualization\""),
+        std::string::npos);
 
     const wz::fs::Path reparse_root =
         wz::fs::join(
@@ -155,6 +178,14 @@ TEST(SceneAssetModule, RenderShaderComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(
         reparsed_scene_data->nodes[0].render_shader->raster,
         "solid_cull_none");
+    ASSERT_EQ(
+        reparsed_scene_data->nodes[0].render_shader->descriptor_bindings
+            .size(),
+        1u);
+    EXPECT_EQ(
+        reparsed_scene_data->nodes[0].render_shader->descriptor_bindings[0]
+            .semantic,
+        "mesh_field_visualization");
 }
 
 TEST(SceneAssetModule, RenderShaderDefaultsApplyWhenFieldsOmitted)

@@ -1,6 +1,8 @@
 #include <engine/behavior/behavior_gpu_compute_executor.h>
 
 #include <engine/assets/compute_pipeline/hlsl_binding_extract.h>
+#include <engine/assets/scene/scene_instance.h>
+#include <gpu/mesh_field_visualization.h>
 #include <file/filesystem.h>
 
 #include <algorithm>
@@ -93,6 +95,238 @@ namespace wz::engine::behavior
             if (error) {
                 *error = std::move(message);
             }
+        }
+
+        struct MeshFieldPublishTarget
+        {
+            wz::asset::AssetKey field_asset{};
+            uint32_t channel_id = 0u;
+            uint32_t element_count = 0u;
+
+            bool valid() const noexcept
+            {
+                return field_asset != wz::asset::AssetKey{}
+                    && channel_id != 0u
+                    && element_count != 0u;
+            }
+        };
+
+        struct BehaviorGpuPublishContext
+        {
+            wz::engine::assets::EngineAssetLibrary* assets = nullptr;
+            const wz::engine::assets::SceneInstance* scene = nullptr;
+        };
+
+        MeshFieldPublishTarget find_mesh_field_publish_target(
+            const BehaviorGpuPublishContext* context,
+            const BehaviorGpuComputeJob& job,
+            uint32_t channel_override,
+            std::string& failure)
+        {
+            using wz::engine::assets::MeshDerivedFieldAsset;
+
+            if (!context || !context->assets || !context->scene) {
+                failure = "no publish context (scene-aware dispatch overload "
+                    "required)";
+                return {};
+            }
+
+            bool saw_entity_target = false;
+            for (const auto& target :
+                context->scene->mesh_field_visualization_targets)
+            {
+                if (target.node != job.entity) {
+                    continue;
+                }
+                saw_entity_target = true;
+
+                const uint32_t channel_id =
+                    channel_override != 0u
+                        ? channel_override
+                        : target.component.channel_id;
+                const MeshDerivedFieldAsset field_asset{
+                    .output = target.component.field_asset,
+                };
+                const auto field_handle =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field(field_asset);
+                const auto* field =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field_data(field_handle);
+                if (!field || !field->valid()) {
+                    failure = "target mesh derived field is not resolved";
+                    continue;
+                }
+                if (field->domain
+                    != wz::engine::assets::MeshDerivedFieldDomain::Vertex)
+                {
+                    failure = "target mesh derived field is not vertex "
+                        "domain";
+                    continue;
+                }
+
+                const auto it = std::find_if(
+                    field->channels.begin(),
+                    field->channels.end(),
+                    [channel_id](const auto& channel)
+                    {
+                        return channel.channel_id == channel_id;
+                    });
+                if (it == field->channels.end()
+                    || it->value_type
+                        != wz::engine::assets
+                            ::MeshDerivedFieldValueType::Float1)
+                {
+                    failure = "target field has no Float1 channel "
+                        + std::to_string(channel_id);
+                    continue;
+                }
+
+                failure.clear();
+                return MeshFieldPublishTarget{
+                    .field_asset = target.component.field_asset,
+                    .channel_id = channel_id,
+                    .element_count = field->element_count,
+                };
+            }
+
+            if (!saw_entity_target) {
+                failure = "entity has no mesh field visualization target";
+            }
+            return {};
+        }
+
+        // Resolve the mesh backing the job's entity through its mesh field
+        // visualization target (the target field records its source mesh).
+        // Used to fill engine-owned mesh data ports.
+        const wz::engine::assets::MeshData* find_entity_mesh_data(
+            const BehaviorGpuPublishContext* context,
+            const BehaviorGpuComputeJob& job)
+        {
+            using wz::engine::assets::MeshDerivedFieldAsset;
+
+            if (!context || !context->assets || !context->scene) {
+                return nullptr;
+            }
+
+            for (const auto& target :
+                context->scene->mesh_field_visualization_targets)
+            {
+                if (target.node != job.entity) {
+                    continue;
+                }
+
+                const MeshDerivedFieldAsset field_asset{
+                    .output = target.component.field_asset,
+                };
+                const auto field_handle =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field(field_asset);
+                const auto* field =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field_data(field_handle);
+                if (!field || !field->valid()) {
+                    continue;
+                }
+
+                const wz::engine::assets::MeshAsset mesh_asset{
+                    .output = field->source_mesh_key,
+                };
+                const auto mesh_handle =
+                    context->assets->meshes().get_mesh(mesh_asset);
+                const auto* mesh =
+                    context->assets->meshes().get_mesh_data(mesh_handle);
+                if (mesh && mesh->valid()) {
+                    return mesh;
+                }
+            }
+
+            return nullptr;
+        }
+
+        // Publish one flagged output buffer as the resident mesh field for
+        // the job's entity. Prefers refreshing the existing resident
+        // resource in place (which keeps handles captured by resolved
+        // renderables valid); falls back to creating a new resource for the
+        // first publish. Returns false and fills `failure` on any mismatch.
+        bool publish_mesh_field_output(
+            wz::gpu::Device& device,
+            const BehaviorGpuPublishContext* context,
+            const BehaviorGpuComputeJob& job,
+            uint32_t channel_override,
+            wz::gpu::GPUHandle output_buffer,
+            uint32_t element_count,
+            uint32_t stride_bytes,
+            std::string& failure)
+        {
+            const MeshFieldPublishTarget target =
+                find_mesh_field_publish_target(
+                    context,
+                    job,
+                    channel_override,
+                    failure);
+            if (!target.valid()) {
+                if (failure.empty()) {
+                    failure = "no usable publish target";
+                }
+                return false;
+            }
+            if (stride_bytes != sizeof(float)) {
+                failure = "output stride must be sizeof(float), got "
+                    + std::to_string(stride_bytes);
+                return false;
+            }
+            if (element_count != target.element_count) {
+                failure = "output element count "
+                    + std::to_string(element_count)
+                    + " does not match field element count "
+                    + std::to_string(target.element_count);
+                return false;
+            }
+
+            auto& resident_fields = context->assets->gpu_resident_fields();
+            const wz::gpu::GPUHandle existing =
+                resident_fields.find(target.field_asset, target.channel_id);
+            if (existing.valid()
+                && wz::gpu::update_mesh_field_visualization_from_gpu_source(
+                    device,
+                    existing,
+                    output_buffer,
+                    0u,
+                    element_count,
+                    stride_bytes))
+            {
+                return true;
+            }
+
+            const wz::gpu::GPUHandle mesh_field =
+                wz::gpu::create_mesh_field_visualization_from_gpu_source(
+                    device,
+                    output_buffer,
+                    0u,
+                    element_count,
+                    stride_bytes);
+            if (!mesh_field.valid()) {
+                failure = "failed to create mesh field visualization from "
+                    "output buffer";
+                return false;
+            }
+
+            if (!resident_fields.replace(
+                    device,
+                    wz::engine::assets::GpuResidentFieldEntry{
+                        .field_key = target.field_asset,
+                        .channel_id = target.channel_id,
+                        .gpu_resource = mesh_field,
+                    }))
+            {
+                wz::gpu::release_mesh_field_visualization(
+                    device,
+                    mesh_field);
+                failure = "failed to register resident mesh field";
+                return false;
+            }
+            return true;
         }
 
         WzGpuPortKind behavior_port_kind(
@@ -332,10 +566,13 @@ namespace wz::engine::behavior
         return find_kernel(kernels, name);
     }
 
-    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+    namespace
+    {
+        BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs_impl(
         wz::gpu::Device& device,
         std::span<const BehaviorGpuComputeJob> jobs,
-        std::span<const BehaviorGpuKernelBinding> kernels)
+        std::span<const BehaviorGpuKernelBinding> kernels,
+        const BehaviorGpuPublishContext* publish_context)
     {
         BehaviorGpuDispatchReport report{};
         report.submitted = static_cast<uint32_t>(jobs.size());
@@ -364,9 +601,16 @@ namespace wz::engine::behavior
                 WzGpuPortKind kind = WZ_GPU_PORT_NONE;
                 uint32_t element_count = 0u;
                 uint32_t stride_bytes = 0u;
+                WzGpuResourceRef resource{};
+                uint32_t u32[4]{};
                 wz::gpu::GPUHandle buffer{};
             };
             std::vector<OutputBuffer> output_buffers;
+
+            // Largest element count the engine resolved for mesh-bound
+            // ports; used to derive the dispatch group count when the job
+            // leaves it at 0.
+            uint32_t engine_resolved_elements = 0u;
 
             for (const BehaviorGpuKernelPortBinding& binding :
                 kernel->ports)
@@ -381,8 +625,30 @@ namespace wz::engine::behavior
                 if (binding.target
                     == BehaviorGpuKernelPortTarget::RootConstant)
                 {
+                    BehaviorGpuPortValue constant_port = *port;
+                    if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT)
+                    {
+                        const auto* mesh =
+                            find_entity_mesh_data(publish_context, job);
+                        if (!mesh) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "mesh vertex count unavailable: "
+                                    "entity has no resolvable mesh field "
+                                    "visualization target",
+                            });
+                            ok = false;
+                            break;
+                        }
+                        constant_port.u32[0] = mesh->vertex_count();
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            mesh->vertex_count());
+                    }
                     ok = write_root_constant(
-                        *port,
+                        constant_port,
                         binding,
                         root_constants);
                     if (!ok) {
@@ -392,33 +658,109 @@ namespace wz::engine::behavior
                 }
 
                 if (port->kind != WZ_GPU_PORT_STRUCTURED_BUFFER
-                    || port->element_count == 0u
                     || port->stride_bytes == 0u)
                 {
                     ok = false;
                     break;
                 }
 
+                uint32_t element_count = port->element_count;
                 wz::gpu::GPUHandle buffer{};
                 if (port->direction == WZ_GPU_PORT_INPUT) {
-                    if (port->initial_data.empty()) {
+                    if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS)
+                    {
+                        const auto* mesh =
+                            find_entity_mesh_data(publish_context, job);
+                        if (!mesh
+                            || port->stride_bytes != 3u * sizeof(float))
+                        {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = !mesh
+                                    ? "mesh vertex positions unavailable: "
+                                      "entity has no resolvable mesh field "
+                                      "visualization target"
+                                    : "mesh vertex position port stride "
+                                      "must be 12 bytes (float3)",
+                            });
+                            ok = false;
+                            break;
+                        }
+
+                        std::vector<float> positions;
+                        positions.reserve(mesh->vertices.size() * 3u);
+                        for (const auto& vertex : mesh->vertices) {
+                            positions.push_back(vertex.position[0]);
+                            positions.push_back(vertex.position[1]);
+                            positions.push_back(vertex.position[2]);
+                        }
+                        element_count = mesh->vertex_count();
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            element_count);
+                        buffer = wz::gpu::create_structured_buffer(device, {
+                            .element_count = element_count,
+                            .stride_bytes = port->stride_bytes,
+                            .initial_data = positions.data(),
+                            .initial_data_bytes =
+                                positions.size() * sizeof(float),
+                        });
+                    }
+                    else {
+                        if (element_count == 0u
+                            || port->initial_data.empty())
+                        {
+                            ok = false;
+                            break;
+                        }
+                        buffer = wz::gpu::create_structured_buffer(device, {
+                            .element_count = element_count,
+                            .stride_bytes = port->stride_bytes,
+                            .initial_data = port->initial_data.data(),
+                            .initial_data_bytes = port->initial_data.size(),
+                        });
+                    }
+                }
+                else if (port->direction == WZ_GPU_PORT_OUTPUT) {
+                    if (element_count == 0u
+                        && port->resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION)
+                    {
+                        std::string target_failure;
+                        const MeshFieldPublishTarget target =
+                            find_mesh_field_publish_target(
+                                publish_context,
+                                job,
+                                port->u32[0],
+                                target_failure);
+                        if (!target.valid()) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "output element count "
+                                    "unavailable: " + target_failure,
+                            });
+                            ok = false;
+                            break;
+                        }
+                        element_count = target.element_count;
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            element_count);
+                    }
+                    if (element_count == 0u) {
                         ok = false;
                         break;
                     }
-                    buffer = wz::gpu::create_structured_buffer(device, {
-                        .element_count = port->element_count,
-                        .stride_bytes = port->stride_bytes,
-                        .initial_data = port->initial_data.data(),
-                        .initial_data_bytes = port->initial_data.size(),
-                    });
-                }
-                else if (port->direction == WZ_GPU_PORT_OUTPUT) {
+
                     std::vector<std::byte> zeroes(
-                        static_cast<size_t>(port->element_count)
+                        static_cast<size_t>(element_count)
                             * port->stride_bytes,
                         std::byte{ 0 });
                     buffer = wz::gpu::create_rw_structured_buffer(device, {
-                        .element_count = port->element_count,
+                        .element_count = element_count,
                         .stride_bytes = port->stride_bytes,
                         .initial_data = zeroes.data(),
                         .initial_data_bytes = zeroes.size(),
@@ -427,8 +769,15 @@ namespace wz::engine::behavior
                         output_buffers.push_back({
                             .name = port->name,
                             .kind = port->kind,
-                            .element_count = port->element_count,
+                            .element_count = element_count,
                             .stride_bytes = port->stride_bytes,
+                            .resource = port->resource,
+                            .u32 = {
+                                port->u32[0],
+                                port->u32[1],
+                                port->u32[2],
+                                port->u32[3],
+                            },
                             .buffer = buffer,
                         });
                     }
@@ -452,29 +801,84 @@ namespace wz::engine::behavior
                 });
             }
 
+            uint32_t group_count_x = job.group_count_x;
+            uint32_t group_count_y = job.group_count_y;
+            uint32_t group_count_z = job.group_count_z;
+            if (ok
+                && group_count_x == 0u
+                && engine_resolved_elements > 0u
+                && kernel->thread_group_size_x > 0u)
+            {
+                group_count_x =
+                    (engine_resolved_elements
+                        + kernel->thread_group_size_x - 1u)
+                    / kernel->thread_group_size_x;
+                group_count_y = group_count_y != 0u ? group_count_y : 1u;
+                group_count_z = group_count_z != 0u ? group_count_z : 1u;
+            }
+            if (group_count_x == 0u
+                || group_count_y == 0u
+                || group_count_z == 0u)
+            {
+                ok = false;
+            }
+
             if (ok) {
                 ok = wz::gpu::dispatch_compute(device, {
                     .pipeline = kernel->pipeline,
                     .bindings = dispatch_bindings,
                     .root_constants = root_constants,
-                    .group_count_x = job.group_count_x,
-                    .group_count_y = job.group_count_y,
-                    .group_count_z = job.group_count_z,
+                    .group_count_x = group_count_x,
+                    .group_count_y = group_count_y,
+                    .group_count_z = group_count_z,
                 });
             }
 
             if (ok) {
                 for (const OutputBuffer& output : output_buffers) {
-                    report.readbacks.push_back({
-                        .work = job.work,
-                        .port_name = output.name,
-                        .kind = output.kind,
-                        .element_count = output.element_count,
-                        .stride_bytes = output.stride_bytes,
-                        .bytes = wz::gpu::readback_buffer(
+                    const bool publish_requested =
+                        output.resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION;
+                    bool published = false;
+                    if (publish_requested) {
+                        std::string failure;
+                        published = publish_mesh_field_output(
                             device,
-                            output.buffer),
-                    });
+                            publish_context,
+                            job,
+                            output.u32[0],
+                            output.buffer,
+                            output.element_count,
+                            output.stride_bytes,
+                            failure);
+                        if (published) {
+                            ++report.published_mesh_fields;
+                        }
+                        else {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = output.name,
+                                .reason = std::move(failure),
+                            });
+                        }
+                    }
+
+                    // Published outputs are GPU-resident for rendering;
+                    // skip the CPU readback that exists to surface outputs
+                    // through completion events. Failed publishes keep the
+                    // readback so the plugin can still inspect the data.
+                    if (!published) {
+                        report.readbacks.push_back({
+                            .work = job.work,
+                            .port_name = output.name,
+                            .kind = output.kind,
+                            .element_count = output.element_count,
+                            .stride_bytes = output.stride_bytes,
+                            .bytes = wz::gpu::readback_buffer(
+                                device,
+                                output.buffer),
+                        });
+                    }
                 }
                 ++report.dispatched;
                 report.completed_work.push_back(job.work);
@@ -491,6 +895,19 @@ namespace wz::engine::behavior
 
         return report;
     }
+    }
+
+    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+        wz::gpu::Device& device,
+        std::span<const BehaviorGpuComputeJob> jobs,
+        std::span<const BehaviorGpuKernelBinding> kernels)
+    {
+        return dispatch_behavior_gpu_compute_jobs_impl(
+            device,
+            jobs,
+            kernels,
+            nullptr);
+    }
 
     BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
         wz::gpu::Device& device,
@@ -501,6 +918,24 @@ namespace wz::engine::behavior
             device,
             jobs,
             library.kernels);
+    }
+
+    BehaviorGpuDispatchReport dispatch_behavior_gpu_compute_jobs(
+        wz::gpu::Device& device,
+        wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::SceneInstance& scene,
+        std::span<const BehaviorGpuComputeJob> jobs,
+        const BehaviorGpuKernelLibrary& library)
+    {
+        const BehaviorGpuPublishContext context{
+            .assets = &assets,
+            .scene = &scene,
+        };
+        return dispatch_behavior_gpu_compute_jobs_impl(
+            device,
+            jobs,
+            library.kernels,
+            &context);
     }
 
     bool build_kernel_library_from_scene(
@@ -597,6 +1032,9 @@ namespace wz::engine::behavior
             binding.pipeline = pipeline;
             binding.root_constant_dwords =
                 pipeline_data->root_constant_dwords;
+            binding.thread_group_size_x = kernel.thread_group_size_x;
+            binding.thread_group_size_y = kernel.thread_group_size_y;
+            binding.thread_group_size_z = kernel.thread_group_size_z;
             binding.ports = derive_port_bindings(kernel, assets, error);
             if (binding.ports.empty() && !kernel.ports.empty()) {
                 set_error(

@@ -1334,6 +1334,64 @@ namespace wz::engine::assets::internal
                 ? compiled_field_node(input, handle)
                 : compile_failed_node(input);
         }
+
+        wz::asset::AssetNode compile_behavior_field_placeholder_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table)
+        {
+            const auto* desc =
+                std::any_cast<BehaviorFieldPlaceholderDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 1u) {
+                logger.error(
+                    "behavior field placeholder node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh || !source_mesh->valid()) {
+                logger.error(
+                    "behavior field placeholder source mesh invalid");
+                return compile_failed_node(input);
+            }
+
+            const uint32_t element_count =
+                mesh_domain_element_count(*source_mesh, desc->domain);
+            if (element_count == 0u) {
+                logger.error(
+                    "behavior field placeholder element_count is zero");
+                return compile_failed_node(input);
+            }
+
+            const uint32_t stride = mesh_derived_field_value_stride(
+                MeshDerivedFieldValueType::Float1);
+            const uint64_t byte_count =
+                static_cast<uint64_t>(element_count) * stride;
+
+            MeshDerivedFieldData field{
+                .source_mesh_key = desc->source_mesh.output,
+                .source_topology_hash =
+                    compute_mesh_topology_hash(*source_mesh),
+                .domain = desc->domain,
+                .element_count = element_count,
+            };
+            field.channels.push_back(MeshDerivedFieldChannel{
+                .channel_id = desc->channel_id,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .byte_offset = 0,
+                .byte_count = static_cast<uint32_t>(byte_count),
+            });
+            field.values.resize(
+                static_cast<size_t>(byte_count), std::byte{0});
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
     }
 
     void register_mesh_derived_field_compilers(
@@ -1395,6 +1453,27 @@ namespace wz::engine::assets::internal
                     mesh_derived_field_table,
                     gpu_resident_field_table,
                     cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kBehaviorFieldPlaceholderSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_behavior_field_placeholder_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table);
             }
         });
     }

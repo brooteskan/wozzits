@@ -31,6 +31,14 @@ namespace wz::engine::assets
         float gamma = 1.0f;
     };
 
+    struct BehaviorFieldPlaceholderDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Vertex;
+        uint32_t channel_id = 0;
+    };
+
     struct MeshDerivedFieldAsset
     {
         wz::asset::AssetKey output{};
@@ -63,6 +71,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_wavelet_analysis(
             const MeshWaveletAnalysisDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_behavior_field_placeholder(
+            const BehaviorFieldPlaceholderDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

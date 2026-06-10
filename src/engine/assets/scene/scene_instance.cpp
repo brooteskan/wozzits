@@ -769,6 +769,23 @@ namespace wz::engine::assets
                 ++inst.render_shaders;
             }
 
+            if (node.mesh_render_style
+                && node.mesh_render_style->field_visualization_enabled
+                && !(node.mesh_render_style->field_visualization_asset
+                    == wz::asset::AssetKey{}))
+            {
+                inst.mesh_field_visualization_targets.push_back({
+                    .node = h,
+                    .component = MeshFieldVisualizationTargetComponent{
+                        .field_asset =
+                            node.mesh_render_style->field_visualization_asset,
+                        .channel_id =
+                            node.mesh_render_style
+                                ->field_visualization_channel_id,
+                    },
+                });
+            }
+
             if (node.debug_visual) {
                 inst.auxiliary_visuals.push_back({
                     .node = h,

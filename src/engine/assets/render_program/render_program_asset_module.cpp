@@ -55,8 +55,10 @@ namespace wz::engine::assets
         node.meta = std::move(desc);
 
         const auto& d = std::any_cast<const BuiltinRenderProgramDesc&>(node.meta);
-        if (!system_->register_asset(node, { d.vertex_shader, d.pixel_shader }))
-            return {};
+        // register_asset() returns false when the key is already registered;
+        // re-materializing the same scene is expected to hit that, so the
+        // existing key is returned rather than failing.
+        (void)system_->register_asset(node, { d.vertex_shader, d.pixel_shader });
 
         return RenderProgramAsset{ key };
     }
@@ -85,8 +87,10 @@ namespace wz::engine::assets
         node.meta = std::move(desc);
 
         const auto& d = std::any_cast<const CustomRenderProgramDesc&>(node.meta);
-        if (!system_->register_asset(node, { d.vertex_shader, d.pixel_shader }))
-            return {};
+        // register_asset() returns false when the key is already registered;
+        // re-materializing the same scene is expected to hit that, so the
+        // existing key is returned rather than failing.
+        (void)system_->register_asset(node, { d.vertex_shader, d.pixel_shader });
 
         return RenderProgramAsset{ key };
     }

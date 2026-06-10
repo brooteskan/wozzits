@@ -87,6 +87,36 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_behavior_field_placeholder(
+        const BehaviorFieldPlaceholderDesc& desc)
+    {
+        if (!desc.source_mesh.valid() || desc.channel_id == 0u) {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_behavior_field_placeholder_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kBehaviorFieldPlaceholderSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        // register_asset() returns false when the key is already registered;
+        // re-materializing the same scene is expected to hit that, so treat
+        // it as success and hand back the existing key.
+        (void)system_.register_asset(
+            std::move(node),
+            { desc.source_mesh.output });
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldHandle
     MeshDerivedFieldAssetModule::get_mesh_derived_field(
         const MeshDerivedFieldAsset& asset) const

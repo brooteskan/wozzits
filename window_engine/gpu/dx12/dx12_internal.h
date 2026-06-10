@@ -195,6 +195,12 @@ namespace wz::gpu::dx12::internal {
     {
         ID3D12Resource* values_buffer = nullptr;
         uint32_t element_count = 0;
+        uint32_t stride_bytes = 0;
+        // True for DEFAULT-heap buffers created from a GPU source; these can
+        // be refreshed in place via update_mesh_field_visualization_dx12.
+        // CPU-uploaded resources live on an UPLOAD heap and cannot be a GPU
+        // copy destination.
+        bool gpu_updatable = false;
         wz::gpu::dx12::DX12DescriptorTable srv_table{};
 
         bool valid() const noexcept
@@ -233,6 +239,14 @@ namespace wz::gpu::dx12::internal {
 
     GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(
         Device& device,
+        GPUHandle source_buffer,
+        uint64_t byte_offset,
+        uint32_t element_count,
+        uint32_t stride_bytes);
+
+    bool update_mesh_field_visualization_from_gpu_source_dx12(
+        Device& device,
+        GPUHandle destination,
         GPUHandle source_buffer,
         uint64_t byte_offset,
         uint32_t element_count,

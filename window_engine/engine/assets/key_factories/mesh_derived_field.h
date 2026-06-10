@@ -63,6 +63,25 @@ namespace wz::engine::assets
     }
 
     [[nodiscard]] inline wz::asset::AssetKey
+    make_behavior_field_placeholder_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const BehaviorFieldPlaceholderDesc& desc) noexcept
+    {
+        uint64_t h = kBehaviorFieldPlaceholderSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.domain));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.channel_id));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kBehaviorFieldPlaceholderSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kBehaviorFieldPlaceholderCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(source_mesh_key),
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey
     make_mesh_wavelet_analysis_field_key(
         const wz::asset::AssetKey& source_mesh_key,
         const MeshWaveletAnalysisDesc& desc) noexcept

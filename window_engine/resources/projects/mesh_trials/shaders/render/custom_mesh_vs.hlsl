@@ -11,6 +11,7 @@ struct VSIn
 	float3 pos : POSITION;
 	float3 normal : NORMAL;
 	float2 uv : TEXCOORD0;
+	uint vertex_id : SV_VertexID;
 };
 
 struct VSOut
@@ -18,7 +19,10 @@ struct VSOut
 	float4 pos : SV_Position;
 	float3 normal : NORMAL;
 	float2 uv : TEXCOORD0;
+	float field_value : TEXCOORD1;
 };
+
+StructuredBuffer<float> MeshFieldValues : register(t0);
 
 VSOut main(VSIn input)
 {
@@ -27,5 +31,6 @@ VSOut main(VSIn input)
 	output.pos = mul(ViewProj, world_pos);
 	output.normal = input.normal;
 	output.uv = input.uv;
+	output.field_value = saturate(MeshFieldValues[input.vertex_id]);
 	return output;
 }

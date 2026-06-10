@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 18u
+#define WZ_BEHAVIOR_ABI_VERSION 20u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -264,6 +264,32 @@ typedef struct WzGpuResourceRef
 {
     uint64_t value;
 } WzGpuResourceRef;
+
+enum
+{
+    WZ_GPU_RESOURCE_REF_NONE = 0u,
+    /*
+     * For output structured-buffer ports, publish the resulting GPU buffer as
+     * the current entity's mesh field visualization channel. u32[0] may hold
+     * the channel id; 0 means use the entity's authored mesh render style
+     * visualization channel. element_count 0 means the engine fills it from
+     * the target field's element count.
+     */
+    WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION = 1u,
+    /*
+     * For input structured-buffer ports, the engine binds the current
+     * entity's mesh vertex positions (one float3 per vertex, stride 12).
+     * No initial_data is required; element_count is filled by the engine
+     * from the mesh vertex count. Requires the entity to have a mesh field
+     * visualization target (the mesh is resolved through it).
+     */
+    WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS = 2u,
+    /*
+     * For u32 root-constant ports, the engine fills the value with the
+     * current entity's mesh vertex count.
+     */
+    WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT = 3u,
+};
 
 typedef struct WzGpuPortValue
 {

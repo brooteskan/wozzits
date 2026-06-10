@@ -71,22 +71,130 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          750,
+          1000,
+          750
         ]
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:97cd611c6b39d2f6:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:d22cbf4873a33686:bd063bee836ed08c"
+        "asset": "asset-key:9172e6c4cc8b72c6:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:a37f844894e2eea1:23963d8d1b6cfda6"
       },
       "mesh_source": {
-        "kind": "placeholder",
-        "path": "",
+        "kind": "glb",
+        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
         "mesh_index": 0
       },
+      "mesh_render_style": {
+        "asset": "asset-key:168a2e8f350b86da:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": false,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.16685889661312103,
+            0.19104644656181335,
+            0.30392158031463623,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": false,
+        "hidden_line_prepass": false,
+        "field_visualization_enabled": true,
+        "field_visualization_channel_id": 4608,
+        "field_visualization_value_min": 0.10000000149011612,
+        "field_visualization_value_max": 1,
+        "field_visualization_gamma": 0.63999998569488525
+      },
+      "event_trigger": {
+        "event": "gpu.compute.request"
+      },
+      "behaviors": [
+        {
+          "id": "empty_1_behavior_landscape_field",
+          "label": "Landscape field compute",
+          "module": "gpu_trial",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": true,
+          "events": [
+            "gpu.compute.*"
+          ]
+        }
+      ],
+      "compute_kernel": {
+        "kernel_id": "project/landscape_field",
+        "hlsl_path": "shaders/compute/landscape_field_cs.hlsl",
+        "entry": "main",
+        "target": "cs_5_0",
+        "thread_group_size": [
+          256,
+          1,
+          1
+        ],
+        "ports": [
+          {
+            "name": "positions",
+            "kind": "structured_buffer",
+            "direction": "input",
+            "binding_kind": "srv",
+            "shader_register": 0,
+            "register_space": 0,
+            "stride_bytes": 12
+          },
+          {
+            "name": "output",
+            "kind": "structured_buffer",
+            "direction": "output",
+            "binding_kind": "uav",
+            "shader_register": 0,
+            "register_space": 0,
+            "stride_bytes": 4
+          },
+          {
+            "name": "vertex_count",
+            "kind": "u32",
+            "direction": "input",
+            "root_constant_offset": 0,
+            "root_constant_dwords": 1
+          },
+          {
+            "name": "phase",
+            "kind": "f32",
+            "direction": "input",
+            "root_constant_offset": 1,
+            "root_constant_dwords": 1
+          },
+          {
+            "name": "frequency",
+            "kind": "f32",
+            "direction": "input",
+            "root_constant_offset": 2,
+            "root_constant_dwords": 1
+          },
+          {
+            "name": "bias",
+            "kind": "f32",
+            "direction": "input",
+            "root_constant_offset": 3,
+            "root_constant_dwords": 1
+          }
+        ]
+      },
       "render_shader": {
-        "program_id": "mesh/custom_surface",
+        "program_id": "mesh/landscape_wavelet_surface",
         "vertex_hlsl_path": "shaders/render/custom_mesh_vs.hlsl",
         "pixel_hlsl_path": "shaders/render/custom_mesh_ps.hlsl",
         "vertex_entry": "main",
@@ -97,57 +205,16 @@
         "input_layout": "mesh_position_normal_uv",
         "blend": "opaque",
         "depth": "test_write",
-        "raster": "solid_cull_none"
-      }
-    },
-    {
-      "id": "empty_2",
-      "parent": "root",
-      "name": "gpu behavior node",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "event_trigger": {
-        "event": "gpu.compute.request"
-      },
-      "behaviors": [
-        {
-          "id": "empty_2_behavior_0",
-          "label": "Debug collision logger",
-          "module": "gpu_trial",
-          "name": "",
-          "enabled": true,
-          "apply_in_editor": false,
-          "events": [
-            "gpu.compute.*"
-          ]
-        }
-      ],
-      "compute_kernel": {
-        "kernel_id": "debug/multiply_u32",
-        "hlsl_path": "shaders/compute/debug_multiply_u32_cs.hlsl",
-        "entry": "main",
-        "target": "cs_5_0",
-        "thread_group_size": [
-          4,
-          1,
-          1
+        "raster": "solid_cull_none",
+        "descriptor_bindings": [
+          {
+            "kind": "structured_buffer_srv",
+            "visibility": "all",
+            "semantic": "mesh_field_visualization",
+            "shader_register": 0,
+            "register_space": 0,
+            "descriptor_count": 1
+          }
         ]
       }
     }
@@ -161,15 +228,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        0,
-        2,
-        -18
+        -294.68881225585938,
+        115.45205688476562,
+        -108.37436676025391
       ],
       "orientation": [
-        0,
-        0,
-        0,
-        1
+        -0.15563248097896576,
+        -0.54891878366470337,
+        0.06188303604722023,
+        -0.8189244270324707
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

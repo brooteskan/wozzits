@@ -561,6 +561,15 @@ namespace wz::engine::assets
                 fp.mix_string(shader.blend);
                 fp.mix_string(shader.depth);
                 fp.mix_string(shader.raster);
+                fp.mix_value(shader.descriptor_bindings.size());
+                for (const auto& binding : shader.descriptor_bindings) {
+                    fp.mix_string(binding.kind);
+                    fp.mix_string(binding.visibility);
+                    fp.mix_string(binding.semantic);
+                    fp.mix_value(binding.shader_register);
+                    fp.mix_value(binding.register_space);
+                    fp.mix_value(binding.descriptor_count);
+                }
             }
 
             if (node.debug_visual) {

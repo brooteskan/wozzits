@@ -111,13 +111,6 @@ namespace wz::engine::rendering
             wz::gpu::ScopedGPUHandle gpu_resource{};
         };
 
-        struct MeshFieldVisualizationEntry
-        {
-            wz::asset::AssetKey field_asset{};
-            uint32_t channel_id = 0;
-            wz::gpu::ScopedGPUHandle gpu_resource{};
-        };
-
         const Entry* find(
             wz::asset::AssetKey source_asset,
             wz::engine::assets::RenderableKind kind) const;
@@ -127,18 +120,8 @@ namespace wz::engine::rendering
             wz::engine::assets::RenderableKind kind,
             wz::gpu::ScopedGPUHandle gpu_resource);
 
-        const MeshFieldVisualizationEntry* find_mesh_field_visualization(
-            wz::asset::AssetKey field_asset,
-            uint32_t channel_id) const;
-
-        void add_mesh_field_visualization(
-            wz::asset::AssetKey field_asset,
-            uint32_t channel_id,
-            wz::gpu::ScopedGPUHandle gpu_resource);
-
         wz::gpu::DeferredReleaseQueue& release_queue_;
         std::vector<Entry> entries_;
-        std::vector<MeshFieldVisualizationEntry> mesh_field_entries_;
 
         struct TerrainMeshChunkEntry
         {

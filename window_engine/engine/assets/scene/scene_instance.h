@@ -336,6 +336,12 @@ namespace wz::engine::assets
         float size = 1.0f;
     };
 
+    struct MeshFieldVisualizationTargetComponent
+    {
+        wz::asset::AssetKey field_asset{};
+        uint32_t channel_id = 0u;
+    };
+
     struct SceneInstance
     {
         // Runtime projection of authored SceneAssetData. instantiate_scene(...)
@@ -369,6 +375,8 @@ namespace wz::engine::assets
         BehaviorStateStorage behavior_state;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
+        std::vector<SceneComponentRecord<MeshFieldVisualizationTargetComponent>>
+            mesh_field_visualization_targets;
 
         std::vector<wz::scene::AuthoredEntityId> runtime_to_authored;
         std::vector<std::string> runtime_names;

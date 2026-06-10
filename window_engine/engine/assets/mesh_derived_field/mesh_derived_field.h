@@ -117,6 +117,15 @@ namespace wz::engine::assets
     {
     public:
         bool add(GpuResidentFieldEntry entry);
+        // Insert or swap the entry for (field_key, channel_id). A swapped-out
+        // prior resource is released immediately, so callers must guarantee
+        // the GPU is no longer executing work that binds it — the behavior
+        // publish path satisfies this by fencing its copy on the same queue
+        // before calling replace(). Steady-state per-frame refresh should use
+        // wz::gpu::update_mesh_field_visualization_from_gpu_source() against
+        // the handle returned by find() instead of swapping, which also keeps
+        // handles captured by resolved renderables valid.
+        bool replace(wz::gpu::Device& device, GpuResidentFieldEntry entry);
         wz::gpu::GPUHandle find(
             wz::asset::AssetKey field_key,
             uint32_t channel_id) const;

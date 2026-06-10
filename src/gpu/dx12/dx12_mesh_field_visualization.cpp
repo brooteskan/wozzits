@@ -307,17 +307,72 @@ namespace wz::gpu::dx12::internal
         const auto* value_bytes =
             desc.field->values.data() + channel->byte_offset;
 
-        DX12MeshFieldVisualizationResource resource{};
-        resource.element_count = desc.field->element_count;
-
+        // Stage the CPU data and copy it into a DEFAULT-heap buffer so the
+        // resulting resource can later be refreshed in place from a GPU
+        // source (behavior compute publish path).
+        ID3D12Resource* staging = nullptr;
         if (!create_upload_buffer(
                 impl->device,
                 value_bytes,
                 channel->byte_count,
-                &resource.values_buffer))
+                &staging))
         {
             return {};
         }
+
+        const D3D12_HEAP_PROPERTIES default_heap =
+            CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        const D3D12_RESOURCE_DESC buffer_desc =
+            CD3DX12_RESOURCE_DESC::Buffer(channel->byte_count);
+
+        ID3D12Resource* destination = nullptr;
+        HRESULT hr = impl->device->CreateCommittedResource(
+            &default_heap,
+            D3D12_HEAP_FLAG_NONE,
+            &buffer_desc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&destination));
+        if (FAILED(hr)) {
+            staging->Release();
+            return {};
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        if (!create_one_shot_command_list(impl, &allocator, &cmd)) {
+            destination->Release();
+            staging->Release();
+            return {};
+        }
+
+        cmd->CopyBufferRegion(
+            destination,
+            0,
+            staging,
+            0,
+            channel->byte_count);
+        transition_resource(
+            cmd,
+            destination,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+        const bool copied = execute_and_wait(impl, allocator, cmd);
+        cmd->Release();
+        allocator->Release();
+        staging->Release();
+        if (!copied) {
+            destination->Release();
+            return {};
+        }
+
+        DX12MeshFieldVisualizationResource resource{};
+        resource.values_buffer = destination;
+        resource.element_count = desc.field->element_count;
+        resource.stride_bytes = sizeof(float);
+        resource.gpu_updatable = true;
 
         resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
         if (!resource.srv_table.valid()) {
@@ -412,7 +467,8 @@ namespace wz::gpu::dx12::internal
             cmd,
             destination,
             D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         transition_resource(
             cmd,
             source->resource,
@@ -431,6 +487,8 @@ namespace wz::gpu::dx12::internal
         DX12MeshFieldVisualizationResource resource{};
         resource.values_buffer = destination;
         resource.element_count = element_count;
+        resource.stride_bytes = stride_bytes;
+        resource.gpu_updatable = true;
         resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
         if (!resource.srv_table.valid()) {
             release_mesh_field_visualization_resource(resource);
@@ -445,6 +503,99 @@ namespace wz::gpu::dx12::internal
             stride_bytes);
 
         return impl->mesh_field_visualizations.add(resource);
+    }
+
+    bool update_mesh_field_visualization_from_gpu_source_dx12(
+        Device& device,
+        GPUHandle destination,
+        GPUHandle source_buffer,
+        uint64_t byte_offset,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl
+            || !impl->device
+            || !destination.valid()
+            || !source_buffer.valid()
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return false;
+        }
+
+        const DX12MeshFieldVisualizationResource* dest =
+            impl->mesh_field_visualizations.get(destination);
+        if (!dest
+            || !dest->valid()
+            || !dest->gpu_updatable
+            || dest->element_count != element_count
+            || dest->stride_bytes != stride_bytes)
+        {
+            return false;
+        }
+
+        DX12ComputeBuffer* source =
+            impl->compute_buffers.get(source_buffer);
+        if (!source || !source->valid()) {
+            return false;
+        }
+
+        const uint64_t byte_count =
+            static_cast<uint64_t>(element_count)
+            * static_cast<uint64_t>(stride_bytes);
+        const uint64_t source_byte_count =
+            static_cast<uint64_t>(source->element_count)
+            * static_cast<uint64_t>(source->stride_bytes);
+        if (byte_count == 0u
+            || byte_offset > source_byte_count
+            || byte_count > source_byte_count - byte_offset)
+        {
+            return false;
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        if (!create_one_shot_command_list(impl, &allocator, &cmd)) {
+            return false;
+        }
+
+        const D3D12_RESOURCE_STATES dest_resident_state =
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+            | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        const D3D12_RESOURCE_STATES source_before = source->state;
+        transition_resource(
+            cmd,
+            dest->values_buffer,
+            dest_resident_state,
+            D3D12_RESOURCE_STATE_COPY_DEST);
+        transition_resource(
+            cmd,
+            source->resource,
+            source_before,
+            D3D12_RESOURCE_STATE_COPY_SOURCE);
+        cmd->CopyBufferRegion(
+            dest->values_buffer,
+            0,
+            source->resource,
+            byte_offset,
+            byte_count);
+        transition_resource(
+            cmd,
+            dest->values_buffer,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            dest_resident_state);
+        transition_resource(
+            cmd,
+            source->resource,
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            source_before);
+        source->state = source_before;
+
+        const bool copied = execute_and_wait(impl, allocator, cmd);
+        cmd->Release();
+        allocator->Release();
+        return copied;
     }
 
     const DX12MeshFieldVisualizationResource*
