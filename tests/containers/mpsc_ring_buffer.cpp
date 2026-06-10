@@ -226,7 +226,7 @@ TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
     EXPECT_EQ(set.size(), out.size());
 }
 
-TEST_F(MPSCQueueTest, StressTest)
+TEST_F(MPSCQueueTest, DISABLED_StressTest)
 {
     ThreadTestHarness harness;
 

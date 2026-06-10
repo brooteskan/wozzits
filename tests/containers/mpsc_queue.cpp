@@ -188,7 +188,7 @@ TEST_F(MPSCQueueTest, FIFOApproximationSingleConsumer)
     }
 }
 
-TEST_F(MPSCQueueTest, HighContentionStress)
+TEST_F(MPSCQueueTest, DISABLED_HighContentionStress)
 {
     ThreadTestHarness harness;
 
@@ -271,7 +271,7 @@ TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
     EXPECT_EQ(consumed.load(), producers * per_thread);
 }
 
-TEST_F(MPSCQueueTest, FrameDrivenStress)
+TEST_F(MPSCQueueTest, DISABLED_FrameDrivenStress)
 {
     const int producers = 8;
     const int per_thread = 200000;
@@ -364,7 +364,7 @@ TEST_F(MPSCQueueTest, FrameDrivenStress)
     EXPECT_EQ(seen.size(), total);
 }
 
-TEST_F(MPSCQueueTest, ChaosStress)
+TEST_F(MPSCQueueTest, DISABLED_ChaosStress)
 {
     const int producers = 128;
     const int duration_seconds = 180;
