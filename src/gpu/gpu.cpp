@@ -2,7 +2,6 @@
 #include <gpu/dx12/dx12.h>
 #include <gpu/dx12/dx12_internal.h>
 #include <platform/win32/win32.h>
-#include <engine/render_backends/dx12/dx12_submit.h>
 #include <render/frame/render_frame.h>
 
 namespace wz::gpu

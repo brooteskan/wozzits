@@ -11,6 +11,7 @@
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
+#include <engine/render_backends/dx12/dx12_submit.h>
 #include <window/window2.h>
 #include <cassert>
 #include <cstdio>

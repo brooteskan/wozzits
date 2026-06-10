@@ -12,10 +12,14 @@
 #include <dxgi1_4.h>
 #include <gpu/dx12/dx12_shader.h>
 #include <gpu/dx12/dx12_descriptor_allocator.h>
-#include <engine/render_backends/dx12/dx12_submit.h>
 #include <gpu/dx12/dx12_internal.h>
 #include <gpu/gaussian_splat_color_lod_settings.h>
 #include <gpu/gaussian_splat_coverage_settings.h>
+
+// The engine-layer submit context is only stored by pointer; the full type
+// lives in engine/render_backends/dx12/dx12_submit.h, included by the TUs
+// that actually call into the submit path.
+namespace wz::engine::render_backend::dx12 { struct Context; }
 
 
 namespace wz::gpu::dx12

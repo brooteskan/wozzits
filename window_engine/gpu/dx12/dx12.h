@@ -4,12 +4,19 @@
 #include <gpu/gpu.h>
 
 #include <render/frame/render_frame.h>
-#include <engine/rendering/render_resource_resolver.h>
-#include <engine/rendering/renderable_pipeline_cache.h>
-#include <engine/rendering/render_program_pipeline_cache.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
 #include <gpu/dx12/dx12_gaussian_splat_debug.h>
+
+// Resolver and pipeline-cache types are only taken by reference in the
+// submit_render_frame declarations below; callers that pass them already
+// own the full engine/rendering includes.
+namespace wz::engine::rendering
+{
+    class RenderResourceResolver;
+    class RenderablePipelineCache;
+    class RenderProgramPipelineCache;
+}
 
 namespace wz::gpu::dx12
 {
