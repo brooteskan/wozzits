@@ -37,6 +37,7 @@ namespace wz::engine::behavior
         uint32_t group_count_x = 1u;
         uint32_t group_count_y = 1u;
         uint32_t group_count_z = 1u;
+        WzGpuDispatchDomain dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_AUTO;
         uint64_t request_tag = 0u;
     };
 
@@ -107,6 +108,7 @@ namespace wz::engine::behavior
             job.group_count_x = desc.group_count_x;
             job.group_count_y = desc.group_count_y;
             job.group_count_z = desc.group_count_z;
+            job.dispatch_domain = desc.dispatch_domain;
             job.request_tag = desc.request_tag;
             job.ports.reserve(desc.port_count);
 

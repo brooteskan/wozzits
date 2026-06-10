@@ -192,20 +192,38 @@ static inline uint8_t wz_gpu_set_groups(
 }
 
 /*
- * Request that the engine derive the dispatch group count from the kernel's
- * authored thread group size and the element count of engine-resolved mesh
- * ports (vertex positions/indices inputs, mesh field output, vertex/triangle
- * count constants). Only meaningful for jobs that use at least one such port.
+ * Declare the job's logical iteration domain and let the engine derive the
+ * dispatch group count from that domain's element count and the kernel's
+ * authored thread group size. This is the preferred way to size a dispatch:
+ * the domain states what the kernel iterates, independently of which mesh
+ * data it reads. Explicitly set group counts (wz_gpu_set_groups) always
+ * take precedence.
  */
-static inline uint8_t wz_gpu_set_groups_from_mesh(WzGpuJob* job)
+static inline uint8_t wz_gpu_set_dispatch_domain(
+    WzGpuJob* job,
+    WzGpuDispatchDomain domain)
 {
     if (!job) {
         return 0u;
     }
+    job->desc.dispatch_domain = domain;
     job->desc.group_count_x = 0u;
     job->desc.group_count_y = 1u;
     job->desc.group_count_z = 1u;
     return 1u;
+}
+
+/*
+ * Legacy alias for wz_gpu_set_dispatch_domain(job,
+ * WZ_GPU_DISPATCH_DOMAIN_AUTO): the engine derives the group count from the
+ * largest element count it resolved for any mesh-bound port (vertex
+ * positions/indices inputs, mesh field output, vertex/triangle count
+ * constants). Prefer an explicit domain — AUTO over-dispatches any kernel
+ * whose read set spans more elements than its iteration domain.
+ */
+static inline uint8_t wz_gpu_set_groups_from_mesh(WzGpuJob* job)
+{
+    return wz_gpu_set_dispatch_domain(job, WZ_GPU_DISPATCH_DOMAIN_AUTO);
 }
 
 static inline uint8_t wz_gpu_set_request_tag(

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 21u
+#define WZ_BEHAVIOR_ABI_VERSION 22u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -318,6 +318,40 @@ typedef struct WzGpuPortValue
     float f32[4];
 } WzGpuPortValue;
 
+/*
+ * Logical iteration domain of a compute job. When group_count_x is 0 the
+ * engine derives the dispatch group count from the domain's element count
+ * and the kernel's authored thread group size. The domain names align with
+ * the engine's MeshDerivedFieldDomain vocabulary (FACE = triangle,
+ * CORNER = index in the triangle list).
+ *
+ * AUTO preserves the legacy derivation: the largest element count the
+ * engine resolved for any mesh-bound port. Note that AUTO conflates the
+ * data a kernel reads with the domain it iterates — a vertex-domain kernel
+ * that merely reads indices over-dispatches by roughly index count.
+ * Declare an explicit domain for any kernel that mixes domains.
+ */
+typedef uint32_t WzGpuDispatchDomain;
+
+enum
+{
+    WZ_GPU_DISPATCH_DOMAIN_AUTO = 0u,
+    /* Mesh vertex count. */
+    WZ_GPU_DISPATCH_DOMAIN_VERTEX = 1u,
+    /*
+     * Reserved: unique mesh edge count. Not resolvable until resident mesh
+     * topology (the resident mesh-data table) provides it; declaring it
+     * fails the job with a clear reason.
+     */
+    WZ_GPU_DISPATCH_DOMAIN_EDGE = 2u,
+    /* Mesh triangle count (index count / 3). */
+    WZ_GPU_DISPATCH_DOMAIN_FACE = 3u,
+    /* Mesh index count (one element per triangle-list corner). */
+    WZ_GPU_DISPATCH_DOMAIN_CORNER = 4u,
+    /* Element count of the job's first output port. */
+    WZ_GPU_DISPATCH_DOMAIN_OUTPUT = 5u,
+};
+
 typedef struct WzGpuComputeJobDesc
 {
     const char* kernel;
@@ -326,6 +360,7 @@ typedef struct WzGpuComputeJobDesc
     uint32_t group_count_x;
     uint32_t group_count_y;
     uint32_t group_count_z;
+    WzGpuDispatchDomain dispatch_domain;
     uint64_t request_tag;
 } WzGpuComputeJobDesc;
 

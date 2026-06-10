@@ -109,6 +109,36 @@ namespace
                     "}\n"),
                 wz::fs::FileError::None);
 
+            // Same valence kernel with a tiny thread group so dispatch-domain
+            // tests on a quad (4 vertices, 6 indices) derive visibly
+            // different group counts: VERTEX -> 2 groups, AUTO -> 3.
+            ASSERT_EQ(
+                wz::fs::write_file_text(
+                    wz::fs::join(
+                        root,
+                        "shaders/compute/publish_vertex_valence_tg2_cs.hlsl"),
+                    "StructuredBuffer<uint> Indices : register(t0);\n"
+                    "RWStructuredBuffer<float> Output : register(u0);\n"
+                    "cbuffer Constants : register(b0) {\n"
+                    "    uint TriangleCount;\n"
+                    "    uint VertexCount;\n"
+                    "};\n"
+                    "[numthreads(2, 1, 1)]\n"
+                    "void main(uint3 id : SV_DispatchThreadID) {\n"
+                    "    if (id.x < VertexCount) {\n"
+                    "        float valence = 0.0;\n"
+                    "        for (uint t = 0; t < TriangleCount; ++t) {\n"
+                    "            if (Indices[3 * t + 0] == id.x\n"
+                    "                || Indices[3 * t + 1] == id.x\n"
+                    "                || Indices[3 * t + 2] == id.x) {\n"
+                    "                valence += 1.0;\n"
+                    "            }\n"
+                    "        }\n"
+                    "        Output[id.x] = valence;\n"
+                    "    }\n"
+                    "}\n"),
+                wz::fs::FileError::None);
+
             wz::window::WindowDesc desc{};
             desc.title = "scene_compute_kernel_materialize_test";
             desc.width = 64;
@@ -845,12 +875,20 @@ namespace
 
     IndexPortSetup build_index_port_setup(
         wz::gpu::Device& device,
-        wz::engine::assets::EngineAssetLibrary& assets)
+        wz::engine::assets::EngineAssetLibrary& assets,
+        uint32_t thread_group_size = 64u)
     {
         using namespace wz::engine::assets;
         namespace behavior = wz::engine::behavior;
 
         IndexPortSetup setup{};
+        const bool tg2 = thread_group_size == 2u;
+        const char* kernel_id = tg2
+            ? "project/publish_vertex_valence_tg2"
+            : "project/publish_vertex_valence";
+        const char* hlsl_path = tg2
+            ? "shaders/compute/publish_vertex_valence_tg2_cs.hlsl"
+            : "shaders/compute/publish_vertex_valence_cs.hlsl";
 
         const MeshAsset mesh = assets.meshes().create_procedural_mesh({
             .name = "valence_mesh",
@@ -896,11 +934,11 @@ namespace
         scene.name = "behavior_vertex_valence";
         SceneNodeAsset node = make_scene_node("kernel");
         node.compute_kernel = SceneComputeKernelAsset{
-            .kernel_id = "project/publish_vertex_valence",
-            .hlsl_path = "shaders/compute/publish_vertex_valence_cs.hlsl",
+            .kernel_id = kernel_id,
+            .hlsl_path = hlsl_path,
             .entry = "main",
             .target = "cs_5_0",
-            .thread_group_size_x = 64,
+            .thread_group_size_x = thread_group_size,
             .thread_group_size_y = 1,
             .thread_group_size_z = 1,
             .ports = {
@@ -971,14 +1009,15 @@ namespace
     // buffer, both count constants, and the dispatch group count are all
     // resolved by the engine from the entity's mesh.
     wz::engine::behavior::BehaviorGpuComputeJob make_valence_job(
-        uint32_t channel_id)
+        uint32_t channel_id,
+        const char* kernel = "project/publish_vertex_valence")
     {
         namespace behavior = wz::engine::behavior;
 
         behavior::BehaviorGpuComputeJob job{};
         job.work.value = 1u;
         job.entity = 0;
-        job.kernel = "project/publish_vertex_valence";
+        job.kernel = kernel;
         job.group_count_x = 0u;
         job.group_count_y = 0u;
         job.group_count_z = 0u;
@@ -1112,6 +1151,184 @@ TEST_F(
         assets.gpu_resident_fields()
             .find(setup.field.output, setup.channel_id)
             .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeVertexDispatchDomainAvoidsIndexOverDispatch)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets, 2u);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    // A vertex-domain kernel that reads indices: VERTEX derives the group
+    // count from the 4 vertices, while legacy AUTO takes the max resolved
+    // count (the 6 indices) and over-dispatches.
+    behavior::BehaviorGpuComputeJob vertex_job = make_valence_job(
+        setup.channel_id,
+        "project/publish_vertex_valence_tg2");
+    vertex_job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_VERTEX;
+    const auto vertex_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &vertex_job, 1u },
+            setup.library);
+    EXPECT_EQ(vertex_report.dispatched, 1u);
+    EXPECT_EQ(vertex_report.published_mesh_fields, 1u);
+    ASSERT_EQ(vertex_report.derived_dispatches.size(), 1u);
+    EXPECT_EQ(
+        vertex_report.derived_dispatches[0].dispatch_domain,
+        WZ_GPU_DISPATCH_DOMAIN_VERTEX);
+    EXPECT_EQ(vertex_report.derived_dispatches[0].element_count, 4u);
+    EXPECT_EQ(vertex_report.derived_dispatches[0].group_count_x, 2u);
+
+    behavior::BehaviorGpuComputeJob auto_job = make_valence_job(
+        setup.channel_id,
+        "project/publish_vertex_valence_tg2");
+    auto_job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_AUTO;
+    const auto auto_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &auto_job, 1u },
+            setup.library);
+    EXPECT_EQ(auto_report.dispatched, 1u);
+    ASSERT_EQ(auto_report.derived_dispatches.size(), 1u);
+    EXPECT_EQ(auto_report.derived_dispatches[0].element_count, 6u);
+    EXPECT_EQ(auto_report.derived_dispatches[0].group_count_x, 3u);
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeEdgeDispatchDomainIsReservedAndFails)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    behavior::BehaviorGpuComputeJob job =
+        make_valence_job(setup.channel_id);
+    job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_EDGE;
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 0u);
+    EXPECT_EQ(report.failed, 1u);
+    ASSERT_EQ(report.publish_failures.size(), 1u);
+    EXPECT_EQ(report.publish_failures[0].port_name, "dispatch_domain");
+    EXPECT_NE(
+        report.publish_failures[0].reason.find("reserved"),
+        std::string::npos)
+        << report.publish_failures[0].reason;
+    EXPECT_NE(
+        report.publish_failures[0].reason.find("resident mesh topology"),
+        std::string::npos)
+        << report.publish_failures[0].reason;
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeOutputDispatchDomainReadsBackExactValenceValues)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    // Plain (non-publish) output port sized by the plugin: OUTPUT domain
+    // derives the group count from it, and the executor's readback path
+    // returns the bytes so the test can validate actual kernel output, not
+    // just successful publication.
+    behavior::BehaviorGpuComputeJob job =
+        make_valence_job(setup.channel_id);
+    job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_OUTPUT;
+    job.ports[1].resource = WzGpuResourceRef{};
+    job.ports[1].element_count = 4u;
+
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.failed, 0u);
+    EXPECT_EQ(report.published_mesh_fields, 0u);
+    ASSERT_EQ(report.derived_dispatches.size(), 1u);
+    EXPECT_EQ(
+        report.derived_dispatches[0].dispatch_domain,
+        WZ_GPU_DISPATCH_DOMAIN_OUTPUT);
+    EXPECT_EQ(report.derived_dispatches[0].element_count, 4u);
+
+    // Quad triangle list {0,1,2, 0,2,3}: vertices 0 and 2 touch both
+    // triangles, vertices 1 and 3 touch one each.
+    ASSERT_EQ(report.readbacks.size(), 1u);
+    const auto& readback = report.readbacks[0];
+    EXPECT_EQ(readback.port_name, "output");
+    ASSERT_EQ(readback.bytes.size(), 4u * sizeof(float));
+    float values[4]{};
+    std::memcpy(values, readback.bytes.data(), sizeof(values));
+    EXPECT_FLOAT_EQ(values[0], 2.0f);
+    EXPECT_FLOAT_EQ(values[1], 1.0f);
+    EXPECT_FLOAT_EQ(values[2], 2.0f);
+    EXPECT_FLOAT_EQ(values[3], 1.0f);
 
     (void)behavior::release_behavior_gpu_kernel_library(
         device,

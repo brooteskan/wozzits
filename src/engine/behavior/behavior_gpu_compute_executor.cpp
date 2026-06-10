@@ -876,15 +876,87 @@ namespace wz::engine::behavior
             uint32_t group_count_z = job.group_count_z;
             if (ok
                 && group_count_x == 0u
-                && engine_resolved_elements > 0u
                 && kernel->thread_group_size_x > 0u)
             {
-                group_count_x =
-                    (engine_resolved_elements
-                        + kernel->thread_group_size_x - 1u)
-                    / kernel->thread_group_size_x;
-                group_count_y = group_count_y != 0u ? group_count_y : 1u;
-                group_count_z = group_count_z != 0u ? group_count_z : 1u;
+                // Explicit group counts always win (group_count_x != 0).
+                // Otherwise the declared dispatch domain selects the element
+                // count; AUTO preserves the legacy max-of-resolved-counts
+                // derivation, which over-dispatches kernels whose read set
+                // spans more elements than their iteration domain.
+                uint32_t domain_elements = 0u;
+                std::string domain_failure;
+                switch (job.dispatch_domain) {
+                case WZ_GPU_DISPATCH_DOMAIN_AUTO:
+                    domain_elements = engine_resolved_elements;
+                    break;
+                case WZ_GPU_DISPATCH_DOMAIN_VERTEX:
+                case WZ_GPU_DISPATCH_DOMAIN_FACE:
+                case WZ_GPU_DISPATCH_DOMAIN_CORNER: {
+                    const auto* mesh =
+                        find_entity_mesh_data(publish_context, job);
+                    if (!mesh) {
+                        domain_failure =
+                            "dispatch domain unresolvable: entity has no "
+                            "resolvable mesh field visualization target";
+                        break;
+                    }
+                    domain_elements =
+                        job.dispatch_domain == WZ_GPU_DISPATCH_DOMAIN_VERTEX
+                            ? mesh->vertex_count()
+                            : job.dispatch_domain
+                                    == WZ_GPU_DISPATCH_DOMAIN_FACE
+                                ? mesh->index_count() / 3u
+                                : mesh->index_count();
+                    if (domain_elements == 0u) {
+                        domain_failure =
+                            "dispatch domain element count is zero";
+                    }
+                    break;
+                }
+                case WZ_GPU_DISPATCH_DOMAIN_EDGE:
+                    domain_failure =
+                        "edge dispatch domain is reserved: unique edge "
+                        "count requires resident mesh topology";
+                    break;
+                case WZ_GPU_DISPATCH_DOMAIN_OUTPUT:
+                    if (output_buffers.empty()) {
+                        domain_failure =
+                            "output dispatch domain unresolvable: job has "
+                            "no output port";
+                        break;
+                    }
+                    domain_elements = output_buffers.front().element_count;
+                    break;
+                default:
+                    domain_failure = "unknown dispatch domain "
+                        + std::to_string(job.dispatch_domain);
+                    break;
+                }
+
+                if (!domain_failure.empty()) {
+                    report.publish_failures.push_back({
+                        .work = job.work,
+                        .port_name = "dispatch_domain",
+                        .reason = std::move(domain_failure),
+                    });
+                    ok = false;
+                }
+                else if (domain_elements > 0u) {
+                    group_count_x =
+                        (domain_elements
+                            + kernel->thread_group_size_x - 1u)
+                        / kernel->thread_group_size_x;
+                    group_count_y =
+                        group_count_y != 0u ? group_count_y : 1u;
+                    group_count_z =
+                        group_count_z != 0u ? group_count_z : 1u;
+                    report.derived_dispatches.push_back({
+                        .work = job.work,
+                        .dispatch_domain = job.dispatch_domain,
+                        .element_count = domain_elements,
+                        .group_count_x = group_count_x,
+                    });
+                }
             }
             if (group_count_x == 0u
                 || group_count_y == 0u

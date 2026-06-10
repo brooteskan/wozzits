@@ -81,6 +81,17 @@ namespace wz::engine::behavior
         std::string reason;
     };
 
+    // Group count the engine derived for a job that left group_count_x at 0
+    // (explicit dispatch domain or legacy AUTO). Diagnostic: lets tests and
+    // tooling observe the dispatch shape instead of inferring it.
+    struct BehaviorGpuDerivedDispatch
+    {
+        WzGpuWorkId work{};
+        WzGpuDispatchDomain dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_AUTO;
+        uint32_t element_count = 0u;
+        uint32_t group_count_x = 0u;
+    };
+
     struct BehaviorGpuDispatchReport
     {
         uint32_t submitted = 0u;
@@ -89,6 +100,7 @@ namespace wz::engine::behavior
         uint32_t published_mesh_fields = 0u;
         std::vector<BehaviorGpuOutputReadback> readbacks;
         std::vector<BehaviorGpuPublishFailure> publish_failures;
+        std::vector<BehaviorGpuDerivedDispatch> derived_dispatches;
         std::vector<WzGpuWorkId> completed_work;
         std::vector<WzGpuWorkId> failed_work;
     };
