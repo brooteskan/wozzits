@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 20u
+#define WZ_BEHAVIOR_ABI_VERSION 21u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -289,6 +289,19 @@ enum
      * current entity's mesh vertex count.
      */
     WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT = 3u,
+    /*
+     * For input structured-buffer ports, the engine binds the current
+     * entity's mesh index buffer (StructuredBuffer<uint>, stride 4,
+     * triangle list). No initial_data is required; element_count is filled
+     * by the engine from the mesh index count. Requires the entity to have
+     * a mesh field visualization target (the mesh is resolved through it).
+     */
+    WZ_GPU_RESOURCE_REF_MESH_INDICES = 4u,
+    /*
+     * For u32 root-constant ports, the engine fills the value with the
+     * current entity's mesh triangle count (index count / 3).
+     */
+    WZ_GPU_RESOURCE_REF_MESH_TRIANGLE_COUNT = 5u,
 };
 
 typedef struct WzGpuPortValue

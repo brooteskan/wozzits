@@ -194,8 +194,8 @@ static inline uint8_t wz_gpu_set_groups(
 /*
  * Request that the engine derive the dispatch group count from the kernel's
  * authored thread group size and the element count of engine-resolved mesh
- * ports (vertex positions input, mesh field output, vertex count constant).
- * Only meaningful for jobs that use at least one such port.
+ * ports (vertex positions/indices inputs, mesh field output, vertex/triangle
+ * count constants). Only meaningful for jobs that use at least one such port.
  */
 static inline uint8_t wz_gpu_set_groups_from_mesh(WzGpuJob* job)
 {
@@ -368,6 +368,51 @@ static inline uint8_t wz_gpu_set_u32_mesh_vertex_count(
         return 0u;
     }
     port->resource.value = WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT;
+    return 1u;
+}
+
+/*
+ * Declare a structured input the engine fills with the entity's mesh index
+ * buffer (uint per index, stride 4, triangle list). The plugin uploads
+ * nothing; the element count is the mesh index count, resolved through the
+ * entity's mesh field visualization target.
+ */
+static inline uint8_t wz_gpu_set_structured_input_mesh_indices(
+    WzGpuJob* job,
+    const char* name)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->stride_bytes = sizeof(uint32_t);
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_INDICES;
+    return 1u;
+}
+
+/*
+ * Declare a u32 root-constant port the engine fills with the entity's mesh
+ * triangle count (index count / 3, resolved through the entity's mesh field
+ * visualization target). Use this instead of authoring the triangle count
+ * in behavior config.
+ */
+static inline uint8_t wz_gpu_set_u32_mesh_triangle_count(
+    WzGpuJob* job,
+    const char* name)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_U32,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_TRIANGLE_COUNT;
     return 1u;
 }
 

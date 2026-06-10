@@ -647,6 +647,29 @@ namespace wz::engine::behavior
                             engine_resolved_elements,
                             mesh->vertex_count());
                     }
+                    else if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_TRIANGLE_COUNT)
+                    {
+                        const auto* mesh =
+                            find_entity_mesh_data(publish_context, job);
+                        if (!mesh) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "mesh triangle count unavailable: "
+                                    "entity has no resolvable mesh field "
+                                    "visualization target",
+                            });
+                            ok = false;
+                            break;
+                        }
+                        const uint32_t triangle_count =
+                            mesh->index_count() / 3u;
+                        constant_port.u32[0] = triangle_count;
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            triangle_count);
+                    }
                     ok = write_root_constant(
                         constant_port,
                         binding,
@@ -706,6 +729,53 @@ namespace wz::engine::behavior
                             .initial_data = positions.data(),
                             .initial_data_bytes =
                                 positions.size() * sizeof(float),
+                        });
+                    }
+                    else if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_INDICES)
+                    {
+                        // Per-dispatch upload; the resident mesh-data table
+                        // (Laplacian milestone part 2) removes this re-upload
+                        // for per-frame use.
+                        const auto* mesh =
+                            find_entity_mesh_data(publish_context, job);
+                        if (!mesh
+                            || port->stride_bytes != sizeof(uint32_t))
+                        {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = !mesh
+                                    ? "mesh indices unavailable: entity has "
+                                      "no resolvable mesh field "
+                                      "visualization target"
+                                    : "mesh index port stride must be "
+                                      "4 bytes (uint)",
+                            });
+                            ok = false;
+                            break;
+                        }
+
+                        element_count = mesh->index_count();
+                        if (element_count == 0u) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "mesh indices unavailable: "
+                                    "entity mesh has no indices",
+                            });
+                            ok = false;
+                            break;
+                        }
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            element_count);
+                        buffer = wz::gpu::create_structured_buffer(device, {
+                            .element_count = element_count,
+                            .stride_bytes = port->stride_bytes,
+                            .initial_data = mesh->indices.data(),
+                            .initial_data_bytes =
+                                mesh->indices.size() * sizeof(uint32_t),
                         });
                     }
                     else {

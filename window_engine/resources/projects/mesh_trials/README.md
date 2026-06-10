@@ -305,7 +305,7 @@ behavior-driven data at runtime.
 ### Configuration
 
 No vertex count is authored anywhere. The plugin declares mesh-resolved ports
-(ABI 20) and the engine fills everything from the entity's mesh:
+(ABI 20+) and the engine fills everything from the entity's mesh:
 
 - `wz_gpu_set_structured_input_mesh_positions(&job, "positions")` binds the
   mesh vertex positions (float3, stride 12) at the port's SRV register.
@@ -313,6 +313,11 @@ No vertex count is authored anywhere. The plugin declares mesh-resolved ports
   output from the target field's element count (the mesh vertex count).
 - `wz_gpu_set_u32_mesh_vertex_count(&job, "vertex_count")` fills the root
   constant with the mesh vertex count.
+- `wz_gpu_set_structured_input_mesh_indices(&job, "indices")` (ABI 21) binds
+  the mesh index buffer (uint, stride 4, triangle list) at the port's SRV
+  register.
+- `wz_gpu_set_u32_mesh_triangle_count(&job, "triangle_count")` (ABI 21) fills
+  the root constant with the mesh triangle count (index count / 3).
 - `wz_gpu_set_groups_from_mesh(&job)` derives the dispatch group count from
   the kernel's authored thread group size.
 

@@ -82,6 +82,33 @@ namespace
                     "}\n"),
                 wz::fs::FileError::None);
 
+            ASSERT_EQ(
+                wz::fs::write_file_text(
+                    wz::fs::join(
+                        root,
+                        "shaders/compute/publish_vertex_valence_cs.hlsl"),
+                    "StructuredBuffer<uint> Indices : register(t0);\n"
+                    "RWStructuredBuffer<float> Output : register(u0);\n"
+                    "cbuffer Constants : register(b0) {\n"
+                    "    uint TriangleCount;\n"
+                    "    uint VertexCount;\n"
+                    "};\n"
+                    "[numthreads(64, 1, 1)]\n"
+                    "void main(uint3 id : SV_DispatchThreadID) {\n"
+                    "    if (id.x < VertexCount) {\n"
+                    "        float valence = 0.0;\n"
+                    "        for (uint t = 0; t < TriangleCount; ++t) {\n"
+                    "            if (Indices[3 * t + 0] == id.x\n"
+                    "                || Indices[3 * t + 1] == id.x\n"
+                    "                || Indices[3 * t + 2] == id.x) {\n"
+                    "                valence += 1.0;\n"
+                    "            }\n"
+                    "        }\n"
+                    "        Output[id.x] = valence;\n"
+                    "    }\n"
+                    "}\n"),
+                wz::fs::FileError::None);
+
             wz::window::WindowDesc desc{};
             desc.title = "scene_compute_kernel_materialize_test";
             desc.width = 64;
@@ -799,6 +826,296 @@ TEST_F(
         assets.gpu_resident_fields().find(field.output, channel_id).valid());
 
     (void)behavior::release_behavior_gpu_kernel_library(device, library);
+}
+
+namespace
+{
+    // Shared setup for the index-exposure tests: a quad mesh with an
+    // explicit Float1 vertex field as the publish target, plus the
+    // vertex-valence kernel that consumes the engine-bound index buffer
+    // and triangle/vertex count constants.
+    struct IndexPortSetup
+    {
+        wz::engine::assets::MeshDerivedFieldAsset field{};
+        uint32_t channel_id = 0u;
+        wz::engine::behavior::BehaviorGpuKernelLibrary library{};
+        bool ok = false;
+        std::string error;
+    };
+
+    IndexPortSetup build_index_port_setup(
+        wz::gpu::Device& device,
+        wz::engine::assets::EngineAssetLibrary& assets)
+    {
+        using namespace wz::engine::assets;
+        namespace behavior = wz::engine::behavior;
+
+        IndexPortSetup setup{};
+
+        const MeshAsset mesh = assets.meshes().create_procedural_mesh({
+            .name = "valence_mesh",
+            .kind = ProceduralMeshKind::Quad,
+        });
+        if (!mesh.valid()) {
+            setup.error = "mesh creation failed";
+            return setup;
+        }
+        if (!assets.commit() || !assets.resolve_all().ok()) {
+            setup.error = "mesh resolve failed";
+            return setup;
+        }
+
+        const MeshData* mesh_data =
+            assets.meshes().get_mesh_data(assets.meshes().get_mesh(mesh));
+        if (!mesh_data || mesh_data->vertex_count() == 0u) {
+            setup.error = "mesh data unavailable";
+            return setup;
+        }
+
+        setup.channel_id = MeshWaveletChannelID::kDetailCost;
+        std::vector<std::byte> zeroes(
+            static_cast<size_t>(mesh_data->vertex_count()) * sizeof(float),
+            std::byte{ 0 });
+        setup.field = assets.mesh_derived_fields().create_explicit_field({
+            .name = "behavior/valence_field",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = mesh_data->vertex_count(),
+            .channels = {{
+                .channel_id = setup.channel_id,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = zeroes,
+            }},
+        });
+        if (!setup.field.valid()) {
+            setup.error = "explicit field creation failed";
+            return setup;
+        }
+
+        SceneAssetData scene{};
+        scene.name = "behavior_vertex_valence";
+        SceneNodeAsset node = make_scene_node("kernel");
+        node.compute_kernel = SceneComputeKernelAsset{
+            .kernel_id = "project/publish_vertex_valence",
+            .hlsl_path = "shaders/compute/publish_vertex_valence_cs.hlsl",
+            .entry = "main",
+            .target = "cs_5_0",
+            .thread_group_size_x = 64,
+            .thread_group_size_y = 1,
+            .thread_group_size_z = 1,
+            .ports = {
+                SceneComputeKernelPortAsset{
+                    .name = "indices",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "output",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Output,
+                    .binding_kind = SceneComputeKernelBindingKind::UAV,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "triangle_count",
+                    .kind = SceneComputeKernelPortKind::U32,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .root_constant_offset = 0,
+                    .root_constant_dwords = 1,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "vertex_count",
+                    .kind = SceneComputeKernelPortKind::U32,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .root_constant_offset = 1,
+                    .root_constant_dwords = 1,
+                },
+            },
+        };
+        scene.nodes.push_back(std::move(node));
+
+        const auto materialize_report =
+            materialize_scene_authoring_components(scene, assets);
+        if (!materialize_report.ok) {
+            setup.error = materialize_report.error;
+            return setup;
+        }
+        if (!assets.commit() || !assets.resolve_all().ok()) {
+            setup.error = "kernel resolve failed";
+            return setup;
+        }
+
+        std::string kernel_error;
+        if (!behavior::build_kernel_library_from_scene(
+                device,
+                scene,
+                assets,
+                setup.library,
+                &kernel_error))
+        {
+            setup.error = kernel_error;
+            return setup;
+        }
+
+        setup.ok = true;
+        return setup;
+    }
+
+    // The plugin supplies no data, no counts, and no group sizes: the index
+    // buffer, both count constants, and the dispatch group count are all
+    // resolved by the engine from the entity's mesh.
+    wz::engine::behavior::BehaviorGpuComputeJob make_valence_job(
+        uint32_t channel_id)
+    {
+        namespace behavior = wz::engine::behavior;
+
+        behavior::BehaviorGpuComputeJob job{};
+        job.work.value = 1u;
+        job.entity = 0;
+        job.kernel = "project/publish_vertex_valence";
+        job.group_count_x = 0u;
+        job.group_count_y = 0u;
+        job.group_count_z = 0u;
+        job.ports = {
+            behavior::BehaviorGpuPortValue{
+                .name = "indices",
+                .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                .direction = WZ_GPU_PORT_INPUT,
+                .element_count = 0u,
+                .stride_bytes = sizeof(uint32_t),
+                .resource = WzGpuResourceRef{
+                    .value = WZ_GPU_RESOURCE_REF_MESH_INDICES,
+                },
+            },
+            behavior::BehaviorGpuPortValue{
+                .name = "output",
+                .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                .direction = WZ_GPU_PORT_OUTPUT,
+                .element_count = 0u,
+                .stride_bytes = sizeof(float),
+                .resource = WzGpuResourceRef{
+                    .value = WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION,
+                },
+                .u32 = { channel_id, 0u, 0u, 0u },
+            },
+            behavior::BehaviorGpuPortValue{
+                .name = "triangle_count",
+                .kind = WZ_GPU_PORT_U32,
+                .direction = WZ_GPU_PORT_INPUT,
+                .resource = WzGpuResourceRef{
+                    .value = WZ_GPU_RESOURCE_REF_MESH_TRIANGLE_COUNT,
+                },
+            },
+            behavior::BehaviorGpuPortValue{
+                .name = "vertex_count",
+                .kind = WZ_GPU_PORT_U32,
+                .direction = WZ_GPU_PORT_INPUT,
+                .resource = WzGpuResourceRef{
+                    .value = WZ_GPU_RESOURCE_REF_MESH_VERTEX_COUNT,
+                },
+            },
+        };
+        return job;
+    }
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeEngineResolvedIndexPortsPublishWithoutPluginData)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    const behavior::BehaviorGpuComputeJob job =
+        make_valence_job(setup.channel_id);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.submitted, 1u);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.failed, 0u);
+    EXPECT_EQ(report.published_mesh_fields, 1u);
+    for (const auto& failure : report.publish_failures) {
+        ADD_FAILURE() << failure.port_name << ": " << failure.reason;
+    }
+    EXPECT_TRUE(
+        assets.gpu_resident_fields()
+            .find(setup.field.output, setup.channel_id)
+            .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeMeshIndicesWithoutMeshFailsWithDiagnostic)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    // No mesh field visualization targets registered for the entity, so
+    // the engine cannot resolve a mesh for the index buffer.
+    wz::engine::assets::SceneInstance instance{};
+
+    const behavior::BehaviorGpuComputeJob job =
+        make_valence_job(setup.channel_id);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 0u);
+    EXPECT_EQ(report.failed, 1u);
+    EXPECT_EQ(report.published_mesh_fields, 0u);
+    ASSERT_FALSE(report.publish_failures.empty());
+    EXPECT_NE(
+        report.publish_failures[0].reason.find("unavailable"),
+        std::string::npos)
+        << report.publish_failures[0].reason;
+    EXPECT_NE(
+        report.publish_failures[0].reason.find(
+            "no resolvable mesh field visualization target"),
+        std::string::npos)
+        << report.publish_failures[0].reason;
+    EXPECT_FALSE(
+        assets.gpu_resident_fields()
+            .find(setup.field.output, setup.channel_id)
+            .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
 }
 
 TEST_F(

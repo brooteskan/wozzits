@@ -125,6 +125,8 @@ namespace wz::engine::behavior
                         src.resource.value
                             == WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS
                         || src.resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_INDICES
+                        || src.resource.value
                             == WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION;
                     if ((src.element_count == 0u && !engine_sized)
                         || src.stride_bytes == 0u
