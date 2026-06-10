@@ -11,7 +11,16 @@
 
 namespace wz::render {
 
-    using namespace wz::scene;
+    using wz::scene::CompiledSceneView;
+    using wz::scene::MeshHandle;
+    using wz::scene::MaterialHandle;
+    using wz::scene::SplatHandle;
+    using wz::scene::INVALID_MESH;
+    using wz::scene::INVALID_MATERIAL;
+    using wz::scene::INVALID_SPLAT;
+    using wz::scene::TerrainVisualInstance;
+    using wz::scene::LightRecord;
+    using wz::scene::ViewData;
 
 
     // ─── Pipeline submission order ────────────────────────────────────────────────

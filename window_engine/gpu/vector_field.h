@@ -7,7 +7,10 @@
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
 
-#include <engine/assets/vector_field/vector_field.h>
+namespace wz::engine::assets
+{
+    struct VectorFieldData;
+}
 
 namespace wz::gpu
 {

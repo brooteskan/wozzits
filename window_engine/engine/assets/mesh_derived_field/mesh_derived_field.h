@@ -4,19 +4,15 @@
 
 #include <asset/types.h>
 #include <engine/assets/mesh/mesh.h>
-#include <gpu/gpu_types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-namespace wz::gpu
-{
-    struct Device;
-}
-
 namespace wz::engine::assets
 {
+    class MeshFieldComputeBackend;
+
     namespace MeshWaveletChannelID
     {
         inline constexpr uint32_t kPositionEnergyBase = 0x1000u;
@@ -108,7 +104,7 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey field_key{};
         uint32_t channel_id = 0;
-        wz::gpu::GPUHandle gpu_resource{};
+        wz::asset::ResourceHandle gpu_resource{};
 
         bool valid() const noexcept;
     };
@@ -125,12 +121,14 @@ namespace wz::engine::assets
         // wz::gpu::update_mesh_field_visualization_from_gpu_source() against
         // the handle returned by find() instead of swapping, which also keeps
         // handles captured by resolved renderables valid.
-        bool replace(wz::gpu::Device& device, GpuResidentFieldEntry entry);
-        wz::gpu::GPUHandle find(
+        bool replace(
+            MeshFieldComputeBackend& compute,
+            GpuResidentFieldEntry entry);
+        wz::asset::ResourceHandle find(
             wz::asset::AssetKey field_key,
             uint32_t channel_id) const;
         void clear();
-        void destroy(wz::gpu::Device& device);
+        void destroy(MeshFieldComputeBackend& compute);
         size_t size() const noexcept;
 
     private:

@@ -330,7 +330,7 @@ namespace wz::gpu::dx12
         assert(impl);
         assert(impl->ctx && "render context was not created");
 
-        wz::render::backend::dx12::submit(
+        wz::engine::render_backend::dx12::submit(
             impl->ctx,
             frame
         );
@@ -341,7 +341,7 @@ namespace wz::gpu::dx12
         const wz::render::RenderFrameView& frame,
         const wz::engine::rendering::RenderResourceResolver& resolver)
     {
-        wz::render::backend::dx12::submit(device, frame, resolver);
+        wz::engine::render_backend::dx12::submit(device, frame, resolver);
     }
 
     void submit_render_frame(
@@ -350,7 +350,7 @@ namespace wz::gpu::dx12
         const wz::engine::rendering::RenderResourceResolver& resolver,
         const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
     {
-        wz::render::backend::dx12::submit(device, frame, resolver, pipeline_cache);
+        wz::engine::render_backend::dx12::submit(device, frame, resolver, pipeline_cache);
     }
 
     void submit_render_frame(
@@ -360,7 +360,7 @@ namespace wz::gpu::dx12
         const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
         const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
     {
-        wz::render::backend::dx12::submit(
+        wz::engine::render_backend::dx12::submit(
             device, frame, resolver, pipeline_cache, render_program_cache);
     }
 
@@ -374,12 +374,12 @@ namespace wz::gpu::dx12
         assert(impl);
         assert(!impl->ctx);
 
-        wz::render::backend::dx12::TrianglePipelineDesc pipeline_desc{
+        wz::engine::render_backend::dx12::TrianglePipelineDesc pipeline_desc{
             .vertex_shader = desc.vertex_shader,
             .pixel_shader = desc.pixel_shader,
         };
 
-        impl->ctx = wz::render::backend::dx12::create(
+        impl->ctx = wz::engine::render_backend::dx12::create(
             device,
             pipeline_desc
         );
@@ -591,7 +591,7 @@ namespace wz::gpu::dx12
         // 1. Destroy renderer/backend context first.
         if (impl->ctx)
         {
-            wz::render::backend::dx12::destroy(impl->ctx);
+            wz::engine::render_backend::dx12::destroy(impl->ctx);
             impl->ctx = nullptr;
         }
 

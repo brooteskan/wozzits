@@ -2,9 +2,9 @@
 
 #include <type_traits>
 
-#include <engine/benchmark_app.h>
+#include <bench/benchmark_app.h>
 #include <engine/frame_storage.h>
-#include <engine/game_app.h>
+#include <app/game_app.h>
 
 TEST(FrameStorageTypes, AppAndBenchAliasesUseSharedEngineStorage)
 {

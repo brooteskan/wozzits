@@ -572,14 +572,16 @@ namespace wz::engine::assets::internal
             const SceneFromGLBCompileDesc& desc,
             uint32_t mesh_index)
         {
-            for (const auto& binding : desc.mesh_renderables) {
-                if (binding.mesh_index == mesh_index
-                    && !(binding.renderable_asset == wz::asset::AssetKey{}))
-                {
-                    return binding.renderable_asset;
-                }
+            const auto it = std::find_if(
+                desc.mesh_renderables.begin(), desc.mesh_renderables.end(),
+                [&](const auto& binding) {
+                    return binding.mesh_index == mesh_index
+                        && !(binding.renderable_asset == wz::asset::AssetKey{});
+                });
+            if (it == desc.mesh_renderables.end()) {
+                return std::nullopt;
             }
-            return std::nullopt;
+            return it->renderable_asset;
         }
 
         bool parse_asset_reference_object(

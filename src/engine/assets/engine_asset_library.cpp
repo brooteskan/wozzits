@@ -134,10 +134,12 @@ namespace wz::engine::assets
         , ambient_lighting_table_{}
         , hdri_environment_table_{}
         , scene_table_{}
+        , mesh_field_compute_(make_gpu_mesh_field_compute_backend(device))
         , system_(internal::make_engine_compiler_registry(
             internal::EngineAssetContext{
                 .device                    = device,
                 .logger                    = logger,
+                .mesh_field_compute        = *mesh_field_compute_,
                 .scalar_fields_table       = scalar_fields_table_,
                 .vector_fields_table       = vector_fields_table_,
                 .csv_table                 = csv_table_,
@@ -228,7 +230,7 @@ namespace wz::engine::assets
 
     EngineAssetLibrary::~EngineAssetLibrary()
     {
-        gpu_resident_field_table_.destroy(device_);
+        gpu_resident_field_table_.destroy(*mesh_field_compute_);
     }
 
 

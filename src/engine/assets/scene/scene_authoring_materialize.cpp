@@ -1127,12 +1127,12 @@ namespace wz::engine::assets
                     : nullptr;
             }
 
-            for (const auto& node : scene.nodes) {
-                if (node.hdri_environment) {
-                    return &*node.hdri_environment;
-                }
-            }
-            return nullptr;
+            const auto it = std::find_if(
+                scene.nodes.begin(), scene.nodes.end(),
+                [](const SceneNodeAsset& node) {
+                    return node.hdri_environment.has_value();
+                });
+            return it != scene.nodes.end() ? &*it->hdri_environment : nullptr;
         }
 
         TerrainLightingData terrain_lighting_for_style(

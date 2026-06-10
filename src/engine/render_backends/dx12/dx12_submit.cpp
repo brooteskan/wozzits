@@ -13,8 +13,11 @@
 #include <limits>
 #include <vector>
 
-namespace wz::render::backend::dx12
+namespace wz::engine::render_backend::dx12
 {
+    // Backend implementation works in the render layer's vocabulary throughout.
+    using namespace wz::render;
+
     namespace
     {
         using wz::engine::assets::BuiltinRenderProgram;

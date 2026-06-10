@@ -6,6 +6,22 @@
 #include <algorithm>
 #include <optional>
 
+namespace
+{
+    // Shared lookup predicate for the three get_* accessors below.
+    template <typename Entries>
+    auto find_entry(const Entries& entries,
+                    wz::asset::ResourceHandle render_program)
+    {
+        return std::find_if(entries.begin(), entries.end(),
+            [&](const auto& e) {
+                return e.render_program.id    == render_program.id &&
+                       e.render_program.epoch == render_program.epoch &&
+                       e.render_program.type  == render_program.type;
+            });
+    }
+}
+
 namespace wz::engine::rendering
 {
     bool RenderProgramPipelineCache::realize(
@@ -105,48 +121,26 @@ namespace wz::engine::rendering
     wz::gpu::GPUHandle RenderProgramPipelineCache::get(
         wz::asset::ResourceHandle render_program) const noexcept
     {
-        for (const Entry& e : entries_)
-        {
-            if (e.render_program.id    == render_program.id &&
-                e.render_program.epoch == render_program.epoch &&
-                e.render_program.type  == render_program.type)
-            {
-                return e.pipeline;
-            }
-        }
-        return {};
+        const auto it = find_entry(entries_, render_program);
+        return it != entries_.end() ? it->pipeline : wz::gpu::GPUHandle{};
     }
 
     std::optional<wz::engine::assets::RenderBindingModel>
     RenderProgramPipelineCache::get_binding_model(
         wz::asset::ResourceHandle render_program) const noexcept
     {
-        for (const Entry& e : entries_)
-        {
-            if (e.render_program.id    == render_program.id &&
-                e.render_program.epoch == render_program.epoch &&
-                e.render_program.type  == render_program.type)
-            {
-                return e.binding_model;
-            }
-        }
-        return std::nullopt;
+        const auto it = find_entry(entries_, render_program);
+        if (it == entries_.end())
+            return std::nullopt;
+        return it->binding_model;
     }
 
     const RealizedRenderProgramBindingLayout*
     RenderProgramPipelineCache::get_binding_layout(
         wz::asset::ResourceHandle render_program) const noexcept
     {
-        for (const Entry& e : entries_)
-        {
-            if (e.render_program.id    == render_program.id &&
-                e.render_program.epoch == render_program.epoch &&
-                e.render_program.type  == render_program.type)
-            {
-                return &e.binding_layout;
-            }
-        }
-        return nullptr;
+        const auto it = find_entry(entries_, render_program);
+        return it != entries_.end() ? &it->binding_layout : nullptr;
     }
 
     void RenderProgramPipelineCache::clear() noexcept

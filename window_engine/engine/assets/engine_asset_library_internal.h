@@ -59,6 +59,7 @@ namespace wz::engine::assets::internal {
     {
         wz::gpu::Device&            device;
         wz::Logger&                 logger;
+        MeshFieldComputeBackend&    mesh_field_compute;
         ScalarFieldTable&           scalar_fields_table;
         VectorFieldTable&           vector_fields_table;
         CSVTable&                   csv_table;

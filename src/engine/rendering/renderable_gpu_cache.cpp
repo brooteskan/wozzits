@@ -15,6 +15,27 @@
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/vector_field_asset_module.h>
 
+#include <algorithm>
+
+namespace
+{
+    template <typename Entries, typename Pred>
+    auto find_entry(Entries& entries, Pred pred) -> decltype(entries.data())
+    {
+        const auto it = std::find_if(entries.begin(), entries.end(), pred);
+        return it != entries.end() ? &*it : nullptr;
+    }
+
+    template <typename Entries>
+    auto find_terrain_entry(Entries& entries, wz::asset::AssetKey terrain_asset)
+        -> decltype(entries.data())
+    {
+        return find_entry(entries, [&](const auto& entry) {
+            return entry.terrain_asset == terrain_asset;
+        });
+    }
+}
+
 namespace wz::engine::rendering
 {
     RenderableGpuCache::RenderableGpuCache(
@@ -27,12 +48,9 @@ namespace wz::engine::rendering
         wz::asset::AssetKey source_asset,
         wz::engine::assets::RenderableKind kind) const
     {
-        for (const Entry& entry : entries_) {
-            if (entry.kind == kind && entry.source_asset == source_asset)
-                return &entry;
-        }
-
-        return nullptr;
+        return find_entry(entries_, [&](const Entry& entry) {
+            return entry.kind == kind && entry.source_asset == source_asset;
+        });
     }
 
     void RenderableGpuCache::add(
@@ -87,24 +105,18 @@ namespace wz::engine::rendering
     RenderableGpuCache::find_terrain_mesh_chunks(
         wz::asset::AssetKey terrain_asset) const
     {
-        for (const auto& entry : terrain_mesh_chunk_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                return &entry.chunks;
-            }
-        }
-        return nullptr;
+        const auto* entry =
+            find_terrain_entry(terrain_mesh_chunk_entries_, terrain_asset);
+        return entry ? &entry->chunks : nullptr;
     }
 
     const std::vector<TerrainTransitionDrawRange>*
     RenderableGpuCache::find_terrain_transition_ranges(
         wz::asset::AssetKey terrain_asset) const
     {
-        for (const auto& entry : terrain_mesh_chunk_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                return &entry.transition_ranges;
-            }
-        }
-        return nullptr;
+        const auto* entry =
+            find_terrain_entry(terrain_mesh_chunk_entries_, terrain_asset);
+        return entry ? &entry->transition_ranges : nullptr;
     }
 
     void RenderableGpuCache::add_terrain_mesh_chunks(
@@ -115,11 +127,11 @@ namespace wz::engine::rendering
             return;
         }
 
-        for (auto& entry : terrain_mesh_chunk_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                entry.chunks = std::move(chunks);
-                return;
-            }
+        if (auto* entry =
+                find_terrain_entry(terrain_mesh_chunk_entries_, terrain_asset))
+        {
+            entry->chunks = std::move(chunks);
+            return;
         }
 
         terrain_mesh_chunk_entries_.push_back(TerrainMeshChunkEntry{
@@ -136,11 +148,10 @@ namespace wz::engine::rendering
             return;
         }
 
-        for (auto& entry : terrain_mesh_chunk_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                entry.transition_ranges = std::move(ranges);
-                return;
-            }
+        if (auto* entry =
+                find_terrain_entry(terrain_mesh_chunk_entries_, terrain_asset))
+        {
+            entry->transition_ranges = std::move(ranges);
         }
 
         // Transition ranges are sidecar data for terrain mesh chunks.  Do not
@@ -151,12 +162,9 @@ namespace wz::engine::rendering
     RenderableGpuCache::find_terrain_far_splat_chunks(
         wz::asset::AssetKey terrain_asset) const
     {
-        for (const auto& entry : terrain_far_splat_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                return &entry.chunks;
-            }
-        }
-        return nullptr;
+        const auto* entry =
+            find_terrain_entry(terrain_far_splat_entries_, terrain_asset);
+        return entry ? &entry->chunks : nullptr;
     }
 
     void RenderableGpuCache::add_terrain_far_splat_chunks(
@@ -176,12 +184,12 @@ namespace wz::engine::rendering
             }
         }
 
-        for (auto& entry : terrain_far_splat_entries_) {
-            if (entry.terrain_asset == terrain_asset) {
-                entry.gpu_resources = std::move(scoped_resources);
-                entry.chunks = std::move(chunks);
-                return;
-            }
+        if (auto* existing =
+                find_terrain_entry(terrain_far_splat_entries_, terrain_asset))
+        {
+            existing->gpu_resources = std::move(scoped_resources);
+            existing->chunks = std::move(chunks);
+            return;
         }
 
         TerrainFarSplatEntry entry{};

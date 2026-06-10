@@ -313,7 +313,7 @@ namespace wz::engine::behavior
             }
 
             if (!resident_fields.replace(
-                    device,
+                    context->assets->mesh_field_compute(),
                     wz::engine::assets::GpuResidentFieldEntry{
                         .field_key = target.field_asset,
                         .channel_id = target.channel_id,

@@ -1287,11 +1287,14 @@ TEST(BehaviorModuleApi, TerrainSurfaceSampleSamplesHeightField)
     EXPECT_NEAR(probe.sample.position.y, 2.0f, 1e-5f);
     EXPECT_NEAR(probe.sample.position.z, 5.0f, 1e-5f);
 
+    // Heightfield sampling uses smoothed (Catmull-Rom) interpolation with
+    // clamped borders. For this 2x2 grid the gradient at the patch center is
+    // 1.25x the bilinear slope: dh/dx = 0.25, dh/dz = 0.5.
     const float normal_scale =
-        1.0f / std::sqrt(0.2f * 0.2f + 1.0f + 0.4f * 0.4f);
-    EXPECT_NEAR(probe.sample.normal.x, -0.2f * normal_scale, 1e-5f);
+        1.0f / std::sqrt(0.25f * 0.25f + 1.0f + 0.5f * 0.5f);
+    EXPECT_NEAR(probe.sample.normal.x, -0.25f * normal_scale, 1e-5f);
     EXPECT_NEAR(probe.sample.normal.y, normal_scale, 1e-5f);
-    EXPECT_NEAR(probe.sample.normal.z, -0.4f * normal_scale, 1e-5f);
+    EXPECT_NEAR(probe.sample.normal.z, -0.5f * normal_scale, 1e-5f);
 
     g_terrain_sample_probe = nullptr;
 }

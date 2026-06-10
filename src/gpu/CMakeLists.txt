@@ -7,6 +7,7 @@ target_sources(window_engine PRIVATE
     mesh_field_visualization.cpp
     gaussian_splat.cpp
     compute.cpp
+    mesh_field_compute_backend.cpp
     gpu_resource_lifecycle.cpp
 
     dx12/dx12_device.cpp

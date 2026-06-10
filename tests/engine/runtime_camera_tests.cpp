@@ -1,6 +1,6 @@
 // tests/engine/runtime_camera_tests.cpp
 #include <gtest/gtest.h>
-#include <engine/runtime_camera.h>
+#include <app/runtime_camera.h>
 
 // Virtual key codes (Windows) — numeric to avoid pulling in <windows.h>
 constexpr int KEY_W      = 0x57;

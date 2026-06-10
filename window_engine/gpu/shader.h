@@ -2,7 +2,7 @@
 // gpu/shader.h
 
 #include <gpu/gpu_types.h>
-#include <engine/assets/shader/shader_types.h>
+#include <gpu/shader_types.h>
 
 #include <span>
 #include <cstdint>

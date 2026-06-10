@@ -31,7 +31,7 @@ namespace wz::engine::assets::internal
         register_mesh_derived_field_compilers(
             registry,
             ctx.logger,
-            ctx.device,
+            ctx.mesh_field_compute,
             ctx.mesh_table,
             ctx.compute_pipeline_table,
             ctx.mesh_derived_field_table,

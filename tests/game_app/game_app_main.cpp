@@ -2,7 +2,7 @@
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 
-#include <engine/game_app.h>
+#include <app/game_app.h>
 
 
 int main()

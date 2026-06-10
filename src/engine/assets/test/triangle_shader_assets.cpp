@@ -1,5 +1,5 @@
 #include <engine/assets/test/triangle_shader_assets.h>
-#include <engine/assets/shader/shader_types.h>
+#include <gpu/shader_types.h>
 #include <asset/types.h>
 #include <file/filesystem.h>
 #include <gpu/dx12/dx12.h>

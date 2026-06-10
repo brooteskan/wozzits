@@ -7,8 +7,10 @@
 #include <engine/rendering/renderable_pipeline_cache.h>
 #include <engine/rendering/render_program_pipeline_cache.h>
 
-namespace wz::render::backend::dx12
+namespace wz::engine::render_backend::dx12
 {
+    using wz::render::RenderFrameView;
+
     struct GpuMesh
     {
         // Non-owning in the current triangle test path.

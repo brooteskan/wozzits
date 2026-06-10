@@ -8,7 +8,7 @@
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12_internal.h>
-#include <engine/assets/shader/shader_types.h>
+#include <gpu/shader_types.h>
 
 #include <d3dcompiler.h>
 

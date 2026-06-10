@@ -1,10 +1,6 @@
 target_sources(window_engine PRIVATE
     engine.cpp
     app_context.cpp
-    game_app.cpp
-    benchmark_app.cpp
-    flying_camera.cpp
-    runtime_camera.cpp
     behavior/behavior_registry.cpp
     behavior/behavior_dispatch.cpp
     behavior/behavior_command_apply.cpp

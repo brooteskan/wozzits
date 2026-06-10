@@ -11,6 +11,7 @@
 #include <math/math_types.h>
 #include <math/projection.h>
 
+#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -291,13 +292,11 @@ namespace wz::engine::assets
         uint32_t count_ambient_lighting_records(
             const std::vector<wz::scene::LightRecord>& lights) noexcept
         {
-            uint32_t count = 0;
-            for (const wz::scene::LightRecord& light : lights) {
-                if (light.type == wz::scene::LightType::Ambient) {
-                    ++count;
-                }
-            }
-            return count;
+            return static_cast<uint32_t>(std::count_if(
+                lights.begin(), lights.end(),
+                [](const wz::scene::LightRecord& light) {
+                    return light.type == wz::scene::LightType::Ambient;
+                }));
         }
     }
 
@@ -338,14 +337,14 @@ namespace wz::engine::assets
         if (!instance.authored_to_runtime.contains(authored_node_id))
             return false;
 
-        for (auto& node : asset.nodes) {
-            if (node.id == authored_node_id) {
-                node.local = local;
-                return true;
-            }
-        }
+        const auto it = std::find_if(
+            asset.nodes.begin(), asset.nodes.end(),
+            [&](const auto& node) { return node.id == authored_node_id; });
+        if (it == asset.nodes.end())
+            return false;
 
-        return false;
+        it->local = local;
+        return true;
     }
 
     wz::scene::SceneRuntimeComponentSummary summarize_scene_instance_components(
@@ -823,13 +822,15 @@ namespace wz::engine::assets
             auto cam_it = id_to_handle.find(cam_id);
             if (cam_it != id_to_handle.end()) {
                 // Find the camera intrinsics on this node.
-                const SceneCameraAsset* cam_asset = nullptr;
-                for (const auto& node : scene.nodes) {
-                    if (node.id == cam_id && node.camera) {
-                        cam_asset = &*node.camera;
-                        break;
-                    }
-                }
+                const auto cam_node_it = std::find_if(
+                    scene.nodes.begin(), scene.nodes.end(),
+                    [&](const auto& node) {
+                        return node.id == cam_id && node.camera;
+                    });
+                const SceneCameraAsset* cam_asset =
+                    cam_node_it != scene.nodes.end()
+                        ? &*cam_node_it->camera
+                        : nullptr;
 
                 if (cam_asset) {
                     const auto& cam_world = wz::core::graph::node_data(

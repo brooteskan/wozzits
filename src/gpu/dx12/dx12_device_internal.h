@@ -103,7 +103,7 @@ namespace wz::gpu::dx12
         // Used for SRV descriptor tables (e.g., SplatPull StructuredBuffer).
         wz::gpu::dx12::DX12DescriptorAllocator srv_cbv_uav_allocator;
 
-        wz::render::backend::dx12::Context* ctx = nullptr;
+        wz::engine::render_backend::dx12::Context* ctx = nullptr;
 
         // Scene-wide splat color LOD settings.  Pushed per-frame by the
         // toolhost via wz::gpu::set_splat_color_lod_settings(); consumed

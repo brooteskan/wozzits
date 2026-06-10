@@ -33,6 +33,7 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
 
 #include <engine/assets/terrain/terrain.h>
@@ -224,6 +225,8 @@ namespace wz::engine::assets
         GpuResidentFieldTable&       gpu_resident_fields()       { return gpu_resident_field_table_; }
         const GpuResidentFieldTable& gpu_resident_fields() const { return gpu_resident_field_table_; }
 
+        MeshFieldComputeBackend& mesh_field_compute() { return *mesh_field_compute_; }
+
         bool gpu_device_valid() const { return device_.valid(); }
 
     private:
@@ -267,6 +270,11 @@ namespace wz::engine::assets
         AmbientLightingTable        ambient_lighting_table_;
         HDRIEnvironmentTable        hdri_environment_table_;
         SceneAssetTable             scene_table_;
+
+        // Before system_: the wavelet compiler lambda captures a reference to
+        // the backend, and the gpu_resident_field_table_ destructor path uses
+        // it as well.
+        std::unique_ptr<MeshFieldComputeBackend> mesh_field_compute_;
 
         wz::asset::AssetSystem system_;
 

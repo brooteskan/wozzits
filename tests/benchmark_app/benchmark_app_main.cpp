@@ -11,7 +11,7 @@
 #include <cmath>
 #include <vector>
 
-#include <engine/benchmark_app.h>
+#include <bench/benchmark_app.h>
 
 #include <scene/scene_graph.h>
 #include <scene/compile/legacy_classification.h>

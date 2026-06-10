@@ -7,11 +7,10 @@
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
+#include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <file/filesystem.h>
-#include <gpu/compute.h>
-#include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <array>
@@ -820,12 +819,12 @@ namespace wz::engine::assets::internal
             const MeshWaveletAnalysisDesc& desc,
             const MeshData& mesh,
             const ComputePipelineData& pipeline_data,
-            wz::gpu::Device& device,
+            MeshFieldComputeBackend& compute,
             wz::Logger& logger,
             GpuResidentFieldTable& gpu_resident_field_table,
             MeshDerivedFieldData& out)
         {
-            if (!device.impl
+            if (!compute.available()
                 || !pipeline_data.valid()
                 || !mesh.valid()
                 || !desc.source_mesh.valid()
@@ -863,9 +862,8 @@ namespace wz::engine::assets::internal
                 signals.push_back(signal);
             }
 
-            const wz::gpu::GPUHandle pipeline =
-                wz::gpu::create_compute_pipeline(
-                    device,
+            const wz::asset::ResourceHandle pipeline =
+                compute.create_compute_pipeline(
                     pipeline_data,
                     pipeline_data.compute_shader);
             if (!pipeline.valid()) {
@@ -874,8 +872,8 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
-            const wz::gpu::GPUHandle input_buffer =
-                wz::gpu::create_structured_buffer(device, {
+            const wz::asset::ResourceHandle input_buffer =
+                compute.create_structured_buffer({
                     .element_count = mesh.vertex_count(),
                     .stride_bytes =
                         static_cast<uint32_t>(
@@ -890,8 +888,8 @@ namespace wz::engine::assets::internal
                 static_cast<size_t>(mesh.vertex_count())
                 * (static_cast<size_t>(desc.scale_count) * 2u + 1u);
             std::vector<float> zeroes(output_float_count, 0.0f);
-            const wz::gpu::GPUHandle output_buffer =
-                wz::gpu::create_rw_structured_buffer(device, {
+            const wz::asset::ResourceHandle output_buffer =
+                compute.create_rw_structured_buffer({
                     .element_count =
                         static_cast<uint32_t>(output_float_count),
                     .stride_bytes = sizeof(float),
@@ -902,12 +900,12 @@ namespace wz::engine::assets::internal
                 });
             if (!input_buffer.valid() || !output_buffer.valid()) {
                 if (input_buffer.valid()) {
-                    wz::gpu::release_compute_buffer(device, input_buffer);
+                    compute.release_buffer(input_buffer);
                 }
                 if (output_buffer.valid()) {
-                    wz::gpu::release_compute_buffer(device, output_buffer);
+                    compute.release_buffer(output_buffer);
                 }
-                wz::gpu::release_compute_pipeline(device, pipeline);
+                compute.release_pipeline(pipeline);
                 logger.warn(
                     "mesh wavelet GPU buffer creation failed; using reference path");
                 return false;
@@ -929,22 +927,25 @@ namespace wz::engine::assets::internal
                 f32_root_constant(bounds_max[2]),
                 0u,
             };
-            const std::array<wz::gpu::ComputeDispatchBinding, 2> bindings{{
+            const std::array<MeshFieldComputeBackend::DispatchBinding, 2>
+                bindings{{
                 {
-                    .kind = wz::gpu::ComputeBindingKind::StructuredBufferSRV,
+                    .kind = MeshFieldComputeBackend::BindingKind
+                        ::StructuredBufferSRV,
                     .shader_register = 0,
                     .register_space = 0,
                     .buffer = input_buffer,
                 },
                 {
-                    .kind = wz::gpu::ComputeBindingKind::StructuredBufferUAV,
+                    .kind = MeshFieldComputeBackend::BindingKind
+                        ::StructuredBufferUAV,
                     .shader_register = 0,
                     .register_space = 0,
                     .buffer = output_buffer,
                 },
             }};
 
-            const bool dispatched = wz::gpu::dispatch_compute(device, {
+            const bool dispatched = compute.dispatch({
                 .pipeline = pipeline,
                 .bindings = bindings,
                 .root_constants = root_constants,
@@ -957,7 +958,7 @@ namespace wz::engine::assets::internal
 
             std::vector<std::byte> bytes;
             if (dispatched) {
-                bytes = wz::gpu::readback_buffer(device, output_buffer);
+                bytes = compute.readback_buffer(output_buffer);
 
                 if (bytes.size() == output_float_count * sizeof(float)) {
                     const uint64_t channel_byte_count =
@@ -968,9 +969,8 @@ namespace wz::engine::assets::internal
                             static_cast<uint64_t>(scale)
                             * 2u
                             * channel_byte_count;
-                        const wz::gpu::GPUHandle position_resource =
-                            wz::gpu::create_mesh_field_visualization_from_gpu_source(
-                                device,
+                        const wz::asset::ResourceHandle position_resource =
+                            compute.create_field_visualization_from_gpu_source(
                                 output_buffer,
                                 position_offset,
                                 mesh.vertex_count(),
@@ -985,8 +985,7 @@ namespace wz::engine::assets::internal
                                 .gpu_resource = position_resource,
                             });
                             if (!added) {
-                                wz::gpu::release_mesh_field_visualization(
-                                    device,
+                                compute.release_field_visualization(
                                     position_resource);
                             }
                         }
@@ -994,9 +993,8 @@ namespace wz::engine::assets::internal
                         const uint64_t normal_offset =
                             (static_cast<uint64_t>(scale) * 2u + 1u)
                             * channel_byte_count;
-                        const wz::gpu::GPUHandle normal_resource =
-                            wz::gpu::create_mesh_field_visualization_from_gpu_source(
-                                device,
+                        const wz::asset::ResourceHandle normal_resource =
+                            compute.create_field_visualization_from_gpu_source(
                                 output_buffer,
                                 normal_offset,
                                 mesh.vertex_count(),
@@ -1011,8 +1009,7 @@ namespace wz::engine::assets::internal
                                 .gpu_resource = normal_resource,
                             });
                             if (!added) {
-                                wz::gpu::release_mesh_field_visualization(
-                                    device,
+                                compute.release_field_visualization(
                                     normal_resource);
                             }
                         }
@@ -1022,9 +1019,8 @@ namespace wz::engine::assets::internal
                         static_cast<uint64_t>(desc.scale_count)
                         * 2u
                         * channel_byte_count;
-                    const wz::gpu::GPUHandle detail_resource =
-                        wz::gpu::create_mesh_field_visualization_from_gpu_source(
-                            device,
+                    const wz::asset::ResourceHandle detail_resource =
+                        compute.create_field_visualization_from_gpu_source(
                             output_buffer,
                             detail_offset,
                             mesh.vertex_count(),
@@ -1037,17 +1033,16 @@ namespace wz::engine::assets::internal
                             .gpu_resource = detail_resource,
                         });
                         if (!added) {
-                            wz::gpu::release_mesh_field_visualization(
-                                device,
+                            compute.release_field_visualization(
                                 detail_resource);
                         }
                     }
                 }
             }
 
-            wz::gpu::release_compute_buffer(device, input_buffer);
-            wz::gpu::release_compute_buffer(device, output_buffer);
-            wz::gpu::release_compute_pipeline(device, pipeline);
+            compute.release_buffer(input_buffer);
+            compute.release_buffer(output_buffer);
+            compute.release_pipeline(pipeline);
 
             if (!dispatched
                 || bytes.size() != output_float_count * sizeof(float))
@@ -1246,7 +1241,7 @@ namespace wz::engine::assets::internal
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
-            wz::gpu::Device& device,
+            MeshFieldComputeBackend& mesh_field_compute,
             MeshTable& mesh_table,
             ComputePipelineTable& compute_pipeline_table,
             MeshDerivedFieldTable& field_table,
@@ -1307,7 +1302,7 @@ namespace wz::engine::assets::internal
                     *desc,
                     *source_mesh,
                     *compute_pipeline,
-                    device,
+                    mesh_field_compute,
                     logger,
                     gpu_resident_field_table,
                     field))
@@ -1397,7 +1392,7 @@ namespace wz::engine::assets::internal
     void register_mesh_derived_field_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        wz::gpu::Device& device,
+        MeshFieldComputeBackend& mesh_field_compute,
         MeshTable& mesh_table,
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
@@ -1432,7 +1427,7 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeMeshDerivedField,
             .compile = [
                 &logger,
-                &device,
+                &mesh_field_compute,
                 &mesh_table,
                 &compute_pipeline_table,
                 &mesh_derived_field_table,
@@ -1447,7 +1442,7 @@ namespace wz::engine::assets::internal
                     input,
                     dep_handles,
                     logger,
-                    device,
+                    mesh_field_compute,
                     mesh_table,
                     compute_pipeline_table,
                     mesh_derived_field_table,

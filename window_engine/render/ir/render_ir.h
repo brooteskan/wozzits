@@ -16,7 +16,7 @@
 
 namespace wz::render {
 
-    using namespace wz::scene;
+    using wz::scene::CompiledSceneView;
 
     // ─── DrawRef ──────────────────────────────────────────────────────────────────
     //

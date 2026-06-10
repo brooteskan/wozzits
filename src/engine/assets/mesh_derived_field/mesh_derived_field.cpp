@@ -1,8 +1,8 @@
 // src/engine/assets/mesh_derived_field/mesh_derived_field.cpp
 
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/type_extensions.h>
-#include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
 #include <limits>
@@ -227,7 +227,7 @@ namespace wz::engine::assets
     }
 
     bool GpuResidentFieldTable::replace(
-        wz::gpu::Device& device,
+        MeshFieldComputeBackend& compute,
         GpuResidentFieldEntry entry)
     {
         if (!entry.valid()) {
@@ -239,8 +239,7 @@ namespace wz::engine::assets
                 && existing.channel_id == entry.channel_id)
             {
                 if (existing.gpu_resource.valid()) {
-                    wz::gpu::release_mesh_field_visualization(
-                        device,
+                    compute.release_field_visualization(
                         existing.gpu_resource);
                 }
                 existing.gpu_resource = entry.gpu_resource;
@@ -252,7 +251,7 @@ namespace wz::engine::assets
         return true;
     }
 
-    wz::gpu::GPUHandle GpuResidentFieldTable::find(
+    wz::asset::ResourceHandle GpuResidentFieldTable::find(
         wz::asset::AssetKey field_key,
         uint32_t channel_id) const
     {
@@ -276,13 +275,11 @@ namespace wz::engine::assets
         entries_.clear();
     }
 
-    void GpuResidentFieldTable::destroy(wz::gpu::Device& device)
+    void GpuResidentFieldTable::destroy(MeshFieldComputeBackend& compute)
     {
         for (GpuResidentFieldEntry& entry : entries_) {
             if (entry.gpu_resource.valid()) {
-                wz::gpu::release_mesh_field_visualization(
-                    device,
-                    entry.gpu_resource);
+                compute.release_field_visualization(entry.gpu_resource);
                 entry.gpu_resource = {};
             }
         }
