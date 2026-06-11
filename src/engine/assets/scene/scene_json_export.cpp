@@ -167,6 +167,14 @@ namespace wz::engine::assets
                 return "vertex_index_gradient";
             case SceneMeshDerivedFieldSourceKind::TriangleCornerCount:
                 return "triangle_corner_count";
+            case SceneMeshDerivedFieldSourceKind::VertexArea:
+                return "vertex_area";
+            case SceneMeshDerivedFieldSourceKind::MeanEdgeLength:
+                return "mean_edge_length";
+            case SceneMeshDerivedFieldSourceKind::InverseAreaDensity:
+                return "inverse_area_density";
+            case SceneMeshDerivedFieldSourceKind::LogDensity:
+                return "log_density";
             }
             return "position_gradient";
         }
@@ -230,6 +238,18 @@ namespace wz::engine::assets
                 return "residual";
             }
             return "residual";
+        }
+
+        const char* mesh_sparse_diffusion_mode_name(
+            SceneMeshSparseDiffusionMode mode)
+        {
+            switch (mode) {
+            case SceneMeshSparseDiffusionMode::Smooth:
+                return "smooth";
+            case SceneMeshSparseDiffusionMode::DiffusionStep:
+                return "diffusion_step";
+            }
+            return "smooth";
         }
 
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
@@ -987,6 +1007,29 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_sparse_diffusion_bands_value(
+            const SceneMeshSparseDiffusionBandsAsset& bands)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(bands.enabled));
+            add_member(*obj, "operator_ref",
+                string_value(bands.operator_ref));
+            add_member(*obj, "input_field_ref",
+                string_value(bands.input_field_ref));
+            add_member(*obj, "input_channel_id",
+                number_value(bands.input_channel_id));
+            add_member(*obj, "output_base_channel_id",
+                number_value(bands.output_base_channel_id));
+            add_member(*obj, "band_count",
+                number_value(bands.band_count));
+            add_member(*obj, "iterations_per_band",
+                number_value(bands.iterations_per_band));
+            add_member(*obj, "mode",
+                string_value(mesh_sparse_diffusion_mode_name(bands.mode)));
+            add_member(*obj, "tau", number_value(bands.tau));
+            return obj;
+        }
+
         JSONValuePtr mesh_compute_field_value(
             const SceneMeshComputeFieldAsset& field)
         {
@@ -1627,6 +1670,11 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_sparse_apply_field",
                     mesh_sparse_apply_field_value(
                         *node.mesh_sparse_apply_field));
+            }
+            if (node.mesh_sparse_diffusion_bands) {
+                add_member(*obj, "mesh_sparse_diffusion_bands",
+                    mesh_sparse_diffusion_bands_value(
+                        *node.mesh_sparse_diffusion_bands));
             }
             if (node.mesh_wavelet_analysis) {
                 add_member(*obj, "mesh_wavelet_analysis",

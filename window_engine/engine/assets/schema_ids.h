@@ -215,6 +215,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Cull
     };
 
+    // Repeated sparse-operator smoothing/diffusion over a MeshDerivedField
+    // input. Produces one Float1 channel per authored scale/detail band.
+    inline constexpr wz::asset::SchemaID kMeshSparseDiffusionBandsSchema{
+        0xF11E'CA55'E7'00040Dull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

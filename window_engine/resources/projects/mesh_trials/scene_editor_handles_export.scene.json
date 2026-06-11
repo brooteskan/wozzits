@@ -110,6 +110,11 @@
         "double_sided": false,
         "hidden_line_prepass": false,
         "field_visualization_enabled": true,
+        "channel_id": 4608,
+        "value_min": 0.10000000149011612,
+        "value_max": 1,
+        "gamma": 0.63999998569488525,
+        "palette": "heat",
         "field_visualization_channel_id": 4608,
         "field_visualization_value_min": 0.10000000149011612,
         "field_visualization_value_max": 1,
@@ -232,35 +237,61 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          500,
+          1000,
+          500
         ]
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:df5fab0481bff36d:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:98e162a6bf9dc9cf:8f5c808d55149d25"
+        "asset": "asset-key:a2b342e9057fdecb:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:acb0bcddcc38ec70:61b6710397eec152"
       },
       "mesh_source": {
         "kind": "glb",
-        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\low_poly_rock.glb",
+        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
         "mesh_index": 0
       },
       "mesh_derived_field_source": {
         "enabled": true,
-        "field_id": "triangle_corner_count",
+        "field_id": "corner_count",
         "domain": "vertex",
         "channel_id": 8192,
         "value_type": "float1",
-        "source_kind": "triangle_corner_count",
+        "source_kind": "inverse_area_density",
         "component": "y",
         "normalize": true,
         "constant_value": 0.5
       },
+      "mesh_sparse_operator_source": {
+        "enabled": true,
+        "operator_id": "uniform_laplacian",
+        "kind": "uniform_vertex_laplacian",
+        "domain": "vertex",
+        "value_convention": "neighbor_weights"
+      },
+      "mesh_sparse_apply_field": {
+        "enabled": true,
+        "operator_ref": "operator:uniform_laplacian",
+        "input_field_ref": "field:corner_count",
+        "input_channel_id": 8192,
+        "output_channel_id": 8448,
+        "apply_mode": "residual"
+      },
+      "mesh_sparse_diffusion_bands": {
+        "enabled": true,
+        "operator_ref": "operator:uniform_laplacian",
+        "input_field_ref": "field:corner_count",
+        "input_channel_id": 8192,
+        "output_base_channel_id": 8704,
+        "band_count": 5,
+        "iterations_per_band": 3,
+        "mode": "smooth",
+        "tau": 3.9000000953674316
+      },
       "mesh_render_style": {
-        "asset": "asset-key:01e280de03007d3d:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:9f40fa2695b04c5f:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
-          "enabled": true,
+          "enabled": false,
           "color": [
             0,
             1,
@@ -285,11 +316,16 @@
         "double_sided": false,
         "hidden_line_prepass": false,
         "field_visualization_enabled": true,
-        "field_visualization_channel_id": 8192,
-        "field_visualization_value_min": 0,
-        "field_visualization_value_max": 1.059999942779541,
-        "field_visualization_gamma": 1,
-        "field_ref": "field:triangle_corner_count"
+        "channel_id": 8704,
+        "value_min": -1,
+        "value_max": 1.0299999713897705,
+        "gamma": 0.97000002861022949,
+        "palette": "heat",
+        "field_visualization_channel_id": 8704,
+        "field_visualization_value_min": -1,
+        "field_visualization_value_max": 1.0299999713897705,
+        "field_visualization_gamma": 0.97000002861022949,
+        "field_ref": "field:diffusion_bands"
       }
     }
   ],
@@ -302,15 +338,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        2.1057238578796387,
-        -0.63962686061859131,
-        2.4377725124359131
+        168.46974182128906,
+        180.589111328125,
+        -279.0675048828125
       ],
       "orientation": [
-        -0.063201121985912323,
-        -0.92075496912002563,
-        -0.060160644352436066,
-        0.38025864958763123
+        0.31804180145263672,
+        -0.18156696856021881,
+        0.039149399846792221,
+        0.92970430850982666
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

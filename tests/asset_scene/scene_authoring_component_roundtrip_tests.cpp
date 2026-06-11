@@ -318,6 +318,102 @@ TEST(SceneAssetModule, MeshSparseApplyFieldComponentRoundTripsThroughSceneJSON)
         std::string::npos);
 }
 
+TEST(SceneAssetModule, MeshSparseDiffusionBandsComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_sparse_diffusion_bands_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_sparse_diffusion_bands_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_sparse_diffusion_bands": {
+        "enabled": true,
+        "operator_ref": "operator:uniform_laplacian",
+        "input_field_ref": "field:corner_count",
+        "input_channel_id": 8192,
+        "output_base_channel_id": 8704,
+        "band_count": 3,
+        "iterations_per_band": 2,
+        "mode": "diffusion_step",
+        "tau": 0.5
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_sparse_diffusion_bands.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_sparse_diffusion_bands",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_sparse_diffusion_bands.has_value());
+    const auto& bands = *node.mesh_sparse_diffusion_bands;
+    EXPECT_TRUE(bands.enabled);
+    EXPECT_EQ(bands.operator_ref, "operator:uniform_laplacian");
+    EXPECT_EQ(bands.input_field_ref, "field:corner_count");
+    EXPECT_EQ(bands.input_channel_id, 8192u);
+    EXPECT_EQ(bands.output_base_channel_id, 8704u);
+    EXPECT_EQ(bands.band_count, 3u);
+    EXPECT_EQ(bands.iterations_per_band, 2u);
+    EXPECT_EQ(bands.mode, SceneMeshSparseDiffusionMode::DiffusionStep);
+    EXPECT_FLOAT_EQ(bands.tau, 0.5f);
+    EXPECT_EQ(bands.output_field_asset, wz::asset::AssetKey{});
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MeshSparseDiffusionBands), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_sparse_diffusion_bands, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_sparse_diffusion_bands, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"mesh_sparse_diffusion_bands\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"diffusion_step\""), std::string::npos);
+    EXPECT_NE(exported.find("\"field:corner_count\""), std::string::npos);
+    EXPECT_EQ(
+        exported.find("\"output_field_asset\""),
+        std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshWaveletAnalysisComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

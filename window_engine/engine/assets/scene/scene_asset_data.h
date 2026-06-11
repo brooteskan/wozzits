@@ -362,6 +362,10 @@ namespace wz::engine::assets
         PositionGradient,
         VertexIndexGradient,
         TriangleCornerCount,
+        VertexArea,
+        MeanEdgeLength,
+        InverseAreaDensity,
+        LogDensity,
     };
 
     enum class SceneMeshDerivedFieldComponent : uint8_t
@@ -418,6 +422,29 @@ namespace wz::engine::assets
         uint32_t output_channel_id = 0x2100u;
         SceneMeshSparseApplyMode apply_mode =
             SceneMeshSparseApplyMode::Residual;
+
+        // Materialization output / editor cache, not saved as authored intent.
+        wz::asset::AssetKey output_field_asset{};
+    };
+
+    enum class SceneMeshSparseDiffusionMode : uint8_t
+    {
+        Smooth = 0,
+        DiffusionStep,
+    };
+
+    struct SceneMeshSparseDiffusionBandsAsset
+    {
+        bool enabled = true;
+        std::string operator_ref = "operator:uniform_laplacian";
+        std::string input_field_ref = "field:height";
+        uint32_t input_channel_id = 0x2000u;
+        uint32_t output_base_channel_id = 0x2200u;
+        uint32_t band_count = 3;
+        uint32_t iterations_per_band = 1;
+        SceneMeshSparseDiffusionMode mode =
+            SceneMeshSparseDiffusionMode::Smooth;
+        float tau = 1.0f;
 
         // Materialization output / editor cache, not saved as authored intent.
         wz::asset::AssetKey output_field_asset{};
@@ -829,6 +856,8 @@ namespace wz::engine::assets
             mesh_sparse_operator_source;
         std::optional<SceneMeshSparseApplyFieldAsset>
             mesh_sparse_apply_field;
+        std::optional<SceneMeshSparseDiffusionBandsAsset>
+            mesh_sparse_diffusion_bands;
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
@@ -909,6 +938,7 @@ namespace wz::engine::assets
         uint32_t mesh_derived_field_sources = 0;
         uint32_t mesh_sparse_operator_sources = 0;
         uint32_t mesh_sparse_apply_fields = 0;
+        uint32_t mesh_sparse_diffusion_bands = 0;
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
@@ -1163,6 +1193,13 @@ namespace wz::engine::assets
         node.mesh_sparse_apply_field = std::move(field);
     }
 
+    inline void attach_mesh_sparse_diffusion_bands(
+        SceneNodeAsset& node,
+        SceneMeshSparseDiffusionBandsAsset bands = {})
+    {
+        node.mesh_sparse_diffusion_bands = std::move(bands);
+    }
+
     inline void attach_mesh_wavelet_analysis(
         SceneNodeAsset& node,
         SceneMeshWaveletAnalysisAsset analysis = {})
@@ -1303,6 +1340,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_sparse_apply_field) {
             out.push_back(Kind::MeshSparseApplyField);
+        }
+        if (node.mesh_sparse_diffusion_bands) {
+            out.push_back(Kind::MeshSparseDiffusionBands);
         }
         if (node.mesh_wavelet_analysis) {
             out.push_back(Kind::MeshWaveletAnalysis);
@@ -1542,6 +1582,7 @@ namespace wz::engine::assets
             || node.mesh_derived_field_source.has_value()
             || node.mesh_sparse_operator_source.has_value()
             || node.mesh_sparse_apply_field.has_value()
+            || node.mesh_sparse_diffusion_bands.has_value()
             || node.mesh_wavelet_analysis.has_value()
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
@@ -1621,6 +1662,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_apply_field) {
                 ++out.mesh_sparse_apply_fields;
+                ++out.total_recipes;
+            }
+            if (node.mesh_sparse_diffusion_bands) {
+                ++out.mesh_sparse_diffusion_bands;
                 ++out.total_recipes;
             }
             if (node.mesh_wavelet_analysis) {
@@ -1753,6 +1798,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_apply_field) {
                 ++out.mesh_sparse_apply_fields;
+            }
+            if (node.mesh_sparse_diffusion_bands) {
+                ++out.mesh_sparse_diffusion_bands;
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;

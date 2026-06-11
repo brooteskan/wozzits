@@ -786,6 +786,14 @@ namespace wz::engine::assets
                 return BuiltinMeshDerivedFieldSourceKind::VertexIndexGradient;
             case SceneMeshDerivedFieldSourceKind::TriangleCornerCount:
                 return BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount;
+            case SceneMeshDerivedFieldSourceKind::VertexArea:
+                return BuiltinMeshDerivedFieldSourceKind::VertexArea;
+            case SceneMeshDerivedFieldSourceKind::MeanEdgeLength:
+                return BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength;
+            case SceneMeshDerivedFieldSourceKind::InverseAreaDensity:
+                return BuiltinMeshDerivedFieldSourceKind::InverseAreaDensity;
+            case SceneMeshDerivedFieldSourceKind::LogDensity:
+                return BuiltinMeshDerivedFieldSourceKind::LogDensity;
             }
             return BuiltinMeshDerivedFieldSourceKind::PositionGradient;
         }
@@ -860,6 +868,18 @@ namespace wz::engine::assets
                 return MeshSparseApplyMode::Residual;
             }
             return MeshSparseApplyMode::Residual;
+        }
+
+        MeshSparseDiffusionMode mesh_sparse_diffusion_mode_for_scene(
+            SceneMeshSparseDiffusionMode mode) noexcept
+        {
+            switch (mode) {
+            case SceneMeshSparseDiffusionMode::Smooth:
+                return MeshSparseDiffusionMode::Smooth;
+            case SceneMeshSparseDiffusionMode::DiffusionStep:
+                return MeshSparseDiffusionMode::DiffusionStep;
+            }
+            return MeshSparseDiffusionMode::Smooth;
         }
 
         bool materialize_mesh_derived_field_source(
@@ -1100,6 +1120,122 @@ namespace wz::engine::assets
             return true;
         }
 
+        bool materialize_mesh_sparse_diffusion_bands(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            MeshFieldRefCache& field_refs,
+            const MeshOperatorRefCache& operator_refs,
+            std::string& error)
+        {
+            if (!node.mesh_sparse_diffusion_bands
+                || !node.mesh_sparse_diffusion_bands->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshSparseDiffusionBandsAsset& bands =
+                *node.mesh_sparse_diffusion_bands;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (!mesh.valid()) {
+                error = "mesh sparse diffusion bands requires a mesh for "
+                    + node_name;
+                return false;
+            }
+            if (bands.operator_ref.empty()) {
+                error = "mesh sparse diffusion bands missing operator_ref for "
+                    + node_name;
+                return false;
+            }
+            if (bands.input_field_ref.empty()) {
+                error =
+                    "mesh sparse diffusion bands missing input_field_ref for "
+                    + node_name;
+                return false;
+            }
+            if (bands.input_channel_id == 0u
+                || bands.output_base_channel_id == 0u
+                || bands.band_count == 0u
+                || bands.iterations_per_band == 0u
+                || !std::isfinite(bands.tau)
+                || bands.tau < 0.0f)
+            {
+                error =
+                    "mesh sparse diffusion bands has invalid parameters for "
+                    + node_name;
+                return false;
+            }
+
+            const std::string canonical_field_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    bands.input_field_ref);
+            const auto field_found = field_refs.find(canonical_field_ref);
+            if (field_found == field_refs.end()) {
+                error = "mesh sparse diffusion bands input ref not found for "
+                    + node_name + ": " + bands.input_field_ref;
+                return false;
+            }
+
+            const std::string canonical_operator =
+                canonical_mesh_operator_ref_for_node(
+                    node,
+                    bands.operator_ref);
+            const auto operator_found =
+                operator_refs.find(canonical_operator);
+            if (operator_found == operator_refs.end()) {
+                error =
+                    "mesh sparse diffusion bands operator ref not found for "
+                    + node_name + ": " + bands.operator_ref;
+                return false;
+            }
+
+            const MeshDerivedFieldAsset output =
+                assets.mesh_derived_fields().create_sparse_diffusion_bands({
+                    .name = node_name + "_sparse_diffusion_bands",
+                    .source_mesh = mesh,
+                    .sparse_operator =
+                        MeshSparseOperatorAsset{
+                            .output = operator_found->second,
+                        },
+                    .input_field =
+                        MeshDerivedFieldAsset{
+                            .output = field_found->second,
+                        },
+                    .input_channel_id = bands.input_channel_id,
+                    .output_base_channel_id =
+                        bands.output_base_channel_id,
+                    .band_count = bands.band_count,
+                    .iterations_per_band = bands.iterations_per_band,
+                    .mode =
+                        mesh_sparse_diffusion_mode_for_scene(bands.mode),
+                    .tau = bands.tau,
+                });
+            if (!output.valid()) {
+                error =
+                    "mesh sparse diffusion bands asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            bands.output_field_asset = output.output;
+            field_refs[canonical_mesh_field_ref(
+                node.id,
+                "diffusion_bands")] = output.output;
+            field_refs[canonical_mesh_field_ref(
+                node.id,
+                "topology_irregularity")] = output.output;
+            for (uint32_t band = 0; band < bands.band_count; ++band) {
+                field_refs[canonical_mesh_field_ref(
+                    node.id,
+                    "diffusion_band" + std::to_string(band))] =
+                    output.output;
+            }
+            return true;
+        }
+
         bool resolve_mesh_field_visualization_ref(
             const SceneNodeAsset& node,
             const SceneMeshRenderStyleAsset& style,
@@ -1147,6 +1283,7 @@ namespace wz::engine::assets
             const SceneNodeAsset& node,
             bool derived_field_source,
             bool sparse_apply_field_source,
+            bool sparse_diffusion_bands_source,
             bool compute_field_source,
             bool behavior_field_source,
             SceneMeshRenderStyleAsset& render_style)
@@ -1180,6 +1317,15 @@ namespace wz::engine::assets
             if (sparse_apply_field_source && node.mesh_sparse_apply_field) {
                 render_style.field_visualization_channel_id =
                     node.mesh_sparse_apply_field->output_channel_id;
+                return;
+            }
+
+            if (sparse_diffusion_bands_source
+                && node.mesh_sparse_diffusion_bands)
+            {
+                render_style.field_visualization_channel_id =
+                    node.mesh_sparse_diffusion_bands
+                        ->output_base_channel_id;
                 return;
             }
 
@@ -3235,6 +3381,9 @@ namespace wz::engine::assets
             if (node.mesh_sparse_apply_field) {
                 node.mesh_sparse_apply_field->output_field_asset = {};
             }
+            if (node.mesh_sparse_diffusion_bands) {
+                node.mesh_sparse_diffusion_bands->output_field_asset = {};
+            }
             if (node.mesh_compute_field) {
                 node.mesh_compute_field->field_asset = {};
             }
@@ -3361,6 +3510,48 @@ namespace wz::engine::assets
                 }
             }
 
+            const bool sparse_diffusion_bands_source =
+                node.mesh_sparse_diffusion_bands
+                && node.mesh_sparse_diffusion_bands->enabled;
+            if (sparse_diffusion_bands_source) {
+                if (!mesh.valid()
+                    && !ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_sparse_diffusion_bands(
+                        assets,
+                        node,
+                        mesh,
+                        mesh_field_refs,
+                        mesh_operator_refs,
+                        report.error))
+                {
+                    return report;
+                }
+                if (render_style.field_visualization_enabled
+                    && render_style.field_visualization_field_ref.empty()
+                    && render_style.field_visualization_asset
+                        == wz::asset::AssetKey{})
+                {
+                    render_style.field_visualization_asset =
+                        node.mesh_sparse_diffusion_bands->output_field_asset;
+                }
+            }
+
             if (render_style.field_visualization_enabled
                 && !render_style.field_visualization_field_ref.empty())
             {
@@ -3420,6 +3611,7 @@ namespace wz::engine::assets
                 node,
                 derived_field_source,
                 sparse_apply_field_source,
+                sparse_diffusion_bands_source,
                 compute_field_source,
                 behavior_field_source,
                 render_style);
@@ -3470,7 +3662,8 @@ namespace wz::engine::assets
                     || behavior_field_source
                     || compute_field_source
                     || derived_field_source
-                    || sparse_apply_field_source)
+                    || sparse_apply_field_source
+                    || sparse_diffusion_bands_source)
                 {
                     node.mesh_render_style = render_style;
                 }

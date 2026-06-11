@@ -177,6 +177,42 @@ namespace wz::engine::assets
     }
 
     [[nodiscard]] inline wz::asset::AssetKey
+    make_mesh_sparse_diffusion_bands_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const MeshSparseDiffusionBandsDesc& desc) noexcept
+    {
+        uint64_t h = kMeshSparseDiffusionBandsSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.input_channel_id));
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(desc.output_base_channel_id));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.band_count));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.iterations_per_band));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.mode));
+        h = detail::mix64(
+            h,
+            detail_mesh_derived_field_key::float_bits(desc.tau));
+
+        const wz::asset::Hash mesh_dep =
+            detail::key_to_dep_hash(source_mesh_key);
+        const wz::asset::Hash field_dep =
+            detail::key_to_dep_hash(desc.input_field.output);
+        const wz::asset::Hash operator_dep =
+            detail::key_to_dep_hash(desc.sparse_operator.output);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kMeshSparseDiffusionBandsSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kMeshSparseDiffusionBandsCompilerVersion),
+            .deps_hash = detail::combine_dep_hashes(
+                detail::combine_dep_hashes(mesh_dep, field_dep),
+                operator_dep),
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey
     make_mesh_wavelet_analysis_field_key(
         const wz::asset::AssetKey& source_mesh_key,
         const MeshWaveletAnalysisDesc& desc) noexcept

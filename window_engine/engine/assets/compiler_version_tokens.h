@@ -44,6 +44,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kBehaviorFieldPlaceholderCompilerVersion = 1;
     inline constexpr uint64_t kMeshComputeDerivedFieldCompilerVersion = 1;
     inline constexpr uint64_t kMeshSparseApplyFieldCompilerVersion = 1;
+    inline constexpr uint64_t kMeshSparseDiffusionBandsCompilerVersion = 1;
     inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 1;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
     inline constexpr uint64_t kInlineDataTableCompilerVersion = 1;

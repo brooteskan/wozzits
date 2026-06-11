@@ -655,7 +655,90 @@ TEST(RenderableAssetModule, StyledMeshCanBindVertexDerivedFieldVisualization)
     EXPECT_FLOAT_EQ(data->mesh_style.field_visualization.gamma, 0.8f);
 }
 
-TEST(RenderableAssetModule, StyledMeshRejectsMismatchedFieldVisualization)
+TEST(RenderableAssetModule, StyledMeshIgnoresMissingVisualizationChannel)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_missing_mesh_field_channel_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/missing_field_channel_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/missing_field_channel_detail",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = 4u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x2200u,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = float_bytes({ 0.0f, 0.25f, 0.75f, 1.0f }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = true;
+    style.field_visualization.enabled = true;
+    style.field_visualization.channel_id = 0x2300u;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/missing_field_channel_heat",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/missing_field_channel_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_field_visualization_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
+    EXPECT_FALSE(data->mesh_style.field_visualization.enabled);
+}
+
+TEST(RenderableAssetModule, StyledMeshIgnoresMismatchedFieldVisualization)
 {
     const wz::fs::Path root =
         wz::fs::join(
@@ -721,17 +804,18 @@ TEST(RenderableAssetModule, StyledMeshRejectsMismatchedFieldVisualization)
     ASSERT_TRUE(assets.commit());
 
     const auto report = assets.resolve_all();
-    EXPECT_FALSE(report.ok());
-    int renderable_failures = 0;
-    for (const auto& failure : report.failures) {
-        if (failure.key == renderable.output
-            && failure.error == wz::asset::ResolveError::CompileFailed)
-        {
-            ++renderable_failures;
-        }
-    }
-    EXPECT_EQ(renderable_failures, 1);
-    EXPECT_FALSE(assets.renderables().get_renderable(renderable).valid());
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_field_visualization_asset, wz::asset::AssetKey{});
+    EXPECT_FALSE(data->mesh_style.field_visualization.enabled);
 }
 
 TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersDoesNotEmitRenderable)

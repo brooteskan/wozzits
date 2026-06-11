@@ -259,6 +259,24 @@ namespace wz::engine::assets::internal
             {
                 return SceneMeshDerivedFieldSourceKind::TriangleCornerCount;
             }
+            if (text == "vertex_area"
+                || text == "incident_triangle_area")
+            {
+                return SceneMeshDerivedFieldSourceKind::VertexArea;
+            }
+            if (text == "mean_edge_length") {
+                return SceneMeshDerivedFieldSourceKind::MeanEdgeLength;
+            }
+            if (text == "inverse_area_density"
+                || text == "inverse_density")
+            {
+                return SceneMeshDerivedFieldSourceKind::InverseAreaDensity;
+            }
+            if (text == "log_density"
+                || text == "log_area_density")
+            {
+                return SceneMeshDerivedFieldSourceKind::LogDensity;
+            }
             return std::nullopt;
         }
 
@@ -365,6 +383,18 @@ namespace wz::engine::assets::internal
         {
             if (text == "residual") {
                 return SceneMeshSparseApplyMode::Residual;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneMeshSparseDiffusionMode>
+        parse_mesh_sparse_diffusion_mode(std::string_view text)
+        {
+            if (text == "smooth") {
+                return SceneMeshSparseDiffusionMode::Smooth;
+            }
+            if (text == "diffusion_step") {
+                return SceneMeshSparseDiffusionMode::DiffusionStep;
             }
             return std::nullopt;
         }
@@ -2110,6 +2140,109 @@ namespace wz::engine::assets::internal
                 }
 
                 node.mesh_sparse_apply_field = std::move(apply);
+            }
+
+            const auto* msdb =
+                find_member(node_val, "mesh_sparse_diffusion_bands");
+            if (msdb && msdb->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshSparseDiffusionBandsAsset bands{};
+
+                if (auto enabled = read_bool(*msdb, "enabled")) {
+                    bands.enabled = *enabled;
+                }
+                if (auto operator_ref =
+                        read_string(*msdb, "operator_ref"))
+                {
+                    bands.operator_ref = std::string(*operator_ref);
+                }
+                if (bands.operator_ref.empty()) {
+                    logger.error("mesh_sparse_diffusion_bands on node '"
+                        + node.id + "' has empty operator_ref");
+                    return std::nullopt;
+                }
+                if (auto input_field_ref =
+                        read_string(*msdb, "input_field_ref"))
+                {
+                    bands.input_field_ref = std::string(*input_field_ref);
+                }
+                if (bands.input_field_ref.empty()) {
+                    logger.error("mesh_sparse_diffusion_bands on node '"
+                        + node.id + "' has empty input_field_ref");
+                    return std::nullopt;
+                }
+                if (auto input_channel_id =
+                        read_number(*msdb, "input_channel_id"))
+                {
+                    if (*input_channel_id <= 0.0
+                        || !std::isfinite(*input_channel_id))
+                    {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id
+                            + "' has invalid input_channel_id");
+                        return std::nullopt;
+                    }
+                    bands.input_channel_id =
+                        static_cast<uint32_t>(*input_channel_id);
+                }
+                if (auto output_base_channel_id =
+                        read_number(*msdb, "output_base_channel_id"))
+                {
+                    if (*output_base_channel_id <= 0.0
+                        || !std::isfinite(*output_base_channel_id))
+                    {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id
+                            + "' has invalid output_base_channel_id");
+                        return std::nullopt;
+                    }
+                    bands.output_base_channel_id =
+                        static_cast<uint32_t>(*output_base_channel_id);
+                }
+                if (auto band_count =
+                        read_number(*msdb, "band_count"))
+                {
+                    if (*band_count <= 0.0 || !std::isfinite(*band_count)) {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id + "' has invalid band_count");
+                        return std::nullopt;
+                    }
+                    bands.band_count = static_cast<uint32_t>(*band_count);
+                }
+                if (auto iterations_per_band =
+                        read_number(*msdb, "iterations_per_band"))
+                {
+                    if (*iterations_per_band <= 0.0
+                        || !std::isfinite(*iterations_per_band))
+                    {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id
+                            + "' has invalid iterations_per_band");
+                        return std::nullopt;
+                    }
+                    bands.iterations_per_band =
+                        static_cast<uint32_t>(*iterations_per_band);
+                }
+                if (auto mode = read_string(*msdb, "mode")) {
+                    auto parsed_mode =
+                        parse_mesh_sparse_diffusion_mode(*mode);
+                    if (!parsed_mode) {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id + "' has unknown mode '"
+                            + std::string(*mode) + "'");
+                        return std::nullopt;
+                    }
+                    bands.mode = *parsed_mode;
+                }
+                if (auto tau = read_number(*msdb, "tau")) {
+                    if (*tau < 0.0 || !std::isfinite(*tau)) {
+                        logger.error("mesh_sparse_diffusion_bands on node '"
+                            + node.id + "' has invalid tau");
+                        return std::nullopt;
+                    }
+                    bands.tau = static_cast<float>(*tau);
+                }
+
+                node.mesh_sparse_diffusion_bands = std::move(bands);
             }
 
             const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");

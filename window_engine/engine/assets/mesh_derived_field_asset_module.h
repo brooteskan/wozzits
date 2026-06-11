@@ -38,6 +38,10 @@ namespace wz::engine::assets
         PositionGradient,
         VertexIndexGradient,
         TriangleCornerCount,
+        VertexArea,
+        MeanEdgeLength,
+        InverseAreaDensity,
+        LogDensity,
     };
 
     enum class BuiltinMeshDerivedFieldComponent : uint8_t
@@ -104,6 +108,12 @@ namespace wz::engine::assets
         Residual = 0,
     };
 
+    enum class MeshSparseDiffusionMode : uint8_t
+    {
+        Smooth = 0,
+        DiffusionStep,
+    };
+
     struct MeshSparseApplyFieldDesc
     {
         std::string name;
@@ -113,6 +123,20 @@ namespace wz::engine::assets
         uint32_t input_channel_id = 0;
         uint32_t output_channel_id = 0;
         MeshSparseApplyMode apply_mode = MeshSparseApplyMode::Residual;
+    };
+
+    struct MeshSparseDiffusionBandsDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        MeshSparseOperatorAsset sparse_operator{};
+        MeshDerivedFieldAsset input_field{};
+        uint32_t input_channel_id = 0;
+        uint32_t output_base_channel_id = 0;
+        uint32_t band_count = 1;
+        uint32_t iterations_per_band = 1;
+        MeshSparseDiffusionMode mode = MeshSparseDiffusionMode::Smooth;
+        float tau = 1.0f;
     };
 
     struct MeshDerivedFieldHandle
@@ -149,6 +173,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_sparse_apply_field(
             const MeshSparseApplyFieldDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_sparse_diffusion_bands(
+            const MeshSparseDiffusionBandsDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

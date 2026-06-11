@@ -385,6 +385,19 @@ namespace wz::engine::assets
                 fp.mix_value(field.apply_mode);
             }
 
+            if (node.mesh_sparse_diffusion_bands) {
+                const auto& bands = *node.mesh_sparse_diffusion_bands;
+                fp.mix_value(bands.enabled);
+                fp.mix_string(bands.operator_ref);
+                fp.mix_string(bands.input_field_ref);
+                fp.mix_value(bands.input_channel_id);
+                fp.mix_value(bands.output_base_channel_id);
+                fp.mix_value(bands.band_count);
+                fp.mix_value(bands.iterations_per_band);
+                fp.mix_value(bands.mode);
+                fp.mix_value(bands.tau);
+            }
+
             if (node.mesh_render_style) {
                 const auto& style = *node.mesh_render_style;
                 mix_asset_key(fp, style.style_asset);

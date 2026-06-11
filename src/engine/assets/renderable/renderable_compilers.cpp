@@ -11,6 +11,7 @@
 #include <cmath>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace wz::engine::assets::internal
 {
@@ -409,75 +410,88 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                MeshRenderStyleData effective_style = *style;
                 const bool wants_field_visualization =
-                    style->field_visualization.enabled;
+                    effective_style.field_visualization.enabled;
+                bool field_visualization_active = wants_field_visualization;
 
                 if (wants_field_visualization) {
+                    auto disable_field_visualization =
+                        [&](std::string_view reason)
+                    {
+                        logger->warn(
+                            "mesh styled renderable field visualization disabled: "
+                            + std::string(reason));
+                        field_visualization_active = false;
+                        effective_style.field_visualization.enabled = false;
+                    };
+
                     if (desc->mesh_field_visualization_asset
                         == wz::asset::AssetKey{})
                     {
-                        logger->error(
-                            "mesh styled renderable field visualization has no field asset");
-                        return compile_failed_node(input);
+                        disable_field_visualization("no field asset");
                     }
-                    if (dep_handles.size() < 3) {
-                        logger->error(
-                            "mesh styled renderable field visualization requires mesh field dependency");
-                        return compile_failed_node(input);
+                    else if (dep_handles.size() < 3) {
+                        disable_field_visualization(
+                            "missing mesh field dependency");
                     }
-
-                    const MeshDerivedFieldData* field =
-                        mesh_derived_field_table->get(dep_handles[2]);
-                    if (!field || !field->valid()) {
-                        logger->error(
-                            "mesh styled renderable field visualization data is invalid");
-                        return compile_failed_node(input);
-                    }
-                    if (field->source_mesh_key != desc->mesh_asset) {
-                        logger->error(
-                            "mesh styled renderable field visualization source mesh mismatch");
-                        return compile_failed_node(input);
-                    }
-                    if (field->domain != MeshDerivedFieldDomain::Vertex) {
-                        logger->error(
-                            "mesh styled renderable field visualization currently requires vertex-domain field data");
-                        return compile_failed_node(input);
-                    }
-                    if (field->element_count != mesh->vertex_count()) {
-                        logger->error(
-                            "mesh styled renderable field visualization vertex count mismatch");
-                        return compile_failed_node(input);
-                    }
-
-                    const auto channel_found = std::find_if(
-                        field->channels.begin(),
-                        field->channels.end(),
-                        [&](const MeshDerivedFieldChannel& channel)
+                    else {
+                        const MeshDerivedFieldData* field =
+                            mesh_derived_field_table->get(dep_handles[2]);
+                        if (!field || !field->valid()) {
+                            disable_field_visualization(
+                                "field data is invalid");
+                        }
+                        else if (field->source_mesh_key != desc->mesh_asset) {
+                            disable_field_visualization(
+                                "field source mesh mismatch");
+                        }
+                        else if (field->domain
+                            != MeshDerivedFieldDomain::Vertex)
                         {
-                            return channel.channel_id
-                                == style->field_visualization.channel_id;
-                        });
+                            disable_field_visualization(
+                                "field is not vertex-domain");
+                        }
+                        else if (field->element_count
+                            != mesh->vertex_count())
+                        {
+                            disable_field_visualization(
+                                "field vertex count mismatch");
+                        }
+                        else {
+                            const auto channel_found = std::find_if(
+                                field->channels.begin(),
+                                field->channels.end(),
+                                [&](const MeshDerivedFieldChannel& channel)
+                                {
+                                    return channel.channel_id
+                                        == effective_style
+                                            .field_visualization.channel_id;
+                                });
 
-                    if (channel_found == field->channels.end()) {
-                        logger->error(
-                            "mesh styled renderable field visualization channel not found");
-                        return compile_failed_node(input);
-                    }
-                    if (channel_found->value_type
-                        != MeshDerivedFieldValueType::Float1)
-                    {
-                        logger->error(
-                            "mesh styled renderable field visualization currently requires Float1 channel data");
-                        return compile_failed_node(input);
-                    }
-                    const uint32_t expected_bytes =
-                        field->element_count
-                        * mesh_derived_field_value_stride(
-                            channel_found->value_type);
-                    if (channel_found->byte_count != expected_bytes) {
-                        logger->error(
-                            "mesh styled renderable field visualization channel byte count mismatch");
-                        return compile_failed_node(input);
+                            if (channel_found == field->channels.end()) {
+                                disable_field_visualization(
+                                    "channel not found");
+                            }
+                            else if (channel_found->value_type
+                                != MeshDerivedFieldValueType::Float1)
+                            {
+                                disable_field_visualization(
+                                    "channel is not Float1");
+                            }
+                            else {
+                                const uint32_t expected_bytes =
+                                    field->element_count
+                                    * mesh_derived_field_value_stride(
+                                        channel_found->value_type);
+                                if (channel_found->byte_count
+                                    != expected_bytes)
+                                {
+                                    disable_field_visualization(
+                                        "channel byte count mismatch");
+                                }
+                            }
+                        }
                     }
                 }
                 else if (!(desc->mesh_field_visualization_asset
@@ -493,7 +507,9 @@ namespace wz::engine::assets::internal
                 data.source_asset = desc->mesh_asset;
                 data.companion_asset = desc->style_asset;
                 data.mesh_field_visualization_asset =
-                    desc->mesh_field_visualization_asset;
+                    field_visualization_active
+                        ? desc->mesh_field_visualization_asset
+                        : wz::asset::AssetKey{};
                 data.program = BuiltinRenderProgram::MeshWireframeDebug;
                 data.domain = RenderDomain::Opaque;
                 data.policy_flags = RenderPolicy_Wireframe;
@@ -515,7 +531,6 @@ namespace wz::engine::assets::internal
                         return compile_failed_node(input);
                     }
                 }
-                MeshRenderStyleData effective_style = *style;
                 const bool transparent = is_mesh_render_style_transparent(*style);
                 if (!transparent) {
                     effective_style.alpha = 1.0f;
@@ -559,7 +574,7 @@ namespace wz::engine::assets::internal
                                 "mesh surface renderables are currently two-sided; treating style as double-sided");
                             effective_style.double_sided = true;
                         }
-                        data.program = wants_field_visualization
+                        data.program = field_visualization_active
                             ? BuiltinRenderProgram::MeshFieldHeatmap
                             : transparent
                                 ? BuiltinRenderProgram::MeshSurfaceAlpha
@@ -577,17 +592,17 @@ namespace wz::engine::assets::internal
                 if (data.program != BuiltinRenderProgram::MeshSurface
                     && data.program != BuiltinRenderProgram::MeshSurfaceAlpha)
                 {
-                    data.program = wants_field_visualization
+                    data.program = field_visualization_active
                         ? BuiltinRenderProgram::MeshFieldHeatmap
                         : transparent
                         ? BuiltinRenderProgram::MeshWireframeAlpha
                         : BuiltinRenderProgram::MeshWireframeDepthDebug;
-                    data.domain = wants_field_visualization
+                    data.domain = field_visualization_active
                         ? RenderDomain::Opaque
                         : transparent
                         ? RenderDomain::Transparent
                         : RenderDomain::Opaque;
-                    data.policy_flags = wants_field_visualization
+                    data.policy_flags = field_visualization_active
                         ? RenderPolicy_None
                         : transparent
                         ? RenderPolicy_Wireframe | RenderPolicy_AlphaBlend

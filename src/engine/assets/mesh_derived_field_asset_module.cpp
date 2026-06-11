@@ -6,6 +6,8 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <cmath>
+
 namespace wz::engine::assets
 {
     MeshDerivedFieldAssetModule::MeshDerivedFieldAssetModule(
@@ -231,6 +233,46 @@ namespace wz::engine::assets
         node.key = field_key;
         node.type = kAssetTypeMeshDerivedField;
         node.schema = kMeshSparseApplyFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.source_mesh.output,
+                desc.input_field.output,
+                desc.sparse_operator.output,
+            });
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_sparse_diffusion_bands(
+        const MeshSparseDiffusionBandsDesc& desc)
+    {
+        if (!desc.source_mesh.valid()
+            || !desc.sparse_operator.valid()
+            || !desc.input_field.valid()
+            || desc.input_channel_id == 0u
+            || desc.output_base_channel_id == 0u
+            || desc.band_count == 0u
+            || desc.iterations_per_band == 0u
+            || !std::isfinite(desc.tau)
+            || desc.tau < 0.0f)
+        {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_mesh_sparse_diffusion_bands_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kMeshSparseDiffusionBandsSchema;
         node.stage = wz::asset::AssetStage::Source;
         node.meta = desc;
 

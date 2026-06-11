@@ -22,6 +22,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -1635,6 +1636,56 @@ namespace wz::engine::assets::internal
             return 1u;
         }
 
+        float mesh_position_distance(
+            const MeshVertex& a,
+            const MeshVertex& b) noexcept
+        {
+            const float dx = a.position[0] - b.position[0];
+            const float dy = a.position[1] - b.position[1];
+            const float dz = a.position[2] - b.position[2];
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        float mesh_triangle_area(
+            const MeshVertex& a,
+            const MeshVertex& b,
+            const MeshVertex& c) noexcept
+        {
+            const float abx = b.position[0] - a.position[0];
+            const float aby = b.position[1] - a.position[1];
+            const float abz = b.position[2] - a.position[2];
+            const float acx = c.position[0] - a.position[0];
+            const float acy = c.position[1] - a.position[1];
+            const float acz = c.position[2] - a.position[2];
+
+            const float cx = aby * acz - abz * acy;
+            const float cy = abz * acx - abx * acz;
+            const float cz = abx * acy - aby * acx;
+            return 0.5f * std::sqrt(cx * cx + cy * cy + cz * cz);
+        }
+
+        uint64_t mesh_edge_key(uint32_t a, uint32_t b) noexcept
+        {
+            if (a > b) {
+                std::swap(a, b);
+            }
+            return (static_cast<uint64_t>(a) << 32u)
+                | static_cast<uint64_t>(b);
+        }
+
+        void normalize_by_max_positive(std::vector<float>& values)
+        {
+            float max_value = 0.0f;
+            for (const float value : values) {
+                max_value = (std::max)(max_value, value);
+            }
+            if (max_value > 0.0f) {
+                for (float& value : values) {
+                    value /= max_value;
+                }
+            }
+        }
+
         bool cached_builtin_field_matches_source(
             const MeshDerivedFieldData& field,
             const BuiltinMeshDerivedFieldDesc& desc,
@@ -1664,6 +1715,12 @@ namespace wz::engine::assets::internal
             uint32_t channel_id,
             std::vector<float>& out);
 
+        MeshDerivedFieldData make_zero_float_field(
+            wz::asset::AssetKey source_mesh_key,
+            wz::asset::Hash topology,
+            uint32_t element_count,
+            std::span<const uint32_t> channel_ids);
+
         bool cached_sparse_apply_field_matches_source(
             const MeshDerivedFieldData& field,
             const MeshSparseApplyFieldDesc& desc,
@@ -1683,6 +1740,261 @@ namespace wz::engine::assets::internal
                 && field.channels[0].channel_id == desc.output_channel_id
                 && field.channels[0].value_type
                     == MeshDerivedFieldValueType::Float1;
+        }
+
+        bool cached_sparse_diffusion_bands_matches_source(
+            const MeshDerivedFieldData& field,
+            const MeshSparseDiffusionBandsDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator) noexcept
+        {
+            if (!field.valid()
+                || field.source_mesh_key != desc.source_mesh.output
+                || field.source_topology_hash
+                    != compute_mesh_topology_hash(source_mesh)
+                || field.domain != MeshDerivedFieldDomain::Vertex
+                || field.element_count != source_mesh.vertex_count()
+                || field.element_count != input_field.element_count
+                || field.element_count != sparse_operator.row_count
+                || field.channels.size() != desc.band_count)
+            {
+                return false;
+            }
+
+            const uint32_t channel_bytes =
+                field.element_count * sizeof(float);
+            for (uint32_t band = 0; band < desc.band_count; ++band) {
+                const MeshDerivedFieldChannel& channel =
+                    field.channels[band];
+                if (channel.channel_id
+                        != desc.output_base_channel_id + band
+                    || channel.value_type
+                        != MeshDerivedFieldValueType::Float1
+                    || channel.byte_offset != band * channel_bytes
+                    || channel.byte_count != channel_bytes)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool smooth_sparse_neighbor_weights(
+            const MeshSparseOperatorData& sparse_operator,
+            const std::vector<float>& input,
+            std::vector<float>& output)
+        {
+            if (sparse_operator.row_offsets.size()
+                    != static_cast<size_t>(sparse_operator.row_count) + 1u
+                || input.size() != sparse_operator.row_count)
+            {
+                return false;
+            }
+
+            output.assign(input.size(), 0.0f);
+            for (uint32_t row = 0; row < sparse_operator.row_count; ++row) {
+                const uint32_t begin = sparse_operator.row_offsets[row];
+                const uint32_t end = sparse_operator.row_offsets[row + 1u];
+                if (begin > end
+                    || end > sparse_operator.col_indices.size()
+                    || end > sparse_operator.weights.size())
+                {
+                    return false;
+                }
+                if (begin == end) {
+                    output[row] = input[row];
+                    continue;
+                }
+
+                float value = 0.0f;
+                for (uint32_t e = begin; e < end; ++e) {
+                    if (sparse_operator.col_indices[e] >= input.size()) {
+                        return false;
+                    }
+                    value +=
+                        sparse_operator.weights[e]
+                        * input[sparse_operator.col_indices[e]];
+                }
+                output[row] = value;
+            }
+            return true;
+        }
+
+        bool compile_mesh_sparse_diffusion_bands(
+            const MeshSparseDiffusionBandsDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator,
+            wz::Logger& logger,
+            MeshDerivedFieldData& out)
+        {
+            if (desc.input_channel_id == 0u
+                || desc.output_base_channel_id == 0u
+                || desc.band_count == 0u
+                || desc.iterations_per_band == 0u)
+            {
+                logger.error(
+                    "mesh sparse diffusion bands requires nonzero channels and counts");
+                return false;
+            }
+            if (!std::isfinite(desc.tau) || desc.tau < 0.0f) {
+                logger.error("mesh sparse diffusion bands tau is invalid");
+                return false;
+            }
+            if (!source_mesh.valid()) {
+                logger.error("mesh sparse diffusion bands source mesh invalid");
+                return false;
+            }
+
+            const wz::asset::Hash topology =
+                compute_mesh_topology_hash(source_mesh);
+            const uint32_t element_count = source_mesh.vertex_count();
+            if (!input_field.valid()
+                || input_field.source_mesh_key != desc.source_mesh.output
+                || input_field.source_topology_hash != topology
+                || input_field.domain != MeshDerivedFieldDomain::Vertex
+                || input_field.element_count != element_count)
+            {
+                logger.error(
+                    "mesh sparse diffusion bands input field does not match source mesh");
+                return false;
+            }
+            if (!sparse_operator.valid()
+                || sparse_operator.source_mesh_key != desc.source_mesh.output
+                || sparse_operator.source_topology_hash != topology
+                || sparse_operator.domain != MeshOperatorDomain::Vertex
+                || sparse_operator.row_count != element_count)
+            {
+                logger.error(
+                    "mesh sparse diffusion bands operator does not match source mesh");
+                return false;
+            }
+            if (sparse_operator.value_convention
+                != MeshSparseOperatorValueConvention::NeighborWeights)
+            {
+                logger.error(
+                    "mesh sparse diffusion bands only supports NeighborWeights");
+                return false;
+            }
+
+            std::vector<float> current;
+            if (!read_float_channel_values(
+                    input_field,
+                    desc.input_channel_id,
+                    current))
+            {
+                logger.warn(
+                    "mesh sparse diffusion bands input channel missing or not Float1; emitting zero bands");
+                std::vector<uint32_t> channel_ids;
+                channel_ids.reserve(desc.band_count);
+                for (uint32_t band = 0; band < desc.band_count; ++band) {
+                    channel_ids.push_back(
+                        desc.output_base_channel_id + band);
+                }
+                out = make_zero_float_field(
+                    desc.source_mesh.output,
+                    topology,
+                    element_count,
+                    channel_ids);
+                return out.valid();
+            }
+
+            const uint32_t channel_bytes = element_count * sizeof(float);
+            std::vector<MeshDerivedFieldChannel> channels;
+            channels.reserve(desc.band_count);
+            std::vector<std::byte> values;
+            values.reserve(
+                static_cast<size_t>(channel_bytes) * desc.band_count);
+
+            std::vector<float> smooth;
+            std::vector<float> next;
+            std::vector<float> band(element_count, 0.0f);
+
+            for (uint32_t band_index = 0;
+                 band_index < desc.band_count;
+                 ++band_index)
+            {
+                const std::vector<float> band_start = current;
+                for (uint32_t iter = 0;
+                     iter < desc.iterations_per_band;
+                     ++iter)
+                {
+                    if (!smooth_sparse_neighbor_weights(
+                            sparse_operator,
+                            current,
+                            smooth))
+                    {
+                        logger.warn(
+                            "mesh sparse diffusion bands smoothing failed; emitting zero bands");
+                        std::vector<uint32_t> channel_ids;
+                        channel_ids.reserve(desc.band_count);
+                        for (uint32_t band_id = 0;
+                             band_id < desc.band_count;
+                             ++band_id)
+                        {
+                            channel_ids.push_back(
+                                desc.output_base_channel_id + band_id);
+                        }
+                        out = make_zero_float_field(
+                            desc.source_mesh.output,
+                            topology,
+                            element_count,
+                            channel_ids);
+                        return out.valid();
+                    }
+
+                    next.resize(element_count);
+                    for (uint32_t i = 0; i < element_count; ++i) {
+                        switch (desc.mode) {
+                        case MeshSparseDiffusionMode::Smooth:
+                            next[i] = smooth[i];
+                            break;
+                        case MeshSparseDiffusionMode::DiffusionStep:
+                            next[i] =
+                                current[i]
+                                + desc.tau * (smooth[i] - current[i]);
+                            break;
+                        }
+                    }
+                    current.swap(next);
+                }
+
+                for (uint32_t i = 0; i < element_count; ++i) {
+                    band[i] = band_start[i] - current[i];
+                }
+
+                const uint32_t byte_offset =
+                    static_cast<uint32_t>(values.size());
+                std::vector<std::byte> band_bytes =
+                    float_channel_bytes(band);
+                values.insert(
+                    values.end(),
+                    band_bytes.begin(),
+                    band_bytes.end());
+                channels.push_back(MeshDerivedFieldChannel{
+                    .channel_id =
+                        desc.output_base_channel_id + band_index,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .byte_offset = byte_offset,
+                    .byte_count = channel_bytes,
+                });
+            }
+
+            out = MeshDerivedFieldData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = topology,
+                .domain = MeshDerivedFieldDomain::Vertex,
+                .element_count = element_count,
+                .channels = std::move(channels),
+                .values = std::move(values),
+            };
+            if (!out.valid()) {
+                logger.error(
+                    "mesh sparse diffusion bands output field is invalid");
+                return false;
+            }
+            return true;
         }
 
         bool compile_mesh_sparse_apply_field(
@@ -1746,15 +2058,48 @@ namespace wz::engine::assets::internal
                     desc.input_channel_id,
                     input_values))
             {
-                logger.error(
-                    "mesh sparse apply input channel missing or not Float1");
-                return false;
+                logger.warn(
+                    "mesh sparse apply input channel missing or not Float1; emitting zero field");
+                const uint32_t channel_id = desc.output_channel_id;
+                out = make_zero_float_field(
+                    desc.source_mesh.output,
+                    topology,
+                    element_count,
+                    std::span<const uint32_t>(&channel_id, 1u));
+                return out.valid();
             }
 
             std::vector<float> output_values(element_count, 0.0f);
+            if (sparse_operator.row_offsets.size()
+                != static_cast<size_t>(element_count) + 1u)
+            {
+                logger.warn(
+                    "mesh sparse apply operator row offsets invalid; emitting zero field");
+                const uint32_t channel_id = desc.output_channel_id;
+                out = make_zero_float_field(
+                    desc.source_mesh.output,
+                    topology,
+                    element_count,
+                    std::span<const uint32_t>(&channel_id, 1u));
+                return out.valid();
+            }
             for (uint32_t row = 0; row < element_count; ++row) {
                 const uint32_t begin = sparse_operator.row_offsets[row];
                 const uint32_t end = sparse_operator.row_offsets[row + 1u];
+                if (begin > end
+                    || end > sparse_operator.col_indices.size()
+                    || end > sparse_operator.weights.size())
+                {
+                    logger.warn(
+                        "mesh sparse apply operator row range invalid; emitting zero field");
+                    const uint32_t channel_id = desc.output_channel_id;
+                    out = make_zero_float_field(
+                        desc.source_mesh.output,
+                        topology,
+                        element_count,
+                        std::span<const uint32_t>(&channel_id, 1u));
+                    return out.valid();
+                }
                 if (begin == end) {
                     output_values[row] = 0.0f;
                     continue;
@@ -1762,6 +2107,19 @@ namespace wz::engine::assets::internal
 
                 float neighbor_average = 0.0f;
                 for (uint32_t e = begin; e < end; ++e) {
+                    if (sparse_operator.col_indices[e]
+                        >= input_values.size())
+                    {
+                        logger.warn(
+                            "mesh sparse apply operator column invalid; emitting zero field");
+                        const uint32_t channel_id = desc.output_channel_id;
+                        out = make_zero_float_field(
+                            desc.source_mesh.output,
+                            topology,
+                            element_count,
+                            std::span<const uint32_t>(&channel_id, 1u));
+                        return out.valid();
+                    }
                     neighbor_average +=
                         sparse_operator.weights[e]
                         * input_values[sparse_operator.col_indices[e]];
@@ -1848,6 +2206,39 @@ namespace wz::engine::assets::internal
                 field.values.data() + byte_offset,
                 byte_count);
             return true;
+        }
+
+        MeshDerivedFieldData make_zero_float_field(
+            wz::asset::AssetKey source_mesh_key,
+            wz::asset::Hash topology,
+            uint32_t element_count,
+            std::span<const uint32_t> channel_ids)
+        {
+            const uint32_t channel_bytes = element_count * sizeof(float);
+            std::vector<MeshDerivedFieldChannel> channels;
+            channels.reserve(channel_ids.size());
+            std::vector<std::byte> values(
+                static_cast<size_t>(channel_bytes) * channel_ids.size(),
+                std::byte{0});
+
+            for (size_t i = 0; i < channel_ids.size(); ++i) {
+                channels.push_back(MeshDerivedFieldChannel{
+                    .channel_id = channel_ids[i],
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .byte_offset =
+                        static_cast<uint32_t>(i * channel_bytes),
+                    .byte_count = channel_bytes,
+                });
+            }
+
+            return MeshDerivedFieldData{
+                .source_mesh_key = source_mesh_key,
+                .source_topology_hash = topology,
+                .domain = MeshDerivedFieldDomain::Vertex,
+                .element_count = element_count,
+                .channels = std::move(channels),
+                .values = std::move(values),
+            };
         }
 
         bool build_builtin_mesh_derived_field_values(
@@ -1943,15 +2334,131 @@ namespace wz::engine::assets::internal
                     }
                 }
                 if (desc.normalize) {
-                    float max_value = 0.0f;
-                    for (const float value : values) {
-                        max_value = (std::max)(max_value, value);
+                    normalize_by_max_positive(values);
+                }
+                return true;
+            }
+
+            case BuiltinMeshDerivedFieldSourceKind::VertexArea: {
+                for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
+                    const uint32_t ia = mesh.indices[i + 0u];
+                    const uint32_t ib = mesh.indices[i + 1u];
+                    const uint32_t ic = mesh.indices[i + 2u];
+                    if (ia >= vertex_count
+                        || ib >= vertex_count
+                        || ic >= vertex_count)
+                    {
+                        continue;
                     }
-                    if (max_value > 0.0f) {
-                        for (float& value : values) {
-                            value /= max_value;
+                    const float area =
+                        mesh_triangle_area(
+                            mesh.vertices[ia],
+                            mesh.vertices[ib],
+                            mesh.vertices[ic])
+                        / 3.0f;
+                    values[ia] += area;
+                    values[ib] += area;
+                    values[ic] += area;
+                }
+                if (desc.normalize) {
+                    normalize_by_max_positive(values);
+                }
+                return true;
+            }
+
+            case BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength: {
+                std::vector<float> length_sums(vertex_count, 0.0f);
+                std::vector<uint32_t> length_counts(vertex_count, 0u);
+                std::unordered_set<uint64_t> seen_edges;
+                seen_edges.reserve(mesh.indices.size());
+
+                auto add_edge = [&](uint32_t a, uint32_t b)
+                {
+                    if (a >= vertex_count || b >= vertex_count || a == b) {
+                        return;
+                    }
+                    const uint64_t key = mesh_edge_key(a, b);
+                    if (!seen_edges.insert(key).second) {
+                        return;
+                    }
+
+                    const float length =
+                        mesh_position_distance(mesh.vertices[a], mesh.vertices[b]);
+                    length_sums[a] += length;
+                    length_sums[b] += length;
+                    ++length_counts[a];
+                    ++length_counts[b];
+                };
+
+                for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
+                    const uint32_t ia = mesh.indices[i + 0u];
+                    const uint32_t ib = mesh.indices[i + 1u];
+                    const uint32_t ic = mesh.indices[i + 2u];
+                    add_edge(ia, ib);
+                    add_edge(ib, ic);
+                    add_edge(ic, ia);
+                }
+
+                for (uint32_t i = 0; i < vertex_count; ++i) {
+                    values[i] =
+                        length_counts[i] > 0u
+                            ? length_sums[i]
+                                / static_cast<float>(length_counts[i])
+                            : 0.0f;
+                }
+                if (desc.normalize) {
+                    normalize_by_max_positive(values);
+                }
+                return true;
+            }
+
+            case BuiltinMeshDerivedFieldSourceKind::InverseAreaDensity:
+            case BuiltinMeshDerivedFieldSourceKind::LogDensity: {
+                std::vector<float> vertex_areas(vertex_count, 0.0f);
+                for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
+                    const uint32_t ia = mesh.indices[i + 0u];
+                    const uint32_t ib = mesh.indices[i + 1u];
+                    const uint32_t ic = mesh.indices[i + 2u];
+                    if (ia >= vertex_count
+                        || ib >= vertex_count
+                        || ic >= vertex_count)
+                    {
+                        continue;
+                    }
+                    const float area =
+                        mesh_triangle_area(
+                            mesh.vertices[ia],
+                            mesh.vertices[ib],
+                            mesh.vertices[ic])
+                        / 3.0f;
+                    vertex_areas[ia] += area;
+                    vertex_areas[ib] += area;
+                    vertex_areas[ic] += area;
+                }
+
+                constexpr float kAreaEpsilon = 1.0e-20f;
+                for (uint32_t i = 0; i < vertex_count; ++i) {
+                    if (vertex_areas[i] <= kAreaEpsilon) {
+                        values[i] = 0.0f;
+                        continue;
+                    }
+
+                    const float inverse_area = 1.0f / vertex_areas[i];
+                    if (desc.source_kind
+                        == BuiltinMeshDerivedFieldSourceKind::
+                            InverseAreaDensity)
+                    {
+                        values[i] = inverse_area;
+                    }
+                    else {
+                        values[i] = std::log(inverse_area);
+                        if (!std::isfinite(values[i])) {
+                            values[i] = 0.0f;
                         }
                     }
+                }
+                if (desc.normalize) {
+                    normalize_by_max_positive(values);
                 }
                 return true;
             }
@@ -2296,6 +2803,99 @@ namespace wz::engine::assets::internal
                 : compile_failed_node(input);
         }
 
+        wz::asset::AssetNode compile_mesh_sparse_diffusion_bands_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table,
+            MeshSparseOperatorTable& sparse_operator_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<MeshSparseDiffusionBandsDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 3u) {
+                logger.error(
+                    "mesh sparse diffusion bands node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error(
+                    "mesh sparse diffusion bands source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            const MeshDerivedFieldData* input_field =
+                field_table.get(dep_handles[1]);
+            if (!input_field) {
+                logger.error(
+                    "mesh sparse diffusion bands input field handle invalid");
+                return compile_failed_node(input);
+            }
+
+            const MeshSparseOperatorData* sparse_operator =
+                sparse_operator_table.get(dep_handles[2]);
+            if (!sparse_operator) {
+                logger.error(
+                    "mesh sparse diffusion bands operator handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshDerivedFieldDiskCacheKey,
+                    input.key,
+                    kMeshSparseDiffusionBandsCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_sparse_diffusion_bands_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh,
+                        *input_field,
+                        *sparse_operator))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn(
+                    "asset disk cache ignored stale mesh sparse diffusion bands");
+            }
+
+            MeshDerivedFieldData field{};
+            if (!compile_mesh_sparse_diffusion_bands(
+                    *desc,
+                    *source_mesh,
+                    *input_field,
+                    *sparse_operator,
+                    logger,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshDerivedFieldDiskCacheKey,
+                input.key,
+                kMeshSparseDiffusionBandsCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
+
         wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::ResourceHandle> dep_handles,
@@ -2619,6 +3219,31 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_sparse_apply_field_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table,
+                    mesh_sparse_operator_table,
+                    cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshSparseDiffusionBandsSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table,
+                &mesh_sparse_operator_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_sparse_diffusion_bands_node(
                     input,
                     dep_handles,
                     logger,
