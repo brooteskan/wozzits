@@ -2,6 +2,7 @@
 
 #include <engine/behavior/behavior_gpu_compute_executor.h>
 #include <engine/assets/scene/scene_instance.h>
+#include <gpu/mesh_field_visualization.h>
 #include <window/window2.h>
 
 namespace
@@ -1549,6 +1550,8 @@ namespace
         wz::engine::assets::MeshSparseOperatorAsset op{};
         uint32_t vertex_count = 0u;
         uint32_t channel_id = 0u;
+        uint32_t signal_channel_id = 0u;
+        std::vector<float> signal_values;
         wz::engine::behavior::BehaviorGpuKernelLibrary library{};
         bool ok = false;
         std::string error;
@@ -1590,20 +1593,38 @@ namespace
         }
         setup.vertex_count = mesh_data->vertex_count();
         setup.channel_id = MeshWaveletChannelID::kDetailCost;
+        setup.signal_channel_id = MeshWaveletChannelID::kPositionEnergyBase;
+        setup.signal_values.resize(setup.vertex_count);
+        for (uint32_t i = 0u; i < setup.vertex_count; ++i) {
+            setup.signal_values[i] = static_cast<float>(i);
+        }
 
         std::vector<std::byte> zeroes(
             static_cast<size_t>(setup.vertex_count) * sizeof(float),
             std::byte{ 0 });
+        std::vector<std::byte> signal_bytes(
+            setup.signal_values.size() * sizeof(float));
+        std::memcpy(
+            signal_bytes.data(),
+            setup.signal_values.data(),
+            signal_bytes.size());
         setup.field = assets.mesh_derived_fields().create_explicit_field({
             .name = "behavior/laplacian_residual_field",
             .source_mesh = mesh,
             .domain = MeshDerivedFieldDomain::Vertex,
             .element_count = setup.vertex_count,
-            .channels = {{
-                .channel_id = setup.channel_id,
-                .value_type = MeshDerivedFieldValueType::Float1,
-                .values = zeroes,
-            }},
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.signal_channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = signal_bytes,
+                },
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = zeroes,
+                },
+            },
         });
         if (!setup.field.valid()) {
             setup.error = "explicit field creation failed";
@@ -1807,6 +1828,39 @@ namespace
         return job;
     }
 
+    wz::engine::behavior::BehaviorGpuComputeJob
+    make_laplacian_field_signal_job(
+        uint32_t signal_channel_id,
+        uint32_t output_channel_id,
+        uint32_t output_element_count,
+        bool publish)
+    {
+        namespace behavior = wz::engine::behavior;
+
+        behavior::BehaviorGpuComputeJob job =
+            make_laplacian_job({}, output_channel_id, publish);
+        job.ports[4] = behavior::BehaviorGpuPortValue{
+            .name = "signal",
+            .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+            .direction = WZ_GPU_PORT_INPUT,
+            .element_count = 0u,
+            .stride_bytes = sizeof(float),
+            .resource = WzGpuResourceRef{
+                .value = WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL,
+            },
+            .u32 = {
+                signal_channel_id,
+                WZ_GPU_MESH_FIELD_VALUE_FLOAT1,
+                WZ_GPU_MESH_FIELD_COMPONENT_ALL,
+                WZ_GPU_SPARSE_APPLY_RESIDUAL,
+            },
+        };
+        if (!publish) {
+            job.ports[5].element_count = output_element_count;
+        }
+        return job;
+    }
+
     // CPU reference application of the NeighborWeights convention with the
     // isolated-row contract: rows with no neighbors output zero detail.
     std::vector<float> reference_residual(
@@ -1979,6 +2033,123 @@ TEST_F(
 
 TEST_F(
     SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualConsumesMeshDerivedFieldSignalChannel)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, false);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    const auto* op_data =
+        assets.mesh_sparse_operators().get_sparse_operator_data(
+            assets.mesh_sparse_operators().get_sparse_operator(setup.op));
+    ASSERT_NE(op_data, nullptr);
+
+    const wz::gpu::GPUHandle signal_buffer =
+        wz::gpu::create_structured_buffer(device, {
+            .element_count = setup.vertex_count,
+            .stride_bytes = sizeof(float),
+            .initial_data = setup.signal_values.data(),
+            .initial_data_bytes =
+                setup.signal_values.size() * sizeof(float),
+        });
+    ASSERT_TRUE(signal_buffer.valid());
+    const wz::gpu::GPUHandle signal_field =
+        wz::gpu::create_mesh_field_visualization_from_gpu_source(
+            device,
+            signal_buffer,
+            0u,
+            setup.vertex_count,
+            sizeof(float));
+    EXPECT_TRUE(wz::gpu::release_compute_buffer(device, signal_buffer));
+    ASSERT_TRUE(signal_field.valid());
+    ASSERT_TRUE(assets.gpu_resident_fields().add(GpuResidentFieldEntry{
+        .field_key = setup.field.output,
+        .channel_id = setup.signal_channel_id,
+        .gpu_resource = signal_field,
+    }));
+
+    const behavior::BehaviorGpuComputeJob readback_job =
+        make_laplacian_field_signal_job(
+            setup.signal_channel_id,
+            setup.channel_id,
+            setup.vertex_count,
+            false);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &readback_job,
+                1u,
+            },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.failed, 0u);
+    for (const auto& failure : report.publish_failures) {
+        ADD_FAILURE() << failure.port_name << ": " << failure.reason;
+    }
+
+    const std::vector<float> expected =
+        reference_residual(*op_data, setup.signal_values);
+    ASSERT_EQ(report.readbacks.size(), 1u);
+    ASSERT_EQ(
+        report.readbacks[0].bytes.size(),
+        setup.vertex_count * sizeof(float));
+    for (size_t i = 0; i < expected.size(); ++i) {
+        float value = 0.0f;
+        std::memcpy(
+            &value,
+            report.readbacks[0].bytes.data() + i * sizeof(float),
+            sizeof(float));
+        EXPECT_NEAR(value, expected[i], 1.0e-5f) << "vertex " << i;
+    }
+
+    const behavior::BehaviorGpuComputeJob publish_job =
+        make_laplacian_field_signal_job(
+            setup.signal_channel_id,
+            setup.channel_id,
+            setup.vertex_count,
+            true);
+    const auto publish_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &publish_job,
+                1u,
+            },
+            setup.library);
+    EXPECT_EQ(publish_report.dispatched, 1u);
+    EXPECT_EQ(publish_report.failed, 0u);
+    EXPECT_EQ(publish_report.published_mesh_fields, 1u);
+    EXPECT_TRUE(publish_report.readbacks.empty());
+    EXPECT_TRUE(
+        assets.gpu_resident_fields()
+            .find(setup.field.output, setup.channel_id)
+            .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
     LaplacianResidualConstantSignalIsZeroIncludingIsolatedVertex)
 {
     using namespace wz::engine::assets;
@@ -2024,6 +2195,160 @@ TEST_F(
             sizeof(float));
         EXPECT_NEAR(value, 0.0f, 1.0e-6f) << "vertex " << i;
     }
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualFieldSignalReportsClearDiagnostics)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, false);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    const auto field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(setup.field);
+    const MeshDerivedFieldData* setup_field =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(setup_field, nullptr);
+    const MeshAsset source_mesh{ .output = setup_field->source_mesh_key };
+
+    auto dispatch_with_target =
+        [&](MeshDerivedFieldAsset field,
+            behavior::BehaviorGpuComputeJob job)
+    {
+        wz::engine::assets::SceneInstance instance{};
+        instance.mesh_field_visualization_targets.push_back({
+            .node = 0,
+            .component = MeshFieldVisualizationTargetComponent{
+                .field_asset = field.output,
+                .channel_id = setup.channel_id,
+            },
+        });
+        return behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    };
+
+    behavior::BehaviorGpuComputeJob missing_channel =
+        make_laplacian_field_signal_job(
+            setup.signal_channel_id + 77u,
+            setup.channel_id,
+            setup.vertex_count,
+            false);
+    auto missing_report =
+        dispatch_with_target(setup.field, missing_channel);
+    EXPECT_EQ(missing_report.dispatched, 0u);
+    EXPECT_EQ(missing_report.failed, 1u);
+    ASSERT_FALSE(missing_report.publish_failures.empty());
+    EXPECT_NE(
+        missing_report.publish_failures[0].reason.find("has no channel"),
+        std::string::npos)
+        << missing_report.publish_failures[0].reason;
+
+    std::vector<float> vec2_values(
+        static_cast<size_t>(setup.vertex_count) * 2u,
+        1.0f);
+    std::vector<std::byte> vec2_bytes(
+        vec2_values.size() * sizeof(float));
+    std::memcpy(
+        vec2_bytes.data(),
+        vec2_values.data(),
+        vec2_bytes.size());
+    std::vector<std::byte> output_zeroes(
+        static_cast<size_t>(setup.vertex_count) * sizeof(float),
+        std::byte{ 0 });
+    const MeshDerivedFieldAsset type_mismatch_field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "behavior/type_mismatch_signal_field",
+            .source_mesh = source_mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = setup.vertex_count,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.signal_channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float2,
+                    .values = vec2_bytes,
+                },
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = output_zeroes,
+                },
+            },
+        });
+    ASSERT_TRUE(type_mismatch_field.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    behavior::BehaviorGpuComputeJob type_mismatch =
+        make_laplacian_field_signal_job(
+            setup.signal_channel_id,
+            setup.channel_id,
+            setup.vertex_count,
+            false);
+    auto type_report =
+        dispatch_with_target(type_mismatch_field, type_mismatch);
+    EXPECT_EQ(type_report.dispatched, 0u);
+    EXPECT_EQ(type_report.failed, 1u);
+    ASSERT_FALSE(type_report.publish_failures.empty());
+    EXPECT_NE(
+        type_report.publish_failures[0].reason.find("type mismatch"),
+        std::string::npos)
+        << type_report.publish_failures[0].reason;
+
+    const uint32_t face_count = 2u;
+    std::vector<std::byte> face_values(face_count * sizeof(float));
+    std::vector<std::byte> face_output(face_count * sizeof(float));
+    const MeshDerivedFieldAsset domain_mismatch_field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "behavior/domain_mismatch_signal_field",
+            .source_mesh = source_mesh,
+            .domain = MeshDerivedFieldDomain::Face,
+            .element_count = face_count,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.signal_channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = face_values,
+                },
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = setup.channel_id,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = face_output,
+                },
+            },
+        });
+    ASSERT_TRUE(domain_mismatch_field.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    behavior::BehaviorGpuComputeJob domain_mismatch =
+        make_laplacian_field_signal_job(
+            setup.signal_channel_id,
+            setup.channel_id,
+            setup.vertex_count,
+            false);
+    auto domain_report =
+        dispatch_with_target(domain_mismatch_field, domain_mismatch);
+    EXPECT_EQ(domain_report.dispatched, 0u);
+    EXPECT_EQ(domain_report.failed, 1u);
+    ASSERT_FALSE(domain_report.publish_failures.empty());
+    EXPECT_NE(
+        domain_report.publish_failures[0].reason.find("domain mismatch"),
+        std::string::npos)
+        << domain_report.publish_failures[0].reason;
 
     (void)behavior::release_behavior_gpu_kernel_library(
         device,

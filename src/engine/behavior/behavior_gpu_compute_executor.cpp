@@ -292,6 +292,225 @@ namespace wz::engine::behavior
             return data && data->valid() ? data : nullptr;
         }
 
+        const char* mesh_field_domain_name(
+            wz::engine::assets::MeshDerivedFieldDomain domain) noexcept
+        {
+            using wz::engine::assets::MeshDerivedFieldDomain;
+            switch (domain) {
+            case MeshDerivedFieldDomain::Vertex:
+                return "Vertex";
+            case MeshDerivedFieldDomain::Edge:
+                return "Edge";
+            case MeshDerivedFieldDomain::Face:
+                return "Face";
+            case MeshDerivedFieldDomain::Corner:
+                return "Corner";
+            }
+            return "Unknown";
+        }
+
+        const char* mesh_field_value_type_name(
+            wz::engine::assets::MeshDerivedFieldValueType type) noexcept
+        {
+            using wz::engine::assets::MeshDerivedFieldValueType;
+            switch (type) {
+            case MeshDerivedFieldValueType::Float1:
+                return "Float1";
+            case MeshDerivedFieldValueType::Float2:
+                return "Float2";
+            case MeshDerivedFieldValueType::Float3:
+                return "Float3";
+            case MeshDerivedFieldValueType::Float4:
+                return "Float4";
+            case MeshDerivedFieldValueType::UInt1:
+                return "UInt1";
+            }
+            return "Unknown";
+        }
+
+        bool find_job_sparse_operator_kind(
+            const BehaviorGpuComputeJob& job,
+            uint32_t& out_kind)
+        {
+            for (const BehaviorGpuPortValue& candidate : job.ports) {
+                if (candidate.resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR
+                    || candidate.resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO)
+                {
+                    out_kind = candidate.u32[1];
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        struct MeshDerivedFieldInputSignal
+        {
+            wz::asset::AssetKey field_asset{};
+            const wz::engine::assets::MeshDerivedFieldData* field = nullptr;
+            const wz::engine::assets::MeshDerivedFieldChannel* channel =
+                nullptr;
+            wz::gpu::GPUHandle resident_resource{};
+
+            bool valid() const noexcept
+            {
+                return field_asset != wz::asset::AssetKey{}
+                    && field
+                    && channel;
+            }
+        };
+
+        MeshDerivedFieldInputSignal find_mesh_derived_field_input_signal(
+            const BehaviorGpuPublishContext* context,
+            const BehaviorGpuComputeJob& job,
+            const BehaviorGpuPortValue& port,
+            std::string& failure)
+        {
+            using namespace wz::engine::assets;
+
+            if (!context || !context->assets || !context->scene) {
+                failure = "mesh derived field input unavailable: "
+                    "scene-aware dispatch overload required";
+                return {};
+            }
+            if (port.stride_bytes != sizeof(float)) {
+                failure = "mesh derived field input stride must be 4 "
+                    "bytes for Float1";
+                return {};
+            }
+            if (port.u32[0] == 0u) {
+                failure = "mesh derived field input channel id is zero";
+                return {};
+            }
+            if (port.u32[1] != WZ_GPU_MESH_FIELD_VALUE_FLOAT1) {
+                failure = "mesh derived field input supports Float1 only "
+                    "in v0";
+                return {};
+            }
+            if (port.u32[2] != WZ_GPU_MESH_FIELD_COMPONENT_ALL
+                && port.u32[2] != WZ_GPU_MESH_FIELD_COMPONENT_X)
+            {
+                failure = "mesh derived field input Float1 component mode "
+                    "must be all or x";
+                return {};
+            }
+            if (port.u32[3] != WZ_GPU_SPARSE_APPLY_RESIDUAL) {
+                failure = "mesh derived field input supports residual "
+                    "apply mode only in v0";
+                return {};
+            }
+
+            uint32_t operator_kind = 0u;
+            if (!find_job_sparse_operator_kind(job, operator_kind)) {
+                failure = "mesh derived field input requires a mesh sparse "
+                    "operator port or info port for domain/count validation";
+                return {};
+            }
+
+            wz::asset::AssetKey operator_key{};
+            const MeshSparseOperatorData* op = find_entity_sparse_operator(
+                context,
+                job,
+                operator_kind,
+                &operator_key);
+            if (!op) {
+                failure = "mesh sparse operator unavailable: no compiled "
+                    "operator for the entity's mesh (resolve the operator "
+                    "asset first)";
+                return {};
+            }
+            if (op->domain != MeshOperatorDomain::Vertex) {
+                failure = "mesh derived field input domain mismatch: "
+                    "operator domain "
+                    + std::string(mesh_field_domain_name(op->domain))
+                    + " is not Vertex";
+                return {};
+            }
+
+            bool saw_entity_target = false;
+            for (const auto& target :
+                context->scene->mesh_field_visualization_targets)
+            {
+                if (target.node != job.entity) {
+                    continue;
+                }
+                saw_entity_target = true;
+
+                const MeshDerivedFieldAsset field_asset{
+                    .output = target.component.field_asset,
+                };
+                const auto field_handle =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field(field_asset);
+                const MeshDerivedFieldData* field =
+                    context->assets->mesh_derived_fields()
+                        .get_mesh_derived_field_data(field_handle);
+                if (!field || !field->valid()) {
+                    failure = "input mesh derived field is not resolved";
+                    continue;
+                }
+                if (field->source_mesh_key != op->source_mesh_key) {
+                    failure = "input mesh derived field source mesh does "
+                        "not match sparse operator source mesh";
+                    continue;
+                }
+                if (field->domain != MeshDerivedFieldDomain::Vertex) {
+                    failure = "input mesh derived field domain mismatch: "
+                        "expected Vertex, got "
+                        + std::string(mesh_field_domain_name(field->domain));
+                    continue;
+                }
+                if (field->element_count != op->row_count) {
+                    failure = "sparse operator row count "
+                        + std::to_string(op->row_count)
+                        + " does not match input field element count "
+                        + std::to_string(field->element_count);
+                    continue;
+                }
+
+                const auto channel_it = std::find_if(
+                    field->channels.begin(),
+                    field->channels.end(),
+                    [&port](const MeshDerivedFieldChannel& channel)
+                    {
+                        return channel.channel_id == port.u32[0];
+                    });
+                if (channel_it == field->channels.end()) {
+                    failure = "input mesh derived field has no channel "
+                        + std::to_string(port.u32[0]);
+                    continue;
+                }
+                if (channel_it->value_type
+                    != MeshDerivedFieldValueType::Float1)
+                {
+                    failure = "input mesh derived field channel "
+                        + std::to_string(port.u32[0])
+                        + " type mismatch: expected Float1, got "
+                        + std::string(mesh_field_value_type_name(
+                            channel_it->value_type));
+                    continue;
+                }
+
+                failure.clear();
+                return MeshDerivedFieldInputSignal{
+                    .field_asset = target.component.field_asset,
+                    .field = field,
+                    .channel = &*channel_it,
+                    .resident_resource =
+                        context->assets->gpu_resident_fields()
+                            .find(
+                                target.component.field_asset,
+                                port.u32[0]),
+                };
+            }
+
+            if (!saw_entity_target) {
+                failure = "entity has no mesh field visualization target";
+            }
+            return {};
+        }
+
         // Publish one flagged output buffer as the resident mesh field for
         // the job's entity. Prefers refreshing the existing resident
         // resource in place (which keeps handles captured by resolved
@@ -1000,6 +1219,49 @@ namespace wz::engine::behavior
                                 *slot = buffer;
                                 transient_buffer = false;
                             }
+                        }
+                    }
+                    else if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL)
+                    {
+                        std::string signal_failure;
+                        const MeshDerivedFieldInputSignal signal =
+                            find_mesh_derived_field_input_signal(
+                                publish_context,
+                                job,
+                                *port,
+                                signal_failure);
+                        if (!signal.valid()) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = std::move(signal_failure),
+                            });
+                            ok = false;
+                            break;
+                        }
+
+                        element_count = signal.field->element_count;
+                        engine_resolved_elements = std::max(
+                            engine_resolved_elements,
+                            element_count);
+
+                        if (signal.resident_resource.valid()) {
+                            buffer = signal.resident_resource;
+                            transient_buffer = false;
+                        }
+                        else {
+                            const std::byte* begin =
+                                signal.field->values.data()
+                                + signal.channel->byte_offset;
+                            buffer = wz::gpu::create_structured_buffer(
+                                device, {
+                                .element_count = element_count,
+                                .stride_bytes = port->stride_bytes,
+                                .initial_data = begin,
+                                .initial_data_bytes =
+                                    signal.channel->byte_count,
+                            });
                         }
                     }
                     else {

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 23u
+#define WZ_BEHAVIOR_ABI_VERSION 24u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -334,6 +334,24 @@ enum
      * buffer ref above.
      */
     WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO = 7u,
+    /*
+     * For input structured-buffer ports, the engine binds a Float1 channel
+     * from the current entity's MeshDerivedField as a read-only signal
+     * (StructuredBuffer<float>, stride 4). The field asset is resolved
+     * through the entity's mesh field visualization target; u32[0] selects
+     * the channel id. v0 requires:
+     *   u32[1] = WZ_GPU_MESH_FIELD_VALUE_FLOAT1
+     *   u32[2] = WZ_GPU_MESH_FIELD_COMPONENT_ALL or
+     *            WZ_GPU_MESH_FIELD_COMPONENT_X
+     *   u32[3] = WZ_GPU_SPARSE_APPLY_RESIDUAL
+     *
+     * The input field domain must match the sparse operator domain. v0 is
+     * vertex-only: operator domain = Vertex, input field domain = Vertex,
+     * output field domain = Vertex. Missing channel, domain mismatch, type
+     * mismatch, missing operator, and row/element-count mismatch fail the
+     * job with a clear reason.
+     */
+    WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL = 8u,
 };
 
 /* Component selector for WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR ports. */
@@ -343,6 +361,36 @@ enum
     WZ_GPU_SPARSE_OPERATOR_COL_INDICES = 1u,  /* uint, nonzero_count */
     WZ_GPU_SPARSE_OPERATOR_WEIGHTS = 2u,      /* float, nonzero_count */
     WZ_GPU_SPARSE_OPERATOR_VERTEX_MASS = 3u,  /* float, row_count */
+};
+
+/* Value type selector for WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL. */
+enum
+{
+    WZ_GPU_MESH_FIELD_VALUE_FLOAT1 = 0u,
+    WZ_GPU_MESH_FIELD_VALUE_FLOAT2 = 1u,
+    WZ_GPU_MESH_FIELD_VALUE_FLOAT3 = 2u,
+    WZ_GPU_MESH_FIELD_VALUE_FLOAT4 = 3u,
+    WZ_GPU_MESH_FIELD_VALUE_UINT1 = 4u,
+};
+
+/* Component selector for vector-capable mesh field signal descriptors. */
+enum
+{
+    WZ_GPU_MESH_FIELD_COMPONENT_ALL = 0u,
+    WZ_GPU_MESH_FIELD_COMPONENT_X = 1u,
+    WZ_GPU_MESH_FIELD_COMPONENT_Y = 2u,
+    WZ_GPU_MESH_FIELD_COMPONENT_Z = 3u,
+    WZ_GPU_MESH_FIELD_COMPONENT_W = 4u,
+    WZ_GPU_MESH_FIELD_COMPONENT_MAGNITUDE = 5u,
+};
+
+/* Sparse-operator apply mode for mesh field signal descriptors. */
+enum
+{
+    WZ_GPU_SPARSE_APPLY_RESIDUAL = 0u,
+    WZ_GPU_SPARSE_APPLY_SMOOTH = 1u,
+    WZ_GPU_SPARSE_APPLY_MAGNITUDE_RESIDUAL = 2u,
+    WZ_GPU_SPARSE_APPLY_DIFFUSION_STEP = 3u,
 };
 
 typedef struct WzGpuPortValue

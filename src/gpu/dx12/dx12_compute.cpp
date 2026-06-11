@@ -675,20 +675,34 @@ namespace wz::gpu::dx12::internal
                 return false;
             }
 
-            DX12ComputeBuffer* buffer = impl->compute_buffers.get(binding.buffer);
-            if (!buffer || !buffer->valid()) {
+            DX12ComputeBuffer* buffer =
+                impl->compute_buffers.get(binding.buffer);
+            ID3D12Resource* bound_resource = nullptr;
+            uint32_t bound_stride_bytes = 0u;
+            if (buffer && buffer->valid()) {
+                transition_buffer(cmd, *buffer, desired_state(binding.kind));
+                bound_resource = buffer->resource;
+                bound_stride_bytes = buffer->stride_bytes;
+            }
+            else if (is_srv(binding.kind)) {
+                const DX12MeshFieldVisualizationResource* field =
+                    impl->mesh_field_visualizations.get(binding.buffer);
+                if (field && field->valid()) {
+                    bound_resource = field->values_buffer;
+                    bound_stride_bytes = field->stride_bytes;
+                }
+            }
+            if (!bound_resource) {
                 cmd->Release();
                 allocator->Release();
                 return false;
             }
 
-            if (declared->stride_bytes != buffer->stride_bytes) {
+            if (declared->stride_bytes != bound_stride_bytes) {
                 cmd->Release();
                 allocator->Release();
                 return false;
             }
-
-            transition_buffer(cmd, *buffer, desired_state(binding.kind));
 
             const uint32_t root_index =
                 root_param_index_for_binding(pipeline->data, declared);
@@ -699,7 +713,7 @@ namespace wz::gpu::dx12::internal
             }
 
             const D3D12_GPU_VIRTUAL_ADDRESS address =
-                buffer->resource->GetGPUVirtualAddress();
+                bound_resource->GetGPUVirtualAddress();
             if (is_srv(binding.kind)) {
                 cmd->SetComputeRootShaderResourceView(root_index, address);
             }

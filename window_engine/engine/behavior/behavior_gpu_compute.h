@@ -131,6 +131,8 @@ namespace wz::engine::behavior
                         || src.resource.value
                             == WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR
                         || src.resource.value
+                            == WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL
+                        || src.resource.value
                             == WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION;
                     if ((src.element_count == 0u && !engine_sized)
                         || src.stride_bytes == 0u

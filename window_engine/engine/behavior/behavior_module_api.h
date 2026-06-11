@@ -483,6 +483,34 @@ static inline uint8_t wz_gpu_set_u32_sparse_operator_info(
     return 1u;
 }
 
+/*
+ * Declare a structured input the engine fills with a Float1 channel from
+ * the entity's MeshDerivedField (StructuredBuffer<float>, stride 4). v0 is
+ * scalar-first and residual-mode only; vector fields should pass an
+ * explicit component/magnitude mode when that support lands.
+ */
+static inline uint8_t wz_gpu_set_structured_input_mesh_field_signal(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t channel_id)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->stride_bytes = sizeof(float);
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL;
+    port->u32[0] = channel_id;
+    port->u32[1] = WZ_GPU_MESH_FIELD_VALUE_FLOAT1;
+    port->u32[2] = WZ_GPU_MESH_FIELD_COMPONENT_ALL;
+    port->u32[3] = WZ_GPU_SPARSE_APPLY_RESIDUAL;
+    return 1u;
+}
+
 static inline uint8_t wz_gpu_set_u32(
     WzGpuJob* job,
     const char* name,
