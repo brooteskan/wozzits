@@ -1534,6 +1534,15 @@ TEST_F(MeshComputeFieldGpuFixture, ResolvesComputeDerivedFieldThroughGpuPath)
             .valid());
     EXPECT_TRUE(
         assets.gpu_resident_fields().find(field.output, kXChannel).valid());
+
+    // The positions upload landed in the resident mesh-data table, keyed by
+    // the source mesh, for reuse by any later compute mesh consumer.
+    ASSERT_EQ(assets.gpu_resident_mesh_data().size(), 1u);
+    const auto* resident = assets.gpu_resident_mesh_data().find(mesh.output);
+    ASSERT_NE(resident, nullptr);
+    EXPECT_TRUE(resident->positions.valid());
+    EXPECT_EQ(resident->vertex_count, 8u);
+    EXPECT_FALSE(resident->indices.valid());
 }
 
 TEST_F(MeshComputeFieldGpuFixture, ComputeDerivedFieldSecondResolveIsDiskCacheHit)
@@ -1697,6 +1706,51 @@ TEST_F(MeshComputeFieldGpuFixture, ComputeDerivedFieldMissingNormalsFailsCompile
     EXPECT_EQ(report.failures[0].key, field.output);
     EXPECT_FALSE(
         assets.mesh_derived_fields().get_mesh_derived_field(field).valid());
+}
+
+TEST(MeshDerivedFieldAssetModule, GpuResidentMeshDataTableKeysByMesh)
+{
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey mesh_key{
+        .content_hash = { 1u, 2u },
+        .schema_hash = { 3u, 4u },
+        .compiler_hash = { 5u, 6u },
+        .deps_hash = { 7u, 8u },
+    };
+    const wz::gpu::GPUHandle positions{
+        .id = 21u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
+
+    GpuResidentMeshDataTable table{};
+    EXPECT_EQ(table.find_or_add(wz::asset::AssetKey{}), nullptr);
+    EXPECT_EQ(table.find(mesh_key), nullptr);
+
+    GpuResidentMeshDataEntry* entry = table.find_or_add(mesh_key);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(table.size(), 1u);
+    EXPECT_FALSE(entry->positions.valid());
+    entry->positions = positions;
+    entry->vertex_count = 8u;
+
+    // Repeated lookups return the same entry, with the filled slots intact.
+    EXPECT_EQ(table.find_or_add(mesh_key), entry);
+    EXPECT_EQ(table.size(), 1u);
+    const GpuResidentMeshDataEntry* found = table.find(mesh_key);
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->positions, positions);
+    EXPECT_EQ(found->vertex_count, 8u);
+
+    wz::asset::AssetKey other_key = mesh_key;
+    other_key.content_hash = { 9u, 10u };
+    EXPECT_NE(table.find_or_add(other_key), nullptr);
+    EXPECT_EQ(table.size(), 2u);
+
+    table.clear();
+    EXPECT_EQ(table.size(), 0u);
+    EXPECT_EQ(table.find(mesh_key), nullptr);
 }
 
 TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)

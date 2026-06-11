@@ -198,10 +198,15 @@ namespace wz::engine::behavior
 
         // Resolve the mesh backing the job's entity through its mesh field
         // visualization target (the target field records its source mesh).
-        // Used to fill engine-owned mesh data ports.
+        // Used to fill engine-owned mesh data ports. The mesh key is the
+        // resident mesh-data table key — the table itself is keyed by the
+        // source mesh asset, not by visualization state; this entity-to-mesh
+        // hop through the visualization target is the remaining short-term
+        // bridge.
         const wz::engine::assets::MeshData* find_entity_mesh_data(
             const BehaviorGpuPublishContext* context,
-            const BehaviorGpuComputeJob& job)
+            const BehaviorGpuComputeJob& job,
+            wz::asset::AssetKey* out_mesh_key = nullptr)
         {
             using wz::engine::assets::MeshDerivedFieldAsset;
 
@@ -237,6 +242,9 @@ namespace wz::engine::behavior
                 const auto* mesh =
                     context->assets->meshes().get_mesh_data(mesh_handle);
                 if (mesh && mesh->valid()) {
+                    if (out_mesh_key) {
+                        *out_mesh_key = field->source_mesh_key;
+                    }
                     return mesh;
                 }
             }
@@ -687,12 +695,16 @@ namespace wz::engine::behavior
 
                 uint32_t element_count = port->element_count;
                 wz::gpu::GPUHandle buffer{};
+                bool transient_buffer = true;
                 if (port->direction == WZ_GPU_PORT_INPUT) {
                     if (port->resource.value
                         == WZ_GPU_RESOURCE_REF_MESH_VERTEX_POSITIONS)
                     {
-                        const auto* mesh =
-                            find_entity_mesh_data(publish_context, job);
+                        wz::asset::AssetKey mesh_key{};
+                        const auto* mesh = find_entity_mesh_data(
+                            publish_context,
+                            job,
+                            &mesh_key);
                         if (!mesh
                             || port->stride_bytes != 3u * sizeof(float))
                         {
@@ -710,33 +722,53 @@ namespace wz::engine::behavior
                             break;
                         }
 
-                        std::vector<float> positions;
-                        positions.reserve(mesh->vertices.size() * 3u);
-                        for (const auto& vertex : mesh->vertices) {
-                            positions.push_back(vertex.position[0]);
-                            positions.push_back(vertex.position[1]);
-                            positions.push_back(vertex.position[2]);
-                        }
                         element_count = mesh->vertex_count();
                         engine_resolved_elements = std::max(
                             engine_resolved_elements,
                             element_count);
-                        buffer = wz::gpu::create_structured_buffer(device, {
-                            .element_count = element_count,
-                            .stride_bytes = port->stride_bytes,
-                            .initial_data = positions.data(),
-                            .initial_data_bytes =
-                                positions.size() * sizeof(float),
-                        });
+
+                        // Mesh data is immutable after import: upload once
+                        // per mesh into the resident table and reuse it on
+                        // every later dispatch.
+                        auto* resident =
+                            publish_context->assets
+                                ->gpu_resident_mesh_data()
+                                .find_or_add(mesh_key);
+                        if (resident && resident->positions.valid()) {
+                            buffer = resident->positions;
+                            transient_buffer = false;
+                        }
+                        else {
+                            std::vector<float> positions;
+                            positions.reserve(mesh->vertices.size() * 3u);
+                            for (const auto& vertex : mesh->vertices) {
+                                positions.push_back(vertex.position[0]);
+                                positions.push_back(vertex.position[1]);
+                                positions.push_back(vertex.position[2]);
+                            }
+                            buffer = wz::gpu::create_structured_buffer(
+                                device, {
+                                .element_count = element_count,
+                                .stride_bytes = port->stride_bytes,
+                                .initial_data = positions.data(),
+                                .initial_data_bytes =
+                                    positions.size() * sizeof(float),
+                            });
+                            if (resident && buffer.valid()) {
+                                resident->positions = buffer;
+                                resident->vertex_count = element_count;
+                                transient_buffer = false;
+                            }
+                        }
                     }
                     else if (port->resource.value
                         == WZ_GPU_RESOURCE_REF_MESH_INDICES)
                     {
-                        // Per-dispatch upload; the resident mesh-data table
-                        // (Laplacian milestone part 2) removes this re-upload
-                        // for per-frame use.
-                        const auto* mesh =
-                            find_entity_mesh_data(publish_context, job);
+                        wz::asset::AssetKey mesh_key{};
+                        const auto* mesh = find_entity_mesh_data(
+                            publish_context,
+                            job,
+                            &mesh_key);
                         if (!mesh
                             || port->stride_bytes != sizeof(uint32_t))
                         {
@@ -770,13 +802,32 @@ namespace wz::engine::behavior
                         // kernel that merely reads indices must not
                         // over-dispatch by index count. Kernels iterating
                         // corners declare WZ_GPU_DISPATCH_DOMAIN_CORNER.
-                        buffer = wz::gpu::create_structured_buffer(device, {
-                            .element_count = element_count,
-                            .stride_bytes = port->stride_bytes,
-                            .initial_data = mesh->indices.data(),
-                            .initial_data_bytes =
-                                mesh->indices.size() * sizeof(uint32_t),
-                        });
+                        auto* resident =
+                            publish_context->assets
+                                ->gpu_resident_mesh_data()
+                                .find_or_add(mesh_key);
+                        if (resident && resident->indices.valid()) {
+                            buffer = resident->indices;
+                            transient_buffer = false;
+                        }
+                        else {
+                            buffer = wz::gpu::create_structured_buffer(
+                                device, {
+                                .element_count = element_count,
+                                .stride_bytes = port->stride_bytes,
+                                .initial_data = mesh->indices.data(),
+                                .initial_data_bytes =
+                                    mesh->indices.size()
+                                    * sizeof(uint32_t),
+                            });
+                            if (resident && buffer.valid()) {
+                                resident->indices = buffer;
+                                resident->index_count = element_count;
+                                resident->triangle_count =
+                                    element_count / 3u;
+                                transient_buffer = false;
+                            }
+                        }
                     }
                     else {
                         if (element_count == 0u
@@ -862,7 +913,12 @@ namespace wz::engine::behavior
                     break;
                 }
 
-                buffers.push_back(buffer);
+                // Resident mesh buffers are owned by the table for the
+                // library's lifetime; only per-dispatch transients join the
+                // release list.
+                if (transient_buffer) {
+                    buffers.push_back(buffer);
+                }
                 dispatch_bindings.push_back({
                     .kind = binding.binding_kind,
                     .shader_register = binding.shader_register,

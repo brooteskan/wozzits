@@ -121,6 +121,41 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    // GPU-resident copies of immutable mesh data, uploaded once per mesh
+    // and reused by every compute mesh consumer: behavior compute kernels,
+    // mesh_compute_field compilation, and future operator/wavelet kernels.
+    // Keyed by the source mesh asset key — deliberately not by mesh field
+    // visualization targets, since operator construction is not a
+    // visualization feature. Zero-copy sharing with the renderer's mesh
+    // buffers is a future concern, not handled here.
+    struct GpuResidentMeshDataEntry
+    {
+        wz::asset::AssetKey mesh_key{};
+        wz::asset::ResourceHandle positions{};   // StructuredBuffer<float3>
+        wz::asset::ResourceHandle indices{};     // StructuredBuffer<uint>
+        // Normals/uv0 slots land here when their compute refs do.
+        uint32_t vertex_count = 0;
+        uint32_t index_count = 0;
+        uint32_t triangle_count = 0;
+    };
+
+    class GpuResidentMeshDataTable
+    {
+    public:
+        // Returns the entry for mesh_key, creating an empty one on first
+        // use so callers can fill whichever buffer slots they need.
+        // Returns nullptr for a default-constructed key.
+        GpuResidentMeshDataEntry* find_or_add(wz::asset::AssetKey mesh_key);
+        const GpuResidentMeshDataEntry* find(
+            wz::asset::AssetKey mesh_key) const;
+        void clear();
+        void destroy(MeshFieldComputeBackend& compute);
+        size_t size() const noexcept;
+
+    private:
+        std::vector<GpuResidentMeshDataEntry> entries_;
+    };
+
     class GpuResidentFieldTable
     {
     public:

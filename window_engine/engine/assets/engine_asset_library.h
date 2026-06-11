@@ -225,6 +225,9 @@ namespace wz::engine::assets
         GpuResidentFieldTable&       gpu_resident_fields()       { return gpu_resident_field_table_; }
         const GpuResidentFieldTable& gpu_resident_fields() const { return gpu_resident_field_table_; }
 
+        GpuResidentMeshDataTable&       gpu_resident_mesh_data()       { return gpu_resident_mesh_data_table_; }
+        const GpuResidentMeshDataTable& gpu_resident_mesh_data() const { return gpu_resident_mesh_data_table_; }
+
         MeshFieldComputeBackend& mesh_field_compute() { return *mesh_field_compute_; }
 
         bool gpu_device_valid() const { return device_.valid(); }
@@ -253,6 +256,7 @@ namespace wz::engine::assets
         MeshTable                   mesh_table_;
         MeshDerivedFieldTable       mesh_derived_field_table_;
         GpuResidentFieldTable       gpu_resident_field_table_;
+        GpuResidentMeshDataTable    gpu_resident_mesh_data_table_;
         TerrainAssetTable           terrain_table_;
         TerrainVisualProxyTable      terrain_visual_proxy_table_;
         CollisionAssetTable         collision_table_;

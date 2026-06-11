@@ -1242,6 +1242,7 @@ namespace wz::engine::assets::internal
             MeshFieldComputeBackend& compute,
             wz::Logger& logger,
             GpuResidentFieldTable& gpu_resident_field_table,
+            GpuResidentMeshDataTable& resident_mesh_data,
             MeshDerivedFieldData& out)
         {
             if (!mesh.valid()
@@ -1285,24 +1286,51 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
-            std::vector<MeshComputeInputBuffer> inputs;
+            // Positions/indices bind from the resident mesh-data table when
+            // a previous compile or behavior dispatch already uploaded them;
+            // anything missing is extracted here and, for those two slots,
+            // registered so every later compute mesh consumer reuses the
+            // upload. Other inputs stay per-compile transients.
+            struct PlannedComputeInput
+            {
+                MeshComputeInput input = MeshComputeInput::Positions;
+                MeshComputeInputBuffer data{};
+                wz::asset::ResourceHandle resident{};
+            };
+
+            std::vector<PlannedComputeInput> inputs;
             inputs.reserve(desc.inputs.size());
             for (const MeshComputeInput input : desc.inputs) {
-                MeshComputeInputBuffer buffer{};
-                std::string diagnostic;
-                if (!extract_mesh_compute_input(
-                        mesh,
-                        input,
-                        buffer,
-                        diagnostic))
+                PlannedComputeInput planned{ .input = input };
+                if (input == MeshComputeInput::Positions
+                    || input == MeshComputeInput::Indices)
                 {
-                    logger.error(
-                        std::string("mesh compute derived field input '")
-                        + mesh_compute_input_name(input)
-                        + "' unavailable: " + diagnostic);
-                    return false;
+                    if (const GpuResidentMeshDataEntry* entry =
+                            resident_mesh_data.find(desc.source_mesh.output))
+                    {
+                        planned.resident =
+                            input == MeshComputeInput::Positions
+                                ? entry->positions
+                                : entry->indices;
+                    }
                 }
-                inputs.push_back(std::move(buffer));
+                if (!planned.resident.valid()) {
+                    std::string diagnostic;
+                    if (!extract_mesh_compute_input(
+                            mesh,
+                            input,
+                            planned.data,
+                            diagnostic))
+                    {
+                        logger.error(
+                            std::string(
+                                "mesh compute derived field input '")
+                            + mesh_compute_input_name(input)
+                            + "' unavailable: " + diagnostic);
+                        return false;
+                    }
+                }
+                inputs.push_back(std::move(planned));
             }
 
             const wz::asset::ResourceHandle pipeline =
@@ -1316,22 +1344,54 @@ namespace wz::engine::assets::internal
             }
 
             std::vector<wz::asset::ResourceHandle> input_buffers;
+            std::vector<wz::asset::ResourceHandle> transient_buffers;
             input_buffers.reserve(inputs.size());
             bool buffers_ok = true;
-            for (const MeshComputeInputBuffer& input : inputs) {
+            for (const PlannedComputeInput& planned : inputs) {
+                if (planned.resident.valid()) {
+                    input_buffers.push_back(planned.resident);
+                    continue;
+                }
+
                 const wz::asset::ResourceHandle buffer =
                     compute.create_structured_buffer({
-                        .element_count = input.element_count,
-                        .stride_bytes = input.stride_bytes,
-                        .initial_data = input.bytes.data(),
+                        .element_count = planned.data.element_count,
+                        .stride_bytes = planned.data.stride_bytes,
+                        .initial_data = planned.data.bytes.data(),
                         .initial_data_bytes =
-                            static_cast<uint64_t>(input.bytes.size()),
+                            static_cast<uint64_t>(planned.data.bytes.size()),
                     });
                 if (!buffer.valid()) {
                     buffers_ok = false;
                     break;
                 }
                 input_buffers.push_back(buffer);
+
+                GpuResidentMeshDataEntry* entry =
+                    (planned.input == MeshComputeInput::Positions
+                        || planned.input == MeshComputeInput::Indices)
+                        ? resident_mesh_data.find_or_add(
+                            desc.source_mesh.output)
+                        : nullptr;
+                if (entry
+                    && planned.input == MeshComputeInput::Positions
+                    && !entry->positions.valid())
+                {
+                    entry->positions = buffer;
+                    entry->vertex_count = planned.data.element_count;
+                }
+                else if (entry
+                    && planned.input == MeshComputeInput::Indices
+                    && !entry->indices.valid())
+                {
+                    entry->indices = buffer;
+                    entry->index_count = planned.data.element_count;
+                    entry->triangle_count =
+                        planned.data.element_count / 3u;
+                }
+                else {
+                    transient_buffers.push_back(buffer);
+                }
             }
 
             const uint32_t output_dword_count =
@@ -1349,9 +1409,13 @@ namespace wz::engine::assets::internal
                     })
                     : wz::asset::ResourceHandle{};
 
+            // Resident mesh buffers are owned by the table for the
+            // library's lifetime; only per-compile transients are released.
             const auto release_resources = [&]()
             {
-                for (const wz::asset::ResourceHandle buffer : input_buffers) {
+                for (const wz::asset::ResourceHandle buffer :
+                    transient_buffers)
+                {
                     compute.release_buffer(buffer);
                 }
                 if (output_buffer.valid()) {
@@ -1609,6 +1673,7 @@ namespace wz::engine::assets::internal
             ComputePipelineTable& compute_pipeline_table,
             MeshDerivedFieldTable& field_table,
             GpuResidentFieldTable& gpu_resident_field_table,
+            GpuResidentMeshDataTable& gpu_resident_mesh_data_table,
             const EngineAssetCacheSettings& cache_settings)
         {
             const auto* desc =
@@ -1667,6 +1732,7 @@ namespace wz::engine::assets::internal
                     mesh_field_compute,
                     logger,
                     gpu_resident_field_table,
+                    gpu_resident_mesh_data_table,
                     field))
             {
                 return compile_failed_node(input);
@@ -1914,6 +1980,7 @@ namespace wz::engine::assets::internal
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
         GpuResidentFieldTable& gpu_resident_field_table,
+        GpuResidentMeshDataTable& gpu_resident_mesh_data_table,
         const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
@@ -1978,6 +2045,7 @@ namespace wz::engine::assets::internal
                 &compute_pipeline_table,
                 &mesh_derived_field_table,
                 &gpu_resident_field_table,
+                &gpu_resident_mesh_data_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode>,
@@ -1993,6 +2061,7 @@ namespace wz::engine::assets::internal
                     compute_pipeline_table,
                     mesh_derived_field_table,
                     gpu_resident_field_table,
+                    gpu_resident_mesh_data_table,
                     cache_settings);
             }
         });

@@ -68,6 +68,7 @@ namespace wz::engine::assets::internal {
         MeshTable&                  mesh_table;
         MeshDerivedFieldTable&      mesh_derived_field_table;
         GpuResidentFieldTable&      gpu_resident_field_table;
+        GpuResidentMeshDataTable&   gpu_resident_mesh_data_table;
         TerrainAssetTable&          terrain_table;
         TerrainVisualProxyTable&     terrain_visual_proxy_table;
         CollisionAssetTable&        collision_table;

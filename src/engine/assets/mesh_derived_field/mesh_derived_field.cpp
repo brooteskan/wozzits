@@ -208,6 +208,62 @@ namespace wz::engine::assets
             && gpu_resource.valid();
     }
 
+    GpuResidentMeshDataEntry* GpuResidentMeshDataTable::find_or_add(
+        wz::asset::AssetKey mesh_key)
+    {
+        if (mesh_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (GpuResidentMeshDataEntry& entry : entries_) {
+            if (entry.mesh_key == mesh_key) {
+                return &entry;
+            }
+        }
+        entries_.push_back(GpuResidentMeshDataEntry{
+            .mesh_key = mesh_key,
+        });
+        return &entries_.back();
+    }
+
+    const GpuResidentMeshDataEntry* GpuResidentMeshDataTable::find(
+        wz::asset::AssetKey mesh_key) const
+    {
+        if (mesh_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (const GpuResidentMeshDataEntry& entry : entries_) {
+            if (entry.mesh_key == mesh_key) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    void GpuResidentMeshDataTable::clear()
+    {
+        entries_.clear();
+    }
+
+    void GpuResidentMeshDataTable::destroy(MeshFieldComputeBackend& compute)
+    {
+        for (GpuResidentMeshDataEntry& entry : entries_) {
+            if (entry.positions.valid()) {
+                compute.release_buffer(entry.positions);
+                entry.positions = {};
+            }
+            if (entry.indices.valid()) {
+                compute.release_buffer(entry.indices);
+                entry.indices = {};
+            }
+        }
+        entries_.clear();
+    }
+
+    size_t GpuResidentMeshDataTable::size() const noexcept
+    {
+        return entries_.size();
+    }
+
     bool GpuResidentFieldTable::add(GpuResidentFieldEntry entry)
     {
         if (!entry.valid()) {

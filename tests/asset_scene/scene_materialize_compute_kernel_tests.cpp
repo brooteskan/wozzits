@@ -867,6 +867,7 @@ namespace
     struct IndexPortSetup
     {
         wz::engine::assets::MeshDerivedFieldAsset field{};
+        wz::asset::AssetKey mesh_key{};
         uint32_t channel_id = 0u;
         wz::engine::behavior::BehaviorGpuKernelLibrary library{};
         bool ok = false;
@@ -910,6 +911,7 @@ namespace
             return setup;
         }
 
+        setup.mesh_key = mesh.output;
         setup.channel_id = MeshWaveletChannelID::kDetailCost;
         std::vector<std::byte> zeroes(
             static_cast<size_t>(mesh_data->vertex_count()) * sizeof(float),
@@ -1104,6 +1106,73 @@ TEST_F(
         assets.gpu_resident_fields()
             .find(setup.field.output, setup.channel_id)
             .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeReusesResidentMeshBuffersAcrossDispatches)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    EXPECT_EQ(assets.gpu_resident_mesh_data().size(), 0u);
+
+    const behavior::BehaviorGpuComputeJob job =
+        make_valence_job(setup.channel_id);
+    const auto first_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(first_report.dispatched, 1u);
+    EXPECT_EQ(first_report.published_mesh_fields, 1u);
+
+    // The first dispatch uploaded the index buffer once and registered it
+    // under the source mesh key.
+    ASSERT_EQ(assets.gpu_resident_mesh_data().size(), 1u);
+    const auto* entry =
+        assets.gpu_resident_mesh_data().find(setup.mesh_key);
+    ASSERT_NE(entry, nullptr);
+    ASSERT_TRUE(entry->indices.valid());
+    EXPECT_EQ(entry->index_count, 6u);
+    EXPECT_EQ(entry->triangle_count, 2u);
+    const wz::gpu::GPUHandle first_indices = entry->indices;
+
+    // The second dispatch binds the same resident buffer: no re-upload, no
+    // new table entry, identical handle.
+    const auto second_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(second_report.dispatched, 1u);
+    EXPECT_EQ(second_report.published_mesh_fields, 1u);
+    EXPECT_EQ(assets.gpu_resident_mesh_data().size(), 1u);
+    const auto* second_entry =
+        assets.gpu_resident_mesh_data().find(setup.mesh_key);
+    ASSERT_NE(second_entry, nullptr);
+    EXPECT_EQ(second_entry->indices, first_indices);
 
     (void)behavior::release_behavior_gpu_kernel_library(
         device,
