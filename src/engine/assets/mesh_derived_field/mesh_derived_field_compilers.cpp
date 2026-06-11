@@ -21,6 +21,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -36,6 +37,52 @@ namespace wz::engine::assets::internal
             float position[3] = {};
             float normal[3] = {};
         };
+
+        struct QuantizedPositionKey
+        {
+            int64_t x = 0;
+            int64_t y = 0;
+            int64_t z = 0;
+
+            friend bool operator==(
+                const QuantizedPositionKey& a,
+                const QuantizedPositionKey& b) noexcept
+            {
+                return a.x == b.x && a.y == b.y && a.z == b.z;
+            }
+        };
+
+        struct QuantizedPositionKeyHash
+        {
+            size_t operator()(const QuantizedPositionKey& key) const noexcept
+            {
+                uint64_t h = 1469598103934665603ull;
+                auto mix = [&h](int64_t value) {
+                    uint64_t bits = 0;
+                    std::memcpy(&bits, &value, sizeof(bits));
+                    h ^= bits;
+                    h *= 1099511628211ull;
+                };
+                mix(key.x);
+                mix(key.y);
+                mix(key.z);
+                return static_cast<size_t>(h);
+            }
+        };
+
+        QuantizedPositionKey quantized_position_key(
+            const MeshVertex& vertex) noexcept
+        {
+            constexpr double kScale = 100000.0;
+            return QuantizedPositionKey{
+                .x = static_cast<int64_t>(
+                    std::llround(vertex.position[0] * kScale)),
+                .y = static_cast<int64_t>(
+                    std::llround(vertex.position[1] * kScale)),
+                .z = static_cast<int64_t>(
+                    std::llround(vertex.position[2] * kScale)),
+            };
+        }
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -1688,9 +1735,25 @@ namespace wz::engine::assets::internal
                 return true;
 
             case BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount: {
+                std::unordered_map<
+                    QuantizedPositionKey,
+                    float,
+                    QuantizedPositionKeyHash>
+                    corner_counts_by_position;
+                corner_counts_by_position.reserve(vertex_count);
+
                 for (const uint32_t index : mesh.indices) {
                     if (index < vertex_count) {
-                        values[index] += 1.0f;
+                        corner_counts_by_position[
+                            quantized_position_key(mesh.vertices[index])]
+                            += 1.0f;
+                    }
+                }
+                for (uint32_t i = 0; i < vertex_count; ++i) {
+                    const auto found = corner_counts_by_position.find(
+                        quantized_position_key(mesh.vertices[i]));
+                    if (found != corner_counts_by_position.end()) {
+                        values[i] = found->second;
                     }
                 }
                 if (desc.normalize) {

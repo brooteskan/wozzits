@@ -1,0 +1,136 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_trials_triangle_corner_count_field",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          1.5,
+          -5
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "triangle_corner_count_mesh",
+      "parent": "root",
+      "name": "Phase 4 - triangle corner count",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "mesh_source": {
+        "kind": "procedural_cube"
+      },
+      "mesh_derived_field_source": {
+        "enabled": true,
+        "field_id": "triangle_corner_count",
+        "domain": "vertex",
+        "channel_id": 8195,
+        "value_type": "float1",
+        "source_kind": "triangle_corner_count",
+        "component": "y",
+        "normalize": true,
+        "constant_value": 0.5
+      },
+      "mesh_render_style": {
+        "wireframe": {
+          "enabled": true,
+          "color": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.9,
+            0.35,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": true,
+        "hidden_line_prepass": false,
+        "field_visualization_enabled": true,
+        "field_visualization_channel_id": 8195,
+        "field_visualization_value_min": 0,
+        "field_visualization_value_max": 1,
+        "field_visualization_gamma": 1,
+        "field_ref": "field:triangle_corner_count"
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  },
+  "scene_editor_metadata": {
+    "schema": "wozzits.scene_editor_metadata.v1",
+    "version": 1,
+    "note": "Editor-only metadata; not part of the authored game scene.",
+    "camera": {
+      "position": [
+        0,
+        1.5,
+        -5
+      ],
+      "orientation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "move_speed": 5,
+      "look_speed": 0.00050000002374872565,
+      "boost_multiplier": 4,
+      "roll_speed": 1.5
+    }
+  }
+}

@@ -106,6 +106,20 @@ Wavelet output channels are vertex-domain scalar fields:
 
 For a first experiment, use channel `4608`.
 
+## Derived Field Recipe Projects
+
+Phase 4 of the scene-authored derived-field sequence is available as:
+
+```text
+triangle_corner_count_field.project.json
+```
+
+Load it in the scene editor to inspect a procedural cube whose
+`mesh_derived_field_source` uses `source_kind: "triangle_corner_count"` and
+publishes Float1 channel `8195` (`0x2003`). The mesh render style visualizes
+`field:triangle_corner_count`, so vertices referenced by more triangle corners
+render higher in the heatmap than vertices referenced by fewer corners.
+
 ## Custom Render Shader Workflow
 
 The `render_shader` component lets a mesh node author a custom HLSL vertex/pixel

@@ -239,7 +239,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:45f491f5235eac4d:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:f6347918bbbc3aa2:6e6b12387d7c8da1"
+        "asset": "asset-key:df5fab0481bff36d:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:98e162a6bf9dc9cf:8f5c808d55149d25"
       },
       "mesh_source": {
         "kind": "glb",
@@ -248,26 +248,19 @@
       },
       "mesh_derived_field_source": {
         "enabled": true,
-        "field_id": "height",
+        "field_id": "triangle_corner_count",
         "domain": "vertex",
         "channel_id": 8192,
         "value_type": "float1",
-        "source_kind": "position_gradient",
+        "source_kind": "triangle_corner_count",
         "component": "y",
         "normalize": true,
         "constant_value": 0.5
       },
-      "mesh_sparse_operator_source": {
-        "enabled": true,
-        "operator_id": "uniform_laplacian",
-        "kind": "uniform_vertex_laplacian",
-        "domain": "vertex",
-        "value_convention": "neighbor_weights"
-      },
       "mesh_render_style": {
-        "asset": "asset-key:d37e528af30d9aa6:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:01e280de03007d3d:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
-          "enabled": false,
+          "enabled": true,
           "color": [
             0,
             1,
@@ -291,11 +284,12 @@
         "depth_write": true,
         "double_sided": false,
         "hidden_line_prepass": false,
-        "field_visualization_enabled": false,
+        "field_visualization_enabled": true,
         "field_visualization_channel_id": 8192,
         "field_visualization_value_min": 0,
-        "field_visualization_value_max": 1,
-        "field_visualization_gamma": 1
+        "field_visualization_value_max": 1.059999942779541,
+        "field_visualization_gamma": 1,
+        "field_ref": "field:triangle_corner_count"
       }
     }
   ],
@@ -308,15 +302,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -5.1642670631408691,
-        5.127497673034668,
-        -13.83785343170166
+        2.1057238578796387,
+        -0.63962686061859131,
+        2.4377725124359131
       ],
       "orientation": [
-        -0.14561745524406433,
-        -0.098456904292106628,
-        -0.021316006779670715,
-        -0.9841989278793335
+        -0.063201121985912323,
+        -0.92075496912002563,
+        -0.060160644352436066,
+        0.38025864958763123
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

@@ -1,0 +1,6 @@
+{
+  "schema": "wozzits.scene_editor.project.v1",
+  "version": 1,
+  "name": "mesh_trials_triangle_corner_count_field",
+  "scene": "triangle_corner_count_field.scene.json"
+}
