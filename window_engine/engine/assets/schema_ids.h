@@ -201,6 +201,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000409ull
     };
 
+    // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
+    // One schema for the whole format: the operator kind and its
+    // parameters are compiler arguments mixed into the content hash, not
+    // separate schemas. Produces kAssetTypeMeshSparseOperator output.
+    inline constexpr wz::asset::SchemaID kMeshSparseOperatorSchema{
+        0xF11E'CA55'E7'00040Aull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

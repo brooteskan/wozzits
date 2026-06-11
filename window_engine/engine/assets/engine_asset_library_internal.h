@@ -14,6 +14,8 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator_compilers.h>
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_compilers.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
@@ -67,6 +69,7 @@ namespace wz::engine::assets::internal {
         TOMLTable&                  toml_table;
         MeshTable&                  mesh_table;
         MeshDerivedFieldTable&      mesh_derived_field_table;
+        MeshSparseOperatorTable&    mesh_sparse_operator_table;
         GpuResidentFieldTable&      gpu_resident_field_table;
         GpuResidentMeshDataTable&   gpu_resident_mesh_data_table;
         TerrainAssetTable&          terrain_table;

@@ -36,6 +36,9 @@
 #include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
 
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
+#include <engine/assets/mesh_sparse_operator_asset_module.h>
+
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain_asset_module.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
@@ -172,6 +175,9 @@ namespace wz::engine::assets
         MeshDerivedFieldAssetModule&       mesh_derived_fields()       { return mesh_derived_fields_; }
         const MeshDerivedFieldAssetModule& mesh_derived_fields() const { return mesh_derived_fields_; }
 
+        MeshSparseOperatorAssetModule&       mesh_sparse_operators()       { return mesh_sparse_operators_; }
+        const MeshSparseOperatorAssetModule& mesh_sparse_operators() const { return mesh_sparse_operators_; }
+
         TerrainAssetModule&            terrains()       { return terrains_; }
         const TerrainAssetModule&      terrains() const { return terrains_; }
 
@@ -255,6 +261,7 @@ namespace wz::engine::assets
         TOMLTable                   toml_table_;
         MeshTable                   mesh_table_;
         MeshDerivedFieldTable       mesh_derived_field_table_;
+        MeshSparseOperatorTable     mesh_sparse_operator_table_;
         GpuResidentFieldTable       gpu_resident_field_table_;
         GpuResidentMeshDataTable    gpu_resident_mesh_data_table_;
         TerrainAssetTable           terrain_table_;
@@ -291,6 +298,7 @@ namespace wz::engine::assets
         TOMLAssetModule             toml_;
         MeshAssetModule             meshes_;
         MeshDerivedFieldAssetModule mesh_derived_fields_;
+        MeshSparseOperatorAssetModule mesh_sparse_operators_;
         TerrainAssetModule          terrains_;
         TerrainVisualProxyAssetModule terrain_visual_proxies_;
         CollisionAssetModule        collisions_;

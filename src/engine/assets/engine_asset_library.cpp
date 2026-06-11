@@ -116,6 +116,7 @@ namespace wz::engine::assets
         , toml_table_{}
         , mesh_table_{}
         , mesh_derived_field_table_{}
+        , mesh_sparse_operator_table_{}
         , gpu_resident_field_table_{}
         , gpu_resident_mesh_data_table_{}
         , terrain_table_{}
@@ -148,6 +149,7 @@ namespace wz::engine::assets
                 .toml_table                = toml_table_,
                 .mesh_table                = mesh_table_,
                 .mesh_derived_field_table  = mesh_derived_field_table_,
+                .mesh_sparse_operator_table = mesh_sparse_operator_table_,
                 .gpu_resident_field_table  = gpu_resident_field_table_,
                 .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table_,
                 .terrain_table             = terrain_table_,
@@ -178,6 +180,7 @@ namespace wz::engine::assets
         , toml_(system_, logger_, files_, toml_table_)
         , meshes_(system_, mesh_table_)
         , mesh_derived_fields_(system_, mesh_derived_field_table_)
+        , mesh_sparse_operators_(system_, mesh_sparse_operator_table_)
         , terrains_(system_, logger_, terrain_table_, cache_settings_)
         , terrain_visual_proxies_(system_, logger_, terrain_visual_proxy_table_)
         , collisions_(system_, logger_, collision_table_)
@@ -347,6 +350,7 @@ namespace wz::engine::assets
             scalar_fields_table_,
             mesh_table_,
             mesh_derived_field_table_,
+            mesh_sparse_operator_table_,
             terrain_table_,
             terrain_visual_proxy_table_,
             collision_table_,

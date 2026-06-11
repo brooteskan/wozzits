@@ -58,4 +58,10 @@ namespace wz::engine::assets::internal
         0x8d3f6e21a45b9c07ull,
         0x5e92c47fd0b13a68ull,
     };
+
+    inline constexpr DiskCacheKeySpec kMeshSparseOperatorDiskCacheKey{
+        "mesh_sparse_operator",
+        0x3a7c91e5d28f46b1ull,
+        0xc65e08a97f3d214eull,
+    };
 }

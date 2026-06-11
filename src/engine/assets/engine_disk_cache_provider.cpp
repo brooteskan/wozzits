@@ -5,6 +5,7 @@
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/mesh/mesh_compilers.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator_compilers.h>
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/terrain/terrain_compilers.h>
@@ -31,6 +32,7 @@ namespace wz::engine::assets
             ScalarFieldTable& scalar_fields,
             MeshTable& meshes,
             MeshDerivedFieldTable& mesh_derived_fields,
+            MeshSparseOperatorTable& mesh_sparse_operators,
             TerrainAssetTable& terrains,
             TerrainVisualProxyTable& terrain_visual_proxies,
             CollisionAssetTable& collisions)
@@ -39,6 +41,7 @@ namespace wz::engine::assets
         , scalar_fields_(scalar_fields)
         , meshes_(meshes)
         , mesh_derived_fields_(mesh_derived_fields)
+        , mesh_sparse_operators_(mesh_sparse_operators)
         , terrains_(terrains)
         , terrain_visual_proxies_(terrain_visual_proxies)
         , collisions_(collisions)
@@ -107,6 +110,16 @@ namespace wz::engine::assets
                 key,
                 internal::kMeshComputeDerivedFieldDiskCacheKey.seed_lo,
                 internal::kMeshComputeDerivedFieldDiskCacheKey.seed_hi);
+        }
+        if (schema == kMeshSparseOperatorSchema
+            && type == kAssetTypeMeshSparseOperator)
+        {
+            return internal::disk_cache_asset_exists(
+                cache_settings_,
+                internal::kMeshSparseOperatorDiskCacheKey.subdirectory,
+                key,
+                internal::kMeshSparseOperatorDiskCacheKey.seed_lo,
+                internal::kMeshSparseOperatorDiskCacheKey.seed_hi);
         }
         if (schema == kTerrainVisualProxySchema
             && type == kAssetTypeTerrainVisualProxy)
@@ -238,6 +251,25 @@ namespace wz::engine::assets
             }
             wz::asset::ResourceHandle handle =
                 mesh_derived_fields_.add(std::move(data));
+            return handle.valid()
+                ? std::optional<wz::asset::ResourceHandle>{ handle }
+                : std::nullopt;
+        }
+
+        if (schema == kMeshSparseOperatorSchema
+            && type == kAssetTypeMeshSparseOperator)
+        {
+            MeshSparseOperatorData data{};
+            if (!internal::load_cached_mesh_sparse_operator(
+                    cache_settings_,
+                    key,
+                    logger_,
+                    data))
+            {
+                return std::nullopt;
+            }
+            wz::asset::ResourceHandle handle =
+                mesh_sparse_operators_.add(std::move(data));
             return handle.valid()
                 ? std::optional<wz::asset::ResourceHandle>{ handle }
                 : std::nullopt;

@@ -33,6 +33,7 @@ namespace
                   scalar_fields,
                   meshes,
                   mesh_derived_fields,
+                  mesh_sparse_operators,
                   terrains,
                   terrain_visual_proxies,
                   collisions)
@@ -43,6 +44,7 @@ namespace
         ScalarFieldTable scalar_fields{};
         MeshTable meshes{};
         MeshDerivedFieldTable mesh_derived_fields{};
+        MeshSparseOperatorTable mesh_sparse_operators{};
         TerrainAssetTable terrains{};
         TerrainVisualProxyTable terrain_visual_proxies{};
         CollisionAssetTable collisions{};

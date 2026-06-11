@@ -5,6 +5,7 @@
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
@@ -23,6 +24,7 @@ namespace wz::engine::assets
             ScalarFieldTable& scalar_fields,
             MeshTable& meshes,
             MeshDerivedFieldTable& mesh_derived_fields,
+            MeshSparseOperatorTable& mesh_sparse_operators,
             TerrainAssetTable& terrains,
             TerrainVisualProxyTable& terrain_visual_proxies,
             CollisionAssetTable& collisions);
@@ -43,6 +45,7 @@ namespace wz::engine::assets
         ScalarFieldTable& scalar_fields_;
         MeshTable& meshes_;
         MeshDerivedFieldTable& mesh_derived_fields_;
+        MeshSparseOperatorTable& mesh_sparse_operators_;
         TerrainAssetTable& terrains_;
         TerrainVisualProxyTable& terrain_visual_proxies_;
         CollisionAssetTable& collisions_;

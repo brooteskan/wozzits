@@ -49,6 +49,9 @@ target_sources(window_engine PRIVATE
     assets/mesh_derived_field/mesh_derived_field.cpp
     assets/mesh_derived_field/mesh_derived_field_compilers.cpp
     assets/mesh_derived_field_asset_module.cpp
+    assets/mesh_sparse_operator/mesh_sparse_operator.cpp
+    assets/mesh_sparse_operator/mesh_sparse_operator_compilers.cpp
+    assets/mesh_sparse_operator_asset_module.cpp
     mesh_processing/mesh_processing_pmp.cpp
 
     assets/terrain/terrain.cpp

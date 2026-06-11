@@ -156,6 +156,14 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeMeshDerivedField =
         static_cast<wz::asset::AssetType>(154);
 
+    // Implemented: CPU-side CSR sparse operator over a source mesh domain
+    // (relationships between elements, vs. MeshDerivedField's per-element
+    // values). Runtime data is owned by MeshSparseOperatorTable. Operator
+    // kinds (uniform Laplacian, later cotangent/adjacency/stiffness) are
+    // recipes within this format, not separate types.
+    inline constexpr wz::asset::AssetType kAssetTypeMeshSparseOperator =
+        static_cast<wz::asset::AssetType>(157);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);
