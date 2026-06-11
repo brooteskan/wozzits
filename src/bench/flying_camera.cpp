@@ -25,8 +25,6 @@ namespace wz::bench
     {
         using namespace wz::math;
 
-        const CameraBasis b = camera_basis(cam);
-
         // Mouse look: yaw around WORLD up, pitch around LOCAL right.
         //
         // Using local up for yaw produces unwanted roll accumulation when
@@ -41,8 +39,10 @@ namespace wz::bench
 
         if (dx != 0.0f)
             cam.orientation = mul(from_axis_angle(world_up, dx), cam.orientation);
-        if (dy != 0.0f)
-            cam.orientation = mul(from_axis_angle(b.right, dy), cam.orientation);
+        if (dy != 0.0f) {
+            const CameraBasis b_yaw = camera_basis(cam);
+            cam.orientation = mul(from_axis_angle(b_yaw.right, dy), cam.orientation);
+        }
 
         // Z/C: roll around forward axis at a fixed angular rate (rad/sec),
         // independent of move_speed.  Recompute basis after the mouse-look
@@ -56,15 +56,16 @@ namespace wz::bench
 
         cam.orientation = normalize(cam.orientation);
 
-        // Movement along camera-local axes.
+        // Movement along the final camera-local axes for this frame.
+        const CameraBasis b_move = camera_basis(cam);
         const float speed = cam.move_speed * dt
             * (input.keyboard.down[VK_SHIFT] ? cam.boost_multiplier : 1.0f);
 
-        if (input.keyboard.down['W']) { cam.x += b.forward.x * speed; cam.y += b.forward.y * speed; cam.z += b.forward.z * speed; }
-        if (input.keyboard.down['S']) { cam.x -= b.forward.x * speed; cam.y -= b.forward.y * speed; cam.z -= b.forward.z * speed; }
-        if (input.keyboard.down['A']) { cam.x -= b.right.x   * speed; cam.y -= b.right.y   * speed; cam.z -= b.right.z   * speed; }
-        if (input.keyboard.down['D']) { cam.x += b.right.x   * speed; cam.y += b.right.y   * speed; cam.z += b.right.z   * speed; }
-        if (input.keyboard.down['E']) { cam.x += b.up.x      * speed; cam.y += b.up.y      * speed; cam.z += b.up.z      * speed; }
-        if (input.keyboard.down['Q']) { cam.x -= b.up.x      * speed; cam.y -= b.up.y      * speed; cam.z -= b.up.z      * speed; }
+        if (input.keyboard.down['W']) { cam.x += b_move.forward.x * speed; cam.y += b_move.forward.y * speed; cam.z += b_move.forward.z * speed; }
+        if (input.keyboard.down['S']) { cam.x -= b_move.forward.x * speed; cam.y -= b_move.forward.y * speed; cam.z -= b_move.forward.z * speed; }
+        if (input.keyboard.down['A']) { cam.x -= b_move.right.x   * speed; cam.y -= b_move.right.y   * speed; cam.z -= b_move.right.z   * speed; }
+        if (input.keyboard.down['D']) { cam.x += b_move.right.x   * speed; cam.y += b_move.right.y   * speed; cam.z += b_move.right.z   * speed; }
+        if (input.keyboard.down['E']) { cam.x += b_move.up.x      * speed; cam.y += b_move.up.y      * speed; cam.z += b_move.up.z      * speed; }
+        if (input.keyboard.down['Q']) { cam.x -= b_move.up.x      * speed; cam.y -= b_move.up.y      * speed; cam.z -= b_move.up.z      * speed; }
     }
 }
