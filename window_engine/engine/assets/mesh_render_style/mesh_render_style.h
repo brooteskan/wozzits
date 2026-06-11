@@ -19,6 +19,13 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    enum class MeshFieldVisualizationPalette : uint8_t
+    {
+        Heat = 0,
+        Grayscale,
+        Diverging,
+    };
+
     struct MeshFieldVisualizationStyle
     {
         bool enabled = false;
@@ -26,6 +33,8 @@ namespace wz::engine::assets
         float value_min = 0.0f;
         float value_max = 1.0f;
         float gamma = 1.0f;
+        MeshFieldVisualizationPalette palette =
+            MeshFieldVisualizationPalette::Heat;
 
         bool valid() const noexcept;
     };

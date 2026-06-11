@@ -215,6 +215,9 @@ namespace wz::engine::render_backend::dx12
             const wz::engine::assets::MeshRenderStyleData& style)
         {
             write_mesh_layer_style_constants(constants, style.surface, style.alpha);
+            constants[36] = static_cast<float>(
+                static_cast<uint32_t>(
+                    style.field_visualization.palette));
             constants[37] = style.field_visualization.value_min;
             constants[38] = style.field_visualization.value_max;
             constants[39] = (std::max)(

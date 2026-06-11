@@ -375,6 +375,16 @@ namespace wz::engine::assets
                 fp.mix_value(source.constant_value);
             }
 
+            if (node.mesh_sparse_apply_field) {
+                const auto& field = *node.mesh_sparse_apply_field;
+                fp.mix_value(field.enabled);
+                fp.mix_string(field.operator_ref);
+                fp.mix_string(field.input_field_ref);
+                fp.mix_value(field.input_channel_id);
+                fp.mix_value(field.output_channel_id);
+                fp.mix_value(field.apply_mode);
+            }
+
             if (node.mesh_render_style) {
                 const auto& style = *node.mesh_render_style;
                 mix_asset_key(fp, style.style_asset);
@@ -398,6 +408,7 @@ namespace wz::engine::assets
                 fp.mix_value(style.field_visualization_value_min);
                 fp.mix_value(style.field_visualization_value_max);
                 fp.mix_value(style.field_visualization_gamma);
+                fp.mix_value(style.field_visualization_palette);
                 fp.mix_string(style.field_visualization_field_ref);
                 mix_asset_key(fp, style.field_visualization_asset);
             }

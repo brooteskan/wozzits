@@ -25,8 +25,36 @@ float3 heat_color(float t)
     return lerp(a, b, step(0.5f, t));
 }
 
+float3 grayscale_color(float t)
+{
+    return float3(t, t, t);
+}
+
+float3 diverging_color(float t)
+{
+    float3 low = float3(0.10f, 0.28f, 0.85f);
+    float3 mid = float3(0.92f, 0.94f, 0.92f);
+    float3 high = float3(0.85f, 0.16f, 0.10f);
+
+    float3 a = lerp(low, mid, saturate(t * 2.0f));
+    float3 b = lerp(mid, high, saturate((t - 0.5f) * 2.0f));
+    return lerp(a, b, step(0.5f, t));
+}
+
+float3 palette_color(float t, uint palette)
+{
+    if (palette == 1u) {
+        return grayscale_color(t);
+    }
+    if (palette == 2u) {
+        return diverging_color(t);
+    }
+    return heat_color(t);
+}
+
 float4 main(PSInput input) : SV_TARGET
 {
+    uint palette = (uint)round(max(style_params.x, 0.0f));
     float min_value = style_params.y;
     float max_value = style_params.z;
     float gamma = max(style_params.w, 0.0001f);
@@ -36,7 +64,7 @@ float4 main(PSInput input) : SV_TARGET
 
     float3 n = normalize(input.normal);
     float facing = saturate(n.y * 0.35f + 0.65f);
-    float3 color = heat_color(t) * facing;
-    color += heat_color(t) * max(style_params.x, 0.0f);
+    float3 ramp = palette_color(t, palette);
+    float3 color = ramp * facing;
     return float4(color, style_color.a);
 }

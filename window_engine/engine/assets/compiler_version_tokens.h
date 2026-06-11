@@ -43,12 +43,13 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshWaveletAnalysisCompilerVersion = 2;
     inline constexpr uint64_t kBehaviorFieldPlaceholderCompilerVersion = 1;
     inline constexpr uint64_t kMeshComputeDerivedFieldCompilerVersion = 1;
+    inline constexpr uint64_t kMeshSparseApplyFieldCompilerVersion = 1;
     inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 1;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
     inline constexpr uint64_t kInlineDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTableResampleTimeSeriesCompilerVersion = 1;
     inline constexpr uint64_t kCSVExportCompilerVersion = 1;
-    inline constexpr uint64_t kMeshRenderStyleCompilerVersion = 1;
+    inline constexpr uint64_t kMeshRenderStyleCompilerVersion = 2;
     inline constexpr uint64_t kMeshWireframeRenderableCompilerVersion = 1;
     inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 2;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;

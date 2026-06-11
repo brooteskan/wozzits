@@ -148,6 +148,35 @@ namespace wz::engine::assets
     }
 
     [[nodiscard]] inline wz::asset::AssetKey
+    make_mesh_sparse_apply_field_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const MeshSparseApplyFieldDesc& desc) noexcept
+    {
+        uint64_t h = kMeshSparseApplyFieldSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.input_channel_id));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.output_channel_id));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.apply_mode));
+
+        const wz::asset::Hash mesh_dep =
+            detail::key_to_dep_hash(source_mesh_key);
+        const wz::asset::Hash field_dep =
+            detail::key_to_dep_hash(desc.input_field.output);
+        const wz::asset::Hash operator_dep =
+            detail::key_to_dep_hash(desc.sparse_operator.output);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kMeshSparseApplyFieldSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kMeshSparseApplyFieldCompilerVersion),
+            .deps_hash = detail::combine_dep_hashes(
+                detail::combine_dep_hashes(mesh_dep, field_dep),
+                operator_dep),
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey
     make_mesh_wavelet_analysis_field_key(
         const wz::asset::AssetKey& source_mesh_key,
         const MeshWaveletAnalysisDesc& desc) noexcept

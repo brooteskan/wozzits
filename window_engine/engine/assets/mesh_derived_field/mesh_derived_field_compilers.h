@@ -8,6 +8,7 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/mesh_derived_field/mesh_field_compute.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <logging/logger.h>
 
 namespace wz::engine::assets::internal
@@ -19,6 +20,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
+        MeshSparseOperatorTable& mesh_sparse_operator_table,
         GpuResidentFieldTable& gpu_resident_field_table,
         GpuResidentMeshDataTable& gpu_resident_mesh_data_table,
         const EngineAssetCacheSettings& cache_settings);

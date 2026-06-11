@@ -6,6 +6,7 @@
 
 #include <engine/assets/light/light.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_render_style/mesh_render_style.h>
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/vector_field/vector_field.h>
 
@@ -349,6 +350,8 @@ namespace wz::engine::assets
         float field_visualization_value_min = 0.0f;
         float field_visualization_value_max = 1.0f;
         float field_visualization_gamma = 1.0f;
+        MeshFieldVisualizationPalette field_visualization_palette =
+            MeshFieldVisualizationPalette::Heat;
         std::string field_visualization_field_ref;
         wz::asset::AssetKey field_visualization_asset{};
     };
@@ -399,6 +402,25 @@ namespace wz::engine::assets
 
         // Materialization output / editor cache, not saved as authored intent.
         wz::asset::AssetKey resolved_operator_asset{};
+    };
+
+    enum class SceneMeshSparseApplyMode : uint8_t
+    {
+        Residual = 0,
+    };
+
+    struct SceneMeshSparseApplyFieldAsset
+    {
+        bool enabled = true;
+        std::string operator_ref = "operator:uniform_laplacian";
+        std::string input_field_ref = "field:height";
+        uint32_t input_channel_id = 0x2000u;
+        uint32_t output_channel_id = 0x2100u;
+        SceneMeshSparseApplyMode apply_mode =
+            SceneMeshSparseApplyMode::Residual;
+
+        // Materialization output / editor cache, not saved as authored intent.
+        wz::asset::AssetKey output_field_asset{};
     };
 
     enum class SceneMeshWaveletAnalysisFunction : uint8_t
@@ -805,6 +827,8 @@ namespace wz::engine::assets
             mesh_derived_field_source;
         std::optional<SceneMeshSparseOperatorSourceAsset>
             mesh_sparse_operator_source;
+        std::optional<SceneMeshSparseApplyFieldAsset>
+            mesh_sparse_apply_field;
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
@@ -884,6 +908,7 @@ namespace wz::engine::assets
         uint32_t mesh_processing = 0;
         uint32_t mesh_derived_field_sources = 0;
         uint32_t mesh_sparse_operator_sources = 0;
+        uint32_t mesh_sparse_apply_fields = 0;
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
@@ -1131,6 +1156,13 @@ namespace wz::engine::assets
         node.mesh_sparse_operator_source = std::move(source);
     }
 
+    inline void attach_mesh_sparse_apply_field(
+        SceneNodeAsset& node,
+        SceneMeshSparseApplyFieldAsset field = {})
+    {
+        node.mesh_sparse_apply_field = std::move(field);
+    }
+
     inline void attach_mesh_wavelet_analysis(
         SceneNodeAsset& node,
         SceneMeshWaveletAnalysisAsset analysis = {})
@@ -1268,6 +1300,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_sparse_operator_source) {
             out.push_back(Kind::MeshSparseOperatorSource);
+        }
+        if (node.mesh_sparse_apply_field) {
+            out.push_back(Kind::MeshSparseApplyField);
         }
         if (node.mesh_wavelet_analysis) {
             out.push_back(Kind::MeshWaveletAnalysis);
@@ -1506,6 +1541,7 @@ namespace wz::engine::assets
             || node.mesh_processing.has_value()
             || node.mesh_derived_field_source.has_value()
             || node.mesh_sparse_operator_source.has_value()
+            || node.mesh_sparse_apply_field.has_value()
             || node.mesh_wavelet_analysis.has_value()
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
@@ -1581,6 +1617,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_operator_source) {
                 ++out.mesh_sparse_operator_sources;
+                ++out.total_recipes;
+            }
+            if (node.mesh_sparse_apply_field) {
+                ++out.mesh_sparse_apply_fields;
                 ++out.total_recipes;
             }
             if (node.mesh_wavelet_analysis) {
@@ -1710,6 +1750,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_operator_source) {
                 ++out.mesh_sparse_operator_sources;
+            }
+            if (node.mesh_sparse_apply_field) {
+                ++out.mesh_sparse_apply_fields;
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;

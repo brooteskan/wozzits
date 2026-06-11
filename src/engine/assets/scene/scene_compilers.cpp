@@ -226,6 +226,21 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<MeshFieldVisualizationPalette>
+        parse_mesh_field_visualization_palette(std::string_view text)
+        {
+            if (text == "heat" || text == "default") {
+                return MeshFieldVisualizationPalette::Heat;
+            }
+            if (text == "grayscale" || text == "greyscale") {
+                return MeshFieldVisualizationPalette::Grayscale;
+            }
+            if (text == "diverging" || text == "signed") {
+                return MeshFieldVisualizationPalette::Diverging;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneMeshDerivedFieldSourceKind>
         parse_mesh_derived_field_source_kind(std::string_view text)
         {
@@ -341,6 +356,15 @@ namespace wz::engine::assets::internal
             }
             if (text == "full_matrix_entries") {
                 return MeshSparseOperatorValueConvention::FullMatrixEntries;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneMeshSparseApplyMode>
+        parse_mesh_sparse_apply_mode(std::string_view text)
+        {
+            if (text == "residual") {
+                return SceneMeshSparseApplyMode::Residual;
             }
             return std::nullopt;
         }
@@ -1734,8 +1758,15 @@ namespace wz::engine::assets::internal
                     style.field_visualization_enabled =
                         *field_visualization_enabled;
                 }
+                bool has_explicit_field_visualization_binding = false;
                 auto field_channel =
                     read_number(*mrs, "field_visualization_channel_id");
+                if (!field_channel) {
+                    field_channel = read_number(*mrs, "channel_id");
+                    has_explicit_field_visualization_binding =
+                        has_explicit_field_visualization_binding
+                        || field_channel.has_value();
+                }
                 if (field_channel) {
                     style.field_visualization_channel_id =
                         static_cast<uint32_t>(
@@ -1743,24 +1774,57 @@ namespace wz::engine::assets::internal
                 }
                 auto field_min =
                     read_number(*mrs, "field_visualization_value_min");
+                if (!field_min) {
+                    field_min = read_number(*mrs, "value_min");
+                    has_explicit_field_visualization_binding =
+                        has_explicit_field_visualization_binding
+                        || field_min.has_value();
+                }
                 if (field_min) {
                     style.field_visualization_value_min =
                         static_cast<float>(*field_min);
                 }
                 auto field_max =
                     read_number(*mrs, "field_visualization_value_max");
+                if (!field_max) {
+                    field_max = read_number(*mrs, "value_max");
+                    has_explicit_field_visualization_binding =
+                        has_explicit_field_visualization_binding
+                        || field_max.has_value();
+                }
                 if (field_max) {
                     style.field_visualization_value_max =
                         static_cast<float>(*field_max);
                 }
                 auto field_gamma =
                     read_number(*mrs, "field_visualization_gamma");
+                if (!field_gamma) {
+                    field_gamma = read_number(*mrs, "gamma");
+                    has_explicit_field_visualization_binding =
+                        has_explicit_field_visualization_binding
+                        || field_gamma.has_value();
+                }
                 if (field_gamma) {
                     style.field_visualization_gamma =
                         static_cast<float>(
                             (std::max)(0.0001, *field_gamma));
                 }
+                if (auto palette = read_string(*mrs, "palette")) {
+                    has_explicit_field_visualization_binding = true;
+                    const auto parsed =
+                        parse_mesh_field_visualization_palette(*palette);
+                    if (!parsed) {
+                        logger.error("mesh_render_style on node '" + node.id
+                            + "' has unknown field visualization palette '"
+                            + std::string(*palette) + "'");
+                        return std::nullopt;
+                    }
+                    style.field_visualization_palette = *parsed;
+                }
                 if (auto field_ref = read_string(*mrs, "field_ref")) {
+                    has_explicit_field_visualization_binding =
+                        has_explicit_field_visualization_binding
+                        || !field_ref->empty();
                     style.field_visualization_field_ref =
                         std::string(*field_ref);
                 }
@@ -1770,6 +1834,12 @@ namespace wz::engine::assets::internal
                 {
                     style.field_visualization_field_ref =
                         std::string(*field_ref);
+                }
+                if (!field_visualization_enabled
+                    && has_explicit_field_visualization_binding
+                    && !style.field_visualization_field_ref.empty())
+                {
+                    style.field_visualization_enabled = true;
                 }
                 node.mesh_render_style = style;
             }
@@ -1959,6 +2029,87 @@ namespace wz::engine::assets::internal
                 }
 
                 node.mesh_sparse_operator_source = std::move(source);
+            }
+
+            const auto* msaf =
+                find_member(node_val, "mesh_sparse_apply_field");
+            if (msaf && msaf->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshSparseApplyFieldAsset apply{};
+
+                if (auto enabled = read_bool(*msaf, "enabled")) {
+                    apply.enabled = *enabled;
+                }
+                if (auto operator_ref =
+                        read_string(*msaf, "operator_ref"))
+                {
+                    apply.operator_ref = std::string(*operator_ref);
+                }
+                if (apply.operator_ref.empty()) {
+                    logger.error("mesh_sparse_apply_field on node '"
+                        + node.id + "' has empty operator_ref");
+                    return std::nullopt;
+                }
+                if (auto input_field_ref =
+                        read_string(*msaf, "input_field_ref"))
+                {
+                    apply.input_field_ref = std::string(*input_field_ref);
+                }
+                if (apply.input_field_ref.empty()) {
+                    logger.error("mesh_sparse_apply_field on node '"
+                        + node.id + "' has empty input_field_ref");
+                    return std::nullopt;
+                }
+                if (auto input_channel_id =
+                        read_number(*msaf, "input_channel_id"))
+                {
+                    if (*input_channel_id <= 0.0
+                        || !std::isfinite(*input_channel_id))
+                    {
+                        logger.error("mesh_sparse_apply_field on node '"
+                            + node.id
+                            + "' has invalid input_channel_id");
+                        return std::nullopt;
+                    }
+                    apply.input_channel_id =
+                        static_cast<uint32_t>(*input_channel_id);
+                }
+                if (apply.input_channel_id == 0u) {
+                    logger.error("mesh_sparse_apply_field on node '"
+                        + node.id + "' requires input_channel_id");
+                    return std::nullopt;
+                }
+                if (auto output_channel_id =
+                        read_number(*msaf, "output_channel_id"))
+                {
+                    if (*output_channel_id <= 0.0
+                        || !std::isfinite(*output_channel_id))
+                    {
+                        logger.error("mesh_sparse_apply_field on node '"
+                            + node.id
+                            + "' has invalid output_channel_id");
+                        return std::nullopt;
+                    }
+                    apply.output_channel_id =
+                        static_cast<uint32_t>(*output_channel_id);
+                }
+                if (apply.output_channel_id == 0u) {
+                    logger.error("mesh_sparse_apply_field on node '"
+                        + node.id + "' requires output_channel_id");
+                    return std::nullopt;
+                }
+                if (auto apply_mode = read_string(*msaf, "apply_mode")) {
+                    auto parsed_mode =
+                        parse_mesh_sparse_apply_mode(*apply_mode);
+                    if (!parsed_mode) {
+                        logger.error("mesh_sparse_apply_field on node '"
+                            + node.id + "' has unknown apply_mode '"
+                            + std::string(*apply_mode) + "'");
+                        return std::nullopt;
+                    }
+                    apply.apply_mode = *parsed_mode;
+                }
+
+                node.mesh_sparse_apply_field = std::move(apply);
             }
 
             const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");

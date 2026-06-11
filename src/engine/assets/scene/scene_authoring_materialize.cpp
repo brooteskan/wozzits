@@ -264,6 +264,8 @@ namespace wz::engine::assets
                 style.field_visualization_value_max;
             out.field_visualization.gamma =
                 style.field_visualization_gamma;
+            out.field_visualization.palette =
+                style.field_visualization_palette;
             return out;
         }
 
@@ -304,6 +306,10 @@ namespace wz::engine::assets
                         + ":gamma:"
                         + std::to_string(
                             style.field_visualization_gamma)
+                        + ":palette:"
+                        + std::to_string(
+                            static_cast<uint32_t>(
+                                style.field_visualization_palette))
                         + ":field_ref:" + style.field_visualization_field_ref
                     : ":no_field_visualization");
         }
@@ -830,6 +836,32 @@ namespace wz::engine::assets
                 + "/operator:" + std::string(operator_id);
         }
 
+        std::string canonical_mesh_operator_ref_for_node(
+            const SceneNodeAsset& node,
+            std::string_view operator_ref)
+        {
+            constexpr std::string_view kNodePrefix = "node:";
+            constexpr std::string_view kOperatorPrefix = "operator:";
+
+            if (operator_ref.starts_with(kNodePrefix)) {
+                return std::string(operator_ref);
+            }
+            if (operator_ref.starts_with(kOperatorPrefix)) {
+                operator_ref.remove_prefix(kOperatorPrefix.size());
+            }
+            return canonical_mesh_operator_ref(node.id, operator_ref);
+        }
+
+        MeshSparseApplyMode mesh_sparse_apply_mode_for_scene(
+            SceneMeshSparseApplyMode mode) noexcept
+        {
+            switch (mode) {
+            case SceneMeshSparseApplyMode::Residual:
+                return MeshSparseApplyMode::Residual;
+            }
+            return MeshSparseApplyMode::Residual;
+        }
+
         bool materialize_mesh_derived_field_source(
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
@@ -970,6 +1002,104 @@ namespace wz::engine::assets
             return true;
         }
 
+        bool materialize_mesh_sparse_apply_field(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            MeshFieldRefCache& field_refs,
+            const MeshOperatorRefCache& operator_refs,
+            std::string& error)
+        {
+            if (!node.mesh_sparse_apply_field
+                || !node.mesh_sparse_apply_field->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshSparseApplyFieldAsset& field =
+                *node.mesh_sparse_apply_field;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (!mesh.valid()) {
+                error = "mesh sparse apply field requires a mesh for "
+                    + node_name;
+                return false;
+            }
+            if (field.operator_ref.empty()) {
+                error = "mesh sparse apply field missing operator_ref for "
+                    + node_name;
+                return false;
+            }
+            if (field.input_field_ref.empty()) {
+                error = "mesh sparse apply field missing input_field_ref for "
+                    + node_name;
+                return false;
+            }
+            if (field.input_channel_id == 0u
+                || field.output_channel_id == 0u)
+            {
+                error = "mesh sparse apply field has invalid channel ids for "
+                    + node_name;
+                return false;
+            }
+
+            const std::string canonical_field_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    field.input_field_ref);
+            const auto field_found = field_refs.find(canonical_field_ref);
+            if (field_found == field_refs.end()) {
+                error = "mesh sparse apply field input ref not found for "
+                    + node_name + ": " + field.input_field_ref;
+                return false;
+            }
+
+            const std::string canonical_operator =
+                canonical_mesh_operator_ref_for_node(
+                    node,
+                    field.operator_ref);
+            const auto operator_found =
+                operator_refs.find(canonical_operator);
+            if (operator_found == operator_refs.end()) {
+                error = "mesh sparse apply field operator ref not found for "
+                    + node_name + ": " + field.operator_ref;
+                return false;
+            }
+
+            const MeshDerivedFieldAsset output =
+                assets.mesh_derived_fields().create_sparse_apply_field({
+                    .name = node_name + "_sparse_apply_field",
+                    .source_mesh = mesh,
+                    .sparse_operator =
+                        MeshSparseOperatorAsset{
+                            .output = operator_found->second,
+                        },
+                    .input_field =
+                        MeshDerivedFieldAsset{
+                            .output = field_found->second,
+                        },
+                    .input_channel_id = field.input_channel_id,
+                    .output_channel_id = field.output_channel_id,
+                    .apply_mode =
+                        mesh_sparse_apply_mode_for_scene(field.apply_mode),
+                });
+            if (!output.valid()) {
+                error = "mesh sparse apply field asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            field.output_field_asset = output.output;
+            field_refs[canonical_mesh_field_ref(
+                node.id,
+                "sparse_apply")] = output.output;
+            field_refs[canonical_mesh_field_ref(
+                node.id,
+                "residual")] = output.output;
+            return true;
+        }
+
         bool resolve_mesh_field_visualization_ref(
             const SceneNodeAsset& node,
             const SceneMeshRenderStyleAsset& style,
@@ -1016,6 +1146,7 @@ namespace wz::engine::assets
         void normalize_implicit_mesh_field_visualization(
             const SceneNodeAsset& node,
             bool derived_field_source,
+            bool sparse_apply_field_source,
             bool compute_field_source,
             bool behavior_field_source,
             SceneMeshRenderStyleAsset& render_style)
@@ -1043,6 +1174,12 @@ namespace wz::engine::assets
             if (derived_field_source && node.mesh_derived_field_source) {
                 render_style.field_visualization_channel_id =
                     node.mesh_derived_field_source->channel_id;
+                return;
+            }
+
+            if (sparse_apply_field_source && node.mesh_sparse_apply_field) {
+                render_style.field_visualization_channel_id =
+                    node.mesh_sparse_apply_field->output_channel_id;
                 return;
             }
 
@@ -3095,6 +3232,9 @@ namespace wz::engine::assets
             if (node.mesh_sparse_operator_source) {
                 node.mesh_sparse_operator_source->resolved_operator_asset = {};
             }
+            if (node.mesh_sparse_apply_field) {
+                node.mesh_sparse_apply_field->output_field_asset = {};
+            }
             if (node.mesh_compute_field) {
                 node.mesh_compute_field->field_asset = {};
             }
@@ -3179,6 +3319,48 @@ namespace wz::engine::assets
                 }
             }
 
+            const bool sparse_apply_field_source =
+                node.mesh_sparse_apply_field
+                && node.mesh_sparse_apply_field->enabled;
+            if (sparse_apply_field_source) {
+                if (!mesh.valid()
+                    && !ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_sparse_apply_field(
+                        assets,
+                        node,
+                        mesh,
+                        mesh_field_refs,
+                        mesh_operator_refs,
+                        report.error))
+                {
+                    return report;
+                }
+                if (render_style.field_visualization_enabled
+                    && render_style.field_visualization_field_ref.empty()
+                    && render_style.field_visualization_asset
+                        == wz::asset::AssetKey{})
+                {
+                    render_style.field_visualization_asset =
+                        node.mesh_sparse_apply_field->output_field_asset;
+                }
+            }
+
             if (render_style.field_visualization_enabled
                 && !render_style.field_visualization_field_ref.empty())
             {
@@ -3237,6 +3419,7 @@ namespace wz::engine::assets
             normalize_implicit_mesh_field_visualization(
                 node,
                 derived_field_source,
+                sparse_apply_field_source,
                 compute_field_source,
                 behavior_field_source,
                 render_style);
@@ -3286,7 +3469,8 @@ namespace wz::engine::assets
                 if (has_authored_render_style
                     || behavior_field_source
                     || compute_field_source
-                    || derived_field_source)
+                    || derived_field_source
+                    || sparse_apply_field_source)
                 {
                     node.mesh_render_style = render_style;
                 }

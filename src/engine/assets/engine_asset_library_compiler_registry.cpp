@@ -35,6 +35,7 @@ namespace wz::engine::assets::internal
             ctx.mesh_table,
             ctx.compute_pipeline_table,
             ctx.mesh_derived_field_table,
+            ctx.mesh_sparse_operator_table,
             ctx.gpu_resident_field_table,
             ctx.gpu_resident_mesh_data_table,
             ctx.cache_settings);

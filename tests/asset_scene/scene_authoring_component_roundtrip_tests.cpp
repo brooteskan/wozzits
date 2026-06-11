@@ -38,12 +38,12 @@ TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON
         "constant_value": 0.25
       },
       "mesh_render_style": {
-        "field_visualization_enabled": true,
-        "field_visualization_channel_id": 8192,
-        "field_visualization_value_min": 0.0,
-        "field_visualization_value_max": 1.0,
-        "field_visualization_gamma": 0.8,
-        "field_ref": "field:height"
+        "field_ref": "field:height",
+        "channel_id": 8192,
+        "value_min": 0.0,
+        "value_max": 1.0,
+        "gamma": 0.8,
+        "palette": "diverging"
       }
     }
   ]
@@ -84,9 +84,25 @@ TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON
     EXPECT_EQ(source.resolved_field_asset, wz::asset::AssetKey{});
 
     ASSERT_TRUE(node.mesh_render_style.has_value());
+    EXPECT_TRUE(node.mesh_render_style->field_visualization_enabled);
     EXPECT_EQ(
         node.mesh_render_style->field_visualization_field_ref,
         "field:height");
+    EXPECT_EQ(
+        node.mesh_render_style->field_visualization_channel_id,
+        8192u);
+    EXPECT_FLOAT_EQ(
+        node.mesh_render_style->field_visualization_value_min,
+        0.0f);
+    EXPECT_FLOAT_EQ(
+        node.mesh_render_style->field_visualization_value_max,
+        1.0f);
+    EXPECT_FLOAT_EQ(
+        node.mesh_render_style->field_visualization_gamma,
+        0.8f);
+    EXPECT_EQ(
+        node.mesh_render_style->field_visualization_palette,
+        MeshFieldVisualizationPalette::Diverging);
 
     const auto components = authored_components_for_node(node);
     EXPECT_EQ(std::count(
@@ -109,6 +125,9 @@ TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON
         std::string::npos);
     EXPECT_NE(exported.find("\"position_gradient\""), std::string::npos);
     EXPECT_NE(exported.find("\"field:height\""), std::string::npos);
+    EXPECT_NE(exported.find("\"palette\""), std::string::npos);
+    EXPECT_NE(exported.find("\"diverging\""), std::string::npos);
+    EXPECT_NE(exported.find("\"channel_id\""), std::string::npos);
     EXPECT_EQ(exported.find("\"resolved_field_asset\""), std::string::npos);
 }
 
@@ -206,6 +225,96 @@ TEST(SceneAssetModule, MeshSparseOperatorSourceComponentRoundTripsThroughSceneJS
     EXPECT_NE(exported.find("\"neighbor_weights\""), std::string::npos);
     EXPECT_EQ(
         exported.find("\"resolved_operator_asset\""),
+        std::string::npos);
+}
+
+TEST(SceneAssetModule, MeshSparseApplyFieldComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_sparse_apply_field_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_sparse_apply_field_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_sparse_apply_field": {
+        "enabled": true,
+        "operator_ref": "operator:uniform_laplacian",
+        "input_field_ref": "field:height",
+        "input_channel_id": 8192,
+        "output_channel_id": 8448,
+        "apply_mode": "residual"
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_sparse_apply_field.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_sparse_apply_field",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_sparse_apply_field.has_value());
+    const auto& field = *node.mesh_sparse_apply_field;
+    EXPECT_TRUE(field.enabled);
+    EXPECT_EQ(field.operator_ref, "operator:uniform_laplacian");
+    EXPECT_EQ(field.input_field_ref, "field:height");
+    EXPECT_EQ(field.input_channel_id, 8192u);
+    EXPECT_EQ(field.output_channel_id, 8448u);
+    EXPECT_EQ(field.apply_mode, SceneMeshSparseApplyMode::Residual);
+    EXPECT_EQ(field.output_field_asset, wz::asset::AssetKey{});
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MeshSparseApplyField), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_sparse_apply_fields, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_sparse_apply_fields, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"mesh_sparse_apply_field\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"residual\""), std::string::npos);
+    EXPECT_NE(exported.find("\"field:height\""), std::string::npos);
+    EXPECT_EQ(
+        exported.find("\"output_field_asset\""),
         std::string::npos);
 }
 

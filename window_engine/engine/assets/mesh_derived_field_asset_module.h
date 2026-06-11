@@ -6,6 +6,7 @@
 #include <engine/assets/compute_pipeline_asset_module.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_sparse_operator_asset_module.h>
 
 #include <string>
 #include <vector>
@@ -98,6 +99,22 @@ namespace wz::engine::assets
         }
     };
 
+    enum class MeshSparseApplyMode : uint8_t
+    {
+        Residual = 0,
+    };
+
+    struct MeshSparseApplyFieldDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        MeshSparseOperatorAsset sparse_operator{};
+        MeshDerivedFieldAsset input_field{};
+        uint32_t input_channel_id = 0;
+        uint32_t output_channel_id = 0;
+        MeshSparseApplyMode apply_mode = MeshSparseApplyMode::Residual;
+    };
+
     struct MeshDerivedFieldHandle
     {
         wz::asset::ResourceHandle handle{};
@@ -129,6 +146,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_compute_derived_field(
             const MeshComputeDerivedFieldDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_sparse_apply_field(
+            const MeshSparseApplyFieldDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

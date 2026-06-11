@@ -61,6 +61,9 @@ namespace wz::engine::assets
         h = detail::mix64(
             h,
             mesh_render_style_float_bits(style.field_visualization.gamma));
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(style.field_visualization.palette));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

@@ -317,6 +317,7 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceFeedsExplicitHeatmapRender
         .field_visualization_value_min = 0.0f,
         .field_visualization_value_max = 1.0f,
         .field_visualization_gamma = 0.8f,
+        .field_visualization_palette = MeshFieldVisualizationPalette::Diverging,
         .field_visualization_field_ref = "field:height",
     };
     scene.nodes.push_back(std::move(node));
@@ -369,6 +370,9 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceFeedsExplicitHeatmapRender
     EXPECT_FLOAT_EQ(
         renderable_data->mesh_style.field_visualization.gamma,
         0.8f);
+    EXPECT_EQ(
+        renderable_data->mesh_style.field_visualization.palette,
+        MeshFieldVisualizationPalette::Diverging);
 }
 
 TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
@@ -573,6 +577,98 @@ TEST(SceneAuthoringMaterialize, MeshSparseOperatorSourceBuildsUniformLaplacian)
     ASSERT_EQ(op_data->row_offsets.size(), op_data->row_count + 1u);
     EXPECT_EQ(op_data->row_offsets.front(), 0u);
     EXPECT_EQ(op_data->row_offsets.back(), op_data->nonzero_count);
+}
+
+TEST(SceneAuthoringMaterialize, MeshSparseApplyFieldBuildsResidualField)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_sparse_apply_field_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_sparse_apply_field";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "constant",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .channel_id = 0x2001u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_sparse_operator_source = SceneMeshSparseOperatorSourceAsset{
+        .enabled = true,
+        .operator_id = "uniform_laplacian",
+        .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
+        .domain = MeshOperatorDomain::Vertex,
+        .value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights,
+    };
+    node.mesh_sparse_apply_field = SceneMeshSparseApplyFieldAsset{
+        .enabled = true,
+        .operator_ref = "operator:uniform_laplacian",
+        .input_field_ref = "field:constant",
+        .input_channel_id = 0x2001u,
+        .output_channel_id = 0x2100u,
+        .apply_mode = SceneMeshSparseApplyMode::Residual,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .field_visualization_enabled = true,
+        .field_visualization_channel_id = 0x2100u,
+        .field_visualization_value_min = -1.0f,
+        .field_visualization_value_max = 1.0f,
+        .field_visualization_gamma = 1.0f,
+        .field_visualization_field_ref = "field:residual",
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_sparse_apply_field.has_value());
+
+    const wz::asset::AssetKey field_key =
+        scene.nodes[0].mesh_sparse_apply_field->output_field_asset;
+    ASSERT_NE(field_key, wz::asset::AssetKey{});
+    ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
+    EXPECT_EQ(
+        scene.nodes[0].mesh_render_style->field_visualization_asset,
+        field_key);
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldAsset field{ .output = field_key };
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    EXPECT_EQ(field_data->domain, MeshDerivedFieldDomain::Vertex);
+    EXPECT_EQ(field_data->element_count, 8u);
+
+    const std::vector<float> values =
+        read_float_channel(*field_data, 0x2100u);
+    ASSERT_EQ(values.size(), field_data->element_count);
+    for (const float value : values) {
+        EXPECT_FLOAT_EQ(value, 0.0f);
+    }
 }
 
 TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)

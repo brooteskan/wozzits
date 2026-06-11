@@ -222,6 +222,16 @@ namespace wz::engine::assets
             return "neighbor_weights";
         }
 
+        const char* mesh_sparse_apply_mode_name(
+            SceneMeshSparseApplyMode mode)
+        {
+            switch (mode) {
+            case SceneMeshSparseApplyMode::Residual:
+                return "residual";
+            }
+            return "residual";
+        }
+
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
         {
             switch (path) {
@@ -808,6 +818,20 @@ namespace wz::engine::assets
             return obj;
         }
 
+        const char* mesh_field_visualization_palette_name(
+            MeshFieldVisualizationPalette palette)
+        {
+            switch (palette) {
+            case MeshFieldVisualizationPalette::Heat:
+                return "heat";
+            case MeshFieldVisualizationPalette::Grayscale:
+                return "grayscale";
+            case MeshFieldVisualizationPalette::Diverging:
+                return "diverging";
+            }
+            return "heat";
+        }
+
         JSONValuePtr mesh_render_style_value(
             const SceneMeshRenderStyleAsset& style)
         {
@@ -828,6 +852,17 @@ namespace wz::engine::assets
                 bool_value(style.hidden_line_prepass));
             add_member(*obj, "field_visualization_enabled",
                 bool_value(style.field_visualization_enabled));
+            add_member(*obj, "channel_id",
+                number_value(style.field_visualization_channel_id));
+            add_member(*obj, "value_min",
+                number_value(style.field_visualization_value_min));
+            add_member(*obj, "value_max",
+                number_value(style.field_visualization_value_max));
+            add_member(*obj, "gamma",
+                number_value(style.field_visualization_gamma));
+            add_member(*obj, "palette",
+                string_value(mesh_field_visualization_palette_name(
+                    style.field_visualization_palette)));
             add_member(*obj, "field_visualization_channel_id",
                 number_value(style.field_visualization_channel_id));
             add_member(*obj, "field_visualization_value_min",
@@ -931,6 +966,24 @@ namespace wz::engine::assets
             add_member(*obj, "value_convention",
                 string_value(mesh_sparse_operator_value_convention_name(
                     source.value_convention)));
+            return obj;
+        }
+
+        JSONValuePtr mesh_sparse_apply_field_value(
+            const SceneMeshSparseApplyFieldAsset& field)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(field.enabled));
+            add_member(*obj, "operator_ref",
+                string_value(field.operator_ref));
+            add_member(*obj, "input_field_ref",
+                string_value(field.input_field_ref));
+            add_member(*obj, "input_channel_id",
+                number_value(field.input_channel_id));
+            add_member(*obj, "output_channel_id",
+                number_value(field.output_channel_id));
+            add_member(*obj, "apply_mode",
+                string_value(mesh_sparse_apply_mode_name(field.apply_mode)));
             return obj;
         }
 
@@ -1569,6 +1622,11 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_sparse_operator_source",
                     mesh_sparse_operator_source_value(
                         *node.mesh_sparse_operator_source));
+            }
+            if (node.mesh_sparse_apply_field) {
+                add_member(*obj, "mesh_sparse_apply_field",
+                    mesh_sparse_apply_field_value(
+                        *node.mesh_sparse_apply_field));
             }
             if (node.mesh_wavelet_analysis) {
                 add_member(*obj, "mesh_wavelet_analysis",

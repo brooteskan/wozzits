@@ -208,6 +208,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Bull
     };
 
+    // Sparse-operator application over a MeshDerivedField input. Produces a
+    // MeshDerivedField recipe output; v0 supports vertex-domain Float1
+    // residual apply only.
+    inline constexpr wz::asset::SchemaID kMeshSparseApplyFieldSchema{
+        0xF11E'CA55'E7'00040Cull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

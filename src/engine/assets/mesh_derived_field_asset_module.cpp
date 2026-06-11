@@ -209,6 +209,42 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_sparse_apply_field(
+        const MeshSparseApplyFieldDesc& desc)
+    {
+        if (!desc.source_mesh.valid()
+            || !desc.sparse_operator.valid()
+            || !desc.input_field.valid()
+            || desc.input_channel_id == 0u
+            || desc.output_channel_id == 0u)
+        {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_mesh_sparse_apply_field_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kMeshSparseApplyFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.source_mesh.output,
+                desc.input_field.output,
+                desc.sparse_operator.output,
+            });
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldHandle
     MeshDerivedFieldAssetModule::get_mesh_derived_field(
         const MeshDerivedFieldAsset& asset) const

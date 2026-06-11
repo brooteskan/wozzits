@@ -1653,6 +1653,149 @@ namespace wz::engine::assets::internal
         }
 
         std::vector<std::byte> float_channel_bytes(
+            const std::vector<float>& values);
+
+        const MeshDerivedFieldChannel* find_float_channel(
+            const MeshDerivedFieldData& field,
+            uint32_t channel_id) noexcept;
+
+        bool read_float_channel_values(
+            const MeshDerivedFieldData& field,
+            uint32_t channel_id,
+            std::vector<float>& out);
+
+        bool cached_sparse_apply_field_matches_source(
+            const MeshDerivedFieldData& field,
+            const MeshSparseApplyFieldDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator) noexcept
+        {
+            return field.valid()
+                && field.source_mesh_key == desc.source_mesh.output
+                && field.source_topology_hash
+                    == compute_mesh_topology_hash(source_mesh)
+                && field.domain == MeshDerivedFieldDomain::Vertex
+                && field.element_count == source_mesh.vertex_count()
+                && field.element_count == input_field.element_count
+                && field.element_count == sparse_operator.row_count
+                && field.channels.size() == 1u
+                && field.channels[0].channel_id == desc.output_channel_id
+                && field.channels[0].value_type
+                    == MeshDerivedFieldValueType::Float1;
+        }
+
+        bool compile_mesh_sparse_apply_field(
+            const MeshSparseApplyFieldDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator,
+            wz::Logger& logger,
+            MeshDerivedFieldData& out)
+        {
+            if (desc.apply_mode != MeshSparseApplyMode::Residual) {
+                logger.error("mesh sparse apply only supports Residual mode");
+                return false;
+            }
+            if (desc.input_channel_id == 0u
+                || desc.output_channel_id == 0u)
+            {
+                logger.error(
+                    "mesh sparse apply requires nonzero channel ids");
+                return false;
+            }
+            if (!source_mesh.valid()) {
+                logger.error("mesh sparse apply source mesh invalid");
+                return false;
+            }
+
+            const wz::asset::Hash topology =
+                compute_mesh_topology_hash(source_mesh);
+            const uint32_t element_count = source_mesh.vertex_count();
+            if (!input_field.valid()
+                || input_field.source_mesh_key != desc.source_mesh.output
+                || input_field.source_topology_hash != topology
+                || input_field.domain != MeshDerivedFieldDomain::Vertex
+                || input_field.element_count != element_count)
+            {
+                logger.error(
+                    "mesh sparse apply input field does not match source mesh");
+                return false;
+            }
+            if (!sparse_operator.valid()
+                || sparse_operator.source_mesh_key != desc.source_mesh.output
+                || sparse_operator.source_topology_hash != topology
+                || sparse_operator.domain != MeshOperatorDomain::Vertex
+                || sparse_operator.row_count != element_count)
+            {
+                logger.error(
+                    "mesh sparse apply operator does not match source mesh");
+                return false;
+            }
+            if (sparse_operator.value_convention
+                != MeshSparseOperatorValueConvention::NeighborWeights)
+            {
+                logger.error(
+                    "mesh sparse apply only supports NeighborWeights");
+                return false;
+            }
+
+            std::vector<float> input_values;
+            if (!read_float_channel_values(
+                    input_field,
+                    desc.input_channel_id,
+                    input_values))
+            {
+                logger.error(
+                    "mesh sparse apply input channel missing or not Float1");
+                return false;
+            }
+
+            std::vector<float> output_values(element_count, 0.0f);
+            for (uint32_t row = 0; row < element_count; ++row) {
+                const uint32_t begin = sparse_operator.row_offsets[row];
+                const uint32_t end = sparse_operator.row_offsets[row + 1u];
+                if (begin == end) {
+                    output_values[row] = 0.0f;
+                    continue;
+                }
+
+                float neighbor_average = 0.0f;
+                for (uint32_t e = begin; e < end; ++e) {
+                    neighbor_average +=
+                        sparse_operator.weights[e]
+                        * input_values[sparse_operator.col_indices[e]];
+                }
+                output_values[row] = input_values[row] - neighbor_average;
+            }
+
+            std::vector<std::byte> output_bytes =
+                float_channel_bytes(output_values);
+            const uint32_t byte_count =
+                static_cast<uint32_t>(output_bytes.size());
+            out = MeshDerivedFieldData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = topology,
+                .domain = MeshDerivedFieldDomain::Vertex,
+                .element_count = element_count,
+                .channels = {
+                    MeshDerivedFieldChannel{
+                        .channel_id = desc.output_channel_id,
+                        .value_type = MeshDerivedFieldValueType::Float1,
+                        .byte_offset = 0u,
+                        .byte_count = byte_count,
+                    },
+                },
+                .values = std::move(output_bytes),
+            };
+            if (!out.valid()) {
+                logger.error("mesh sparse apply output field is invalid");
+                return false;
+            }
+            return true;
+        }
+
+        std::vector<std::byte> float_channel_bytes(
             const std::vector<float>& values)
         {
             std::vector<std::byte> bytes(
@@ -1662,6 +1805,49 @@ namespace wz::engine::assets::internal
                 std::memcpy(bytes.data(), values.data(), bytes.size());
             }
             return bytes;
+        }
+
+        const MeshDerivedFieldChannel* find_float_channel(
+            const MeshDerivedFieldData& field,
+            uint32_t channel_id) noexcept
+        {
+            for (const MeshDerivedFieldChannel& channel : field.channels) {
+                if (channel.channel_id == channel_id
+                    && channel.value_type
+                        == MeshDerivedFieldValueType::Float1)
+                {
+                    return &channel;
+                }
+            }
+            return nullptr;
+        }
+
+        bool read_float_channel_values(
+            const MeshDerivedFieldData& field,
+            uint32_t channel_id,
+            std::vector<float>& out)
+        {
+            const MeshDerivedFieldChannel* channel =
+                find_float_channel(field, channel_id);
+            if (!channel) {
+                return false;
+            }
+            const size_t byte_offset = channel->byte_offset;
+            const size_t byte_count = channel->byte_count;
+            if (byte_offset > field.values.size()
+                || byte_count > field.values.size() - byte_offset
+                || byte_count
+                    != static_cast<size_t>(field.element_count)
+                        * sizeof(float))
+            {
+                return false;
+            }
+            out.resize(field.element_count);
+            std::memcpy(
+                out.data(),
+                field.values.data() + byte_offset,
+                byte_count);
+            return true;
         }
 
         bool build_builtin_mesh_derived_field_values(
@@ -2021,6 +2207,95 @@ namespace wz::engine::assets::internal
                 : compile_failed_node(input);
         }
 
+        wz::asset::AssetNode compile_mesh_sparse_apply_field_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table,
+            MeshSparseOperatorTable& sparse_operator_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<MeshSparseApplyFieldDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 3u) {
+                logger.error("mesh sparse apply field node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error("mesh sparse apply source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            const MeshDerivedFieldData* input_field =
+                field_table.get(dep_handles[1]);
+            if (!input_field) {
+                logger.error("mesh sparse apply input field handle invalid");
+                return compile_failed_node(input);
+            }
+
+            const MeshSparseOperatorData* sparse_operator =
+                sparse_operator_table.get(dep_handles[2]);
+            if (!sparse_operator) {
+                logger.error("mesh sparse apply operator handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshDerivedFieldDiskCacheKey,
+                    input.key,
+                    kMeshSparseApplyFieldCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_sparse_apply_field_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh,
+                        *input_field,
+                        *sparse_operator))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn(
+                    "asset disk cache ignored stale mesh sparse apply field");
+            }
+
+            MeshDerivedFieldData field{};
+            if (!compile_mesh_sparse_apply_field(
+                    *desc,
+                    *source_mesh,
+                    *input_field,
+                    *sparse_operator,
+                    logger,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshDerivedFieldDiskCacheKey,
+                input.key,
+                kMeshSparseApplyFieldCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
+
         wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::ResourceHandle> dep_handles,
@@ -2278,6 +2553,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         ComputePipelineTable& compute_pipeline_table,
         MeshDerivedFieldTable& mesh_derived_field_table,
+        MeshSparseOperatorTable& mesh_sparse_operator_table,
         GpuResidentFieldTable& gpu_resident_field_table,
         GpuResidentMeshDataTable& gpu_resident_mesh_data_table,
         const EngineAssetCacheSettings& cache_settings)
@@ -2324,6 +2600,31 @@ namespace wz::engine::assets::internal
                     logger,
                     mesh_table,
                     mesh_derived_field_table,
+                    cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshSparseApplyFieldSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table,
+                &mesh_sparse_operator_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_sparse_apply_field_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table,
+                    mesh_sparse_operator_table,
                     cache_settings);
             }
         });
