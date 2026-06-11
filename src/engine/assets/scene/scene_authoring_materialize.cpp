@@ -15,8 +15,10 @@
 #include <chrono>
 #include <cstring>
 #include <iomanip>
+#include <iterator>
 #include <memory>
 #include <mutex>
+#include <ranges>
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
@@ -33,6 +35,8 @@ namespace wz::engine::assets
         using VectorFieldCache =
             std::unordered_map<std::string, VectorFieldAsset>;
         using MeshFieldRefCache =
+            std::unordered_map<std::string, wz::asset::AssetKey>;
+        using MeshOperatorRefCache =
             std::unordered_map<std::string, wz::asset::AssetKey>;
         using DirectLightCache =
             std::unordered_map<std::string, DirectLightAsset>;
@@ -733,12 +737,16 @@ namespace wz::engine::assets
 
             std::vector<MeshDerivedFieldChannelDesc> channels;
             channels.reserve(field.channels.size());
-            for (const auto& channel : field.channels) {
-                channels.push_back(MeshDerivedFieldChannelDesc{
+            std::ranges::transform(
+                field.channels,
+                std::back_inserter(channels),
+                [](const auto& channel)
+                {
+                    return MeshDerivedFieldChannelDesc{
                     .channel_id = channel.channel_id,
                     .value_type = channel.value_type,
+                    };
                 });
-            }
 
             const MeshDerivedFieldAsset field_asset =
                 assets.mesh_derived_fields().create_compute_derived_field({
@@ -814,6 +822,14 @@ namespace wz::engine::assets
             return canonical_mesh_field_ref(node.id, field_ref);
         }
 
+        std::string canonical_mesh_operator_ref(
+            std::string_view node_id,
+            std::string_view operator_id)
+        {
+            return "node:" + std::string(node_id)
+                + "/operator:" + std::string(operator_id);
+        }
+
         bool materialize_mesh_derived_field_source(
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
@@ -884,6 +900,76 @@ namespace wz::engine::assets
             return true;
         }
 
+        bool materialize_mesh_sparse_operator_source(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            MeshOperatorRefCache& operator_refs,
+            std::string& error)
+        {
+            if (!node.mesh_sparse_operator_source
+                || !node.mesh_sparse_operator_source->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshSparseOperatorSourceAsset& source =
+                *node.mesh_sparse_operator_source;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (source.operator_id.empty()) {
+                error = "mesh sparse operator source missing operator_id for "
+                    + node_name;
+                return false;
+            }
+            if (!mesh.valid()) {
+                error = "mesh sparse operator source requires a mesh for "
+                    + node_name;
+                return false;
+            }
+            if (source.kind
+                != MeshSparseOperatorKind::UniformVertexLaplacian)
+            {
+                error = "mesh sparse operator source only supports "
+                    "UniformVertexLaplacian for " + node_name;
+                return false;
+            }
+            if (source.domain != MeshOperatorDomain::Vertex) {
+                error =
+                    "mesh sparse operator source only supports vertex domain "
+                    "for " + node_name;
+                return false;
+            }
+            if (source.value_convention
+                != MeshSparseOperatorValueConvention::NeighborWeights)
+            {
+                error = "mesh sparse operator source only supports "
+                    "NeighborWeights for " + node_name;
+                return false;
+            }
+
+            const MeshSparseOperatorAsset operator_asset =
+                assets.mesh_sparse_operators().create_sparse_operator({
+                    .name =
+                        node_name + "_operator_" + source.operator_id,
+                    .source_mesh = mesh,
+                    .kind = source.kind,
+                    .domain = source.domain,
+                });
+            if (!operator_asset.valid()) {
+                error = "mesh sparse operator source asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            source.resolved_operator_asset = operator_asset.output;
+            operator_refs[canonical_mesh_operator_ref(
+                node.id,
+                source.operator_id)] = operator_asset.output;
+            return true;
+        }
+
         bool resolve_mesh_field_visualization_ref(
             const SceneNodeAsset& node,
             const SceneMeshRenderStyleAsset& style,
@@ -912,6 +998,66 @@ namespace wz::engine::assets
             }
             out = found->second;
             return true;
+        }
+
+        bool mesh_compute_field_has_channel(
+            const SceneMeshComputeFieldAsset& field,
+            uint32_t channel_id) noexcept
+        {
+            return std::any_of(
+                field.channels.begin(),
+                field.channels.end(),
+                [channel_id](const SceneMeshComputeFieldChannelAsset& channel)
+                {
+                    return channel.channel_id == channel_id;
+                });
+        }
+
+        void normalize_implicit_mesh_field_visualization(
+            const SceneNodeAsset& node,
+            bool derived_field_source,
+            bool compute_field_source,
+            bool behavior_field_source,
+            SceneMeshRenderStyleAsset& render_style)
+        {
+            if (!render_style.field_visualization_enabled
+                || !render_style.field_visualization_field_ref.empty())
+            {
+                return;
+            }
+
+            if (compute_field_source
+                && node.mesh_compute_field
+                && !node.mesh_compute_field->channels.empty())
+            {
+                if (!mesh_compute_field_has_channel(
+                        *node.mesh_compute_field,
+                        render_style.field_visualization_channel_id))
+                {
+                    render_style.field_visualization_channel_id =
+                        node.mesh_compute_field->channels.front().channel_id;
+                }
+                return;
+            }
+
+            if (derived_field_source && node.mesh_derived_field_source) {
+                render_style.field_visualization_channel_id =
+                    node.mesh_derived_field_source->channel_id;
+                return;
+            }
+
+            if (node.mesh_wavelet_analysis
+                && node.mesh_wavelet_analysis->enabled)
+            {
+                render_style.field_visualization_channel_id =
+                    MeshWaveletChannelID::kDetailCost;
+                return;
+            }
+
+            if (!behavior_field_source) {
+                render_style.field_visualization_channel_id =
+                    MeshWaveletChannelID::kDetailCost;
+            }
         }
 
         bool validate_render_shader_token(
@@ -2379,7 +2525,8 @@ namespace wz::engine::assets
                         ? wavelet_analysis
                         : nullptr)
                 + mesh_derived_field_source_cache_key(field_source)
-                + mesh_compute_field_cache_key(compute_field)
+                + mesh_compute_field_cache_key(
+                    has_compute_field_source ? compute_field : nullptr)
                 + render_shader_cache_key(render_shader)
                 + (has_behavior_field_source
                     ? ":behavior_field" : "");
@@ -2560,6 +2707,13 @@ namespace wz::engine::assets
                 scene.sky_draws.push_back(draw);
             }
         }
+
+        void materialize_event_trigger(const SceneNodeAsset& node)
+        {
+            if (!node.event_trigger) {
+                return;
+            }
+        }
     }
 
     SceneAuthoringMaterializeReport materialize_scene_authoring_components(
@@ -2573,6 +2727,7 @@ namespace wz::engine::assets
         ScalarFieldCache scalar_fields;
         VectorFieldCache vector_fields;
         MeshFieldRefCache mesh_field_refs;
+        MeshOperatorRefCache mesh_operator_refs;
         DirectLightCache direct_lights;
         AmbientLightingCache ambient_lighting;
         HDRIEnvironmentCache hdri_environments;
@@ -2711,6 +2866,14 @@ namespace wz::engine::assets
         log_phase(
             "render_shaders",
             elapsed_ms_since(render_shaders_started));
+
+        const auto event_triggers_started = std::chrono::steady_clock::now();
+        for (auto& node : scene.nodes) {
+            materialize_event_trigger(node);
+        }
+        log_phase(
+            "event_triggers",
+            elapsed_ms_since(event_triggers_started));
 
         const auto lights_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
@@ -2929,6 +3092,9 @@ namespace wz::engine::assets
             if (node.mesh_derived_field_source) {
                 node.mesh_derived_field_source->resolved_field_asset = {};
             }
+            if (node.mesh_sparse_operator_source) {
+                node.mesh_sparse_operator_source->resolved_operator_asset = {};
+            }
             if (node.mesh_compute_field) {
                 node.mesh_compute_field->field_asset = {};
             }
@@ -2971,6 +3137,45 @@ namespace wz::engine::assets
                 {
                     render_style.field_visualization_asset =
                         node.mesh_derived_field_source->resolved_field_asset;
+                }
+            }
+
+            const bool sparse_operator_source =
+                node.mesh_sparse_operator_source
+                && node.mesh_sparse_operator_source->enabled;
+            if (sparse_operator_source) {
+                if (!node.mesh_source) {
+                    report.error =
+                        "mesh sparse operator source requires a mesh source "
+                        "for " + node_log_name(node);
+                    return report;
+                }
+                if (!mesh.valid()
+                    && !ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_sparse_operator_source(
+                        assets,
+                        node,
+                        mesh,
+                        mesh_operator_refs,
+                        report.error))
+                {
+                    return report;
                 }
             }
 
@@ -3029,7 +3234,22 @@ namespace wz::engine::assets
                 }
             }
 
+            normalize_implicit_mesh_field_visualization(
+                node,
+                derived_field_source,
+                compute_field_source,
+                behavior_field_source,
+                render_style);
+
             if (options.create_preview_renderables && node.visible) {
+                const SceneMeshDerivedFieldSourceAsset* active_field_source =
+                    derived_field_source
+                        ? &*node.mesh_derived_field_source
+                        : nullptr;
+                SceneMeshComputeFieldAsset* active_compute_field =
+                    compute_field_source
+                        ? &*node.mesh_compute_field
+                        : nullptr;
                 RenderableAsset renderable{};
                 if (!ensure_renderable_for_mesh_source(
                         assets,
@@ -3037,15 +3257,11 @@ namespace wz::engine::assets
                         node.mesh_processing
                             ? &*node.mesh_processing
                             : nullptr,
-                        node.mesh_derived_field_source
-                            ? &*node.mesh_derived_field_source
-                            : nullptr,
+                        active_field_source,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
                             : nullptr,
-                        node.mesh_compute_field
-                            ? &*node.mesh_compute_field
-                            : nullptr,
+                        active_compute_field,
                         node.render_shader
                             ? &*node.render_shader
                             : nullptr,

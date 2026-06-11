@@ -7,6 +7,7 @@
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace wz::gpu
@@ -18,6 +19,10 @@ namespace wz::gpu
         uint32_t channel_id = 0;
 
         bool valid() const noexcept;
+        const std::byte* values_begin() const noexcept;
+        uint64_t value_byte_count() const noexcept;
+        uint32_t element_count() const noexcept;
+        uint32_t stride_bytes() const noexcept;
     };
 
     [[nodiscard]] GPUHandle upload_mesh_field_visualization(

@@ -232,6 +232,7 @@ TEST_F(
     });
     auto component = make_scaled_height_component(0x2000u, 1.0f);
     component.enabled = false;
+    component.hlsl_path = "shaders/compute/missing_disabled_cs.hlsl";
     attach_mesh_compute_field(node, std::move(component));
     scene.nodes.push_back(std::move(node));
 
@@ -242,4 +243,86 @@ TEST_F(
     EXPECT_EQ(
         scene.nodes[0].mesh_compute_field->field_asset,
         wz::asset::AssetKey{});
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(assets.commit());
+    const auto resolve_report = assets.resolve_all();
+    if (!resolve_report.ok()) {
+        ADD_FAILURE() << "resolve_all failed with "
+                      << resolve_report.failures.size() << " failure(s)";
+        for (const auto& failure : resolve_report.failures) {
+            ADD_FAILURE() << "  error=" << static_cast<int>(failure.error);
+        }
+    }
+    ASSERT_TRUE(resolve_report.ok());
+}
+
+TEST_F(
+    SceneMeshComputeFieldMaterializeGpuFixture,
+    DisabledMeshDerivedFieldSourceDoesNotOverrideComputeField)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+        EngineAssetCacheSettings{
+            .root = root,
+            .enabled = true,
+        }};
+
+    constexpr uint32_t kComputeChannel = 0x2000u;
+
+    SceneAssetData scene{};
+    scene.name = "mesh_compute_field_with_disabled_builtin_source";
+    SceneNodeAsset node = make_scene_node("field_mesh");
+    attach_mesh_source(node, SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    });
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = false,
+        .field_id = "height",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .channel_id = 0x3000u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .constant_value = 0.25f,
+    };
+    attach_mesh_compute_field(
+        node,
+        make_scaled_height_component(kComputeChannel, 1.0f));
+    SceneMeshRenderStyleAsset style{};
+    style.field_visualization_enabled = true;
+    style.field_visualization_channel_id = kComputeChannel;
+    attach_mesh_render_style(node, style);
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+
+    const auto& materialized = scene.nodes[0];
+    ASSERT_TRUE(materialized.mesh_derived_field_source.has_value());
+    EXPECT_EQ(
+        materialized.mesh_derived_field_source->resolved_field_asset,
+        wz::asset::AssetKey{});
+    ASSERT_TRUE(materialized.mesh_compute_field.has_value());
+    const wz::asset::AssetKey compute_field_key =
+        materialized.mesh_compute_field->field_asset;
+    EXPECT_NE(compute_field_key, wz::asset::AssetKey{});
+    ASSERT_TRUE(materialized.mesh_render_style.has_value());
+    EXPECT_EQ(
+        materialized.mesh_render_style->field_visualization_asset,
+        compute_field_key);
+
+    ASSERT_TRUE(assets.commit());
+    const auto resolve_report = assets.resolve_all();
+    if (!resolve_report.ok()) {
+        ADD_FAILURE() << "resolve_all failed with "
+                      << resolve_report.failures.size() << " failure(s)";
+        for (const auto& failure : resolve_report.failures) {
+            ADD_FAILURE() << "  error=" << static_cast<int>(failure.error);
+        }
+    }
+    ASSERT_TRUE(resolve_report.ok());
 }

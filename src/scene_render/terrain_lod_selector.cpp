@@ -1,6 +1,7 @@
 #include <scene/compile/terrain_lod_selector.h>
 
 #include <math/screen_space_metrics.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,7 +13,6 @@ namespace wz::scene
 {
     namespace
     {
-        using wz::engine::assets::TerrainChunkId;
         using wz::engine::assets::TerrainVisualProxyLodRecord;
         using wz::engine::assets::TerrainVisualProxySurfelDensityLevel;
 
@@ -166,10 +166,10 @@ namespace wz::scene
 
         uint32_t find_lod_index(
             const VisibleChunk& chunk,
-            wz::engine::assets::TerrainLodId lod_id) noexcept
+            TerrainLodId lod_id) noexcept
         {
             for (uint32_t i = 0u; i < chunk.lods.size(); ++i) {
-                if (chunk.lods[i]->lod_id == lod_id) {
+                if (chunk.lods[i]->lod_id.value == lod_id.value) {
                     return i;
                 }
             }
@@ -235,8 +235,7 @@ namespace wz::scene
 
         bool neighbor_id_matches(TerrainChunkId a, TerrainChunkId b) noexcept
         {
-            return a == b
-                && a != wz::engine::assets::kInvalidTerrainChunkId;
+            return a == b && a != kInvalidTerrainChunkId;
         }
 
         bool are_neighbors(
@@ -401,9 +400,8 @@ namespace wz::scene
                         chunk.info.terrain_instance_index,
                     .chunk_id = chunk.info.chunk_id,
                     .representation_kind =
-                        wz::engine::assets
-                            ::TerrainVisualRepresentationKind::SurfelCloud,
-                    .lod_id = surfel->density_id,
+                        TerrainVisualRepresentationKind::SurfelCloud,
+                    .lod_id = TerrainLodId{ surfel->density_id.value },
                     .projected_error_px = chunk.errors_px[chunk.selected],
                     .projected_area_px = chunk.projected_area_px,
                     .asset_triangle_density =
@@ -422,8 +420,8 @@ namespace wz::scene
             return TerrainLodChoice{
                 .terrain_instance_index = chunk.info.terrain_instance_index,
                 .chunk_id = chunk.info.chunk_id,
-                .representation_kind = lod->representation_kind,
-                .lod_id = lod->lod_id,
+                .representation_kind = chunk.info.representation_kind,
+                .lod_id = TerrainLodId{ lod->lod_id.value },
                 .projected_error_px = chunk.errors_px[chunk.selected],
                 .projected_area_px = chunk.projected_area_px,
                 .asset_triangle_density =

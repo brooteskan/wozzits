@@ -2,6 +2,7 @@
 #include <math/frustum.h>
 #include <math/screen_space_metrics.h>
 #include <algo/next.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 
 #include <new>
 #include <ranges>
@@ -77,6 +78,34 @@ namespace wz::render {
             bool    visible{ false };
             DrawRef ref{};
         };
+
+        TerrainChunkId scene_terrain_chunk_id(
+            wz::engine::assets::TerrainChunkId id) noexcept
+        {
+            return TerrainChunkId{ id.value };
+        }
+
+        TerrainLodId scene_terrain_lod_id(
+            wz::engine::assets::TerrainLodId id) noexcept
+        {
+            return TerrainLodId{ id.value };
+        }
+
+        TerrainVisualProxyBoundaryEdge scene_terrain_boundary_edge(
+            wz::engine::assets::TerrainVisualProxyBoundaryEdge edge) noexcept
+        {
+            switch (edge) {
+            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX:
+                return TerrainVisualProxyBoundaryEdge::NegativeX;
+            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveX:
+                return TerrainVisualProxyBoundaryEdge::PositiveX;
+            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeZ:
+                return TerrainVisualProxyBoundaryEdge::NegativeZ;
+            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveZ:
+                return TerrainVisualProxyBoundaryEdge::PositiveZ;
+            }
+            return TerrainVisualProxyBoundaryEdge::NegativeX;
+        }
 
         struct DrawRefSink {
             DrawRef* ptr{ nullptr };
@@ -176,7 +205,7 @@ namespace wz::render {
 
         const TerrainLodChoice* find_terrain_lod_choice(
             const TerrainChoiceLookup& choices,
-            wz::engine::assets::TerrainChunkId chunk_id)
+            TerrainChunkId chunk_id)
         {
             const auto it = std::lower_bound(
                 choices.begin(),
@@ -215,13 +244,16 @@ namespace wz::render {
             TerrainDrawRef ref{
                 .kind = TerrainDrawRefKind::LodTransition,
                 .terrain_instance_index = terrain_instance_index,
-                .chunk_id = strip.chunk_id,
-                .neighbor_chunk_id = strip.neighbor_chunk_id,
+                .chunk_id = scene_terrain_chunk_id(strip.chunk_id),
+                .neighbor_chunk_id =
+                    scene_terrain_chunk_id(strip.neighbor_chunk_id),
                 .representation_kind =
-                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-                .lod_id = strip.lod_id,
-                .neighbor_lod_id = strip.neighbor_lod_id,
-                .transition_edge = strip.edge,
+                    TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = scene_terrain_lod_id(strip.lod_id),
+                .neighbor_lod_id =
+                    scene_terrain_lod_id(strip.neighbor_lod_id),
+                .transition_edge =
+                    scene_terrain_boundary_edge(strip.edge),
             };
             const uint64_t batch = terrain_ref_batch_key(instance, ref);
             ref.batch_key = batch;
@@ -292,17 +324,18 @@ namespace wz::render {
                         const TerrainLodChoice* choice =
                             find_terrain_lod_choice(
                                 selected_choices,
-                                strip.chunk_id);
+                                scene_terrain_chunk_id(strip.chunk_id));
                         const TerrainLodChoice* neighbor_choice =
                             find_terrain_lod_choice(
                                 selected_choices,
-                                strip.neighbor_chunk_id);
+                                scene_terrain_chunk_id(
+                                    strip.neighbor_chunk_id));
                         if (!choice || !neighbor_choice) {
                             continue;
                         }
-                        if (choice->lod_id != strip.lod_id
-                            || neighbor_choice->lod_id
-                                != strip.neighbor_lod_id)
+                        if (choice->lod_id.value != strip.lod_id.value
+                            || neighbor_choice->lod_id.value
+                                != strip.neighbor_lod_id.value)
                         {
                             continue;
                         }

@@ -1497,7 +1497,8 @@ namespace wz::engine::rendering
                 terrain_transition_ranges);
             descriptor.terrain_visual_proxy_asset =
                 renderable.companion_asset;
-            descriptor.terrain_proxy_id = terrain_proxy_id;
+            descriptor.terrain_proxy_id =
+                wz::scene::TerrainProxyId{ terrain_proxy_id.key };
             descriptor.terrain_visual_proxy_data = terrain_visual_proxy_data;
             descriptor.terrain_visual_chunk_count =
                 static_cast<uint32_t>(terrain_chunks.size());

@@ -187,6 +187,10 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
             SceneAuthoredComponentKind::MeshDerivedFieldSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
+        scene_component_domain(
+            SceneAuthoredComponentKind::MeshSparseOperatorSource),
+        SceneComponentDomain::EditorAuthoring);
+    EXPECT_EQ(
         scene_component_domain(SceneAuthoredComponentKind::MeshRenderStyle),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
@@ -218,6 +222,10 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         SceneAuthoredComponentKind::MeshDerivedFieldSource));
     EXPECT_TRUE(is_editor_authoring_component(
         SceneAuthoredComponentKind::MeshDerivedFieldSource));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::MeshSparseOperatorSource));
+    EXPECT_TRUE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::MeshSparseOperatorSource));
     EXPECT_FALSE(is_exportable_component(
         SceneAuthoredComponentKind::MeshRenderStyle));
     EXPECT_TRUE(is_editor_authoring_component(

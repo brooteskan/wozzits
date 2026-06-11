@@ -44,7 +44,7 @@ namespace wz::engine::assets {
     //
     //   0x000A00 – 0x000AFF   Terrain and world-data recipes
     //
-    //   0x000B00 – 0x000BFF   Audio
+    //   0x000B00 – 0x000BFF   Collision (0x000B00-0x000B7F) and audio
     //
     //   0x000C00 – 0x000CFF   UI and text
     //
@@ -234,9 +234,9 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A02ull
     };
 
-    // CSV table recipe — compiled by the CSV parser; expects a kCSVFileSchema dependency.
-    // header_mode ordinal is encoded in the key so the same file compiled with
-    // different modes produces distinct asset keys.
+    // Collision schemas intentionally occupy 0x000B00-0x000B7F. These IDs
+    // are persisted in disk-cache keys, so keep them stable; reserve
+    // 0x000B80-0x000BFF for future audio schemas.
     // Collision asset derived from CPU MeshData. The recipe chooses how the
     // source mesh occupies space: bounds, triangle surface, or future proxy
     // methods. Produces kAssetTypeCollisionAsset output.
@@ -251,6 +251,9 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000B01ull
     };
 
+    // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema
+    // dependency. header_mode ordinal is encoded in the key so the same file
+    // compiled with different modes produces distinct asset keys.
     inline constexpr wz::asset::SchemaID kCSVTableSchema{
         0xF11E'CA55'E7'000D00ull
     };

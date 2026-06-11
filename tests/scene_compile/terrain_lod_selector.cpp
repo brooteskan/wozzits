@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <math/projection.h>
 #include <scene/compile/terrain_lod_selector.h>
 
@@ -63,9 +64,9 @@ namespace
     {
         return TerrainChunkInfo{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ chunk_id },
+            .chunk_id = TerrainChunkId{ chunk_id },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
+                TerrainVisualRepresentationKind::MeshChunks,
             .world_bounds = bounds,
             .lods = lods,
         };
@@ -276,8 +277,8 @@ TEST(TerrainLodSelector, HysteresisSuppressesThresholdFlicker)
     const std::vector previous{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
-            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+            .chunk_id = TerrainChunkId{ 0u },
+            .lod_id = TerrainLodId{ 1u },
         },
     };
 
@@ -393,7 +394,7 @@ TEST(TerrainLodSelector, SurfelLevelsAreOptIn)
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(
         choices[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
+        TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_EQ(choices[0].lod_id.value, 1u);
 }
 
@@ -422,7 +423,7 @@ TEST(TerrainLodSelector, FarFieldChoosesSurfelDensityWhenEnabled)
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(
         choices[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+        TerrainVisualRepresentationKind::SurfelCloud);
     EXPECT_EQ(choices[0].lod_id.value, 2u);
 }
 
@@ -451,7 +452,7 @@ TEST(TerrainLodSelector, ProjectedRadiusCanSelectMiddleSurfelDensity)
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(
         choices[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+        TerrainVisualRepresentationKind::SurfelCloud);
     EXPECT_EQ(choices[0].lod_id.value, 1u);
 }
 
@@ -480,7 +481,7 @@ TEST(TerrainLodSelector, SurfelFallbackParticipatesInCoarseBudget)
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(
         choices[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+        TerrainVisualRepresentationKind::SurfelCloud);
     EXPECT_EQ(choices[0].lod_id.value, 2u);
 }
 
@@ -507,7 +508,7 @@ TEST(TerrainLodSelector, SurfelSelectionKeepsMeshWhenCoarseErrorIsTooHigh)
     ASSERT_EQ(choices.size(), 1u);
     EXPECT_EQ(
         choices[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
+        TerrainVisualRepresentationKind::MeshChunks);
     EXPECT_EQ(choices[0].lod_id.value, 0u);
 }
 
@@ -527,10 +528,8 @@ TEST(TerrainLodSelector, NeighborConstraintRefinesCoarseNeighborWhenEnabled)
         chunk(0u, box(-2.0f, -1.0f, 10.0f, 0.0f, 1.0f, 11.0f), left_lods);
     TerrainChunkInfo right =
         chunk(1u, box(0.0f, -1.0f, 10.0f, 2.0f, 1.0f, 11.0f), right_lods);
-    left.boundary.positive_x_neighbor =
-        wz::engine::assets::TerrainChunkId{ 1u };
-    right.boundary.negative_x_neighbor =
-        wz::engine::assets::TerrainChunkId{ 0u };
+    left.boundary.positive_x_neighbor = TerrainChunkId{ 1u };
+    right.boundary.negative_x_neighbor = TerrainChunkId{ 0u };
     const std::vector chunks{ left, right };
 
     ViewData view = test_view();

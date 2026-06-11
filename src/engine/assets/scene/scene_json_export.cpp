@@ -1,8 +1,11 @@
 #include <engine/assets/scene/scene_json_export.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <iomanip>
+#include <iterator>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <utility>
 
@@ -139,7 +142,7 @@ namespace wz::engine::assets
             case SceneImportSourceKind::GLB:
                 return "glb";
             }
-            return "unknown";
+            return "glb";
         }
 
         const char* mesh_wavelet_analysis_function_name(
@@ -180,6 +183,43 @@ namespace wz::engine::assets
                 return "z";
             }
             return "y";
+        }
+
+        const char* mesh_sparse_operator_kind_name(
+            MeshSparseOperatorKind kind)
+        {
+            switch (kind) {
+            case MeshSparseOperatorKind::UniformVertexLaplacian:
+                return "uniform_vertex_laplacian";
+            }
+            return "uniform_vertex_laplacian";
+        }
+
+        const char* mesh_operator_domain_name(MeshOperatorDomain domain)
+        {
+            switch (domain) {
+            case MeshOperatorDomain::Vertex:
+                return "vertex";
+            case MeshOperatorDomain::Edge:
+                return "edge";
+            case MeshOperatorDomain::Face:
+                return "face";
+            case MeshOperatorDomain::Corner:
+                return "corner";
+            }
+            return "vertex";
+        }
+
+        const char* mesh_sparse_operator_value_convention_name(
+            MeshSparseOperatorValueConvention convention)
+        {
+            switch (convention) {
+            case MeshSparseOperatorValueConvention::NeighborWeights:
+                return "neighbor_weights";
+            case MeshSparseOperatorValueConvention::FullMatrixEntries:
+                return "full_matrix_entries";
+            }
+            return "neighbor_weights";
         }
 
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
@@ -877,6 +917,23 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr mesh_sparse_operator_source_value(
+            const SceneMeshSparseOperatorSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(source.enabled));
+            add_member(*obj, "operator_id",
+                string_value(source.operator_id));
+            add_member(*obj, "kind",
+                string_value(mesh_sparse_operator_kind_name(source.kind)));
+            add_member(*obj, "domain",
+                string_value(mesh_operator_domain_name(source.domain)));
+            add_member(*obj, "value_convention",
+                string_value(mesh_sparse_operator_value_convention_name(
+                    source.value_convention)));
+            return obj;
+        }
+
         JSONValuePtr mesh_compute_field_value(
             const SceneMeshComputeFieldAsset& field)
         {
@@ -901,10 +958,13 @@ namespace wz::engine::assets
 
             if (!field.inputs.empty()) {
                 auto inputs = array_value();
-                for (const MeshComputeInput input : field.inputs) {
-                    inputs->array_values.push_back(
-                        string_value(mesh_compute_input_name(input)));
-                }
+                std::ranges::transform(
+                    field.inputs,
+                    std::back_inserter(inputs->array_values),
+                    [](const MeshComputeInput input)
+                    {
+                        return string_value(mesh_compute_input_name(input));
+                    });
                 add_member(*obj, "inputs", std::move(inputs));
             }
 
@@ -926,9 +986,13 @@ namespace wz::engine::assets
 
             if (!field.params.empty()) {
                 auto params = array_value();
-                for (const uint32_t param : field.params) {
-                    params->array_values.push_back(number_value(param));
-                }
+                std::ranges::transform(
+                    field.params,
+                    std::back_inserter(params->array_values),
+                    [](const uint32_t param)
+                    {
+                        return number_value(param);
+                    });
                 add_member(*obj, "params", std::move(params));
             }
             return obj;
@@ -1500,6 +1564,11 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_derived_field_source",
                     mesh_derived_field_source_value(
                         *node.mesh_derived_field_source));
+            }
+            if (node.mesh_sparse_operator_source) {
+                add_member(*obj, "mesh_sparse_operator_source",
+                    mesh_sparse_operator_source_value(
+                        *node.mesh_sparse_operator_source));
             }
             if (node.mesh_wavelet_analysis) {
                 add_member(*obj, "mesh_wavelet_analysis",

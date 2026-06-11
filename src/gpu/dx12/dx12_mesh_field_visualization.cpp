@@ -5,7 +5,6 @@
 #include <gpu/gpu_resource_types.h>
 #include <gpu/mesh_field_visualization.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <limits>
@@ -58,27 +57,6 @@ namespace wz::gpu::dx12::internal
 
             *out_resource = resource;
             return true;
-        }
-
-        const wz::engine::assets::MeshDerivedFieldChannel* find_float1_channel(
-            const wz::engine::assets::MeshDerivedFieldData& field,
-            uint32_t channel_id)
-        {
-            const auto found = std::find_if(
-                field.channels.begin(),
-                field.channels.end(),
-                [channel_id](
-                    const wz::engine::assets::MeshDerivedFieldChannel& channel)
-                {
-                    return channel.channel_id == channel_id;
-                });
-            if (found == field.channels.end()
-                || found->value_type
-                    != wz::engine::assets::MeshDerivedFieldValueType::Float1)
-            {
-                return nullptr;
-            }
-            return &*found;
         }
 
         void release_mesh_field_visualization_resource(
@@ -297,15 +275,17 @@ namespace wz::gpu::dx12::internal
             return {};
         }
 
-        const auto* channel = find_float1_channel(
-            *desc.field,
-            desc.channel_id);
-        if (!channel) {
+        const std::byte* value_bytes = desc.values_begin();
+        const uint64_t value_byte_count = desc.value_byte_count();
+        const uint32_t element_count = desc.element_count();
+        const uint32_t stride_bytes = desc.stride_bytes();
+        if (!value_bytes
+            || value_byte_count == 0u
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
             return {};
         }
-
-        const auto* value_bytes =
-            desc.field->values.data() + channel->byte_offset;
 
         // Stage the CPU data and copy it into a DEFAULT-heap buffer so the
         // resulting resource can later be refreshed in place from a GPU
@@ -314,7 +294,7 @@ namespace wz::gpu::dx12::internal
         if (!create_upload_buffer(
                 impl->device,
                 value_bytes,
-                channel->byte_count,
+                value_byte_count,
                 &staging))
         {
             return {};
@@ -323,7 +303,7 @@ namespace wz::gpu::dx12::internal
         const D3D12_HEAP_PROPERTIES default_heap =
             CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
         const D3D12_RESOURCE_DESC buffer_desc =
-            CD3DX12_RESOURCE_DESC::Buffer(channel->byte_count);
+            CD3DX12_RESOURCE_DESC::Buffer(value_byte_count);
 
         ID3D12Resource* destination = nullptr;
         HRESULT hr = impl->device->CreateCommittedResource(
@@ -351,7 +331,7 @@ namespace wz::gpu::dx12::internal
             0,
             staging,
             0,
-            channel->byte_count);
+            value_byte_count);
         transition_resource(
             cmd,
             destination,
@@ -370,8 +350,8 @@ namespace wz::gpu::dx12::internal
 
         DX12MeshFieldVisualizationResource resource{};
         resource.values_buffer = destination;
-        resource.element_count = desc.field->element_count;
-        resource.stride_bytes = sizeof(float);
+        resource.element_count = element_count;
+        resource.stride_bytes = stride_bytes;
         resource.gpu_updatable = true;
 
         resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
@@ -385,7 +365,7 @@ namespace wz::gpu::dx12::internal
             0,
             resource.values_buffer,
             resource.element_count,
-            sizeof(float));
+            resource.stride_bytes);
 
         return impl->mesh_field_visualizations.add(resource);
     }

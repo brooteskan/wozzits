@@ -222,13 +222,27 @@ namespace wz::engine::rendering
             const wz::render::TerrainDrawRef& ref) const noexcept;
 
         std::optional<ResolvedTerrainDrawResource>
+        resolve_terrain_draw(
+            wz::scene::TerrainProxyId terrain_proxy_id,
+            const wz::render::TerrainDrawRef& ref) const noexcept;
+
+        std::optional<ResolvedTerrainDrawResource>
         resolve_terrain_draw_mesh_fallback(
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
+            const wz::render::TerrainDrawRef& ref) const noexcept;
+
+        std::optional<ResolvedTerrainDrawResource>
+        resolve_terrain_draw_mesh_fallback(
+            wz::scene::TerrainProxyId terrain_proxy_id,
             const wz::render::TerrainDrawRef& ref) const noexcept;
 
         std::optional<wz::render::TerrainFrameDiagnostics>
         resolve_terrain_proxy_diagnostics(
             wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept;
+
+        std::optional<wz::render::TerrainFrameDiagnostics>
+        resolve_terrain_proxy_diagnostics(
+            wz::scene::TerrainProxyId terrain_proxy_id) const noexcept;
 
         void reset_terrain_render_stats() const noexcept;
         void record_terrain_render_stats(

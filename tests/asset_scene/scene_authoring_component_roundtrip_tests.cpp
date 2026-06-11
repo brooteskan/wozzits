@@ -112,6 +112,103 @@ TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON
     EXPECT_EQ(exported.find("\"resolved_field_asset\""), std::string::npos);
 }
 
+TEST(SceneAssetModule, MeshSparseOperatorSourceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_sparse_operator_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_sparse_operator_source_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_source": {
+        "kind": "procedural_cube"
+      },
+      "mesh_sparse_operator_source": {
+        "enabled": true,
+        "operator_id": "uniform_laplacian",
+        "kind": "uniform_vertex_laplacian",
+        "domain": "vertex",
+        "value_convention": "neighbor_weights"
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_sparse_operator_source.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_sparse_operator_source",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_sparse_operator_source.has_value());
+    const auto& source = *node.mesh_sparse_operator_source;
+    EXPECT_TRUE(source.enabled);
+    EXPECT_EQ(source.operator_id, "uniform_laplacian");
+    EXPECT_EQ(
+        source.kind,
+        MeshSparseOperatorKind::UniformVertexLaplacian);
+    EXPECT_EQ(source.domain, MeshOperatorDomain::Vertex);
+    EXPECT_EQ(
+        source.value_convention,
+        MeshSparseOperatorValueConvention::NeighborWeights);
+    EXPECT_EQ(source.resolved_operator_asset, wz::asset::AssetKey{});
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MeshSparseOperatorSource), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_sparse_operator_sources, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_sparse_operator_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"mesh_sparse_operator_source\""),
+        std::string::npos);
+    EXPECT_NE(
+        exported.find("\"uniform_vertex_laplacian\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"neighbor_weights\""), std::string::npos);
+    EXPECT_EQ(
+        exported.find("\"resolved_operator_asset\""),
+        std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshWaveletAnalysisComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

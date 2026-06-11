@@ -226,6 +226,58 @@ TEST(SceneAuthoringMaterialize, MeshWaveletAnalysisFeedsHeatmapRenderable)
     EXPECT_TRUE(renderable_data->mesh_style.field_visualization.enabled);
 }
 
+TEST(SceneAuthoringMaterialize, StaleComputeVisualizationChannelFallsBackToWaveletChannel)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_stale_compute_channel_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "stale_compute_visualization_channel";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_wavelet_analysis = SceneMeshWaveletAnalysisAsset{
+        .enabled = true,
+        .function = SceneMeshWaveletAnalysisFunction::BuiltinDetailHeatV0,
+        .scale_count = 3u,
+        .lambda_max_estimate = 2.0f,
+        .gamma = 1.0f,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .field_visualization_enabled = true,
+        .field_visualization_channel_id = 0x2000u,
+        .field_visualization_value_min = 0.0f,
+        .field_visualization_value_max = 1.0f,
+        .field_visualization_gamma = 1.0f,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
+    EXPECT_EQ(
+        scene.nodes[0].mesh_render_style->field_visualization_channel_id,
+        MeshWaveletChannelID::kDetailCost);
+    ASSERT_TRUE(scene.nodes[0].mesh_wavelet_analysis.has_value());
+    EXPECT_NE(
+        scene.nodes[0].mesh_wavelet_analysis->field_asset,
+        wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+}
+
 TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceFeedsExplicitHeatmapRenderable)
 {
     using namespace wz::engine::assets;
@@ -458,6 +510,69 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
     for (size_t i = 0; i < expected_counts.size(); ++i) {
         EXPECT_FLOAT_EQ(corner_count_values[i], expected_counts[i]);
     }
+}
+
+TEST(SceneAuthoringMaterialize, MeshSparseOperatorSourceBuildsUniformLaplacian)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_sparse_operator_source_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_sparse_operator_source";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_sparse_operator_source = SceneMeshSparseOperatorSourceAsset{
+        .enabled = true,
+        .operator_id = "uniform_laplacian",
+        .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
+        .domain = MeshOperatorDomain::Vertex,
+        .value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_sparse_operator_source.has_value());
+
+    const wz::asset::AssetKey operator_key =
+        scene.nodes[0]
+            .mesh_sparse_operator_source->resolved_operator_asset;
+    ASSERT_NE(operator_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshSparseOperatorAsset op{ .output = operator_key };
+    const MeshSparseOperatorHandle op_handle =
+        assets.mesh_sparse_operators().get_sparse_operator(op);
+    ASSERT_TRUE(op_handle.valid());
+    const MeshSparseOperatorData* op_data =
+        assets.mesh_sparse_operators().get_sparse_operator_data(op_handle);
+    ASSERT_NE(op_data, nullptr);
+    EXPECT_EQ(
+        op_data->kind,
+        MeshSparseOperatorKind::UniformVertexLaplacian);
+    EXPECT_EQ(op_data->domain, MeshOperatorDomain::Vertex);
+    EXPECT_EQ(
+        op_data->value_convention,
+        MeshSparseOperatorValueConvention::NeighborWeights);
+    EXPECT_EQ(op_data->row_count, 8u);
+    ASSERT_EQ(op_data->row_offsets.size(), op_data->row_count + 1u);
+    EXPECT_EQ(op_data->row_offsets.front(), 0u);
+    EXPECT_EQ(op_data->row_offsets.back(), op_data->nonzero_count);
 }
 
 TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)

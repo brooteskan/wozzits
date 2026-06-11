@@ -19,6 +19,56 @@ namespace
             });
         return it != entries.end() ? &it->second : nullptr;
     }
+
+    wz::engine::assets::TerrainProxyId engine_terrain_proxy_id(
+        wz::scene::TerrainProxyId id) noexcept
+    {
+        return wz::engine::assets::TerrainProxyId{ id.key };
+    }
+
+    wz::engine::assets::TerrainChunkId engine_terrain_chunk_id(
+        wz::scene::TerrainChunkId id) noexcept
+    {
+        return wz::engine::assets::TerrainChunkId{ id.value };
+    }
+
+    wz::engine::assets::TerrainLodId engine_terrain_lod_id(
+        wz::scene::TerrainLodId id) noexcept
+    {
+        return wz::engine::assets::TerrainLodId{ id.value };
+    }
+
+    wz::engine::assets::TerrainVisualRepresentationKind
+    engine_terrain_representation_kind(
+        wz::scene::TerrainVisualRepresentationKind kind) noexcept
+    {
+        switch (kind) {
+        case wz::scene::TerrainVisualRepresentationKind::MeshChunks:
+            return wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
+        case wz::scene::TerrainVisualRepresentationKind::GridTiles:
+            return wz::engine::assets::TerrainVisualRepresentationKind::GridTiles;
+        case wz::scene::TerrainVisualRepresentationKind::SurfelCloud:
+            return wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud;
+        }
+        return wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
+    }
+
+    wz::engine::assets::TerrainVisualProxyBoundaryEdge
+    engine_terrain_boundary_edge(
+        wz::scene::TerrainVisualProxyBoundaryEdge edge) noexcept
+    {
+        switch (edge) {
+        case wz::scene::TerrainVisualProxyBoundaryEdge::NegativeX:
+            return wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
+        case wz::scene::TerrainVisualProxyBoundaryEdge::PositiveX:
+            return wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveX;
+        case wz::scene::TerrainVisualProxyBoundaryEdge::NegativeZ:
+            return wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeZ;
+        case wz::scene::TerrainVisualProxyBoundaryEdge::PositiveZ:
+            return wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveZ;
+        }
+        return wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
+    }
 }
 
 namespace wz::engine::rendering
@@ -278,6 +328,16 @@ namespace wz::engine::rendering
 
     std::optional<ResolvedTerrainDrawResource>
     RenderResourceResolver::resolve_terrain_draw(
+        wz::scene::TerrainProxyId terrain_proxy_id,
+        const wz::render::TerrainDrawRef& ref) const noexcept
+    {
+        return resolve_terrain_draw(
+            engine_terrain_proxy_id(terrain_proxy_id),
+            ref);
+    }
+
+    std::optional<ResolvedTerrainDrawResource>
+    RenderResourceResolver::resolve_terrain_draw(
         wz::engine::assets::TerrainProxyId terrain_proxy_id,
         const wz::render::TerrainDrawRef& ref) const noexcept
     {
@@ -291,8 +351,18 @@ namespace wz::engine::rendering
             return std::nullopt;
 
         const Entry& e = *found;
+        const auto representation_kind =
+            engine_terrain_representation_kind(ref.representation_kind);
+        const auto chunk_id = engine_terrain_chunk_id(ref.chunk_id);
+        const auto neighbor_chunk_id =
+            engine_terrain_chunk_id(ref.neighbor_chunk_id);
+        const auto lod_id = engine_terrain_lod_id(ref.lod_id);
+        const auto neighbor_lod_id =
+            engine_terrain_lod_id(ref.neighbor_lod_id);
+        const auto transition_edge =
+            engine_terrain_boundary_edge(ref.transition_edge);
         if (ref.kind == wz::render::TerrainDrawRefKind::LodTransition) {
-            if (ref.representation_kind
+            if (representation_kind
                 != wz::engine::assets::TerrainVisualRepresentationKind
                     ::MeshChunks)
             {
@@ -302,11 +372,11 @@ namespace wz::engine::rendering
                 e.terrain_transition_ranges.begin(),
                 e.terrain_transition_ranges.end(),
                 [&](const TerrainTransitionDrawRange& range) {
-                    return range.chunk_id == ref.chunk_id
-                        && range.neighbor_chunk_id == ref.neighbor_chunk_id
-                        && range.lod_id == ref.lod_id
-                        && range.neighbor_lod_id == ref.neighbor_lod_id
-                        && range.edge == ref.transition_edge
+                    return range.chunk_id == chunk_id
+                        && range.neighbor_chunk_id == neighbor_chunk_id
+                        && range.lod_id == lod_id
+                        && range.neighbor_lod_id == neighbor_lod_id
+                        && range.edge == transition_edge
                         && range.index_count > 0u;
                 });
             if (range_it == e.terrain_transition_ranges.end())
@@ -327,15 +397,15 @@ namespace wz::engine::rendering
             };
         }
 
-        if (ref.representation_kind
+        if (representation_kind
             == wz::engine::assets::TerrainVisualRepresentationKind
                 ::SurfelCloud)
         {
             const TerrainFarSplatChunk* chunk =
                 find_terrain_far_splat_chunk(
                     e,
-                    ref.chunk_id,
-                    ref.lod_id);
+                    chunk_id,
+                    lod_id);
             if (chunk && chunk->splat_count > 0u) {
                 return ResolvedTerrainDrawResource{
                     .gpu_resource = chunk->gpu_resource,
@@ -345,8 +415,8 @@ namespace wz::engine::rendering
                     .terrain_target_pixels_per_triangle =
                         e.terrain_target_pixels_per_triangle,
                     .source_triangle_count =
-                        ref.chunk_id.value < e.terrain_chunks.size()
-                        ? e.terrain_chunks[ref.chunk_id.value]
+                        chunk_id.value < e.terrain_chunks.size()
+                        ? e.terrain_chunks[chunk_id.value]
                             .triangle_count()
                         : 0u,
                     .first_splat = chunk->first_splat,
@@ -357,17 +427,17 @@ namespace wz::engine::rendering
             return std::nullopt;
         }
 
-        if (ref.representation_kind
+        if (representation_kind
             != wz::engine::assets::TerrainVisualRepresentationKind
                 ::MeshChunks)
         {
             return std::nullopt;
         }
 
-        if (ref.chunk_id.value >= e.terrain_chunks.size())
+        if (chunk_id.value >= e.terrain_chunks.size())
             return std::nullopt;
 
-        const auto& chunk = e.terrain_chunks[ref.chunk_id.value];
+        const auto& chunk = e.terrain_chunks[chunk_id.value];
         if (chunk.index_count == 0)
             return std::nullopt;
 
@@ -398,6 +468,16 @@ namespace wz::engine::rendering
 
     std::optional<ResolvedTerrainDrawResource>
     RenderResourceResolver::resolve_terrain_draw_mesh_fallback(
+        wz::scene::TerrainProxyId terrain_proxy_id,
+        const wz::render::TerrainDrawRef& ref) const noexcept
+    {
+        return resolve_terrain_draw_mesh_fallback(
+            engine_terrain_proxy_id(terrain_proxy_id),
+            ref);
+    }
+
+    std::optional<ResolvedTerrainDrawResource>
+    RenderResourceResolver::resolve_terrain_draw_mesh_fallback(
         wz::engine::assets::TerrainProxyId terrain_proxy_id,
         const wz::render::TerrainDrawRef& ref) const noexcept
     {
@@ -415,10 +495,11 @@ namespace wz::engine::rendering
             return std::nullopt;
 
         const Entry& e = *found;
-        if (ref.chunk_id.value >= e.terrain_chunks.size())
+        const auto chunk_id = engine_terrain_chunk_id(ref.chunk_id);
+        if (chunk_id.value >= e.terrain_chunks.size())
             return std::nullopt;
 
-        const auto& chunk = e.terrain_chunks[ref.chunk_id.value];
+        const auto& chunk = e.terrain_chunks[chunk_id.value];
         if (chunk.index_count == 0u)
             return std::nullopt;
 
@@ -443,6 +524,14 @@ namespace wz::engine::rendering
             .lod_replacement_available = replacement_available,
             .lod_replacement_selected = replacement_available,
         };
+    }
+
+    std::optional<wz::render::TerrainFrameDiagnostics>
+    RenderResourceResolver::resolve_terrain_proxy_diagnostics(
+        wz::scene::TerrainProxyId terrain_proxy_id) const noexcept
+    {
+        return resolve_terrain_proxy_diagnostics(
+            engine_terrain_proxy_id(terrain_proxy_id));
     }
 
     std::optional<wz::render::TerrainFrameDiagnostics>

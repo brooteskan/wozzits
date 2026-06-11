@@ -31,6 +31,25 @@ namespace wz::engine::render_backend::dx12
             return std::chrono::duration<double, std::micro>(b - a).count();
         }
 
+        wz::engine::assets::TerrainVisualRepresentationKind
+        engine_terrain_representation_kind(
+            wz::scene::TerrainVisualRepresentationKind kind) noexcept
+        {
+            switch (kind) {
+            case wz::scene::TerrainVisualRepresentationKind::MeshChunks:
+                return wz::engine::assets::TerrainVisualRepresentationKind
+                    ::MeshChunks;
+            case wz::scene::TerrainVisualRepresentationKind::GridTiles:
+                return wz::engine::assets::TerrainVisualRepresentationKind
+                    ::GridTiles;
+            case wz::scene::TerrainVisualRepresentationKind::SurfelCloud:
+                return wz::engine::assets::TerrainVisualRepresentationKind
+                    ::SurfelCloud;
+            }
+            return wz::engine::assets::TerrainVisualRepresentationKind
+                ::MeshChunks;
+        }
+
         struct TerrainLightingConstants
         {
             float light_position[4]{ 0.0f, 8.0f, 0.0f, 0.0f };
@@ -268,7 +287,7 @@ namespace wz::engine::render_backend::dx12
             bool mesh_fallback = false)
         {
             if (ref.representation_kind
-                != wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks)
+                != wz::scene::TerrainVisualRepresentationKind::MeshChunks)
             {
                 if (!mesh_fallback)
                     return false;
@@ -419,7 +438,8 @@ namespace wz::engine::render_backend::dx12
                 mesh_fallback
                     ? wz::engine::assets::TerrainVisualRepresentationKind
                         ::MeshChunks
-                    : ref.representation_kind,
+                    : engine_terrain_representation_kind(
+                        ref.representation_kind),
                 1u);
             const auto stats_t1 = SubmitClock::now();
             profile.stats_us += elapsed_us(stats_t0, stats_t1);
@@ -433,7 +453,7 @@ namespace wz::engine::render_backend::dx12
             uint64_t submitted_draw_calls)
         {
             if (ref.representation_kind
-                != wz::engine::assets::TerrainVisualRepresentationKind
+                != wz::scene::TerrainVisualRepresentationKind
                     ::SurfelCloud)
             {
                 return false;
@@ -470,7 +490,7 @@ namespace wz::engine::render_backend::dx12
                 0u,
                 0u,
                 ref.lod_id.value,
-                ref.representation_kind,
+                engine_terrain_representation_kind(ref.representation_kind),
                 submitted_draw_calls);
             return true;
         }
@@ -509,7 +529,7 @@ namespace wz::engine::render_backend::dx12
                 out_resolved = nullptr)
         {
             if (ref.representation_kind
-                != wz::engine::assets::TerrainVisualRepresentationKind
+                != wz::scene::TerrainVisualRepresentationKind
                     ::SurfelCloud)
             {
                 return false;
@@ -667,7 +687,7 @@ namespace wz::engine::render_backend::dx12
                     surfel_resolved;
 
                 if (ref.representation_kind
-                    == wz::engine::assets::TerrainVisualRepresentationKind
+                    == wz::scene::TerrainVisualRepresentationKind
                         ::SurfelCloud)
                 {
                     const auto resolve_t0 = SubmitClock::now();

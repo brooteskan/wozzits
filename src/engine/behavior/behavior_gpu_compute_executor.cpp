@@ -981,6 +981,8 @@ namespace wz::engine::behavior
 
                 uint32_t element_count = port->element_count;
                 wz::gpu::GPUHandle buffer{};
+                wz::gpu::ComputeBindingResourceKind resource_kind =
+                    wz::gpu::ComputeBindingResourceKind::ComputeBuffer;
                 bool transient_buffer = true;
                 if (port->direction == WZ_GPU_PORT_INPUT) {
                     if (port->resource.value
@@ -1248,6 +1250,8 @@ namespace wz::engine::behavior
 
                         if (signal.resident_resource.valid()) {
                             buffer = signal.resident_resource;
+                            resource_kind = wz::gpu::ComputeBindingResourceKind
+                                ::MeshFieldVisualization;
                             transient_buffer = false;
                         }
                         else {
@@ -1356,6 +1360,7 @@ namespace wz::engine::behavior
                 }
                 dispatch_bindings.push_back({
                     .kind = binding.binding_kind,
+                    .resource_kind = resource_kind,
                     .shader_register = binding.shader_register,
                     .register_space = binding.register_space,
                     .buffer = buffer,

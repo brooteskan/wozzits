@@ -294,7 +294,8 @@ TEST(SceneInstantiate, TerrainSurfaceRenderableCompilesToTerrainDrawRefs)
             wz::scene::RenderableDescriptor& descriptor) const override
         {
             descriptor.terrain_visual_proxy_asset = proxy_key_;
-            descriptor.terrain_proxy_id = TerrainProxyId{ proxy_key_ };
+            descriptor.terrain_proxy_id =
+                wz::scene::TerrainProxyId{ proxy_key_ };
             descriptor.terrain_visual_proxy_data = &proxy_;
             descriptor.terrain_visual_chunk_count = 2u;
             return true;
@@ -889,10 +890,10 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     EXPECT_EQ(resolved->terrain_chunks[0].index_count, 6u);
 
     wz::render::TerrainDrawRef base_ref{};
-    base_ref.chunk_id = TerrainChunkId{ 0u };
+    base_ref.chunk_id = wz::scene::TerrainChunkId{ 0u };
     base_ref.representation_kind =
-        TerrainVisualRepresentationKind::MeshChunks;
-    base_ref.lod_id = TerrainLodId{ 0u };
+        wz::scene::TerrainVisualRepresentationKind::MeshChunks;
+    base_ref.lod_id = wz::scene::TerrainLodId{ 0u };
 
     auto draw = resolver.resolve_terrain_draw(proxy_id, base_ref);
     ASSERT_TRUE(draw.has_value());
@@ -904,7 +905,7 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     EXPECT_FALSE(draw->lod_replacement_selected);
 
     wz::render::TerrainDrawRef replacement_ref = base_ref;
-    replacement_ref.lod_id = TerrainLodId{ 1u };
+    replacement_ref.lod_id = wz::scene::TerrainLodId{ 1u };
 
     draw = resolver.resolve_terrain_draw(proxy_id, replacement_ref);
     ASSERT_TRUE(draw.has_value());
@@ -915,12 +916,12 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
 
     wz::render::TerrainDrawRef transition_ref{};
     transition_ref.kind = wz::render::TerrainDrawRefKind::LodTransition;
-    transition_ref.chunk_id = TerrainChunkId{ 0u };
-    transition_ref.neighbor_chunk_id = TerrainChunkId{ 1u };
-    transition_ref.lod_id = TerrainLodId{ 0u };
-    transition_ref.neighbor_lod_id = TerrainLodId{ 1u };
+    transition_ref.chunk_id = wz::scene::TerrainChunkId{ 0u };
+    transition_ref.neighbor_chunk_id = wz::scene::TerrainChunkId{ 1u };
+    transition_ref.lod_id = wz::scene::TerrainLodId{ 0u };
+    transition_ref.neighbor_lod_id = wz::scene::TerrainLodId{ 1u };
     transition_ref.transition_edge =
-        TerrainVisualProxyBoundaryEdge::PositiveX;
+        wz::scene::TerrainVisualProxyBoundaryEdge::PositiveX;
 
     draw = resolver.resolve_terrain_draw(proxy_id, transition_ref);
     ASSERT_TRUE(draw.has_value());
@@ -930,10 +931,10 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     EXPECT_FALSE(draw->lod_replacement_available);
 
     wz::render::TerrainDrawRef surfel_ref{};
-    surfel_ref.chunk_id = TerrainChunkId{ 0u };
+    surfel_ref.chunk_id = wz::scene::TerrainChunkId{ 0u };
     surfel_ref.representation_kind =
-        TerrainVisualRepresentationKind::SurfelCloud;
-    surfel_ref.lod_id = TerrainLodId{ 2u };
+        wz::scene::TerrainVisualRepresentationKind::SurfelCloud;
+    surfel_ref.lod_id = wz::scene::TerrainLodId{ 2u };
 
     draw = resolver.resolve_terrain_draw(proxy_id, surfel_ref);
     ASSERT_TRUE(draw.has_value());

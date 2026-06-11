@@ -304,6 +304,47 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<MeshSparseOperatorKind>
+        parse_mesh_sparse_operator_kind(std::string_view text)
+        {
+            if (text == "uniform_vertex_laplacian"
+                || text == "uniform_laplacian")
+            {
+                return MeshSparseOperatorKind::UniformVertexLaplacian;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<MeshOperatorDomain>
+        parse_mesh_operator_domain(std::string_view text)
+        {
+            if (text == "vertex") {
+                return MeshOperatorDomain::Vertex;
+            }
+            if (text == "edge") {
+                return MeshOperatorDomain::Edge;
+            }
+            if (text == "face") {
+                return MeshOperatorDomain::Face;
+            }
+            if (text == "corner") {
+                return MeshOperatorDomain::Corner;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<MeshSparseOperatorValueConvention>
+        parse_mesh_sparse_operator_value_convention(std::string_view text)
+        {
+            if (text == "neighbor_weights") {
+                return MeshSparseOperatorValueConvention::NeighborWeights;
+            }
+            if (text == "full_matrix_entries") {
+                return MeshSparseOperatorValueConvention::FullMatrixEntries;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -1842,6 +1883,84 @@ namespace wz::engine::assets::internal
                 node.mesh_derived_field_source = std::move(source);
             }
 
+            const auto* msos =
+                find_member(node_val, "mesh_sparse_operator_source");
+            if (msos && msos->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshSparseOperatorSourceAsset source{};
+
+                if (auto enabled = read_bool(*msos, "enabled")) {
+                    source.enabled = *enabled;
+                }
+                if (auto operator_id = read_string(*msos, "operator_id")) {
+                    source.operator_id = std::string(*operator_id);
+                }
+                if (source.operator_id.empty()) {
+                    logger.error("mesh_sparse_operator_source on node '"
+                        + node.id + "' has empty operator_id");
+                    return std::nullopt;
+                }
+
+                if (auto kind = read_string(*msos, "kind")) {
+                    auto parsed_kind =
+                        parse_mesh_sparse_operator_kind(*kind);
+                    if (!parsed_kind) {
+                        logger.error("mesh_sparse_operator_source on node '"
+                            + node.id + "' has unknown kind '"
+                            + std::string(*kind) + "'");
+                        return std::nullopt;
+                    }
+                    source.kind = *parsed_kind;
+                }
+                if (source.kind
+                    != MeshSparseOperatorKind::UniformVertexLaplacian)
+                {
+                    logger.error("mesh_sparse_operator_source on node '"
+                        + node.id + "' only supports "
+                        "uniform_vertex_laplacian in v0");
+                    return std::nullopt;
+                }
+
+                if (auto domain = read_string(*msos, "domain")) {
+                    auto parsed_domain = parse_mesh_operator_domain(*domain);
+                    if (!parsed_domain) {
+                        logger.error("mesh_sparse_operator_source on node '"
+                            + node.id + "' has unknown domain '"
+                            + std::string(*domain) + "'");
+                        return std::nullopt;
+                    }
+                    source.domain = *parsed_domain;
+                }
+                if (source.domain != MeshOperatorDomain::Vertex) {
+                    logger.error("mesh_sparse_operator_source on node '"
+                        + node.id + "' only supports vertex domain in v0");
+                    return std::nullopt;
+                }
+
+                if (auto convention =
+                        read_string(*msos, "value_convention"))
+                {
+                    auto parsed_convention =
+                        parse_mesh_sparse_operator_value_convention(
+                            *convention);
+                    if (!parsed_convention) {
+                        logger.error("mesh_sparse_operator_source on node '"
+                            + node.id + "' has unknown value_convention '"
+                            + std::string(*convention) + "'");
+                        return std::nullopt;
+                    }
+                    source.value_convention = *parsed_convention;
+                }
+                if (source.value_convention
+                    != MeshSparseOperatorValueConvention::NeighborWeights)
+                {
+                    logger.error("mesh_sparse_operator_source on node '"
+                        + node.id + "' only supports neighbor_weights in v0");
+                    return std::nullopt;
+                }
+
+                node.mesh_sparse_operator_source = std::move(source);
+            }
+
             const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");
             if (mwa && mwa->kind == wz::json::JSONValueKind::Object) {
                 SceneMeshWaveletAnalysisAsset analysis{};
@@ -2034,12 +2153,17 @@ namespace wz::engine::assets::internal
                         channel.value_type = *parsed_value_type;
                     }
 
-                    for (const auto& existing : component.channels) {
-                        if (existing.channel_id == channel.channel_id) {
-                            logger.error("mesh_compute_field on node '"
-                                + node.id + "' has duplicate channel_id");
-                            return std::nullopt;
-                        }
+                    if (std::ranges::any_of(
+                            component.channels,
+                            [&](const auto& existing)
+                            {
+                                return existing.channel_id
+                                    == channel.channel_id;
+                            }))
+                    {
+                        logger.error("mesh_compute_field on node '"
+                            + node.id + "' has duplicate channel_id");
+                        return std::nullopt;
                     }
                     component.channels.push_back(channel);
                 }

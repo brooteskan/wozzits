@@ -15,6 +15,8 @@ namespace wz::gpu::dx12::internal
     namespace
     {
         using ComputeBindingKind = wz::gpu::ComputeBindingKind;
+        using ComputeBindingResourceKind =
+            wz::gpu::ComputeBindingResourceKind;
 
         uint64_t buffer_byte_count(const DX12ComputeBuffer& buffer) noexcept
         {
@@ -675,22 +677,34 @@ namespace wz::gpu::dx12::internal
                 return false;
             }
 
-            DX12ComputeBuffer* buffer =
-                impl->compute_buffers.get(binding.buffer);
             ID3D12Resource* bound_resource = nullptr;
             uint32_t bound_stride_bytes = 0u;
-            if (buffer && buffer->valid()) {
-                transition_buffer(cmd, *buffer, desired_state(binding.kind));
-                bound_resource = buffer->resource;
-                bound_stride_bytes = buffer->stride_bytes;
+            switch (binding.resource_kind) {
+            case ComputeBindingResourceKind::ComputeBuffer: {
+                DX12ComputeBuffer* buffer =
+                    impl->compute_buffers.get(binding.buffer);
+                if (buffer && buffer->valid()) {
+                    transition_buffer(
+                        cmd,
+                        *buffer,
+                        desired_state(binding.kind));
+                    bound_resource = buffer->resource;
+                    bound_stride_bytes = buffer->stride_bytes;
+                }
+                break;
             }
-            else if (is_srv(binding.kind)) {
+            case ComputeBindingResourceKind::MeshFieldVisualization: {
+                if (!is_srv(binding.kind)) {
+                    break;
+                }
                 const DX12MeshFieldVisualizationResource* field =
                     impl->mesh_field_visualizations.get(binding.buffer);
                 if (field && field->valid()) {
                     bound_resource = field->values_buffer;
                     bound_stride_bytes = field->stride_bytes;
                 }
+                break;
+            }
             }
             if (!bound_resource) {
                 cmd->Release();

@@ -25,6 +25,12 @@ namespace wz::gpu
         ByteAddressBufferUAV,
     };
 
+    enum class ComputeBindingResourceKind : uint8_t
+    {
+        ComputeBuffer,
+        MeshFieldVisualization,
+    };
+
     struct ComputeBufferDesc
     {
         uint32_t element_count = 0;
@@ -41,6 +47,8 @@ namespace wz::gpu
     struct ComputeDispatchBinding
     {
         ComputeBindingKind kind{};
+        ComputeBindingResourceKind resource_kind =
+            ComputeBindingResourceKind::ComputeBuffer;
         uint32_t shader_register = 0;
         uint32_t register_space = 0;
         GPUHandle buffer{};

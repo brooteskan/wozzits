@@ -6,6 +6,7 @@
 
 #include <engine/assets/light/light.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
+#include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/vector_field/vector_field.h>
 
 #include <scene/scene_ecs.h>
@@ -384,6 +385,20 @@ namespace wz::engine::assets
 
         // Materialization output / editor cache, not saved as authored intent.
         wz::asset::AssetKey resolved_field_asset{};
+    };
+
+    struct SceneMeshSparseOperatorSourceAsset
+    {
+        bool enabled = true;
+        std::string operator_id = "uniform_laplacian";
+        MeshSparseOperatorKind kind =
+            MeshSparseOperatorKind::UniformVertexLaplacian;
+        MeshOperatorDomain domain = MeshOperatorDomain::Vertex;
+        MeshSparseOperatorValueConvention value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights;
+
+        // Materialization output / editor cache, not saved as authored intent.
+        wz::asset::AssetKey resolved_operator_asset{};
     };
 
     enum class SceneMeshWaveletAnalysisFunction : uint8_t
@@ -788,6 +803,8 @@ namespace wz::engine::assets
         std::optional<SceneMeshProcessingAsset> mesh_processing;
         std::optional<SceneMeshDerivedFieldSourceAsset>
             mesh_derived_field_source;
+        std::optional<SceneMeshSparseOperatorSourceAsset>
+            mesh_sparse_operator_source;
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
@@ -866,6 +883,7 @@ namespace wz::engine::assets
         uint32_t mesh_sources = 0;
         uint32_t mesh_processing = 0;
         uint32_t mesh_derived_field_sources = 0;
+        uint32_t mesh_sparse_operator_sources = 0;
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
@@ -1106,6 +1124,13 @@ namespace wz::engine::assets
         node.mesh_derived_field_source = std::move(source);
     }
 
+    inline void attach_mesh_sparse_operator_source(
+        SceneNodeAsset& node,
+        SceneMeshSparseOperatorSourceAsset source = {})
+    {
+        node.mesh_sparse_operator_source = std::move(source);
+    }
+
     inline void attach_mesh_wavelet_analysis(
         SceneNodeAsset& node,
         SceneMeshWaveletAnalysisAsset analysis = {})
@@ -1240,6 +1265,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_derived_field_source) {
             out.push_back(Kind::MeshDerivedFieldSource);
+        }
+        if (node.mesh_sparse_operator_source) {
+            out.push_back(Kind::MeshSparseOperatorSource);
         }
         if (node.mesh_wavelet_analysis) {
             out.push_back(Kind::MeshWaveletAnalysis);
@@ -1477,6 +1505,7 @@ namespace wz::engine::assets
             || node.mesh_source.has_value()
             || node.mesh_processing.has_value()
             || node.mesh_derived_field_source.has_value()
+            || node.mesh_sparse_operator_source.has_value()
             || node.mesh_wavelet_analysis.has_value()
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
@@ -1518,6 +1547,7 @@ namespace wz::engine::assets
             || node.behavior.has_value()
             || !node.behaviors.empty()
             || node.compute_kernel.has_value()
+            || node.render_shader.has_value()
             || node.debug_visual.has_value();
     }
 
@@ -1547,6 +1577,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_derived_field_source) {
                 ++out.mesh_derived_field_sources;
+                ++out.total_recipes;
+            }
+            if (node.mesh_sparse_operator_source) {
+                ++out.mesh_sparse_operator_sources;
                 ++out.total_recipes;
             }
             if (node.mesh_wavelet_analysis) {
@@ -1673,6 +1707,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_derived_field_source) {
                 ++out.mesh_derived_field_sources;
+            }
+            if (node.mesh_sparse_operator_source) {
+                ++out.mesh_sparse_operator_sources;
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;

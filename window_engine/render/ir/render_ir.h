@@ -36,16 +36,16 @@ namespace wz::render {
     struct TerrainDrawRef {
         TerrainDrawRefKind kind{ TerrainDrawRefKind::ChunkLod };
         uint32_t terrain_instance_index = 0;
-        wz::engine::assets::TerrainChunkId chunk_id{};
-        wz::engine::assets::TerrainChunkId neighbor_chunk_id{
-            wz::engine::assets::kInvalidTerrainChunkId
+        wz::scene::TerrainChunkId chunk_id{};
+        wz::scene::TerrainChunkId neighbor_chunk_id{
+            wz::scene::kInvalidTerrainChunkId
         };
-        wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
-            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
-        wz::engine::assets::TerrainLodId lod_id{};
-        wz::engine::assets::TerrainLodId neighbor_lod_id{};
-        wz::engine::assets::TerrainVisualProxyBoundaryEdge transition_edge =
-            wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
+        wz::scene::TerrainVisualRepresentationKind representation_kind =
+            wz::scene::TerrainVisualRepresentationKind::MeshChunks;
+        wz::scene::TerrainLodId lod_id{};
+        wz::scene::TerrainLodId neighbor_lod_id{};
+        wz::scene::TerrainVisualProxyBoundaryEdge transition_edge =
+            wz::scene::TerrainVisualProxyBoundaryEdge::NegativeX;
         uint64_t batch_key = 0;
         uint64_t sort_key = 0;
     };

@@ -1,6 +1,7 @@
 #include <scene/compile/scene_compiler.h>
 #include <scene/compile/terrain_lod_selector.h>
 #include <algo/next.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 
 #include <algorithm>
 #include <new>
@@ -297,6 +298,43 @@ namespace wz::scene {
             };
         }
 
+        TerrainChunkId scene_terrain_chunk_id(
+            wz::engine::assets::TerrainChunkId id) noexcept
+        {
+            return TerrainChunkId{ id.value };
+        }
+
+        TerrainVisualRepresentationKind scene_terrain_representation_kind(
+            wz::engine::assets::TerrainVisualRepresentationKind kind) noexcept
+        {
+            switch (kind) {
+            case wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks:
+                return TerrainVisualRepresentationKind::MeshChunks;
+            case wz::engine::assets::TerrainVisualRepresentationKind::GridTiles:
+                return TerrainVisualRepresentationKind::GridTiles;
+            case wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud:
+                return TerrainVisualRepresentationKind::SurfelCloud;
+            }
+            return TerrainVisualRepresentationKind::MeshChunks;
+        }
+
+        TerrainVisualChunkBoundaryMetadata scene_terrain_boundary(
+            const wz::engine::assets::TerrainVisualChunkBoundaryMetadata&
+                boundary) noexcept
+        {
+            return TerrainVisualChunkBoundaryMetadata{
+                .boundary_flags = boundary.boundary_flags,
+                .negative_x_neighbor =
+                    scene_terrain_chunk_id(boundary.negative_x_neighbor),
+                .positive_x_neighbor =
+                    scene_terrain_chunk_id(boundary.positive_x_neighbor),
+                .negative_z_neighbor =
+                    scene_terrain_chunk_id(boundary.negative_z_neighbor),
+                .positive_z_neighbor =
+                    scene_terrain_chunk_id(boundary.positive_z_neighbor),
+            };
+        }
+
         void select_view_terrain_lods(
             CompiledSceneStorage& storage,
             const ViewData& view)
@@ -341,14 +379,16 @@ namespace wz::scene {
                 for (const auto& chunk : proxy.chunks) {
                     chunks.push_back(TerrainChunkInfo{
                         .terrain_instance_index = instance_index,
-                        .chunk_id = chunk.chunk_id,
-                        .representation_kind = chunk.representation_kind,
+                        .chunk_id = scene_terrain_chunk_id(chunk.chunk_id),
+                        .representation_kind =
+                            scene_terrain_representation_kind(
+                                chunk.representation_kind),
                         .world_bounds = transform_aabb(
                             terrain_proxy_bounds_to_aabb(chunk.bounds),
                             instance.world),
                         .asset_triangle_density =
                             chunk_asset_density(chunk),
-                        .boundary = chunk.boundary,
+                        .boundary = scene_terrain_boundary(chunk.boundary),
                         .surfel_density_levels =
                             chunk.surfel_density_levels,
                         .lods = chunk.lods,

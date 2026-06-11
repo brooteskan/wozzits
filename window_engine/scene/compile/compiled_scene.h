@@ -2,8 +2,8 @@
 
 // wz/scene/compiled_scene.h
 
+#include <asset/types.h>
 #include <stats/scene_render_storage.h>
-#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <graph/static_polytree.h>
 #include <scene/geometry.h>
 #include <scene/compile/scene_node_class.h>
@@ -11,6 +11,13 @@
 #include <limits>
 #include <span>
 #include <memory>
+
+namespace wz::engine::assets
+{
+    struct TerrainVisualProxyData;
+    struct TerrainVisualProxyLodRecord;
+    struct TerrainVisualProxySurfelDensityLevel;
+}
 
 namespace wz::scene {
 
@@ -25,6 +32,60 @@ namespace wz::scene {
     static constexpr MeshHandle     INVALID_MESH     = 0xFFFF'FFFFu;
     static constexpr MaterialHandle INVALID_MATERIAL = 0xFFFF'FFFFu;
     static constexpr SplatHandle    INVALID_SPLAT    = 0xFFFF'FFFFu;
+
+    struct TerrainProxyId
+    {
+        wz::asset::AssetKey key{};
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return key != wz::asset::AssetKey{};
+        }
+
+        bool operator==(const TerrainProxyId&) const = default;
+    };
+
+    struct TerrainChunkId
+    {
+        uint32_t value = 0;
+
+        bool operator==(const TerrainChunkId&) const = default;
+    };
+
+    inline constexpr TerrainChunkId kInvalidTerrainChunkId{
+        (std::numeric_limits<uint32_t>::max)()
+    };
+
+    struct TerrainLodId
+    {
+        uint32_t value = 0;
+
+        bool operator==(const TerrainLodId&) const = default;
+    };
+
+    enum class TerrainVisualRepresentationKind : uint8_t
+    {
+        MeshChunks = 0,
+        GridTiles,
+        SurfelCloud,
+    };
+
+    enum class TerrainVisualProxyBoundaryEdge : uint8_t
+    {
+        NegativeX,
+        PositiveX,
+        NegativeZ,
+        PositiveZ,
+    };
+
+    struct TerrainVisualChunkBoundaryMetadata
+    {
+        uint32_t boundary_flags = 0;
+        TerrainChunkId negative_x_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId positive_x_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId negative_z_neighbor = kInvalidTerrainChunkId;
+        TerrainChunkId positive_z_neighbor = kInvalidTerrainChunkId;
+    };
 
 
     // ─── Pipeline classification (legacy) ─────────────────────────────────────────
@@ -130,7 +191,7 @@ namespace wz::scene {
     struct TerrainVisualInstance {
         wz::math::Mat4 world{};
         AABB           bounds{};
-        wz::engine::assets::TerrainProxyId terrain_proxy_id{};
+        TerrainProxyId terrain_proxy_id{};
         wz::asset::AssetKey visual_proxy_asset{};
         // Non-owning CPU metadata owned by TerrainVisualProxyTable. The asset
         // library/table must outlive compiled scene views that select terrain LODs.
@@ -160,10 +221,10 @@ namespace wz::scene {
 
     struct TerrainLodChoice {
         uint32_t terrain_instance_index = 0;
-        wz::engine::assets::TerrainChunkId chunk_id{};
-        wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
-            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
-        wz::engine::assets::TerrainLodId lod_id{};
+        TerrainChunkId chunk_id{};
+        TerrainVisualRepresentationKind representation_kind =
+            TerrainVisualRepresentationKind::MeshChunks;
+        TerrainLodId lod_id{};
         float projected_error_px = 0.0f;
         float projected_area_px = 0.0f;
         float asset_triangle_density = 0.0f;
@@ -305,7 +366,7 @@ namespace wz::scene {
         AABB            local_bounds{};
         SplatDescriptor splat_data{};
         wz::asset::AssetKey terrain_visual_proxy_asset{};
-        wz::engine::assets::TerrainProxyId terrain_proxy_id{};
+        TerrainProxyId terrain_proxy_id{};
         // Non-owning CPU metadata owned by TerrainVisualProxyTable. Resource
         // resolvers populate this for terrain LOD selection; they do not transfer
         // ownership to scene-render.

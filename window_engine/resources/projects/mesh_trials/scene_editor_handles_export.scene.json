@@ -57,7 +57,7 @@
     {
       "id": "empty_1",
       "parent": "root",
-      "name": "mesh",
+      "name": "terrain mesh",
       "transform": {
         "translation": [
           0,
@@ -76,17 +76,14 @@
           750
         ]
       },
-      "visible": true,
-      "renderable": {
-        "asset": "asset-key:9172e6c4cc8b72c6:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:a37f844894e2eea1:23963d8d1b6cfda6"
-      },
+      "visible": false,
       "mesh_source": {
         "kind": "glb",
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
         "mesh_index": 0
       },
       "mesh_render_style": {
-        "asset": "asset-key:168a2e8f350b86da:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:813af2cec5b0710b:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
           "enabled": false,
           "color": [
@@ -217,6 +214,89 @@
           }
         ]
       }
+    },
+    {
+      "id": "empty_2",
+      "parent": "root",
+      "name": "mesh test 0",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          1.872905164290728e-09,
+          -1.3067476272754194e-26,
+          -6.9771154384714661e-18,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset": "asset-key:45f491f5235eac4d:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:f6347918bbbc3aa2:6e6b12387d7c8da1"
+      },
+      "mesh_source": {
+        "kind": "glb",
+        "path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\gltf\\low_poly_rock.glb",
+        "mesh_index": 0
+      },
+      "mesh_derived_field_source": {
+        "enabled": true,
+        "field_id": "height",
+        "domain": "vertex",
+        "channel_id": 8192,
+        "value_type": "float1",
+        "source_kind": "position_gradient",
+        "component": "y",
+        "normalize": true,
+        "constant_value": 0.5
+      },
+      "mesh_sparse_operator_source": {
+        "enabled": true,
+        "operator_id": "uniform_laplacian",
+        "kind": "uniform_vertex_laplacian",
+        "domain": "vertex",
+        "value_convention": "neighbor_weights"
+      },
+      "mesh_render_style": {
+        "asset": "asset-key:d37e528af30d9aa6:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "wireframe": {
+          "enabled": false,
+          "color": [
+            0,
+            1,
+            0.15000000596046448,
+            1
+          ],
+          "emissive_strength": 1
+        },
+        "surface": {
+          "enabled": true,
+          "color": [
+            0.25,
+            0.89999997615814209,
+            0.34999999403953552,
+            1
+          ],
+          "emissive_strength": 0
+        },
+        "alpha": 1,
+        "depth_test": true,
+        "depth_write": true,
+        "double_sided": false,
+        "hidden_line_prepass": false,
+        "field_visualization_enabled": false,
+        "field_visualization_channel_id": 8192,
+        "field_visualization_value_min": 0,
+        "field_visualization_value_max": 1,
+        "field_visualization_gamma": 1
+      }
     }
   ],
   "defaults": {
@@ -228,15 +308,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -294.68881225585938,
-        115.45205688476562,
-        -108.37436676025391
+        -5.1642670631408691,
+        5.127497673034668,
+        -13.83785343170166
       ],
       "orientation": [
-        -0.15563248097896576,
-        -0.54891878366470337,
-        0.06188303604722023,
-        -0.8189244270324707
+        -0.14561745524406433,
+        -0.098456904292106628,
+        -0.021316006779670715,
+        -0.9841989278793335
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

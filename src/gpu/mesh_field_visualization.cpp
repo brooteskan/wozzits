@@ -6,6 +6,33 @@
 
 namespace wz::gpu
 {
+    namespace
+    {
+        const wz::engine::assets::MeshDerivedFieldChannel* find_float1_channel(
+            const MeshFieldVisualizationUploadDesc& desc) noexcept
+        {
+            if (!desc.field) {
+                return nullptr;
+            }
+
+            const auto found = std::find_if(
+                desc.field->channels.begin(),
+                desc.field->channels.end(),
+                [&](const wz::engine::assets::MeshDerivedFieldChannel& channel)
+                {
+                    return channel.channel_id == desc.channel_id;
+                });
+
+            if (found == desc.field->channels.end()
+                || found->value_type
+                    != wz::engine::assets::MeshDerivedFieldValueType::Float1)
+            {
+                return nullptr;
+            }
+            return &*found;
+        }
+    }
+
     bool MeshFieldVisualizationUploadDesc::valid() const noexcept
     {
         if (!mesh || !mesh->valid() || !field || !field->valid()) {
@@ -19,28 +46,52 @@ namespace wz::gpu
             return false;
         }
 
-        const auto found = std::find_if(
-            field->channels.begin(),
-            field->channels.end(),
-            [&](const wz::engine::assets::MeshDerivedFieldChannel& channel)
-            {
-                return channel.channel_id == channel_id;
-            });
-
-        if (found == field->channels.end()
-            || found->value_type
-                != wz::engine::assets::MeshDerivedFieldValueType::Float1)
-        {
+        const auto* channel = find_float1_channel(*this);
+        if (!channel) {
             return false;
         }
 
         const uint32_t expected_bytes =
             field->element_count
             * wz::engine::assets::mesh_derived_field_value_stride(
-                found->value_type);
-        return found->byte_count == expected_bytes
-            && found->byte_offset <= field->values.size()
-            && found->byte_count <= field->values.size() - found->byte_offset;
+                channel->value_type);
+        return channel->byte_count == expected_bytes
+            && channel->byte_offset <= field->values.size()
+            && channel->byte_count <= field->values.size()
+                - channel->byte_offset;
+    }
+
+    const std::byte* MeshFieldVisualizationUploadDesc::values_begin()
+        const noexcept
+    {
+        if (!valid()) {
+            return nullptr;
+        }
+        const auto* channel = find_float1_channel(*this);
+        return channel ? field->values.data() + channel->byte_offset : nullptr;
+    }
+
+    uint64_t MeshFieldVisualizationUploadDesc::value_byte_count()
+        const noexcept
+    {
+        if (!valid()) {
+            return 0u;
+        }
+        const auto* channel = find_float1_channel(*this);
+        return channel ? channel->byte_count : 0u;
+    }
+
+    uint32_t MeshFieldVisualizationUploadDesc::element_count() const noexcept
+    {
+        return valid() && field ? field->element_count : 0u;
+    }
+
+    uint32_t MeshFieldVisualizationUploadDesc::stride_bytes() const noexcept
+    {
+        return valid()
+            ? wz::engine::assets::mesh_derived_field_value_stride(
+                wz::engine::assets::MeshDerivedFieldValueType::Float1)
+            : 0u;
     }
 
     GPUHandle upload_mesh_field_visualization(

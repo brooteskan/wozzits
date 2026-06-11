@@ -105,6 +105,7 @@ TEST(SceneAssetModule, RenderShaderComponentRoundTripsThroughSceneJSON)
         wz::scene::scene_component_domain(
             wz::scene::SceneAuthoredComponentKind::RenderShader),
         wz::scene::SceneComponentDomain::Exportable);
+    EXPECT_TRUE(has_runtime_relevant_components(node));
 
     const auto recipe_summary =
         summarize_scene_asset_authoring_recipes(*scene_data);

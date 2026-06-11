@@ -10,12 +10,12 @@ namespace wz::scene
     struct TerrainChunkInfo
     {
         uint32_t terrain_instance_index = 0;
-        wz::engine::assets::TerrainChunkId chunk_id{};
-        wz::engine::assets::TerrainVisualRepresentationKind representation_kind =
-            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks;
+        TerrainChunkId chunk_id{};
+        TerrainVisualRepresentationKind representation_kind =
+            TerrainVisualRepresentationKind::MeshChunks;
         AABB world_bounds{};
         float asset_triangle_density = 0.0f;
-        wz::engine::assets::TerrainVisualChunkBoundaryMetadata boundary{};
+        TerrainVisualChunkBoundaryMetadata boundary{};
         std::span<
             const wz::engine::assets::TerrainVisualProxySurfelDensityLevel>
             surfel_density_levels;
