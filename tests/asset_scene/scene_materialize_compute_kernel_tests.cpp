@@ -1178,8 +1178,10 @@ TEST_F(
     });
 
     // A vertex-domain kernel that reads indices: VERTEX derives the group
-    // count from the 4 vertices, while legacy AUTO takes the max resolved
-    // count (the 6 indices) and over-dispatches.
+    // count from the 4 vertices. Topology ports deliberately do not feed
+    // the legacy AUTO derivation, so AUTO resolves the same vertex-sized
+    // counts (vertex-count constant, publish target) and agrees — reading
+    // the 6 indices must not inflate the dispatch.
     behavior::BehaviorGpuComputeJob vertex_job = make_valence_job(
         setup.channel_id,
         "project/publish_vertex_valence_tg2");
@@ -1215,8 +1217,97 @@ TEST_F(
             setup.library);
     EXPECT_EQ(auto_report.dispatched, 1u);
     ASSERT_EQ(auto_report.derived_dispatches.size(), 1u);
-    EXPECT_EQ(auto_report.derived_dispatches[0].element_count, 6u);
-    EXPECT_EQ(auto_report.derived_dispatches[0].group_count_x, 3u);
+    EXPECT_EQ(auto_report.derived_dispatches[0].element_count, 4u);
+    EXPECT_EQ(auto_report.derived_dispatches[0].group_count_x, 2u);
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    BehaviorComputeTopologyOnlyAutoFailsAndFaceDomainResolves)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    IndexPortSetup setup = build_index_port_setup(device, assets);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    // Only topology is engine-resolved: the output is a plain plugin-sized
+    // port and the vertex count is a plain authored constant, so nothing
+    // feeds AUTO and the job must declare its iteration domain.
+    const auto make_topology_job = [&]()
+    {
+        behavior::BehaviorGpuComputeJob job =
+            make_valence_job(setup.channel_id);
+        job.ports[1].resource = WzGpuResourceRef{};
+        job.ports[1].element_count = 4u;
+        job.ports[3].resource = WzGpuResourceRef{};
+        job.ports[3].u32[0] = 4u;
+        return job;
+    };
+
+    behavior::BehaviorGpuComputeJob auto_job = make_topology_job();
+    auto_job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_AUTO;
+    const auto auto_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &auto_job, 1u },
+            setup.library);
+    EXPECT_EQ(auto_report.dispatched, 0u);
+    EXPECT_EQ(auto_report.failed, 1u);
+    ASSERT_EQ(auto_report.publish_failures.size(), 1u);
+    EXPECT_EQ(auto_report.publish_failures[0].port_name, "dispatch_domain");
+    EXPECT_NE(
+        auto_report.publish_failures[0].reason.find(
+            "dispatch group count unresolved"),
+        std::string::npos)
+        << auto_report.publish_failures[0].reason;
+
+    behavior::BehaviorGpuComputeJob face_job = make_topology_job();
+    face_job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_FACE;
+    const auto face_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{
+                &face_job, 1u },
+            setup.library);
+    EXPECT_EQ(face_report.dispatched, 1u);
+    EXPECT_EQ(face_report.failed, 0u);
+    ASSERT_EQ(face_report.derived_dispatches.size(), 1u);
+    EXPECT_EQ(
+        face_report.derived_dispatches[0].dispatch_domain,
+        WZ_GPU_DISPATCH_DOMAIN_FACE);
+    EXPECT_EQ(face_report.derived_dispatches[0].element_count, 2u);
+
+    ASSERT_EQ(face_report.readbacks.size(), 1u);
+    ASSERT_EQ(face_report.readbacks[0].bytes.size(), 4u * sizeof(float));
+    float values[4]{};
+    std::memcpy(
+        values,
+        face_report.readbacks[0].bytes.data(),
+        sizeof(values));
+    EXPECT_FLOAT_EQ(values[0], 2.0f);
+    EXPECT_FLOAT_EQ(values[1], 1.0f);
+    EXPECT_FLOAT_EQ(values[2], 2.0f);
+    EXPECT_FLOAT_EQ(values[3], 1.0f);
 
     (void)behavior::release_behavior_gpu_kernel_library(
         device,

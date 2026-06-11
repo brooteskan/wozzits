@@ -663,12 +663,10 @@ namespace wz::engine::behavior
                             ok = false;
                             break;
                         }
-                        const uint32_t triangle_count =
-                            mesh->index_count() / 3u;
-                        constant_port.u32[0] = triangle_count;
-                        engine_resolved_elements = std::max(
-                            engine_resolved_elements,
-                            triangle_count);
+                        // Topology counts deliberately do not feed the
+                        // legacy AUTO group derivation; kernels iterating
+                        // triangles declare WZ_GPU_DISPATCH_DOMAIN_FACE.
+                        constant_port.u32[0] = mesh->index_count() / 3u;
                     }
                     ok = write_root_constant(
                         constant_port,
@@ -767,9 +765,11 @@ namespace wz::engine::behavior
                             ok = false;
                             break;
                         }
-                        engine_resolved_elements = std::max(
-                            engine_resolved_elements,
-                            element_count);
+                        // Topology reads deliberately do not feed the
+                        // legacy AUTO group derivation; a vertex-domain
+                        // kernel that merely reads indices must not
+                        // over-dispatch by index count. Kernels iterating
+                        // corners declare WZ_GPU_DISPATCH_DOMAIN_CORNER.
                         buffer = wz::gpu::create_structured_buffer(device, {
                             .element_count = element_count,
                             .stride_bytes = port->stride_bytes,
@@ -957,6 +957,19 @@ namespace wz::engine::behavior
                         .group_count_x = group_count_x,
                     });
                 }
+            }
+            if (ok && group_count_x == 0u) {
+                // AUTO resolved nothing (e.g. the job only reads topology,
+                // which deliberately does not feed AUTO). Surface why the
+                // job cannot dispatch instead of failing silently.
+                report.publish_failures.push_back({
+                    .work = job.work,
+                    .port_name = "dispatch_domain",
+                    .reason = "dispatch group count unresolved: set "
+                        "explicit group counts or declare a dispatch "
+                        "domain",
+                });
+                ok = false;
             }
             if (group_count_x == 0u
                 || group_count_y == 0u

@@ -216,10 +216,10 @@ static inline uint8_t wz_gpu_set_dispatch_domain(
 /*
  * Legacy alias for wz_gpu_set_dispatch_domain(job,
  * WZ_GPU_DISPATCH_DOMAIN_AUTO): the engine derives the group count from the
- * largest element count it resolved for any mesh-bound port (vertex
- * positions/indices inputs, mesh field output, vertex/triangle count
- * constants). Prefer an explicit domain — AUTO over-dispatches any kernel
- * whose read set spans more elements than its iteration domain.
+ * largest element count it resolved for vertex-sized ports (vertex
+ * positions input, mesh field output, vertex count constant). Topology
+ * ports (indices, triangle count) do not feed AUTO; kernels iterating
+ * topology declare an explicit FACE/CORNER domain instead.
  */
 static inline uint8_t wz_gpu_set_groups_from_mesh(WzGpuJob* job)
 {

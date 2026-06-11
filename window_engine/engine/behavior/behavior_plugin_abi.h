@@ -325,11 +325,13 @@ typedef struct WzGpuPortValue
  * the engine's MeshDerivedFieldDomain vocabulary (FACE = triangle,
  * CORNER = index in the triangle list).
  *
- * AUTO preserves the legacy derivation: the largest element count the
- * engine resolved for any mesh-bound port. Note that AUTO conflates the
- * data a kernel reads with the domain it iterates — a vertex-domain kernel
- * that merely reads indices over-dispatches by roughly index count.
- * Declare an explicit domain for any kernel that mixes domains.
+ * AUTO is the legacy derivation: the largest element count the engine
+ * resolved for vertex-sized ports (vertex positions input, mesh field
+ * visualization output, vertex count constant). Topology ports (mesh
+ * indices input, triangle count constant) deliberately do not feed AUTO —
+ * reading topology must not inflate a vertex-domain dispatch. A kernel
+ * that iterates topology declares FACE or CORNER explicitly; AUTO with
+ * nothing resolved fails the job with a clear reason.
  */
 typedef uint32_t WzGpuDispatchDomain;
 

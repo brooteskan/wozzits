@@ -318,8 +318,12 @@ No vertex count is authored anywhere. The plugin declares mesh-resolved ports
   register.
 - `wz_gpu_set_u32_mesh_triangle_count(&job, "triangle_count")` (ABI 21) fills
   the root constant with the mesh triangle count (index count / 3).
-- `wz_gpu_set_groups_from_mesh(&job)` derives the dispatch group count from
-  the kernel's authored thread group size.
+- `wz_gpu_set_dispatch_domain(&job, WZ_GPU_DISPATCH_DOMAIN_VERTEX)` (ABI 22)
+  declares the iteration domain and derives the dispatch group count from
+  the kernel's authored thread group size. `wz_gpu_set_groups_from_mesh(&job)`
+  is the legacy alias for the AUTO domain; topology ports (indices,
+  triangle count) do not feed AUTO, so kernels iterating triangles declare
+  `WZ_GPU_DISPATCH_DOMAIN_FACE` explicitly.
 
 If anything cannot be resolved (no mesh field visualization target on the
 entity, element count mismatch, ...), the failure reason is reported in the
