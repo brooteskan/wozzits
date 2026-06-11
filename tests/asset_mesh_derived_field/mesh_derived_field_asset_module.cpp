@@ -1708,6 +1708,45 @@ TEST_F(MeshComputeFieldGpuFixture, ComputeDerivedFieldMissingNormalsFailsCompile
         assets.mesh_derived_fields().get_mesh_derived_field(field).valid());
 }
 
+namespace
+{
+    // Backend stub for resident-table lifetime tests: records which buffer
+    // handles were released. All creation paths are unreachable here.
+    struct ReleaseCountingComputeBackend final
+        : public wz::engine::assets::MeshFieldComputeBackend
+    {
+        std::vector<wz::asset::ResourceHandle> released;
+
+        bool available() const noexcept override { return false; }
+        wz::asset::ResourceHandle create_compute_pipeline(
+            const wz::engine::assets::ComputePipelineData&,
+            wz::asset::ResourceHandle) override { return {}; }
+        wz::asset::ResourceHandle create_structured_buffer(
+            const BufferDesc&) override { return {}; }
+        wz::asset::ResourceHandle create_rw_structured_buffer(
+            const BufferDesc&) override { return {}; }
+        bool dispatch(const DispatchDesc&) override { return false; }
+        std::vector<std::byte> readback_buffer(
+            wz::asset::ResourceHandle) override { return {}; }
+        bool release_buffer(wz::asset::ResourceHandle handle) override
+        {
+            released.push_back(handle);
+            return true;
+        }
+        bool release_pipeline(wz::asset::ResourceHandle) override
+        {
+            return true;
+        }
+        wz::asset::ResourceHandle create_field_visualization_from_gpu_source(
+            wz::asset::ResourceHandle,
+            uint64_t,
+            uint32_t,
+            uint32_t) override { return {}; }
+        bool release_field_visualization(
+            wz::asset::ResourceHandle) override { return true; }
+    };
+}
+
 TEST(MeshDerivedFieldAssetModule, GpuResidentMeshDataTableKeysByMesh)
 {
     using namespace wz::engine::assets;
@@ -1720,6 +1759,11 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentMeshDataTableKeysByMesh)
     };
     const wz::gpu::GPUHandle positions{
         .id = 21u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
+    const wz::gpu::GPUHandle indices{
+        .id = 22u,
         .epoch = 1u,
         .type = wz::gpu::kGPUMeshFieldBufferResourceType,
     };
@@ -1745,12 +1789,32 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentMeshDataTableKeysByMesh)
 
     wz::asset::AssetKey other_key = mesh_key;
     other_key.content_hash = { 9u, 10u };
-    EXPECT_NE(table.find_or_add(other_key), nullptr);
+    GpuResidentMeshDataEntry* other = table.find_or_add(other_key);
+    ASSERT_NE(other, nullptr);
     EXPECT_EQ(table.size(), 2u);
+    other->indices = indices;
+    other->index_count = 6u;
+    other->triangle_count = 2u;
 
-    table.clear();
+    // destroy() is the only way to empty the table, and it releases every
+    // filled buffer slot exactly once (empty slots are skipped).
+    ReleaseCountingComputeBackend backend{};
+    table.destroy(backend);
     EXPECT_EQ(table.size(), 0u);
     EXPECT_EQ(table.find(mesh_key), nullptr);
+    ASSERT_EQ(backend.released.size(), 2u);
+    EXPECT_NE(
+        std::find(
+            backend.released.begin(),
+            backend.released.end(),
+            positions),
+        backend.released.end());
+    EXPECT_NE(
+        std::find(
+            backend.released.begin(),
+            backend.released.end(),
+            indices),
+        backend.released.end());
 }
 
 TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)

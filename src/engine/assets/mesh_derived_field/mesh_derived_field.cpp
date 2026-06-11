@@ -239,11 +239,6 @@ namespace wz::engine::assets
         return nullptr;
     }
 
-    void GpuResidentMeshDataTable::clear()
-    {
-        entries_.clear();
-    }
-
     void GpuResidentMeshDataTable::destroy(MeshFieldComputeBackend& compute)
     {
         for (GpuResidentMeshDataEntry& entry : entries_) {

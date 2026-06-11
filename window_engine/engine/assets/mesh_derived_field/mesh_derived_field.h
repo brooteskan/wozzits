@@ -148,7 +148,8 @@ namespace wz::engine::assets
         GpuResidentMeshDataEntry* find_or_add(wz::asset::AssetKey mesh_key);
         const GpuResidentMeshDataEntry* find(
             wz::asset::AssetKey mesh_key) const;
-        void clear();
+        // No buffer-dropping clear(): entries own GPU buffers, so the only
+        // way to empty the table is destroy(), which releases them.
         void destroy(MeshFieldComputeBackend& compute);
         size_t size() const noexcept;
 
