@@ -78,6 +78,41 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    // GPU-resident copies of a compiled sparse operator's CSR buffers,
+    // uploaded once per operator and reused by every compute consumer —
+    // re-uploading ~hundreds of MB of CSR data per dispatch would defeat
+    // the operator at the target mesh scale. Keyed by the operator asset
+    // key (which already encodes source mesh + kind + domain).
+    struct GpuResidentSparseOperatorEntry
+    {
+        wz::asset::AssetKey operator_key{};
+        wz::asset::ResourceHandle row_offsets{};   // uint, row_count + 1
+        wz::asset::ResourceHandle col_indices{};   // uint, nonzero_count
+        wz::asset::ResourceHandle weights{};       // float, nonzero_count
+        wz::asset::ResourceHandle vertex_mass{};   // float, row_count
+        uint32_t row_count = 0;
+        uint32_t nonzero_count = 0;
+    };
+
+    class GpuResidentSparseOperatorTable
+    {
+    public:
+        // Returns the entry for operator_key, creating an empty one on
+        // first use so callers can fill the buffer slots they upload.
+        // Returns nullptr for a default-constructed key.
+        GpuResidentSparseOperatorEntry* find_or_add(
+            wz::asset::AssetKey operator_key);
+        const GpuResidentSparseOperatorEntry* find(
+            wz::asset::AssetKey operator_key) const;
+        // No buffer-dropping clear(): entries own GPU buffers, so the only
+        // way to empty the table is destroy(), which releases them.
+        void destroy(MeshFieldComputeBackend& compute);
+        size_t size() const noexcept;
+
+    private:
+        std::vector<GpuResidentSparseOperatorEntry> entries_;
+    };
+
     class MeshSparseOperatorTable
     {
     public:

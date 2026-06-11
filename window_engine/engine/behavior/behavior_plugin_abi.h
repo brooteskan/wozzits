@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 22u
+#define WZ_BEHAVIOR_ABI_VERSION 23u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -302,6 +302,47 @@ enum
      * current entity's mesh triangle count (index count / 3).
      */
     WZ_GPU_RESOURCE_REF_MESH_TRIANGLE_COUNT = 5u,
+    /*
+     * For input structured-buffer ports, the engine binds one component of
+     * the entity mesh's compiled sparse operator asset (CSR; see
+     * MeshSparseOperatorData). u32[0] selects the component
+     * (WZ_GPU_SPARSE_OPERATOR_*), u32[1] selects the operator kind ordinal
+     * (0 = uniform vertex Laplacian). All components are 4-byte elements
+     * (uint offsets/indices, float weights/mass); element_count is filled
+     * by the engine. The operator asset must already be compiled for the
+     * entity's mesh, or the job fails with a clear reason. Buffers are
+     * GPU-resident: uploaded once per operator and reused across
+     * dispatches.
+     *
+     * Weight convention for NeighborWeights operators: rows store neighbor
+     * weights only, so kernels apply
+     *   smooth[i]   = sum_j w_ij * x[j]
+     *   residual[i] = x[i] - smooth[i]
+     * and rows with no neighbors (row_offsets[i] == row_offsets[i+1]) must
+     * output residual 0 — an isolated vertex is not detail.
+     */
+    WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR = 6u,
+    /*
+     * For u32 root-constant ports, the engine fills up to four dwords of
+     * operator metadata so the kernel can validate what it is consuming:
+     *   u32[0] = row_count (domain element count)
+     *   u32[1] = nonzero_count
+     *   u32[2] = operator kind ordinal (MeshSparseOperatorKind)
+     *   u32[3] = value convention ordinal
+     *            (MeshSparseOperatorValueConvention)
+     * u32[1] of the declared port selects the operator kind, matching the
+     * buffer ref above.
+     */
+    WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO = 7u,
+};
+
+/* Component selector for WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR ports. */
+enum
+{
+    WZ_GPU_SPARSE_OPERATOR_ROW_OFFSETS = 0u,  /* uint, row_count + 1 */
+    WZ_GPU_SPARSE_OPERATOR_COL_INDICES = 1u,  /* uint, nonzero_count */
+    WZ_GPU_SPARSE_OPERATOR_WEIGHTS = 2u,      /* float, nonzero_count */
+    WZ_GPU_SPARSE_OPERATOR_VERTEX_MASS = 3u,  /* float, row_count */
 };
 
 typedef struct WzGpuPortValue

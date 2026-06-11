@@ -109,6 +109,48 @@ namespace
                     "}\n"),
                 wz::fs::FileError::None);
 
+            // NeighborWeights sparse apply (#150/#151): isolated rows output
+            // zero detail, and mismatched operator metadata writes a
+            // sentinel so the value tests catch a mis-filled info constant.
+            ASSERT_EQ(
+                wz::fs::write_file_text(
+                    wz::fs::join(
+                        root,
+                        "shaders/compute/laplacian_residual_cs.hlsl"),
+                    "StructuredBuffer<uint>  RowOffsets : register(t0);\n"
+                    "StructuredBuffer<uint>  ColIndices : register(t1);\n"
+                    "StructuredBuffer<float> Weights    : register(t2);\n"
+                    "StructuredBuffer<float> VertexMass : register(t3);\n"
+                    "StructuredBuffer<float> Signal     : register(t4);\n"
+                    "RWStructuredBuffer<float> Output   : register(u0);\n"
+                    "cbuffer Constants : register(b0) {\n"
+                    "    uint RowCount;\n"
+                    "    uint NonzeroCount;\n"
+                    "    uint OperatorKind;\n"
+                    "    uint ValueConvention;\n"
+                    "};\n"
+                    "[numthreads(64, 1, 1)]\n"
+                    "void main(uint3 id : SV_DispatchThreadID) {\n"
+                    "    if (id.x >= RowCount) { return; }\n"
+                    "    if (OperatorKind != 0u || ValueConvention != 0u) {\n"
+                    "        Output[id.x] = -999.0;\n"
+                    "        return;\n"
+                    "    }\n"
+                    "    uint row_begin = RowOffsets[id.x];\n"
+                    "    uint row_end = RowOffsets[id.x + 1u];\n"
+                    "    if (row_begin == row_end) {\n"
+                    "        Output[id.x] = 0.0;\n"
+                    "        return;\n"
+                    "    }\n"
+                    "    float smooth = 0.0;\n"
+                    "    for (uint e = row_begin; e < row_end; ++e) {\n"
+                    "        smooth += Weights[e] * Signal[ColIndices[e]];\n"
+                    "    }\n"
+                    "    Output[id.x] = (Signal[id.x] - smooth)\n"
+                    "        / VertexMass[id.x];\n"
+                    "}\n"),
+                wz::fs::FileError::None);
+
             // Same valence kernel with a tiny thread group so dispatch-domain
             // tests on a quad (4 vertices, 6 indices) derive visibly
             // different group counts: VERTEX -> 2 groups, AUTO -> 3.
@@ -1489,6 +1531,544 @@ TEST_F(
     EXPECT_FLOAT_EQ(values[1], 1.0f);
     EXPECT_FLOAT_EQ(values[2], 2.0f);
     EXPECT_FLOAT_EQ(values[3], 1.0f);
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+namespace
+{
+    // Shared setup for the Laplacian consumer tests (#151): a quad mesh
+    // (optionally mutated so vertex 3 is isolated), an explicit Float1
+    // vertex field as the publish target, the compiled uniform-Laplacian
+    // sparse operator, and the residual kernel library.
+    struct LaplacianConsumerSetup
+    {
+        wz::engine::assets::MeshDerivedFieldAsset field{};
+        wz::engine::assets::MeshSparseOperatorAsset op{};
+        uint32_t vertex_count = 0u;
+        uint32_t channel_id = 0u;
+        wz::engine::behavior::BehaviorGpuKernelLibrary library{};
+        bool ok = false;
+        std::string error;
+    };
+
+    LaplacianConsumerSetup build_laplacian_consumer_setup(
+        wz::gpu::Device& device,
+        wz::engine::assets::EngineAssetLibrary& assets,
+        bool isolate_vertex_three,
+        bool create_operator = true)
+    {
+        using namespace wz::engine::assets;
+        namespace behavior = wz::engine::behavior;
+
+        LaplacianConsumerSetup setup{};
+
+        const MeshAsset mesh = assets.meshes().create_procedural_mesh({
+            .name = "laplacian_mesh",
+            .kind = ProceduralMeshKind::Quad,
+        });
+        if (!mesh.valid()) {
+            setup.error = "mesh creation failed";
+            return setup;
+        }
+        if (!assets.commit() || !assets.resolve_all().ok()) {
+            setup.error = "mesh resolve failed";
+            return setup;
+        }
+
+        const MeshData* mesh_data =
+            assets.meshes().get_mesh_data(assets.meshes().get_mesh(mesh));
+        if (!mesh_data || mesh_data->vertex_count() == 0u) {
+            setup.error = "mesh data unavailable";
+            return setup;
+        }
+        if (isolate_vertex_three) {
+            const_cast<MeshData*>(mesh_data)->indices =
+                { 0u, 1u, 2u, 2u, 2u, 2u };
+        }
+        setup.vertex_count = mesh_data->vertex_count();
+        setup.channel_id = MeshWaveletChannelID::kDetailCost;
+
+        std::vector<std::byte> zeroes(
+            static_cast<size_t>(setup.vertex_count) * sizeof(float),
+            std::byte{ 0 });
+        setup.field = assets.mesh_derived_fields().create_explicit_field({
+            .name = "behavior/laplacian_residual_field",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = setup.vertex_count,
+            .channels = {{
+                .channel_id = setup.channel_id,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = zeroes,
+            }},
+        });
+        if (!setup.field.valid()) {
+            setup.error = "explicit field creation failed";
+            return setup;
+        }
+
+        if (create_operator) {
+            setup.op =
+                assets.mesh_sparse_operators().create_sparse_operator({
+                    .name = "laplacian_operator",
+                    .source_mesh = mesh,
+                });
+            if (!setup.op.valid()) {
+                setup.error = "sparse operator creation failed";
+                return setup;
+            }
+        }
+
+        SceneAssetData scene{};
+        scene.name = "behavior_laplacian_residual";
+        SceneNodeAsset node = make_scene_node("kernel");
+        node.compute_kernel = SceneComputeKernelAsset{
+            .kernel_id = "project/laplacian_residual",
+            .hlsl_path = "shaders/compute/laplacian_residual_cs.hlsl",
+            .entry = "main",
+            .target = "cs_5_0",
+            .thread_group_size_x = 64,
+            .thread_group_size_y = 1,
+            .thread_group_size_z = 1,
+            .ports = {
+                SceneComputeKernelPortAsset{
+                    .name = "row_offsets",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 0,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "col_indices",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 1,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "weights",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 2,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "vertex_mass",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 3,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "signal",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .binding_kind = SceneComputeKernelBindingKind::SRV,
+                    .shader_register = 4,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "output",
+                    .kind = SceneComputeKernelPortKind::StructuredBuffer,
+                    .direction = SceneComputeKernelPortDirection::Output,
+                    .binding_kind = SceneComputeKernelBindingKind::UAV,
+                    .shader_register = 0,
+                    .stride_bytes = 4,
+                },
+                SceneComputeKernelPortAsset{
+                    .name = "info",
+                    .kind = SceneComputeKernelPortKind::U32,
+                    .direction = SceneComputeKernelPortDirection::Input,
+                    .root_constant_offset = 0,
+                    .root_constant_dwords = 4,
+                },
+            },
+        };
+        scene.nodes.push_back(std::move(node));
+
+        const auto materialize_report =
+            materialize_scene_authoring_components(scene, assets);
+        if (!materialize_report.ok) {
+            setup.error = materialize_report.error;
+            return setup;
+        }
+        if (!assets.commit() || !assets.resolve_all().ok()) {
+            setup.error = "kernel/operator resolve failed";
+            return setup;
+        }
+
+        std::string kernel_error;
+        if (!behavior::build_kernel_library_from_scene(
+                device,
+                scene,
+                assets,
+                setup.library,
+                &kernel_error))
+        {
+            setup.error = kernel_error;
+            return setup;
+        }
+
+        setup.ok = true;
+        return setup;
+    }
+
+    // Residual job using engine-resolved sparse-operator ports and an
+    // explicit VERTEX dispatch domain (the kernel reads CSR arrays whose
+    // element counts far exceed the iteration domain).
+    wz::engine::behavior::BehaviorGpuComputeJob make_laplacian_job(
+        const std::vector<float>& signal,
+        uint32_t channel_id,
+        bool publish)
+    {
+        namespace behavior = wz::engine::behavior;
+
+        behavior::BehaviorGpuComputeJob job{};
+        job.work.value = 1u;
+        job.entity = 0;
+        job.kernel = "project/laplacian_residual";
+        job.group_count_x = 0u;
+        job.group_count_y = 0u;
+        job.group_count_z = 0u;
+        job.dispatch_domain = WZ_GPU_DISPATCH_DOMAIN_VERTEX;
+
+        const auto sparse_port =
+            [](const char* name, uint32_t component)
+        {
+            return behavior::BehaviorGpuPortValue{
+                .name = name,
+                .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                .direction = WZ_GPU_PORT_INPUT,
+                .element_count = 0u,
+                .stride_bytes = 4u,
+                .resource = WzGpuResourceRef{
+                    .value = WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR,
+                },
+                .u32 = { component, 0u, 0u, 0u },
+            };
+        };
+
+        job.ports = {
+            sparse_port(
+                "row_offsets",
+                WZ_GPU_SPARSE_OPERATOR_ROW_OFFSETS),
+            sparse_port(
+                "col_indices",
+                WZ_GPU_SPARSE_OPERATOR_COL_INDICES),
+            sparse_port("weights", WZ_GPU_SPARSE_OPERATOR_WEIGHTS),
+            sparse_port(
+                "vertex_mass",
+                WZ_GPU_SPARSE_OPERATOR_VERTEX_MASS),
+            behavior::BehaviorGpuPortValue{
+                .name = "signal",
+                .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                .direction = WZ_GPU_PORT_INPUT,
+                .element_count = static_cast<uint32_t>(signal.size()),
+                .stride_bytes = sizeof(float),
+                .initial_data = {
+                    reinterpret_cast<const std::byte*>(signal.data()),
+                    reinterpret_cast<const std::byte*>(signal.data())
+                        + signal.size() * sizeof(float),
+                },
+            },
+            behavior::BehaviorGpuPortValue{
+                .name = "output",
+                .kind = WZ_GPU_PORT_STRUCTURED_BUFFER,
+                .direction = WZ_GPU_PORT_OUTPUT,
+                .element_count = publish
+                    ? 0u
+                    : static_cast<uint32_t>(signal.size()),
+                .stride_bytes = sizeof(float),
+                .resource = WzGpuResourceRef{
+                    .value = publish
+                        ? static_cast<uint64_t>(
+                            WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION)
+                        : static_cast<uint64_t>(WZ_GPU_RESOURCE_REF_NONE),
+                },
+                .u32 = { publish ? channel_id : 0u, 0u, 0u, 0u },
+            },
+            behavior::BehaviorGpuPortValue{
+                .name = "info",
+                .kind = WZ_GPU_PORT_U32,
+                .direction = WZ_GPU_PORT_INPUT,
+                .resource = WzGpuResourceRef{
+                    .value =
+                        WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO,
+                },
+            },
+        };
+        return job;
+    }
+
+    // CPU reference application of the NeighborWeights convention with the
+    // isolated-row contract: rows with no neighbors output zero detail.
+    std::vector<float> reference_residual(
+        const wz::engine::assets::MeshSparseOperatorData& op,
+        const std::vector<float>& signal)
+    {
+        std::vector<float> out(op.row_count, 0.0f);
+        for (uint32_t row = 0; row < op.row_count; ++row) {
+            const uint32_t begin = op.row_offsets[row];
+            const uint32_t end = op.row_offsets[row + 1u];
+            if (begin == end) {
+                continue;
+            }
+            float smooth = 0.0f;
+            for (uint32_t e = begin; e < end; ++e) {
+                smooth += op.weights[e] * signal[op.col_indices[e]];
+            }
+            out[row] =
+                (signal[row] - smooth) / op.vertex_mass[row];
+        }
+        return out;
+    }
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualMatchesCpuReferenceAndStaysResident)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, false);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    const auto* op_data =
+        assets.mesh_sparse_operators().get_sparse_operator_data(
+            assets.mesh_sparse_operators().get_sparse_operator(setup.op));
+    ASSERT_NE(op_data, nullptr);
+
+    const std::vector<float> signal{ 0.0f, 1.0f, 2.0f, 3.0f };
+    const behavior::BehaviorGpuComputeJob job =
+        make_laplacian_job(signal, setup.channel_id, false);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.failed, 0u);
+    for (const auto& failure : report.publish_failures) {
+        ADD_FAILURE() << failure.port_name << ": " << failure.reason;
+    }
+
+    ASSERT_EQ(report.derived_dispatches.size(), 1u);
+    EXPECT_EQ(
+        report.derived_dispatches[0].dispatch_domain,
+        WZ_GPU_DISPATCH_DOMAIN_VERTEX);
+    EXPECT_EQ(report.derived_dispatches[0].element_count, 4u);
+
+    // GPU residual equals the CPU reference application (including the
+    // metadata guard: a mis-filled info constant writes -999 sentinels).
+    const std::vector<float> expected =
+        reference_residual(*op_data, signal);
+    ASSERT_EQ(report.readbacks.size(), 1u);
+    ASSERT_EQ(
+        report.readbacks[0].bytes.size(),
+        signal.size() * sizeof(float));
+    for (size_t i = 0; i < signal.size(); ++i) {
+        float value = 0.0f;
+        std::memcpy(
+            &value,
+            report.readbacks[0].bytes.data() + i * sizeof(float),
+            sizeof(float));
+        EXPECT_NEAR(value, expected[i], 1.0e-5f) << "vertex " << i;
+    }
+
+    // The four CSR buffers were uploaded once into the resident operator
+    // table; a second dispatch binds the identical handles.
+    ASSERT_EQ(assets.gpu_resident_sparse_operators().size(), 1u);
+    const auto* resident =
+        assets.gpu_resident_sparse_operators().find(setup.op.output);
+    ASSERT_NE(resident, nullptr);
+    EXPECT_TRUE(resident->row_offsets.valid());
+    EXPECT_TRUE(resident->col_indices.valid());
+    EXPECT_TRUE(resident->weights.valid());
+    EXPECT_TRUE(resident->vertex_mass.valid());
+    EXPECT_EQ(resident->row_count, 4u);
+    EXPECT_EQ(resident->nonzero_count, 10u);
+    const wz::gpu::GPUHandle first_weights = resident->weights;
+
+    const auto second_report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(second_report.dispatched, 1u);
+    EXPECT_EQ(assets.gpu_resident_sparse_operators().size(), 1u);
+    EXPECT_EQ(
+        assets.gpu_resident_sparse_operators().find(setup.op.output)
+            ->weights,
+        first_weights);
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualPublishesMeshFieldVisualization)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, false);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    const std::vector<float> signal{ 0.0f, 1.0f, 2.0f, 3.0f };
+    const behavior::BehaviorGpuComputeJob job =
+        make_laplacian_job(signal, setup.channel_id, true);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.published_mesh_fields, 1u);
+    for (const auto& failure : report.publish_failures) {
+        ADD_FAILURE() << failure.port_name << ": " << failure.reason;
+    }
+    // Published outputs stay GPU-resident; no CPU readback.
+    EXPECT_TRUE(report.readbacks.empty());
+    EXPECT_TRUE(
+        assets.gpu_resident_fields()
+            .find(setup.field.output, setup.channel_id)
+            .valid());
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualConstantSignalIsZeroIncludingIsolatedVertex)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, true);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    // Constant signal: connected rows cancel exactly (rows sum to 1), and
+    // the isolated vertex 3 must output 0 — not its raw signal value,
+    // which is what a kernel without the empty-row guard would produce.
+    const std::vector<float> signal(4u, 0.75f);
+    const behavior::BehaviorGpuComputeJob job =
+        make_laplacian_job(signal, setup.channel_id, false);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 1u);
+    EXPECT_EQ(report.failed, 0u);
+
+    ASSERT_EQ(report.readbacks.size(), 1u);
+    ASSERT_EQ(report.readbacks[0].bytes.size(), 4u * sizeof(float));
+    for (size_t i = 0; i < 4u; ++i) {
+        float value = 0.0f;
+        std::memcpy(
+            &value,
+            report.readbacks[0].bytes.data() + i * sizeof(float),
+            sizeof(float));
+        EXPECT_NEAR(value, 0.0f, 1.0e-6f) << "vertex " << i;
+    }
+
+    (void)behavior::release_behavior_gpu_kernel_library(
+        device,
+        setup.library);
+}
+
+TEST_F(
+    SceneComputeKernelMaterializeGpuFixture,
+    LaplacianResidualWithoutCompiledOperatorFailsWithDiagnostic)
+{
+    using namespace wz::engine::assets;
+    namespace behavior = wz::engine::behavior;
+
+    EngineAssetLibrary assets{ device, logger, root };
+    LaplacianConsumerSetup setup =
+        build_laplacian_consumer_setup(device, assets, false, false);
+    ASSERT_TRUE(setup.ok) << setup.error;
+
+    wz::engine::assets::SceneInstance instance{};
+    instance.mesh_field_visualization_targets.push_back({
+        .node = 0,
+        .component = MeshFieldVisualizationTargetComponent{
+            .field_asset = setup.field.output,
+            .channel_id = setup.channel_id,
+        },
+    });
+
+    const std::vector<float> signal(4u, 0.5f);
+    const behavior::BehaviorGpuComputeJob job =
+        make_laplacian_job(signal, setup.channel_id, false);
+    const auto report =
+        behavior::dispatch_behavior_gpu_compute_jobs(
+            device,
+            assets,
+            instance,
+            std::span<const behavior::BehaviorGpuComputeJob>{ &job, 1u },
+            setup.library);
+    EXPECT_EQ(report.dispatched, 0u);
+    EXPECT_EQ(report.failed, 1u);
+    ASSERT_FALSE(report.publish_failures.empty());
+    EXPECT_NE(
+        report.publish_failures[0].reason.find(
+            "mesh sparse operator unavailable"),
+        std::string::npos)
+        << report.publish_failures[0].reason;
 
     (void)behavior::release_behavior_gpu_kernel_library(
         device,

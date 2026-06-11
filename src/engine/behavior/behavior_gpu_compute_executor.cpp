@@ -1,6 +1,7 @@
 #include <engine/behavior/behavior_gpu_compute_executor.h>
 
 #include <engine/assets/compute_pipeline/hlsl_binding_extract.h>
+#include <engine/assets/key_factories/mesh_sparse_operator.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <gpu/mesh_field_visualization.h>
 #include <file/filesystem.h>
@@ -250,6 +251,45 @@ namespace wz::engine::behavior
             }
 
             return nullptr;
+        }
+
+        // Resolve the compiled sparse operator for the job's entity: entity
+        // -> mesh (via the visualization-target bridge) -> deterministic
+        // operator key (mesh key + kind + vertex domain). The operator must
+        // already be compiled; this path never builds one.
+        const wz::engine::assets::MeshSparseOperatorData*
+        find_entity_sparse_operator(
+            const BehaviorGpuPublishContext* context,
+            const BehaviorGpuComputeJob& job,
+            uint32_t kind_ordinal,
+            wz::asset::AssetKey* out_operator_key)
+        {
+            using namespace wz::engine::assets;
+
+            wz::asset::AssetKey mesh_key{};
+            if (!find_entity_mesh_data(context, job, &mesh_key)) {
+                return nullptr;
+            }
+
+            const MeshSparseOperatorDesc desc{
+                .source_mesh = MeshAsset{ .output = mesh_key },
+                .kind = static_cast<MeshSparseOperatorKind>(kind_ordinal),
+                .domain = MeshOperatorDomain::Vertex,
+            };
+            const wz::asset::AssetKey operator_key =
+                make_mesh_sparse_operator_key(mesh_key, desc);
+            if (out_operator_key) {
+                *out_operator_key = operator_key;
+            }
+
+            const auto handle =
+                context->assets->mesh_sparse_operators()
+                    .get_sparse_operator(
+                        MeshSparseOperatorAsset{ .output = operator_key });
+            const auto* data =
+                context->assets->mesh_sparse_operators()
+                    .get_sparse_operator_data(handle);
+            return data && data->valid() ? data : nullptr;
         }
 
         // Publish one flagged output buffer as the resident mesh field for
@@ -676,6 +716,33 @@ namespace wz::engine::behavior
                         // triangles declare WZ_GPU_DISPATCH_DOMAIN_FACE.
                         constant_port.u32[0] = mesh->index_count() / 3u;
                     }
+                    else if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO)
+                    {
+                        const auto* op = find_entity_sparse_operator(
+                            publish_context,
+                            job,
+                            port->u32[1],
+                            nullptr);
+                        if (!op) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "mesh sparse operator unavailable: "
+                                    "no compiled operator for the entity's "
+                                    "mesh (resolve the operator asset "
+                                    "first)",
+                            });
+                            ok = false;
+                            break;
+                        }
+                        constant_port.u32[0] = op->row_count;
+                        constant_port.u32[1] = op->nonzero_count;
+                        constant_port.u32[2] =
+                            static_cast<uint32_t>(op->kind);
+                        constant_port.u32[3] =
+                            static_cast<uint32_t>(op->value_convention);
+                    }
                     ok = write_root_constant(
                         constant_port,
                         binding,
@@ -825,6 +892,112 @@ namespace wz::engine::behavior
                                 resident->index_count = element_count;
                                 resident->triangle_count =
                                     element_count / 3u;
+                                transient_buffer = false;
+                            }
+                        }
+                    }
+                    else if (port->resource.value
+                        == WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR)
+                    {
+                        wz::asset::AssetKey operator_key{};
+                        const auto* op = find_entity_sparse_operator(
+                            publish_context,
+                            job,
+                            port->u32[1],
+                            &operator_key);
+                        if (!op || port->stride_bytes != 4u) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = !op
+                                    ? "mesh sparse operator unavailable: "
+                                      "no compiled operator for the "
+                                      "entity's mesh (resolve the operator "
+                                      "asset first)"
+                                    : "sparse operator port stride must be "
+                                      "4 bytes",
+                            });
+                            ok = false;
+                            break;
+                        }
+
+                        const void* initial_data = nullptr;
+                        switch (port->u32[0]) {
+                        case WZ_GPU_SPARSE_OPERATOR_ROW_OFFSETS:
+                            element_count = op->row_count + 1u;
+                            initial_data = op->row_offsets.data();
+                            break;
+                        case WZ_GPU_SPARSE_OPERATOR_COL_INDICES:
+                            element_count = op->nonzero_count;
+                            initial_data = op->col_indices.data();
+                            break;
+                        case WZ_GPU_SPARSE_OPERATOR_WEIGHTS:
+                            element_count = op->nonzero_count;
+                            initial_data = op->weights.data();
+                            break;
+                        case WZ_GPU_SPARSE_OPERATOR_VERTEX_MASS:
+                            element_count = static_cast<uint32_t>(
+                                op->vertex_mass.size());
+                            initial_data = op->vertex_mass.data();
+                            break;
+                        default:
+                            break;
+                        }
+                        if (!initial_data || element_count == 0u) {
+                            report.publish_failures.push_back({
+                                .work = job.work,
+                                .port_name = port->name,
+                                .reason = "sparse operator component "
+                                    "unavailable: unknown component or "
+                                    "operator has no data for it",
+                            });
+                            ok = false;
+                            break;
+                        }
+
+                        // CSR sizes deliberately do not feed the legacy
+                        // AUTO derivation: nnz dwarfs the iteration domain.
+                        // Consumers declare WZ_GPU_DISPATCH_DOMAIN_VERTEX.
+                        auto* resident =
+                            publish_context->assets
+                                ->gpu_resident_sparse_operators()
+                                .find_or_add(operator_key);
+                        wz::asset::ResourceHandle* slot = nullptr;
+                        if (resident) {
+                            resident->row_count = op->row_count;
+                            resident->nonzero_count = op->nonzero_count;
+                            switch (port->u32[0]) {
+                            case WZ_GPU_SPARSE_OPERATOR_ROW_OFFSETS:
+                                slot = &resident->row_offsets;
+                                break;
+                            case WZ_GPU_SPARSE_OPERATOR_COL_INDICES:
+                                slot = &resident->col_indices;
+                                break;
+                            case WZ_GPU_SPARSE_OPERATOR_WEIGHTS:
+                                slot = &resident->weights;
+                                break;
+                            case WZ_GPU_SPARSE_OPERATOR_VERTEX_MASS:
+                                slot = &resident->vertex_mass;
+                                break;
+                            }
+                        }
+
+                        if (slot && slot->valid()) {
+                            buffer = *slot;
+                            transient_buffer = false;
+                        }
+                        else {
+                            buffer = wz::gpu::create_structured_buffer(
+                                device, {
+                                .element_count = element_count,
+                                .stride_bytes = port->stride_bytes,
+                                .initial_data = initial_data,
+                                .initial_data_bytes =
+                                    static_cast<uint64_t>(element_count)
+                                    * port->stride_bytes,
+                            });
+                            if (slot && buffer.valid()) {
+                                *slot = buffer;
                                 transient_buffer = false;
                             }
                         }

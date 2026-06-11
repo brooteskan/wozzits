@@ -434,6 +434,55 @@ static inline uint8_t wz_gpu_set_u32_mesh_triangle_count(
     return 1u;
 }
 
+/*
+ * Declare a structured input the engine fills with one component of the
+ * entity mesh's compiled sparse operator (component is a
+ * WZ_GPU_SPARSE_OPERATOR_* value). The plugin uploads nothing; element
+ * counts are engine-filled and the buffers are GPU-resident across
+ * dispatches. Set port->u32[1] afterwards to select a non-default
+ * operator kind.
+ */
+static inline uint8_t wz_gpu_set_structured_input_sparse_operator(
+    WzGpuJob* job,
+    const char* name,
+    uint32_t component)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_STRUCTURED_BUFFER,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->stride_bytes = 4u;
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR;
+    port->u32[0] = component;
+    return 1u;
+}
+
+/*
+ * Declare a u32 root-constant port the engine fills with sparse-operator
+ * metadata ({row_count, nonzero_count, kind, value_convention}; the
+ * kernel binding's root_constant_dwords selects how many it receives).
+ * Lets the kernel validate it is consuming the operator it expects.
+ */
+static inline uint8_t wz_gpu_set_u32_sparse_operator_info(
+    WzGpuJob* job,
+    const char* name)
+{
+    WzGpuPortValue* port = wz_gpu_add_port(
+        job,
+        name,
+        WZ_GPU_PORT_U32,
+        WZ_GPU_PORT_INPUT);
+    if (!port) {
+        return 0u;
+    }
+    port->resource.value = WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO;
+    return 1u;
+}
+
 static inline uint8_t wz_gpu_set_u32(
     WzGpuJob* job,
     const char* name,

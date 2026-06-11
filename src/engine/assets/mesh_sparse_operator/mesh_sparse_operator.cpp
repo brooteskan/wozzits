@@ -1,12 +1,70 @@
 // src/engine/assets/mesh_sparse_operator/mesh_sparse_operator.cpp
 
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
+#include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/type_extensions.h>
 
 #include <utility>
 
 namespace wz::engine::assets
 {
+    GpuResidentSparseOperatorEntry*
+    GpuResidentSparseOperatorTable::find_or_add(
+        wz::asset::AssetKey operator_key)
+    {
+        if (operator_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (GpuResidentSparseOperatorEntry& entry : entries_) {
+            if (entry.operator_key == operator_key) {
+                return &entry;
+            }
+        }
+        entries_.push_back(GpuResidentSparseOperatorEntry{
+            .operator_key = operator_key,
+        });
+        return &entries_.back();
+    }
+
+    const GpuResidentSparseOperatorEntry*
+    GpuResidentSparseOperatorTable::find(
+        wz::asset::AssetKey operator_key) const
+    {
+        if (operator_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (const GpuResidentSparseOperatorEntry& entry : entries_) {
+            if (entry.operator_key == operator_key) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    void GpuResidentSparseOperatorTable::destroy(
+        MeshFieldComputeBackend& compute)
+    {
+        for (GpuResidentSparseOperatorEntry& entry : entries_) {
+            for (wz::asset::ResourceHandle* handle : {
+                &entry.row_offsets,
+                &entry.col_indices,
+                &entry.weights,
+                &entry.vertex_mass })
+            {
+                if (handle->valid()) {
+                    compute.release_buffer(*handle);
+                    *handle = {};
+                }
+            }
+        }
+        entries_.clear();
+    }
+
+    size_t GpuResidentSparseOperatorTable::size() const noexcept
+    {
+        return entries_.size();
+    }
+
     bool MeshSparseOperatorData::valid() const noexcept
     {
         if (source_mesh_key == wz::asset::AssetKey{}

@@ -330,6 +330,30 @@ entity, element count mismatch, ...), the failure reason is reported in the
 dispatch report's `publish_failures` and the previously resident field remains
 visible.
 
+### Laplacian residual (ABI 23)
+
+`laplacian_residual_cs.hlsl` consumes the prebuilt sparse mesh operator
+(`MeshSparseOperatorAsset`, uniform vertex Laplacian) instead of procedural
+noise — real detail derived from real mesh structure. The operator must be
+compiled for the entity's mesh (create it via
+`mesh_sparse_operators().create_sparse_operator` during scene setup); the
+plugin then binds everything with engine-resolved ports:
+
+- `wz_gpu_set_structured_input_sparse_operator(&job, "row_offsets", WZ_GPU_SPARSE_OPERATOR_ROW_OFFSETS)`
+  and likewise for `col_indices`, `weights`, and `vertex_mass`. The CSR
+  buffers are GPU-resident: uploaded once per operator, reused every
+  dispatch.
+- `wz_gpu_set_u32_sparse_operator_info(&job, "info")` fills
+  `{row_count, nonzero_count, kind, value_convention}` so the kernel can
+  validate the operator it consumes.
+- `wz_gpu_set_dispatch_domain(&job, WZ_GPU_DISPATCH_DOMAIN_VERTEX)` — the
+  apply is a per-vertex CSR traversal; the CSR arrays are much larger than
+  the iteration domain, so AUTO must not be used here.
+
+Weight convention (`NeighborWeights`): rows store neighbor weights only and
+sum to 1, so the kernel computes `residual[i] = x[i] - Σ_j w_ij x[j]` and
+outputs zero for rows with no neighbors (isolated vertices are not detail).
+
 ### Compute shader design
 
 `landscape_field_cs.hlsl` reads the engine-bound vertex positions and computes
