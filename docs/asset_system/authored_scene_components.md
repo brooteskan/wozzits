@@ -256,8 +256,9 @@ The current high-level categories are:
 |---|---|
 | Core node | `Transform`, `Visibility`, `MotionType`, `ParentLink` |
 | Exportable/render | `Renderable`, `Camera`, `Light`, `AmbientLighting`, `HDRIEnvironment`, `SkyVisual`, `SkySurface`, `AuxiliaryVisual` |
-| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `AudioListener`, `EventListener` |
-| Editor authoring drafts | `SceneImportSource`, `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `TerrainRenderStyle`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
+| Runtime relevant | `InputReceiver`, `FlyingCameraController`, `ActorMovementController`, `GroundBoundary`, `Terrain`, `Motion`, `AudioListener`, `EventListener` |
+| Behavior / compute authoring | `Behavior`, `ComputeKernel` |
+| Editor authoring drafts | `SceneImportSource`, `MeshSource`, `MeshRenderStyle`, `ScalarFieldSource`, `VectorFieldSource`, `MeshDerivedFieldSource`, `MeshWaveletAnalysis`, `MeshComputeField`, `TerrainRenderStyle`, `TerrainMeshSource`, `TerrainHeightFieldSource` |
 | Editor only | `EditorHandle` |
 
 These categories are descriptive. They do not imply a generic ECS storage model,
@@ -508,6 +509,31 @@ Behavior components answer:
 What does input do to this entity?
 ```
 
+### Behavior
+
+Runtime behavior binding metadata for event-driven modules.
+
+Fields:
+
+- `id`
+- `label`
+- `module`
+- `name`
+- `enabled`
+- `apply_in_editor`
+- `events`
+- `config`
+
+Scene JSON supports a legacy singular `behavior` object and the preferred
+`behaviors` array. Instantiation compiles event-channel names into masks, checks
+for duplicate effective binding ids, and stores runtime `BehaviorComponent`
+records in `SceneInstance::behaviors`.
+
+Behavior records are authored scene language, not standalone asset-system
+capabilities. They can cooperate with authored `ComputeKernel` records and GPU
+resource bindings, but the behavior module identity and config remain ordinary
+scene component data.
+
 ### FlyingCameraController
 
 Runtime behavior component for camera-style movement and look behavior.
@@ -670,6 +696,60 @@ The asset DAG owns source paths, mesh indices, render program choices, and rende
 policy flags. The scene keeps these records only so the editor can re-open and
 rebuild the asset graph.
 
+`MeshRenderStyle` also owns the current explicit mesh-field visualization
+selection for editor preview. Its field visualization controls are:
+
+- `field_ref`
+- `channel_id`
+- `value_min`
+- `value_max`
+- `gamma`
+
+`field_ref` is symbolic authoring data. Same-node refs may use `field:height`
+or a bare `height` id. Cross-node refs use the canonical
+`node:<node-id>/field:<field-id>` spelling. Materialization resolves the ref to
+the field asset key that the renderable should visualize; the ref remains the
+authored intent.
+
+### MeshDerivedFieldSource
+
+Editor/import authoring draft for building a builtin `MeshDerivedFieldAsset`
+from the node's materialized mesh.
+
+Fields:
+
+- `enabled`
+- `field_id`
+- `domain`
+- `channel_id`
+- `value_type`
+- `source_kind`
+- `component`
+- `normalize`
+- `constant_value`
+- `resolved_field_asset`
+
+V0 is intentionally vertex-domain and Float1-first. Supported `source_kind`
+values are `constant`, `position_gradient`, `vertex_index_gradient`, and
+`triangle_corner_count`. `PositionGradient` reads `component` (`x`, `y`, or `z`)
+from mesh positions; `TriangleCornerCount` counts how many triangle corners
+reference each vertex, producing a simple valence-like field.
+
+During materialization, an enabled record registers a builtin mesh-derived field
+through `MeshDerivedFieldAssetModule::create_builtin_field()` and stores the
+resulting key on `resolved_field_asset`. That key is materialized editor/cache
+state rather than authored JSON. A same-node `MeshRenderStyle` with field
+visualization enabled can either omit `field_ref` and use this resolved field
+directly, or set `field_ref` explicitly.
+
+This component exists for the first scene-editor mesh-field projects:
+position-gradient heatmap, constant field, vertex-index gradient, and
+triangle-corner-count field. Sparse operator sources, sparse apply chaining, and
+the general `MeshComputeField` editor panel are follow-up components.
+
+`MeshDerivedFieldSource` does not instantiate into runtime scene component
+tables.
+
 ### ScalarFieldSource
 
 Editor/import authoring draft for building a scalar-field asset.
@@ -715,6 +795,96 @@ per channel.
 Before another editor recipe consumes it, the editor materializes this draft
 into a `VectorFieldAsset` and stores that key on `asset`. `VectorFieldSource`
 does not instantiate into runtime scene component tables.
+
+### MeshWaveletAnalysis
+
+Editor/import authoring draft for building a mesh-derived field from the node's
+materialized mesh.
+
+Fields:
+
+- `enabled`
+- `function`
+- `scale_count`
+- `lambda_max_estimate`
+- `gamma`
+- `field_asset`
+
+The current function is `builtin_detail_heat_v0`. During authoring
+materialization, an enabled record is compiled through
+`MeshDerivedFieldAssetModule::create_wavelet_analysis()` and the resulting
+`MeshDerivedFieldAsset` key is stored on `field_asset`. The asset stores
+per-mesh derived channels such as detail cost; the scene component stores only
+the editor recipe needed to rebuild that asset.
+
+`field_asset` is materialized state rather than an authored JSON field.
+`MeshWaveletAnalysis` does not instantiate into runtime scene component tables.
+
+### MeshComputeField
+
+Editor/import authoring draft for compiling a project-authored compute kernel
+into a cached `MeshDerivedFieldAsset` on the node's mesh.
+
+Fields:
+
+- `enabled`
+- `kernel_id`
+- `hlsl_path`
+- `entry`
+- `target`
+- `thread_group_size`
+- `inputs`
+- `channels`
+- `params`
+- `field_asset`
+
+The `inputs` list names engine-extracted mesh buffers bound as SRVs in declared
+order: `positions`, `normals`, `uv0`, `indices`, or `vertices`. `positions` and
+`indices` are always available; `normals` and `uv0` require the source mesh to
+carry those attributes. `channels` declares the packed output field channels and
+their `MeshDerivedFieldValueType`; `params` are authored root-constant dwords
+appended after engine-filled mesh counts.
+
+During materialization, the editor registers the compute shader and
+`ComputePipelineAsset`, then compiles the mesh compute derived field through
+`MeshDerivedFieldAssetModule::create_compute_derived_field()`. The resulting
+mesh field key is stored on `field_asset`, which is materialized state rather
+than an authored JSON field.
+
+`MeshComputeField` is the scene-facing authoring route for mesh-derived compute
+fields. It does not instantiate into runtime scene component tables.
+
+### ComputeKernel
+
+Authored behavior/compute kernel metadata for scene-side GPU jobs.
+
+Fields:
+
+- `kernel_id`
+- `hlsl_path`
+- `entry`
+- `target`
+- `thread_group_size`
+- `ports`
+- `compute_shader_asset`
+- `compute_pipeline_asset`
+
+Each port declares a `name`, `kind`, `direction`, and either buffer binding
+metadata (`binding_kind`, `shader_register`, `register_space`, `stride_bytes`)
+or root-constant metadata (`root_constant_offset`,
+`root_constant_dwords`). Supported port kinds are `structured_buffer`, `u32`,
+and `f32`; buffer bindings are `srv` or `uav`.
+
+During materialization, the editor registers a compute shader and
+`ComputePipelineAsset` for the authored contract. The materialized asset keys
+are stored on `compute_shader_asset` and `compute_pipeline_asset`; they are not
+authored JSON fields. Runtime scene instantiation currently records the number
+of compute kernels but does not create a general-purpose component table for
+them.
+
+`ComputeKernel` is intentionally separate from `MeshComputeField`: a mesh
+compute field produces a cached `MeshDerivedFieldAsset`, while a compute kernel
+describes dispatchable behavior GPU work and its resource contract.
 
 ### TerrainMeshSource
 
@@ -888,6 +1058,10 @@ Examples:
   preserving the asset-system dependency path.
 - visible terrain nodes may reference a terrain surface or terrain debug
   `RenderableAsset` derived from the node's `TerrainAsset`
+- `mesh_derived_field_source`, `mesh_wavelet_analysis`, and `mesh_compute_field` materialize
+  `MeshDerivedFieldAsset` references from mesh-authored editor recipes
+- `compute_kernel` materializes compute shader and `ComputePipelineAsset`
+  references for behavior GPU jobs
 - future material, input-map, animation, or script components may reference
   asset-system resources
 

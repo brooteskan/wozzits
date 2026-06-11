@@ -9,7 +9,7 @@
 
 | Field | Value |
 |-------|-------|
-| Schema ID | `kBuiltinRenderProgramSchema` = `0xF11ECA55E7_000101` |
+| Schema ID | `kBuiltinRenderProgramSchema` = `0xF11ECA55E7_000101`; `kCustomRenderProgramSchema` = `0xF11ECA55E7_000103` |
 | Output AssetType | `kAssetTypeRenderProgram` = 1049 |
 | CPU storage | `RenderProgramTable` |
 | GPU realization | None at the asset level; the backend allocates a PSO separately |
@@ -51,6 +51,13 @@ Ten variants currently exist:
 The module registers a `kBuiltinRenderProgramSchema` node with explicit vertex
 and pixel shader dependencies and stores the compiled record in
 `RenderProgramTable`.
+
+`RenderProgramAssetModule::create_custom()` registers a
+`kCustomRenderProgramSchema` node. Custom programs carry authored render-state
+metadata directly: binding model, topology, descriptor bindings, root constants,
+blend/depth/raster state, input layout, and vertex/pixel shader dependencies.
+They still produce the same `kAssetTypeRenderProgram` and remain CPU-side
+declarations rather than backend PSOs.
 
 Renderable assets also carry a `BuiltinRenderProgram` enum directly. Each
 `create_*_renderable()` call on `RenderableAssetModule` implicitly selects the
@@ -122,6 +129,10 @@ struct RenderableAssetData {
 dependencies through `BuiltinRenderProgramDesc`. Callers typically create those
 shader assets via `ShaderAssetModule::create_shader_pair()` or equivalent shader
 registration code before creating the render program.
+
+`kCustomRenderProgramSchema` also depends on a vertex shader and pixel shader,
+but its content hash includes the authored render-state and descriptor-binding
+strings instead of a `BuiltinRenderProgram` enum.
 
 | Dependency | How required |
 |------------|--------------|

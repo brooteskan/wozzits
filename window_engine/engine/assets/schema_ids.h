@@ -201,6 +201,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000409ull
     };
 
+    // Built-in scene-authored mesh-derived scalar field recipe. Produces a
+    // MeshDerivedField from one mesh dependency without embedding payload
+    // bytes in the authored scene.
+    inline constexpr wz::asset::SchemaID kBuiltinMeshDerivedFieldSchema{
+        0xF11E'CA55'E7'00040Bull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

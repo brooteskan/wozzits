@@ -362,6 +362,19 @@ namespace wz::engine::assets
                 }
             }
 
+            if (node.mesh_derived_field_source) {
+                const auto& source = *node.mesh_derived_field_source;
+                fp.mix_value(source.enabled);
+                fp.mix_string(source.field_id);
+                fp.mix_value(source.domain);
+                fp.mix_value(source.channel_id);
+                fp.mix_value(source.value_type);
+                fp.mix_value(source.source_kind);
+                fp.mix_value(source.component);
+                fp.mix_value(source.normalize);
+                fp.mix_value(source.constant_value);
+            }
+
             if (node.mesh_render_style) {
                 const auto& style = *node.mesh_render_style;
                 mix_asset_key(fp, style.style_asset);
@@ -385,6 +398,7 @@ namespace wz::engine::assets
                 fp.mix_value(style.field_visualization_value_min);
                 fp.mix_value(style.field_visualization_value_max);
                 fp.mix_value(style.field_visualization_gamma);
+                fp.mix_string(style.field_visualization_field_ref);
                 mix_asset_key(fp, style.field_visualization_asset);
             }
 

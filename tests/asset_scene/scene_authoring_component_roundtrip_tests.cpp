@@ -1,5 +1,117 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_derived_field_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_derived_field_source_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_source": {
+        "kind": "procedural_cube"
+      },
+      "mesh_derived_field_source": {
+        "enabled": true,
+        "field_id": "height",
+        "domain": "vertex",
+        "channel_id": 8192,
+        "value_type": "float1",
+        "source_kind": "position_gradient",
+        "component": "y",
+        "normalize": true,
+        "constant_value": 0.25
+      },
+      "mesh_render_style": {
+        "field_visualization_enabled": true,
+        "field_visualization_channel_id": 8192,
+        "field_visualization_value_min": 0.0,
+        "field_visualization_value_max": 1.0,
+        "field_visualization_gamma": 0.8,
+        "field_ref": "field:height"
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_derived_field_source.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_derived_field_source",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_derived_field_source.has_value());
+    const auto& source = *node.mesh_derived_field_source;
+    EXPECT_TRUE(source.enabled);
+    EXPECT_EQ(source.field_id, "height");
+    EXPECT_EQ(source.domain, MeshDerivedFieldDomain::Vertex);
+    EXPECT_EQ(source.channel_id, 8192u);
+    EXPECT_EQ(source.value_type, MeshDerivedFieldValueType::Float1);
+    EXPECT_EQ(
+        source.source_kind,
+        SceneMeshDerivedFieldSourceKind::PositionGradient);
+    EXPECT_EQ(source.component, SceneMeshDerivedFieldComponent::Y);
+    EXPECT_TRUE(source.normalize);
+    EXPECT_FLOAT_EQ(source.constant_value, 0.25f);
+    EXPECT_EQ(source.resolved_field_asset, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(node.mesh_render_style.has_value());
+    EXPECT_EQ(
+        node.mesh_render_style->field_visualization_field_ref,
+        "field:height");
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MeshDerivedFieldSource), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_derived_field_sources, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_derived_field_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"mesh_derived_field_source\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"position_gradient\""), std::string::npos);
+    EXPECT_NE(exported.find("\"field:height\""), std::string::npos);
+    EXPECT_EQ(exported.find("\"resolved_field_asset\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshWaveletAnalysisComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

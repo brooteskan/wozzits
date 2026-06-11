@@ -81,6 +81,33 @@ namespace wz::engine::assets
         };
     }
 
+    [[nodiscard]] inline wz::asset::AssetKey
+    make_builtin_mesh_derived_field_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const BuiltinMeshDerivedFieldDesc& desc) noexcept
+    {
+        uint64_t h = kBuiltinMeshDerivedFieldSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.domain));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.channel_id));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.value_type));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.source_kind));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.component));
+        h = detail::mix64(h, desc.normalize ? 1ull : 0ull);
+        h = detail::mix64(
+            h,
+            detail_mesh_derived_field_key::float_bits(
+                desc.constant_value));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kBuiltinMeshDerivedFieldSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kMeshDerivedFieldCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(source_mesh_key),
+        };
+    }
+
     // Identity: params + output channel layout + declared mesh inputs in
     // content_hash; source mesh + compute pipeline in deps_hash, so editing
     // the kernel HLSL or swapping the mesh rebuilds the field and nothing

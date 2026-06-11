@@ -32,6 +32,8 @@ namespace wz::engine::assets
             std::unordered_map<std::string, ScalarFieldAsset>;
         using VectorFieldCache =
             std::unordered_map<std::string, VectorFieldAsset>;
+        using MeshFieldRefCache =
+            std::unordered_map<std::string, wz::asset::AssetKey>;
         using DirectLightCache =
             std::unordered_map<std::string, DirectLightAsset>;
         using AmbientLightingCache =
@@ -298,6 +300,7 @@ namespace wz::engine::assets
                         + ":gamma:"
                         + std::to_string(
                             style.field_visualization_gamma)
+                        + ":field_ref:" + style.field_visualization_field_ref
                     : ":no_field_visualization");
         }
 
@@ -348,6 +351,28 @@ namespace wz::engine::assets
                 key += ":" + std::to_string(param);
             }
             return key;
+        }
+
+        std::string mesh_derived_field_source_cache_key(
+            const SceneMeshDerivedFieldSourceAsset* source)
+        {
+            if (!source) {
+                return ":mesh_field_source_none";
+            }
+            return std::string(":mesh_field_source")
+                + (source->enabled ? ":on" : ":off")
+                + ":id:" + source->field_id
+                + ":domain:"
+                + std::to_string(static_cast<uint32_t>(source->domain))
+                + ":channel:" + std::to_string(source->channel_id)
+                + ":type:"
+                + std::to_string(static_cast<uint32_t>(source->value_type))
+                + ":kind:"
+                + std::to_string(static_cast<uint32_t>(source->source_kind))
+                + ":component:"
+                + std::to_string(static_cast<uint32_t>(source->component))
+                + (source->normalize ? ":normalized" : ":raw")
+                + ":constant:" + std::to_string(source->constant_value);
         }
 
         std::string render_shader_cache_key(
@@ -732,6 +757,160 @@ namespace wz::engine::assets
             }
 
             field.field_asset = field_asset.output;
+            return true;
+        }
+
+        BuiltinMeshDerivedFieldSourceKind builtin_source_kind_for_scene(
+            SceneMeshDerivedFieldSourceKind kind) noexcept
+        {
+            switch (kind) {
+            case SceneMeshDerivedFieldSourceKind::Constant:
+                return BuiltinMeshDerivedFieldSourceKind::Constant;
+            case SceneMeshDerivedFieldSourceKind::PositionGradient:
+                return BuiltinMeshDerivedFieldSourceKind::PositionGradient;
+            case SceneMeshDerivedFieldSourceKind::VertexIndexGradient:
+                return BuiltinMeshDerivedFieldSourceKind::VertexIndexGradient;
+            case SceneMeshDerivedFieldSourceKind::TriangleCornerCount:
+                return BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount;
+            }
+            return BuiltinMeshDerivedFieldSourceKind::PositionGradient;
+        }
+
+        BuiltinMeshDerivedFieldComponent builtin_component_for_scene(
+            SceneMeshDerivedFieldComponent component) noexcept
+        {
+            switch (component) {
+            case SceneMeshDerivedFieldComponent::X:
+                return BuiltinMeshDerivedFieldComponent::X;
+            case SceneMeshDerivedFieldComponent::Y:
+                return BuiltinMeshDerivedFieldComponent::Y;
+            case SceneMeshDerivedFieldComponent::Z:
+                return BuiltinMeshDerivedFieldComponent::Z;
+            }
+            return BuiltinMeshDerivedFieldComponent::Y;
+        }
+
+        std::string canonical_mesh_field_ref(
+            std::string_view node_id,
+            std::string_view field_id)
+        {
+            return "node:" + std::string(node_id)
+                + "/field:" + std::string(field_id);
+        }
+
+        std::string canonical_mesh_field_ref_for_node(
+            const SceneNodeAsset& node,
+            std::string_view field_ref)
+        {
+            constexpr std::string_view kNodePrefix = "node:";
+            constexpr std::string_view kFieldPrefix = "field:";
+
+            if (field_ref.starts_with(kNodePrefix)) {
+                return std::string(field_ref);
+            }
+            if (field_ref.starts_with(kFieldPrefix)) {
+                field_ref.remove_prefix(kFieldPrefix.size());
+            }
+            return canonical_mesh_field_ref(node.id, field_ref);
+        }
+
+        bool materialize_mesh_derived_field_source(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            MeshFieldRefCache& field_refs,
+            std::string& error)
+        {
+            if (!node.mesh_derived_field_source
+                || !node.mesh_derived_field_source->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshDerivedFieldSourceAsset& source =
+                *node.mesh_derived_field_source;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (source.field_id.empty()) {
+                error = "mesh derived field source missing field_id for "
+                    + node_name;
+                return false;
+            }
+            if (source.channel_id == 0u) {
+                error = "mesh derived field source has invalid channel_id for "
+                    + node_name;
+                return false;
+            }
+            if (!mesh.valid()) {
+                error = "mesh derived field source requires a mesh for "
+                    + node_name;
+                return false;
+            }
+            if (source.domain != MeshDerivedFieldDomain::Vertex) {
+                error =
+                    "mesh derived field source only supports vertex domain for "
+                    + node_name;
+                return false;
+            }
+            if (source.value_type != MeshDerivedFieldValueType::Float1) {
+                error = "mesh derived field source only supports Float1 for "
+                    + node_name;
+                return false;
+            }
+
+            const MeshDerivedFieldAsset field_asset =
+                assets.mesh_derived_fields().create_builtin_field({
+                    .name = node_name + "_field_" + source.field_id,
+                    .source_mesh = mesh,
+                    .domain = source.domain,
+                    .channel_id = source.channel_id,
+                    .value_type = source.value_type,
+                    .source_kind =
+                        builtin_source_kind_for_scene(source.source_kind),
+                    .component = builtin_component_for_scene(source.component),
+                    .normalize = source.normalize,
+                    .constant_value = source.constant_value,
+                });
+            if (!field_asset.valid()) {
+                error = "mesh derived field source asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            source.resolved_field_asset = field_asset.output;
+            field_refs[canonical_mesh_field_ref(node.id, source.field_id)] =
+                field_asset.output;
+            return true;
+        }
+
+        bool resolve_mesh_field_visualization_ref(
+            const SceneNodeAsset& node,
+            const SceneMeshRenderStyleAsset& style,
+            const MeshFieldRefCache& field_refs,
+            wz::asset::AssetKey& out,
+            std::string& error)
+        {
+            if (!style.field_visualization_enabled
+                || style.field_visualization_field_ref.empty())
+            {
+                return true;
+            }
+
+            const std::string canonical_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    style.field_visualization_field_ref);
+            const auto found = field_refs.find(canonical_ref);
+            if (found == field_refs.end()) {
+                const std::string node_name =
+                    !node.id.empty() ? node.id : node.name;
+                error = "mesh render style field_ref '"
+                    + style.field_visualization_field_ref
+                    + "' did not resolve on " + node_name;
+                return false;
+            }
+            out = found->second;
             return true;
         }
 
@@ -2177,6 +2356,7 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
             const SceneMeshProcessingAsset* processing,
+            const SceneMeshDerivedFieldSourceAsset* field_source,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             const SceneMeshComputeFieldAsset* compute_field,
             SceneRenderShaderAsset* render_shader,
@@ -2198,6 +2378,7 @@ namespace wz::engine::assets
                     style.field_visualization_enabled
                         ? wavelet_analysis
                         : nullptr)
+                + mesh_derived_field_source_cache_key(field_source)
                 + mesh_compute_field_cache_key(compute_field)
                 + render_shader_cache_key(render_shader)
                 + (has_behavior_field_source
@@ -2391,6 +2572,7 @@ namespace wz::engine::assets
         MeshCache meshes;
         ScalarFieldCache scalar_fields;
         VectorFieldCache vector_fields;
+        MeshFieldRefCache mesh_field_refs;
         DirectLightCache direct_lights;
         AmbientLightingCache ambient_lighting;
         HDRIEnvironmentCache hdri_environments;
@@ -2744,8 +2926,66 @@ namespace wz::engine::assets
             if (node.mesh_wavelet_analysis) {
                 node.mesh_wavelet_analysis->field_asset = {};
             }
+            if (node.mesh_derived_field_source) {
+                node.mesh_derived_field_source->resolved_field_asset = {};
+            }
             if (node.mesh_compute_field) {
                 node.mesh_compute_field->field_asset = {};
+            }
+
+            const bool derived_field_source =
+                node.mesh_derived_field_source
+                && node.mesh_derived_field_source->enabled;
+            if (derived_field_source) {
+                if (!mesh.valid()
+                    && !ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_derived_field_source(
+                        assets,
+                        node,
+                        mesh,
+                        mesh_field_refs,
+                        report.error))
+                {
+                    return report;
+                }
+                if (render_style.field_visualization_enabled
+                    && render_style.field_visualization_field_ref.empty()
+                    && render_style.field_visualization_asset
+                        == wz::asset::AssetKey{})
+                {
+                    render_style.field_visualization_asset =
+                        node.mesh_derived_field_source->resolved_field_asset;
+                }
+            }
+
+            if (render_style.field_visualization_enabled
+                && !render_style.field_visualization_field_ref.empty())
+            {
+                if (!resolve_mesh_field_visualization_ref(
+                        node,
+                        render_style,
+                        mesh_field_refs,
+                        render_style.field_visualization_asset,
+                        report.error))
+                {
+                    return report;
+                }
             }
 
             const bool compute_field_source =
@@ -2797,6 +3037,9 @@ namespace wz::engine::assets
                         node.mesh_processing
                             ? &*node.mesh_processing
                             : nullptr,
+                        node.mesh_derived_field_source
+                            ? &*node.mesh_derived_field_source
+                            : nullptr,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
                             : nullptr,
@@ -2826,7 +3069,8 @@ namespace wz::engine::assets
                 attach_renderable_asset(node, renderable.output);
                 if (has_authored_render_style
                     || behavior_field_source
-                    || compute_field_source)
+                    || compute_field_source
+                    || derived_field_source)
                 {
                     node.mesh_render_style = render_style;
                 }

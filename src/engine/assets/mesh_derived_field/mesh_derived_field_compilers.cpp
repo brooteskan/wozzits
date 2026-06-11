@@ -1574,6 +1574,144 @@ namespace wz::engine::assets::internal
                 && field.element_count == desc.element_count;
         }
 
+        uint32_t builtin_mesh_field_component_index(
+            BuiltinMeshDerivedFieldComponent component) noexcept
+        {
+            switch (component) {
+            case BuiltinMeshDerivedFieldComponent::X:
+                return 0u;
+            case BuiltinMeshDerivedFieldComponent::Y:
+                return 1u;
+            case BuiltinMeshDerivedFieldComponent::Z:
+                return 2u;
+            }
+            return 1u;
+        }
+
+        bool cached_builtin_field_matches_source(
+            const MeshDerivedFieldData& field,
+            const BuiltinMeshDerivedFieldDesc& desc,
+            const MeshData& source_mesh) noexcept
+        {
+            return field.valid()
+                && field.source_mesh_key == desc.source_mesh.output
+                && field.source_topology_hash
+                    == compute_mesh_topology_hash(source_mesh)
+                && field.domain == desc.domain
+                && field.element_count
+                    == mesh_domain_element_count(source_mesh, desc.domain)
+                && field.channels.size() == 1u
+                && field.channels[0].channel_id == desc.channel_id
+                && field.channels[0].value_type == desc.value_type;
+        }
+
+        std::vector<std::byte> float_channel_bytes(
+            const std::vector<float>& values)
+        {
+            std::vector<std::byte> bytes(
+                values.size() * sizeof(float),
+                std::byte{0});
+            if (!values.empty()) {
+                std::memcpy(bytes.data(), values.data(), bytes.size());
+            }
+            return bytes;
+        }
+
+        bool build_builtin_mesh_derived_field_values(
+            const BuiltinMeshDerivedFieldDesc& desc,
+            const MeshData& mesh,
+            std::vector<float>& values,
+            wz::Logger& logger)
+        {
+            if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                logger.error(
+                    "builtin mesh derived field only supports vertex domain");
+                return false;
+            }
+            if (desc.value_type != MeshDerivedFieldValueType::Float1) {
+                logger.error(
+                    "builtin mesh derived field only supports Float1");
+                return false;
+            }
+            if (desc.channel_id == 0u) {
+                logger.error(
+                    "builtin mesh derived field channel_id is invalid");
+                return false;
+            }
+
+            const uint32_t vertex_count = mesh.vertex_count();
+            values.assign(vertex_count, 0.0f);
+
+            switch (desc.source_kind) {
+            case BuiltinMeshDerivedFieldSourceKind::Constant:
+                std::fill(
+                    values.begin(),
+                    values.end(),
+                    desc.constant_value);
+                return true;
+
+            case BuiltinMeshDerivedFieldSourceKind::PositionGradient: {
+                const uint32_t component =
+                    builtin_mesh_field_component_index(desc.component);
+                float min_value = 0.0f;
+                float max_value = 0.0f;
+                if (!mesh.vertices.empty()) {
+                    min_value = mesh.vertices.front().position[component];
+                    max_value = min_value;
+                }
+                for (const MeshVertex& vertex : mesh.vertices) {
+                    const float value = vertex.position[component];
+                    min_value = (std::min)(min_value, value);
+                    max_value = (std::max)(max_value, value);
+                }
+                const float range = max_value - min_value;
+                for (uint32_t i = 0; i < vertex_count; ++i) {
+                    const float value = mesh.vertices[i].position[component];
+                    values[i] =
+                        desc.normalize && range > 0.0f
+                            ? (value - min_value) / range
+                            : value;
+                }
+                return true;
+            }
+
+            case BuiltinMeshDerivedFieldSourceKind::VertexIndexGradient:
+                for (uint32_t i = 0; i < vertex_count; ++i) {
+                    values[i] =
+                        desc.normalize
+                            ? (vertex_count > 1u
+                                ? static_cast<float>(i)
+                                    / static_cast<float>(vertex_count - 1u)
+                                : 0.0f)
+                            : static_cast<float>(i);
+                }
+                return true;
+
+            case BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount: {
+                for (const uint32_t index : mesh.indices) {
+                    if (index < vertex_count) {
+                        values[index] += 1.0f;
+                    }
+                }
+                if (desc.normalize) {
+                    float max_value = 0.0f;
+                    for (const float value : values) {
+                        max_value = (std::max)(max_value, value);
+                    }
+                    if (max_value > 0.0f) {
+                        for (float& value : values) {
+                            value /= max_value;
+                        }
+                    }
+                }
+                return true;
+            }
+            }
+
+            logger.error("builtin mesh derived field source kind is invalid");
+            return false;
+        }
+
         bool cached_wavelet_field_matches_source(
             const MeshDerivedFieldData& field,
             const MeshWaveletAnalysisDesc& desc,
@@ -1820,6 +1958,104 @@ namespace wz::engine::assets::internal
                 : compile_failed_node(input);
         }
 
+        wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<BuiltinMeshDerivedFieldDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 1u) {
+                logger.error(
+                    "mesh derived field node missing builtin source desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error(
+                    "builtin mesh derived field source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshDerivedFieldDiskCacheKey,
+                    input.key,
+                    kMeshDerivedFieldCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_builtin_field_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn(
+                    "asset disk cache ignored stale builtin mesh derived field");
+            }
+
+            std::vector<float> values;
+            if (!build_builtin_mesh_derived_field_values(
+                    *desc,
+                    *source_mesh,
+                    values,
+                    logger))
+            {
+                return compile_failed_node(input);
+            }
+
+            const ExplicitMeshDerivedFieldDesc explicit_desc{
+                .name = desc->name,
+                .source_mesh = desc->source_mesh,
+                .domain = desc->domain,
+                .element_count =
+                    mesh_domain_element_count(*source_mesh, desc->domain),
+                .channels = {
+                    MeshDerivedFieldChannelDesc{
+                        .channel_id = desc->channel_id,
+                        .value_type = desc->value_type,
+                        .values = float_channel_bytes(values),
+                    },
+                },
+            };
+
+            MeshDerivedFieldData field{};
+            if (!pack_explicit_field(
+                    input.key,
+                    explicit_desc,
+                    *source_mesh,
+                    logger,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshDerivedFieldDiskCacheKey,
+                input.key,
+                kMeshDerivedFieldCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
+
         wz::asset::AssetNode compile_mesh_wavelet_analysis_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::ResourceHandle> dep_handles,
@@ -1997,6 +2233,29 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 return compile_explicit_mesh_derived_field_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table,
+                    cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kBuiltinMeshDerivedFieldSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_builtin_mesh_derived_field_node(
                     input,
                     dep_handles,
                     logger,

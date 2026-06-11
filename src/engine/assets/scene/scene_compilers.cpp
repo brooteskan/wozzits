@@ -226,6 +226,42 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshDerivedFieldSourceKind>
+        parse_mesh_derived_field_source_kind(std::string_view text)
+        {
+            if (text == "constant") {
+                return SceneMeshDerivedFieldSourceKind::Constant;
+            }
+            if (text == "position_gradient") {
+                return SceneMeshDerivedFieldSourceKind::PositionGradient;
+            }
+            if (text == "vertex_index_gradient") {
+                return SceneMeshDerivedFieldSourceKind::VertexIndexGradient;
+            }
+            if (text == "triangle_corner_count"
+                || text == "triangle_count"
+                || text == "valence")
+            {
+                return SceneMeshDerivedFieldSourceKind::TriangleCornerCount;
+            }
+            return std::nullopt;
+        }
+
+        std::optional<SceneMeshDerivedFieldComponent>
+        parse_mesh_derived_field_component(std::string_view text)
+        {
+            if (text == "x") {
+                return SceneMeshDerivedFieldComponent::X;
+            }
+            if (text == "y") {
+                return SceneMeshDerivedFieldComponent::Y;
+            }
+            if (text == "z") {
+                return SceneMeshDerivedFieldComponent::Z;
+            }
+            return std::nullopt;
+        }
+
         std::optional<MeshComputeInput> parse_mesh_compute_input(
             std::string_view text)
         {
@@ -1683,7 +1719,127 @@ namespace wz::engine::assets::internal
                         static_cast<float>(
                             (std::max)(0.0001, *field_gamma));
                 }
+                if (auto field_ref = read_string(*mrs, "field_ref")) {
+                    style.field_visualization_field_ref =
+                        std::string(*field_ref);
+                }
+                if (auto field_ref = read_string(
+                        *mrs,
+                        "field_visualization_field_ref"))
+                {
+                    style.field_visualization_field_ref =
+                        std::string(*field_ref);
+                }
                 node.mesh_render_style = style;
+            }
+
+            const auto* mdfs =
+                find_member(node_val, "mesh_derived_field_source");
+            if (mdfs && mdfs->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshDerivedFieldSourceAsset source{};
+
+                if (auto enabled = read_bool(*mdfs, "enabled")) {
+                    source.enabled = *enabled;
+                }
+                if (auto field_id = read_string(*mdfs, "field_id")) {
+                    source.field_id = std::string(*field_id);
+                }
+                if (source.field_id.empty()) {
+                    logger.error("mesh_derived_field_source on node '"
+                        + node.id + "' has empty field_id");
+                    return std::nullopt;
+                }
+
+                if (auto source_kind = read_string(*mdfs, "source_kind")) {
+                    auto parsed_source_kind =
+                        parse_mesh_derived_field_source_kind(*source_kind);
+                    if (!parsed_source_kind) {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has unknown source_kind '"
+                            + std::string(*source_kind) + "'");
+                        return std::nullopt;
+                    }
+                    source.source_kind = *parsed_source_kind;
+                }
+                else if (auto kind = read_string(*mdfs, "kind")) {
+                    auto parsed_kind =
+                        parse_mesh_derived_field_source_kind(*kind);
+                    if (!parsed_kind) {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has unknown kind '"
+                            + std::string(*kind) + "'");
+                        return std::nullopt;
+                    }
+                    source.source_kind = *parsed_kind;
+                }
+
+                if (auto domain = read_string(*mdfs, "domain")) {
+                    if (*domain != "vertex") {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' only supports vertex domain in v0");
+                        return std::nullopt;
+                    }
+                    source.domain = MeshDerivedFieldDomain::Vertex;
+                }
+
+                if (auto channel_id = read_number(*mdfs, "channel_id")) {
+                    if (!std::isfinite(*channel_id)
+                        || *channel_id <= 0.0
+                        || *channel_id > 4294967295.0
+                        || static_cast<double>(
+                            static_cast<uint32_t>(*channel_id))
+                            != *channel_id)
+                    {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has invalid channel_id");
+                        return std::nullopt;
+                    }
+                    source.channel_id =
+                        static_cast<uint32_t>(*channel_id);
+                }
+
+                if (auto value_type = read_string(*mdfs, "value_type")) {
+                    auto parsed_value_type =
+                        parse_mesh_derived_field_value_type(*value_type);
+                    if (!parsed_value_type) {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has unknown value_type '"
+                            + std::string(*value_type) + "'");
+                        return std::nullopt;
+                    }
+                    source.value_type = *parsed_value_type;
+                }
+                if (source.value_type != MeshDerivedFieldValueType::Float1) {
+                    logger.error("mesh_derived_field_source on node '"
+                        + node.id + "' only supports float1 in v0");
+                    return std::nullopt;
+                }
+
+                if (auto component = read_string(*mdfs, "component")) {
+                    auto parsed_component =
+                        parse_mesh_derived_field_component(*component);
+                    if (!parsed_component) {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has unknown component '"
+                            + std::string(*component) + "'");
+                        return std::nullopt;
+                    }
+                    source.component = *parsed_component;
+                }
+
+                if (auto normalize = read_bool(*mdfs, "normalize")) {
+                    source.normalize = *normalize;
+                }
+                if (auto constant = read_number(*mdfs, "constant_value")) {
+                    if (!std::isfinite(*constant)) {
+                        logger.error("mesh_derived_field_source on node '"
+                            + node.id + "' has invalid constant_value");
+                        return std::nullopt;
+                    }
+                    source.constant_value = static_cast<float>(*constant);
+                }
+
+                node.mesh_derived_field_source = std::move(source);
             }
 
             const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");

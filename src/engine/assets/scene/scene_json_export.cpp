@@ -152,6 +152,36 @@ namespace wz::engine::assets
             return "builtin_detail_heat_v0";
         }
 
+        const char* mesh_derived_field_source_kind_name(
+            SceneMeshDerivedFieldSourceKind kind)
+        {
+            switch (kind) {
+            case SceneMeshDerivedFieldSourceKind::Constant:
+                return "constant";
+            case SceneMeshDerivedFieldSourceKind::PositionGradient:
+                return "position_gradient";
+            case SceneMeshDerivedFieldSourceKind::VertexIndexGradient:
+                return "vertex_index_gradient";
+            case SceneMeshDerivedFieldSourceKind::TriangleCornerCount:
+                return "triangle_corner_count";
+            }
+            return "position_gradient";
+        }
+
+        const char* mesh_derived_field_component_name(
+            SceneMeshDerivedFieldComponent component)
+        {
+            switch (component) {
+            case SceneMeshDerivedFieldComponent::X:
+                return "x";
+            case SceneMeshDerivedFieldComponent::Y:
+                return "y";
+            case SceneMeshDerivedFieldComponent::Z:
+                return "z";
+            }
+            return "y";
+        }
+
         const char* terrain_render_path_name(SceneTerrainRenderPath path)
         {
             switch (path) {
@@ -766,6 +796,10 @@ namespace wz::engine::assets
                 number_value(style.field_visualization_value_max));
             add_member(*obj, "field_visualization_gamma",
                 number_value(style.field_visualization_gamma));
+            if (!style.field_visualization_field_ref.empty()) {
+                add_member(*obj, "field_ref",
+                    string_value(style.field_visualization_field_ref));
+            }
             return obj;
         }
 
@@ -818,6 +852,29 @@ namespace wz::engine::assets
                 return "uint1";
             }
             return "float1";
+        }
+
+        JSONValuePtr mesh_derived_field_source_value(
+            const SceneMeshDerivedFieldSourceAsset& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(source.enabled));
+            add_member(*obj, "field_id", string_value(source.field_id));
+            add_member(*obj, "domain", string_value("vertex"));
+            add_member(*obj, "channel_id", number_value(source.channel_id));
+            add_member(*obj, "value_type",
+                string_value(mesh_derived_field_value_type_name(
+                    source.value_type)));
+            add_member(*obj, "source_kind",
+                string_value(mesh_derived_field_source_kind_name(
+                    source.source_kind)));
+            add_member(*obj, "component",
+                string_value(mesh_derived_field_component_name(
+                    source.component)));
+            add_member(*obj, "normalize", bool_value(source.normalize));
+            add_member(*obj, "constant_value",
+                number_value(source.constant_value));
+            return obj;
         }
 
         JSONValuePtr mesh_compute_field_value(
@@ -1438,6 +1495,11 @@ namespace wz::engine::assets
             if (node.mesh_processing) {
                 add_member(*obj, "mesh_processing",
                     mesh_processing_value(*node.mesh_processing));
+            }
+            if (node.mesh_derived_field_source) {
+                add_member(*obj, "mesh_derived_field_source",
+                    mesh_derived_field_source_value(
+                        *node.mesh_derived_field_source));
             }
             if (node.mesh_wavelet_analysis) {
                 add_member(*obj, "mesh_wavelet_analysis",

@@ -31,6 +31,37 @@ namespace wz::engine::assets
         float gamma = 1.0f;
     };
 
+    enum class BuiltinMeshDerivedFieldSourceKind : uint8_t
+    {
+        Constant = 0,
+        PositionGradient,
+        VertexIndexGradient,
+        TriangleCornerCount,
+    };
+
+    enum class BuiltinMeshDerivedFieldComponent : uint8_t
+    {
+        X = 0,
+        Y,
+        Z,
+    };
+
+    struct BuiltinMeshDerivedFieldDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Vertex;
+        uint32_t channel_id = 0x2000u;
+        MeshDerivedFieldValueType value_type =
+            MeshDerivedFieldValueType::Float1;
+        BuiltinMeshDerivedFieldSourceKind source_kind =
+            BuiltinMeshDerivedFieldSourceKind::PositionGradient;
+        BuiltinMeshDerivedFieldComponent component =
+            BuiltinMeshDerivedFieldComponent::Y;
+        bool normalize = true;
+        float constant_value = 0.5f;
+    };
+
     struct BehaviorFieldPlaceholderDesc
     {
         std::string name;
@@ -89,6 +120,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_wavelet_analysis(
             const MeshWaveletAnalysisDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_builtin_field(
+            const BuiltinMeshDerivedFieldDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldAsset create_behavior_field_placeholder(
             const BehaviorFieldPlaceholderDesc& desc);

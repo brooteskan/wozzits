@@ -53,12 +53,14 @@ into the system; other assets declare them as dependencies.
 
 ---
 
-## Shaders and Render Programs
+## Shaders, Render Programs, And Compute Pipelines
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
 | HLSL shader pair | `kHLSLShaderSchema` | `0x000100` | `AssetType::Shader` | `ShaderAssetModule::create_shader_pair()` |
 | Builtin render program | `kBuiltinRenderProgramSchema` | `0x000101` | `kAssetTypeRenderProgram` (1049) | `RenderProgramAssetModule::create_builtin()` |
+| Compute pipeline declaration | `kComputePipelineSchema` | `0x000102` | `kAssetTypeComputePipeline` (1050) | `ComputePipelineAssetModule::create_compute_pipeline()` |
+| Custom render program | `kCustomRenderProgramSchema` | `0x000103` | `kAssetTypeRenderProgram` (1049) | `RenderProgramAssetModule::create_custom()` |
 
 `ShaderPairAsset` wraps two `AssetKey` values (vertex + pixel). Resolved to
 `ShaderPairHandles` (GPU handles) via `ShaderAssetModule::get_shader_pair()`.
@@ -66,6 +68,16 @@ into the system; other assets declare them as dependencies.
 `kAssetTypeRenderProgram` is a CPU-side declaration: binding model, topology,
 render domain/policy, and shader pair reference. It does not directly own a
 backend PSO; that realization step is deferred.
+
+`kAssetTypeComputePipeline` is also CPU-side metadata: one compiled compute
+shader dependency, structured-buffer binding layout, root-constant count, and
+thread-group size. The DX12 backend realizes this into a compute PSO when a
+behavior GPU job or mesh compute field compile builds a kernel library.
+
+Dedicated docs:
+
+- [`capabilities/render_program.md`](capabilities/render_program.md)
+- [`capabilities/compute_pipeline.md`](capabilities/compute_pipeline.md)
 
 ---
 
@@ -128,6 +140,7 @@ capability.
 | Procedural cube mesh | `kProceduralCubeMeshSchema` | `0x000402` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_procedural_mesh()` with `ProceduralMeshKind::Cube` |
 | GLB static mesh import | `kGLBMeshSchema` | `0x000403` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_glb_mesh()` |
 | Placeholder mesh | `kPlaceholderMeshSchema` | `0x000404` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_placeholder_mesh()` |
+| Mesh decimation | `kMeshDecimationSchema` | `0x000405` | `kAssetTypeMesh` (130) | `MeshAssetModule::create_decimated_mesh()` |
 
 All mesh schemas produce `kAssetTypeMesh` stored in `MeshTable`.
 `MeshAssetModule::get_mesh()` → `MeshHandle`; `get_mesh_data()` → `const MeshData*`.
@@ -137,6 +150,86 @@ selects which mesh primitive inside the GLB to compile (default 0).
 When present, GLB `NORMAL` and `TEXCOORD_0` attributes are preserved on
 `MeshData` and exposed through `mesh.has_normals` / `mesh.has_uv0` so downstream
 asset compilers can choose terrain/material sources explicitly.
+
+`kMeshDecimationSchema` compiles one source mesh into another `kAssetTypeMesh`
+using the mesh processing abstraction. The descriptor can target vertex count,
+triangle count, or ratio and carries quality constraints such as boundary
+preservation, aspect ratio, edge length, valence, normal deviation, and
+Hausdorff error.
+
+---
+
+## Mesh Derived Fields And Sparse Operators
+
+`MeshDerivedFieldData` stores typed channel values over a source mesh domain.
+`MeshSparseOperatorData` stores CSR relationships between elements of a source
+mesh domain. Together they form the current mesh signal-analysis path:
+
+```text
+MeshDerivedField Float1 channel
+  + MeshSparseOperator NeighborWeights CSR
+  -> behavior GPU sparse residual apply
+  -> output MeshDerivedField channel
+```
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Explicit mesh derived field | `kMeshDerivedFieldExplicitSchema` | `0x000406` | `kAssetTypeMeshDerivedField` (154) | `MeshDerivedFieldAssetModule::create_explicit_field()` |
+| Mesh wavelet analysis field | `kMeshWaveletAnalysisSchema` | `0x000407` | `kAssetTypeMeshDerivedField` (154) | `MeshDerivedFieldAssetModule::create_wavelet_analysis()` |
+| Behavior field placeholder | `kBehaviorFieldPlaceholderSchema` | `0x000408` | `kAssetTypeMeshDerivedField` (154) | `MeshDerivedFieldAssetModule::create_behavior_field_placeholder()` |
+| Mesh compute derived field | `kMeshComputeDerivedFieldSchema` | `0x000409` | `kAssetTypeMeshDerivedField` (154) | `MeshDerivedFieldAssetModule::create_compute_derived_field()` |
+| Builtin mesh derived field | `kBuiltinMeshDerivedFieldSchema` | `0x00040B` | `kAssetTypeMeshDerivedField` (154) | `MeshDerivedFieldAssetModule::create_builtin_field()` |
+| Mesh sparse operator | `kMeshSparseOperatorSchema` | `0x00040A` | `kAssetTypeMeshSparseOperator` (157) | `MeshSparseOperatorAssetModule::create_sparse_operator()` |
+
+Mesh-derived fields support `Vertex`, `Edge`, `Face`, and `Corner` domain names
+in the data model, but the current behavior sparse-apply bridge is v0
+vertex-domain and scalar-first. `MeshDerivedFieldValueType` currently includes
+`Float1`, `Float2`, `Float3`, `Float4`, and `UInt1`; visualization and behavior
+signal input are Float1-only today.
+
+Scene-authored `MeshDerivedFieldSource` is the v0 editor bridge for the first
+mesh-to-field visualization projects. It registers builtin Float1 vertex fields
+from constant values, position gradients, vertex-index gradients, or
+triangle-corner counts, then stores the materialized key on `resolved_field_asset`.
+Mesh render styles can bind those fields explicitly with `field_ref`,
+`channel_id`, `value_min`, `value_max`, and `gamma`.
+
+The implemented sparse operator kind is `UniformVertexLaplacian` with
+`NeighborWeights` convention. Rows store neighbor weights only:
+
+```text
+smooth[i] = sum_j w_ij f[j]
+Lf[i]     = f[i] - smooth[i]
+```
+
+Rows with no neighbors are treated as zero detail by consumers. `vertex_mass`
+exists as a companion array and is all 1 for the uniform v0 operator.
+
+GPU residency tables now cover:
+
+- source mesh positions/indices (`GpuResidentMeshDataTable`)
+- Float1 mesh field visualization channels (`GpuResidentFieldTable`)
+- CSR sparse operator buffers (`GpuResidentSparseOperatorTable`)
+
+The behavior ABI exposes this path through ABI 24:
+
+- `WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR`
+- `WZ_GPU_RESOURCE_REF_MESH_SPARSE_OPERATOR_INFO`
+- `WZ_GPU_RESOURCE_REF_MESH_DERIVED_FIELD_CHANNEL`
+- `WZ_GPU_RESOURCE_REF_MESH_FIELD_VISUALIZATION`
+- helper `wz_gpu_set_structured_input_mesh_field_signal(...)`
+
+The current limitation is intentional and tracked as follow-up work: behavior
+field input and sparse-operator resolution still use the entity's
+`mesh_field_visualization_targets` bridge to discover the source mesh/field.
+That is fine for the editor visualization loop, but authored field chaining
+should eventually bind explicit input field assets independent of what is
+currently visualized.
+
+Dedicated docs:
+
+- [`capabilities/mesh_derived_field.md`](capabilities/mesh_derived_field.md)
+- [`capabilities/mesh_sparse_operator.md`](capabilities/mesh_sparse_operator.md)
 
 ---
 
@@ -151,8 +244,9 @@ not embed heightmap files, mesh import settings, or compiler recipes.
 |---|---|---|---|---|
 | Terrain from height field | `kTerrainFromHeightFieldSchema` | `0x000A00` | `kAssetTypeTerrain` (149) | `TerrainAssetModule::create_from_height_field()` |
 | Terrain from mesh | `kTerrainFromMeshSchema` | `0x000A01` | `kAssetTypeTerrain` (149) | `TerrainAssetModule::create_from_mesh()` |
+| Terrain visual proxy | `kTerrainVisualProxySchema` | `0x000A02` | `kAssetTypeTerrainVisualProxy` (153) | `TerrainVisualProxyAssetModule::create_from_terrain()` |
 
-Both schemas produce `TerrainAssetData` stored in `TerrainAssetTable`.
+The first two schemas produce `TerrainAssetData` stored in `TerrainAssetTable`.
 The height-field variant depends on a compiled `kAssetTypeScalarField`; the mesh
 variant depends on a compiled `kAssetTypeMesh`. V0 records domain bounds,
 resolution/source metadata, basic render/collision policy, and query capability
@@ -323,7 +417,7 @@ to a render program and domain, producing an entry in `RenderableAssetTable`.
 | Terrain mesh surface | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
 | Mesh styled | `kMeshStyledRenderableSchema` | `0x000705` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_mesh_styled()` |
 
-All five produce `RenderableAssetData` in `RenderableAssetTable`.
+All six produce `RenderableAssetData` in `RenderableAssetTable`.
 `RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,
 policy flags, spatial bounds, and an optional `companion_asset` key (used to attach
 a `GaussianSplatColorLOD` to a splat renderable).
@@ -422,7 +516,7 @@ general texture asset pipeline is still reserved but unimplemented.
 
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
-| CSV table | `kCSVTableSchema` | `0x000D00` | `kAssetTypeCSVTable` (150) | `CSVAssetModule::create_csv()` |
+| CSV table | `kCSVTableSchema` | `0x000D00` | `kAssetTypeCSVTable` (156) | `CSVAssetModule::create_csv()` |
 | JSON document | `kJSONDocumentSchema` | `0x000012` | `kAssetTypeJSONDocument` (151) | `JSONAssetModule::create_json()` |
 | TOML document | `kTOMLDocumentSchema` | `0x000013` | `kAssetTypeTOMLDocument` (152) | `TOMLAssetModule::create_toml()` |
 
@@ -551,19 +645,23 @@ preview state. Serialized via yyjson in `landscape_document_json.cpp`.
 | Category | Implemented capabilities |
 |----------|--------------------------|
 | File carriers | 7 |
-| Shaders / render programs | 2 |
+| Shaders / render programs / compute pipelines | 4 |
 | Scalar fields | 2 |
 | Vector fields | 1 |
-| Meshes | 5 |
-| Terrain | 2 |
+| Meshes | 6 |
+| Mesh derived fields | 5 |
+| Mesh sparse operators | 1 |
+| Terrain | 3 |
+| Collision assets | 2 |
 | Gaussian splat clouds | 5 |
 | Gaussian splat color LOD | 1 |
-| Renderables | 5 |
+| Mesh render styles | 1 |
+| Renderables | 6 |
 | Lighting / environment | 3 |
 | Scenes | 1 |
 | Parsed data documents | 3 |
 | Diagnostics / tooling data | 6 |
-| **Total** | **43** |
+| **Total** | **57** |
 
 ---
 
@@ -575,11 +673,15 @@ schema, compiler, module API, or runtime table:
 - Textures (`kAssetTypeTexture`, all general GPU texture variants). The sky path
   has a narrow OpenEXR float-image upload for visible equirectangular sky
   visuals, but that is not a reusable `TextureAsset`.
-- All GPU-resident types (`kAssetTypeGPUShader`, `kAssetTypeGPUPipeline`, etc.)
+- Graph-addressable GPU asset types (`kAssetTypeGPUShader`,
+  `kAssetTypeGPUPipeline`, etc.). Runtime GPU residency tables exist for
+  realized meshes, mesh fields, sparse operators, shaders, and pipelines, but
+  those handles are not standalone asset-system DAG nodes.
 - Material definitions, instances, graphs
 - Prefab / world / level assets beyond the implemented JSON scene asset
 - Animation clips, skeletons, blend trees
-- Physics shapes and collision meshes
+- General physics simulation shapes beyond the implemented CPU-side
+  `CollisionAsset` mesh/terrain descriptors
 - Audio clips, sound cues
 - UI layouts, font atlases
 - All gameplay data types (items, quests, dialogue, etc.)

@@ -87,6 +87,39 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    MeshDerivedFieldAsset MeshDerivedFieldAssetModule::create_builtin_field(
+        const BuiltinMeshDerivedFieldDesc& desc)
+    {
+        if (!desc.source_mesh.valid()
+            || desc.domain != MeshDerivedFieldDomain::Vertex
+            || desc.channel_id == 0u
+            || desc.value_type != MeshDerivedFieldValueType::Float1)
+        {
+            return {};
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_builtin_mesh_derived_field_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kBuiltinMeshDerivedFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.source_mesh.output }))
+        {
+            return MeshDerivedFieldAsset{ .output = field_key };
+        }
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldAsset
     MeshDerivedFieldAssetModule::create_behavior_field_placeholder(
         const BehaviorFieldPlaceholderDesc& desc)
