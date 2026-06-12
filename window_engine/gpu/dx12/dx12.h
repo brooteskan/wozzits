@@ -23,10 +23,13 @@ namespace wz::gpu::dx12
     wz::gpu::Device create_device(void* native_window);
 
     void destroy_device(wz::gpu::Device& device);
-    void resize(wz::gpu::Device& device, int w, int h);
+    wz::gpu::DeviceStatus device_status(const wz::gpu::Device& device);
+    const wz::gpu::DeviceLostInfo* device_lost_info(
+        const wz::gpu::Device& device);
+    bool resize(wz::gpu::Device& device, int w, int h);
     void wait_idle(wz::gpu::Device& device);
 
-    void begin_frame(wz::gpu::Device& device);
+    bool begin_frame(wz::gpu::Device& device);
     void clear(wz::gpu::Device& device, float r, float g, float b, float a);
 
 
@@ -143,7 +146,7 @@ namespace wz::gpu::dx12
         const ScalarFieldDebugView& view
     );
 
-    void end_frame(wz::gpu::Device& device);
-    void present(wz::gpu::Device& device);
-    void present(wz::gpu::Device& device, uint32_t sync_interval);
+    bool end_frame(wz::gpu::Device& device);
+    bool present(wz::gpu::Device& device);
+    bool present(wz::gpu::Device& device, uint32_t sync_interval);
 }

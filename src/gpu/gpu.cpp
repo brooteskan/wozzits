@@ -26,9 +26,24 @@ namespace wz::gpu
         wz::gpu::dx12::destroy_device(d);
     }
 
-    void resize(Device& d, int w, int h)
+    DeviceStatus device_status(const Device& d)
     {
-        wz::gpu::dx12::resize(d, w, h);
+        return wz::gpu::dx12::device_status(d);
+    }
+
+    const DeviceLostInfo* device_lost_info(const Device& d)
+    {
+        return wz::gpu::dx12::device_lost_info(d);
+    }
+
+    bool device_ok(const Device& d)
+    {
+        return d.valid() && device_status(d) == DeviceStatus::Ok;
+    }
+
+    bool resize(Device& d, int w, int h)
+    {
+        return wz::gpu::dx12::resize(d, w, h);
     }
 
     void wait_idle(Device& d)
@@ -36,9 +51,9 @@ namespace wz::gpu
         wz::gpu::dx12::wait_idle(d);
     }
 
-    void begin_frame(Device& d)
+    bool begin_frame(Device& d)
     {
-        wz::gpu::dx12::begin_frame(d);
+        return wz::gpu::dx12::begin_frame(d);
     }
 
     void clear(Device& d, float r, float g, float b, float a)
@@ -46,18 +61,18 @@ namespace wz::gpu
         wz::gpu::dx12::clear(d, r, g, b, a);
     }
 
-    void end_frame(Device& d)
+    bool end_frame(Device& d)
     {
-        wz::gpu::dx12::end_frame(d);
+        return wz::gpu::dx12::end_frame(d);
     }
 
-    void present(Device& d)
+    bool present(Device& d)
     {
-        wz::gpu::dx12::present(d);
+        return wz::gpu::dx12::present(d);
     }
 
-    void present(Device& d, uint32_t sync_interval)
+    bool present(Device& d, uint32_t sync_interval)
     {
-        wz::gpu::dx12::present(d, sync_interval);
+        return wz::gpu::dx12::present(d, sync_interval);
     }
 }

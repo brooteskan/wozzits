@@ -115,6 +115,7 @@ namespace wz::app
         wz::engine::behavior::BehaviorRegistry behavior_registry{};
         wz::engine::behavior::BehaviorPluginHost behavior_plugins{};
         wz::engine::behavior::BehaviorGpuKernelLibrary behavior_gpu_kernels{};
+        bool device_lost_reported = false;
     };
 
 

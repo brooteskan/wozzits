@@ -94,6 +94,7 @@ namespace wz::bench
         BenchJobRuntime jobs{};
         FrameDirtyState frame_dirty{};
         BenchFrameStorage frame{};
+        bool device_lost_reported = false;
     };
 
     // Pass ownership of the SceneDefinition at init time.

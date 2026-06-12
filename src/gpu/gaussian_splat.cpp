@@ -15,7 +15,7 @@ namespace wz::gpu
         Device& device,
         const GaussianSplatCloudUploadDesc& desc)
     {
-        if (!desc.valid())
+        if (!device_ok(device) || !desc.valid())
             return {};
 
         return dx12::internal::upload_gaussian_splat_cloud_dx12(
@@ -28,7 +28,7 @@ namespace wz::gpu
         Device& device,
         GPUHandle handle)
     {
-        if (!device.valid() || !handle.valid())
+        if (!device_ok(device) || !handle.valid())
             return false;
 
         return dx12::internal::release_gaussian_splat_cloud_dx12(

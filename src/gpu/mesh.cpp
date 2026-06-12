@@ -10,7 +10,7 @@ namespace wz::gpu
         Device& device,
         const MeshUploadDesc& desc)
     {
-        if (!desc.valid())
+        if (!device_ok(device) || !desc.valid())
             return {};
 
         return dx12::internal::upload_mesh_dx12(device, *desc.mesh);
@@ -20,7 +20,7 @@ namespace wz::gpu
         Device& device,
         GPUHandle handle)
     {
-        if (!device.valid() || !handle.valid())
+        if (!device_ok(device) || !handle.valid())
             return false;
 
         return dx12::internal::release_mesh_dx12(device, handle);

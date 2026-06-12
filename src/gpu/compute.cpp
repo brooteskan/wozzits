@@ -7,6 +7,9 @@ namespace wz::gpu
         Device& device,
         const ComputeBufferDesc& desc)
     {
+        if (!device_ok(device)) {
+            return {};
+        }
         return dx12::internal::create_structured_buffer_dx12(
             device,
             desc,
@@ -17,6 +20,9 @@ namespace wz::gpu
         Device& device,
         const ComputeBufferDesc& desc)
     {
+        if (!device_ok(device)) {
+            return {};
+        }
         return dx12::internal::create_structured_buffer_dx12(
             device,
             desc,
@@ -28,6 +34,9 @@ namespace wz::gpu
         const wz::engine::assets::ComputePipelineData& data,
         GPUHandle compute_shader)
     {
+        if (!device_ok(device)) {
+            return {};
+        }
         return dx12::internal::create_compute_pipeline_dx12(
             device,
             data,
@@ -36,21 +45,33 @@ namespace wz::gpu
 
     bool dispatch_compute(Device& device, const ComputeDispatchDesc& desc)
     {
+        if (!device_ok(device)) {
+            return false;
+        }
         return dx12::internal::dispatch_compute_dx12(device, desc);
     }
 
     std::vector<std::byte> readback_buffer(Device& device, GPUHandle buffer)
     {
+        if (!device_ok(device)) {
+            return {};
+        }
         return dx12::internal::readback_buffer_dx12(device, buffer);
     }
 
     bool release_compute_buffer(Device& device, GPUHandle handle)
     {
+        if (!device_ok(device)) {
+            return false;
+        }
         return dx12::internal::release_compute_buffer_dx12(device, handle);
     }
 
     bool release_compute_pipeline(Device& device, GPUHandle handle)
     {
+        if (!device_ok(device)) {
+            return false;
+        }
         return dx12::internal::release_compute_pipeline_dx12(device, handle);
     }
 }

@@ -100,7 +100,7 @@ namespace wz::gpu::dx12::internal
             }
 
             HRESULT hr = cmd->Close();
-            if (FAILED(hr)) {
+            if (!dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Close")) {
                 return false;
             }
 
@@ -109,7 +109,7 @@ namespace wz::gpu::dx12::internal
 
             const UINT64 fence_value = impl->fence_value;
             hr = impl->queue->Signal(impl->fence, fence_value);
-            if (FAILED(hr)) {
+            if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
                 return false;
             }
 
@@ -117,7 +117,10 @@ namespace wz::gpu::dx12::internal
                 hr = impl->fence->SetEventOnCompletion(
                     fence_value,
                     impl->fence_event);
-                if (FAILED(hr)) {
+                if (!dx12_check_hr(
+                        *impl,
+                        hr,
+                        "ID3D12Fence::SetEventOnCompletion")) {
                     return false;
                 }
                 WaitForSingleObject(impl->fence_event, INFINITE);
@@ -144,7 +147,10 @@ namespace wz::gpu::dx12::internal
             HRESULT hr = impl->device->CreateCommandAllocator(
                 D3D12_COMMAND_LIST_TYPE_DIRECT,
                 IID_PPV_ARGS(out_allocator));
-            if (FAILED(hr)) {
+            if (!dx12_check_hr(
+                    *impl,
+                    hr,
+                    "ID3D12Device::CreateCommandAllocator")) {
                 return false;
             }
 
@@ -154,7 +160,10 @@ namespace wz::gpu::dx12::internal
                 *out_allocator,
                 nullptr,
                 IID_PPV_ARGS(out_cmd));
-            if (FAILED(hr)) {
+            if (!dx12_check_hr(
+                    *impl,
+                    hr,
+                    "ID3D12Device::CreateCommandList")) {
                 (*out_allocator)->Release();
                 *out_allocator = nullptr;
                 return false;

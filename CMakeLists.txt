@@ -457,6 +457,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_gaussian_splat terrain_reconstruction)
 
     rs_add_test_group(gpu gpu_mesh)
+    rs_add_test_group(gpu device_status)
     rs_add_test_group(gpu dx12_descriptor_allocator)
     rs_add_test_group(gpu compute_dispatch)
 

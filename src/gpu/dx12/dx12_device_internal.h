@@ -118,6 +118,21 @@ namespace wz::gpu::dx12
         // toolhost via wz::gpu::set_splat_coverage_settings(); consumed
         // by the dx12 submit path when binding GaussianSplatTerrainCoverageDebug.
         wz::gpu::SplatCoverageSettings splat_coverage_settings{};
+
+        wz::gpu::DeviceStatus status = wz::gpu::DeviceStatus::Ok;
+        wz::gpu::DeviceLostInfo lost_info{};
     };
+
+    bool dx12_is_device_lost_hr(HRESULT hr) noexcept;
+    bool dx12_device_lost(const DX12Device& device) noexcept;
+    bool dx12_check_hr(DX12Device& device, HRESULT hr, const char* operation);
+    void dx12_mark_device_lost(
+        DX12Device& device,
+        HRESULT hr,
+        const char* operation);
+    wz::gpu::DeviceStatus dx12_device_status(
+        const DX12Device* device) noexcept;
+    const wz::gpu::DeviceLostInfo* dx12_device_lost_info(
+        const DX12Device* device) noexcept;
 
 }

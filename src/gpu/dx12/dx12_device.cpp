@@ -101,29 +101,6 @@ namespace
         }
     }
 
-    void report_present_failure(
-        wz::gpu::dx12::DX12Device* impl,
-        HRESULT present_result)
-    {
-        HRESULT removed_reason = S_OK;
-        if (impl && impl->device
-            && (present_result == DXGI_ERROR_DEVICE_REMOVED
-                || present_result == DXGI_ERROR_DEVICE_RESET))
-        {
-            removed_reason = impl->device->GetDeviceRemovedReason();
-        }
-
-        char msg[256]{};
-        std::snprintf(
-            msg,
-            sizeof(msg),
-            "wz::gpu::dx12::present failed hr=0x%08lx"
-            " device_removed_reason=0x%08lx\n",
-            static_cast<unsigned long>(present_result),
-            static_cast<unsigned long>(removed_reason));
-        OutputDebugStringA(msg);
-    }
-
     bool present_swapchain(
         wz::gpu::dx12::DX12Device* impl,
         uint32_t sync_interval)
@@ -131,10 +108,16 @@ namespace
         if (!impl || !impl->swapchain) {
             return false;
         }
+        if (wz::gpu::dx12::dx12_device_lost(*impl)) {
+            return false;
+        }
 
         const HRESULT hr = impl->swapchain->Present(sync_interval, 0);
         if (FAILED(hr)) {
-            report_present_failure(impl, hr);
+            wz::gpu::dx12::dx12_check_hr(
+                *impl,
+                hr,
+                "IDXGISwapChain::Present");
             return false;
         }
         return true;
@@ -329,6 +312,9 @@ namespace wz::gpu::dx12
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         assert(impl);
+        if (dx12_device_lost(*impl)) {
+            return;
+        }
         assert(impl->ctx && "render context was not created");
 
         wz::engine::render_backend::dx12::submit(
@@ -342,6 +328,10 @@ namespace wz::gpu::dx12
         const wz::render::RenderFrameView& frame,
         const wz::engine::rendering::RenderResourceResolver& resolver)
     {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || dx12_device_lost(*impl)) {
+            return;
+        }
         wz::engine::render_backend::dx12::submit(device, frame, resolver);
     }
 
@@ -351,6 +341,10 @@ namespace wz::gpu::dx12
         const wz::engine::rendering::RenderResourceResolver& resolver,
         const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
     {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || dx12_device_lost(*impl)) {
+            return;
+        }
         wz::engine::render_backend::dx12::submit(device, frame, resolver, pipeline_cache);
     }
 
@@ -361,6 +355,10 @@ namespace wz::gpu::dx12
         const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
         const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
     {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || dx12_device_lost(*impl)) {
+            return;
+        }
         wz::engine::render_backend::dx12::submit(
             device, frame, resolver, pipeline_cache, render_program_cache);
     }
@@ -373,6 +371,9 @@ namespace wz::gpu::dx12
 
         auto* impl = (DX12Device*)device.impl;
         assert(impl);
+        if (dx12_device_lost(*impl)) {
+            return;
+        }
         assert(!impl->ctx);
 
         wz::engine::render_backend::dx12::TrianglePipelineDesc pipeline_desc{
@@ -401,17 +402,26 @@ namespace wz::gpu::dx12
         assert(false && "deprecated triangle test path removed");
     }
 
-    void begin_frame(Device& d)
+    bool begin_frame(Device& d)
     {
         HRESULT hr;
         auto* impl = (DX12Device*)d.impl;
+        if (!impl || dx12_device_lost(*impl)) {
+            return false;
+        }
 
         impl->frame_index = impl->swapchain->GetCurrentBackBufferIndex();
 
         hr = impl->allocator->Reset();
+        if (!dx12_check_hr(*impl, hr, "ID3D12CommandAllocator::Reset")) {
+            return false;
+        }
         assert(SUCCEEDED(hr));
 
         hr = impl->cmd->Reset(impl->allocator, nullptr);
+        if (!dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Reset")) {
+            return false;
+        }
         assert(SUCCEEDED(hr));
         // impl->cmd->SetGraphicsRootSignature(nullptr); // harmless placeholder sanity reset
 
@@ -466,11 +476,15 @@ namespace wz::gpu::dx12
 
         impl->cmd->RSSetViewports(1, &vp);
         impl->cmd->RSSetScissorRects(1, &scissor);
+        return true;
     }
 
     void clear(Device& d, float r, float g, float b, float a)
     {
         auto* impl = (DX12Device*)d.impl;
+        if (!impl || dx12_device_lost(*impl)) {
+            return;
+        }
 
         auto handle = impl->rtv_heap->GetCPUDescriptorHandleForHeapStart();
         handle.ptr += impl->frame_index * impl->rtv_stride;
@@ -492,10 +506,13 @@ namespace wz::gpu::dx12
         }
     }
 
-    void end_frame(Device& d)
+    bool end_frame(Device& d)
     {
         HRESULT hr;
         auto* impl = (DX12Device*)d.impl;
+        if (!impl || dx12_device_lost(*impl)) {
+            return false;
+        }
 
         D3D12_RESOURCE_BARRIER barrier = {};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -506,6 +523,9 @@ namespace wz::gpu::dx12
         impl->cmd->ResourceBarrier(1, &barrier);
 
         hr = impl->cmd->Close();
+        if (!dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Close")) {
+            return false;
+        }
         assert(SUCCEEDED(hr));
 
         ID3D12CommandList* lists[] = { impl->cmd };
@@ -513,11 +533,21 @@ namespace wz::gpu::dx12
 
         // ────── wait for fences ───────────────────────────────────────────────────────
         hr = impl->queue->Signal(impl->fence, impl->fence_value);
+        if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
+            return false;
+        }
         assert(SUCCEEDED(hr));
 
         if (impl->fence->GetCompletedValue() < impl->fence_value)
         {
             hr = impl->fence->SetEventOnCompletion(impl->fence_value, impl->fence_event);
+            if (!dx12_check_hr(
+                    *impl,
+                    hr,
+                    "ID3D12Fence::SetEventOnCompletion"))
+            {
+                return false;
+            }
             assert(SUCCEEDED(hr));
 
             DWORD res = WaitForSingleObject(impl->fence_event, INFINITE);
@@ -525,18 +555,19 @@ namespace wz::gpu::dx12
         }
 
         impl->fence_value++;
+        return true;
     }
 
-    void present(Device& d)
+    bool present(Device& d)
     {
         auto* impl = (DX12Device*)d.impl;
-        (void)present_swapchain(impl, 1);
+        return present_swapchain(impl, 1);
     }
 
-    void present(Device& d, uint32_t sync_interval)
+    bool present(Device& d, uint32_t sync_interval)
     {
         auto* impl = (DX12Device*)d.impl;
-        (void)present_swapchain(impl, sync_interval);
+        return present_swapchain(impl, sync_interval);
     }
 
     namespace
@@ -545,9 +576,15 @@ namespace wz::gpu::dx12
         void wait_for_gpu(DX12Device* impl)
         {
             HRESULT hr;
+            if (!impl || dx12_device_lost(*impl)) {
+                return;
+            }
 
             // Signal GPU with current fence value
             hr = impl->queue->Signal(impl->fence, impl->fence_value);
+            if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
+                return;
+            }
             assert(SUCCEEDED(hr));
 
             // If GPU hasn't reached this fence value yet → wait
@@ -557,6 +594,13 @@ namespace wz::gpu::dx12
                     impl->fence_value,
                     impl->fence_event
                 );
+                if (!dx12_check_hr(
+                        *impl,
+                        hr,
+                        "ID3D12Fence::SetEventOnCompletion"))
+                {
+                    return;
+                }
                 assert(SUCCEEDED(hr));
 
                 DWORD res = WaitForSingleObject(
@@ -578,6 +622,8 @@ namespace wz::gpu::dx12
         auto* impl = static_cast<DX12Device*>(d.impl);
         if (!impl || !impl->queue || !impl->fence || !impl->fence_event)
             return;
+        if (dx12_device_lost(*impl))
+            return;
 
         wait_for_gpu(impl);
     }
@@ -587,7 +633,9 @@ namespace wz::gpu::dx12
         auto* impl = (DX12Device*)d.impl;
         if (!impl) return;
 
-        wait_for_gpu(impl);
+        if (!dx12_device_lost(*impl)) {
+            wait_for_gpu(impl);
+        }
 
         // 1. Destroy renderer/backend context first.
         if (impl->ctx)
@@ -717,11 +765,13 @@ namespace wz::gpu::dx12
 
     // ────── resize ───────────────────────────────────────────────────────
 
-    void resize(Device& d, int w, int h)
+    bool resize(Device& d, int w, int h)
     {
         auto* impl = (DX12Device*)d.impl;
         if (!impl || !impl->swapchain)
-            return;
+            return false;
+        if (dx12_device_lost(*impl))
+            return false;
 
         impl->width = w;
         impl->height = h;
@@ -748,6 +798,9 @@ namespace wz::gpu::dx12
             BACKBUFFER_FORMAT,// attention: hardcoded format
             0
         );
+        if (!dx12_check_hr(*impl, hr, "IDXGISwapChain::ResizeBuffers")) {
+            return false;
+        }
         assert(SUCCEEDED(hr));
 
         // 4. reacquire backbuffers
@@ -756,6 +809,9 @@ namespace wz::gpu::dx12
         for (UINT i = 0; i < 2; ++i)
         {
             hr = impl->swapchain->GetBuffer(i, IID_PPV_ARGS(&impl->backbuffers[i]));
+            if (!dx12_check_hr(*impl, hr, "IDXGISwapChain::GetBuffer")) {
+                return false;
+            }
             assert(SUCCEEDED(hr));
 
             impl->device->CreateRenderTargetView(
@@ -774,6 +830,19 @@ namespace wz::gpu::dx12
 
         // 5. recreate depth buffer at the new size
         create_depth_resources(impl, static_cast<UINT>(w), static_cast<UINT>(h));
+        return !dx12_device_lost(*impl);
+    }
+
+    wz::gpu::DeviceStatus device_status(const wz::gpu::Device& device)
+    {
+        return dx12_device_status(static_cast<const DX12Device*>(device.impl));
+    }
+
+    const wz::gpu::DeviceLostInfo* device_lost_info(
+        const wz::gpu::Device& device)
+    {
+        return dx12_device_lost_info(
+            static_cast<const DX12Device*>(device.impl));
     }
 
 

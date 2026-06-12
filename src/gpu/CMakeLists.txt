@@ -11,6 +11,7 @@ target_sources(window_engine PRIVATE
     gpu_resource_lifecycle.cpp
 
     dx12/dx12_device.cpp
+    dx12/dx12_device_status.cpp
     dx12/dx12_shader.cpp
     dx12/dx12_internal.cpp
     dx12/dx12_pipeline_factory.cpp

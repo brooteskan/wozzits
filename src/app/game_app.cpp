@@ -72,10 +72,29 @@ namespace wz::app
 
         constexpr uint32_t kDefaultDebugSceneModeIndex = 1;
 
+        void report_device_lost_once(wz::app::GameApp& app)
+        {
+            if (app.device_lost_reported
+                || wz::gpu::device_status(app.ctx.device) != wz::gpu::DeviceStatus::Lost)
+                return;
+
+            const wz::gpu::DeviceLostInfo* info =
+                wz::gpu::device_lost_info(app.ctx.device);
+
+            app.ctx.logger.critical(
+                (info && !info->message.empty())
+                    ? info->message
+                    : "GPU device lost; restart required.");
+
+            app.device_lost_reported = true;
+            wz::engine::shutdown();
+        }
+
         struct PlatformEventsJobData
         {
             wz::engine::Context* ctx = nullptr;
             wz::engine::AppContext* app_ctx = nullptr;
+            wz::app::GameApp* app = nullptr;
         };
 
         struct ShutdownInputJobData
@@ -1099,11 +1118,14 @@ namespace wz::app
                 case PlatformEvent::Type::Resize:
                     if (event.resize.width > 0 && event.resize.height > 0)
                     {
-                        wz::gpu::resize(
-                            data->app_ctx->device,
-                            event.resize.width,
-                            event.resize.height
-                        );
+                        if (!wz::gpu::resize(
+                                data->app_ctx->device,
+                                event.resize.width,
+                                event.resize.height)
+                            && data->app)
+                        {
+                            report_device_lost_once(*data->app);
+                        }
                     }
                     break;
 
@@ -1370,6 +1392,7 @@ namespace wz::app
         PlatformEventsJobData platform_events_data{
             .ctx = &ctx,
             .app_ctx = &app.ctx,
+            .app = &app,
         };
 
         ShutdownInputJobData shutdown_input_data{
@@ -1482,13 +1505,22 @@ namespace wz::app
         GameApp& app,
         const wz::engine::FrameContext& fctx)
     {
-        wz::gpu::begin_frame(app.ctx.device);
+        if (!wz::gpu::begin_frame(app.ctx.device))
+        {
+            report_device_lost_once(app);
+            return;
+        }
         wz::gpu::clear(app.ctx.device, 0.0f, 0.15f, 0.35f, 1.0f);
 
         render_contents(app, fctx);
 
-        wz::gpu::end_frame(app.ctx.device);
-        wz::gpu::present(app.ctx.device);
+        if (!wz::gpu::end_frame(app.ctx.device))
+        {
+            report_device_lost_once(app);
+            return;
+        }
+        if (!wz::gpu::present(app.ctx.device))
+            report_device_lost_once(app);
     }
 
     GameAppBenchmarkSnapshot benchmark_snapshot(

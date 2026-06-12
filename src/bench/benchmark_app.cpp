@@ -28,6 +28,24 @@ namespace wz::bench
     {
         constexpr uint64_t kProfileLogEveryNFrames = 120;
 
+        void report_device_lost_once(BenchmarkApp& app)
+        {
+            if (app.device_lost_reported
+                || wz::gpu::device_status(app.ctx.device) != wz::gpu::DeviceStatus::Lost)
+                return;
+
+            const wz::gpu::DeviceLostInfo* info =
+                wz::gpu::device_lost_info(app.ctx.device);
+
+            app.ctx.logger.critical(
+                (info && !info->message.empty())
+                    ? info->message
+                    : "GPU device lost; restart required.");
+
+            app.device_lost_reported = true;
+            wz::engine::shutdown();
+        }
+
         // ─── Per-frame data forwarded into each job via JobContext ────────────────
 
         struct FrameData
@@ -196,7 +214,15 @@ namespace wz::bench
                     break;
                 case PlatformEvent::Type::Resize:
                     if (event.resize.width > 0 && event.resize.height > 0)
-                        wz::gpu::resize(d->app->ctx.device, event.resize.width, event.resize.height);
+                    {
+                        if (!wz::gpu::resize(
+                                d->app->ctx.device,
+                                event.resize.width,
+                                event.resize.height))
+                        {
+                            report_device_lost_once(*d->app);
+                        }
+                    }
                     break;
                 default:
                     break;
@@ -528,11 +554,20 @@ namespace wz::bench
 
     void render(BenchmarkApp& app, const wz::engine::FrameContext& fctx)
     {
-        wz::gpu::begin_frame(app.ctx.device);
+        if (!wz::gpu::begin_frame(app.ctx.device))
+        {
+            report_device_lost_once(app);
+            return;
+        }
         wz::gpu::clear(app.ctx.device, 0.05f, 0.05f, 0.1f, 1.0f);
         render_contents(app, fctx);
-        wz::gpu::end_frame(app.ctx.device);
-        wz::gpu::present(app.ctx.device);
+        if (!wz::gpu::end_frame(app.ctx.device))
+        {
+            report_device_lost_once(app);
+            return;
+        }
+        if (!wz::gpu::present(app.ctx.device))
+            report_device_lost_once(app);
     }
 
     void shutdown(BenchmarkApp& app)

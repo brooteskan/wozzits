@@ -13,7 +13,7 @@ namespace wz::gpu
 {
     bool release_gpu_resource(Device& device, GPUHandle handle)
     {
-        if (!device.valid() || !handle.valid())
+        if (!device_ok(device) || !handle.valid())
             return false;
 
         switch (handle.type) {

@@ -196,7 +196,7 @@ namespace wz::gpu
         Device& device,
         const MeshFieldVisualizationUploadDesc& desc)
     {
-        if (!device.valid() || !desc.valid()) {
+        if (!device_ok(device) || !desc.valid()) {
             return {};
         }
 
@@ -281,7 +281,7 @@ namespace wz::gpu
         uint32_t element_count,
         uint32_t stride_bytes)
     {
-        if (!device.valid()
+        if (!device_ok(device)
             || !source_buffer.valid()
             || element_count == 0u
             || stride_bytes == 0u)
@@ -306,7 +306,7 @@ namespace wz::gpu
         uint32_t element_count,
         uint32_t stride_bytes)
     {
-        if (!device.valid()
+        if (!device_ok(device)
             || !destination.valid()
             || !source_buffer.valid()
             || element_count == 0u
@@ -329,7 +329,7 @@ namespace wz::gpu
         Device& device,
         GPUHandle handle)
     {
-        if (!device.valid() || !handle.valid()) {
+        if (!device_ok(device) || !handle.valid()) {
             return false;
         }
 

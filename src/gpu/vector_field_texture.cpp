@@ -10,7 +10,7 @@ namespace wz::gpu
         Device& device,
         const wz::engine::assets::VectorFieldData& field)
     {
-        if (!device.valid())
+        if (!device_ok(device))
             return INVALID_GPU_HANDLE;
 
         if (!field.valid())
