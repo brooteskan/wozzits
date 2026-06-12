@@ -2183,6 +2183,11 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)
         .epoch = 1u,
         .type = wz::gpu::kGPUMeshFieldBufferResourceType,
     };
+    const wz::gpu::GPUHandle raw_face{
+        .id = 13u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
 
     GpuResidentFieldTable table{};
     EXPECT_FALSE(table.add({}));
@@ -2207,6 +2212,23 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)
     EXPECT_EQ(
         table.find(field_key, MeshWaveletChannelID::kDetailCost),
         handle);
+
+    EXPECT_TRUE(table.add(GpuResidentFieldEntry{
+        .field_key = field_key,
+        .channel_id = MeshWaveletChannelID::kDetailCost,
+        .layout = GpuResidentFieldLayout::FaceRaw,
+        .gpu_resource = raw_face,
+    }));
+    EXPECT_EQ(table.size(), 2u);
+    EXPECT_EQ(
+        table.find(field_key, MeshWaveletChannelID::kDetailCost),
+        handle);
+    EXPECT_EQ(
+        table.find(
+            field_key,
+            MeshWaveletChannelID::kDetailCost,
+            GpuResidentFieldLayout::FaceRaw),
+        raw_face);
 
     table.clear();
     EXPECT_EQ(table.size(), 0u);

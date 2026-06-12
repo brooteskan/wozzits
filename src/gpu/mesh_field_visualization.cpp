@@ -11,22 +11,19 @@ namespace wz::gpu
     namespace
     {
         const wz::engine::assets::MeshDerivedFieldChannel*
-        find_visualization_channel(
-            const MeshFieldVisualizationUploadDesc& desc) noexcept
+        find_field_channel(
+            const wz::engine::assets::MeshDerivedFieldData& field,
+            uint32_t channel_id) noexcept
         {
-            if (!desc.field) {
-                return nullptr;
-            }
-
             const auto found = std::find_if(
-                desc.field->channels.begin(),
-                desc.field->channels.end(),
+                field.channels.begin(),
+                field.channels.end(),
                 [&](const wz::engine::assets::MeshDerivedFieldChannel& channel)
                 {
-                    return channel.channel_id == desc.channel_id;
+                    return channel.channel_id == channel_id;
                 });
 
-            if (found == desc.field->channels.end()
+            if (found == field.channels.end()
                 || (found->value_type
                         != wz::engine::assets::MeshDerivedFieldValueType::Float1
                     && found->value_type
@@ -35,6 +32,15 @@ namespace wz::gpu
                 return nullptr;
             }
             return &*found;
+        }
+
+        const wz::engine::assets::MeshDerivedFieldChannel*
+        find_visualization_channel(
+            const MeshFieldVisualizationUploadDesc& desc) noexcept
+        {
+            return desc.field
+                ? find_field_channel(*desc.field, desc.channel_id)
+                : nullptr;
         }
 
         float read_channel_value_as_float(
@@ -192,6 +198,50 @@ namespace wz::gpu
             : 0u;
     }
 
+    bool MeshFieldRawFaceUploadDesc::valid() const noexcept
+    {
+        if (!mesh
+            || !mesh->valid()
+            || !field
+            || !field->valid()
+            || !channel_ids
+            || channel_count == 0u
+            || field->domain
+                != wz::engine::assets::MeshDerivedFieldDomain::Face
+            || field->element_count != mesh->index_count() / 3u)
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < channel_count; ++i) {
+            const auto* channel = find_field_channel(*field, channel_ids[i]);
+            if (!channel || !channel_bytes_are_valid(*field, *channel)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    uint32_t MeshFieldRawFaceUploadDesc::face_count() const noexcept
+    {
+        return valid() && field ? field->element_count : 0u;
+    }
+
+    uint32_t MeshFieldRawFaceUploadDesc::element_count() const noexcept
+    {
+        return valid() && field
+            ? field->element_count * channel_count
+            : 0u;
+    }
+
+    uint32_t MeshFieldRawFaceUploadDesc::stride_bytes() const noexcept
+    {
+        return valid()
+            ? wz::engine::assets::mesh_derived_field_value_stride(
+                wz::engine::assets::MeshDerivedFieldValueType::Float1)
+            : 0u;
+    }
+
     GPUHandle upload_mesh_field_visualization(
         Device& device,
         const MeshFieldVisualizationUploadDesc& desc)
@@ -272,6 +322,70 @@ namespace wz::gpu
         return dx12::internal::upload_mesh_field_visualization_dx12(
             device,
             desc);
+    }
+
+    GPUHandle upload_mesh_field_visualization_values(
+        Device& device,
+        const std::byte* values,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        if (!device_ok(device)
+            || !values
+            || value_byte_count == 0u
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return {};
+        }
+
+        return dx12::internal::upload_mesh_field_visualization_values_dx12(
+            device,
+            values,
+            value_byte_count,
+            element_count,
+            stride_bytes);
+    }
+
+    GPUHandle upload_mesh_field_raw_faces(
+        Device& device,
+        const MeshFieldRawFaceUploadDesc& desc)
+    {
+        if (!device_ok(device) || !desc.valid()) {
+            return {};
+        }
+
+        std::vector<float> packed(
+            static_cast<size_t>(desc.field->element_count)
+            * static_cast<size_t>(desc.channel_count),
+            0.0f);
+        for (uint32_t channel_index = 0u;
+             channel_index < desc.channel_count;
+             ++channel_index)
+        {
+            const auto* channel =
+                find_field_channel(*desc.field, desc.channel_ids[channel_index]);
+            if (!channel || !channel_bytes_are_valid(*desc.field, *channel)) {
+                return {};
+            }
+
+            const size_t base =
+                static_cast<size_t>(channel_index)
+                * static_cast<size_t>(desc.field->element_count);
+            for (uint32_t face = 0u; face < desc.field->element_count; ++face)
+            {
+                packed[base + face] =
+                    read_channel_value_as_float(*desc.field, *channel, face);
+            }
+        }
+
+        return upload_mesh_field_visualization_values(
+            device,
+            reinterpret_cast<const std::byte*>(packed.data()),
+            static_cast<uint64_t>(packed.size() * sizeof(float)),
+            static_cast<uint32_t>(packed.size()),
+            sizeof(float));
     }
 
     GPUHandle create_mesh_field_visualization_from_gpu_source(

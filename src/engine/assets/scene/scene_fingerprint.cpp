@@ -424,6 +424,27 @@ namespace wz::engine::assets
                 fp.mix_value(style.field_visualization_palette);
                 fp.mix_string(style.field_visualization_field_ref);
                 mix_asset_key(fp, style.field_visualization_asset);
+                fp.mix_value(style.mask.enabled);
+                fp.mix_value(style.mask.domain);
+                fp.mix_value(style.mask.projection_mode);
+                fp.mix_value(style.mask.overlap_mode);
+                for (float channel : style.mask.unmatched_color) {
+                    fp.mix_value(channel);
+                }
+                fp.mix_value(style.mask.show_unmatched);
+                fp.mix_value(style.mask.rules.size());
+                for (const MeshMaskRule& rule : style.mask.rules) {
+                    fp.mix_value(rule.enabled);
+                    fp.mix_value(rule.input_channel_id);
+                    fp.mix_value(rule.lo);
+                    fp.mix_value(rule.hi);
+                    for (float channel : rule.color) {
+                        fp.mix_value(channel);
+                    }
+                    fp.mix_value(rule.priority);
+                }
+                fp.mix_string(style.mask_source_field_ref);
+                mix_asset_key(fp, style.mask_source_field_asset);
             }
 
             if (node.scalar_field_source) {

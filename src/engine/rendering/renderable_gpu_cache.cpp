@@ -16,6 +16,7 @@
 #include <engine/assets/vector_field_asset_module.h>
 
 #include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -33,6 +34,51 @@ namespace
         return find_entry(entries, [&](const auto& entry) {
             return entry.terrain_asset == terrain_asset;
         });
+    }
+
+    uint32_t mesh_mask_channel_set_id(
+        const wz::engine::assets::MeshMaskRenderStyleData& mask)
+    {
+        std::vector<uint32_t> channels;
+        channels.reserve(mask.rules.size());
+        for (const wz::engine::assets::MeshMaskRule& rule : mask.rules) {
+            if (rule.enabled && rule.input_channel_id != 0u) {
+                channels.push_back(rule.input_channel_id);
+            }
+        }
+        std::sort(channels.begin(), channels.end());
+        channels.erase(
+            std::unique(channels.begin(), channels.end()),
+            channels.end());
+        if (channels.empty()) {
+            return 0u;
+        }
+
+        uint32_t hash = 2166136261u;
+        for (uint32_t channel : channels) {
+            for (uint32_t i = 0u; i < 4u; ++i) {
+                hash ^= static_cast<uint8_t>((channel >> (i * 8u)) & 0xffu);
+                hash *= 16777619u;
+            }
+        }
+        return hash == 0u ? 1u : hash;
+    }
+
+    std::vector<uint32_t> mesh_mask_channel_ids(
+        const wz::engine::assets::MeshMaskRenderStyleData& mask)
+    {
+        std::vector<uint32_t> channels;
+        channels.reserve(mask.rules.size());
+        for (const wz::engine::assets::MeshMaskRule& rule : mask.rules) {
+            if (rule.enabled && rule.input_channel_id != 0u) {
+                channels.push_back(rule.input_channel_id);
+            }
+        }
+        std::sort(channels.begin(), channels.end());
+        channels.erase(
+            std::unique(channels.begin(), channels.end()),
+            channels.end());
+        return channels;
     }
 }
 
@@ -283,8 +329,22 @@ namespace wz::engine::rendering
             if (!(renderable.mesh_field_visualization_asset
                     == wz::asset::AssetKey{}))
             {
-                const uint32_t channel_id =
-                    renderable.mesh_style.field_visualization.channel_id;
+                const bool wants_mask =
+                    renderable.program
+                        == wz::engine::assets::BuiltinRenderProgram::
+                            MeshMaskStyle
+                    && renderable.mesh_style.mask.enabled;
+                const uint32_t channel_id = wants_mask
+                    ? mesh_mask_channel_set_id(renderable.mesh_style.mask)
+                    : renderable.mesh_style.field_visualization.channel_id;
+                const wz::engine::assets::GpuResidentFieldLayout layout =
+                    wants_mask
+                        ? wz::engine::assets::GpuResidentFieldLayout::FaceRaw
+                        : wz::engine::assets::GpuResidentFieldLayout::
+                            VertexProjected;
+                if (channel_id == 0u) {
+                    return out;
+                }
                 // The GPU-resident field table is the single owner of mesh
                 // field visualization resources. Behavior compute refreshes
                 // resident entries in place, so renderables must bind the
@@ -293,7 +353,8 @@ namespace wz::engine::rendering
                 if (const wz::gpu::GPUHandle resident_field =
                         assets.gpu_resident_fields().find(
                             renderable.mesh_field_visualization_asset,
-                            channel_id);
+                            channel_id,
+                            layout);
                     resident_field.valid())
                 {
                     out.mesh_field_visualization_resource = resident_field;
@@ -314,14 +375,29 @@ namespace wz::engine::rendering
                     if (!field_data || !field_data->valid())
                         return {};
 
-                    const wz::gpu::GPUHandle gpu_field =
-                        wz::gpu::upload_mesh_field_visualization(
+                    wz::gpu::GPUHandle gpu_field{};
+                    if (wants_mask) {
+                        const std::vector<uint32_t> channels =
+                            mesh_mask_channel_ids(renderable.mesh_style.mask);
+                        gpu_field = wz::gpu::upload_mesh_field_raw_faces(
+                            device,
+                            wz::gpu::MeshFieldRawFaceUploadDesc{
+                                .mesh = mesh_data,
+                                .field = field_data,
+                                .channel_ids = channels.data(),
+                                .channel_count =
+                                    static_cast<uint32_t>(channels.size()),
+                            });
+                    }
+                    else {
+                        gpu_field = wz::gpu::upload_mesh_field_visualization(
                             device,
                             wz::gpu::MeshFieldVisualizationUploadDesc{
                                 .mesh = mesh_data,
                                 .field = field_data,
                                 .channel_id = channel_id,
                             });
+                    }
                     if (!gpu_field.valid())
                         return {};
 
@@ -330,6 +406,7 @@ namespace wz::engine::rendering
                                 .field_key =
                                     renderable.mesh_field_visualization_asset,
                                 .channel_id = channel_id,
+                                .layout = layout,
                                 .gpu_resource = gpu_field,
                             }))
                     {

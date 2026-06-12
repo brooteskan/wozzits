@@ -273,22 +273,19 @@ namespace wz::gpu::dx12::internal
         slots_.emplace_back();
     }
 
-    GPUHandle upload_mesh_field_visualization_dx12(
+    GPUHandle upload_mesh_field_visualization_values_dx12(
         Device& device,
-        const wz::gpu::MeshFieldVisualizationUploadDesc& desc)
+        const std::byte* value_bytes,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes)
     {
         auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
         assert(impl);
 
-        if (!impl || !impl->device || !desc.valid()) {
-            return {};
-        }
-
-        const std::byte* value_bytes = desc.values_begin();
-        const uint64_t value_byte_count = desc.value_byte_count();
-        const uint32_t element_count = desc.element_count();
-        const uint32_t stride_bytes = desc.stride_bytes();
-        if (!value_bytes
+        if (!impl
+            || !impl->device
+            || !value_bytes
             || value_byte_count == 0u
             || element_count == 0u
             || stride_bytes == 0u)
@@ -377,6 +374,21 @@ namespace wz::gpu::dx12::internal
             resource.stride_bytes);
 
         return impl->mesh_field_visualizations.add(resource);
+    }
+
+    GPUHandle upload_mesh_field_visualization_dx12(
+        Device& device,
+        const wz::gpu::MeshFieldVisualizationUploadDesc& desc)
+    {
+        if (!desc.valid()) {
+            return {};
+        }
+        return upload_mesh_field_visualization_values_dx12(
+            device,
+            desc.values_begin(),
+            desc.value_byte_count(),
+            desc.element_count(),
+            desc.stride_bytes());
     }
 
     GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(

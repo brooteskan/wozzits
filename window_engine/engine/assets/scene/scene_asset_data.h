@@ -354,6 +354,9 @@ namespace wz::engine::assets
             MeshFieldVisualizationPalette::Heat;
         std::string field_visualization_field_ref;
         wz::asset::AssetKey field_visualization_asset{};
+        MeshMaskRenderStyleData mask{};
+        std::string mask_source_field_ref;
+        wz::asset::AssetKey mask_source_field_asset{};
     };
 
     enum class SceneMeshDerivedFieldSourceKind : uint8_t

@@ -25,9 +25,33 @@ namespace wz::gpu
         uint32_t stride_bytes() const noexcept;
     };
 
+    struct MeshFieldRawFaceUploadDesc
+    {
+        const wz::engine::assets::MeshData* mesh = nullptr;
+        const wz::engine::assets::MeshDerivedFieldData* field = nullptr;
+        const uint32_t* channel_ids = nullptr;
+        uint32_t channel_count = 0;
+
+        bool valid() const noexcept;
+        uint32_t face_count() const noexcept;
+        uint32_t element_count() const noexcept;
+        uint32_t stride_bytes() const noexcept;
+    };
+
     [[nodiscard]] GPUHandle upload_mesh_field_visualization(
         Device& device,
         const MeshFieldVisualizationUploadDesc& desc);
+
+    [[nodiscard]] GPUHandle upload_mesh_field_visualization_values(
+        Device& device,
+        const std::byte* values,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes);
+
+    [[nodiscard]] GPUHandle upload_mesh_field_raw_faces(
+        Device& device,
+        const MeshFieldRawFaceUploadDesc& desc);
 
     [[nodiscard]] GPUHandle create_mesh_field_visualization_from_gpu_source(
         Device& device,

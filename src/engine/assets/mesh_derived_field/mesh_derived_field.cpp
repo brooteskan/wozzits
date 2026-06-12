@@ -267,7 +267,8 @@ namespace wz::engine::assets
 
         for (GpuResidentFieldEntry& existing : entries_) {
             if (existing.field_key == entry.field_key
-                && existing.channel_id == entry.channel_id)
+                && existing.channel_id == entry.channel_id
+                && existing.layout == entry.layout)
             {
                 return false;
             }
@@ -287,7 +288,8 @@ namespace wz::engine::assets
 
         for (GpuResidentFieldEntry& existing : entries_) {
             if (existing.field_key == entry.field_key
-                && existing.channel_id == entry.channel_id)
+                && existing.channel_id == entry.channel_id
+                && existing.layout == entry.layout)
             {
                 if (existing.gpu_resource.valid()) {
                     compute.release_field_visualization(
@@ -304,7 +306,8 @@ namespace wz::engine::assets
 
     wz::asset::ResourceHandle GpuResidentFieldTable::find(
         wz::asset::AssetKey field_key,
-        uint32_t channel_id) const
+        uint32_t channel_id,
+        GpuResidentFieldLayout layout) const
     {
         if (field_key == wz::asset::AssetKey{} || channel_id == 0u) {
             return {};
@@ -313,6 +316,7 @@ namespace wz::engine::assets
         for (const GpuResidentFieldEntry& entry : entries_) {
             if (entry.field_key == field_key
                 && entry.channel_id == channel_id
+                && entry.layout == layout
                 && entry.gpu_resource.valid())
             {
                 return entry.gpu_resource;

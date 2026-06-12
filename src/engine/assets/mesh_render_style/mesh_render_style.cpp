@@ -41,6 +41,49 @@ namespace wz::engine::assets
             && gamma > 0.0f;
     }
 
+    bool MeshMaskRule::valid() const noexcept
+    {
+        if (!enabled) {
+            return true;
+        }
+        if (input_channel_id == 0u
+            || !std::isfinite(lo)
+            || !std::isfinite(hi))
+        {
+            return false;
+        }
+        for (float channel : color) {
+            if (!std::isfinite(channel)) {
+                return false;
+            }
+        }
+        return lo <= hi;
+    }
+
+    bool MeshMaskRenderStyleData::valid() const noexcept
+    {
+        if (!enabled) {
+            return true;
+        }
+        if (domain != MeshMaskDomain::Face
+            || projection_mode != MeshMaskProjectionMode::Direct
+            || (overlap_mode != MeshMaskOverlapMode::Priority
+                && overlap_mode != MeshMaskOverlapMode::AlphaBlend)
+            || rules.empty())
+        {
+            return false;
+        }
+        for (float channel : unmatched_color) {
+            if (!std::isfinite(channel)) {
+                return false;
+            }
+        }
+        return std::all_of(
+            rules.begin(),
+            rules.end(),
+            [](const MeshMaskRule& rule) { return rule.valid(); });
+    }
+
     bool MeshRenderStyleData::valid() const noexcept
     {
         return wireframe.valid()
@@ -48,7 +91,9 @@ namespace wz::engine::assets
             && std::isfinite(alpha)
             && alpha >= 0.0f
             && alpha <= 1.0f
-            && field_visualization.valid();
+            && field_visualization.valid()
+            && mask.valid()
+            && !(field_visualization.enabled && mask.enabled);
     }
 
     wz::asset::ResourceHandle MeshRenderStyleTable::add(

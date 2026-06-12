@@ -112,10 +112,17 @@ namespace wz::engine::assets
         std::vector<Slot> slots_;
     };
 
+    enum class GpuResidentFieldLayout : uint8_t
+    {
+        VertexProjected = 0,
+        FaceRaw,
+    };
+
     struct GpuResidentFieldEntry
     {
         wz::asset::AssetKey field_key{};
         uint32_t channel_id = 0;
+        GpuResidentFieldLayout layout = GpuResidentFieldLayout::VertexProjected;
         wz::asset::ResourceHandle gpu_resource{};
 
         bool valid() const noexcept;
@@ -174,7 +181,9 @@ namespace wz::engine::assets
             GpuResidentFieldEntry entry);
         wz::asset::ResourceHandle find(
             wz::asset::AssetKey field_key,
-            uint32_t channel_id) const;
+            uint32_t channel_id,
+            GpuResidentFieldLayout layout =
+                GpuResidentFieldLayout::VertexProjected) const;
         void clear();
         void destroy(MeshFieldComputeBackend& compute);
         size_t size() const noexcept;

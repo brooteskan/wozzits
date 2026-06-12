@@ -4,6 +4,7 @@
 
 #include <asset/types.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace wz::engine::assets
@@ -39,6 +40,52 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    enum class MeshMaskDomain : uint8_t
+    {
+        Face = 0,
+        Vertex,
+        Edge,
+    };
+
+    enum class MeshMaskProjectionMode : uint8_t
+    {
+        Direct = 0,
+        Any,
+        All,
+        Majority,
+    };
+
+    enum class MeshMaskOverlapMode : uint8_t
+    {
+        Priority = 0,
+        AlphaBlend,
+    };
+
+    struct MeshMaskRule
+    {
+        bool enabled = true;
+        uint32_t input_channel_id = 0;
+        float lo = 0.0f;
+        float hi = 1.0f;
+        float color[4]{ 1.0f, 0.15f, 0.05f, 1.0f };
+        int32_t priority = 0;
+
+        bool valid() const noexcept;
+    };
+
+    struct MeshMaskRenderStyleData
+    {
+        bool enabled = false;
+        MeshMaskDomain domain = MeshMaskDomain::Face;
+        MeshMaskProjectionMode projection_mode = MeshMaskProjectionMode::Direct;
+        MeshMaskOverlapMode overlap_mode = MeshMaskOverlapMode::Priority;
+        float unmatched_color[4]{ 0.18f, 0.18f, 0.18f, 1.0f };
+        bool show_unmatched = true;
+        std::vector<MeshMaskRule> rules{};
+
+        bool valid() const noexcept;
+    };
+
     struct MeshRenderStyleData
     {
         MeshRenderLayerStyle wireframe{
@@ -57,6 +104,7 @@ namespace wz::engine::assets
         bool double_sided = true;
         bool hidden_line_prepass = true;
         MeshFieldVisualizationStyle field_visualization{};
+        MeshMaskRenderStyleData mask{};
 
         bool valid() const noexcept;
     };

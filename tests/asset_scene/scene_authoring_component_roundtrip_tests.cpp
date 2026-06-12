@@ -131,6 +131,117 @@ TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON
     EXPECT_EQ(exported.find("\"resolved_field_asset\""), std::string::npos);
 }
 
+TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_mask_render_style_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_mask_render_style_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_source": {
+        "kind": "procedural_quad"
+      },
+      "mesh_derived_field_source": {
+        "enabled": true,
+        "field_id": "selected_faces",
+        "domain": "face",
+        "channel_id": 13056,
+        "value_type": "float1",
+        "source_kind": "triangle_area"
+      },
+      "mesh_render_style": {
+        "surface": {
+          "enabled": true,
+          "color": [1.0, 1.0, 1.0, 1.0],
+          "emissive_strength": 0.0
+        },
+        "wireframe": {
+          "enabled": false,
+          "color": [0.0, 0.0, 0.0, 1.0],
+          "emissive_strength": 0.0
+        },
+        "mask": {
+          "enabled": true,
+          "source_field_ref": "field:selected_faces",
+          "domain": "face",
+          "projection_mode": "direct",
+          "overlap_mode": "priority",
+          "unmatched_color": [0.1, 0.1, 0.1, 1.0],
+          "show_unmatched": false,
+          "rules": [
+            {
+              "input_channel_id": 13056,
+              "lo": 3.0,
+              "hi": 3.0,
+              "color": [0.9, 0.2, 0.1, 1.0],
+              "priority": 5
+            }
+          ]
+        }
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_mask_render_style.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_mask_render_style",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_render_style.has_value());
+    const auto& style = *node.mesh_render_style;
+    EXPECT_TRUE(style.mask.enabled);
+    EXPECT_EQ(style.mask_source_field_ref, "field:selected_faces");
+    EXPECT_EQ(style.mask_source_field_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(style.mask.domain, MeshMaskDomain::Face);
+    EXPECT_EQ(style.mask.projection_mode, MeshMaskProjectionMode::Direct);
+    EXPECT_EQ(style.mask.overlap_mode, MeshMaskOverlapMode::Priority);
+    EXPECT_FALSE(style.mask.show_unmatched);
+    ASSERT_EQ(style.mask.rules.size(), 1u);
+    EXPECT_EQ(style.mask.rules[0].input_channel_id, 13056u);
+    EXPECT_FLOAT_EQ(style.mask.rules[0].lo, 3.0f);
+    EXPECT_FLOAT_EQ(style.mask.rules[0].hi, 3.0f);
+    EXPECT_EQ(style.mask.rules[0].priority, 5);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"mask\""), std::string::npos);
+    EXPECT_NE(exported.find("\"source_field_ref\""), std::string::npos);
+    EXPECT_NE(exported.find("\"field:selected_faces\""), std::string::npos);
+    EXPECT_NE(exported.find("\"input_channel_id\""), std::string::npos);
+    EXPECT_NE(exported.find("\"priority\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshSparseOperatorSourceComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

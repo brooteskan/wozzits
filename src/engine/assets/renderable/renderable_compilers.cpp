@@ -414,6 +414,8 @@ namespace wz::engine::assets::internal
                 const bool wants_field_visualization =
                     effective_style.field_visualization.enabled;
                 bool field_visualization_active = wants_field_visualization;
+                const bool wants_mask = effective_style.mask.enabled;
+                bool mask_active = wants_mask;
 
                 if (wants_field_visualization) {
                     auto disable_field_visualization =
@@ -506,12 +508,110 @@ namespace wz::engine::assets::internal
                         }
                     }
                 }
-                else if (!(desc->mesh_field_visualization_asset
+                if (wants_mask) {
+                    auto disable_mask = [&](std::string_view reason)
+                    {
+                        logger->warn(
+                            "mesh styled renderable mask disabled: "
+                            + std::string(reason));
+                        mask_active = false;
+                        effective_style.mask.enabled = false;
+                    };
+
+                    if (field_visualization_active) {
+                        disable_mask("field visualization already active");
+                    }
+                    else if (desc->mesh_field_visualization_asset
+                        == wz::asset::AssetKey{})
+                    {
+                        disable_mask("no field asset");
+                    }
+                    else if (dep_handles.size() < 3) {
+                        disable_mask("missing mesh field dependency");
+                    }
+                    else if (effective_style.mask.domain
+                        != MeshMaskDomain::Face)
+                    {
+                        disable_mask("only face-domain masks are supported");
+                    }
+                    else if (effective_style.mask.projection_mode
+                        != MeshMaskProjectionMode::Direct)
+                    {
+                        disable_mask("only direct masks are supported");
+                    }
+                    else {
+                        const MeshDerivedFieldData* field =
+                            mesh_derived_field_table->get(dep_handles[2]);
+                        if (!field || !field->valid()) {
+                            disable_mask("field data is invalid");
+                        }
+                        else if (field->source_mesh_key != desc->mesh_asset) {
+                            disable_mask("field source mesh mismatch");
+                        }
+                        else if (field->domain
+                            != MeshDerivedFieldDomain::Face)
+                        {
+                            disable_mask("field is not face-domain");
+                        }
+                        else if (field->element_count
+                            != mesh->index_count() / 3u)
+                        {
+                            disable_mask("field face count mismatch");
+                        }
+                        else {
+                            for (const MeshMaskRule& rule :
+                                 effective_style.mask.rules)
+                            {
+                                if (!rule.enabled) {
+                                    continue;
+                                }
+                                const auto channel_found = std::find_if(
+                                    field->channels.begin(),
+                                    field->channels.end(),
+                                    [&](const MeshDerivedFieldChannel& channel)
+                                    {
+                                        return channel.channel_id
+                                            == rule.input_channel_id;
+                                    });
+
+                                if (channel_found == field->channels.end()) {
+                                    disable_mask("rule channel not found");
+                                    break;
+                                }
+                                if (channel_found->value_type
+                                        != MeshDerivedFieldValueType::Float1
+                                    && channel_found->value_type
+                                        != MeshDerivedFieldValueType::UInt1)
+                                {
+                                    disable_mask(
+                                        "rule channel is not Float1 or UInt1");
+                                    break;
+                                }
+
+                                const uint32_t expected_bytes =
+                                    field->element_count
+                                    * mesh_derived_field_value_stride(
+                                        channel_found->value_type);
+                                if (channel_found->byte_count
+                                    != expected_bytes)
+                                {
+                                    disable_mask(
+                                        "rule channel byte count mismatch");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (!wants_field_visualization
+                         && !(desc->mesh_field_visualization_asset
                          == wz::asset::AssetKey{}))
                 {
-                    logger->error(
-                        "mesh styled renderable has field asset but style field visualization is disabled");
-                    return compile_failed_node(input);
+                    if (!field_visualization_active) {
+                        logger->error(
+                            "mesh styled renderable has field asset but style field visualization and mask are disabled");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 RenderableAssetData data{};
@@ -519,7 +619,7 @@ namespace wz::engine::assets::internal
                 data.source_asset = desc->mesh_asset;
                 data.companion_asset = desc->style_asset;
                 data.mesh_field_visualization_asset =
-                    field_visualization_active
+                    field_visualization_active || mask_active
                         ? desc->mesh_field_visualization_asset
                         : wz::asset::AssetKey{};
                 data.program = BuiltinRenderProgram::MeshWireframeDebug;
@@ -588,13 +688,21 @@ namespace wz::engine::assets::internal
                         }
                         data.program = field_visualization_active
                             ? BuiltinRenderProgram::MeshFieldHeatmap
+                            : mask_active
+                            ? BuiltinRenderProgram::MeshMaskStyle
                             : transparent
                                 ? BuiltinRenderProgram::MeshSurfaceAlpha
                                 : BuiltinRenderProgram::MeshSurface;
-                        data.domain = transparent
+                        data.domain =
+                            (field_visualization_active || mask_active)
+                            ? RenderDomain::Opaque
+                            : transparent
                             ? RenderDomain::Transparent
                             : RenderDomain::Opaque;
-                        data.policy_flags = transparent
+                        data.policy_flags =
+                            (field_visualization_active || mask_active)
+                            ? RenderPolicy_None
+                            : transparent
                             ? RenderPolicy_AlphaBlend
                             : RenderPolicy_None;
                         apply_depth_policy();
@@ -606,15 +714,21 @@ namespace wz::engine::assets::internal
                 {
                     data.program = field_visualization_active
                         ? BuiltinRenderProgram::MeshFieldHeatmap
+                        : mask_active
+                        ? BuiltinRenderProgram::MeshMaskStyle
                         : transparent
                         ? BuiltinRenderProgram::MeshWireframeAlpha
                         : BuiltinRenderProgram::MeshWireframeDepthDebug;
                     data.domain = field_visualization_active
                         ? RenderDomain::Opaque
+                        : mask_active
+                        ? RenderDomain::Opaque
                         : transparent
                         ? RenderDomain::Transparent
                         : RenderDomain::Opaque;
                     data.policy_flags = field_visualization_active
+                        ? RenderPolicy_None
+                        : mask_active
                         ? RenderPolicy_None
                         : transparent
                         ? RenderPolicy_Wireframe | RenderPolicy_AlphaBlend

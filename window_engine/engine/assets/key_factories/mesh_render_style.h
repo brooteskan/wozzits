@@ -64,6 +64,34 @@ namespace wz::engine::assets
         h = detail::mix64(
             h,
             static_cast<uint64_t>(style.field_visualization.palette));
+        h = detail::mix64(h, style.mask.enabled ? 1ull : 0ull);
+        h = detail::mix64(h, static_cast<uint64_t>(style.mask.domain));
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(style.mask.projection_mode));
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(style.mask.overlap_mode));
+        for (float channel : style.mask.unmatched_color) {
+            h = detail::mix64(h, mesh_render_style_float_bits(channel));
+        }
+        h = detail::mix64(h, style.mask.show_unmatched ? 1ull : 0ull);
+        h = detail::mix64(
+            h,
+            static_cast<uint64_t>(style.mask.rules.size()));
+        for (const MeshMaskRule& rule : style.mask.rules) {
+            h = detail::mix64(h, rule.enabled ? 1ull : 0ull);
+            h = detail::mix64(h, rule.input_channel_id);
+            h = detail::mix64(h, mesh_render_style_float_bits(rule.lo));
+            h = detail::mix64(h, mesh_render_style_float_bits(rule.hi));
+            for (float channel : rule.color) {
+                h = detail::mix64(h, mesh_render_style_float_bits(channel));
+            }
+            h = detail::mix64(
+                h,
+                static_cast<uint64_t>(
+                    static_cast<int64_t>(rule.priority)));
+        }
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

@@ -15,6 +15,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -781,8 +782,39 @@ namespace wz::engine::assets
                         .channel_id =
                             node.mesh_render_style
                                 ->field_visualization_channel_id,
-                    },
+                        },
                 });
+            }
+
+            if (node.mesh_render_style
+                && node.mesh_render_style->mask.enabled
+                && !(node.mesh_render_style->mask_source_field_asset
+                    == wz::asset::AssetKey{}))
+            {
+                std::vector<uint32_t> channels;
+                channels.reserve(node.mesh_render_style->mask.rules.size());
+                for (const MeshMaskRule& rule :
+                     node.mesh_render_style->mask.rules)
+                {
+                    if (rule.enabled && rule.input_channel_id != 0u) {
+                        channels.push_back(rule.input_channel_id);
+                    }
+                }
+                std::sort(channels.begin(), channels.end());
+                channels.erase(
+                    std::unique(channels.begin(), channels.end()),
+                    channels.end());
+                for (uint32_t channel_id : channels) {
+                    inst.mesh_field_visualization_targets.push_back({
+                        .node = h,
+                        .component = MeshFieldVisualizationTargetComponent{
+                            .field_asset =
+                                node.mesh_render_style
+                                    ->mask_source_field_asset,
+                            .channel_id = channel_id,
+                        },
+                    });
+                }
             }
 
             if (node.debug_visual) {

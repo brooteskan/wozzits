@@ -870,6 +870,89 @@ namespace wz::engine::assets
             return "heat";
         }
 
+        const char* mesh_mask_domain_name(MeshMaskDomain domain)
+        {
+            switch (domain) {
+            case MeshMaskDomain::Face:
+                return "face";
+            case MeshMaskDomain::Vertex:
+                return "vertex";
+            case MeshMaskDomain::Edge:
+                return "edge";
+            }
+            return "face";
+        }
+
+        const char* mesh_mask_projection_mode_name(
+            MeshMaskProjectionMode mode)
+        {
+            switch (mode) {
+            case MeshMaskProjectionMode::Direct:
+                return "direct";
+            case MeshMaskProjectionMode::Any:
+                return "any";
+            case MeshMaskProjectionMode::All:
+                return "all";
+            case MeshMaskProjectionMode::Majority:
+                return "majority";
+            }
+            return "direct";
+        }
+
+        const char* mesh_mask_overlap_mode_name(MeshMaskOverlapMode mode)
+        {
+            switch (mode) {
+            case MeshMaskOverlapMode::Priority:
+                return "priority";
+            case MeshMaskOverlapMode::AlphaBlend:
+                return "alpha_blend";
+            }
+            return "priority";
+        }
+
+        JSONValuePtr mesh_mask_rule_value(const MeshMaskRule& rule)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(rule.enabled));
+            add_member(*obj, "input_channel_id",
+                number_value(rule.input_channel_id));
+            add_member(*obj, "lo", number_value(rule.lo));
+            add_member(*obj, "hi", number_value(rule.hi));
+            add_member(*obj, "color", float_array(rule.color, 4));
+            add_member(*obj, "priority", number_value(rule.priority));
+            return obj;
+        }
+
+        JSONValuePtr mesh_mask_value(
+            const MeshMaskRenderStyleData& mask,
+            const std::string& source_field_ref)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(mask.enabled));
+            if (!source_field_ref.empty()) {
+                add_member(*obj, "source_field_ref",
+                    string_value(source_field_ref));
+            }
+            add_member(*obj, "domain",
+                string_value(mesh_mask_domain_name(mask.domain)));
+            add_member(*obj, "projection_mode",
+                string_value(mesh_mask_projection_mode_name(
+                    mask.projection_mode)));
+            add_member(*obj, "overlap_mode",
+                string_value(mesh_mask_overlap_mode_name(mask.overlap_mode)));
+            add_member(*obj, "unmatched_color",
+                float_array(mask.unmatched_color, 4));
+            add_member(*obj, "show_unmatched",
+                bool_value(mask.show_unmatched));
+
+            auto rules = array_value();
+            for (const MeshMaskRule& rule : mask.rules) {
+                rules->array_values.push_back(mesh_mask_rule_value(rule));
+            }
+            add_member(*obj, "rules", std::move(rules));
+            return obj;
+        }
+
         JSONValuePtr mesh_render_style_value(
             const SceneMeshRenderStyleAsset& style)
         {
@@ -913,6 +996,8 @@ namespace wz::engine::assets
                 add_member(*obj, "field_ref",
                     string_value(style.field_visualization_field_ref));
             }
+            add_member(*obj, "mask",
+                mesh_mask_value(style.mask, style.mask_source_field_ref));
             return obj;
         }
 

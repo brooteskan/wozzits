@@ -266,6 +266,7 @@ namespace wz::engine::assets
                 style.field_visualization_gamma;
             out.field_visualization.palette =
                 style.field_visualization_palette;
+            out.mask = style.mask;
             return out;
         }
 
@@ -283,7 +284,7 @@ namespace wz::engine::assets
                         + ":emissive:"
                         + std::to_string(layer.emissive_strength);
                 };
-            return std::string("mesh_style")
+            std::string key = std::string("mesh_style")
                 + ((style.depth_test || style.depth_write)
                     ? ":depth_occlusion"
                     : ":no_depth_occlusion")
@@ -293,25 +294,57 @@ namespace wz::engine::assets
                 + (style.double_sided ? ":double_sided" : ":single_sided")
                 + (style.hidden_line_prepass
                     ? ":hidden_line_prepass"
-                    : ":no_hidden_line_prepass")
-                + (style.field_visualization_enabled
-                    ? ":field_visualization:"
-                        + std::to_string(style.field_visualization_channel_id)
-                        + ":min:"
-                        + std::to_string(
-                            style.field_visualization_value_min)
-                        + ":max:"
-                        + std::to_string(
-                            style.field_visualization_value_max)
-                        + ":gamma:"
-                        + std::to_string(
-                            style.field_visualization_gamma)
-                        + ":palette:"
-                        + std::to_string(
-                            static_cast<uint32_t>(
-                                style.field_visualization_palette))
-                        + ":field_ref:" + style.field_visualization_field_ref
-                    : ":no_field_visualization");
+                    : ":no_hidden_line_prepass");
+            key += style.field_visualization_enabled
+                ? ":field_visualization:"
+                    + std::to_string(style.field_visualization_channel_id)
+                    + ":min:"
+                    + std::to_string(style.field_visualization_value_min)
+                    + ":max:"
+                    + std::to_string(style.field_visualization_value_max)
+                    + ":gamma:"
+                    + std::to_string(style.field_visualization_gamma)
+                    + ":palette:"
+                    + std::to_string(
+                        static_cast<uint32_t>(
+                            style.field_visualization_palette))
+                    + ":field_ref:" + style.field_visualization_field_ref
+                : ":no_field_visualization";
+            if (!style.mask.enabled) {
+                key += ":no_mask";
+                return key;
+            }
+            key += ":mask:domain:"
+                + std::to_string(static_cast<uint32_t>(style.mask.domain))
+                + ":projection:"
+                + std::to_string(
+                    static_cast<uint32_t>(style.mask.projection_mode))
+                + ":overlap:"
+                + std::to_string(
+                    static_cast<uint32_t>(style.mask.overlap_mode))
+                + ":unmatched:"
+                + std::to_string(style.mask.unmatched_color[0])
+                + "," + std::to_string(style.mask.unmatched_color[1])
+                + "," + std::to_string(style.mask.unmatched_color[2])
+                + "," + std::to_string(style.mask.unmatched_color[3])
+                + (style.mask.show_unmatched
+                    ? ":show_unmatched"
+                    : ":hide_unmatched")
+                + ":field_ref:" + style.mask_source_field_ref
+                + ":rules:" + std::to_string(style.mask.rules.size());
+            for (const MeshMaskRule& rule : style.mask.rules) {
+                key += ":rule:"
+                    + std::to_string(rule.enabled ? 1 : 0)
+                    + ":ch:" + std::to_string(rule.input_channel_id)
+                    + ":lo:" + std::to_string(rule.lo)
+                    + ":hi:" + std::to_string(rule.hi)
+                    + ":color:" + std::to_string(rule.color[0])
+                    + "," + std::to_string(rule.color[1])
+                    + "," + std::to_string(rule.color[2])
+                    + "," + std::to_string(rule.color[3])
+                    + ":priority:" + std::to_string(rule.priority);
+            }
+            return key;
         }
 
         std::string mesh_wavelet_analysis_cache_key(
@@ -1374,6 +1407,34 @@ namespace wz::engine::assets
                     !node.id.empty() ? node.id : node.name;
                 error = "mesh render style field_ref '"
                     + style.field_visualization_field_ref
+                    + "' did not resolve on " + node_name;
+                return false;
+            }
+            out = found->second;
+            return true;
+        }
+
+        bool resolve_mesh_mask_field_ref(
+            const SceneNodeAsset& node,
+            const SceneMeshRenderStyleAsset& style,
+            const MeshFieldRefCache& field_refs,
+            wz::asset::AssetKey& out,
+            std::string& error)
+        {
+            if (!style.mask.enabled || style.mask_source_field_ref.empty()) {
+                return true;
+            }
+
+            const std::string canonical_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    style.mask_source_field_ref);
+            const auto found = field_refs.find(canonical_ref);
+            if (found == field_refs.end()) {
+                const std::string node_name =
+                    !node.id.empty() ? node.id : node.name;
+                error = "mesh render style mask.source_field_ref '"
+                    + style.mask_source_field_ref
                     + "' did not resolve on " + node_name;
                 return false;
             }
@@ -2697,6 +2758,11 @@ namespace wz::engine::assets
                                 .output =
                                     effective_style.field_visualization_asset,
                             }
+                            : effective_style.mask.enabled
+                            ? MeshDerivedFieldAsset{
+                                .output =
+                                    effective_style.mask_source_field_asset,
+                            }
                             : MeshDerivedFieldAsset{},
                     .render_program_asset =
                         render_shader
@@ -3711,6 +3777,19 @@ namespace wz::engine::assets
                         render_style,
                         mesh_field_refs,
                         render_style.field_visualization_asset,
+                        report.error))
+                {
+                    return report;
+                }
+            }
+            if (render_style.mask.enabled
+                && !render_style.mask_source_field_ref.empty())
+            {
+                if (!resolve_mesh_mask_field_ref(
+                        node,
+                        render_style,
+                        mesh_field_refs,
+                        render_style.mask_source_field_asset,
                         report.error))
                 {
                     return report;
