@@ -456,7 +456,8 @@ namespace wz::engine::assets {
         static_cast<wz::asset::AssetType>(535);
 
     // Implemented: backend-owned mesh-derived-field visualization buffer.
-    // Currently uploads one vertex-domain Float1 channel as a StructuredBuffer.
+    // Uploads vertex-domain Float1 data directly, converts UInt1 mask data
+    // to float, and projects face-domain channels to vertices for display.
     inline constexpr wz::asset::AssetType kAssetTypeGPUMeshFieldBuffer =
         static_cast<wz::asset::AssetType>(536);
 

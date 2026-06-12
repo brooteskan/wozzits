@@ -50,6 +50,7 @@ namespace wz::scene
         MeshSparseOperatorSource,
         MeshSparseApplyField,
         MeshSparseDiffusionBands,
+        MeshLevelMaskSource,
         MeshWaveletAnalysis,
         MeshComputeField,
         MeshRenderStyle,
@@ -110,6 +111,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::MeshSparseOperatorSource:
         case SceneAuthoredComponentKind::MeshSparseApplyField:
         case SceneAuthoredComponentKind::MeshSparseDiffusionBands:
+        case SceneAuthoredComponentKind::MeshLevelMaskSource:
         case SceneAuthoredComponentKind::MeshWaveletAnalysis:
         case SceneAuthoredComponentKind::MeshComputeField:
         case SceneAuthoredComponentKind::MeshRenderStyle:
@@ -188,6 +190,7 @@ namespace wz::scene
         uint32_t mesh_sparse_operator_sources = 0;
         uint32_t mesh_sparse_apply_fields = 0;
         uint32_t mesh_sparse_diffusion_bands = 0;
+        uint32_t mesh_level_mask_sources = 0;
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;

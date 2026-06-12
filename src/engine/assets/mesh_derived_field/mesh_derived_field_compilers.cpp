@@ -1722,6 +1722,45 @@ namespace wz::engine::assets::internal
             uint32_t element_count,
             std::span<const uint32_t> channel_ids);
 
+        bool cached_field_level_mask_matches_source(
+            const MeshDerivedFieldData& field,
+            const MeshFieldLevelMaskDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field) noexcept
+        {
+            if (!field.valid()
+                || field.source_mesh_key != desc.source_mesh.output
+                || field.source_topology_hash
+                    != compute_mesh_topology_hash(source_mesh)
+                || field.domain != desc.domain
+                || field.domain != input_field.domain
+                || field.element_count
+                    != mesh_domain_element_count(source_mesh, desc.domain)
+                || field.element_count != input_field.element_count
+                || field.channels.size() != desc.regions.size())
+            {
+                return false;
+            }
+
+            const uint32_t channel_bytes =
+                field.element_count * sizeof(uint32_t);
+            uint32_t expected_offset = 0u;
+            for (size_t i = 0; i < desc.regions.size(); ++i) {
+                const MeshDerivedFieldChannel& channel = field.channels[i];
+                if (channel.channel_id
+                        != desc.regions[i].output_channel_id
+                    || channel.value_type
+                        != MeshDerivedFieldValueType::UInt1
+                    || channel.byte_offset != expected_offset
+                    || channel.byte_count != channel_bytes)
+                {
+                    return false;
+                }
+                expected_offset += channel_bytes;
+            }
+            return true;
+        }
+
         bool cached_sparse_apply_field_matches_source(
             const MeshDerivedFieldData& field,
             const MeshSparseApplyFieldDesc& desc,
@@ -2255,6 +2294,135 @@ namespace wz::engine::assets::internal
                 .channels = std::move(channels),
                 .values = std::move(values),
             };
+        }
+
+        std::vector<std::byte> uint_channel_bytes(
+            const std::vector<uint32_t>& values)
+        {
+            std::vector<std::byte> bytes(
+                values.size() * sizeof(uint32_t),
+                std::byte{0});
+            if (!values.empty()) {
+                std::memcpy(bytes.data(), values.data(), bytes.size());
+            }
+            return bytes;
+        }
+
+        bool compile_mesh_field_level_mask(
+            const MeshFieldLevelMaskDesc& desc,
+            const MeshData& source_mesh,
+            const MeshDerivedFieldData& input_field,
+            wz::Logger& logger,
+            MeshDerivedFieldData& out)
+        {
+            if (desc.domain != MeshDerivedFieldDomain::Vertex
+                && desc.domain != MeshDerivedFieldDomain::Face)
+            {
+                logger.error(
+                    "mesh field level mask only supports vertex or face domain");
+                return false;
+            }
+            if (desc.regions.empty()) {
+                logger.error("mesh field level mask requires regions");
+                return false;
+            }
+            if (!source_mesh.valid()) {
+                logger.error("mesh field level mask source mesh invalid");
+                return false;
+            }
+
+            const wz::asset::Hash topology =
+                compute_mesh_topology_hash(source_mesh);
+            const uint32_t element_count =
+                mesh_domain_element_count(source_mesh, desc.domain);
+            if (!input_field.valid()
+                || input_field.source_mesh_key != desc.source_mesh.output
+                || input_field.source_topology_hash != topology
+                || input_field.domain != desc.domain
+                || input_field.element_count != element_count)
+            {
+                logger.error(
+                    "mesh field level mask input field does not match source mesh");
+                return false;
+            }
+
+            const uint32_t channel_bytes =
+                element_count * sizeof(uint32_t);
+            std::vector<MeshDerivedFieldChannel> channels;
+            channels.reserve(desc.regions.size());
+            std::vector<std::byte> values;
+            values.reserve(
+                static_cast<size_t>(channel_bytes) * desc.regions.size());
+
+            for (const MeshFieldLevelMaskRegionDesc& region :
+                 desc.regions)
+            {
+                if (region.input_channel_id == 0u
+                    || region.output_channel_id == 0u
+                    || !std::isfinite(region.min_value)
+                    || !std::isfinite(region.max_value))
+                {
+                    logger.error(
+                        "mesh field level mask region has invalid parameters");
+                    return false;
+                }
+
+                float min_value = region.min_value;
+                float max_value = region.max_value;
+                if (min_value > max_value) {
+                    std::swap(min_value, max_value);
+                }
+
+                std::vector<uint32_t> mask_values(element_count, 0u);
+                std::vector<float> input_values;
+                if (!read_float_channel_values(
+                        input_field,
+                        region.input_channel_id,
+                        input_values))
+                {
+                    logger.warn(
+                        "mesh field level mask input channel missing or not Float1; emitting zero mask channel");
+                } else {
+                    for (uint32_t i = 0; i < element_count; ++i) {
+                        const float value = input_values[i];
+                        mask_values[i] =
+                            std::isfinite(value)
+                                && value >= min_value
+                                && value <= max_value
+                            ? 1u
+                            : 0u;
+                    }
+                }
+
+                const uint32_t byte_offset =
+                    static_cast<uint32_t>(values.size());
+                std::vector<std::byte> region_bytes =
+                    uint_channel_bytes(mask_values);
+                values.insert(
+                    values.end(),
+                    region_bytes.begin(),
+                    region_bytes.end());
+                channels.push_back(MeshDerivedFieldChannel{
+                    .channel_id = region.output_channel_id,
+                    .value_type = MeshDerivedFieldValueType::UInt1,
+                    .byte_offset = byte_offset,
+                    .byte_count = channel_bytes,
+                });
+            }
+
+            out = MeshDerivedFieldData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = topology,
+                .domain = desc.domain,
+                .element_count = element_count,
+                .channels = std::move(channels),
+                .values = std::move(values),
+            };
+            if (!out.valid()) {
+                logger.error("mesh field level mask output is invalid");
+                return false;
+            }
+            return true;
         }
 
         bool build_builtin_mesh_derived_field_values(
@@ -3008,6 +3176,87 @@ namespace wz::engine::assets::internal
                 : compile_failed_node(input);
         }
 
+        wz::asset::AssetNode compile_mesh_field_level_mask_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshDerivedFieldTable& field_table,
+            const EngineAssetCacheSettings& cache_settings)
+        {
+            const auto* desc =
+                std::any_cast<MeshFieldLevelMaskDesc>(&input.meta);
+            if (!desc || dep_handles.size() != 2u) {
+                logger.error("mesh field level mask node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source_mesh = mesh_table.get(dep_handles[0]);
+            if (!source_mesh) {
+                logger.error(
+                    "mesh field level mask source mesh handle invalid");
+                return compile_failed_node(input);
+            }
+
+            const MeshDerivedFieldData* input_field =
+                field_table.get(dep_handles[1]);
+            if (!input_field) {
+                logger.error(
+                    "mesh field level mask input field handle invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshDerivedFieldData cached{};
+            if (load_cached_mesh_derived_field_with_key(
+                    cache_settings,
+                    kMeshDerivedFieldDiskCacheKey,
+                    input.key,
+                    kMeshFieldLevelMaskCompilerVersion,
+                    logger,
+                    cached))
+            {
+                if (cached_field_level_mask_matches_source(
+                        cached,
+                        *desc,
+                        *source_mesh,
+                        *input_field))
+                {
+                    const wz::asset::ResourceHandle handle =
+                        field_table.add(std::move(cached));
+                    return handle.valid()
+                        ? compiled_field_node(input, handle)
+                        : compile_failed_node(input);
+                }
+                logger.warn(
+                    "asset disk cache ignored stale mesh field level mask");
+            }
+
+            MeshDerivedFieldData field{};
+            if (!compile_mesh_field_level_mask(
+                    *desc,
+                    *source_mesh,
+                    *input_field,
+                    logger,
+                    field))
+            {
+                return compile_failed_node(input);
+            }
+
+            store_cached_mesh_derived_field(
+                cache_settings,
+                kMeshDerivedFieldDiskCacheKey,
+                input.key,
+                kMeshFieldLevelMaskCompilerVersion,
+                field,
+                logger);
+
+            const wz::asset::ResourceHandle handle =
+                field_table.add(std::move(field));
+            return handle.valid()
+                ? compiled_field_node(input, handle)
+                : compile_failed_node(input);
+        }
+
         wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::ResourceHandle> dep_handles,
@@ -3362,6 +3611,29 @@ namespace wz::engine::assets::internal
                     mesh_table,
                     mesh_derived_field_table,
                     mesh_sparse_operator_table,
+                    cache_settings);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshFieldLevelMaskSchema,
+            .output_type = kAssetTypeMeshDerivedField,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &mesh_derived_field_table,
+                cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_field_level_mask_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    mesh_derived_field_table,
                     cache_settings);
             }
         });

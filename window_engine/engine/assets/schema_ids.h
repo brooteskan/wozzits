@@ -221,6 +221,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Dull
     };
 
+    // Level/range masks over a mesh-derived Float1 field. Produces UInt1
+    // channels in the selected mesh domain, with one channel per authored
+    // low/high region.
+    inline constexpr wz::asset::SchemaID kMeshFieldLevelMaskSchema{
+        0xF11E'CA55'E7'00040Eull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

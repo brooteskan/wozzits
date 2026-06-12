@@ -1244,6 +1244,113 @@ namespace wz::engine::assets
             return true;
         }
 
+        bool materialize_mesh_level_mask_source(
+            EngineAssetLibrary& assets,
+            SceneNodeAsset& node,
+            MeshAsset mesh,
+            MeshFieldRefCache& field_refs,
+            std::string& error)
+        {
+            if (!node.mesh_level_mask_source
+                || !node.mesh_level_mask_source->enabled)
+            {
+                return true;
+            }
+
+            SceneMeshLevelMaskSourceAsset& masks =
+                *node.mesh_level_mask_source;
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+
+            if (!mesh.valid()) {
+                error = "mesh level mask source requires a mesh for "
+                    + node_name;
+                return false;
+            }
+            if (masks.input_field_ref.empty()) {
+                error = "mesh level mask source missing input_field_ref for "
+                    + node_name;
+                return false;
+            }
+            if (masks.output_field_id.empty()) {
+                error = "mesh level mask source missing output_field_id for "
+                    + node_name;
+                return false;
+            }
+            if (masks.domain != MeshDerivedFieldDomain::Vertex
+                && masks.domain != MeshDerivedFieldDomain::Face)
+            {
+                error =
+                    "mesh level mask source only supports vertex or "
+                    "face domain for "
+                    + node_name;
+                return false;
+            }
+            if (masks.regions.empty()) {
+                error = "mesh level mask source requires at least one region for "
+                    + node_name;
+                return false;
+            }
+
+            const std::string canonical_field_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    masks.input_field_ref);
+            const auto field_found = field_refs.find(canonical_field_ref);
+            if (field_found == field_refs.end()) {
+                error = "mesh level mask input ref not found for "
+                    + node_name + ": " + masks.input_field_ref;
+                return false;
+            }
+
+            std::vector<MeshFieldLevelMaskRegionDesc> regions;
+            regions.reserve(masks.regions.size());
+            for (const SceneMeshLevelMaskRegionAsset& region :
+                 masks.regions)
+            {
+                if (region.input_channel_id == 0u
+                    || region.output_channel_id == 0u
+                    || !std::isfinite(region.min_value)
+                    || !std::isfinite(region.max_value))
+                {
+                    error =
+                        "mesh level mask source has invalid region for "
+                        + node_name;
+                    return false;
+                }
+                regions.push_back(MeshFieldLevelMaskRegionDesc{
+                    .input_channel_id = region.input_channel_id,
+                    .output_channel_id = region.output_channel_id,
+                    .min_value = region.min_value,
+                    .max_value = region.max_value,
+                });
+            }
+
+            const MeshDerivedFieldAsset output =
+                assets.mesh_derived_fields().create_field_level_mask({
+                    .name =
+                        node_name + "_level_mask_" + masks.output_field_id,
+                    .source_mesh = mesh,
+                    .input_field =
+                        MeshDerivedFieldAsset{
+                            .output = field_found->second,
+                        },
+                    .domain = masks.domain,
+                    .regions = std::move(regions),
+                });
+            if (!output.valid()) {
+                error = "mesh level mask asset unavailable for "
+                    + node_name;
+                return false;
+            }
+
+            masks.output_field_asset = output.output;
+            field_refs[canonical_mesh_field_ref(
+                node.id,
+                masks.output_field_id)] = output.output;
+            return true;
+        }
+
         bool resolve_mesh_field_visualization_ref(
             const SceneNodeAsset& node,
             const SceneMeshRenderStyleAsset& style,
@@ -3392,6 +3499,9 @@ namespace wz::engine::assets
             if (node.mesh_sparse_diffusion_bands) {
                 node.mesh_sparse_diffusion_bands->output_field_asset = {};
             }
+            if (node.mesh_level_mask_source) {
+                node.mesh_level_mask_source->output_field_asset = {};
+            }
             if (node.mesh_compute_field) {
                 node.mesh_compute_field->field_asset = {};
             }
@@ -3557,6 +3667,39 @@ namespace wz::engine::assets
                 {
                     render_style.field_visualization_asset =
                         node.mesh_sparse_diffusion_bands->output_field_asset;
+                }
+            }
+
+            const bool level_mask_source =
+                node.mesh_level_mask_source
+                && node.mesh_level_mask_source->enabled;
+            if (level_mask_source) {
+                if (!mesh.valid()
+                    && !ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        node.mesh_processing
+                            ? &*node.mesh_processing
+                            : nullptr,
+                        meshes,
+                        mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return report;
+                }
+                if (!materialize_mesh_level_mask_source(
+                        assets,
+                        node,
+                        mesh,
+                        mesh_field_refs,
+                        report.error))
+                {
+                    return report;
                 }
             }
 

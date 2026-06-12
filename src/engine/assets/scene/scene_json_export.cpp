@@ -220,6 +220,22 @@ namespace wz::engine::assets
             return "vertex";
         }
 
+        const char* mesh_derived_field_domain_name(
+            MeshDerivedFieldDomain domain)
+        {
+            switch (domain) {
+            case MeshDerivedFieldDomain::Vertex:
+                return "vertex";
+            case MeshDerivedFieldDomain::Face:
+                return "face";
+            case MeshDerivedFieldDomain::Edge:
+                return "edge";
+            case MeshDerivedFieldDomain::Corner:
+                return "corner";
+            }
+            return "vertex";
+        }
+
         const char* mesh_sparse_operator_value_convention_name(
             MeshSparseOperatorValueConvention convention)
         {
@@ -957,7 +973,8 @@ namespace wz::engine::assets
             auto obj = object_value();
             add_member(*obj, "enabled", bool_value(source.enabled));
             add_member(*obj, "field_id", string_value(source.field_id));
-            add_member(*obj, "domain", string_value("vertex"));
+            add_member(*obj, "domain",
+                string_value(mesh_derived_field_domain_name(source.domain)));
             add_member(*obj, "channel_id", number_value(source.channel_id));
             add_member(*obj, "value_type",
                 string_value(mesh_derived_field_value_type_name(
@@ -1029,6 +1046,37 @@ namespace wz::engine::assets
             add_member(*obj, "mode",
                 string_value(mesh_sparse_diffusion_mode_name(bands.mode)));
             add_member(*obj, "tau", number_value(bands.tau));
+            return obj;
+        }
+
+        JSONValuePtr mesh_level_mask_source_value(
+            const SceneMeshLevelMaskSourceAsset& masks)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(masks.enabled));
+            add_member(*obj, "input_field_ref",
+                string_value(masks.input_field_ref));
+            add_member(*obj, "output_field_id",
+                string_value(masks.output_field_id));
+            add_member(*obj, "domain",
+                string_value(mesh_derived_field_domain_name(masks.domain)));
+
+            auto regions = array_value();
+            for (const SceneMeshLevelMaskRegionAsset& region :
+                 masks.regions)
+            {
+                auto region_obj = object_value();
+                add_member(*region_obj, "input_channel_id",
+                    number_value(region.input_channel_id));
+                add_member(*region_obj, "output_channel_id",
+                    number_value(region.output_channel_id));
+                add_member(*region_obj, "min_value",
+                    number_value(region.min_value));
+                add_member(*region_obj, "max_value",
+                    number_value(region.max_value));
+                regions->array_values.push_back(std::move(region_obj));
+            }
+            add_member(*obj, "regions", std::move(regions));
             return obj;
         }
 
@@ -1677,6 +1725,11 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_sparse_diffusion_bands",
                     mesh_sparse_diffusion_bands_value(
                         *node.mesh_sparse_diffusion_bands));
+            }
+            if (node.mesh_level_mask_source) {
+                add_member(*obj, "mesh_level_mask_source",
+                    mesh_level_mask_source_value(
+                        *node.mesh_level_mask_source));
             }
             if (node.mesh_wavelet_analysis) {
                 add_member(*obj, "mesh_wavelet_analysis",

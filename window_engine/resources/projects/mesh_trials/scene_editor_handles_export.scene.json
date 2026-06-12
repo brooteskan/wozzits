@@ -244,7 +244,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:527b5190e07a3d87:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:b6952322ee1a8042:61b6710397eec152"
+        "asset": "asset-key:79da1fe14abd8600:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:65856441350d8212:638c38d4b3d82672"
       },
       "mesh_source": {
         "kind": "glb",
@@ -254,7 +254,7 @@
       "mesh_derived_field_source": {
         "enabled": true,
         "field_id": "face_density",
-        "domain": "vertex",
+        "domain": "face",
         "channel_id": 8192,
         "value_type": "float1",
         "source_kind": "triangle_area",
@@ -288,8 +288,28 @@
         "mode": "smooth",
         "tau": 3.9000000953674316
       },
+      "mesh_level_mask_source": {
+        "enabled": true,
+        "input_field_ref": "field:diffusion_bands",
+        "output_field_id": "masks",
+        "domain": "face",
+        "regions": [
+          {
+            "input_channel_id": 8704,
+            "output_channel_id": 12288,
+            "min_value": -1.062999963760376,
+            "max_value": 1.0880000591278076
+          },
+          {
+            "input_channel_id": 8704,
+            "output_channel_id": 12289,
+            "min_value": 0.34999999403953552,
+            "max_value": 0.69999998807907104
+          }
+        ]
+      },
       "mesh_render_style": {
-        "asset": "asset-key:f3bcfac85c27c451:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:ea7cd96b09228d66:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
           "enabled": false,
           "color": [
@@ -303,9 +323,9 @@
         "surface": {
           "enabled": true,
           "color": [
-            0.25,
-            0.89999997615814209,
-            0.34999999403953552,
+            0.10993365943431854,
+            0.89705884456634521,
+            0.23102974891662598,
             1
           ],
           "emissive_strength": 0
@@ -316,16 +336,16 @@
         "double_sided": false,
         "hidden_line_prepass": false,
         "field_visualization_enabled": true,
-        "channel_id": 8704,
-        "value_min": -1.0299999713897705,
-        "value_max": 1.0399999618530273,
-        "gamma": 1.0099999904632568,
-        "palette": "heat",
-        "field_visualization_channel_id": 8704,
-        "field_visualization_value_min": -1.0299999713897705,
-        "field_visualization_value_max": 1.0399999618530273,
-        "field_visualization_gamma": 1.0099999904632568,
-        "field_ref": "field:diffusion_bands"
+        "channel_id": 12288,
+        "value_min": 0,
+        "value_max": 1,
+        "gamma": 1,
+        "palette": "grayscale",
+        "field_visualization_channel_id": 12288,
+        "field_visualization_value_min": 0,
+        "field_visualization_value_max": 1,
+        "field_visualization_gamma": 1,
+        "field_ref": "field:masks"
       }
     }
   ],

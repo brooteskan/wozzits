@@ -451,6 +451,28 @@ namespace wz::engine::assets
         wz::asset::AssetKey output_field_asset{};
     };
 
+    struct SceneMeshLevelMaskRegionAsset
+    {
+        uint32_t input_channel_id = 0x2200u;
+        uint32_t output_channel_id = 0x3000u;
+        float min_value = 0.0f;
+        float max_value = 1.0f;
+    };
+
+    struct SceneMeshLevelMaskSourceAsset
+    {
+        bool enabled = true;
+        std::string input_field_ref = "field:diffusion_bands";
+        std::string output_field_id = "masks";
+        MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Face;
+        std::vector<SceneMeshLevelMaskRegionAsset> regions{
+            SceneMeshLevelMaskRegionAsset{},
+        };
+
+        // Materialization output / editor cache, not saved as authored intent.
+        wz::asset::AssetKey output_field_asset{};
+    };
+
     enum class SceneMeshWaveletAnalysisFunction : uint8_t
     {
         BuiltinDetailHeatV0 = 0,
@@ -859,6 +881,8 @@ namespace wz::engine::assets
             mesh_sparse_apply_field;
         std::optional<SceneMeshSparseDiffusionBandsAsset>
             mesh_sparse_diffusion_bands;
+        std::optional<SceneMeshLevelMaskSourceAsset>
+            mesh_level_mask_source;
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
@@ -940,6 +964,7 @@ namespace wz::engine::assets
         uint32_t mesh_sparse_operator_sources = 0;
         uint32_t mesh_sparse_apply_fields = 0;
         uint32_t mesh_sparse_diffusion_bands = 0;
+        uint32_t mesh_level_mask_sources = 0;
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
@@ -1201,6 +1226,13 @@ namespace wz::engine::assets
         node.mesh_sparse_diffusion_bands = std::move(bands);
     }
 
+    inline void attach_mesh_level_mask_source(
+        SceneNodeAsset& node,
+        SceneMeshLevelMaskSourceAsset source = {})
+    {
+        node.mesh_level_mask_source = std::move(source);
+    }
+
     inline void attach_mesh_wavelet_analysis(
         SceneNodeAsset& node,
         SceneMeshWaveletAnalysisAsset analysis = {})
@@ -1344,6 +1376,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_sparse_diffusion_bands) {
             out.push_back(Kind::MeshSparseDiffusionBands);
+        }
+        if (node.mesh_level_mask_source) {
+            out.push_back(Kind::MeshLevelMaskSource);
         }
         if (node.mesh_wavelet_analysis) {
             out.push_back(Kind::MeshWaveletAnalysis);
@@ -1584,6 +1619,7 @@ namespace wz::engine::assets
             || node.mesh_sparse_operator_source.has_value()
             || node.mesh_sparse_apply_field.has_value()
             || node.mesh_sparse_diffusion_bands.has_value()
+            || node.mesh_level_mask_source.has_value()
             || node.mesh_wavelet_analysis.has_value()
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
@@ -1667,6 +1703,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_diffusion_bands) {
                 ++out.mesh_sparse_diffusion_bands;
+                ++out.total_recipes;
+            }
+            if (node.mesh_level_mask_source) {
+                ++out.mesh_level_mask_sources;
                 ++out.total_recipes;
             }
             if (node.mesh_wavelet_analysis) {
@@ -1802,6 +1842,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_sparse_diffusion_bands) {
                 ++out.mesh_sparse_diffusion_bands;
+            }
+            if (node.mesh_level_mask_source) {
+                ++out.mesh_level_mask_sources;
             }
             if (node.mesh_wavelet_analysis) {
                 ++out.mesh_wavelet_analyses;

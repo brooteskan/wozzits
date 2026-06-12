@@ -374,6 +374,18 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<MeshDerivedFieldDomain>
+        parse_mesh_derived_field_domain(std::string_view text)
+        {
+            if (text == "vertex") {
+                return MeshDerivedFieldDomain::Vertex;
+            }
+            if (text == "face") {
+                return MeshDerivedFieldDomain::Face;
+            }
+            return std::nullopt;
+        }
+
         std::optional<MeshSparseOperatorValueConvention>
         parse_mesh_sparse_operator_value_convention(std::string_view text)
         {
@@ -1923,18 +1935,15 @@ namespace wz::engine::assets::internal
                 }
 
                 if (auto domain = read_string(*mdfs, "domain")) {
-                    if (*domain == "vertex") {
-                        source.domain = MeshDerivedFieldDomain::Vertex;
-                    }
-                    else if (*domain == "face") {
-                        source.domain = MeshDerivedFieldDomain::Face;
-                    }
-                    else {
+                    auto parsed_domain =
+                        parse_mesh_derived_field_domain(*domain);
+                    if (!parsed_domain) {
                         logger.error("mesh_derived_field_source on node '"
                             + node.id
                             + "' only supports vertex or face domain");
                         return std::nullopt;
                     }
+                    source.domain = *parsed_domain;
                 }
 
                 if (auto channel_id = read_number(*mdfs, "channel_id")) {
@@ -2259,6 +2268,162 @@ namespace wz::engine::assets::internal
                 }
 
                 node.mesh_sparse_diffusion_bands = std::move(bands);
+            }
+
+            const auto* mlms =
+                find_member(node_val, "mesh_level_mask_source");
+            if (mlms && mlms->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshLevelMaskSourceAsset masks{};
+                masks.regions.clear();
+
+                if (auto enabled = read_bool(*mlms, "enabled")) {
+                    masks.enabled = *enabled;
+                }
+                if (auto input_field_ref =
+                        read_string(*mlms, "input_field_ref"))
+                {
+                    masks.input_field_ref = std::string(*input_field_ref);
+                }
+                if (masks.input_field_ref.empty()) {
+                    logger.error("mesh_level_mask_source on node '"
+                        + node.id + "' has empty input_field_ref");
+                    return std::nullopt;
+                }
+                if (auto output_field_id =
+                        read_string(*mlms, "output_field_id"))
+                {
+                    masks.output_field_id = std::string(*output_field_id);
+                }
+                if (masks.output_field_id.empty()) {
+                    logger.error("mesh_level_mask_source on node '"
+                        + node.id + "' has empty output_field_id");
+                    return std::nullopt;
+                }
+                if (auto domain = read_string(*mlms, "domain")) {
+                    auto parsed_domain =
+                        parse_mesh_derived_field_domain(*domain);
+                    if (!parsed_domain) {
+                        logger.error("mesh_level_mask_source on node '"
+                            + node.id
+                            + "' only supports vertex or face domain");
+                        return std::nullopt;
+                    }
+                    masks.domain = *parsed_domain;
+                }
+
+                const auto* regions = find_member(*mlms, "regions");
+                if (regions) {
+                    if (regions->kind != wz::json::JSONValueKind::Array) {
+                        logger.error("mesh_level_mask_source on node '"
+                            + node.id + "' has non-array regions");
+                        return std::nullopt;
+                    }
+                    for (const auto& region_ptr : regions->array_values) {
+                        if (!region_ptr
+                            || region_ptr->kind
+                                != wz::json::JSONValueKind::Object)
+                        {
+                            logger.error("mesh_level_mask_source on node '"
+                                + node.id
+                                + "' has non-object region");
+                            return std::nullopt;
+                        }
+
+                        const wz::json::JSONValue& region_value =
+                            *region_ptr;
+                        SceneMeshLevelMaskRegionAsset region{};
+                        if (auto input_channel_id =
+                                read_number(
+                                    region_value,
+                                    "input_channel_id"))
+                        {
+                            if (*input_channel_id <= 0.0
+                                || !std::isfinite(*input_channel_id))
+                            {
+                                logger.error(
+                                    "mesh_level_mask_source on node '"
+                                    + node.id
+                                    + "' has invalid input_channel_id");
+                                return std::nullopt;
+                            }
+                            region.input_channel_id =
+                                static_cast<uint32_t>(*input_channel_id);
+                        }
+                        if (auto output_channel_id =
+                                read_number(
+                                    region_value,
+                                    "output_channel_id"))
+                        {
+                            if (*output_channel_id <= 0.0
+                                || !std::isfinite(*output_channel_id))
+                            {
+                                logger.error(
+                                    "mesh_level_mask_source on node '"
+                                    + node.id
+                                    + "' has invalid output_channel_id");
+                                return std::nullopt;
+                            }
+                            region.output_channel_id =
+                                static_cast<uint32_t>(*output_channel_id);
+                        }
+
+                        std::optional<double> min_value =
+                            read_number(region_value, "min_value");
+                        if (!min_value) {
+                            min_value = read_number(region_value, "min");
+                        }
+                        if (!min_value) {
+                            min_value = read_number(region_value, "lo");
+                        }
+                        if (min_value) {
+                            if (!std::isfinite(*min_value)) {
+                                logger.error(
+                                    "mesh_level_mask_source on node '"
+                                    + node.id
+                                    + "' has invalid min_value");
+                                return std::nullopt;
+                            }
+                            region.min_value =
+                                static_cast<float>(*min_value);
+                        }
+
+                        std::optional<double> max_value =
+                            read_number(region_value, "max_value");
+                        if (!max_value) {
+                            max_value = read_number(region_value, "max");
+                        }
+                        if (!max_value) {
+                            max_value = read_number(region_value, "hi");
+                        }
+                        if (max_value) {
+                            if (!std::isfinite(*max_value)) {
+                                logger.error(
+                                    "mesh_level_mask_source on node '"
+                                    + node.id
+                                    + "' has invalid max_value");
+                                return std::nullopt;
+                            }
+                            region.max_value =
+                                static_cast<float>(*max_value);
+                        }
+
+                        if (region.input_channel_id == 0u
+                            || region.output_channel_id == 0u)
+                        {
+                            logger.error("mesh_level_mask_source on node '"
+                                + node.id
+                                + "' requires nonzero region channels");
+                            return std::nullopt;
+                        }
+                        masks.regions.push_back(region);
+                    }
+                }
+                if (masks.regions.empty()) {
+                    masks.regions.push_back(
+                        SceneMeshLevelMaskRegionAsset{});
+                }
+
+                node.mesh_level_mask_source = std::move(masks);
             }
 
             const auto* mwa = find_member(node_val, "mesh_wavelet_analysis");

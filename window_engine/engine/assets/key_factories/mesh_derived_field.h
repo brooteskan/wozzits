@@ -213,6 +213,43 @@ namespace wz::engine::assets
     }
 
     [[nodiscard]] inline wz::asset::AssetKey
+    make_mesh_field_level_mask_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const MeshFieldLevelMaskDesc& desc) noexcept
+    {
+        uint64_t h = kMeshFieldLevelMaskSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.domain));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.regions.size()));
+        for (const MeshFieldLevelMaskRegionDesc& region : desc.regions) {
+            h = detail::mix64(
+                h,
+                static_cast<uint64_t>(region.input_channel_id));
+            h = detail::mix64(
+                h,
+                static_cast<uint64_t>(region.output_channel_id));
+            h = detail::mix64(
+                h,
+                detail_mesh_derived_field_key::float_bits(
+                    region.min_value));
+            h = detail::mix64(
+                h,
+                detail_mesh_derived_field_key::float_bits(
+                    region.max_value));
+        }
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kMeshFieldLevelMaskSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kMeshFieldLevelMaskCompilerVersion),
+            .deps_hash = detail::combine_dep_hashes(
+                detail::key_to_dep_hash(source_mesh_key),
+                detail::key_to_dep_hash(desc.input_field.output)),
+        };
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey
     make_mesh_wavelet_analysis_field_key(
         const wz::asset::AssetKey& source_mesh_key,
         const MeshWaveletAnalysisDesc& desc) noexcept

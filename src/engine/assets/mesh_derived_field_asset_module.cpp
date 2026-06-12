@@ -288,6 +288,51 @@ namespace wz::engine::assets
         return MeshDerivedFieldAsset{ .output = field_key };
     }
 
+    MeshDerivedFieldAsset
+    MeshDerivedFieldAssetModule::create_field_level_mask(
+        const MeshFieldLevelMaskDesc& desc)
+    {
+        if (!desc.source_mesh.valid()
+            || !desc.input_field.valid()
+            || (desc.domain != MeshDerivedFieldDomain::Vertex
+                && desc.domain != MeshDerivedFieldDomain::Face)
+            || desc.regions.empty())
+        {
+            return {};
+        }
+
+        for (const MeshFieldLevelMaskRegionDesc& region : desc.regions) {
+            if (region.input_channel_id == 0u
+                || region.output_channel_id == 0u
+                || !std::isfinite(region.min_value)
+                || !std::isfinite(region.max_value))
+            {
+                return {};
+            }
+        }
+
+        const wz::asset::AssetKey field_key =
+            make_mesh_field_level_mask_key(
+                desc.source_mesh.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = field_key;
+        node.type = kAssetTypeMeshDerivedField;
+        node.schema = kMeshFieldLevelMaskSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.source_mesh.output,
+                desc.input_field.output,
+            });
+
+        return MeshDerivedFieldAsset{ .output = field_key };
+    }
+
     MeshDerivedFieldHandle
     MeshDerivedFieldAssetModule::get_mesh_derived_field(
         const MeshDerivedFieldAsset& asset) const

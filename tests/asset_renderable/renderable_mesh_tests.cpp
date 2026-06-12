@@ -12,6 +12,13 @@ namespace
         std::memcpy(bytes.data(), values.begin(), bytes.size());
         return bytes;
     }
+
+    std::vector<std::byte> uint_bytes(std::initializer_list<uint32_t> values)
+    {
+        std::vector<std::byte> bytes(values.size() * sizeof(uint32_t));
+        std::memcpy(bytes.data(), values.begin(), bytes.size());
+        return bytes;
+    }
 }
 
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
@@ -816,6 +823,91 @@ TEST(RenderableAssetModule, StyledMeshAcceptsFaceFieldVisualization)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
     EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
+}
+
+TEST(RenderableAssetModule, StyledMeshAcceptsFaceUIntMaskVisualization)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_face_mask_visualization_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/face_mask_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/face_mask_quad_masks",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Face,
+            .element_count = 2u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x3000u,
+                    .value_type = MeshDerivedFieldValueType::UInt1,
+                    .values = uint_bytes({ 1u, 0u }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.field_visualization.enabled = true;
+    style.field_visualization.channel_id = 0x3000u;
+    style.field_visualization.value_min = 0.0f;
+    style.field_visualization.value_max = 1.0f;
+    style.field_visualization.gamma = 1.0f;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/face_mask_heat",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/face_mask_quad_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshFieldHeatmap);
+    EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
+    EXPECT_EQ(data->mesh_style.field_visualization.channel_id, 0x3000u);
 }
 
 TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersDoesNotEmitRenderable)

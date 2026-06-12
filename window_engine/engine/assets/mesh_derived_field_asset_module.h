@@ -140,6 +140,23 @@ namespace wz::engine::assets
         float tau = 1.0f;
     };
 
+    struct MeshFieldLevelMaskRegionDesc
+    {
+        uint32_t input_channel_id = 0;
+        uint32_t output_channel_id = 0;
+        float min_value = 0.0f;
+        float max_value = 1.0f;
+    };
+
+    struct MeshFieldLevelMaskDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        MeshDerivedFieldAsset input_field{};
+        MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Face;
+        std::vector<MeshFieldLevelMaskRegionDesc> regions;
+    };
+
     struct MeshDerivedFieldHandle
     {
         wz::asset::ResourceHandle handle{};
@@ -177,6 +194,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshDerivedFieldAsset create_sparse_diffusion_bands(
             const MeshSparseDiffusionBandsDesc& desc);
+
+        [[nodiscard]] MeshDerivedFieldAsset create_field_level_mask(
+            const MeshFieldLevelMaskDesc& desc);
 
         [[nodiscard]] MeshDerivedFieldHandle get_mesh_derived_field(
             const MeshDerivedFieldAsset& asset) const;

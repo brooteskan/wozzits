@@ -191,6 +191,18 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
             SceneAuthoredComponentKind::MeshSparseOperatorSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
+        scene_component_domain(
+            SceneAuthoredComponentKind::MeshSparseApplyField),
+        SceneComponentDomain::EditorAuthoring);
+    EXPECT_EQ(
+        scene_component_domain(
+            SceneAuthoredComponentKind::MeshSparseDiffusionBands),
+        SceneComponentDomain::EditorAuthoring);
+    EXPECT_EQ(
+        scene_component_domain(
+            SceneAuthoredComponentKind::MeshLevelMaskSource),
+        SceneComponentDomain::EditorAuthoring);
+    EXPECT_EQ(
         scene_component_domain(SceneAuthoredComponentKind::MeshRenderStyle),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
@@ -226,6 +238,18 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         SceneAuthoredComponentKind::MeshSparseOperatorSource));
     EXPECT_TRUE(is_editor_authoring_component(
         SceneAuthoredComponentKind::MeshSparseOperatorSource));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::MeshSparseApplyField));
+    EXPECT_TRUE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::MeshSparseApplyField));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::MeshSparseDiffusionBands));
+    EXPECT_TRUE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::MeshSparseDiffusionBands));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::MeshLevelMaskSource));
+    EXPECT_TRUE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::MeshLevelMaskSource));
     EXPECT_FALSE(is_exportable_component(
         SceneAuthoredComponentKind::MeshRenderStyle));
     EXPECT_TRUE(is_editor_authoring_component(

@@ -414,6 +414,116 @@ TEST(SceneAssetModule, MeshSparseDiffusionBandsComponentRoundTripsThroughSceneJS
         std::string::npos);
 }
 
+TEST(SceneAssetModule, MeshLevelMaskSourceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_level_mask_source_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_level_mask_source_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_level_mask_source": {
+        "enabled": true,
+        "input_field_ref": "field:diffusion_bands",
+        "output_field_id": "masks",
+        "domain": "face",
+        "regions": [
+          {
+            "input_channel_id": 8704,
+            "output_channel_id": 12288,
+            "lo": 0.1,
+            "hi": 0.4
+          },
+          {
+            "input_channel_id": 8705,
+            "output_channel_id": 12289,
+            "min_value": 0.6,
+            "max_value": 1.0
+          }
+        ]
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_level_mask_source.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_level_mask_source",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_level_mask_source.has_value());
+    const auto& masks = *node.mesh_level_mask_source;
+    EXPECT_TRUE(masks.enabled);
+    EXPECT_EQ(masks.input_field_ref, "field:diffusion_bands");
+    EXPECT_EQ(masks.output_field_id, "masks");
+    EXPECT_EQ(masks.domain, MeshDerivedFieldDomain::Face);
+    ASSERT_EQ(masks.regions.size(), 2u);
+    EXPECT_EQ(masks.regions[0].input_channel_id, 8704u);
+    EXPECT_EQ(masks.regions[0].output_channel_id, 12288u);
+    EXPECT_FLOAT_EQ(masks.regions[0].min_value, 0.1f);
+    EXPECT_FLOAT_EQ(masks.regions[0].max_value, 0.4f);
+    EXPECT_EQ(masks.regions[1].input_channel_id, 8705u);
+    EXPECT_EQ(masks.regions[1].output_channel_id, 12289u);
+    EXPECT_FLOAT_EQ(masks.regions[1].min_value, 0.6f);
+    EXPECT_FLOAT_EQ(masks.regions[1].max_value, 1.0f);
+    EXPECT_EQ(masks.output_field_asset, wz::asset::AssetKey{});
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MeshLevelMaskSource), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.mesh_level_mask_sources, 1u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.mesh_level_mask_sources, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(
+        exported.find("\"mesh_level_mask_source\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"field:diffusion_bands\""), std::string::npos);
+    EXPECT_NE(exported.find("\"regions\""), std::string::npos);
+    EXPECT_NE(exported.find("\"face\""), std::string::npos);
+    EXPECT_EQ(
+        exported.find("\"output_field_asset\""),
+        std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshWaveletAnalysisComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

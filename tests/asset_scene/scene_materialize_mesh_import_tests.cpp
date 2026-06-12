@@ -30,6 +30,32 @@ namespace
             values.size() * sizeof(float));
         return values;
     }
+
+    std::vector<uint32_t> read_uint_channel(
+        const wz::engine::assets::MeshDerivedFieldData& field,
+        uint32_t channel_id)
+    {
+        const auto found = std::find_if(
+            field.channels.begin(),
+            field.channels.end(),
+            [channel_id](
+                const wz::engine::assets::MeshDerivedFieldChannel& channel) {
+                return channel.channel_id == channel_id;
+            });
+        if (found == field.channels.end()
+            || found->value_type
+                != wz::engine::assets::MeshDerivedFieldValueType::UInt1)
+        {
+            return {};
+        }
+
+        std::vector<uint32_t> values(field.element_count, 0u);
+        std::memcpy(
+            values.data(),
+            field.values.data() + found->byte_offset,
+            values.size() * sizeof(uint32_t));
+        return values;
+    }
 }
 
 TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
@@ -928,6 +954,99 @@ TEST(SceneAuthoringMaterialize, MeshSparseDiffusionBandsWrongInputChannelFallsBa
         for (const float value : values) {
             EXPECT_FLOAT_EQ(value, 0.0f);
         }
+    }
+}
+
+TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceBuildsFaceMaskField)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_level_mask_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_level_mask";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "face_constant",
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2200u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_level_mask_source = SceneMeshLevelMaskSourceAsset{
+        .enabled = true,
+        .input_field_ref = "field:face_constant",
+        .output_field_id = "masks",
+        .domain = MeshDerivedFieldDomain::Face,
+        .regions = {
+            SceneMeshLevelMaskRegionAsset{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3000u,
+                .min_value = 0.25f,
+                .max_value = 0.75f,
+            },
+            SceneMeshLevelMaskRegionAsset{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3001u,
+                .min_value = 0.75f,
+                .max_value = 1.0f,
+            },
+        },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_level_mask_source.has_value());
+
+    const wz::asset::AssetKey field_key =
+        scene.nodes[0].mesh_level_mask_source->output_field_asset;
+    ASSERT_NE(field_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(
+            MeshDerivedFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    ASSERT_TRUE(field_data->valid());
+    EXPECT_EQ(field_data->domain, MeshDerivedFieldDomain::Face);
+    ASSERT_EQ(field_data->element_count, 12u);
+    ASSERT_EQ(field_data->channels.size(), 2u);
+
+    const std::vector<uint32_t> selected =
+        read_uint_channel(*field_data, 0x3000u);
+    ASSERT_EQ(selected.size(), field_data->element_count);
+    for (const uint32_t value : selected) {
+        EXPECT_EQ(value, 1u);
+    }
+
+    const std::vector<uint32_t> rejected =
+        read_uint_channel(*field_data, 0x3001u);
+    ASSERT_EQ(rejected.size(), field_data->element_count);
+    for (const uint32_t value : rejected) {
+        EXPECT_EQ(value, 0u);
     }
 }
 

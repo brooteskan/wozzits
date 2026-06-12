@@ -484,10 +484,12 @@ namespace wz::engine::assets::internal
                                     "channel not found");
                             }
                             else if (channel_found->value_type
-                                != MeshDerivedFieldValueType::Float1)
+                                    != MeshDerivedFieldValueType::Float1
+                                && channel_found->value_type
+                                    != MeshDerivedFieldValueType::UInt1)
                             {
                                 disable_field_visualization(
-                                    "channel is not Float1");
+                                    "channel is not Float1 or UInt1");
                             }
                             else {
                                 const uint32_t expected_bytes =

@@ -10,7 +10,8 @@ namespace wz::gpu
 {
     namespace
     {
-        const wz::engine::assets::MeshDerivedFieldChannel* find_float1_channel(
+        const wz::engine::assets::MeshDerivedFieldChannel*
+        find_visualization_channel(
             const MeshFieldVisualizationUploadDesc& desc) noexcept
         {
             if (!desc.field) {
@@ -26,12 +27,39 @@ namespace wz::gpu
                 });
 
             if (found == desc.field->channels.end()
-                || found->value_type
-                    != wz::engine::assets::MeshDerivedFieldValueType::Float1)
+                || (found->value_type
+                        != wz::engine::assets::MeshDerivedFieldValueType::Float1
+                    && found->value_type
+                        != wz::engine::assets::MeshDerivedFieldValueType::UInt1))
             {
                 return nullptr;
             }
             return &*found;
+        }
+
+        float read_channel_value_as_float(
+            const wz::engine::assets::MeshDerivedFieldData& field,
+            const wz::engine::assets::MeshDerivedFieldChannel& channel,
+            uint32_t element) noexcept
+        {
+            const std::byte* source =
+                field.values.data()
+                + channel.byte_offset
+                + static_cast<size_t>(element)
+                    * wz::engine::assets::mesh_derived_field_value_stride(
+                        channel.value_type);
+
+            if (channel.value_type
+                == wz::engine::assets::MeshDerivedFieldValueType::UInt1)
+            {
+                uint32_t value = 0u;
+                std::memcpy(&value, source, sizeof(value));
+                return static_cast<float>(value);
+            }
+
+            float value = 0.0f;
+            std::memcpy(&value, source, sizeof(value));
+            return value;
         }
 
         bool channel_bytes_are_valid(
@@ -46,6 +74,22 @@ namespace wz::gpu
                 && channel.byte_offset <= field.values.size()
                 && channel.byte_count <= field.values.size()
                     - channel.byte_offset;
+        }
+
+        bool channel_to_float_values(
+            const wz::engine::assets::MeshDerivedFieldData& field,
+            const wz::engine::assets::MeshDerivedFieldChannel& channel,
+            std::vector<float>& out)
+        {
+            if (!channel_bytes_are_valid(field, channel)) {
+                return false;
+            }
+
+            out.resize(field.element_count);
+            for (uint32_t i = 0; i < field.element_count; ++i) {
+                out[i] = read_channel_value_as_float(field, channel, i);
+            }
+            return true;
         }
 
         bool project_face_field_to_vertices(
@@ -64,13 +108,11 @@ namespace wz::gpu
                 return false;
             }
 
-            const auto* face_values =
-                reinterpret_cast<const float*>(
-                    desc.field->values.data() + channel.byte_offset);
             out.assign(desc.mesh->vertex_count(), 0.0f);
             std::vector<uint32_t> counts(desc.mesh->vertex_count(), 0u);
             for (uint32_t face = 0; face < desc.field->element_count; ++face) {
-                const float value = face_values[face];
+                const float value =
+                    read_channel_value_as_float(*desc.field, channel, face);
                 const size_t i = static_cast<size_t>(face) * 3u;
                 for (uint32_t corner = 0; corner < 3u; ++corner) {
                     const uint32_t vertex = desc.mesh->indices[i + corner];
@@ -99,7 +141,7 @@ namespace wz::gpu
             return false;
         }
 
-        const auto* channel = find_float1_channel(*this);
+        const auto* channel = find_visualization_channel(*this);
         if (!channel) {
             return false;
         }
@@ -123,7 +165,7 @@ namespace wz::gpu
         if (!valid()) {
             return nullptr;
         }
-        const auto* channel = find_float1_channel(*this);
+        const auto* channel = find_visualization_channel(*this);
         return channel ? field->values.data() + channel->byte_offset : nullptr;
     }
 
@@ -133,7 +175,7 @@ namespace wz::gpu
         if (!valid()) {
             return 0u;
         }
-        const auto* channel = find_float1_channel(*this);
+        const auto* channel = find_visualization_channel(*this);
         return channel ? channel->byte_count : 0u;
     }
 
@@ -158,20 +200,33 @@ namespace wz::gpu
             return {};
         }
 
-        if (desc.field
-            && desc.field->domain
-                == wz::engine::assets::MeshDerivedFieldDomain::Face)
-        {
-            const auto* channel = find_float1_channel(desc);
-            if (!channel) {
-                return {};
-            }
+        const auto* channel = find_visualization_channel(desc);
+        if (!channel) {
+            return {};
+        }
 
+        if (desc.field
+            && (desc.field->domain
+                    == wz::engine::assets::MeshDerivedFieldDomain::Face
+                || channel->value_type
+                    == wz::engine::assets::MeshDerivedFieldValueType::UInt1))
+        {
             std::vector<float> projected_values;
-            if (!project_face_field_to_vertices(
-                    desc,
-                    *channel,
-                    projected_values))
+            if (desc.field->domain
+                == wz::engine::assets::MeshDerivedFieldDomain::Face)
+            {
+                if (!project_face_field_to_vertices(
+                        desc,
+                        *channel,
+                        projected_values))
+                {
+                    return {};
+                }
+            }
+            else if (!channel_to_float_values(
+                         *desc.field,
+                         *channel,
+                         projected_values))
             {
                 return {};
             }

@@ -114,6 +114,19 @@ namespace
         return out;
     }
 
+    uint32_t read_uint(
+        const std::vector<std::byte>& bytes,
+        uint32_t byte_offset,
+        uint32_t element)
+    {
+        uint32_t out = 0u;
+        std::memcpy(
+            &out,
+            bytes.data() + byte_offset + element * sizeof(uint32_t),
+            sizeof(uint32_t));
+        return out;
+    }
+
     const wz::engine::assets::MeshDerivedFieldChannel* find_channel(
         const wz::engine::assets::MeshDerivedFieldData& data,
         uint32_t channel_id)
@@ -139,6 +152,23 @@ namespace
         std::vector<float> out(data.element_count, 0.0f);
         for (uint32_t i = 0; i < data.element_count; ++i) {
             out[i] = read_float(data.values, channel->byte_offset, i);
+        }
+        return out;
+    }
+
+    std::vector<uint32_t> read_uint_channel(
+        const wz::engine::assets::MeshDerivedFieldData& data,
+        uint32_t channel_id)
+    {
+        const auto* channel = find_channel(data, channel_id);
+        EXPECT_NE(channel, nullptr);
+        if (!channel) {
+            return {};
+        }
+
+        std::vector<uint32_t> out(data.element_count, 0u);
+        for (uint32_t i = 0; i < data.element_count; ++i) {
+            out[i] = read_uint(data.values, channel->byte_offset, i);
         }
         return out;
     }
@@ -773,6 +803,134 @@ TEST(MeshDerivedFieldAssetModule, SparseDiffusionBandsSupportsFaceDomain)
     ASSERT_EQ(band.size(), 2u);
     EXPECT_FLOAT_EQ(band[0], -2.0f);
     EXPECT_FLOAT_EQ(band[1], 2.0f);
+}
+
+TEST(MeshDerivedFieldAssetModule, FieldLevelMaskBuildsFaceMaskChannels)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "field_level_mask_face");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto input = assets.mesh_derived_fields().create_explicit_field({
+        .name = "face_bands",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .element_count = 2u,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2200u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = float_values({ 0.25f, 0.75f }),
+            },
+        },
+    });
+    ASSERT_TRUE(input.valid());
+
+    const auto masks = assets.mesh_derived_fields().create_field_level_mask({
+        .name = "face_masks",
+        .source_mesh = mesh,
+        .input_field = input,
+        .domain = MeshDerivedFieldDomain::Face,
+        .regions = {
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3000u,
+                .min_value = 0.0f,
+                .max_value = 0.5f,
+            },
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3001u,
+                .min_value = 0.5f,
+                .max_value = 1.0f,
+            },
+        },
+    });
+    ASSERT_TRUE(masks.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(masks);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Face);
+    EXPECT_EQ(data->element_count, 2u);
+    ASSERT_EQ(data->channels.size(), 2u);
+    EXPECT_EQ(data->channels[0].value_type, MeshDerivedFieldValueType::UInt1);
+    EXPECT_EQ(data->channels[1].value_type, MeshDerivedFieldValueType::UInt1);
+    EXPECT_EQ(read_uint_channel(*data, 0x3000u), std::vector<uint32_t>({ 1u, 0u }));
+    EXPECT_EQ(read_uint_channel(*data, 0x3001u), std::vector<uint32_t>({ 0u, 1u }));
+}
+
+TEST(MeshDerivedFieldAssetModule, FieldLevelMaskMissingInputChannelEmitsZeroMask)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "field_level_mask_missing");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto input = assets.mesh_derived_fields().create_explicit_field({
+        .name = "face_bands",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .element_count = 2u,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2200u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = float_values({ 0.25f, 0.75f }),
+            },
+        },
+    });
+    ASSERT_TRUE(input.valid());
+
+    const auto masks = assets.mesh_derived_fields().create_field_level_mask({
+        .name = "face_masks",
+        .source_mesh = mesh,
+        .input_field = input,
+        .domain = MeshDerivedFieldDomain::Face,
+        .regions = {
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2299u,
+                .output_channel_id = 0x3000u,
+                .min_value = 0.0f,
+                .max_value = 1.0f,
+            },
+        },
+    });
+    ASSERT_TRUE(masks.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(masks);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(read_uint_channel(*data, 0x3000u), std::vector<uint32_t>({ 0u, 0u }));
 }
 
 TEST(MeshDerivedFieldAssetModule, RejectsElementCountMismatch)
