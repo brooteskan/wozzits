@@ -73,6 +73,8 @@ namespace wz::engine::assets
         bool valid() const noexcept;
     };
 
+    inline constexpr uint32_t kMaxMeshMaskRules = 16u;
+
     struct MeshMaskRenderStyleData
     {
         bool enabled = false;
@@ -113,6 +115,12 @@ namespace wz::engine::assets
         const MeshRenderStyleData& style) noexcept
     {
         return style.alpha < kMeshRenderStyleOpaqueAlpha;
+    }
+
+    [[nodiscard]] inline bool is_mesh_render_style_drawable(
+        const MeshRenderStyleData& style) noexcept
+    {
+        return style.wireframe.enabled || style.surface.enabled;
     }
 
     struct MeshRenderStyleCompileDesc

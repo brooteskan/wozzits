@@ -1560,6 +1560,13 @@ namespace wz::engine::rendering
                 mesh_field_visualization_resource);
 
         descriptor.mesh = scene_mesh;
+        if (!wz::engine::assets::is_mesh_render_style_drawable(
+                renderable.mesh_style))
+        {
+            descriptor.node_class.default_surface =
+                wz::scene::SurfaceClass::None;
+            descriptor.node_class.domains = 0;
+        }
         if (renderable.program
             == wz::engine::assets::BuiltinRenderProgram::TerrainMeshSurface)
         {

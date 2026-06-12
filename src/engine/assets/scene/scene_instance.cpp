@@ -83,6 +83,13 @@ namespace wz::engine::assets
                 break;
             }
 
+            if (data.kind == RenderableKind::Mesh
+                && !is_mesh_render_style_drawable(data.mesh_style))
+            {
+                nc.default_surface = sc::SurfaceClass::None;
+                nc.domains = 0;
+            }
+
             // mesh/material: RenderableAssetData carries source_asset (AssetKey)
             // but not scene-render MeshHandle/MaterialHandle.  Those are GPU-side
             // indices resolved during the realize/upload path.  Use 0 as a valid
@@ -482,10 +489,21 @@ namespace wz::engine::assets
             inst.authored_to_runtime[node.id] = h;
         }
 
+        struct PendingRenderableRealize
+        {
+            NodeHandle node{};
+            const RenderableAssetData* renderable = nullptr;
+            std::string node_name;
+        };
+        std::vector<PendingRenderableRealize> pending_renderable_realize;
+
         // Allocate renderables sized to node count
         inst.renderables.resize(nc);
 
-        // Fill renderable descriptors
+        // Fill renderable descriptors from authored/compiled CPU data first.
+        // GPU realization runs after non-render component tables are built, so
+        // mesh-field targets and behavior/compute metadata exist before the
+        // candidate scene creates render resources.
         for (const auto& node : scene.nodes) {
             NodeHandle h = id_to_handle[node.id];
 
@@ -512,18 +530,9 @@ namespace wz::engine::assets
                 auto desc = descriptor_from_renderable_asset(
                     *rdata, node.visible);
 
-                if (context.resource_resolver) {
-                    if (!context.resource_resolver->realize_renderable_descriptor(
-                            *rdata, desc))
-                    {
-                        result.error = SceneInstantiateError::RenderableRealizeFailed;
-                        result.error_detail = node_log_name(node)
-                            + " renderable descriptor could not be realized";
-                        log_instantiate_failure(result, context);
-                        return result;
-                    }
-                }
-                else if (rdata->kind != RenderableKind::Mesh) {
+                if (!context.resource_resolver
+                    && rdata->kind != RenderableKind::Mesh)
+                {
                     result.error = SceneInstantiateError::RenderableRealizeFailed;
                     result.error_detail = node_log_name(node)
                         + " has non-mesh renderable kind but no resource resolver";
@@ -532,6 +541,14 @@ namespace wz::engine::assets
                 }
 
                 inst.renderables[h] = desc;
+                if (context.resource_resolver) {
+                    pending_renderable_realize.push_back(
+                        PendingRenderableRealize{
+                            .node = h,
+                            .renderable = rdata,
+                            .node_name = node_log_name(node),
+                        });
+                }
             }
             else if (node.renderable) {
                 const auto& rb = *node.renderable;
@@ -838,6 +855,23 @@ namespace wz::engine::assets
                         .size    = node.editor_handle->size,
                     },
                 });
+            }
+        }
+
+        for (const PendingRenderableRealize& pending :
+             pending_renderable_realize)
+        {
+            if (!pending.renderable
+                || !context.resource_resolver->realize_renderable_descriptor(
+                    *pending.renderable,
+                    inst.renderables[pending.node]))
+            {
+                result.error =
+                    SceneInstantiateError::RenderableRealizeFailed;
+                result.error_detail = pending.node_name
+                    + " renderable descriptor could not be realized";
+                log_instantiate_failure(result, context);
+                return result;
             }
         }
 

@@ -411,6 +411,36 @@ namespace wz::engine::assets::internal
                 }
 
                 MeshRenderStyleData effective_style = *style;
+                if (!is_mesh_render_style_drawable(effective_style)) {
+                    logger->warn(
+                        "mesh styled renderable has no enabled render layers; "
+                        "compiling as non-drawing renderable");
+
+                    RenderableAssetData data{};
+                    data.kind = RenderableKind::Mesh;
+                    data.source_asset = desc->mesh_asset;
+                    data.companion_asset = desc->style_asset;
+                    data.mesh_field_visualization_asset = {};
+                    data.program = BuiltinRenderProgram::MeshWireframeDebug;
+                    data.domain = RenderDomain::Opaque;
+                    data.policy_flags = RenderPolicy_None;
+                    data.mesh_style = effective_style;
+                    copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
+
+                    wz::asset::ResourceHandle handle =
+                        renderable_table->add(std::move(data));
+
+                    if (!handle.valid()) {
+                        logger->error("failed to store mesh styled renderable");
+                        return compile_failed_node(input);
+                    }
+
+                    wz::asset::AssetNode out = input;
+                    out.stage = wz::asset::AssetStage::Compiled;
+                    out.payload = handle;
+                    return out;
+                }
+
                 const bool wants_field_visualization =
                     effective_style.field_visualization.enabled;
                 bool field_visualization_active = wants_field_visualization;
@@ -648,12 +678,6 @@ namespace wz::engine::assets::internal
                     effective_style.alpha = 1.0f;
                 }
                 effective_style.hidden_line_prepass = false;
-
-                if (!style->wireframe.enabled && !style->surface.enabled) {
-                    logger->warn(
-                        "mesh styled renderable has no enabled render layers");
-                    return compile_failed_node(input);
-                }
 
                 auto apply_depth_policy = [&]()
                 {

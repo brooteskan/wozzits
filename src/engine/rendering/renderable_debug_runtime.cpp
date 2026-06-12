@@ -49,6 +49,7 @@ namespace wz::engine::rendering
 
         case BuiltinRenderProgram::MeshDepthPrepassDebug:
         case BuiltinRenderProgram::MeshFieldHeatmap:
+        case BuiltinRenderProgram::MeshMaskStyle:
         case BuiltinRenderProgram::TerrainMeshSurface:
             return false;
 

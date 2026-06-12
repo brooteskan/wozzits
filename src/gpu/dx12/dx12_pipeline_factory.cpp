@@ -136,6 +136,86 @@ namespace wz::gpu::dx12::internal
         return root_sig;
     }
 
+    static ID3D12RootSignature* create_mesh_mask_style_root_sig(
+        ID3D12Device* device)
+    {
+        D3D12_DESCRIPTOR_RANGE field_range{};
+        field_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        field_range.NumDescriptors = 1;
+        field_range.BaseShaderRegister = 0;
+        field_range.RegisterSpace = 0;
+        field_range.OffsetInDescriptorsFromTableStart =
+            D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        D3D12_DESCRIPTOR_RANGE rules_range{};
+        rules_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        rules_range.NumDescriptors = 1;
+        rules_range.BaseShaderRegister = 1;
+        rules_range.RegisterSpace = 0;
+        rules_range.OffsetInDescriptorsFromTableStart =
+            D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        D3D12_ROOT_PARAMETER params[3]{};
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[0].Constants.Num32BitValues = 48;
+        params[0].Constants.RegisterSpace  = 0;
+        params[0].Constants.ShaderRegister = 0;
+        params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        params[1].ParameterType =
+            D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[1].DescriptorTable.NumDescriptorRanges = 1;
+        params[1].DescriptorTable.pDescriptorRanges = &field_range;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        params[2].ParameterType =
+            D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[2].DescriptorTable.NumDescriptorRanges = 1;
+        params[2].DescriptorTable.pDescriptorRanges = &rules_range;
+        params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        D3D12_ROOT_SIGNATURE_DESC desc = {};
+        desc.NumParameters   = 3;
+        desc.pParameters     = params;
+        desc.NumStaticSamplers = 0;
+        desc.pStaticSamplers = nullptr;
+        desc.Flags =
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        ID3DBlob* sig_blob   = nullptr;
+        ID3DBlob* error_blob = nullptr;
+
+        HRESULT hr = D3D12SerializeRootSignature(
+            &desc,
+            D3D_ROOT_SIGNATURE_VERSION_1,
+            &sig_blob,
+            &error_blob);
+
+        if (FAILED(hr))
+        {
+            if (error_blob)
+            {
+                OutputDebugStringA(
+                    static_cast<const char*>(error_blob->GetBufferPointer()));
+                error_blob->Release();
+            }
+            return nullptr;
+        }
+
+        ID3D12RootSignature* root_sig = nullptr;
+        hr = device->CreateRootSignature(
+            0,
+            sig_blob->GetBufferPointer(),
+            sig_blob->GetBufferSize(),
+            IID_PPV_ARGS(&root_sig));
+
+        sig_blob->Release();
+        if (error_blob) error_blob->Release();
+
+        assert(SUCCEEDED(hr));
+        return root_sig;
+    }
+
     static ID3D12RootSignature* create_gaussian_splat_root_sig(ID3D12Device* device)
     {
         // 36 × 32-bit constants:
@@ -342,6 +422,8 @@ namespace wz::gpu::dx12::internal
             return create_mesh_wireframe_root_sig(device);
         case P::MeshFieldHeatmap:
             return create_mesh_field_heatmap_root_sig(device);
+        case P::MeshMaskStyle:
+            return create_mesh_mask_style_root_sig(device);
         case P::TerrainMeshSurface:
             return create_terrain_mesh_surface_root_sig(device);
         case P::GaussianSplatDebug:
@@ -831,6 +913,13 @@ namespace wz::gpu::dx12::internal
                 true,
                 true);
         case P::MeshFieldHeatmap:
+            return create_terrain_mesh_surface_pso(
+                device,
+                root_sig,
+                vertex_shader,
+                pixel_shader,
+                true);
+        case P::MeshMaskStyle:
             return create_terrain_mesh_surface_pso(
                 device,
                 root_sig,

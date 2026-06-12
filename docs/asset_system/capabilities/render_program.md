@@ -30,15 +30,21 @@ captures:
 - Vertex and pixel shader asset keys
 
 The `BuiltinRenderProgram` enum drives which PSO the backend ultimately creates.
-Ten variants currently exist:
+The current variants are:
 
 | Variant | Domain | Notes |
 |---------|--------|-------|
 | `MeshWireframeDebug` | `Debug` | IA-driven wireframe; depends on mesh vertex/index buffers |
 | `MeshWireframeDepthDebug` | `Debug` | Depth-tested/depth-writing mesh wireframe debug path |
 | `MeshDepthPrepassDebug` | `Debug` | Depth-only mesh prepass path used before some debug rendering |
+| `MeshWireframeAlpha` | `Transparent` | Alpha-blended wireframe mesh path |
+| `MeshSurface` | `Opaque` | Solid mesh path consuming position, normal, and UV0 |
+| `MeshSurfaceAlpha` | `Transparent` | Alpha-blended solid mesh path |
+| `MeshFieldHeatmap` | `Opaque` | Mesh surface path using a per-face field SRV at t0 |
+| `MeshMaskStyle` | `Opaque` | Mesh surface path using per-face field values at t0 and packed mask rules at t1 |
 | `TerrainMeshSurface` | `Opaque` | IA-driven solid terrain mesh path consuming position, normal, and UV0 |
 | `GaussianSplatDebug` | `Splat` | Classic per-splat path |
+| `TerrainSurfelSurface` | `Splat` | IA-based terrain surfel splat path with depth read/write |
 | `ScalarFieldDebug` | `Debug` | Field-to-geometry debug visualization |
 | `GaussianSplatPullDebug` | `Splat` | Pull-based path: no IA, reads t0 `StructuredBuffer<Splat>` at SRV slot 0 |
 | `GaussianSplatNeighborhoodColorBlend` | `Splat` | Pull-based + LOD color blend modes (distance/stride/confidence blending) |
@@ -88,8 +94,14 @@ enum class BuiltinRenderProgram : uint8_t {
     MeshWireframeDebug,
     MeshWireframeDepthDebug,
     MeshDepthPrepassDebug,
+    MeshWireframeAlpha,
+    MeshSurface,
+    MeshSurfaceAlpha,
+    MeshFieldHeatmap,
+    MeshMaskStyle,
     TerrainMeshSurface,
     GaussianSplatDebug,
+    TerrainSurfelSurface,
     ScalarFieldDebug,
     GaussianSplatPullDebug,
     GaussianSplatNeighborhoodColorBlend,

@@ -181,3 +181,30 @@ TEST(MeshRenderStyleAssetModule, MaskStyleParticipatesInIdentity)
     EXPECT_TRUE(report.ok());
     EXPECT_EQ(report.resolved_count, 2u);
 }
+
+TEST(MeshRenderStyleAssetModule, MaskStyleRejectsTooManyRules)
+{
+    using namespace wz::engine::assets;
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = true;
+    style.mask.enabled = true;
+
+    style.mask.rules.resize(kMaxMeshMaskRules + 1u);
+    for (uint32_t i = 0; i < style.mask.rules.size(); ++i) {
+        MeshMaskRule& rule = style.mask.rules[i];
+        rule.input_channel_id = 0x3100u + i;
+        rule.lo = 0.0f;
+        rule.hi = 1.0f;
+        rule.color[0] = 1.0f;
+        rule.color[1] = 0.0f;
+        rule.color[2] = 0.0f;
+        rule.color[3] = 1.0f;
+    }
+
+    EXPECT_FALSE(style.valid());
+
+    style.mask.rules.resize(kMaxMeshMaskRules);
+    EXPECT_TRUE(style.valid());
+}

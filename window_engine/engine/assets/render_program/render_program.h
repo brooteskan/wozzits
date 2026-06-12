@@ -91,6 +91,7 @@ namespace wz::engine::assets
         SortedSplatIndices,
         ScalarFieldTexture,
         MeshFieldVisualization,
+        MeshMaskRules,
     };
 
     struct DescriptorBinding

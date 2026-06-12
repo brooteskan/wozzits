@@ -224,6 +224,89 @@ TEST(SceneAssetModule, RealizedHandlesWithMixedNodes)
         wz::scene::SceneRole::None);
 }
 
+TEST(SceneInstantiate, DelaysResourceRealizationUntilDescriptorsArePopulated)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_realize_order_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    const auto first = assets.renderables().create_mesh_wireframe({
+        .name = "debug/first",
+        .mesh = mesh,
+    });
+    const auto second = assets.renderables().create_mesh_wireframe({
+        .name = "debug/second",
+        .mesh = mesh,
+    });
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    SceneAssetData scene{};
+    scene.name = "realize_order";
+
+    SceneNodeAsset first_node{};
+    first_node.id = "first";
+    first_node.renderable_asset = first.output;
+    scene.nodes.push_back(std::move(first_node));
+
+    SceneNodeAsset second_node{};
+    second_node.id = "second";
+    second_node.renderable_asset = second.output;
+    scene.nodes.push_back(std::move(second_node));
+
+    class OrderingResourceResolver final
+        : public SceneRenderResourceResolver
+    {
+    public:
+        bool realize_renderable_descriptor(
+            const RenderableAssetData&,
+            wz::scene::RenderableDescriptor& descriptor) const override
+        {
+            ++calls;
+            if (calls == 1u) {
+                const auto* next_descriptor = &descriptor + 1;
+                saw_next_descriptor_populated =
+                    next_descriptor->node_class.role
+                    == wz::scene::SceneRole::Renderable;
+            }
+            descriptor.mesh = wz::scene::MeshHandle{ calls };
+            descriptor.material = wz::scene::MaterialHandle{ calls };
+            return true;
+        }
+
+        mutable uint32_t calls = 0u;
+        mutable bool saw_next_descriptor_populated = false;
+    };
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    OrderingResourceResolver resource_resolver;
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    EXPECT_EQ(resource_resolver.calls, 2u);
+    EXPECT_TRUE(resource_resolver.saw_next_descriptor_populated);
+}
+
 TEST(SceneInstantiate, TerrainSurfaceRenderableCompilesToTerrainDrawRefs)
 {
     using namespace wz::engine::assets;
@@ -623,6 +706,109 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     EXPECT_EQ(cmd.material, desc.material);
     EXPECT_FLOAT_EQ(cmd.world.m[12], 4.0f);
     EXPECT_FLOAT_EQ(cmd.world.m[14], 6.0f);
+}
+
+TEST(SceneAssetModule, StyledMeshWithNoEnabledLayersCompilesToNoDraws)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_empty_mesh_style_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = false;
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/none",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable = assets.renderables().create_mesh_styled({
+        .name = "debug/cube_none",
+        .mesh = mesh,
+        .style = render_style,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(),
+        render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "empty_style_scene";
+
+    SceneNodeAsset node{};
+    node.id = "cube_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    const auto cube_h = result.instance.authored_to_runtime["cube_node"];
+    const auto& desc = result.instance.renderables[cube_h];
+    EXPECT_EQ(desc.node_class.role, wz::scene::SceneRole::Renderable);
+    EXPECT_EQ(desc.node_class.producer, wz::scene::ProducerKind::Mesh);
+    EXPECT_EQ(desc.node_class.default_surface, wz::scene::SurfaceClass::None);
+    EXPECT_NE(desc.mesh, wz::scene::INVALID_MESH);
+
+    wz::scene::ViewData view{};
+    view.camera_position = { 0.f, 0.f, 0.f };
+    view.view = wz::math::Mat4::identity();
+    constexpr float Pi = 3.14159265358979323846f;
+    view.projection = wz::math::projection_perspective_dx(
+        70.0f * Pi / 180.0f,
+        16.f / 9.f,
+        0.1f,
+        100.f);
+    view.view_projection = wz::math::mul(view.projection, view.view);
+
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        result.instance.storage.polytree,
+        result.instance.renderables,
+        result.instance.lights,
+        view);
+
+    EXPECT_TRUE(compiled.scene.opaque.empty());
+    EXPECT_TRUE(compiled.scene.transparent.empty());
+
+    wz::render::RenderIRStorage render_ir{};
+    wz::render::build_render_ir(render_ir, compiled.scene);
+
+    wz::render::RenderFrameStorage render_frame{};
+    wz::render::build_frame(render_frame, render_ir.ir, compiled.scene);
+
+    EXPECT_TRUE(render_frame.frame.opaque.empty());
+    EXPECT_TRUE(render_frame.frame.transparent.empty());
 }
 
 TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)

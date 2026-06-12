@@ -1003,7 +1003,7 @@ TEST(RenderableAssetModule, StyledMeshAcceptsFaceMaskStyle)
     EXPECT_EQ(data->mesh_style.mask.rules[0].input_channel_id, 0x3300u);
 }
 
-TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersDoesNotEmitRenderable)
+TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersResolvesAsNonDrawing)
 {
     const wz::fs::Path root =
         wz::fs::join(
@@ -1051,17 +1051,18 @@ TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersDoesNotEmitRenderable)
     ASSERT_TRUE(assets.commit());
 
     const auto report = assets.resolve_all();
-    EXPECT_FALSE(report.ok());
-    int renderable_failures = 0;
-    for (const auto& failure : report.failures) {
-        if (failure.key == renderable.output
-            && failure.error == wz::asset::ResolveError::CompileFailed)
-        {
-            ++renderable_failures;
-        }
-    }
-    EXPECT_EQ(renderable_failures, 1);
-    EXPECT_FALSE(assets.renderables().get_renderable(renderable).valid());
+    EXPECT_TRUE(report.ok());
+
+    const auto handle = assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
+    EXPECT_FALSE(data->mesh_style.surface.enabled);
+    EXPECT_EQ(data->policy_flags, RenderPolicy_None);
+    EXPECT_EQ(data->mesh_field_visualization_asset, wz::asset::AssetKey{});
 }
 
 TEST(RenderableAssetModule, MeshWireframeRenderableDomainParticipatesInIdentity)

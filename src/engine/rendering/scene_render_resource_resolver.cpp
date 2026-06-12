@@ -43,6 +43,13 @@ namespace wz::engine::rendering
                 renderable.mesh_style);
 
         descriptor.mesh = scene_mesh;
+        if (!wz::engine::assets::is_mesh_render_style_drawable(
+                renderable.mesh_style))
+        {
+            descriptor.node_class.default_surface =
+                wz::scene::SurfaceClass::None;
+            descriptor.node_class.domains = 0;
+        }
 
         // Default material: scene-render INVALID_MATERIAL signals the submit
         // path to use the debug/fallback material.  A material resolver would

@@ -4,6 +4,7 @@
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/rendering/builtin_render_programs.h>
 #include <engine/rendering/render_program_pipeline_cache.h>
 
 #include <file/filesystem.h>
@@ -488,6 +489,167 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinTerrainMeshSurface)
     EXPECT_EQ(data->root_constants[0].value_count, 32u);
 
     EXPECT_TRUE(data->descriptor_bindings.empty());
+}
+
+TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshMaskStyle)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name = "stub/mesh_mask_style",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path = "shaders/stub/stub_ps.hlsl",
+        });
+
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_builtin({
+        .name = "program/mesh_mask_style",
+        .program = BuiltinRenderProgram::MeshMaskStyle,
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader = shaders.pixel_shader,
+        });
+
+    ASSERT_TRUE(program.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto handle = assets.render_programs().get_render_program(program);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.render_programs().get_render_program_data(handle);
+    ASSERT_NE(data, nullptr);
+
+    EXPECT_EQ(data->builtin_program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_EQ(data->binding_model, RenderBindingModel::MeshIA);
+    EXPECT_EQ(data->topology, RenderPrimitiveTopology::TriangleList);
+    EXPECT_EQ(data->default_domain, RenderDomain::Opaque);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthTest, 0u);
+    EXPECT_NE(data->default_policy_flags & RenderPolicy_DepthWrite, 0u);
+
+    EXPECT_EQ(data->input_layout, InputLayoutKind::MeshPositionNormalUV);
+    EXPECT_EQ(data->blend_mode, BlendMode::Opaque);
+    EXPECT_EQ(data->depth_mode, DepthMode::TestWrite);
+    EXPECT_EQ(data->raster_mode, RasterMode::SolidCullNone);
+
+    ASSERT_EQ(data->root_constants.size(), 1u);
+    EXPECT_EQ(data->root_constants[0].visibility, ShaderVisibility::All);
+    EXPECT_EQ(data->root_constants[0].shader_register, 0u);
+    EXPECT_EQ(data->root_constants[0].register_space, 0u);
+    EXPECT_EQ(data->root_constants[0].value_count, 48u);
+
+    ASSERT_EQ(data->descriptor_bindings.size(), 2u);
+    EXPECT_EQ(
+        data->descriptor_bindings[0].kind,
+        DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(data->descriptor_bindings[0].visibility, ShaderVisibility::All);
+    EXPECT_EQ(
+        data->descriptor_bindings[0].semantic,
+        DescriptorSemantic::MeshFieldVisualization);
+    EXPECT_EQ(data->descriptor_bindings[0].shader_register, 0u);
+    EXPECT_EQ(data->descriptor_bindings[0].register_space, 0u);
+    EXPECT_EQ(data->descriptor_bindings[0].descriptor_count, 1u);
+
+    EXPECT_EQ(
+        data->descriptor_bindings[1].kind,
+        DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(data->descriptor_bindings[1].visibility, ShaderVisibility::Pixel);
+    EXPECT_EQ(
+        data->descriptor_bindings[1].semantic,
+        DescriptorSemantic::MeshMaskRules);
+    EXPECT_EQ(data->descriptor_bindings[1].shader_register, 1u);
+    EXPECT_EQ(data->descriptor_bindings[1].register_space, 0u);
+    EXPECT_EQ(data->descriptor_bindings[1].descriptor_count, 1u);
+
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_FALSE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(
+        device,
+        assets.render_programs().table(),
+        handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
+    EXPECT_TRUE(pipeline_cache.realize(
+        device,
+        assets.render_programs().table(),
+        handle));
+
+    const auto* layout = pipeline_cache.get_binding_layout(handle);
+    ASSERT_NE(layout, nullptr);
+    ASSERT_EQ(layout->root_constants.size(), 1u);
+    EXPECT_EQ(layout->root_constants[0].root_parameter_index, 0u);
+    EXPECT_EQ(layout->root_constants[0].value_count, 48u);
+
+    ASSERT_EQ(layout->desc_tables.size(), 2u);
+    EXPECT_EQ(layout->desc_tables[0].root_parameter_index, 1u);
+    EXPECT_EQ(layout->desc_tables[0].heap_start_slot, 0u);
+    EXPECT_EQ(layout->desc_tables[0].slot_count, 1u);
+    EXPECT_EQ(layout->desc_tables[1].root_parameter_index, 2u);
+    EXPECT_EQ(layout->desc_tables[1].heap_start_slot, 1u);
+    EXPECT_EQ(layout->desc_tables[1].slot_count, 1u);
+
+    ASSERT_EQ(layout->descriptors.size(), 2u);
+    EXPECT_EQ(
+        layout->descriptors[0].semantic,
+        DescriptorSemantic::MeshFieldVisualization);
+    EXPECT_EQ(layout->descriptors[0].root_parameter_index, 1u);
+    EXPECT_EQ(layout->descriptors[0].descriptor_table_offset, 0u);
+    EXPECT_EQ(
+        layout->descriptors[1].semantic,
+        DescriptorSemantic::MeshMaskRules);
+    EXPECT_EQ(layout->descriptors[1].root_parameter_index, 2u);
+    EXPECT_EQ(layout->descriptors[1].descriptor_table_offset, 1u);
+}
+
+TEST_F(RenderProgramGpuFixture, CompilesBuiltinMeshMaskStyleShaders)
+{
+    using namespace wz::engine::assets;
+
+    const fs::path resource_root =
+        fs::path(WZ_TEST_FIXTURE_DIR).parent_path().parent_path()
+        / "window_engine"
+        / "resources";
+
+    EngineAssetLibrary assets(device, logger, resource_root.string());
+
+    ShaderPairDesc shader_desc{};
+    ASSERT_TRUE(wz::engine::rendering::get_builtin_shader_pair_desc(
+        BuiltinRenderProgram::MeshMaskStyle,
+        shader_desc));
+
+    const auto shaders = assets.shaders().create_shader_pair(shader_desc);
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_builtin({
+        .name = "program/mesh_mask_style_real_shaders",
+        .program = BuiltinRenderProgram::MeshMaskStyle,
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader = shaders.pixel_shader,
+        });
+
+    ASSERT_TRUE(program.valid());
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    ASSERT_TRUE(report.ok());
+
+    const auto handles = assets.shaders().get_shader_pair(shaders);
+    EXPECT_TRUE(handles.valid());
+    EXPECT_TRUE(handles.vertex.valid());
+    EXPECT_TRUE(handles.pixel.valid());
+
+    const auto handle = assets.render_programs().get_render_program(program);
+    ASSERT_TRUE(handle.valid());
+
+    wz::engine::rendering::RenderProgramPipelineCache pipeline_cache;
+    EXPECT_TRUE(pipeline_cache.realize(
+        device,
+        assets.render_programs().table(),
+        handle));
+    EXPECT_TRUE(pipeline_cache.get(handle).valid());
 }
 
 TEST_F(RenderProgramGpuFixture, ResolvesCustomMeshSurface)

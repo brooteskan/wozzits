@@ -69,7 +69,8 @@ namespace wz::engine::assets
             || projection_mode != MeshMaskProjectionMode::Direct
             || (overlap_mode != MeshMaskOverlapMode::Priority
                 && overlap_mode != MeshMaskOverlapMode::AlphaBlend)
-            || rules.empty())
+            || rules.empty()
+            || rules.size() > kMaxMeshMaskRules)
         {
             return false;
         }

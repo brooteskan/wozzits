@@ -34,10 +34,24 @@ namespace wz::engine::assets
             std::unordered_map<std::string, ScalarFieldAsset>;
         using VectorFieldCache =
             std::unordered_map<std::string, VectorFieldAsset>;
+        struct MeshFieldRefEntry
+        {
+            wz::asset::AssetKey asset{};
+            MeshDerivedFieldDomain domain = MeshDerivedFieldDomain::Vertex;
+            std::string label;
+        };
+
+        struct MeshOperatorRefEntry
+        {
+            wz::asset::AssetKey asset{};
+            MeshOperatorDomain domain = MeshOperatorDomain::Vertex;
+            std::string label;
+        };
+
         using MeshFieldRefCache =
-            std::unordered_map<std::string, wz::asset::AssetKey>;
+            std::unordered_map<std::string, MeshFieldRefEntry>;
         using MeshOperatorRefCache =
-            std::unordered_map<std::string, wz::asset::AssetKey>;
+            std::unordered_map<std::string, MeshOperatorRefEntry>;
         using DirectLightCache =
             std::unordered_map<std::string, DirectLightAsset>;
         using AmbientLightingCache =
@@ -62,6 +76,77 @@ namespace wz::engine::assets
             std::ostringstream out;
             out << std::hex << std::setfill('0') << std::setw(16) << value;
             return out.str();
+        }
+
+        std::string short_asset_key(const wz::asset::AssetKey& key)
+        {
+            if (key == wz::asset::AssetKey{}) {
+                return "none";
+            }
+            std::ostringstream out;
+            out << std::hex << std::setfill('0')
+                << std::setw(8) << static_cast<uint32_t>(key.content_hash.lo)
+                << ":"
+                << std::setw(8) << static_cast<uint32_t>(key.deps_hash.lo);
+            return out.str();
+        }
+
+        const char* mesh_field_domain_name(
+            MeshDerivedFieldDomain domain) noexcept
+        {
+            switch (domain) {
+            case MeshDerivedFieldDomain::Vertex:
+                return "Vertex";
+            case MeshDerivedFieldDomain::Edge:
+                return "Edge";
+            case MeshDerivedFieldDomain::Face:
+                return "Face";
+            case MeshDerivedFieldDomain::Corner:
+                return "Corner";
+            }
+            return "Unknown";
+        }
+
+        const char* mesh_operator_domain_name(
+            MeshOperatorDomain domain) noexcept
+        {
+            switch (domain) {
+            case MeshOperatorDomain::Vertex:
+                return "Vertex";
+            case MeshOperatorDomain::Edge:
+                return "Edge";
+            case MeshOperatorDomain::Face:
+                return "Face";
+            case MeshOperatorDomain::Corner:
+                return "Corner";
+            }
+            return "Unknown";
+        }
+
+        std::string describe_field_ref(
+            std::string_view canonical_ref,
+            const MeshFieldRefEntry& entry)
+        {
+            std::string out = std::string(canonical_ref)
+                + " domain=" + mesh_field_domain_name(entry.domain)
+                + " asset=" + short_asset_key(entry.asset);
+            if (!entry.label.empty()) {
+                out += " source=" + entry.label;
+            }
+            return out;
+        }
+
+        std::string describe_operator_ref(
+            std::string_view canonical_ref,
+            const MeshOperatorRefEntry& entry)
+        {
+            std::string out = std::string(canonical_ref)
+                + " domain=" + mesh_operator_domain_name(entry.domain)
+                + " asset=" + short_asset_key(entry.asset);
+            if (!entry.label.empty()) {
+                out += " source=" + entry.label;
+            }
+            return out;
         }
 
         void append_u32(std::vector<uint8_t>& bytes, uint32_t value)
@@ -917,6 +1002,102 @@ namespace wz::engine::assets
             return MeshSparseDiffusionMode::Smooth;
         }
 
+        bool infer_sparse_operator_domain_from_consumers(
+            const SceneNodeAsset& node,
+            const MeshFieldRefCache& field_refs,
+            const SceneMeshSparseOperatorSourceAsset& source,
+            MeshOperatorDomain& domain,
+            std::string& error)
+        {
+            const std::string node_name =
+                !node.id.empty() ? node.id : node.name;
+            const std::string local_operator_ref =
+                canonical_mesh_operator_ref(node.id, source.operator_id);
+
+            bool saw_domain = false;
+            auto consume = [&](std::string_view consumer_name,
+                               std::string_view operator_ref,
+                               std::string_view input_field_ref) -> bool
+            {
+                if (operator_ref.empty() || input_field_ref.empty()) {
+                    return true;
+                }
+                if (canonical_mesh_operator_ref_for_node(node, operator_ref)
+                    != local_operator_ref)
+                {
+                    return true;
+                }
+
+                const std::string canonical_field_ref =
+                    canonical_mesh_field_ref_for_node(node, input_field_ref);
+                const auto field_found = field_refs.find(canonical_field_ref);
+                if (field_found == field_refs.end()) {
+                    return true;
+                }
+                const MeshOperatorDomain inferred =
+                    field_found->second.domain;
+                if (inferred != MeshOperatorDomain::Vertex
+                    && inferred != MeshOperatorDomain::Face)
+                {
+                    error =
+                        "mesh sparse operator source cannot infer domain "
+                        "from unsupported "
+                        + std::string(consumer_name)
+                        + " input for " + node_name
+                        + ": input_ref=" + std::string(input_field_ref)
+                        + " input{"
+                        + describe_field_ref(
+                            canonical_field_ref,
+                            field_found->second)
+                        + "}";
+                    return false;
+                }
+                if (saw_domain && domain != inferred) {
+                    error =
+                        "mesh sparse operator source has conflicting "
+                        "consumer field domains for "
+                        + node_name
+                        + ": previous_domain="
+                        + mesh_operator_domain_name(domain)
+                        + " " + std::string(consumer_name)
+                        + "_domain="
+                        + mesh_operator_domain_name(inferred)
+                        + " input_ref=" + std::string(input_field_ref)
+                        + " input{"
+                        + describe_field_ref(
+                            canonical_field_ref,
+                            field_found->second)
+                        + "}";
+                    return false;
+                }
+                domain = inferred;
+                saw_domain = true;
+                return true;
+            };
+
+            if (node.mesh_sparse_apply_field
+                && node.mesh_sparse_apply_field->enabled
+                && !consume(
+                    "mesh_sparse_apply_field",
+                    node.mesh_sparse_apply_field->operator_ref,
+                    node.mesh_sparse_apply_field->input_field_ref))
+            {
+                return false;
+            }
+
+            if (node.mesh_sparse_diffusion_bands
+                && node.mesh_sparse_diffusion_bands->enabled
+                && !consume(
+                    "mesh_sparse_diffusion_bands",
+                    node.mesh_sparse_diffusion_bands->operator_ref,
+                    node.mesh_sparse_diffusion_bands->input_field_ref))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         bool materialize_mesh_derived_field_source(
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
@@ -986,7 +1167,12 @@ namespace wz::engine::assets
 
             source.resolved_field_asset = field_asset.output;
             field_refs[canonical_mesh_field_ref(node.id, source.field_id)] =
-                field_asset.output;
+                MeshFieldRefEntry{
+                    .asset = field_asset.output,
+                    .domain = source.domain,
+                    .label = "mesh_derived_field_source field:"
+                        + source.field_id,
+                };
             return true;
         }
 
@@ -994,6 +1180,7 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             SceneNodeAsset& node,
             MeshAsset mesh,
+            const MeshFieldRefCache& field_refs,
             MeshOperatorRefCache& operator_refs,
             std::string& error)
         {
@@ -1042,13 +1229,25 @@ namespace wz::engine::assets
                 return false;
             }
 
+            MeshOperatorDomain effective_domain = source.domain;
+            if (!infer_sparse_operator_domain_from_consumers(
+                    node,
+                    field_refs,
+                    source,
+                    effective_domain,
+                    error))
+            {
+                return false;
+            }
+            source.domain = effective_domain;
+
             const MeshSparseOperatorAsset operator_asset =
                 assets.mesh_sparse_operators().create_sparse_operator({
                     .name =
                         node_name + "_operator_" + source.operator_id,
                     .source_mesh = mesh,
                     .kind = source.kind,
-                    .domain = source.domain,
+                    .domain = effective_domain,
                 });
             if (!operator_asset.valid()) {
                 error = "mesh sparse operator source asset unavailable for "
@@ -1059,7 +1258,12 @@ namespace wz::engine::assets
             source.resolved_operator_asset = operator_asset.output;
             operator_refs[canonical_mesh_operator_ref(
                 node.id,
-                source.operator_id)] = operator_asset.output;
+                source.operator_id)] = MeshOperatorRefEntry{
+                    .asset = operator_asset.output,
+                    .domain = effective_domain,
+                    .label = "mesh_sparse_operator_source operator:"
+                        + source.operator_id,
+                };
             return true;
         }
 
@@ -1127,6 +1331,24 @@ namespace wz::engine::assets
                     + node_name + ": " + field.operator_ref;
                 return false;
             }
+            if (field_found->second.domain != operator_found->second.domain) {
+                error =
+                    "mesh sparse apply field input domain does not match "
+                    "operator domain for "
+                    + node_name
+                    + ": input_ref=" + field.input_field_ref
+                    + " input{"
+                    + describe_field_ref(
+                        canonical_field_ref,
+                        field_found->second)
+                    + "} operator_ref=" + field.operator_ref
+                    + " operator{"
+                    + describe_operator_ref(
+                        canonical_operator,
+                        operator_found->second)
+                    + "}";
+                return false;
+            }
 
             const MeshDerivedFieldAsset output =
                 assets.mesh_derived_fields().create_sparse_apply_field({
@@ -1134,11 +1356,11 @@ namespace wz::engine::assets
                     .source_mesh = mesh,
                     .sparse_operator =
                         MeshSparseOperatorAsset{
-                            .output = operator_found->second,
+                            .output = operator_found->second.asset,
                         },
                     .input_field =
                         MeshDerivedFieldAsset{
-                            .output = field_found->second,
+                            .output = field_found->second.asset,
                         },
                     .input_channel_id = field.input_channel_id,
                     .output_channel_id = field.output_channel_id,
@@ -1154,10 +1376,20 @@ namespace wz::engine::assets
             field.output_field_asset = output.output;
             field_refs[canonical_mesh_field_ref(
                 node.id,
-                "sparse_apply")] = output.output;
+                "sparse_apply")] = MeshFieldRefEntry{
+                    .asset = output.output,
+                    .domain = operator_found->second.domain,
+                    .label = "mesh_sparse_apply_field output field:"
+                        "sparse_apply",
+                };
             field_refs[canonical_mesh_field_ref(
                 node.id,
-                "residual")] = output.output;
+                "residual")] = MeshFieldRefEntry{
+                    .asset = output.output,
+                    .domain = operator_found->second.domain,
+                    .label = "mesh_sparse_apply_field output field:"
+                        "residual",
+                };
             return true;
         }
 
@@ -1232,6 +1464,24 @@ namespace wz::engine::assets
                     + node_name + ": " + bands.operator_ref;
                 return false;
             }
+            if (field_found->second.domain != operator_found->second.domain) {
+                error =
+                    "mesh sparse diffusion bands input domain does not match "
+                    "operator domain for "
+                    + node_name
+                    + ": input_ref=" + bands.input_field_ref
+                    + " input{"
+                    + describe_field_ref(
+                        canonical_field_ref,
+                        field_found->second)
+                    + "} operator_ref=" + bands.operator_ref
+                    + " operator{"
+                    + describe_operator_ref(
+                        canonical_operator,
+                        operator_found->second)
+                    + "}";
+                return false;
+            }
 
             const MeshDerivedFieldAsset output =
                 assets.mesh_derived_fields().create_sparse_diffusion_bands({
@@ -1239,11 +1489,11 @@ namespace wz::engine::assets
                     .source_mesh = mesh,
                     .sparse_operator =
                         MeshSparseOperatorAsset{
-                            .output = operator_found->second,
+                            .output = operator_found->second.asset,
                         },
                     .input_field =
                         MeshDerivedFieldAsset{
-                            .output = field_found->second,
+                            .output = field_found->second.asset,
                         },
                     .input_channel_id = bands.input_channel_id,
                     .output_base_channel_id =
@@ -1264,15 +1514,30 @@ namespace wz::engine::assets
             bands.output_field_asset = output.output;
             field_refs[canonical_mesh_field_ref(
                 node.id,
-                "diffusion_bands")] = output.output;
+                "diffusion_bands")] = MeshFieldRefEntry{
+                    .asset = output.output,
+                    .domain = operator_found->second.domain,
+                    .label = "mesh_sparse_diffusion_bands output field:"
+                        "diffusion_bands",
+                };
             field_refs[canonical_mesh_field_ref(
                 node.id,
-                "topology_irregularity")] = output.output;
+                "topology_irregularity")] = MeshFieldRefEntry{
+                    .asset = output.output,
+                    .domain = operator_found->second.domain,
+                    .label = "mesh_sparse_diffusion_bands output field:"
+                        "topology_irregularity",
+                };
             for (uint32_t band = 0; band < bands.band_count; ++band) {
                 field_refs[canonical_mesh_field_ref(
                     node.id,
                     "diffusion_band" + std::to_string(band))] =
-                    output.output;
+                    MeshFieldRefEntry{
+                        .asset = output.output,
+                        .domain = operator_found->second.domain,
+                        .label = "mesh_sparse_diffusion_bands output field:"
+                            "diffusion_band" + std::to_string(band),
+                    };
             }
             return true;
         }
@@ -1336,6 +1601,25 @@ namespace wz::engine::assets
                 return false;
             }
 
+            const MeshDerivedFieldDomain inferred_domain =
+                field_found->second.domain;
+            if (inferred_domain != MeshDerivedFieldDomain::Vertex
+                && inferred_domain != MeshDerivedFieldDomain::Face)
+            {
+                error =
+                    "mesh level mask source cannot infer supported domain "
+                    "from input field for "
+                    + node_name
+                    + ": input_ref=" + masks.input_field_ref
+                    + " input{"
+                    + describe_field_ref(
+                        canonical_field_ref,
+                        field_found->second)
+                    + " output_field_id=" + masks.output_field_id;
+                return false;
+            }
+            masks.domain = inferred_domain;
+
             std::vector<MeshFieldLevelMaskRegionDesc> regions;
             regions.reserve(masks.regions.size());
             for (const SceneMeshLevelMaskRegionAsset& region :
@@ -1366,7 +1650,7 @@ namespace wz::engine::assets
                     .source_mesh = mesh,
                     .input_field =
                         MeshDerivedFieldAsset{
-                            .output = field_found->second,
+                            .output = field_found->second.asset,
                         },
                     .domain = masks.domain,
                     .regions = std::move(regions),
@@ -1380,7 +1664,12 @@ namespace wz::engine::assets
             masks.output_field_asset = output.output;
             field_refs[canonical_mesh_field_ref(
                 node.id,
-                masks.output_field_id)] = output.output;
+                masks.output_field_id)] = MeshFieldRefEntry{
+                    .asset = output.output,
+                    .domain = masks.domain,
+                    .label = "mesh_level_mask_source output field:"
+                        + masks.output_field_id,
+                };
             return true;
         }
 
@@ -1410,7 +1699,7 @@ namespace wz::engine::assets
                     + "' did not resolve on " + node_name;
                 return false;
             }
-            out = found->second;
+            out = found->second.asset;
             return true;
         }
 
@@ -1438,7 +1727,7 @@ namespace wz::engine::assets
                     + "' did not resolve on " + node_name;
                 return false;
             }
-            out = found->second;
+            out = found->second.asset;
             return true;
         }
 
@@ -3645,6 +3934,7 @@ namespace wz::engine::assets
                         assets,
                         node,
                         mesh,
+                        mesh_field_refs,
                         mesh_operator_refs,
                         report.error))
                 {

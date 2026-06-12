@@ -85,6 +85,116 @@ namespace wz::engine::assets::internal
             };
         }
 
+        std::string key_summary(const wz::asset::AssetKey& key)
+        {
+            std::ostringstream out;
+            out << std::hex
+                << key.content_hash.lo << ':'
+                << key.content_hash.hi << ':'
+                << key.schema_hash.lo << ':'
+                << key.schema_hash.hi;
+            return out.str();
+        }
+
+        std::string hash_summary(const wz::asset::Hash& hash)
+        {
+            std::ostringstream out;
+            out << std::hex << hash.lo << ':' << hash.hi;
+            return out.str();
+        }
+
+        const char* field_domain_name(MeshDerivedFieldDomain domain) noexcept
+        {
+            switch (domain) {
+            case MeshDerivedFieldDomain::Vertex: return "vertex";
+            case MeshDerivedFieldDomain::Face: return "face";
+            case MeshDerivedFieldDomain::Edge: return "edge";
+            case MeshDerivedFieldDomain::Corner: return "corner";
+            }
+            return "unknown";
+        }
+
+        void log_sparse_input_mesh_mismatch(
+            wz::Logger& logger,
+            const char* prefix,
+            const MeshSparseDiffusionBandsDesc& desc,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator,
+            const wz::asset::Hash& source_topology,
+            uint32_t source_element_count)
+        {
+            std::ostringstream out;
+            out << prefix
+                << " input field does not match source mesh"
+                << " expected_mesh=" << key_summary(desc.source_mesh.output)
+                << " input_mesh="
+                << key_summary(input_field.source_mesh_key)
+                << " expected_topology=" << hash_summary(source_topology)
+                << " input_topology="
+                << hash_summary(input_field.source_topology_hash)
+                << " expected_domain="
+                << field_domain_name(sparse_operator.domain)
+                << " input_domain="
+                << field_domain_name(input_field.domain)
+                << " expected_elements=" << source_element_count
+                << " input_elements=" << input_field.element_count;
+            logger.error(out.str());
+        }
+
+        void log_sparse_input_mesh_mismatch(
+            wz::Logger& logger,
+            const char* prefix,
+            const MeshSparseApplyFieldDesc& desc,
+            const MeshDerivedFieldData& input_field,
+            const MeshSparseOperatorData& sparse_operator,
+            const wz::asset::Hash& source_topology,
+            uint32_t source_element_count)
+        {
+            std::ostringstream out;
+            out << prefix
+                << " input field does not match source mesh"
+                << " expected_mesh=" << key_summary(desc.source_mesh.output)
+                << " input_mesh="
+                << key_summary(input_field.source_mesh_key)
+                << " expected_topology=" << hash_summary(source_topology)
+                << " input_topology="
+                << hash_summary(input_field.source_topology_hash)
+                << " expected_domain="
+                << field_domain_name(sparse_operator.domain)
+                << " input_domain="
+                << field_domain_name(input_field.domain)
+                << " expected_elements=" << source_element_count
+                << " input_elements=" << input_field.element_count;
+            logger.error(out.str());
+        }
+
+        void log_sparse_operator_mesh_mismatch(
+            wz::Logger& logger,
+            const char* prefix,
+            const wz::asset::AssetKey& source_mesh_key,
+            const MeshSparseOperatorData& sparse_operator,
+            const wz::asset::Hash& source_topology,
+            MeshDerivedFieldDomain expected_domain,
+            uint32_t source_element_count)
+        {
+            std::ostringstream out;
+            out << prefix
+                << " operator does not match source mesh"
+                << " expected_mesh=" << key_summary(source_mesh_key)
+                << " operator_mesh="
+                << key_summary(sparse_operator.source_mesh_key)
+                << " expected_topology=" << hash_summary(source_topology)
+                << " operator_topology="
+                << hash_summary(sparse_operator.source_topology_hash)
+                << " expected_domain="
+                << field_domain_name(expected_domain)
+                << " operator_domain="
+                << field_domain_name(sparse_operator.domain)
+                << " expected_rows=" << source_element_count
+                << " operator_rows=" << sparse_operator.row_count;
+            logger.error(out.str());
+        }
+
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
         {
@@ -1902,8 +2012,14 @@ namespace wz::engine::assets::internal
                 || input_field.domain != domain
                 || input_field.element_count != element_count)
             {
-                logger.error(
-                    "mesh sparse diffusion bands input field does not match source mesh");
+                log_sparse_input_mesh_mismatch(
+                    logger,
+                    "mesh sparse diffusion bands",
+                    desc,
+                    input_field,
+                    sparse_operator,
+                    topology,
+                    element_count);
                 return false;
             }
             if (!sparse_operator.valid()
@@ -1912,8 +2028,14 @@ namespace wz::engine::assets::internal
                 || sparse_operator.domain != domain
                 || sparse_operator.row_count != element_count)
             {
-                logger.error(
-                    "mesh sparse diffusion bands operator does not match source mesh");
+                log_sparse_operator_mesh_mismatch(
+                    logger,
+                    "mesh sparse diffusion bands",
+                    desc.source_mesh.output,
+                    sparse_operator,
+                    topology,
+                    domain,
+                    element_count);
                 return false;
             }
             if (sparse_operator.value_convention
@@ -2080,8 +2202,14 @@ namespace wz::engine::assets::internal
                 || input_field.domain != domain
                 || input_field.element_count != element_count)
             {
-                logger.error(
-                    "mesh sparse apply input field does not match source mesh");
+                log_sparse_input_mesh_mismatch(
+                    logger,
+                    "mesh sparse apply",
+                    desc,
+                    input_field,
+                    sparse_operator,
+                    topology,
+                    element_count);
                 return false;
             }
             if (!sparse_operator.valid()
@@ -2090,8 +2218,14 @@ namespace wz::engine::assets::internal
                 || sparse_operator.domain != domain
                 || sparse_operator.row_count != element_count)
             {
-                logger.error(
-                    "mesh sparse apply operator does not match source mesh");
+                log_sparse_operator_mesh_mismatch(
+                    logger,
+                    "mesh sparse apply",
+                    desc.source_mesh.output,
+                    sparse_operator,
+                    topology,
+                    domain,
+                    element_count);
                 return false;
             }
             if (sparse_operator.value_convention

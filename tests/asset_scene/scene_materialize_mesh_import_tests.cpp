@@ -957,6 +957,85 @@ TEST(SceneAuthoringMaterialize, MeshSparseDiffusionBandsWrongInputChannelFallsBa
     }
 }
 
+TEST(SceneAuthoringMaterialize, MeshSparseOperatorDomainFollowsInputField)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_sparse_domain_infer_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_sparse_domain_infer";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "height",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .channel_id = 0x2200u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::PositionGradient,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_sparse_operator_source = SceneMeshSparseOperatorSourceAsset{
+        .enabled = true,
+        .operator_id = "face_laplacian",
+        .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
+        .domain = MeshOperatorDomain::Face,
+        .value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights,
+    };
+    node.mesh_sparse_diffusion_bands = SceneMeshSparseDiffusionBandsAsset{
+        .enabled = true,
+        .operator_ref = "operator:face_laplacian",
+        .input_field_ref = "field:height",
+        .input_channel_id = 0x2200u,
+        .output_base_channel_id = 0x2300u,
+        .band_count = 2u,
+        .iterations_per_band = 1u,
+        .mode = SceneMeshSparseDiffusionMode::Smooth,
+        .tau = 1.0f,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_sparse_operator_source.has_value());
+    EXPECT_EQ(
+        scene.nodes[0].mesh_sparse_operator_source->domain,
+        MeshOperatorDomain::Vertex);
+
+    const wz::asset::AssetKey field_key =
+        scene.nodes[0].mesh_sparse_diffusion_bands->output_field_asset;
+    ASSERT_NE(field_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(
+            MeshDerivedFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    ASSERT_TRUE(field_data->valid());
+    EXPECT_EQ(field_data->domain, MeshDerivedFieldDomain::Vertex);
+}
+
 TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceBuildsFaceMaskField)
 {
     using namespace wz::engine::assets;
@@ -992,7 +1071,7 @@ TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceBuildsFaceMaskField)
         .enabled = true,
         .input_field_ref = "field:face_constant",
         .output_field_id = "masks",
-        .domain = MeshDerivedFieldDomain::Face,
+        .domain = MeshDerivedFieldDomain::Vertex,
         .regions = {
             SceneMeshLevelMaskRegionAsset{
                 .input_channel_id = 0x2200u,
@@ -1048,6 +1127,99 @@ TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceBuildsFaceMaskField)
     for (const uint32_t value : rejected) {
         EXPECT_EQ(value, 0u);
     }
+}
+
+TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceDomainFollowsInputField)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_level_mask_domain_mismatch_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_level_mask_domain_mismatch";
+    SceneNodeAsset node = make_scene_node("empty_2");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "face_constant",
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2200u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_sparse_operator_source = SceneMeshSparseOperatorSourceAsset{
+        .enabled = true,
+        .operator_id = "face_laplacian",
+        .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
+        .domain = MeshOperatorDomain::Face,
+        .value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights,
+    };
+    node.mesh_sparse_diffusion_bands = SceneMeshSparseDiffusionBandsAsset{
+        .enabled = true,
+        .operator_ref = "operator:face_laplacian",
+        .input_field_ref = "field:face_constant",
+        .input_channel_id = 0x2200u,
+        .output_base_channel_id = 0x2300u,
+        .band_count = 2u,
+        .iterations_per_band = 1u,
+        .mode = SceneMeshSparseDiffusionMode::Smooth,
+        .tau = 1.0f,
+    };
+    node.mesh_level_mask_source = SceneMeshLevelMaskSourceAsset{
+        .enabled = true,
+        .input_field_ref = "field:diffusion_bands",
+        .output_field_id = "masks",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .regions = {
+            SceneMeshLevelMaskRegionAsset{
+                .input_channel_id = 0x2300u,
+                .output_channel_id = 0x3000u,
+                .min_value = 0.25f,
+                .max_value = 0.75f,
+            },
+        },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_level_mask_source.has_value());
+    EXPECT_EQ(
+        scene.nodes[0].mesh_level_mask_source->domain,
+        MeshDerivedFieldDomain::Face);
+
+    const wz::asset::AssetKey field_key =
+        scene.nodes[0].mesh_level_mask_source->output_field_asset;
+    ASSERT_NE(field_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(
+            MeshDerivedFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    ASSERT_TRUE(field_data->valid());
+    EXPECT_EQ(field_data->domain, MeshDerivedFieldDomain::Face);
 }
 
 TEST(SceneAuthoringMaterialize, MeshFieldVisualizationWrongChannelFallsBack)

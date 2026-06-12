@@ -161,6 +161,44 @@ namespace wz::engine::assets::internal
                 }};
                 return true;
 
+            case BuiltinRenderProgram::MeshMaskStyle:
+                out.binding_model        = RenderBindingModel::MeshIA;
+                out.topology             = RenderPrimitiveTopology::TriangleList;
+                out.default_domain       = RenderDomain::Opaque;
+                out.default_policy_flags =
+                    RenderPolicy_DepthTest
+                    | RenderPolicy_DepthWrite;
+                out.input_layout = InputLayoutKind::MeshPositionNormalUV;
+                out.blend_mode   = BlendMode::Opaque;
+                out.depth_mode   = DepthMode::TestWrite;
+                out.raster_mode  = RasterMode::SolidCullNone;
+                out.root_constants = {{
+                    .visibility      = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space  = 0,
+                    .value_count     = 48,
+                }};
+                out.descriptor_bindings = {
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::All,
+                        .semantic         =
+                            DescriptorSemantic::MeshFieldVisualization,
+                        .shader_register  = 0,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                    {
+                        .kind             = DescriptorKind::StructuredBufferSRV,
+                        .visibility       = ShaderVisibility::Pixel,
+                        .semantic         = DescriptorSemantic::MeshMaskRules,
+                        .shader_register  = 1,
+                        .register_space   = 0,
+                        .descriptor_count = 1,
+                    },
+                };
+                return true;
+
             case BuiltinRenderProgram::TerrainMeshSurface:
                 out.binding_model        = RenderBindingModel::MeshIA;
                 out.topology             = RenderPrimitiveTopology::TriangleList;
