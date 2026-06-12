@@ -1718,6 +1718,7 @@ namespace wz::engine::assets::internal
         MeshDerivedFieldData make_zero_float_field(
             wz::asset::AssetKey source_mesh_key,
             wz::asset::Hash topology,
+            MeshDerivedFieldDomain domain,
             uint32_t element_count,
             std::span<const uint32_t> channel_ids);
 
@@ -1732,8 +1733,10 @@ namespace wz::engine::assets::internal
                 && field.source_mesh_key == desc.source_mesh.output
                 && field.source_topology_hash
                     == compute_mesh_topology_hash(source_mesh)
-                && field.domain == MeshDerivedFieldDomain::Vertex
-                && field.element_count == source_mesh.vertex_count()
+                && field.domain == input_field.domain
+                && field.domain == sparse_operator.domain
+                && field.element_count
+                    == mesh_domain_element_count(source_mesh, field.domain)
                 && field.element_count == input_field.element_count
                 && field.element_count == sparse_operator.row_count
                 && field.channels.size() == 1u
@@ -1753,8 +1756,10 @@ namespace wz::engine::assets::internal
                 || field.source_mesh_key != desc.source_mesh.output
                 || field.source_topology_hash
                     != compute_mesh_topology_hash(source_mesh)
-                || field.domain != MeshDerivedFieldDomain::Vertex
-                || field.element_count != source_mesh.vertex_count()
+                || field.domain != input_field.domain
+                || field.domain != sparse_operator.domain
+                || field.element_count
+                    != mesh_domain_element_count(source_mesh, field.domain)
                 || field.element_count != input_field.element_count
                 || field.element_count != sparse_operator.row_count
                 || field.channels.size() != desc.band_count)
@@ -1849,11 +1854,13 @@ namespace wz::engine::assets::internal
 
             const wz::asset::Hash topology =
                 compute_mesh_topology_hash(source_mesh);
-            const uint32_t element_count = source_mesh.vertex_count();
+            const MeshDerivedFieldDomain domain = sparse_operator.domain;
+            const uint32_t element_count =
+                mesh_domain_element_count(source_mesh, domain);
             if (!input_field.valid()
                 || input_field.source_mesh_key != desc.source_mesh.output
                 || input_field.source_topology_hash != topology
-                || input_field.domain != MeshDerivedFieldDomain::Vertex
+                || input_field.domain != domain
                 || input_field.element_count != element_count)
             {
                 logger.error(
@@ -1863,7 +1870,7 @@ namespace wz::engine::assets::internal
             if (!sparse_operator.valid()
                 || sparse_operator.source_mesh_key != desc.source_mesh.output
                 || sparse_operator.source_topology_hash != topology
-                || sparse_operator.domain != MeshOperatorDomain::Vertex
+                || sparse_operator.domain != domain
                 || sparse_operator.row_count != element_count)
             {
                 logger.error(
@@ -1895,6 +1902,7 @@ namespace wz::engine::assets::internal
                 out = make_zero_float_field(
                     desc.source_mesh.output,
                     topology,
+                    domain,
                     element_count,
                     channel_ids);
                 return out.valid();
@@ -1939,6 +1947,7 @@ namespace wz::engine::assets::internal
                         out = make_zero_float_field(
                             desc.source_mesh.output,
                             topology,
+                            domain,
                             element_count,
                             channel_ids);
                         return out.valid();
@@ -1984,7 +1993,7 @@ namespace wz::engine::assets::internal
             out = MeshDerivedFieldData{
                 .source_mesh_key = desc.source_mesh.output,
                 .source_topology_hash = topology,
-                .domain = MeshDerivedFieldDomain::Vertex,
+                .domain = domain,
                 .element_count = element_count,
                 .channels = std::move(channels),
                 .values = std::move(values),
@@ -2023,11 +2032,13 @@ namespace wz::engine::assets::internal
 
             const wz::asset::Hash topology =
                 compute_mesh_topology_hash(source_mesh);
-            const uint32_t element_count = source_mesh.vertex_count();
+            const MeshDerivedFieldDomain domain = sparse_operator.domain;
+            const uint32_t element_count =
+                mesh_domain_element_count(source_mesh, domain);
             if (!input_field.valid()
                 || input_field.source_mesh_key != desc.source_mesh.output
                 || input_field.source_topology_hash != topology
-                || input_field.domain != MeshDerivedFieldDomain::Vertex
+                || input_field.domain != domain
                 || input_field.element_count != element_count)
             {
                 logger.error(
@@ -2037,7 +2048,7 @@ namespace wz::engine::assets::internal
             if (!sparse_operator.valid()
                 || sparse_operator.source_mesh_key != desc.source_mesh.output
                 || sparse_operator.source_topology_hash != topology
-                || sparse_operator.domain != MeshOperatorDomain::Vertex
+                || sparse_operator.domain != domain
                 || sparse_operator.row_count != element_count)
             {
                 logger.error(
@@ -2064,6 +2075,7 @@ namespace wz::engine::assets::internal
                 out = make_zero_float_field(
                     desc.source_mesh.output,
                     topology,
+                    domain,
                     element_count,
                     std::span<const uint32_t>(&channel_id, 1u));
                 return out.valid();
@@ -2079,6 +2091,7 @@ namespace wz::engine::assets::internal
                 out = make_zero_float_field(
                     desc.source_mesh.output,
                     topology,
+                    domain,
                     element_count,
                     std::span<const uint32_t>(&channel_id, 1u));
                 return out.valid();
@@ -2096,6 +2109,7 @@ namespace wz::engine::assets::internal
                     out = make_zero_float_field(
                         desc.source_mesh.output,
                         topology,
+                        domain,
                         element_count,
                         std::span<const uint32_t>(&channel_id, 1u));
                     return out.valid();
@@ -2116,6 +2130,7 @@ namespace wz::engine::assets::internal
                         out = make_zero_float_field(
                             desc.source_mesh.output,
                             topology,
+                            domain,
                             element_count,
                             std::span<const uint32_t>(&channel_id, 1u));
                         return out.valid();
@@ -2134,7 +2149,7 @@ namespace wz::engine::assets::internal
             out = MeshDerivedFieldData{
                 .source_mesh_key = desc.source_mesh.output,
                 .source_topology_hash = topology,
-                .domain = MeshDerivedFieldDomain::Vertex,
+                .domain = domain,
                 .element_count = element_count,
                 .channels = {
                     MeshDerivedFieldChannel{
@@ -2211,6 +2226,7 @@ namespace wz::engine::assets::internal
         MeshDerivedFieldData make_zero_float_field(
             wz::asset::AssetKey source_mesh_key,
             wz::asset::Hash topology,
+            MeshDerivedFieldDomain domain,
             uint32_t element_count,
             std::span<const uint32_t> channel_ids)
         {
@@ -2234,7 +2250,7 @@ namespace wz::engine::assets::internal
             return MeshDerivedFieldData{
                 .source_mesh_key = source_mesh_key,
                 .source_topology_hash = topology,
-                .domain = MeshDerivedFieldDomain::Vertex,
+                .domain = domain,
                 .element_count = element_count,
                 .channels = std::move(channels),
                 .values = std::move(values),
@@ -2247,9 +2263,11 @@ namespace wz::engine::assets::internal
             std::vector<float>& values,
             wz::Logger& logger)
         {
-            if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+            if (desc.domain != MeshDerivedFieldDomain::Vertex
+                && desc.domain != MeshDerivedFieldDomain::Face)
+            {
                 logger.error(
-                    "builtin mesh derived field only supports vertex domain");
+                    "builtin mesh derived field only supports vertex or face domain");
                 return false;
             }
             if (desc.value_type != MeshDerivedFieldValueType::Float1) {
@@ -2264,7 +2282,9 @@ namespace wz::engine::assets::internal
             }
 
             const uint32_t vertex_count = mesh.vertex_count();
-            values.assign(vertex_count, 0.0f);
+            const uint32_t element_count =
+                mesh_domain_element_count(mesh, desc.domain);
+            values.assign(element_count, 0.0f);
 
             switch (desc.source_kind) {
             case BuiltinMeshDerivedFieldSourceKind::Constant:
@@ -2275,6 +2295,11 @@ namespace wz::engine::assets::internal
                 return true;
 
             case BuiltinMeshDerivedFieldSourceKind::PositionGradient: {
+                if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                    logger.error(
+                        "position_gradient requires vertex domain");
+                    return false;
+                }
                 const uint32_t component =
                     builtin_mesh_field_component_index(desc.component);
                 float min_value = 0.0f;
@@ -2300,6 +2325,11 @@ namespace wz::engine::assets::internal
             }
 
             case BuiltinMeshDerivedFieldSourceKind::VertexIndexGradient:
+                if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                    logger.error(
+                        "vertex_index_gradient requires vertex domain");
+                    return false;
+                }
                 for (uint32_t i = 0; i < vertex_count; ++i) {
                     values[i] =
                         desc.normalize
@@ -2312,6 +2342,11 @@ namespace wz::engine::assets::internal
                 return true;
 
             case BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount: {
+                if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                    logger.error(
+                        "triangle_corner_count requires vertex domain");
+                    return false;
+                }
                 std::unordered_map<
                     QuantizedPositionKey,
                     float,
@@ -2340,6 +2375,10 @@ namespace wz::engine::assets::internal
             }
 
             case BuiltinMeshDerivedFieldSourceKind::VertexArea: {
+                if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                    logger.error("vertex_area requires vertex domain");
+                    return false;
+                }
                 for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
                     const uint32_t ia = mesh.indices[i + 0u];
                     const uint32_t ib = mesh.indices[i + 1u];
@@ -2366,7 +2405,39 @@ namespace wz::engine::assets::internal
                 return true;
             }
 
+            case BuiltinMeshDerivedFieldSourceKind::TriangleArea: {
+                if (desc.domain != MeshDerivedFieldDomain::Face) {
+                    logger.error("triangle_area requires face domain");
+                    return false;
+                }
+                for (uint32_t face = 0; face < element_count; ++face) {
+                    const size_t i = static_cast<size_t>(face) * 3u;
+                    const uint32_t ia = mesh.indices[i + 0u];
+                    const uint32_t ib = mesh.indices[i + 1u];
+                    const uint32_t ic = mesh.indices[i + 2u];
+                    if (ia >= vertex_count
+                        || ib >= vertex_count
+                        || ic >= vertex_count)
+                    {
+                        continue;
+                    }
+                    values[face] =
+                        mesh_triangle_area(
+                            mesh.vertices[ia],
+                            mesh.vertices[ib],
+                            mesh.vertices[ic]);
+                }
+                if (desc.normalize) {
+                    normalize_by_max_positive(values);
+                }
+                return true;
+            }
+
             case BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength: {
+                if (desc.domain != MeshDerivedFieldDomain::Vertex) {
+                    logger.error("mean_edge_length requires vertex domain");
+                    return false;
+                }
                 std::vector<float> length_sums(vertex_count, 0.0f);
                 std::vector<uint32_t> length_counts(vertex_count, 0u);
                 std::unordered_set<uint64_t> seen_edges;
@@ -2414,6 +2485,48 @@ namespace wz::engine::assets::internal
 
             case BuiltinMeshDerivedFieldSourceKind::InverseAreaDensity:
             case BuiltinMeshDerivedFieldSourceKind::LogDensity: {
+                constexpr float kAreaEpsilon = 1.0e-20f;
+                if (desc.domain == MeshDerivedFieldDomain::Face) {
+                    for (uint32_t face = 0; face < element_count; ++face) {
+                        const size_t i = static_cast<size_t>(face) * 3u;
+                        const uint32_t ia = mesh.indices[i + 0u];
+                        const uint32_t ib = mesh.indices[i + 1u];
+                        const uint32_t ic = mesh.indices[i + 2u];
+                        if (ia >= vertex_count
+                            || ib >= vertex_count
+                            || ic >= vertex_count)
+                        {
+                            continue;
+                        }
+                        const float area =
+                            mesh_triangle_area(
+                                mesh.vertices[ia],
+                                mesh.vertices[ib],
+                                mesh.vertices[ic]);
+                        if (area <= kAreaEpsilon) {
+                            values[face] = 0.0f;
+                            continue;
+                        }
+                        const float inverse_area = 1.0f / area;
+                        if (desc.source_kind
+                            == BuiltinMeshDerivedFieldSourceKind::
+                                InverseAreaDensity)
+                        {
+                            values[face] = inverse_area;
+                        }
+                        else {
+                            values[face] = std::log(inverse_area);
+                            if (!std::isfinite(values[face])) {
+                                values[face] = 0.0f;
+                            }
+                        }
+                    }
+                    if (desc.normalize) {
+                        normalize_by_max_positive(values);
+                    }
+                    return true;
+                }
+
                 std::vector<float> vertex_areas(vertex_count, 0.0f);
                 for (size_t i = 0; i + 2u < mesh.indices.size(); i += 3u) {
                     const uint32_t ia = mesh.indices[i + 0u];
@@ -2436,7 +2549,6 @@ namespace wz::engine::assets::internal
                     vertex_areas[ic] += area;
                 }
 
-                constexpr float kAreaEpsilon = 1.0e-20f;
                 for (uint32_t i = 0; i < vertex_count; ++i) {
                     if (vertex_areas[i] <= kAreaEpsilon) {
                         values[i] = 0.0f;

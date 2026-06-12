@@ -447,16 +447,26 @@ namespace wz::engine::assets::internal
                                 "field source mesh mismatch");
                         }
                         else if (field->domain
-                            != MeshDerivedFieldDomain::Vertex)
+                            != MeshDerivedFieldDomain::Vertex
+                            && field->domain != MeshDerivedFieldDomain::Face)
                         {
                             disable_field_visualization(
-                                "field is not vertex-domain");
+                                "field is not vertex- or face-domain");
                         }
-                        else if (field->element_count
-                            != mesh->vertex_count())
+                        else if (field->domain
+                                == MeshDerivedFieldDomain::Vertex
+                            && field->element_count != mesh->vertex_count())
                         {
                             disable_field_visualization(
                                 "field vertex count mismatch");
+                        }
+                        else if (field->domain
+                                == MeshDerivedFieldDomain::Face
+                            && field->element_count
+                                != mesh->index_count() / 3u)
+                        {
+                            disable_field_visualization(
+                                "field face count mismatch");
                         }
                         else {
                             const auto channel_found = std::find_if(

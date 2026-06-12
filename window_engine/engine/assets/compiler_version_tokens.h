@@ -39,13 +39,13 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kJSONDocumentCompilerVersion = 1;
     inline constexpr uint64_t kTOMLDocumentCompilerVersion = 1;
     inline constexpr uint64_t kMeshCompilerVersion = 2;
-    inline constexpr uint64_t kMeshDerivedFieldCompilerVersion = 2;
+    inline constexpr uint64_t kMeshDerivedFieldCompilerVersion = 3;
     inline constexpr uint64_t kMeshWaveletAnalysisCompilerVersion = 2;
     inline constexpr uint64_t kBehaviorFieldPlaceholderCompilerVersion = 1;
     inline constexpr uint64_t kMeshComputeDerivedFieldCompilerVersion = 1;
-    inline constexpr uint64_t kMeshSparseApplyFieldCompilerVersion = 1;
-    inline constexpr uint64_t kMeshSparseDiffusionBandsCompilerVersion = 1;
-    inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 1;
+    inline constexpr uint64_t kMeshSparseApplyFieldCompilerVersion = 2;
+    inline constexpr uint64_t kMeshSparseDiffusionBandsCompilerVersion = 2;
+    inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 2;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
     inline constexpr uint64_t kInlineDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTableResampleTimeSeriesCompilerVersion = 1;
@@ -70,7 +70,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kTerrainCompilerVersion = 4;
     inline constexpr uint64_t kTerrainVisualProxyCompilerVersion = 5;
     inline constexpr uint64_t kCollisionCompilerVersion = 2;
-    inline constexpr uint64_t kSceneFromJSONCompilerVersion = 4;
+    inline constexpr uint64_t kSceneFromJSONCompilerVersion = 5;
     inline constexpr uint64_t kSceneFromGLBCompilerVersion = 1;
     inline constexpr uint64_t kDirectLightCompilerVersion = 1;
     inline constexpr uint64_t kAmbientLightingCompilerVersion = 1;

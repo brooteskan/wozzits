@@ -253,13 +253,13 @@ TEST(MeshSparseOperatorAssetModule, IdentityIncludesKindDomainAndMeshDeps)
     EXPECT_EQ(base_key.content_hash, changed_mesh_key.content_hash);
 }
 
-TEST(MeshSparseOperatorAssetModule, RejectsUnsupportedDomain)
+TEST(MeshSparseOperatorAssetModule, FaceDomainBuildsDualAdjacencyOnQuad)
 {
     using namespace wz::engine::assets;
 
     wz::Logger logger;
     wz::gpu::Device device{};
-    auto assets = make_assets(device, logger, "bad_domain", false);
+    auto assets = make_assets(device, logger, "face_domain", false);
 
     const auto mesh = assets.meshes().create_procedural_mesh({
         .name = "quad",
@@ -267,11 +267,49 @@ TEST(MeshSparseOperatorAssetModule, RejectsUnsupportedDomain)
     });
     ASSERT_TRUE(mesh.valid());
 
-    EXPECT_FALSE(assets.mesh_sparse_operators().create_sparse_operator({
-        .name = "face_domain",
+    const auto op = assets.mesh_sparse_operators().create_sparse_operator({
+        .name = "quad_dual_laplacian",
         .source_mesh = mesh,
         .domain = MeshOperatorDomain::Face,
-    }).valid());
+    });
+    ASSERT_TRUE(op.valid());
+
+    const auto* data = resolve_operator(assets, op);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->kind, MeshSparseOperatorKind::UniformVertexLaplacian);
+    EXPECT_EQ(data->domain, MeshOperatorDomain::Face);
+    EXPECT_EQ(
+        data->value_convention,
+        MeshSparseOperatorValueConvention::NeighborWeights);
+
+    // Quad triangle list {0,1,2, 0,2,3}: the two face-domain rows are
+    // adjacent across the shared original edge {0,2}.
+    EXPECT_EQ(data->row_count, 2u);
+    EXPECT_EQ(data->nonzero_count, 2u);
+    ASSERT_EQ(data->row_offsets.size(), 3u);
+    EXPECT_EQ(data->row_offsets[0], 0u);
+    EXPECT_EQ(data->row_offsets[1], 1u);
+    EXPECT_EQ(data->row_offsets[2], 2u);
+    ASSERT_EQ(data->col_indices.size(), 2u);
+    EXPECT_EQ(data->col_indices[0], 1u);
+    EXPECT_EQ(data->col_indices[1], 0u);
+    ASSERT_EQ(data->weights.size(), 2u);
+    EXPECT_FLOAT_EQ(data->weights[0], 1.0f);
+    EXPECT_FLOAT_EQ(data->weights[1], 1.0f);
+    ASSERT_EQ(data->vertex_mass.size(), data->row_count);
+    EXPECT_FLOAT_EQ(data->vertex_mass[0], 1.0f);
+    EXPECT_FLOAT_EQ(data->vertex_mass[1], 1.0f);
+}
+
+TEST(MeshSparseOperatorAssetModule, RejectsInvalidSourceMesh)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "bad_source", false);
+
     EXPECT_FALSE(assets.mesh_sparse_operators().create_sparse_operator({
         .name = "no_mesh",
         .source_mesh = {},

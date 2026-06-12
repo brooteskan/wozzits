@@ -20,13 +20,16 @@ namespace wz::engine::assets
 {
     // Domain whose elements the operator's rows index. Shares the
     // MeshDerivedFieldDomain vocabulary so fields and the operators that
-    // act on them speak the same language. v0 compiles Vertex only.
+    // act on them speak the same language.
     using MeshOperatorDomain = MeshDerivedFieldDomain;
 
     enum class MeshSparseOperatorKind : uint8_t
     {
-        // w_ij = 1 / degree(i) over the vertex adjacency graph; rows sum
-        // to 1 (isolated vertices have empty rows). vertex_mass is all 1.
+        // w_ij = 1 / degree(i) over the selected domain adjacency graph;
+        // rows sum to 1 (isolated elements have empty rows). vertex_mass
+        // is all 1.
+        UniformAdjacency = 0,
+        // Back-compat name for existing authored scenes and tests.
         UniformVertexLaplacian = 0,
         // v1: CotangentVertexLaplacian (degenerate-triangle, boundary,
         // area/mass, and sign-convention handling); later adjacency,

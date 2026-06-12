@@ -264,6 +264,11 @@ namespace wz::engine::assets::internal
             {
                 return SceneMeshDerivedFieldSourceKind::VertexArea;
             }
+            if (text == "triangle_area"
+                || text == "face_area")
+            {
+                return SceneMeshDerivedFieldSourceKind::TriangleArea;
+            }
             if (text == "mean_edge_length") {
                 return SceneMeshDerivedFieldSourceKind::MeanEdgeLength;
             }
@@ -341,7 +346,10 @@ namespace wz::engine::assets::internal
         parse_mesh_sparse_operator_kind(std::string_view text)
         {
             if (text == "uniform_vertex_laplacian"
-                || text == "uniform_laplacian")
+                || text == "uniform_laplacian"
+                || text == "uniform_adjacency"
+                || text == "uniform_face_adjacency"
+                || text == "face_laplacian")
             {
                 return MeshSparseOperatorKind::UniformVertexLaplacian;
             }
@@ -1915,12 +1923,18 @@ namespace wz::engine::assets::internal
                 }
 
                 if (auto domain = read_string(*mdfs, "domain")) {
-                    if (*domain != "vertex") {
+                    if (*domain == "vertex") {
+                        source.domain = MeshDerivedFieldDomain::Vertex;
+                    }
+                    else if (*domain == "face") {
+                        source.domain = MeshDerivedFieldDomain::Face;
+                    }
+                    else {
                         logger.error("mesh_derived_field_source on node '"
-                            + node.id + "' only supports vertex domain in v0");
+                            + node.id
+                            + "' only supports vertex or face domain");
                         return std::nullopt;
                     }
-                    source.domain = MeshDerivedFieldDomain::Vertex;
                 }
 
                 if (auto channel_id = read_number(*mdfs, "channel_id")) {
@@ -2030,9 +2044,11 @@ namespace wz::engine::assets::internal
                     }
                     source.domain = *parsed_domain;
                 }
-                if (source.domain != MeshOperatorDomain::Vertex) {
+                if (source.domain != MeshOperatorDomain::Vertex
+                    && source.domain != MeshOperatorDomain::Face)
+                {
                     logger.error("mesh_sparse_operator_source on node '"
-                        + node.id + "' only supports vertex domain in v0");
+                        + node.id + "' only supports vertex or face domain");
                     return std::nullopt;
                 }
 

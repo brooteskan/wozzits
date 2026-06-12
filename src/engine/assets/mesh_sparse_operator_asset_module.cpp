@@ -20,10 +20,9 @@ namespace wz::engine::assets
     MeshSparseOperatorAssetModule::create_sparse_operator(
         const MeshSparseOperatorDesc& desc)
     {
-        // v0 compiles vertex-domain operators only; the domain field exists
-        // in the format so face/edge/cluster operators are additive later.
         if (!desc.source_mesh.valid()
-            || desc.domain != MeshOperatorDomain::Vertex)
+            || (desc.domain != MeshOperatorDomain::Vertex
+                && desc.domain != MeshOperatorDomain::Face))
         {
             return {};
         }

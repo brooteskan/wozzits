@@ -788,6 +788,8 @@ namespace wz::engine::assets
                 return BuiltinMeshDerivedFieldSourceKind::TriangleCornerCount;
             case SceneMeshDerivedFieldSourceKind::VertexArea:
                 return BuiltinMeshDerivedFieldSourceKind::VertexArea;
+            case SceneMeshDerivedFieldSourceKind::TriangleArea:
+                return BuiltinMeshDerivedFieldSourceKind::TriangleArea;
             case SceneMeshDerivedFieldSourceKind::MeanEdgeLength:
                 return BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength;
             case SceneMeshDerivedFieldSourceKind::InverseAreaDensity:
@@ -915,9 +917,12 @@ namespace wz::engine::assets
                     + node_name;
                 return false;
             }
-            if (source.domain != MeshDerivedFieldDomain::Vertex) {
+            if (source.domain != MeshDerivedFieldDomain::Vertex
+                && source.domain != MeshDerivedFieldDomain::Face)
+            {
                 error =
-                    "mesh derived field source only supports vertex domain for "
+                    "mesh derived field source only supports vertex or "
+                    "face domain for "
                     + node_name;
                 return false;
             }
@@ -987,9 +992,12 @@ namespace wz::engine::assets
                     "UniformVertexLaplacian for " + node_name;
                 return false;
             }
-            if (source.domain != MeshOperatorDomain::Vertex) {
+            if (source.domain != MeshOperatorDomain::Vertex
+                && source.domain != MeshOperatorDomain::Face)
+            {
                 error =
-                    "mesh sparse operator source only supports vertex domain "
+                    "mesh sparse operator source only supports vertex or "
+                    "face domain "
                     "for " + node_name;
                 return false;
             }

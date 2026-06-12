@@ -394,7 +394,9 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
         [](const char* id,
             const char* field_id,
             uint32_t channel_id,
-            SceneMeshDerivedFieldSourceKind kind) {
+            SceneMeshDerivedFieldSourceKind kind,
+            MeshDerivedFieldDomain domain =
+                MeshDerivedFieldDomain::Vertex) {
             SceneNodeAsset node = make_scene_node(id);
             node.mesh_source = SceneMeshSourceAsset{
                 .kind = SceneMeshSourceKind::ProceduralCube,
@@ -403,7 +405,7 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
                 SceneMeshDerivedFieldSourceAsset{
                     .enabled = true,
                     .field_id = field_id,
-                    .domain = MeshDerivedFieldDomain::Vertex,
+                    .domain = domain,
                     .channel_id = channel_id,
                     .value_type = MeshDerivedFieldValueType::Float1,
                     .source_kind = kind,
@@ -437,6 +439,12 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
         0x2004u,
         SceneMeshDerivedFieldSourceKind::VertexArea));
     scene.nodes.push_back(make_field_node(
+        "triangle_area",
+        "triangle_area",
+        0x2008u,
+        SceneMeshDerivedFieldSourceKind::TriangleArea,
+        MeshDerivedFieldDomain::Face));
+    scene.nodes.push_back(make_field_node(
         "mean_edge_length",
         "mean_edge_length",
         0x2005u,
@@ -455,7 +463,7 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_EQ(scene.nodes.size(), 7u);
+    ASSERT_EQ(scene.nodes.size(), 8u);
     for (const SceneNodeAsset& node : scene.nodes) {
         ASSERT_TRUE(node.mesh_derived_field_source.has_value());
         EXPECT_NE(
@@ -581,7 +589,7 @@ TEST(SceneAuthoringMaterialize, MeshSparseOperatorSourceBuildsUniformLaplacian)
         .enabled = true,
         .operator_id = "uniform_laplacian",
         .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
-        .domain = MeshOperatorDomain::Vertex,
+        .domain = MeshOperatorDomain::Face,
         .value_convention =
             MeshSparseOperatorValueConvention::NeighborWeights,
     };
@@ -610,11 +618,11 @@ TEST(SceneAuthoringMaterialize, MeshSparseOperatorSourceBuildsUniformLaplacian)
     EXPECT_EQ(
         op_data->kind,
         MeshSparseOperatorKind::UniformVertexLaplacian);
-    EXPECT_EQ(op_data->domain, MeshOperatorDomain::Vertex);
+    EXPECT_EQ(op_data->domain, MeshOperatorDomain::Face);
     EXPECT_EQ(
         op_data->value_convention,
         MeshSparseOperatorValueConvention::NeighborWeights);
-    EXPECT_EQ(op_data->row_count, 8u);
+    EXPECT_EQ(op_data->row_count, 12u);
     ASSERT_EQ(op_data->row_offsets.size(), op_data->row_count + 1u);
     EXPECT_EQ(op_data->row_offsets.front(), 0u);
     EXPECT_EQ(op_data->row_offsets.back(), op_data->nonzero_count);

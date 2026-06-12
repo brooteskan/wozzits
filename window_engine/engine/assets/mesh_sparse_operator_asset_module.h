@@ -11,8 +11,8 @@
 namespace wz::engine::assets
 {
     // Recipe for a sparse operator over a source mesh. kind selects the
-    // operator within the single MeshSparseOperator format; v0 compiles
-    // UniformVertexLaplacian on the Vertex domain only.
+    // operator within the single MeshSparseOperator format; domain selects
+    // whether rows index vertices or faces.
     struct MeshSparseOperatorDesc
     {
         std::string name;

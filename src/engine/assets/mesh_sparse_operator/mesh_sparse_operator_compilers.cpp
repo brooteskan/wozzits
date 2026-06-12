@@ -331,6 +331,174 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        // Uniform face-domain adjacency over the dual graph: rows are
+        // source triangles and columns are triangles sharing an original
+        // undirected mesh edge. Non-manifold shared edges connect every
+        // face pair incident to that edge; boundary edges add no entry.
+        bool build_uniform_face_laplacian(
+            const MeshSparseOperatorDesc& desc,
+            const MeshData& mesh,
+            wz::Logger& logger,
+            MeshSparseOperatorData& out)
+        {
+            if (!mesh.valid() || mesh.index_count() < 3u) {
+                logger.error("mesh sparse operator source mesh is invalid");
+                return false;
+            }
+
+            struct EdgeFace
+            {
+                uint64_t edge = 0u;
+                uint32_t face = 0u;
+            };
+
+            const uint32_t vertex_count = mesh.vertex_count();
+            const uint32_t face_count = mesh.index_count() / 3u;
+            std::vector<EdgeFace> edge_faces;
+            edge_faces.reserve(static_cast<size_t>(face_count) * 3u);
+
+            const auto edge_key =
+                [](uint32_t a, uint32_t b) noexcept -> uint64_t
+            {
+                const uint32_t lo = (std::min)(a, b);
+                const uint32_t hi = (std::max)(a, b);
+                return (static_cast<uint64_t>(lo) << 32u)
+                    | static_cast<uint64_t>(hi);
+            };
+            const auto add_edge_face =
+                [&edge_faces, edge_key](
+                    uint32_t a,
+                    uint32_t b,
+                    uint32_t face)
+            {
+                if (a != b) {
+                    edge_faces.push_back(EdgeFace{
+                        .edge = edge_key(a, b),
+                        .face = face,
+                    });
+                }
+            };
+
+            for (uint32_t face = 0; face < face_count; ++face) {
+                const size_t i = static_cast<size_t>(face) * 3u;
+                const uint32_t a = mesh.indices[i + 0u];
+                const uint32_t b = mesh.indices[i + 1u];
+                const uint32_t c = mesh.indices[i + 2u];
+                if (a >= vertex_count
+                    || b >= vertex_count
+                    || c >= vertex_count)
+                {
+                    logger.error(
+                        "mesh sparse operator index out of range");
+                    return false;
+                }
+                add_edge_face(a, b, face);
+                add_edge_face(b, c, face);
+                add_edge_face(c, a, face);
+            }
+
+            std::sort(
+                edge_faces.begin(),
+                edge_faces.end(),
+                [](const EdgeFace& a, const EdgeFace& b) noexcept
+                {
+                    if (a.edge != b.edge) {
+                        return a.edge < b.edge;
+                    }
+                    return a.face < b.face;
+                });
+            edge_faces.erase(
+                std::unique(
+                    edge_faces.begin(),
+                    edge_faces.end(),
+                    [](const EdgeFace& a, const EdgeFace& b) noexcept
+                    {
+                        return a.edge == b.edge && a.face == b.face;
+                    }),
+                edge_faces.end());
+
+            const auto directed_face_edge =
+                [](uint32_t from, uint32_t to) noexcept -> uint64_t
+            {
+                return (static_cast<uint64_t>(from) << 32u)
+                    | static_cast<uint64_t>(to);
+            };
+            std::vector<uint64_t> directed_edges;
+            for (size_t begin = 0; begin < edge_faces.size();) {
+                size_t end = begin + 1u;
+                while (end < edge_faces.size()
+                    && edge_faces[end].edge == edge_faces[begin].edge)
+                {
+                    ++end;
+                }
+
+                for (size_t i = begin; i < end; ++i) {
+                    for (size_t j = i + 1u; j < end; ++j) {
+                        const uint32_t a = edge_faces[i].face;
+                        const uint32_t b = edge_faces[j].face;
+                        if (a != b) {
+                            directed_edges.push_back(
+                                directed_face_edge(a, b));
+                            directed_edges.push_back(
+                                directed_face_edge(b, a));
+                        }
+                    }
+                }
+                begin = end;
+            }
+
+            std::sort(directed_edges.begin(), directed_edges.end());
+            directed_edges.erase(
+                std::unique(directed_edges.begin(), directed_edges.end()),
+                directed_edges.end());
+
+            out = MeshSparseOperatorData{
+                .source_mesh_key = desc.source_mesh.output,
+                .source_topology_hash = compute_mesh_topology_hash(mesh),
+                .kind = desc.kind,
+                .domain = MeshOperatorDomain::Face,
+                .value_convention =
+                    MeshSparseOperatorValueConvention::NeighborWeights,
+                .row_count = face_count,
+                .nonzero_count =
+                    static_cast<uint32_t>(directed_edges.size()),
+            };
+
+            out.row_offsets.assign(
+                static_cast<size_t>(face_count) + 1u, 0u);
+            for (const uint64_t edge : directed_edges) {
+                const uint32_t from = static_cast<uint32_t>(edge >> 32u);
+                ++out.row_offsets[from + 1u];
+            }
+            for (size_t i = 1; i < out.row_offsets.size(); ++i) {
+                out.row_offsets[i] += out.row_offsets[i - 1u];
+            }
+
+            out.col_indices.reserve(directed_edges.size());
+            out.weights.reserve(directed_edges.size());
+            for (const uint64_t edge : directed_edges) {
+                out.col_indices.push_back(
+                    static_cast<uint32_t>(edge & 0xffffffffu));
+            }
+            for (uint32_t row = 0; row < face_count; ++row) {
+                const uint32_t degree =
+                    out.row_offsets[row + 1u] - out.row_offsets[row];
+                const float weight =
+                    degree > 0u ? 1.0f / static_cast<float>(degree) : 0.0f;
+                for (uint32_t e = 0; e < degree; ++e) {
+                    out.weights.push_back(weight);
+                }
+            }
+
+            out.vertex_mass.assign(face_count, 1.0f);
+
+            if (!out.valid()) {
+                logger.error("mesh sparse operator output is invalid");
+                return false;
+            }
+            return true;
+        }
+
         bool cached_operator_matches_source(
             const MeshSparseOperatorData& data,
             const MeshSparseOperatorDesc& desc,
@@ -399,22 +567,30 @@ namespace wz::engine::assets::internal
                     "asset disk cache ignored stale mesh sparse operator");
             }
 
-            if (desc->domain != MeshOperatorDomain::Vertex) {
-                logger.error(
-                    "mesh sparse operator domain not supported yet; "
-                    "v0 compiles Vertex only");
-                return compile_failed_node(input);
-            }
-
             MeshSparseOperatorData data{};
             switch (desc->kind) {
             case MeshSparseOperatorKind::UniformVertexLaplacian:
-                if (!build_uniform_vertex_laplacian(
-                        *desc,
-                        *source_mesh,
-                        logger,
-                        data))
-                {
+                if (desc->domain == MeshOperatorDomain::Vertex) {
+                    if (!build_uniform_vertex_laplacian(
+                            *desc,
+                            *source_mesh,
+                            logger,
+                            data))
+                    {
+                        return compile_failed_node(input);
+                    }
+                } else if (desc->domain == MeshOperatorDomain::Face) {
+                    if (!build_uniform_face_laplacian(
+                            *desc,
+                            *source_mesh,
+                            logger,
+                            data))
+                    {
+                        return compile_failed_node(input);
+                    }
+                } else {
+                    logger.error(
+                        "mesh sparse operator domain not supported");
                     return compile_failed_node(input);
                 }
                 break;

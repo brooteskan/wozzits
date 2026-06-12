@@ -244,7 +244,7 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:a2b342e9057fdecb:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:acb0bcddcc38ec70:61b6710397eec152"
+        "asset": "asset-key:527b5190e07a3d87:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:b6952322ee1a8042:61b6710397eec152"
       },
       "mesh_source": {
         "kind": "glb",
@@ -253,11 +253,11 @@
       },
       "mesh_derived_field_source": {
         "enabled": true,
-        "field_id": "corner_count",
+        "field_id": "face_density",
         "domain": "vertex",
         "channel_id": 8192,
         "value_type": "float1",
-        "source_kind": "inverse_area_density",
+        "source_kind": "triangle_area",
         "component": "y",
         "normalize": true,
         "constant_value": 0.5
@@ -266,13 +266,13 @@
         "enabled": true,
         "operator_id": "uniform_laplacian",
         "kind": "uniform_vertex_laplacian",
-        "domain": "vertex",
+        "domain": "face",
         "value_convention": "neighbor_weights"
       },
       "mesh_sparse_apply_field": {
         "enabled": true,
         "operator_ref": "operator:uniform_laplacian",
-        "input_field_ref": "field:corner_count",
+        "input_field_ref": "field:face_density",
         "input_channel_id": 8192,
         "output_channel_id": 8448,
         "apply_mode": "residual"
@@ -280,7 +280,7 @@
       "mesh_sparse_diffusion_bands": {
         "enabled": true,
         "operator_ref": "operator:uniform_laplacian",
-        "input_field_ref": "field:corner_count",
+        "input_field_ref": "field:face_density",
         "input_channel_id": 8192,
         "output_base_channel_id": 8704,
         "band_count": 5,
@@ -289,7 +289,7 @@
         "tau": 3.9000000953674316
       },
       "mesh_render_style": {
-        "asset": "asset-key:9f40fa2695b04c5f:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
+        "asset": "asset-key:f3bcfac85c27c451:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
         "wireframe": {
           "enabled": false,
           "color": [
@@ -298,7 +298,7 @@
             0.15000000596046448,
             1
           ],
-          "emissive_strength": 1
+          "emissive_strength": 0.64999997615814209
         },
         "surface": {
           "enabled": true,
@@ -317,14 +317,14 @@
         "hidden_line_prepass": false,
         "field_visualization_enabled": true,
         "channel_id": 8704,
-        "value_min": -1,
-        "value_max": 1.0299999713897705,
-        "gamma": 0.97000002861022949,
+        "value_min": -1.0299999713897705,
+        "value_max": 1.0399999618530273,
+        "gamma": 1.0099999904632568,
         "palette": "heat",
         "field_visualization_channel_id": 8704,
-        "field_visualization_value_min": -1,
-        "field_visualization_value_max": 1.0299999713897705,
-        "field_visualization_gamma": 0.97000002861022949,
+        "field_visualization_value_min": -1.0299999713897705,
+        "field_visualization_value_max": 1.0399999618530273,
+        "field_visualization_gamma": 1.0099999904632568,
         "field_ref": "field:diffusion_bands"
       }
     }
@@ -338,15 +338,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        168.46974182128906,
-        180.589111328125,
-        -279.0675048828125
+        225.31294250488281,
+        121.69952392578125,
+        150.74089050292969
       ],
       "orientation": [
-        0.31804180145263672,
-        -0.18156696856021881,
-        0.039149399846792221,
-        0.92970430850982666
+        0.13690318167209625,
+        -0.86486101150512695,
+        0.22792120277881622,
+        0.42582264542579651
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

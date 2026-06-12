@@ -39,6 +39,7 @@ namespace wz::engine::assets
         VertexIndexGradient,
         TriangleCornerCount,
         VertexArea,
+        TriangleArea,
         MeanEdgeLength,
         InverseAreaDensity,
         LogDensity,

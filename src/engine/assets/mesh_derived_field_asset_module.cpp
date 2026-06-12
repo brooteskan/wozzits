@@ -93,7 +93,8 @@ namespace wz::engine::assets
         const BuiltinMeshDerivedFieldDesc& desc)
     {
         if (!desc.source_mesh.valid()
-            || desc.domain != MeshDerivedFieldDomain::Vertex
+            || (desc.domain != MeshDerivedFieldDomain::Vertex
+                && desc.domain != MeshDerivedFieldDomain::Face)
             || desc.channel_id == 0u
             || desc.value_type != MeshDerivedFieldValueType::Float1)
         {

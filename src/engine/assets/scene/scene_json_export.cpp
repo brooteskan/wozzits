@@ -169,6 +169,8 @@ namespace wz::engine::assets
                 return "triangle_corner_count";
             case SceneMeshDerivedFieldSourceKind::VertexArea:
                 return "vertex_area";
+            case SceneMeshDerivedFieldSourceKind::TriangleArea:
+                return "triangle_area";
             case SceneMeshDerivedFieldSourceKind::MeanEdgeLength:
                 return "mean_edge_length";
             case SceneMeshDerivedFieldSourceKind::InverseAreaDensity:

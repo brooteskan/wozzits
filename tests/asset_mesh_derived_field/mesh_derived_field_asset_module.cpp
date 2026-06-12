@@ -185,8 +185,18 @@ namespace
             std::filesystem::remove_all(root, ec);
             std::filesystem::create_directories(
                 root / "shaders" / "mesh_wavelet");
-            const std::filesystem::path source_root =
-                std::filesystem::current_path().parent_path().parent_path();
+            std::filesystem::path source_root =
+                std::filesystem::current_path();
+            if (!std::filesystem::exists(
+                    source_root
+                    / "window_engine"
+                    / "resources"
+                    / "shaders"
+                    / "mesh_wavelet"
+                    / "detail_heat_cs.hlsl"))
+            {
+                source_root = source_root.parent_path().parent_path();
+            }
             std::filesystem::copy_file(
                 source_root
                     / "window_engine"
@@ -585,6 +595,184 @@ TEST(MeshDerivedFieldAssetModule, PreservesFaceDomainAndSOAChannels)
     EXPECT_EQ(
         data->values.size(),
         2u * sizeof(float) + 2u * sizeof(uint32_t));
+}
+
+TEST(MeshDerivedFieldAssetModule, BuiltinTriangleAreaProducesFaceField)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "triangle_area_face");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field = assets.mesh_derived_fields().create_builtin_field({
+        .name = "quad_triangle_area",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2100u,
+        .source_kind = BuiltinMeshDerivedFieldSourceKind::TriangleArea,
+        .normalize = false,
+    });
+    ASSERT_TRUE(field.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Face);
+    EXPECT_EQ(data->element_count, 2u);
+
+    const std::vector<float> areas = read_float_channel(*data, 0x2100u);
+    ASSERT_EQ(areas.size(), 2u);
+    EXPECT_GT(areas[0], 0.0f);
+    EXPECT_FLOAT_EQ(areas[0], areas[1]);
+}
+
+TEST(MeshDerivedFieldAssetModule, SparseApplyFieldSupportsFaceDomain)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "sparse_apply_face");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto input = assets.mesh_derived_fields().create_explicit_field({
+        .name = "face_input",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .element_count = 2u,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2100u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = float_values({ 1.0f, 3.0f }),
+            },
+        },
+    });
+    ASSERT_TRUE(input.valid());
+
+    const auto op = assets.mesh_sparse_operators().create_sparse_operator({
+        .name = "quad_dual_laplacian",
+        .source_mesh = mesh,
+        .domain = MeshOperatorDomain::Face,
+    });
+    ASSERT_TRUE(op.valid());
+
+    const auto output =
+        assets.mesh_derived_fields().create_sparse_apply_field({
+            .name = "face_residual",
+            .source_mesh = mesh,
+            .sparse_operator = op,
+            .input_field = input,
+            .input_channel_id = 0x2100u,
+            .output_channel_id = 0x2101u,
+        });
+    ASSERT_TRUE(output.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(output);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Face);
+    EXPECT_EQ(data->element_count, 2u);
+
+    const std::vector<float> residual = read_float_channel(*data, 0x2101u);
+    ASSERT_EQ(residual.size(), 2u);
+    EXPECT_FLOAT_EQ(residual[0], -2.0f);
+    EXPECT_FLOAT_EQ(residual[1], 2.0f);
+}
+
+TEST(MeshDerivedFieldAssetModule, SparseDiffusionBandsSupportsFaceDomain)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "diffusion_bands_face");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto input = assets.mesh_derived_fields().create_explicit_field({
+        .name = "face_input",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .element_count = 2u,
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2100u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = float_values({ 1.0f, 3.0f }),
+            },
+        },
+    });
+    ASSERT_TRUE(input.valid());
+
+    const auto op = assets.mesh_sparse_operators().create_sparse_operator({
+        .name = "quad_dual_laplacian",
+        .source_mesh = mesh,
+        .domain = MeshOperatorDomain::Face,
+    });
+    ASSERT_TRUE(op.valid());
+
+    const auto output =
+        assets.mesh_derived_fields().create_sparse_diffusion_bands({
+            .name = "face_bands",
+            .source_mesh = mesh,
+            .sparse_operator = op,
+            .input_field = input,
+            .input_channel_id = 0x2100u,
+            .output_base_channel_id = 0x2200u,
+            .band_count = 1u,
+            .iterations_per_band = 1u,
+            .mode = MeshSparseDiffusionMode::Smooth,
+        });
+    ASSERT_TRUE(output.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(output);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Face);
+    EXPECT_EQ(data->element_count, 2u);
+
+    const std::vector<float> band = read_float_channel(*data, 0x2200u);
+    ASSERT_EQ(band.size(), 2u);
+    EXPECT_FLOAT_EQ(band[0], -2.0f);
+    EXPECT_FLOAT_EQ(band[1], 2.0f);
 }
 
 TEST(MeshDerivedFieldAssetModule, RejectsElementCountMismatch)
