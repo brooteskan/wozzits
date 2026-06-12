@@ -1,8 +1,8 @@
 #include <render/ir/render_ir.h>
+#include <scene/compile/terrain_visual_proxy_bridge.h>
 #include <math/frustum.h>
 #include <math/screen_space_metrics.h>
 #include <algo/next.h>
-#include <engine/assets/terrain/terrain_visual_proxy.h>
 
 #include <new>
 #include <ranges>
@@ -79,34 +79,6 @@ namespace wz::render {
             DrawRef ref{};
         };
 
-        TerrainChunkId scene_terrain_chunk_id(
-            wz::engine::assets::TerrainChunkId id) noexcept
-        {
-            return TerrainChunkId{ id.value };
-        }
-
-        TerrainLodId scene_terrain_lod_id(
-            wz::engine::assets::TerrainLodId id) noexcept
-        {
-            return TerrainLodId{ id.value };
-        }
-
-        TerrainVisualProxyBoundaryEdge scene_terrain_boundary_edge(
-            wz::engine::assets::TerrainVisualProxyBoundaryEdge edge) noexcept
-        {
-            switch (edge) {
-            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX:
-                return TerrainVisualProxyBoundaryEdge::NegativeX;
-            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveX:
-                return TerrainVisualProxyBoundaryEdge::PositiveX;
-            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeZ:
-                return TerrainVisualProxyBoundaryEdge::NegativeZ;
-            case wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveZ:
-                return TerrainVisualProxyBoundaryEdge::PositiveZ;
-            }
-            return TerrainVisualProxyBoundaryEdge::NegativeX;
-        }
-
         struct DrawRefSink {
             DrawRef* ptr{ nullptr };
             uint32_t count{ 0 };
@@ -169,9 +141,9 @@ namespace wz::render {
                 if (!instance.visual_proxy_data) {
                     continue;
                 }
-                const auto& proxy = *instance.visual_proxy_data;
-                count += static_cast<uint32_t>(proxy.chunks.size());
-                count += proxy.transition_strip_count();
+                count += instance.visual_proxy_chunk_count;
+                count += terrain_visual_proxy_transition_strip_count(
+                    instance.visual_proxy_data);
             }
             if (count == 0u) {
                 count = static_cast<uint32_t>(
@@ -239,21 +211,18 @@ namespace wz::render {
         TerrainDrawRef terrain_ref_from_transition(
             const TerrainVisualInstance& instance,
             uint32_t terrain_instance_index,
-            const wz::engine::assets::TerrainVisualProxyTransitionStrip& strip)
+            const TerrainTransitionStripInfo& strip)
         {
             TerrainDrawRef ref{
                 .kind = TerrainDrawRefKind::LodTransition,
                 .terrain_instance_index = terrain_instance_index,
-                .chunk_id = scene_terrain_chunk_id(strip.chunk_id),
-                .neighbor_chunk_id =
-                    scene_terrain_chunk_id(strip.neighbor_chunk_id),
+                .chunk_id = strip.chunk_id,
+                .neighbor_chunk_id = strip.neighbor_chunk_id,
                 .representation_kind =
                     TerrainVisualRepresentationKind::MeshChunks,
-                .lod_id = scene_terrain_lod_id(strip.lod_id),
-                .neighbor_lod_id =
-                    scene_terrain_lod_id(strip.neighbor_lod_id),
-                .transition_edge =
-                    scene_terrain_boundary_edge(strip.edge),
+                .lod_id = strip.lod_id,
+                .neighbor_lod_id = strip.neighbor_lod_id,
+                .transition_edge = strip.edge,
             };
             const uint64_t batch = terrain_ref_batch_key(instance, ref);
             ref.batch_key = batch;
@@ -310,7 +279,6 @@ namespace wz::render {
                     continue;
                 }
 
-                const auto& proxy = *instance.visual_proxy_data;
                 const TerrainChoiceLookup selected_choices =
                     terrain_choices_for_instance(
                         scene.terrain_lod_choices,
@@ -319,32 +287,33 @@ namespace wz::render {
                     continue;
                 }
 
-                for (const auto& chunk : proxy.chunks) {
-                    for (const auto& strip : chunk.transition_strips) {
-                        const TerrainLodChoice* choice =
-                            find_terrain_lod_choice(
-                                selected_choices,
-                                scene_terrain_chunk_id(strip.chunk_id));
-                        const TerrainLodChoice* neighbor_choice =
-                            find_terrain_lod_choice(
-                                selected_choices,
-                                scene_terrain_chunk_id(
-                                    strip.neighbor_chunk_id));
-                        if (!choice || !neighbor_choice) {
-                            continue;
-                        }
-                        if (choice->lod_id.value != strip.lod_id.value
-                            || neighbor_choice->lod_id.value
-                                != strip.neighbor_lod_id.value)
-                        {
-                            continue;
-                        }
-                        sink.push_ref(
-                            terrain_ref_from_transition(
-                                instance,
-                                instance_index,
-                                strip));
+                std::vector<TerrainTransitionStripInfo> transition_strips;
+                append_terrain_transition_strips(
+                    transition_strips,
+                    instance);
+                for (const auto& strip : transition_strips) {
+                    const TerrainLodChoice* choice =
+                        find_terrain_lod_choice(
+                            selected_choices,
+                            strip.chunk_id);
+                    const TerrainLodChoice* neighbor_choice =
+                        find_terrain_lod_choice(
+                            selected_choices,
+                            strip.neighbor_chunk_id);
+                    if (!choice || !neighbor_choice) {
+                        continue;
                     }
+                    if (choice->lod_id.value != strip.lod_id.value
+                        || neighbor_choice->lod_id.value
+                            != strip.neighbor_lod_id.value)
+                    {
+                        continue;
+                    }
+                    sink.push_ref(
+                        terrain_ref_from_transition(
+                            instance,
+                            instance_index,
+                            strip));
                 }
             }
 

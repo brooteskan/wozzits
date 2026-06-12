@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <render/ir/render_ir.h>
 #include <scene/compile/scene_compiler.h>
 #include <scene/compile/legacy_classification.h>
@@ -88,9 +89,11 @@ namespace {
 
         wz::engine::assets::TerrainVisualProxyTransitionStrip strip{};
         strip.chunk_id = wz::engine::assets::TerrainChunkId{ 0u };
-        strip.neighbor_chunk_id = wz::engine::assets::TerrainChunkId{ 1u };
+        strip.neighbor_chunk_id =
+            wz::engine::assets::TerrainChunkId{ 1u };
         strip.lod_id = wz::engine::assets::TerrainLodId{ 0u };
-        strip.neighbor_lod_id = wz::engine::assets::TerrainLodId{ 1u };
+        strip.neighbor_lod_id =
+            wz::engine::assets::TerrainLodId{ 1u };
         strip.edge =
             wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveX;
         strip.vertices.resize(4u);
@@ -228,7 +231,7 @@ namespace {
             .local_bounds = unit_box(),
             .terrain_visual_proxy_asset = proxy_key,
             .terrain_proxy_id =
-                wz::engine::assets::TerrainProxyId{ proxy_key },
+                TerrainProxyId{ proxy_key },
             .terrain_visual_proxy_data = &proxy,
             .terrain_visual_chunk_count = 2u,
             .visible = true,
@@ -274,7 +277,7 @@ namespace {
             .local_bounds = unit_box(),
             .terrain_visual_proxy_asset = proxy_key,
             .terrain_proxy_id =
-                wz::engine::assets::TerrainProxyId{ proxy_key },
+                TerrainProxyId{ proxy_key },
             .terrain_visual_proxy_data = &proxy,
             .terrain_visual_chunk_count = 2u,
             .visible = true,
@@ -364,20 +367,20 @@ TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)
     std::vector<TerrainLodChoice> choices{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 7 },
+            .chunk_id = TerrainChunkId{ 7 },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 1 },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 1 },
             .projected_error_px = 0.5f,
             .projected_area_px = 128.0f,
             .priority = 2.0f,
         },
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 8 },
+            .chunk_id = TerrainChunkId{ 8 },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 0 },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 0 },
             .projected_error_px = 0.1f,
             .projected_area_px = 64.0f,
             .priority = 1.0f,
@@ -397,7 +400,7 @@ TEST(RenderIRSpec, TerrainDrawRefsAreFlatLodChoices)
         EXPECT_EQ(ref.terrain_instance_index, 0u);
         EXPECT_EQ(
             ref.representation_kind,
-            wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks);
+            TerrainVisualRepresentationKind::MeshChunks);
         EXPECT_NE(ref.sort_key, 0u);
     }
     EXPECT_NE(ir.terrain[0].chunk_id, ir.terrain[1].chunk_id);
@@ -409,10 +412,10 @@ TEST(RenderIRSpec, TerrainDrawRefsPreserveSurfelRepresentation)
     std::vector<TerrainLodChoice> choices{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 7 },
+            .chunk_id = TerrainChunkId{ 7 },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud,
-            .lod_id = wz::engine::assets::TerrainLodId{ 2 },
+                TerrainVisualRepresentationKind::SurfelCloud,
+            .lod_id = TerrainLodId{ 2 },
             .projected_error_px = 0.25f,
             .projected_area_px = 32.0f,
             .priority = 4.0f,
@@ -429,7 +432,7 @@ TEST(RenderIRSpec, TerrainDrawRefsPreserveSurfelRepresentation)
     EXPECT_EQ(ir.terrain[0].kind, TerrainDrawRefKind::ChunkLod);
     EXPECT_EQ(
         ir.terrain[0].representation_kind,
-        wz::engine::assets::TerrainVisualRepresentationKind::SurfelCloud);
+        TerrainVisualRepresentationKind::SurfelCloud);
     EXPECT_EQ(ir.terrain[0].lod_id.value, 2u);
 }
 
@@ -439,17 +442,17 @@ TEST(RenderIRSpec, TerrainDrawRefsIncludeSelectedMixedLodTransition)
     std::vector<TerrainLodChoice> choices{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .chunk_id = TerrainChunkId{ 0u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 0u },
         },
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .chunk_id = TerrainChunkId{ 1u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 1u },
         },
     };
 
@@ -480,17 +483,17 @@ TEST(RenderIRSpec, TerrainDrawRefsSkipTransitionsByDefault)
     std::vector<TerrainLodChoice> choices{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .chunk_id = TerrainChunkId{ 0u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 0u },
         },
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .chunk_id = TerrainChunkId{ 1u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 1u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 1u },
         },
     };
 
@@ -515,17 +518,17 @@ TEST(RenderIRSpec, TerrainDrawRefsSkipTransitionForEqualLods)
     std::vector<TerrainLodChoice> choices{
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 0u },
+            .chunk_id = TerrainChunkId{ 0u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 0u },
         },
         TerrainLodChoice{
             .terrain_instance_index = 0u,
-            .chunk_id = wz::engine::assets::TerrainChunkId{ 1u },
+            .chunk_id = TerrainChunkId{ 1u },
             .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .lod_id = wz::engine::assets::TerrainLodId{ 0u },
+                TerrainVisualRepresentationKind::MeshChunks,
+            .lod_id = TerrainLodId{ 0u },
         },
     };
 

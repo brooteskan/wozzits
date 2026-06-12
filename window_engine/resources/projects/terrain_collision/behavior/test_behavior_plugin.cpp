@@ -107,15 +107,15 @@ namespace
             float value = wz_input_event_controller_axis_value(facts);
            
 
-            if (axis == 4) {
+            if (axis == 1) {
                 state->left_tread_speed = value;
             }
 
-            if (axis == 5) {
+            if (axis == 3) {
                 state->right_tread_speed = value;
             }
 
-            // wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
+            wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
@@ -138,8 +138,8 @@ namespace
             break;
         }
 
-        state->turn = 0.1f * (state->left_tread_speed - state->right_tread_speed);
-        state->throttle = -0.5f * (state->left_tread_speed + state->right_tread_speed);
+        state->turn = -0.2f * (state->right_tread_speed - state->left_tread_speed);
+        state->throttle = -0.2f * (state->left_tread_speed + state->right_tread_speed);
         apply_tank_motion(facts, event, state);
 
     }

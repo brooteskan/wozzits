@@ -15,8 +15,6 @@
 namespace wz::engine::assets
 {
     struct TerrainVisualProxyData;
-    struct TerrainVisualProxyLodRecord;
-    struct TerrainVisualProxySurfelDensityLevel;
 }
 
 namespace wz::scene {
@@ -196,6 +194,7 @@ namespace wz::scene {
         // Non-owning CPU metadata owned by TerrainVisualProxyTable. The asset
         // library/table must outlive compiled scene views that select terrain LODs.
         const wz::engine::assets::TerrainVisualProxyData* visual_proxy_data = nullptr;
+        uint32_t       visual_proxy_chunk_count{ 0 };
         MaterialHandle material{ INVALID_MATERIAL };
         bool           visible{ true };
     };

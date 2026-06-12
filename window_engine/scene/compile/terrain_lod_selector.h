@@ -7,6 +7,22 @@
 
 namespace wz::scene
 {
+    struct TerrainSurfelDensityLevel
+    {
+        TerrainLodId density_id{};
+        float representative_radius = 0.0f;
+        uint32_t equivalent_triangle_cost = 0u;
+        bool valid = false;
+    };
+
+    struct TerrainLodRecord
+    {
+        TerrainLodId lod_id{};
+        uint32_t triangle_count = 0u;
+        float conservative_geometric_error = 0.0f;
+        bool valid = false;
+    };
+
     struct TerrainChunkInfo
     {
         uint32_t terrain_instance_index = 0;
@@ -16,10 +32,8 @@ namespace wz::scene
         AABB world_bounds{};
         float asset_triangle_density = 0.0f;
         TerrainVisualChunkBoundaryMetadata boundary{};
-        std::span<
-            const wz::engine::assets::TerrainVisualProxySurfelDensityLevel>
-            surfel_density_levels;
-        std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods;
+        std::vector<TerrainSurfelDensityLevel> surfel_density_levels;
+        std::vector<TerrainLodRecord> lods;
     };
 
     std::vector<TerrainLodChoice> select_terrain_lods(

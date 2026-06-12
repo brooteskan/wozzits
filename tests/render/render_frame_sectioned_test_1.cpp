@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <render/frame/render_frame.h>
 #include <render/ir/render_ir.h>
 #include <scene/compile/scene_compiler.h>
@@ -222,7 +223,7 @@ namespace {
             .local_bounds = unit_box(),
             .terrain_visual_proxy_asset = proxy_key,
             .terrain_proxy_id =
-                wz::engine::assets::TerrainProxyId{ proxy_key },
+                TerrainProxyId{ proxy_key },
             .visible = true,
         };
 
@@ -236,20 +237,20 @@ namespace {
         return {
             TerrainLodChoice{
                 .terrain_instance_index = 0u,
-                .chunk_id = wz::engine::assets::TerrainChunkId{ first_chunk },
+                .chunk_id = TerrainChunkId{ first_chunk },
                 .representation_kind =
-                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-                .lod_id = wz::engine::assets::TerrainLodId{ 1 },
+                    TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = TerrainLodId{ 1 },
                 .projected_error_px = 0.5f,
                 .projected_area_px = 128.0f,
                 .priority = 2.0f,
             },
             TerrainLodChoice{
                 .terrain_instance_index = 0u,
-                .chunk_id = wz::engine::assets::TerrainChunkId{ first_chunk + 1u },
+                .chunk_id = TerrainChunkId{ first_chunk + 1u },
                 .representation_kind =
-                    wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-                .lod_id = wz::engine::assets::TerrainLodId{ 0 },
+                    TerrainVisualRepresentationKind::MeshChunks,
+                .lod_id = TerrainLodId{ 0 },
                 .projected_error_px = 0.1f,
                 .projected_area_px = 64.0f,
                 .priority = 1.0f,

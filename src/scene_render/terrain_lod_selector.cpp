@@ -1,7 +1,6 @@
 #include <scene/compile/terrain_lod_selector.h>
 
 #include <math/screen_space_metrics.h>
-#include <engine/assets/terrain/terrain_visual_proxy.h>
 
 #include <algorithm>
 #include <cmath>
@@ -13,15 +12,12 @@ namespace wz::scene
 {
     namespace
     {
-        using wz::engine::assets::TerrainVisualProxyLodRecord;
-        using wz::engine::assets::TerrainVisualProxySurfelDensityLevel;
-
         struct VisibleChunk
         {
             TerrainChunkInfo info{};
             wz::math::ProjectionResult projection{};
             float projected_area_px = 0.0f;
-            std::vector<const TerrainVisualProxyLodRecord*> lods;
+            std::vector<const TerrainLodRecord*> lods;
             std::vector<float> errors_px;
             uint32_t selected = 0;
         };
@@ -49,13 +45,13 @@ namespace wz::scene
         }
 
         uint32_t lod_level_value(
-            const TerrainVisualProxyLodRecord* lod) noexcept
+            const TerrainLodRecord* lod) noexcept
         {
             return lod ? lod->lod_id.value : 0u;
         }
 
         uint32_t lod_triangles(
-            const TerrainVisualProxyLodRecord* lod) noexcept
+            const TerrainLodRecord* lod) noexcept
         {
             return lod ? lod->triangle_count : 0u;
         }
@@ -68,9 +64,9 @@ namespace wz::scene
                  i > 0u;
                  --i)
             {
-                const TerrainVisualProxySurfelDensityLevel& level =
+                const TerrainSurfelDensityLevel& level =
                     chunk.surfel_density_levels[i - 1u];
-                if (level.valid()) {
+                if (level.valid) {
                     return level.equivalent_triangle_cost;
                 }
             }
@@ -78,7 +74,7 @@ namespace wz::scene
         }
 
         float lod_error(
-            const TerrainVisualProxyLodRecord* lod,
+            const TerrainLodRecord* lod,
             const wz::math::ProjectionResult& projection,
             const TerrainLodSelectionParams& params) noexcept
         {
@@ -90,8 +86,8 @@ namespace wz::scene
         }
 
         bool lods_are_finer_first(
-            const TerrainVisualProxyLodRecord* a,
-            const TerrainVisualProxyLodRecord* b) noexcept
+            const TerrainLodRecord* a,
+            const TerrainLodRecord* b) noexcept
         {
             return lod_level_value(a) < lod_level_value(b);
         }
@@ -312,7 +308,7 @@ namespace wz::scene
             }
         }
 
-        const TerrainVisualProxySurfelDensityLevel* select_surfel_density(
+        const TerrainSurfelDensityLevel* select_surfel_density(
             const VisibleChunk& chunk,
             const TerrainLodSelectionParams& params) noexcept
         {
@@ -332,11 +328,11 @@ namespace wz::scene
                     : chunk.projection.nearest_depth;
             const float min_projected_radius_px =
                 (std::max)(1.0f, params.surfel_target_coverage_px);
-            const TerrainVisualProxySurfelDensityLevel* fallback = nullptr;
-            for (const TerrainVisualProxySurfelDensityLevel& level :
+            const TerrainSurfelDensityLevel* fallback = nullptr;
+            for (const TerrainSurfelDensityLevel& level :
                  chunk.info.surfel_density_levels)
             {
-                if (!level.valid()) {
+                if (!level.valid) {
                     continue;
                 }
                 fallback = &level;
@@ -390,9 +386,9 @@ namespace wz::scene
             const VisibleChunk& chunk,
             const TerrainLodSelectionParams& params)
         {
-            const TerrainVisualProxyLodRecord* lod =
+            const TerrainLodRecord* lod =
                 chunk.lods[chunk.selected];
-            if (const TerrainVisualProxySurfelDensityLevel* surfel =
+            if (const TerrainSurfelDensityLevel* surfel =
                     select_surfel_density(chunk, params))
             {
                 return TerrainLodChoice{
@@ -525,8 +521,8 @@ namespace wz::scene
                 .projected_area_px = area,
             };
             visible_chunk.lods.reserve(chunk.lods.size());
-            for (const TerrainVisualProxyLodRecord& lod : chunk.lods) {
-                if (lod.valid()) {
+            for (const TerrainLodRecord& lod : chunk.lods) {
+                if (lod.valid) {
                     visible_chunk.lods.push_back(&lod);
                 }
             }
@@ -539,7 +535,7 @@ namespace wz::scene
                 lods_are_finer_first);
 
             visible_chunk.errors_px.reserve(visible_chunk.lods.size());
-            for (const TerrainVisualProxyLodRecord* lod : visible_chunk.lods) {
+            for (const TerrainLodRecord* lod : visible_chunk.lods) {
                 visible_chunk.errors_px.push_back(
                     lod_error(lod, projection, params));
             }

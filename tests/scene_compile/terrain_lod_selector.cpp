@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <math/projection.h>
 #include <scene/compile/terrain_lod_selector.h>
 
@@ -37,69 +36,57 @@ namespace
         return view;
     }
 
-    wz::engine::assets::TerrainVisualProxyLodRecord lod(
+    TerrainLodRecord lod(
         uint32_t lod_id,
         uint32_t triangles,
         float error)
     {
-        return wz::engine::assets::TerrainVisualProxyLodRecord{
-            .lod_id = wz::engine::assets::TerrainLodId{ lod_id },
-            .representation_id =
-                wz::engine::assets::TerrainRepresentationId{ 1u },
-            .representation_kind =
-                wz::engine::assets::TerrainVisualRepresentationKind::MeshChunks,
-            .bounds = wz::engine::assets::TerrainVisualProxyBounds{
-                .min = { -1.0f, -1.0f, 10.0f },
-                .max = { 1.0f, 1.0f, 11.0f },
-            },
+        return TerrainLodRecord{
+            .lod_id = TerrainLodId{ lod_id },
             .triangle_count = triangles,
             .conservative_geometric_error = error,
+            .valid = true,
         };
     }
 
     TerrainChunkInfo chunk(
         uint32_t chunk_id,
         AABB bounds,
-        std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods)
+        std::span<const TerrainLodRecord> lods)
     {
-        return TerrainChunkInfo{
+        TerrainChunkInfo out{
             .terrain_instance_index = 0u,
             .chunk_id = TerrainChunkId{ chunk_id },
             .representation_kind =
                 TerrainVisualRepresentationKind::MeshChunks,
             .world_bounds = bounds,
-            .lods = lods,
         };
+        out.lods.assign(lods.begin(), lods.end());
+        return out;
     }
 
     TerrainChunkInfo dense_chunk(
         uint32_t chunk_id,
         AABB bounds,
         float asset_triangle_density,
-        std::span<const wz::engine::assets::TerrainVisualProxyLodRecord> lods)
+        std::span<const TerrainLodRecord> lods)
     {
         TerrainChunkInfo out = chunk(chunk_id, bounds, lods);
         out.asset_triangle_density = asset_triangle_density;
         return out;
     }
 
-    wz::engine::assets::TerrainVisualProxySurfelDensityLevel surfel_level(
+    TerrainSurfelDensityLevel surfel_level(
         uint32_t density_id,
         uint32_t count,
         float spacing,
         float radius)
     {
-        return wz::engine::assets::TerrainVisualProxySurfelDensityLevel{
-            .density_id = wz::engine::assets::TerrainLodId{ density_id },
-            .spacing = spacing,
+        return TerrainSurfelDensityLevel{
+            .density_id = TerrainLodId{ density_id },
             .representative_radius = radius,
-            .first_surfel = 0u,
-            .surfel_count = count,
             .equivalent_triangle_cost = count * 2u,
-            .bounds = wz::engine::assets::TerrainVisualProxyBounds{
-                .min = { -1.0f, -1.0f, 10.0f },
-                .max = { 1.0f, 1.0f, 11.0f },
-            },
+            .valid = spacing > 0.0f && radius > 0.0f && count > 0u,
         };
     }
 }

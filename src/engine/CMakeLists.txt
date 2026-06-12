@@ -141,6 +141,7 @@ target_sources(window_engine PRIVATE
     rendering/render_program_pipeline_cache.cpp
     rendering/builtin_render_programs.cpp
     rendering/render_resource_resolver.cpp
+    rendering/scene_terrain_visual_proxy_bridge.cpp
     rendering/scene_render_resource_resolver.cpp
     rendering/gpu_scene_render_resource_resolver.cpp
 )

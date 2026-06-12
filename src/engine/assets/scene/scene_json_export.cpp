@@ -1181,9 +1181,12 @@ namespace wz::engine::assets
                 number_value(source.components_per_channel));
 
             auto channels = array_value();
-            for (const auto& channel : source.channels) {
-                channels->array_values.push_back(string_value(channel.name));
-            }
+            std::ranges::transform(
+                source.channels,
+                std::back_inserter(channels->array_values),
+                [](const auto& channel) {
+                    return string_value(channel.name);
+                });
             add_member(*obj, "channels", std::move(channels));
             return obj;
         }
@@ -1477,9 +1480,12 @@ namespace wz::engine::assets
         {
             auto obj = object_value();
             auto channels = array_value();
-            for (const auto& channel : listener.channels) {
-                channels->array_values.push_back(string_value(channel));
-            }
+            std::ranges::transform(
+                listener.channels,
+                std::back_inserter(channels->array_values),
+                [](const auto& channel) {
+                    return string_value(channel);
+                });
             add_member(*obj, "channels", std::move(channels));
             return obj;
         }
