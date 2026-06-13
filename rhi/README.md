@@ -40,7 +40,10 @@ include/wozzits/rhi/
   tag_registry.h            runtime name -> handle registry (the no-enums core)
   render_program.h          declarative program contract: closed pipeline-state
                             enums + descriptor semantics as Tags (the boundary)
-  render_program_registry.h render programs as registered data, no enum
+  program_registry.h        generic "named programs as data" registry (shared
+                            by render + compute)
+  render_program_registry.h RenderProgramRegistry (alias of the generic)
+  compute_program.h         compute pipelines as registered data (compute peer)
   handle.h                  generational handle + slot map (stale-handle safe)
   gpu_resource.h            GPU resource contract: identity, residency,
                             cpu_access, usage + the GpuBackend interface
@@ -116,6 +119,11 @@ not in this repo, and maps `wz::engine::assets::RenderProgramData` into a
 
 `tests/render_program_bridge_tests.cpp` exercises this against the real
 `mesh_mask_style` program shape with zero engine dependency.
+
+Compute pipelines get the same treatment via `compute_program.h`
+(`ComputeProgramDesc` + `ComputeProgramRegistry`), reusing the binding structs.
+Both registries are the one generic `ProgramRegistry<Desc, Max>` — a new
+program kind is a new descriptor + alias, never a new enum or switch.
 
 ## Build
 

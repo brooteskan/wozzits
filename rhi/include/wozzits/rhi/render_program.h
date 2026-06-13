@@ -30,7 +30,7 @@ namespace wz::rhi
 {
     // ── Closed, bounded pipeline-state value sets: correctly enums ────────────
 
-    enum class ShaderStage : uint8_t { All, Vertex, Pixel };
+    enum class ShaderStage : uint8_t { All, Vertex, Pixel, Compute };
 
     enum class BindingModel : uint8_t
     {

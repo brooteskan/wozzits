@@ -29,6 +29,7 @@ if(WOZZITS_RHI_BUILD_TESTS)
         tag_registry_tests
         render_program_registry_tests
         render_program_bridge_tests
+        compute_program_tests
         handle_tests
         gpu_resource_registry_tests
         frame_graph_tests
