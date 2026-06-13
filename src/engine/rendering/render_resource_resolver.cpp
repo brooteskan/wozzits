@@ -3,6 +3,7 @@
 #include <engine/rendering/render_resource_resolver.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -68,6 +69,65 @@ namespace
             return wz::engine::assets::TerrainVisualProxyBoundaryEdge::PositiveZ;
         }
         return wz::engine::assets::TerrainVisualProxyBoundaryEdge::NegativeX;
+    }
+
+    bool float_equal(float a, float b) noexcept
+    {
+        return a == b || (std::isnan(a) && std::isnan(b));
+    }
+
+    bool color_equal(const float (&a)[4], const float (&b)[4]) noexcept
+    {
+        return float_equal(a[0], b[0])
+            && float_equal(a[1], b[1])
+            && float_equal(a[2], b[2])
+            && float_equal(a[3], b[3]);
+    }
+
+    bool mask_rule_equal(
+        const wz::engine::assets::MeshMaskRule& a,
+        const wz::engine::assets::MeshMaskRule& b) noexcept
+    {
+        return a.enabled == b.enabled
+            && a.input_channel_id == b.input_channel_id
+            && float_equal(a.lo, b.lo)
+            && float_equal(a.hi, b.hi)
+            && color_equal(a.color, b.color)
+            && a.priority == b.priority;
+    }
+
+    bool mask_style_equal(
+        const wz::engine::assets::MeshMaskRenderStyleData& a,
+        const wz::engine::assets::MeshMaskRenderStyleData& b) noexcept
+    {
+        if (a.enabled != b.enabled
+            || a.domain != b.domain
+            || a.projection_mode != b.projection_mode
+            || a.overlap_mode != b.overlap_mode
+            || !color_equal(a.unmatched_color, b.unmatched_color)
+            || a.show_unmatched != b.show_unmatched
+            || a.rules.size() != b.rules.size())
+        {
+            return false;
+        }
+
+        for (size_t i = 0; i < a.rules.size(); ++i) {
+            if (!mask_rule_equal(a.rules[i], b.rules[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void record_mesh_style_live_update(
+        wz::engine::rendering::MeshStyleLiveUpdateStats& stats,
+        const wz::engine::assets::MeshRenderStyleData& before,
+        const wz::engine::assets::MeshRenderStyleData& after) noexcept
+    {
+        ++stats.style_updates;
+        if (!mask_style_equal(before.mask, after.mask)) {
+            ++stats.mask_rule_updates;
+        }
     }
 }
 
@@ -302,6 +362,26 @@ namespace wz::engine::rendering
             e.terrain_far_splat_chunks };
     }
 
+    bool RenderResourceResolver::update_mesh_style(
+        wz::scene::MeshHandle handle,
+        wz::engine::assets::MeshRenderStyleData style) noexcept
+    {
+        if (!style.valid())
+            return false;
+        if (handle == wz::scene::INVALID_MESH)
+            return false;
+        if (static_cast<size_t>(handle) >= mesh_entries_.size())
+            return false;
+
+        Entry& e = mesh_entries_[handle];
+        record_mesh_style_live_update(
+            mesh_style_live_update_stats_,
+            e.mesh_style,
+            style);
+        e.mesh_style = std::move(style);
+        return true;
+    }
+
     std::optional<ResolvedRenderableResource>
     RenderResourceResolver::resolve_terrain_proxy(
         wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept
@@ -324,6 +404,38 @@ namespace wz::engine::rendering
             e->mesh_field_visualization_resource,
             e->terrain_chunks,
             e->terrain_far_splat_chunks };
+    }
+
+    bool RenderResourceResolver::update_terrain_proxy_mesh_style(
+        wz::engine::assets::TerrainProxyId terrain_proxy_id,
+        wz::engine::assets::MeshRenderStyleData style) noexcept
+    {
+        if (!style.valid())
+            return false;
+        if (!terrain_proxy_id.valid())
+            return false;
+
+        Entry* e = find_terrain_proxy_entry(
+            terrain_proxy_entries_,
+            terrain_proxy_id);
+        if (!e)
+            return false;
+
+        record_mesh_style_live_update(
+            mesh_style_live_update_stats_,
+            e->mesh_style,
+            style);
+        e->mesh_style = std::move(style);
+        return true;
+    }
+
+    bool RenderResourceResolver::update_terrain_proxy_mesh_style(
+        wz::scene::TerrainProxyId terrain_proxy_id,
+        wz::engine::assets::MeshRenderStyleData style) noexcept
+    {
+        return update_terrain_proxy_mesh_style(
+            engine_terrain_proxy_id(terrain_proxy_id),
+            std::move(style));
     }
 
     std::optional<ResolvedTerrainDrawResource>
@@ -813,5 +925,17 @@ namespace wz::engine::rendering
         diagnostics.p95_projected_error_px =
             terrain_stats_.p95_projected_error_px;
         return diagnostics;
+    }
+
+    void RenderResourceResolver::reset_mesh_style_live_update_stats()
+        const noexcept
+    {
+        mesh_style_live_update_stats_ = {};
+    }
+
+    MeshStyleLiveUpdateStats
+    RenderResourceResolver::mesh_style_live_update_stats() const noexcept
+    {
+        return mesh_style_live_update_stats_;
     }
 }

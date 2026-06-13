@@ -120,7 +120,10 @@ namespace wz::engine::assets
     [[nodiscard]] inline bool is_mesh_render_style_drawable(
         const MeshRenderStyleData& style) noexcept
     {
-        return style.wireframe.enabled || style.surface.enabled;
+        return style.wireframe.enabled
+            || style.surface.enabled
+            || style.field_visualization.enabled
+            || style.mask.enabled;
     }
 
     struct MeshRenderStyleCompileDesc

@@ -25,11 +25,22 @@ struct PSInput
 {
     float4 position : SV_POSITION;
     float3 normal : NORMAL;
+    float4 mask_color : COLOR0;
+    float mask_matched : TEXCOORD1;
 };
+
+float3 safe_normalize_or_up(float3 value)
+{
+    float len_sq = dot(value, value);
+    if (len_sq <= 1.0e-8f) {
+        return float3(0.0f, 1.0f, 0.0f);
+    }
+    return value * rsqrt(len_sq);
+}
 
 float3 apply_lighting(float3 color, float3 normal, float emissive)
 {
-    float3 n = normalize(normal);
+    float3 n = safe_normalize_or_up(normal);
     float facing = saturate(n.y * 0.45f + 0.55f);
     return color * (0.35f + 0.65f * facing) + color * max(emissive, 0.0f);
 }
@@ -52,13 +63,18 @@ float4 main(PSInput input, uint primitive_id : SV_PrimitiveID) : SV_TARGET
 {
     uint rule_count = (uint)round(max(mask_params.x, 0.0f));
     uint overlap_mode = (uint)round(max(mask_params.y, 0.0f));
-    uint face_count = (uint)round(max(mask_params.z, 0.0f));
+    uint element_count = (uint)round(max(mask_params.z, 0.0f));
     bool show_unmatched = mask_params.w >= 0.5f;
+    uint mask_domain = (uint)round(max(surface_params.y, 0.0f));
 
     float4 selected = float4(0.0f, 0.0f, 0.0f, 0.0f);
     bool matched = false;
 
-    if (primitive_id < face_count) {
+    if (mask_domain == 1u) {
+        selected = input.mask_color;
+        matched = input.mask_matched > 0.0001f;
+    }
+    else if (primitive_id < element_count) {
         [loop]
         for (uint i = 0u; i < rule_count && i < 16u; ++i) {
             MeshMaskRule rule = mask_rules[i];

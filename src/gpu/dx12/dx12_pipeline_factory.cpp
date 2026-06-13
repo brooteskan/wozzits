@@ -166,13 +166,13 @@ namespace wz::gpu::dx12::internal
             D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         params[1].DescriptorTable.NumDescriptorRanges = 1;
         params[1].DescriptorTable.pDescriptorRanges = &field_range;
-        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
         params[2].ParameterType =
             D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         params[2].DescriptorTable.NumDescriptorRanges = 1;
         params[2].DescriptorTable.pDescriptorRanges = &rules_range;
-        params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
         D3D12_ROOT_SIGNATURE_DESC desc = {};
         desc.NumParameters   = 3;
@@ -1030,12 +1030,40 @@ namespace wz::gpu::dx12::internal
             std::vector<size_t>     binding_indices;  // indices into data.descriptor_bindings
         };
 
+        auto can_share_descriptor_table =
+            [&](const VisibilityGroup& group,
+                const wz::engine::assets::DescriptorBinding& binding)
+        {
+            if (group.visibility != to_dx12_visibility(binding.visibility)) {
+                return false;
+            }
+            if (binding.semantic
+                    == wz::engine::assets::DescriptorSemantic::MeshMaskRules)
+            {
+                return false;
+            }
+            for (size_t group_binding_index : group.binding_indices) {
+                if (data.descriptor_bindings[group_binding_index].semantic
+                    == wz::engine::assets::DescriptorSemantic::MeshMaskRules)
+                {
+                    return false;
+                }
+            }
+            return true;
+        };
+
         std::vector<VisibilityGroup> groups;
         for (size_t i = 0; i < data.descriptor_bindings.size(); ++i)
         {
-            const auto vis = to_dx12_visibility(data.descriptor_bindings[i].visibility);
+            const auto vis =
+                to_dx12_visibility(data.descriptor_bindings[i].visibility);
             auto it = std::find_if(groups.begin(), groups.end(),
-                [vis](const VisibilityGroup& g) { return g.visibility == vis; });
+                [&](const VisibilityGroup& g)
+                {
+                    return can_share_descriptor_table(
+                        g,
+                        data.descriptor_bindings[i]);
+                });
             if (it != groups.end())
                 it->binding_indices.push_back(i);
             else

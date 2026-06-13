@@ -996,8 +996,19 @@ namespace wz::engine::assets
                 add_member(*obj, "field_ref",
                     string_value(style.field_visualization_field_ref));
             }
-            add_member(*obj, "mask",
-                mesh_mask_value(style.mask, style.mask_source_field_ref));
+            return obj;
+        }
+
+        JSONValuePtr mesh_mask_render_style_value(
+            const SceneMeshMaskRenderStyleAsset& style)
+        {
+            MeshMaskRenderStyleData mask = style.mask;
+            mask.enabled = style.enabled;
+            auto obj = mesh_mask_value(mask, style.source_field_ref);
+            add_member(
+                *obj,
+                "wireframe",
+                mesh_render_layer_value(style.wireframe));
             return obj;
         }
 
@@ -1732,7 +1743,8 @@ namespace wz::engine::assets
                 add_member(*obj, "debug_renderable",
                     renderable_value(*node.renderable));
             }
-            if (node.renderable_asset
+            if (!node.mesh_source
+                && node.renderable_asset
                 && !(*node.renderable_asset == wz::asset::AssetKey{}))
             {
                 add_member(*obj, "renderable",
@@ -1834,6 +1846,11 @@ namespace wz::engine::assets
             if (node.mesh_render_style) {
                 add_member(*obj, "mesh_render_style",
                     mesh_render_style_value(*node.mesh_render_style));
+            }
+            if (node.mesh_mask_render_style) {
+                add_member(*obj, "mesh_mask_render_style",
+                    mesh_mask_render_style_value(
+                        *node.mesh_mask_render_style));
             }
             if (node.scalar_field_source) {
                 add_member(*obj, "scalar_field_source",

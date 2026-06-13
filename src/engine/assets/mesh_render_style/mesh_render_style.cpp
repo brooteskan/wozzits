@@ -65,7 +65,8 @@ namespace wz::engine::assets
         if (!enabled) {
             return true;
         }
-        if (domain != MeshMaskDomain::Face
+        if ((domain != MeshMaskDomain::Face
+                && domain != MeshMaskDomain::Vertex)
             || projection_mode != MeshMaskProjectionMode::Direct
             || (overlap_mode != MeshMaskOverlapMode::Priority
                 && overlap_mode != MeshMaskOverlapMode::AlphaBlend)

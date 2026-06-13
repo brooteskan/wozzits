@@ -10,6 +10,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -670,6 +671,49 @@ TEST(MeshDerivedFieldAssetModule, BuiltinTriangleAreaProducesFaceField)
     EXPECT_FLOAT_EQ(areas[0], areas[1]);
 }
 
+TEST(MeshDerivedFieldAssetModule, BuiltinMeanEdgeLengthProducesFaceField)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "mean_edge_length_face");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "quad",
+        .kind = ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field = assets.mesh_derived_fields().create_builtin_field({
+        .name = "quad_mean_edge_length",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2200u,
+        .source_kind = BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength,
+        .normalize = false,
+    });
+    ASSERT_TRUE(field.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(field);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->domain, MeshDerivedFieldDomain::Face);
+    EXPECT_EQ(data->element_count, 2u);
+
+    const std::vector<float> lengths = read_float_channel(*data, 0x2200u);
+    ASSERT_EQ(lengths.size(), 2u);
+    EXPECT_GT(lengths[0], 0.0f);
+    EXPECT_FLOAT_EQ(lengths[0], lengths[1]);
+}
+
 TEST(MeshDerivedFieldAssetModule, SparseApplyFieldSupportsFaceDomain)
 {
     using namespace wz::engine::assets;
@@ -873,6 +917,124 @@ TEST(MeshDerivedFieldAssetModule, FieldLevelMaskBuildsFaceMaskChannels)
     EXPECT_EQ(data->channels[1].value_type, MeshDerivedFieldValueType::UInt1);
     EXPECT_EQ(read_uint_channel(*data, 0x3000u), std::vector<uint32_t>({ 1u, 0u }));
     EXPECT_EQ(read_uint_channel(*data, 0x3001u), std::vector<uint32_t>({ 0u, 1u }));
+}
+
+TEST(MeshDerivedFieldAssetModule, FieldLevelMaskMatchesPreviewPredicate)
+{
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    auto assets = make_assets(device, logger, "field_level_mask_parity");
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const std::vector<float> preview_values{
+        -0.1f,
+        0.0f,
+        0.25f,
+        0.5f,
+        0.5001f,
+        0.75f,
+        1.0f,
+        1.2f,
+        std::numeric_limits<float>::quiet_NaN(),
+        -1.0f,
+        2.0f,
+        0.5f,
+    };
+    std::vector<std::byte> field_bytes(
+        preview_values.size() * sizeof(float));
+    std::memcpy(
+        field_bytes.data(),
+        preview_values.data(),
+        field_bytes.size());
+
+    const auto input = assets.mesh_derived_fields().create_explicit_field({
+        .name = "face_bands",
+        .source_mesh = mesh,
+        .domain = MeshDerivedFieldDomain::Face,
+        .element_count = static_cast<uint32_t>(preview_values.size()),
+        .channels = {
+            MeshDerivedFieldChannelDesc{
+                .channel_id = 0x2200u,
+                .value_type = MeshDerivedFieldValueType::Float1,
+                .values = std::move(field_bytes),
+            },
+        },
+    });
+    ASSERT_TRUE(input.valid());
+
+    const auto masks = assets.mesh_derived_fields().create_field_level_mask({
+        .name = "face_masks",
+        .source_mesh = mesh,
+        .input_field = input,
+        .domain = MeshDerivedFieldDomain::Face,
+        .regions = {
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3000u,
+                .min_value = 0.0f,
+                .max_value = 0.5f,
+            },
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3001u,
+                .min_value = 0.5f,
+                .max_value = 1.0f,
+            },
+            MeshFieldLevelMaskRegionDesc{
+                .input_channel_id = 0x2200u,
+                .output_channel_id = 0x3002u,
+                .min_value = 1.0f,
+                .max_value = 0.5f,
+            },
+        },
+    });
+    ASSERT_TRUE(masks.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(masks);
+    ASSERT_TRUE(handle.valid());
+    const auto* data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    ASSERT_EQ(data->element_count, preview_values.size());
+
+    auto preview_rule_membership =
+        [&](float lo, float hi)
+        {
+            if (lo > hi) {
+                std::swap(lo, hi);
+            }
+            std::vector<uint32_t> out;
+            out.reserve(preview_values.size());
+            for (float value : preview_values) {
+                out.push_back(
+                    std::isfinite(value) && value >= lo && value <= hi
+                        ? 1u
+                        : 0u);
+            }
+            return out;
+        };
+
+    EXPECT_EQ(
+        read_uint_channel(*data, 0x3000u),
+        preview_rule_membership(0.0f, 0.5f));
+    EXPECT_EQ(
+        read_uint_channel(*data, 0x3001u),
+        preview_rule_membership(0.5f, 1.0f));
+    EXPECT_EQ(
+        read_uint_channel(*data, 0x3002u),
+        preview_rule_membership(1.0f, 0.5f));
 }
 
 TEST(MeshDerivedFieldAssetModule, FieldLevelMaskMissingInputChannelEmitsZeroMask)
@@ -2188,6 +2350,11 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)
         .epoch = 1u,
         .type = wz::gpu::kGPUMeshFieldBufferResourceType,
     };
+    const wz::gpu::GPUHandle raw_vertex{
+        .id = 14u,
+        .epoch = 1u,
+        .type = wz::gpu::kGPUMeshFieldBufferResourceType,
+    };
 
     GpuResidentFieldTable table{};
     EXPECT_FALSE(table.add({}));
@@ -2229,6 +2396,19 @@ TEST(MeshDerivedFieldAssetModule, GpuResidentFieldTableFindsByFieldAndChannel)
             MeshWaveletChannelID::kDetailCost,
             GpuResidentFieldLayout::FaceRaw),
         raw_face);
+    EXPECT_TRUE(table.add(GpuResidentFieldEntry{
+        .field_key = field_key,
+        .channel_id = MeshWaveletChannelID::kDetailCost,
+        .layout = GpuResidentFieldLayout::VertexRaw,
+        .gpu_resource = raw_vertex,
+    }));
+    EXPECT_EQ(table.size(), 3u);
+    EXPECT_EQ(
+        table.find(
+            field_key,
+            MeshWaveletChannelID::kDetailCost,
+            GpuResidentFieldLayout::VertexRaw),
+        raw_vertex);
 
     table.clear();
     EXPECT_EQ(table.size(), 0u);

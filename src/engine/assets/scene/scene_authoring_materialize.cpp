@@ -3824,8 +3824,23 @@ namespace wz::engine::assets
                 node.mesh_render_style.has_value();
             SceneMeshRenderStyleAsset render_style =
                 node.mesh_render_style.value_or(default_render_style);
+            if (node.mesh_mask_render_style && !has_authored_render_style) {
+                render_style = SceneMeshRenderStyleAsset{};
+                render_style.wireframe.enabled = false;
+                render_style.surface.enabled = false;
+                render_style.depth_test = true;
+                render_style.depth_write = true;
+                render_style.double_sided = true;
+                render_style.hidden_line_prepass = false;
+            }
             render_style.style_asset = {};
             render_style.field_visualization_asset = {};
+            render_style.mask = {};
+            render_style.mask_source_field_ref.clear();
+            render_style.mask_source_field_asset = {};
+            if (node.mesh_mask_render_style) {
+                node.mesh_mask_render_style->source_field_asset = {};
+            }
             if (node.render_shader) {
                 render_style.surface.enabled = true;
                 render_style.wireframe.enabled = false;
@@ -4059,6 +4074,29 @@ namespace wz::engine::assets
                 }
             }
 
+            const bool mask_render_style =
+                node.mesh_mask_render_style
+                && node.mesh_mask_render_style->enabled;
+            if (mask_render_style) {
+                const bool depth_test = render_style.depth_test;
+                const bool depth_write = render_style.depth_write;
+                const bool double_sided = render_style.double_sided;
+                render_style = SceneMeshRenderStyleAsset{};
+                render_style.wireframe =
+                    node.mesh_mask_render_style->wireframe;
+                render_style.surface.enabled = false;
+                render_style.depth_test = depth_test;
+                render_style.depth_write = depth_write;
+                render_style.double_sided = double_sided;
+                render_style.hidden_line_prepass = false;
+                render_style.field_visualization_enabled = false;
+                render_style.field_visualization_asset = {};
+                render_style.mask = node.mesh_mask_render_style->mask;
+                render_style.mask.enabled = true;
+                render_style.mask_source_field_ref =
+                    node.mesh_mask_render_style->source_field_ref;
+            }
+
             if (render_style.field_visualization_enabled
                 && !render_style.field_visualization_field_ref.empty())
             {
@@ -4083,6 +4121,10 @@ namespace wz::engine::assets
                         report.error))
                 {
                     return report;
+                }
+                if (node.mesh_mask_render_style) {
+                    node.mesh_mask_render_style->source_field_asset =
+                        render_style.mask_source_field_asset;
                 }
             }
 
@@ -4178,14 +4220,14 @@ namespace wz::engine::assets
 
                 node.renderable.reset();
                 attach_renderable_asset(node, renderable.output);
-                if (has_authored_render_style
-                    || behavior_field_source
-                    || compute_field_source
-                    || derived_field_source
-                    || sparse_apply_field_source
-                    || sparse_diffusion_bands_source)
+                if (has_authored_render_style)
                 {
-                    node.mesh_render_style = render_style;
+                    SceneMeshRenderStyleAsset materialized_style =
+                        render_style;
+                    materialized_style.mask = {};
+                    materialized_style.mask_source_field_ref.clear();
+                    materialized_style.mask_source_field_asset = {};
+                    node.mesh_render_style = materialized_style;
                 }
                 append_unique_renderable(report, renderable.output);
             }

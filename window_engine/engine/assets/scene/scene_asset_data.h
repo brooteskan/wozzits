@@ -359,6 +359,19 @@ namespace wz::engine::assets
         wz::asset::AssetKey mask_source_field_asset{};
     };
 
+    struct SceneMeshMaskRenderStyleAsset
+    {
+        bool enabled = true;
+        std::string source_field_ref;
+        SceneMeshRenderLayerAsset wireframe{
+            true,
+            { 1.0f, 1.0f, 1.0f, 0.5f },
+            1.0f,
+        };
+        MeshMaskRenderStyleData mask{ true };
+        wz::asset::AssetKey source_field_asset{};
+    };
+
     enum class SceneMeshDerivedFieldSourceKind : uint8_t
     {
         Constant = 0,
@@ -889,6 +902,8 @@ namespace wz::engine::assets
         std::optional<SceneMeshWaveletAnalysisAsset> mesh_wavelet_analysis;
         std::optional<SceneMeshComputeFieldAsset> mesh_compute_field;
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
+        std::optional<SceneMeshMaskRenderStyleAsset>
+            mesh_mask_render_style;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
         std::optional<SceneCollisionAsset> collision;
@@ -971,6 +986,7 @@ namespace wz::engine::assets
         uint32_t mesh_wavelet_analyses = 0;
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
+        uint32_t mesh_mask_render_styles = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
         uint32_t direct_light_sources = 0;
@@ -1201,6 +1217,13 @@ namespace wz::engine::assets
         node.mesh_render_style = style;
     }
 
+    inline void attach_mesh_mask_render_style(
+        SceneNodeAsset& node,
+        SceneMeshMaskRenderStyleAsset style = {})
+    {
+        node.mesh_mask_render_style = std::move(style);
+    }
+
     inline void attach_mesh_derived_field_source(
         SceneNodeAsset& node,
         SceneMeshDerivedFieldSourceAsset source = {})
@@ -1391,6 +1414,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_render_style) {
             out.push_back(Kind::MeshRenderStyle);
+        }
+        if (node.mesh_mask_render_style) {
+            out.push_back(Kind::MeshMaskRenderStyle);
         }
         if (node.scalar_field_source) {
             out.push_back(Kind::ScalarFieldSource);
@@ -1626,6 +1652,7 @@ namespace wz::engine::assets
             || node.mesh_wavelet_analysis.has_value()
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
+            || node.mesh_mask_render_style.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
             || node.direct_light_source.has_value()
@@ -1722,6 +1749,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;
+                ++out.total_recipes;
+            }
+            if (node.mesh_mask_render_style) {
+                ++out.mesh_mask_render_styles;
                 ++out.total_recipes;
             }
             if (node.scalar_field_source) {
@@ -1857,6 +1888,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_render_style) {
                 ++out.mesh_render_styles;
+            }
+            if (node.mesh_mask_render_style) {
+                ++out.mesh_mask_render_styles;
             }
             if (node.scalar_field_source) {
                 ++out.scalar_field_sources;

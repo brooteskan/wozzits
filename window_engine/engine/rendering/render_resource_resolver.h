@@ -144,6 +144,15 @@ namespace wz::engine::rendering
         float p95_projected_error_px = 0.0f;
     };
 
+    struct MeshStyleLiveUpdateStats
+    {
+        uint64_t style_updates = 0;
+        uint64_t mask_rule_updates = 0;
+        uint64_t mesh_uploads = 0;
+        uint64_t mesh_derived_field_compiles = 0;
+        uint64_t asset_graph_resolves = 0;
+    };
+
     class RenderResourceResolver
     {
     public:
@@ -212,9 +221,24 @@ namespace wz::engine::rendering
         std::optional<ResolvedRenderableResource>
         resolve_mesh(wz::scene::MeshHandle handle) const noexcept;
 
+        // Live editor update for committed bundle style overlays. This only
+        // mutates the resolver-owned style snapshot read by submit; it must
+        // not touch asset graph, mesh upload, or derived-field compilation.
+        bool update_mesh_style(
+            wz::scene::MeshHandle handle,
+            wz::engine::assets::MeshRenderStyleData style) noexcept;
+
         std::optional<ResolvedRenderableResource>
         resolve_terrain_proxy(
             wz::engine::assets::TerrainProxyId terrain_proxy_id) const noexcept;
+
+        bool update_terrain_proxy_mesh_style(
+            wz::engine::assets::TerrainProxyId terrain_proxy_id,
+            wz::engine::assets::MeshRenderStyleData style) noexcept;
+
+        bool update_terrain_proxy_mesh_style(
+            wz::scene::TerrainProxyId terrain_proxy_id,
+            wz::engine::assets::MeshRenderStyleData style) noexcept;
 
         std::optional<ResolvedTerrainDrawResource>
         resolve_terrain_draw(
@@ -306,6 +330,9 @@ namespace wz::engine::rendering
         TerrainRenderStats terrain_render_stats() const noexcept;
         wz::render::TerrainFrameDiagnostics terrain_frame_diagnostics()
             const noexcept;
+        void reset_mesh_style_live_update_stats() const noexcept;
+        MeshStyleLiveUpdateStats mesh_style_live_update_stats()
+            const noexcept;
 
     private:
         struct Entry
@@ -343,5 +370,6 @@ namespace wz::engine::rendering
         std::vector<std::pair<wz::engine::assets::TerrainProxyId, Entry>>
             terrain_proxy_entries_;
         mutable TerrainRenderStats terrain_stats_{};
+        mutable MeshStyleLiveUpdateStats mesh_style_live_update_stats_{};
     };
 }

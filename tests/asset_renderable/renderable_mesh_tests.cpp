@@ -1003,6 +1003,288 @@ TEST(RenderableAssetModule, StyledMeshAcceptsFaceMaskStyle)
     EXPECT_EQ(data->mesh_style.mask.rules[0].input_channel_id, 0x3300u);
 }
 
+TEST(RenderableAssetModule, StyledMeshAcceptsVertexMaskStyle)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_vertex_mesh_mask_style_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/vertex_mask_style_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/vertex_mask_style_field",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = 4u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x3300u,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = float_bytes({ 0.0f, 0.25f, 0.5f, 1.0f }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = true;
+    style.mask.enabled = true;
+    style.mask.domain = MeshMaskDomain::Vertex;
+    style.mask.rules = {
+        MeshMaskRule{
+            .input_channel_id = 0x3300u,
+            .lo = 0.25f,
+            .hi = 0.75f,
+            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
+            .priority = 7,
+        },
+    };
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/vertex_mask_style",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/vertex_mask_style_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_TRUE(data->mesh_style.mask.enabled);
+    EXPECT_EQ(data->mesh_style.mask.domain, MeshMaskDomain::Vertex);
+    ASSERT_EQ(data->mesh_style.mask.rules.size(), 1u);
+    EXPECT_EQ(data->mesh_style.mask.rules[0].input_channel_id, 0x3300u);
+}
+
+TEST(RenderableAssetModule, StyledMeshAcceptsFaceMaskStyleWithoutBaseLayers)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_face_mesh_mask_only_style_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/face_mask_only_style_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/face_mask_only_style_field",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Face,
+            .element_count = 2u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x3300u,
+                    .value_type = MeshDerivedFieldValueType::UInt1,
+                    .values = uint_bytes({ 1u, 0u }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = false;
+    style.mask.enabled = true;
+    style.mask.rules = {
+        MeshMaskRule{
+            .input_channel_id = 0x3300u,
+            .lo = 1.0f,
+            .hi = 1.0f,
+            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
+            .priority = 7,
+        },
+    };
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/face_mask_only_style",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/face_mask_only_style_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
+    EXPECT_FALSE(data->mesh_style.surface.enabled);
+    EXPECT_TRUE(data->mesh_style.mask.enabled);
+}
+
+TEST(RenderableAssetModule, StyledMeshMaskOnlyKeepsShowUnmatchedForVertexField)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_renderable_mask_unmatched_vertex_field_tests");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto mesh =
+        assets.meshes().create_procedural_mesh({
+            .name = "debug/mask_unmatched_vertex_quad",
+            .kind = ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/mask_unmatched_vertex_field",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Vertex,
+            .element_count = 4u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x3300u,
+                    .value_type = MeshDerivedFieldValueType::Float1,
+                    .values = float_bytes({ 0.0f, 0.25f, 0.5f, 1.0f }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = false;
+    style.mask.enabled = true;
+    style.mask.show_unmatched = true;
+    style.mask.rules = {
+        MeshMaskRule{
+            .input_channel_id = 0x3300u,
+            .lo = 0.25f,
+            .hi = 0.75f,
+            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
+            .priority = 7,
+        },
+    };
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/mask_unmatched_vertex_field",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable =
+        assets.renderables().create_mesh_styled({
+            .name = "debug/mask_unmatched_vertex_renderable",
+            .mesh = mesh,
+            .style = render_style,
+            .mesh_field_visualization = field,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle =
+        assets.renderables().get_renderable(renderable);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data =
+        assets.renderables().get_renderable_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
+    EXPECT_FALSE(data->mesh_style.surface.enabled);
+    EXPECT_TRUE(data->mesh_style.mask.enabled);
+    EXPECT_TRUE(data->mesh_style.mask.show_unmatched);
+}
+
 TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersResolvesAsNonDrawing)
 {
     const wz::fs::Path root =

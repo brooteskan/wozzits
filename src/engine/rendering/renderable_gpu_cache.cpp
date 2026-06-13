@@ -16,6 +16,7 @@
 #include <engine/assets/vector_field_asset_module.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 namespace
@@ -79,6 +80,14 @@ namespace
             std::unique(channels.begin(), channels.end()),
             channels.end());
         return channels;
+    }
+
+    wz::engine::assets::GpuResidentFieldLayout mesh_mask_field_layout(
+        const wz::engine::assets::MeshMaskRenderStyleData& mask)
+    {
+        return mask.domain == wz::engine::assets::MeshMaskDomain::Vertex
+            ? wz::engine::assets::GpuResidentFieldLayout::VertexRaw
+            : wz::engine::assets::GpuResidentFieldLayout::FaceRaw;
     }
 }
 
@@ -270,11 +279,19 @@ namespace wz::engine::rendering
         wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::RenderableAssetData& renderable)
     {
+        auto fail = [&](const char* reason)
+        {
+            assets.logger().error(
+                std::string("renderable gpu cache realize_data failed: ")
+                + reason);
+            return PreparedRenderable{};
+        };
+
         if (!device.valid())
             return {};
 
         if (!renderable.valid())
-            return {};
+            return fail("renderable data is invalid");
 
         PreparedRenderable out{};
         out.kind           = renderable.kind;
@@ -306,13 +323,13 @@ namespace wz::engine::rendering
                 assets.meshes().get_mesh(mesh_asset);
 
             if (!mesh_handle.valid())
-                return {};
+                return fail("mesh asset handle not found");
 
             const wz::engine::assets::MeshData* mesh_data =
                 assets.meshes().get_mesh_data(mesh_handle);
 
             if (!mesh_data || !mesh_data->valid())
-                return {};
+                return fail("mesh asset data is missing or invalid");
 
             if (!out.gpu_resource.valid()) {
                 wz::gpu::ScopedGPUHandle gpu_mesh(
@@ -320,7 +337,7 @@ namespace wz::engine::rendering
                     wz::gpu::upload_mesh(device, *mesh_data));
 
                 if (!gpu_mesh.valid())
-                    return {};
+                    return fail("GPU mesh upload failed");
 
                 out.gpu_resource = gpu_mesh.get();
                 add(renderable.source_asset, renderable.kind, std::move(gpu_mesh));
@@ -339,7 +356,7 @@ namespace wz::engine::rendering
                     : renderable.mesh_style.field_visualization.channel_id;
                 const wz::engine::assets::GpuResidentFieldLayout layout =
                     wants_mask
-                        ? wz::engine::assets::GpuResidentFieldLayout::FaceRaw
+                        ? mesh_mask_field_layout(renderable.mesh_style.mask)
                         : wz::engine::assets::GpuResidentFieldLayout::
                             VertexProjected;
                 if (channel_id == 0u) {
@@ -366,28 +383,56 @@ namespace wz::engine::rendering
                     const wz::engine::assets::MeshDerivedFieldHandle field_handle =
                         assets.mesh_derived_fields().get_mesh_derived_field(
                             field_asset);
-                    if (!field_handle.valid())
-                        return {};
+                    if (!field_handle.valid()) {
+                        if (wants_mask) {
+                            return out;
+                        }
+                        return fail(
+                            "mesh field visualization asset handle not found");
+                    }
 
                     const wz::engine::assets::MeshDerivedFieldData* field_data =
                         assets.mesh_derived_fields()
                             .get_mesh_derived_field_data(field_handle);
-                    if (!field_data || !field_data->valid())
-                        return {};
+                    if (!field_data || !field_data->valid()) {
+                        if (wants_mask) {
+                            return out;
+                        }
+                        return fail(
+                            "mesh field visualization data is missing or invalid");
+                    }
 
                     wz::gpu::GPUHandle gpu_field{};
                     if (wants_mask) {
                         const std::vector<uint32_t> channels =
                             mesh_mask_channel_ids(renderable.mesh_style.mask);
-                        gpu_field = wz::gpu::upload_mesh_field_raw_faces(
-                            device,
-                            wz::gpu::MeshFieldRawFaceUploadDesc{
-                                .mesh = mesh_data,
-                                .field = field_data,
-                                .channel_ids = channels.data(),
-                                .channel_count =
-                                    static_cast<uint32_t>(channels.size()),
-                            });
+                        if (channels.empty()) {
+                            return out;
+                        }
+                        if (renderable.mesh_style.mask.domain
+                            == wz::engine::assets::MeshMaskDomain::Vertex)
+                        {
+                            gpu_field = wz::gpu::upload_mesh_field_raw_vertices(
+                                device,
+                                wz::gpu::MeshFieldRawVertexUploadDesc{
+                                    .mesh = mesh_data,
+                                    .field = field_data,
+                                    .channel_ids = channels.data(),
+                                    .channel_count =
+                                        static_cast<uint32_t>(channels.size()),
+                                });
+                        }
+                        else {
+                            gpu_field = wz::gpu::upload_mesh_field_raw_faces(
+                                device,
+                                wz::gpu::MeshFieldRawFaceUploadDesc{
+                                    .mesh = mesh_data,
+                                    .field = field_data,
+                                    .channel_ids = channels.data(),
+                                    .channel_count =
+                                        static_cast<uint32_t>(channels.size()),
+                                });
+                        }
                     }
                     else {
                         gpu_field = wz::gpu::upload_mesh_field_visualization(
@@ -398,8 +443,12 @@ namespace wz::engine::rendering
                                 .channel_id = channel_id,
                             });
                     }
-                    if (!gpu_field.valid())
-                        return {};
+                    if (!gpu_field.valid()) {
+                        if (wants_mask) {
+                            return out;
+                        }
+                        return fail("mesh field visualization upload failed");
+                    }
 
                     if (!assets.gpu_resident_fields().add(
                             wz::engine::assets::GpuResidentFieldEntry{
@@ -413,7 +462,11 @@ namespace wz::engine::rendering
                         wz::gpu::release_mesh_field_visualization(
                             device,
                             gpu_field);
-                        return {};
+                        if (wants_mask) {
+                            return out;
+                        }
+                        return fail(
+                            "mesh field visualization resident resource registration failed");
                     }
                     out.mesh_field_visualization_resource = gpu_field;
                 }

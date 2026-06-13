@@ -34,6 +34,9 @@ instantiates into `SceneInstance` runtime component tables.
 
 See [`authored_scene_components.md`](authored_scene_components.md).
 
+The transactional rebuild boundary for committed scene runtime state is tracked
+in [`scene_runtime_bundle_contract.md`](scene_runtime_bundle_contract.md).
+
 ---
 
 ## File Carriers and Source Nodes

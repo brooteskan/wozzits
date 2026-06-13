@@ -2736,8 +2736,37 @@ namespace wz::engine::assets::internal
             }
 
             case BuiltinMeshDerivedFieldSourceKind::MeanEdgeLength: {
+                if (desc.domain == MeshDerivedFieldDomain::Face) {
+                    for (uint32_t face = 0; face < element_count; ++face) {
+                        const size_t i = static_cast<size_t>(face) * 3u;
+                        const uint32_t ia = mesh.indices[i + 0u];
+                        const uint32_t ib = mesh.indices[i + 1u];
+                        const uint32_t ic = mesh.indices[i + 2u];
+                        if (ia >= vertex_count
+                            || ib >= vertex_count
+                            || ic >= vertex_count)
+                        {
+                            continue;
+                        }
+                        const float ab = mesh_position_distance(
+                            mesh.vertices[ia],
+                            mesh.vertices[ib]);
+                        const float bc = mesh_position_distance(
+                            mesh.vertices[ib],
+                            mesh.vertices[ic]);
+                        const float ca = mesh_position_distance(
+                            mesh.vertices[ic],
+                            mesh.vertices[ia]);
+                        values[face] = (ab + bc + ca) / 3.0f;
+                    }
+                    if (desc.normalize) {
+                        normalize_by_max_positive(values);
+                    }
+                    return true;
+                }
                 if (desc.domain != MeshDerivedFieldDomain::Vertex) {
-                    logger.error("mean_edge_length requires vertex domain");
+                    logger.error(
+                        "mean_edge_length requires vertex or face domain");
                     return false;
                 }
                 std::vector<float> length_sums(vertex_count, 0.0f);

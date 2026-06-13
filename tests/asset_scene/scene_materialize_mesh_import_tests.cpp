@@ -476,6 +476,12 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
         0x2005u,
         SceneMeshDerivedFieldSourceKind::MeanEdgeLength));
     scene.nodes.push_back(make_field_node(
+        "mean_edge_length_face",
+        "mean_edge_length_face",
+        0x2009u,
+        SceneMeshDerivedFieldSourceKind::MeanEdgeLength,
+        MeshDerivedFieldDomain::Face));
+    scene.nodes.push_back(make_field_node(
         "inverse_area_density",
         "inverse_area_density",
         0x2006u,
@@ -489,7 +495,7 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_EQ(scene.nodes.size(), 8u);
+    ASSERT_EQ(scene.nodes.size(), 9u);
     for (const SceneNodeAsset& node : scene.nodes) {
         ASSERT_TRUE(node.mesh_derived_field_source.has_value());
         EXPECT_NE(
@@ -1127,6 +1133,88 @@ TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceBuildsFaceMaskField)
     for (const uint32_t value : rejected) {
         EXPECT_EQ(value, 0u);
     }
+}
+
+TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleDoesNotReattachBaseStyle)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_mask_without_base_style_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_mask_without_base_style";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "face_density",
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2200u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_mask_render_style = SceneMeshMaskRenderStyleAsset{
+        .enabled = true,
+        .source_field_ref = "field:face_density",
+        .mask = MeshMaskRenderStyleData{
+            .enabled = true,
+            .domain = MeshMaskDomain::Face,
+            .projection_mode = MeshMaskProjectionMode::Direct,
+            .overlap_mode = MeshMaskOverlapMode::Priority,
+            .rules = {
+                MeshMaskRule{
+                    .input_channel_id = 0x2200u,
+                    .lo = 0.25f,
+                    .hi = 0.75f,
+                    .color = { 1.0f, 0.15f, 0.05f, 1.0f },
+                    .priority = 0,
+                },
+            },
+        },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_FALSE(scene.nodes[0].mesh_render_style.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_mask_render_style.has_value());
+    ASSERT_NE(
+        scene.nodes[0].mesh_mask_render_style->source_field_asset,
+        wz::asset::AssetKey{});
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_TRUE(renderable_data->mesh_style.wireframe.enabled);
+    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[3], 0.5f);
+    EXPECT_FALSE(renderable_data->mesh_style.surface.enabled);
+    EXPECT_TRUE(renderable_data->mesh_style.mask.enabled);
+    ASSERT_EQ(renderable_data->mesh_style.mask.rules.size(), 1u);
+    EXPECT_EQ(
+        renderable_data->mesh_style.mask.rules[0].input_channel_id,
+        0x2200u);
 }
 
 TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceDomainFollowsInputField)

@@ -244,6 +244,14 @@ namespace wz::gpu::dx12::internal {
         uint32_t element_count,
         uint32_t stride_bytes);
 
+    bool update_mesh_field_visualization_values_dx12(
+        Device& device,
+        GPUHandle destination,
+        const std::byte* values,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes);
+
     GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(
         Device& device,
         GPUHandle source_buffer,

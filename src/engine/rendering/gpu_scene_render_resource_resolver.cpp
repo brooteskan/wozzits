@@ -185,6 +185,14 @@ namespace wz::engine::rendering
             return channels;
         }
 
+        wz::engine::assets::GpuResidentFieldLayout mesh_mask_field_layout(
+            const wz::engine::assets::MeshMaskRenderStyleData& mask)
+        {
+            return mask.domain == wz::engine::assets::MeshMaskDomain::Vertex
+                ? wz::engine::assets::GpuResidentFieldLayout::VertexRaw
+                : wz::engine::assets::GpuResidentFieldLayout::FaceRaw;
+        }
+
         wz::fs::Path terrain_render_mesh_cache_directory(
             const wz::engine::assets::EngineAssetCacheSettings& cache)
         {
@@ -1455,7 +1463,7 @@ namespace wz::engine::rendering
                 : renderable.mesh_style.field_visualization.channel_id;
             const wz::engine::assets::GpuResidentFieldLayout layout =
                 wants_mask
-                    ? wz::engine::assets::GpuResidentFieldLayout::FaceRaw
+                    ? mesh_mask_field_layout(renderable.mesh_style.mask)
                     : wz::engine::assets::GpuResidentFieldLayout::
                         VertexProjected;
             const wz::gpu::GPUHandle resident_field =
@@ -1485,36 +1493,66 @@ namespace wz::engine::rendering
                 assets_.mesh_derived_fields().get_mesh_derived_field(
                     field_asset);
             if (!field_handle.valid()) {
-                return false;
+                const bool wants_mask =
+                    renderable.program
+                        == wz::engine::assets::BuiltinRenderProgram::
+                            MeshMaskStyle
+                    && renderable.mesh_style.mask.enabled;
+                if (wants_mask) {
+                    mesh_field_visualization_resource = {};
+                }
+                else {
+                    return false;
+                }
             }
 
             const wz::engine::assets::MeshDerivedFieldData* field_data =
-                assets_.mesh_derived_fields().get_mesh_derived_field_data(
-                    field_handle);
-            if (!field_data || !field_data->valid()) {
-                return false;
-            }
+                field_handle.valid()
+                    ? assets_.mesh_derived_fields().get_mesh_derived_field_data(
+                        field_handle)
+                    : nullptr;
 
             const bool wants_mask =
                 renderable.program
                     == wz::engine::assets::BuiltinRenderProgram::MeshMaskStyle
                 && renderable.mesh_style.mask.enabled;
+            if ((!field_data || !field_data->valid()) && !wants_mask) {
+                return false;
+            }
             if (wants_mask) {
                 const std::vector<uint32_t> channels =
                     mesh_mask_channel_ids(renderable.mesh_style.mask);
                 if (channels.empty()) {
-                    return false;
+                    mesh_field_visualization_resource = {};
                 }
-                mesh_field_visualization_resource =
-                    wz::gpu::upload_mesh_field_raw_faces(
-                        device_,
-                        wz::gpu::MeshFieldRawFaceUploadDesc{
-                            .mesh = mesh_data,
-                            .field = field_data,
-                            .channel_ids = channels.data(),
-                            .channel_count =
-                                static_cast<uint32_t>(channels.size()),
-                        });
+                else if (field_data && field_data->valid()) {
+                    if (renderable.mesh_style.mask.domain
+                        == wz::engine::assets::MeshMaskDomain::Vertex)
+                    {
+                        mesh_field_visualization_resource =
+                            wz::gpu::upload_mesh_field_raw_vertices(
+                                device_,
+                                wz::gpu::MeshFieldRawVertexUploadDesc{
+                                    .mesh = mesh_data,
+                                    .field = field_data,
+                                    .channel_ids = channels.data(),
+                                    .channel_count =
+                                        static_cast<uint32_t>(channels.size()),
+                                });
+                    }
+                    else {
+                        mesh_field_visualization_resource =
+                            wz::gpu::upload_mesh_field_raw_faces(
+                                device_,
+                                wz::gpu::MeshFieldRawFaceUploadDesc{
+                                    .mesh = mesh_data,
+                                    .field = field_data,
+                                    .channel_ids = channels.data(),
+                                    .channel_count =
+                                        static_cast<uint32_t>(channels.size()),
+                                });
+                    }
+                }
             }
             else {
                 mesh_field_visualization_resource =
@@ -1528,13 +1566,15 @@ namespace wz::engine::rendering
                                     .field_visualization.channel_id,
                         });
             }
-            if (!mesh_field_visualization_resource.valid()) {
+            if (!mesh_field_visualization_resource.valid() && !wants_mask) {
                 return false;
             }
 
-            preview_gpu_resources_.emplace_back(
-                preview_release_queue_,
-                mesh_field_visualization_resource);
+            if (mesh_field_visualization_resource.valid()) {
+                preview_gpu_resources_.emplace_back(
+                    preview_release_queue_,
+                    mesh_field_visualization_resource);
+            }
         }
 
         std::span<const wz::engine::assets::TerrainVisualChunk> terrain_chunks{};

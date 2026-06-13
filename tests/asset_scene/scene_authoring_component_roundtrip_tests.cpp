@@ -175,25 +175,30 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
           "enabled": false,
           "color": [0.0, 0.0, 0.0, 1.0],
           "emissive_strength": 0.0
-        },
-        "mask": {
-          "enabled": true,
-          "source_field_ref": "field:selected_faces",
-          "domain": "face",
-          "projection_mode": "direct",
-          "overlap_mode": "priority",
-          "unmatched_color": [0.1, 0.1, 0.1, 1.0],
-          "show_unmatched": false,
-          "rules": [
-            {
-              "input_channel_id": 13056,
-              "lo": 3.0,
-              "hi": 3.0,
-              "color": [0.9, 0.2, 0.1, 1.0],
-              "priority": 5
-            }
-          ]
         }
+      },
+      "mesh_mask_render_style": {
+        "enabled": true,
+        "source_field_ref": "field:selected_faces",
+        "wireframe": {
+          "enabled": true,
+          "color": [1.0, 1.0, 1.0, 0.5],
+          "emissive_strength": 1.0
+        },
+        "domain": "face",
+        "projection_mode": "direct",
+        "overlap_mode": "priority",
+        "unmatched_color": [0.1, 0.1, 0.1, 1.0],
+        "show_unmatched": false,
+        "rules": [
+          {
+            "input_channel_id": 13056,
+            "lo": 3.0,
+            "hi": 3.0,
+            "color": [0.9, 0.2, 0.1, 1.0],
+            "priority": 5
+          }
+        ]
       }
     }
   ]
@@ -219,10 +224,15 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
 
     const auto& node = scene_data->nodes[0];
     ASSERT_TRUE(node.mesh_render_style.has_value());
-    const auto& style = *node.mesh_render_style;
+    EXPECT_FALSE(node.mesh_render_style->mask.enabled);
+    ASSERT_TRUE(node.mesh_mask_render_style.has_value());
+    const auto& style = *node.mesh_mask_render_style;
+    EXPECT_TRUE(style.enabled);
+    EXPECT_TRUE(style.wireframe.enabled);
+    EXPECT_FLOAT_EQ(style.wireframe.color[3], 0.5f);
     EXPECT_TRUE(style.mask.enabled);
-    EXPECT_EQ(style.mask_source_field_ref, "field:selected_faces");
-    EXPECT_EQ(style.mask_source_field_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(style.source_field_ref, "field:selected_faces");
+    EXPECT_EQ(style.source_field_asset, wz::asset::AssetKey{});
     EXPECT_EQ(style.mask.domain, MeshMaskDomain::Face);
     EXPECT_EQ(style.mask.projection_mode, MeshMaskProjectionMode::Direct);
     EXPECT_EQ(style.mask.overlap_mode, MeshMaskOverlapMode::Priority);
@@ -235,11 +245,18 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
 
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(*scene_data));
-    EXPECT_NE(exported.find("\"mask\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"mesh_mask_render_style\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"overlap_mode\""), std::string::npos);
     EXPECT_NE(exported.find("\"source_field_ref\""), std::string::npos);
+    EXPECT_NE(exported.find("\"wireframe\""), std::string::npos);
     EXPECT_NE(exported.find("\"field:selected_faces\""), std::string::npos);
     EXPECT_NE(exported.find("\"input_channel_id\""), std::string::npos);
     EXPECT_NE(exported.find("\"priority\""), std::string::npos);
+    EXPECT_EQ(
+        exported.find("\"mesh_render_style\":{\"mask\""),
+        std::string::npos);
 }
 
 TEST(SceneAssetModule, MeshSparseOperatorSourceComponentRoundTripsThroughSceneJSON)

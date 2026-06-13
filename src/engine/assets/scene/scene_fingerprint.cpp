@@ -132,6 +132,8 @@ namespace wz::engine::assets
                 node.mesh_compute_field.has_value();
             const bool has_mesh_render_style =
                 node.mesh_render_style.has_value();
+            const bool has_mesh_mask_render_style =
+                node.mesh_mask_render_style.has_value();
             const bool has_scalar_field_source =
                 node.scalar_field_source.has_value();
             const bool has_vector_field_source =
@@ -167,6 +169,7 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_wavelet_analysis);
             fp.mix_value(has_mesh_compute_field);
             fp.mix_value(has_mesh_render_style);
+            fp.mix_value(has_mesh_mask_render_style);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
             fp.mix_value(has_collision);
@@ -424,6 +427,20 @@ namespace wz::engine::assets
                 fp.mix_value(style.field_visualization_palette);
                 fp.mix_string(style.field_visualization_field_ref);
                 mix_asset_key(fp, style.field_visualization_asset);
+            }
+
+            if (node.mesh_mask_render_style) {
+                const auto& style = *node.mesh_mask_render_style;
+                const auto mix_layer =
+                    [&fp](const SceneMeshRenderLayerAsset& layer) {
+                        fp.mix_value(layer.enabled);
+                        for (float channel : layer.color) {
+                            fp.mix_value(channel);
+                        }
+                        fp.mix_value(layer.emissive_strength);
+                };
+                fp.mix_value(style.enabled);
+                mix_layer(style.wireframe);
                 fp.mix_value(style.mask.enabled);
                 fp.mix_value(style.mask.domain);
                 fp.mix_value(style.mask.projection_mode);
@@ -443,8 +460,8 @@ namespace wz::engine::assets
                     }
                     fp.mix_value(rule.priority);
                 }
-                fp.mix_string(style.mask_source_field_ref);
-                mix_asset_key(fp, style.mask_source_field_asset);
+                fp.mix_string(style.source_field_ref);
+                mix_asset_key(fp, style.source_field_asset);
             }
 
             if (node.scalar_field_source) {

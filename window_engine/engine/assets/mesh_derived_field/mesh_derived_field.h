@@ -116,6 +116,7 @@ namespace wz::engine::assets
     {
         VertexProjected = 0,
         FaceRaw,
+        VertexRaw,
     };
 
     struct GpuResidentFieldEntry

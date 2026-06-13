@@ -242,6 +242,50 @@ namespace wz::gpu
             : 0u;
     }
 
+    bool MeshFieldRawVertexUploadDesc::valid() const noexcept
+    {
+        if (!mesh
+            || !mesh->valid()
+            || !field
+            || !field->valid()
+            || !channel_ids
+            || channel_count == 0u
+            || field->domain
+                != wz::engine::assets::MeshDerivedFieldDomain::Vertex
+            || field->element_count != mesh->vertex_count())
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < channel_count; ++i) {
+            const auto* channel = find_field_channel(*field, channel_ids[i]);
+            if (!channel || !channel_bytes_are_valid(*field, *channel)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    uint32_t MeshFieldRawVertexUploadDesc::vertex_count() const noexcept
+    {
+        return valid() && field ? field->element_count : 0u;
+    }
+
+    uint32_t MeshFieldRawVertexUploadDesc::element_count() const noexcept
+    {
+        return valid() && field
+            ? field->element_count * channel_count
+            : 0u;
+    }
+
+    uint32_t MeshFieldRawVertexUploadDesc::stride_bytes() const noexcept
+    {
+        return valid()
+            ? wz::engine::assets::mesh_derived_field_value_stride(
+                wz::engine::assets::MeshDerivedFieldValueType::Float1)
+            : 0u;
+    }
+
     GPUHandle upload_mesh_field_visualization(
         Device& device,
         const MeshFieldVisualizationUploadDesc& desc)
@@ -348,6 +392,33 @@ namespace wz::gpu
             stride_bytes);
     }
 
+    bool update_mesh_field_visualization_values(
+        Device& device,
+        GPUHandle destination,
+        const std::byte* values,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        if (!device_ok(device)
+            || !destination.valid()
+            || !values
+            || value_byte_count == 0u
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return false;
+        }
+
+        return dx12::internal::update_mesh_field_visualization_values_dx12(
+            device,
+            destination,
+            values,
+            value_byte_count,
+            element_count,
+            stride_bytes);
+    }
+
     GPUHandle upload_mesh_field_raw_faces(
         Device& device,
         const MeshFieldRawFaceUploadDesc& desc)
@@ -377,6 +448,48 @@ namespace wz::gpu
             {
                 packed[base + face] =
                     read_channel_value_as_float(*desc.field, *channel, face);
+            }
+        }
+
+        return upload_mesh_field_visualization_values(
+            device,
+            reinterpret_cast<const std::byte*>(packed.data()),
+            static_cast<uint64_t>(packed.size() * sizeof(float)),
+            static_cast<uint32_t>(packed.size()),
+            sizeof(float));
+    }
+
+    GPUHandle upload_mesh_field_raw_vertices(
+        Device& device,
+        const MeshFieldRawVertexUploadDesc& desc)
+    {
+        if (!device_ok(device) || !desc.valid()) {
+            return {};
+        }
+
+        std::vector<float> packed(
+            static_cast<size_t>(desc.field->element_count)
+            * static_cast<size_t>(desc.channel_count),
+            0.0f);
+        for (uint32_t channel_index = 0u;
+             channel_index < desc.channel_count;
+             ++channel_index)
+        {
+            const auto* channel =
+                find_field_channel(*desc.field, desc.channel_ids[channel_index]);
+            if (!channel || !channel_bytes_are_valid(*desc.field, *channel)) {
+                return {};
+            }
+
+            const size_t base =
+                static_cast<size_t>(channel_index)
+                * static_cast<size_t>(desc.field->element_count);
+            for (uint32_t vertex = 0u;
+                 vertex < desc.field->element_count;
+                 ++vertex)
+            {
+                packed[base + vertex] =
+                    read_channel_value_as_float(*desc.field, *channel, vertex);
             }
         }
 

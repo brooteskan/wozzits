@@ -391,6 +391,84 @@ namespace wz::gpu::dx12::internal
             desc.stride_bytes());
     }
 
+    bool update_mesh_field_visualization_values_dx12(
+        Device& device,
+        GPUHandle destination,
+        const std::byte* value_bytes,
+        uint64_t value_byte_count,
+        uint32_t element_count,
+        uint32_t stride_bytes)
+    {
+        auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
+        if (!impl
+            || !impl->device
+            || !destination.valid()
+            || !value_bytes
+            || value_byte_count == 0u
+            || element_count == 0u
+            || stride_bytes == 0u)
+        {
+            return false;
+        }
+
+        const DX12MeshFieldVisualizationResource* dest =
+            impl->mesh_field_visualizations.get(destination);
+        if (!dest
+            || !dest->valid()
+            || !dest->gpu_updatable
+            || dest->element_count != element_count
+            || dest->stride_bytes != stride_bytes
+            || value_byte_count
+                != static_cast<uint64_t>(element_count)
+                    * static_cast<uint64_t>(stride_bytes))
+        {
+            return false;
+        }
+
+        ID3D12Resource* staging = nullptr;
+        if (!create_upload_buffer(
+                impl->device,
+                value_bytes,
+                value_byte_count,
+                &staging))
+        {
+            return false;
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        if (!create_one_shot_command_list(impl, &allocator, &cmd)) {
+            staging->Release();
+            return false;
+        }
+
+        const D3D12_RESOURCE_STATES resident_state =
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+            | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        transition_resource(
+            cmd,
+            dest->values_buffer,
+            resident_state,
+            D3D12_RESOURCE_STATE_COPY_DEST);
+        cmd->CopyBufferRegion(
+            dest->values_buffer,
+            0,
+            staging,
+            0,
+            value_byte_count);
+        transition_resource(
+            cmd,
+            dest->values_buffer,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            resident_state);
+
+        const bool copied = execute_and_wait(impl, allocator, cmd);
+        cmd->Release();
+        allocator->Release();
+        staging->Release();
+        return copied;
+    }
+
     GPUHandle create_mesh_field_visualization_from_gpu_source_dx12(
         Device& device,
         GPUHandle source_buffer,

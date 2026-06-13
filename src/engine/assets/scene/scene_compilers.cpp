@@ -286,6 +286,119 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        void read_mesh_render_layer(
+            const wz::json::JSONValue& obj,
+            const char* field_name,
+            SceneMeshRenderLayerAsset& layer);
+
+        bool read_mesh_mask_render_style(
+            const wz::json::JSONValue& obj,
+            const std::string& node_id,
+            const char* field_name,
+            wz::Logger& logger,
+            SceneMeshMaskRenderStyleAsset& style)
+        {
+            if (auto enabled = read_bool(obj, "enabled")) {
+                style.enabled = *enabled;
+                style.mask.enabled = *enabled;
+            }
+            if (auto source_ref = read_string(obj, "source_field_ref")) {
+                style.source_field_ref = std::string(*source_ref);
+            }
+            if (style.source_field_ref.empty()) {
+                if (auto source_ref = read_string(obj, "field_ref")) {
+                    style.source_field_ref = std::string(*source_ref);
+                }
+            }
+            if (auto domain = read_string(obj, "domain")) {
+                const auto parsed = parse_mesh_mask_domain(*domain);
+                if (!parsed) {
+                    logger.error(std::string(field_name) + " on node '"
+                        + node_id + "' has unknown domain '"
+                        + std::string(*domain) + "'");
+                    return false;
+                }
+                style.mask.domain = *parsed;
+            }
+            if (auto projection = read_string(obj, "projection_mode")) {
+                const auto parsed =
+                    parse_mesh_mask_projection_mode(*projection);
+                if (!parsed) {
+                    logger.error(std::string(field_name) + " on node '"
+                        + node_id + "' has unknown projection_mode '"
+                        + std::string(*projection) + "'");
+                    return false;
+                }
+                style.mask.projection_mode = *parsed;
+            }
+            if (auto overlap = read_string(obj, "overlap_mode")) {
+                const auto parsed = parse_mesh_mask_overlap_mode(*overlap);
+                if (!parsed) {
+                    logger.error(std::string(field_name) + " on node '"
+                        + node_id + "' has unknown overlap_mode '"
+                        + std::string(*overlap) + "'");
+                    return false;
+                }
+                style.mask.overlap_mode = *parsed;
+            }
+            if (auto show = read_bool(obj, "show_unmatched")) {
+                style.mask.show_unmatched = *show;
+            }
+            read_float4(obj, "unmatched_color", style.mask.unmatched_color);
+            read_mesh_render_layer(obj, "wireframe", style.wireframe);
+
+            if (const auto* rules = find_member(obj, "rules")) {
+                if (rules->kind != wz::json::JSONValueKind::Array) {
+                    logger.error(std::string(field_name) + " on node '"
+                        + node_id + "' has non-array rules");
+                    return false;
+                }
+                style.mask.rules.clear();
+                for (const auto& rule_value : rules->array_values) {
+                    if (!rule_value
+                        || rule_value->kind
+                            != wz::json::JSONValueKind::Object)
+                    {
+                        logger.error(std::string(field_name) + " on node '"
+                            + node_id + "' has non-object rule");
+                        return false;
+                    }
+                    MeshMaskRule rule{};
+                    if (auto enabled = read_bool(*rule_value, "enabled")) {
+                        rule.enabled = *enabled;
+                    }
+                    if (auto channel =
+                            read_number(*rule_value, "input_channel_id"))
+                    {
+                        rule.input_channel_id =
+                            static_cast<uint32_t>(
+                                (std::max)(0.0, *channel));
+                    }
+                    if (auto lo = read_number(*rule_value, "lo")) {
+                        rule.lo = static_cast<float>(*lo);
+                    }
+                    if (auto hi = read_number(*rule_value, "hi")) {
+                        rule.hi = static_cast<float>(*hi);
+                    }
+                    read_float4(*rule_value, "color", rule.color);
+                    if (auto priority =
+                            read_number(*rule_value, "priority"))
+                    {
+                        rule.priority = static_cast<int32_t>(*priority);
+                    }
+                    style.mask.rules.push_back(rule);
+                }
+            }
+            if (!style.mask.enabled
+                && (!style.source_field_ref.empty()
+                    || !style.mask.rules.empty()))
+            {
+                style.mask.enabled = true;
+                style.enabled = true;
+            }
+            return true;
+        }
+
         std::optional<SceneMeshDerivedFieldSourceKind>
         parse_mesh_derived_field_source_kind(std::string_view text)
         {
@@ -2054,7 +2167,40 @@ namespace wz::engine::assets::internal
                 {
                     style.field_visualization_enabled = true;
                 }
+                if (style.mask.enabled
+                    || !style.mask_source_field_ref.empty()
+                    || !style.mask.rules.empty())
+                {
+                    SceneMeshMaskRenderStyleAsset mask_style{};
+                    mask_style.enabled = style.mask.enabled;
+                    mask_style.source_field_ref =
+                        style.mask_source_field_ref;
+                    mask_style.source_field_asset =
+                        style.mask_source_field_asset;
+                    mask_style.mask = style.mask;
+                    node.mesh_mask_render_style = std::move(mask_style);
+
+                    style.mask = {};
+                    style.mask_source_field_ref.clear();
+                    style.mask_source_field_asset = {};
+                }
                 node.mesh_render_style = style;
+            }
+
+            const auto* mmrs =
+                find_member(node_val, "mesh_mask_render_style");
+            if (mmrs && mmrs->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshMaskRenderStyleAsset style{};
+                if (!read_mesh_mask_render_style(
+                        *mmrs,
+                        node.id,
+                        "mesh_mask_render_style",
+                        logger,
+                        style))
+                {
+                    return std::nullopt;
+                }
+                node.mesh_mask_render_style = std::move(style);
             }
 
             const auto* mdfs =

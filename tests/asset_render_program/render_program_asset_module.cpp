@@ -557,7 +557,7 @@ TEST_F(RenderProgramGpuFixture, ResolvesBuiltinMeshMaskStyle)
     EXPECT_EQ(
         data->descriptor_bindings[1].kind,
         DescriptorKind::StructuredBufferSRV);
-    EXPECT_EQ(data->descriptor_bindings[1].visibility, ShaderVisibility::Pixel);
+    EXPECT_EQ(data->descriptor_bindings[1].visibility, ShaderVisibility::All);
     EXPECT_EQ(
         data->descriptor_bindings[1].semantic,
         DescriptorSemantic::MeshMaskRules);

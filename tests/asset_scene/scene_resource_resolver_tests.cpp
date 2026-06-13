@@ -1,5 +1,15 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+namespace
+{
+    std::vector<std::byte> uint_bytes(std::initializer_list<uint32_t> values)
+    {
+        std::vector<std::byte> bytes(values.size() * sizeof(uint32_t));
+        std::memcpy(bytes.data(), values.begin(), bytes.size());
+        return bytes;
+    }
+}
+
 TEST(SceneInstantiate, RejectsRenderableAssetWithoutResolver)
 {
     using namespace wz::engine::assets;
@@ -809,6 +819,267 @@ TEST(SceneAssetModule, StyledMeshWithNoEnabledLayersCompilesToNoDraws)
 
     EXPECT_TRUE(render_frame.frame.opaque.empty());
     EXPECT_TRUE(render_frame.frame.transparent.empty());
+}
+
+TEST(SceneAssetModule, StyledMeshMaskOnlyCompilesToOpaqueDraw)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mask_only_mesh_style_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "debug/mask_cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "debug/mask_cube_faces",
+            .source_mesh = mesh,
+            .domain = MeshDerivedFieldDomain::Face,
+            .element_count = 12u,
+            .channels = {
+                MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x2200u,
+                    .value_type = MeshDerivedFieldValueType::UInt1,
+                    .values = uint_bytes({
+                        1u, 1u, 1u, 1u,
+                        1u, 1u, 1u, 1u,
+                        1u, 1u, 1u, 1u,
+                    }),
+                },
+            },
+        });
+    ASSERT_TRUE(field.valid());
+
+    MeshRenderStyleData style{};
+    style.wireframe.enabled = false;
+    style.surface.enabled = false;
+    style.mask.enabled = true;
+    style.mask.show_unmatched = true;
+    style.mask.rules = {
+        MeshMaskRule{
+            .input_channel_id = 0x2200u,
+            .lo = 1.0f,
+            .hi = 1.0f,
+            .color = { 1.0f, 0.15f, 0.05f, 1.0f },
+            .priority = 0,
+        },
+    };
+
+    const auto render_style =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "styles/mask_only",
+            .style = style,
+        });
+    ASSERT_TRUE(render_style.valid());
+
+    const auto renderable = assets.renderables().create_mesh_styled({
+        .name = "debug/mask_cube_renderable",
+        .mesh = mesh,
+        .style = render_style,
+        .mesh_field_visualization = field,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RenderResourceResolver render_resolver;
+    wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
+        assets.meshes(),
+        render_resolver);
+
+    SceneAssetData scene{};
+    scene.name = "mask_only_style_scene";
+
+    SceneNodeAsset node{};
+    node.id = "mask_cube_node";
+    node.renderable_asset = renderable.output;
+    scene.nodes.push_back(std::move(node));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
+
+    const auto cube_h = result.instance.authored_to_runtime["mask_cube_node"];
+    const auto& desc = result.instance.renderables[cube_h];
+    EXPECT_EQ(desc.node_class.role, wz::scene::SceneRole::Renderable);
+    EXPECT_EQ(desc.node_class.producer, wz::scene::ProducerKind::Mesh);
+    EXPECT_EQ(
+        desc.node_class.default_surface,
+        wz::scene::SurfaceClass::Opaque);
+    EXPECT_NE(desc.mesh, wz::scene::INVALID_MESH);
+
+    wz::scene::ViewData view{};
+    view.camera_position = { 0.f, 0.f, 0.f };
+    view.view = wz::math::Mat4::identity();
+    constexpr float Pi = 3.14159265358979323846f;
+    view.projection = wz::math::projection_perspective_dx(
+        70.0f * Pi / 180.0f,
+        16.f / 9.f,
+        0.1f,
+        100.f);
+    view.view_projection = wz::math::mul(view.projection, view.view);
+
+    wz::scene::CompiledSceneStorage compiled{};
+    wz::scene::compile(
+        compiled,
+        result.instance.storage.polytree,
+        result.instance.renderables,
+        result.instance.lights,
+        view);
+
+    EXPECT_EQ(compiled.scene.opaque.size(), 1u);
+    EXPECT_TRUE(compiled.scene.transparent.empty());
+
+    wz::render::RenderIRStorage render_ir{};
+    wz::render::build_render_ir(render_ir, compiled.scene);
+
+    wz::render::RenderFrameStorage render_frame{};
+    wz::render::build_frame(render_frame, render_ir.ir, compiled.scene);
+
+    ASSERT_EQ(render_frame.frame.opaque.size(), 1u);
+    EXPECT_TRUE(render_frame.frame.transparent.empty());
+    EXPECT_EQ(render_frame.frame.opaque[0].mesh, desc.mesh);
+}
+
+TEST(RenderResourceResolver, LiveMeshStyleUpdateMutatesSnapshotOnly)
+{
+    using namespace wz::engine::assets;
+
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    MeshRenderStyleData style{};
+    style.surface.enabled = true;
+    style.mask.enabled = true;
+    style.mask.rules = {
+        MeshMaskRule{
+            .enabled = true,
+            .input_channel_id = 0x2200u,
+            .lo = 0.1f,
+            .hi = 0.4f,
+            .color = { 1.0f, 0.0f, 0.0f, 1.0f },
+            .priority = 0,
+        },
+    };
+
+    const wz::gpu::GPUHandle gpu_mesh{
+        .id = 7u,
+        .epoch = 1u,
+        .type = wz::gpu::GPUResourceType::Mesh,
+    };
+    const auto mesh_handle = resolver.register_mesh(
+        gpu_mesh,
+        BuiltinRenderProgram::MeshMaskStyle,
+        {},
+        {},
+        0.0f,
+        style);
+
+    MeshRenderStyleData updated = style;
+    updated.mask.rules[0].lo = 0.25f;
+    updated.mask.rules[0].hi = 0.75f;
+    updated.mask.rules[0].color[1] = 0.8f;
+
+    resolver.reset_mesh_style_live_update_stats();
+    ASSERT_TRUE(resolver.update_mesh_style(mesh_handle, updated));
+
+    const auto resolved = resolver.resolve_mesh(mesh_handle);
+    ASSERT_TRUE(resolved.has_value());
+    ASSERT_EQ(resolved->mesh_style.mask.rules.size(), 1u);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.mask.rules[0].lo, 0.25f);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.mask.rules[0].hi, 0.75f);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.mask.rules[0].color[1], 0.8f);
+    EXPECT_EQ(resolved->gpu_resource, gpu_mesh);
+
+    const auto stats = resolver.mesh_style_live_update_stats();
+    EXPECT_EQ(stats.style_updates, 1u);
+    EXPECT_EQ(stats.mask_rule_updates, 1u);
+    EXPECT_EQ(stats.mesh_uploads, 0u);
+    EXPECT_EQ(stats.mesh_derived_field_compiles, 0u);
+    EXPECT_EQ(stats.asset_graph_resolves, 0u);
+}
+
+TEST(RenderResourceResolver, LiveTerrainProxyStyleUpdateMutatesSnapshotOnly)
+{
+    using namespace wz::engine::assets;
+
+    wz::engine::rendering::RenderResourceResolver resolver;
+
+    TerrainVisualChunk chunk{};
+    chunk.first_index = 0u;
+    chunk.index_count = 3u;
+    chunk.aggregate.triangle_count = 1u;
+
+    MeshRenderStyleData style{};
+    style.surface.enabled = true;
+    style.mask.enabled = true;
+    style.mask.rules = {
+        MeshMaskRule{
+            .enabled = true,
+            .input_channel_id = 0x2300u,
+            .lo = 0.0f,
+            .hi = 0.5f,
+            .color = { 0.0f, 0.0f, 1.0f, 1.0f },
+            .priority = 2,
+        },
+    };
+
+    const TerrainProxyId proxy_id{ wz::asset::AssetKey{
+        .content_hash = { 0x1234u, 0u },
+    } };
+    const wz::gpu::GPUHandle gpu_mesh{
+        .id = 8u,
+        .epoch = 1u,
+        .type = wz::gpu::GPUResourceType::Mesh,
+    };
+    ASSERT_TRUE(resolver.register_terrain_proxy(
+        proxy_id,
+        gpu_mesh,
+        BuiltinRenderProgram::MeshMaskStyle,
+        {},
+        {},
+        0.0f,
+        style,
+        std::span<const TerrainVisualChunk>(&chunk, 1u)));
+
+    MeshRenderStyleData updated = style;
+    updated.mask.rules[0].lo = 0.35f;
+    updated.mask.rules[0].hi = 0.95f;
+
+    resolver.reset_mesh_style_live_update_stats();
+    ASSERT_TRUE(resolver.update_terrain_proxy_mesh_style(
+        proxy_id,
+        updated));
+
+    const auto resolved = resolver.resolve_terrain_proxy(proxy_id);
+    ASSERT_TRUE(resolved.has_value());
+    ASSERT_EQ(resolved->mesh_style.mask.rules.size(), 1u);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.mask.rules[0].lo, 0.35f);
+    EXPECT_FLOAT_EQ(resolved->mesh_style.mask.rules[0].hi, 0.95f);
+
+    const auto stats = resolver.mesh_style_live_update_stats();
+    EXPECT_EQ(stats.style_updates, 1u);
+    EXPECT_EQ(stats.mask_rule_updates, 1u);
+    EXPECT_EQ(stats.mesh_uploads, 0u);
+    EXPECT_EQ(stats.mesh_derived_field_compiles, 0u);
+    EXPECT_EQ(stats.asset_graph_resolves, 0u);
 }
 
 TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)

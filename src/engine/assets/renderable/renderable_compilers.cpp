@@ -547,6 +547,18 @@ namespace wz::engine::assets::internal
                         mask_active = false;
                         effective_style.mask.enabled = false;
                     };
+                    auto disable_mask_or_show_unmatched =
+                        [&](std::string_view reason)
+                    {
+                        if (effective_style.mask.show_unmatched) {
+                            logger->warn(
+                                "mesh styled renderable mask field unavailable; "
+                                "drawing unmatched color: "
+                                + std::string(reason));
+                            return;
+                        }
+                        disable_mask(reason);
+                    };
 
                     if (field_visualization_active) {
                         disable_mask("field visualization already active");
@@ -554,15 +566,18 @@ namespace wz::engine::assets::internal
                     else if (desc->mesh_field_visualization_asset
                         == wz::asset::AssetKey{})
                     {
-                        disable_mask("no field asset");
+                        disable_mask_or_show_unmatched("no field asset");
                     }
                     else if (dep_handles.size() < 3) {
-                        disable_mask("missing mesh field dependency");
+                        disable_mask_or_show_unmatched(
+                            "missing mesh field dependency");
                     }
                     else if (effective_style.mask.domain
-                        != MeshMaskDomain::Face)
+                            != MeshMaskDomain::Face
+                        && effective_style.mask.domain
+                            != MeshMaskDomain::Vertex)
                     {
-                        disable_mask("only face-domain masks are supported");
+                        disable_mask("only face- or vertex-domain masks are supported");
                     }
                     else if (effective_style.mask.projection_mode
                         != MeshMaskProjectionMode::Direct)
@@ -573,61 +588,79 @@ namespace wz::engine::assets::internal
                         const MeshDerivedFieldData* field =
                             mesh_derived_field_table->get(dep_handles[2]);
                         if (!field || !field->valid()) {
-                            disable_mask("field data is invalid");
+                            disable_mask_or_show_unmatched(
+                                "field data is invalid");
                         }
                         else if (field->source_mesh_key != desc->mesh_asset) {
-                            disable_mask("field source mesh mismatch");
-                        }
-                        else if (field->domain
-                            != MeshDerivedFieldDomain::Face)
-                        {
-                            disable_mask("field is not face-domain");
-                        }
-                        else if (field->element_count
-                            != mesh->index_count() / 3u)
-                        {
-                            disable_mask("field face count mismatch");
+                            disable_mask_or_show_unmatched(
+                                "field source mesh mismatch");
                         }
                         else {
-                            for (const MeshMaskRule& rule :
-                                 effective_style.mask.rules)
-                            {
-                                if (!rule.enabled) {
-                                    continue;
-                                }
-                                const auto channel_found = std::find_if(
-                                    field->channels.begin(),
-                                    field->channels.end(),
-                                    [&](const MeshDerivedFieldChannel& channel)
+                            const MeshDerivedFieldDomain required_domain =
+                                effective_style.mask.domain
+                                    == MeshMaskDomain::Vertex
+                                ? MeshDerivedFieldDomain::Vertex
+                                : MeshDerivedFieldDomain::Face;
+                            const uint32_t required_count =
+                                required_domain == MeshDerivedFieldDomain::Vertex
+                                    ? mesh->vertex_count()
+                                    : mesh->index_count() / 3u;
+                            if (field->domain != required_domain) {
+                                disable_mask_or_show_unmatched(
+                                    required_domain
+                                            == MeshDerivedFieldDomain::Vertex
+                                        ? "field is not vertex-domain"
+                                        : "field is not face-domain");
+                            }
+                            else if (field->element_count != required_count) {
+                                disable_mask_or_show_unmatched(
+                                    required_domain
+                                            == MeshDerivedFieldDomain::Vertex
+                                        ? "field vertex count mismatch"
+                                        : "field face count mismatch");
+                            }
+                            else {
+                                for (const MeshMaskRule& rule :
+                                     effective_style.mask.rules)
+                                {
+                                    if (!rule.enabled) {
+                                        continue;
+                                    }
+                                    const auto channel_found = std::find_if(
+                                        field->channels.begin(),
+                                        field->channels.end(),
+                                        [&](const MeshDerivedFieldChannel& channel)
+                                        {
+                                            return channel.channel_id
+                                                == rule.input_channel_id;
+                                        });
+
+                                    if (channel_found == field->channels.end()) {
+                                        disable_mask_or_show_unmatched(
+                                            "rule channel not found");
+                                        break;
+                                    }
+                                    if (channel_found->value_type
+                                            != MeshDerivedFieldValueType::Float1
+                                        && channel_found->value_type
+                                            != MeshDerivedFieldValueType::UInt1)
                                     {
-                                        return channel.channel_id
-                                            == rule.input_channel_id;
-                                    });
+                                        disable_mask_or_show_unmatched(
+                                            "rule channel is not Float1 or UInt1");
+                                        break;
+                                    }
 
-                                if (channel_found == field->channels.end()) {
-                                    disable_mask("rule channel not found");
-                                    break;
-                                }
-                                if (channel_found->value_type
-                                        != MeshDerivedFieldValueType::Float1
-                                    && channel_found->value_type
-                                        != MeshDerivedFieldValueType::UInt1)
-                                {
-                                    disable_mask(
-                                        "rule channel is not Float1 or UInt1");
-                                    break;
-                                }
-
-                                const uint32_t expected_bytes =
-                                    field->element_count
-                                    * mesh_derived_field_value_stride(
-                                        channel_found->value_type);
-                                if (channel_found->byte_count
-                                    != expected_bytes)
-                                {
-                                    disable_mask(
-                                        "rule channel byte count mismatch");
-                                    break;
+                                    const uint32_t expected_bytes =
+                                        field->element_count
+                                        * mesh_derived_field_value_stride(
+                                            channel_found->value_type);
+                                    if (channel_found->byte_count
+                                        != expected_bytes)
+                                    {
+                                        disable_mask_or_show_unmatched(
+                                            "rule channel byte count mismatch");
+                                        break;
+                                    }
                                 }
                             }
                         }

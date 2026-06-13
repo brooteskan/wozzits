@@ -803,15 +803,17 @@ namespace wz::engine::assets
                 });
             }
 
-            if (node.mesh_render_style
-                && node.mesh_render_style->mask.enabled
-                && !(node.mesh_render_style->mask_source_field_asset
+            if (node.mesh_mask_render_style
+                && node.mesh_mask_render_style->enabled
+                && node.mesh_mask_render_style->mask.enabled
+                && !(node.mesh_mask_render_style->source_field_asset
                     == wz::asset::AssetKey{}))
             {
                 std::vector<uint32_t> channels;
-                channels.reserve(node.mesh_render_style->mask.rules.size());
+                channels.reserve(
+                    node.mesh_mask_render_style->mask.rules.size());
                 for (const MeshMaskRule& rule :
-                     node.mesh_render_style->mask.rules)
+                     node.mesh_mask_render_style->mask.rules)
                 {
                     if (rule.enabled && rule.input_channel_id != 0u) {
                         channels.push_back(rule.input_channel_id);
@@ -826,8 +828,8 @@ namespace wz::engine::assets
                         .node = h,
                         .component = MeshFieldVisualizationTargetComponent{
                             .field_asset =
-                                node.mesh_render_style
-                                    ->mask_source_field_asset,
+                                node.mesh_mask_render_style
+                                    ->source_field_asset,
                             .channel_id = channel_id,
                         },
                     });

@@ -231,7 +231,7 @@ namespace wz::engine::render_backend::dx12
             float constants[48],
             const wz::engine::assets::MeshRenderStyleData& style,
             uint32_t enabled_rule_count,
-            uint32_t face_count)
+            uint32_t element_count)
         {
             write_mesh_layer_style_constants(
                 constants,
@@ -240,7 +240,7 @@ namespace wz::engine::render_backend::dx12
             constants[36] = static_cast<float>(enabled_rule_count);
             constants[37] = static_cast<float>(
                 static_cast<uint32_t>(style.mask.overlap_mode));
-            constants[38] = static_cast<float>(face_count);
+            constants[38] = static_cast<float>(element_count);
             constants[39] = style.mask.show_unmatched ? 1.0f : 0.0f;
             constants[40] = style.mask.unmatched_color[0];
             constants[41] = style.mask.unmatched_color[1];
@@ -248,7 +248,10 @@ namespace wz::engine::render_backend::dx12
             constants[43] = style.mask.unmatched_color[3];
             constants[44] =
                 (std::max)(0.0f, style.surface.emissive_strength);
-            constants[45] = 0.0f;
+            constants[45] = style.mask.domain
+                    == wz::engine::assets::MeshMaskDomain::Vertex
+                ? 1.0f
+                : 0.0f;
             constants[46] = 0.0f;
             constants[47] = 0.0f;
         }
@@ -273,6 +276,15 @@ namespace wz::engine::render_backend::dx12
         };
 
         std::vector<MeshMaskRuleBufferCacheEntry> g_mesh_mask_rule_buffers;
+
+        struct MeshMaskDummyBuffers
+        {
+            void* device_impl = nullptr;
+            wz::gpu::GPUHandle field{};
+            wz::gpu::GPUHandle rules{};
+        };
+
+        std::vector<MeshMaskDummyBuffers> g_mesh_mask_dummy_buffers;
 
         uint64_t fnv_mix_bytes(
             uint64_t hash,
@@ -306,7 +318,7 @@ namespace wz::engine::render_backend::dx12
 
         std::vector<MeshMaskRuleGpu> pack_mesh_mask_rules(
             const wz::engine::assets::MeshMaskRenderStyleData& mask,
-            uint32_t face_count)
+            uint32_t element_count)
         {
             struct RuleWithChannel
             {
@@ -361,7 +373,7 @@ namespace wz::engine::render_backend::dx12
                 }
                 out.lo = item.rule->lo;
                 out.hi = item.rule->hi;
-                out.value_offset = item.channel_index * face_count;
+                out.value_offset = item.channel_index * element_count;
                 out.priority = item.rule->priority;
                 packed.push_back(out);
             }
@@ -371,16 +383,16 @@ namespace wz::engine::render_backend::dx12
         wz::gpu::GPUHandle ensure_mesh_mask_rule_buffer(
             wz::gpu::Device& device,
             const wz::engine::assets::MeshMaskRenderStyleData& mask,
-            uint32_t face_count,
+            uint32_t element_count,
             uint32_t& out_rule_count)
         {
             out_rule_count = 0u;
-            if (!device.valid() || face_count == 0u || !mask.enabled) {
+            if (!device.valid() || element_count == 0u || !mask.enabled) {
                 return {};
             }
 
             const std::vector<MeshMaskRuleGpu> packed =
-                pack_mesh_mask_rules(mask, face_count);
+                pack_mesh_mask_rules(mask, element_count);
             if (packed.empty()) {
                 return {};
             }
@@ -389,21 +401,36 @@ namespace wz::engine::render_backend::dx12
             uint64_t signature = 14695981039346656037ull;
             signature = fnv_mix_bytes(
                 signature,
-                &face_count,
-                sizeof(face_count));
+                &element_count,
+                sizeof(element_count));
             signature = fnv_mix_bytes(
                 signature,
                 packed.data(),
                 packed.size() * sizeof(MeshMaskRuleGpu));
 
-            for (const MeshMaskRuleBufferCacheEntry& entry :
+            for (MeshMaskRuleBufferCacheEntry& entry :
                  g_mesh_mask_rule_buffers)
             {
-                if (entry.device_impl == device.impl
-                    && entry.signature == signature
-                    && entry.handle.valid())
-                {
+                if (entry.device_impl != device.impl) {
+                    continue;
+                }
+                if (entry.signature == signature && entry.handle.valid()) {
                     out_rule_count = entry.rule_count;
+                    return entry.handle;
+                }
+
+                if (entry.handle.valid()
+                    && entry.rule_count == out_rule_count
+                    && wz::gpu::update_mesh_field_visualization_values(
+                        device,
+                        entry.handle,
+                        reinterpret_cast<const std::byte*>(packed.data()),
+                        static_cast<uint64_t>(
+                            packed.size() * sizeof(MeshMaskRuleGpu)),
+                        static_cast<uint32_t>(packed.size()),
+                        sizeof(MeshMaskRuleGpu)))
+                {
+                    entry.signature = signature;
                     return entry.handle;
                 }
             }
@@ -428,6 +455,62 @@ namespace wz::engine::render_backend::dx12
                 .rule_count = out_rule_count,
             });
             return handle;
+        }
+
+        bool ensure_mesh_mask_dummy_buffers(
+            wz::gpu::Device& device,
+            wz::gpu::GPUHandle& out_field,
+            wz::gpu::GPUHandle& out_rules)
+        {
+            out_field = {};
+            out_rules = {};
+            if (!device.valid()) {
+                return false;
+            }
+
+            for (const MeshMaskDummyBuffers& entry :
+                 g_mesh_mask_dummy_buffers)
+            {
+                if (entry.device_impl == device.impl
+                    && entry.field.valid()
+                    && entry.rules.valid())
+                {
+                    out_field = entry.field;
+                    out_rules = entry.rules;
+                    return true;
+                }
+            }
+
+            const float dummy_field = 0.0f;
+            const wz::gpu::GPUHandle field =
+                wz::gpu::upload_mesh_field_visualization_values(
+                    device,
+                    reinterpret_cast<const std::byte*>(&dummy_field),
+                    sizeof(dummy_field),
+                    1u,
+                    sizeof(dummy_field));
+
+            MeshMaskRuleGpu dummy_rule{};
+            const wz::gpu::GPUHandle rules =
+                wz::gpu::upload_mesh_field_visualization_values(
+                    device,
+                    reinterpret_cast<const std::byte*>(&dummy_rule),
+                    sizeof(dummy_rule),
+                    1u,
+                    sizeof(dummy_rule));
+
+            if (!field.valid() || !rules.valid()) {
+                return false;
+            }
+
+            g_mesh_mask_dummy_buffers.push_back({
+                .device_impl = device.impl,
+                .field = field,
+                .rules = rules,
+            });
+            out_field = field;
+            out_rules = rules;
+            return true;
         }
 
         bool mesh_wireframe_wants_prepass(
@@ -1070,7 +1153,7 @@ namespace wz::engine::render_backend::dx12
                 1u);
         }
 
-        uint32_t mesh_mask_face_count(
+        uint32_t mesh_mask_element_count(
             wz::gpu::Device& device,
             const wz::engine::rendering::ResolvedRenderableResource& resolved)
         {
@@ -1093,15 +1176,67 @@ namespace wz::engine::render_backend::dx12
             return field->element_count / static_cast<uint32_t>(channels.size());
         }
 
+        bool prepare_builtin_mesh_mask_resources(
+            wz::gpu::Device& device,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            uint32_t fallback_element_count,
+            uint32_t& out_rule_count,
+            uint32_t& out_element_count)
+        {
+            out_rule_count = 0u;
+            out_element_count = 0u;
+            if (!is_mesh_mask_program(resolved.program)) {
+                return true;
+            }
+
+            out_element_count = mesh_mask_element_count(device, resolved);
+            if (out_element_count > 0u) {
+                const wz::gpu::GPUHandle rules =
+                    ensure_mesh_mask_rule_buffer(
+                        device,
+                        resolved.mesh_style.mask,
+                        out_element_count,
+                        out_rule_count);
+                if (rules.valid() && out_rule_count > 0u) {
+                    return true;
+                }
+            }
+
+            if (!resolved.mesh_style.mask.show_unmatched
+                || fallback_element_count == 0u)
+            {
+                out_rule_count = 0u;
+                out_element_count = 0u;
+                return false;
+            }
+
+            wz::gpu::GPUHandle dummy_field{};
+            wz::gpu::GPUHandle dummy_rules{};
+            if (!ensure_mesh_mask_dummy_buffers(
+                    device,
+                    dummy_field,
+                    dummy_rules))
+            {
+                out_rule_count = 0u;
+                out_element_count = 0u;
+                return false;
+            }
+
+            out_rule_count = 0u;
+            out_element_count = fallback_element_count;
+            return true;
+        }
+
         bool bind_builtin_mesh_mask_resources(
             wz::gpu::Device& device,
             ID3D12GraphicsCommandList* cmdList,
             const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            uint32_t fallback_element_count,
             uint32_t& out_rule_count,
-            uint32_t& out_face_count)
+            uint32_t& out_element_count)
         {
             out_rule_count = 0u;
-            out_face_count = 0u;
+            out_element_count = 0u;
             if (!is_mesh_mask_program(resolved.program)) {
                 return true;
             }
@@ -1110,32 +1245,50 @@ namespace wz::engine::render_backend::dx12
                 wz::gpu::dx12::internal::get_mesh_field_visualization(
                     device,
                     resolved.mesh_field_visualization_resource);
-            if (!field || !field->valid()) {
-                return false;
-            }
 
             const std::vector<uint32_t> channels =
                 mesh_mask_channel_ids(resolved.mesh_style.mask);
-            if (channels.empty()
-                || field->element_count
-                    < static_cast<uint32_t>(channels.size()))
+            wz::gpu::GPUHandle field_handle =
+                resolved.mesh_field_visualization_resource;
+            wz::gpu::GPUHandle rules_handle{};
+
+            if (field && field->valid() && !channels.empty()
+                && field->element_count
+                    >= static_cast<uint32_t>(channels.size()))
             {
-                return false;
-            }
-            out_face_count =
-                field->element_count / static_cast<uint32_t>(channels.size());
-            if (out_face_count == 0u) {
-                return false;
+                out_element_count =
+                    field->element_count
+                    / static_cast<uint32_t>(channels.size());
             }
 
-            const wz::gpu::GPUHandle rules_handle =
-                ensure_mesh_mask_rule_buffer(
+            if (out_element_count > 0u) {
+                rules_handle = ensure_mesh_mask_rule_buffer(
                     device,
                     resolved.mesh_style.mask,
-                    out_face_count,
+                    out_element_count,
                     out_rule_count);
+            }
+
             if (!rules_handle.valid() || out_rule_count == 0u) {
-                return false;
+                if (!resolved.mesh_style.mask.show_unmatched
+                    || fallback_element_count == 0u)
+                {
+                    return false;
+                }
+
+                wz::gpu::GPUHandle dummy_field{};
+                wz::gpu::GPUHandle dummy_rules{};
+                if (!ensure_mesh_mask_dummy_buffers(
+                        device,
+                        dummy_field,
+                        dummy_rules))
+                {
+                    return false;
+                }
+                field_handle = dummy_field;
+                rules_handle = dummy_rules;
+                out_rule_count = 0u;
+                out_element_count = fallback_element_count;
             }
 
             const auto* rules =
@@ -1143,6 +1296,12 @@ namespace wz::engine::render_backend::dx12
                     device,
                     rules_handle);
             if (!rules || !rules->valid()) {
+                return false;
+            }
+            field = wz::gpu::dx12::internal::get_mesh_field_visualization(
+                device,
+                field_handle);
+            if (!field || !field->valid()) {
                 return false;
             }
 
@@ -1198,14 +1357,14 @@ namespace wz::engine::render_backend::dx12
                     break;
                 case wz::engine::assets::DescriptorSemantic::MeshMaskRules:
                 {
-                    const uint32_t face_count =
-                        mesh_mask_face_count(device, resolved);
+                    const uint32_t element_count =
+                        mesh_mask_element_count(device, resolved);
                     uint32_t rule_count = 0u;
                     const wz::gpu::GPUHandle rules_handle =
                         ensure_mesh_mask_rule_buffer(
                             device,
                             resolved.mesh_style.mask,
-                            face_count,
+                            element_count,
                             rule_count);
                     if (!rules_handle.valid() || rule_count == 0u) {
                         return false;
@@ -1250,11 +1409,23 @@ namespace wz::engine::render_backend::dx12
                 return;
             }
 
+            wz::engine::assets::MeshRenderStyleData overlay_style = style;
+            if (std::isfinite(overlay_style.wireframe.color[3])) {
+                overlay_style.alpha = (std::clamp)(
+                    overlay_style.wireframe.color[3],
+                    0.0f,
+                    1.0f);
+            }
+            if (overlay_style.alpha <= 0.0f) {
+                return;
+            }
             const bool transparent =
-                wz::engine::assets::is_mesh_render_style_transparent(style);
-            const auto program = transparent
-                ? BuiltinRenderProgram::MeshWireframeAlpha
-                : style.depth_test || style.depth_write
+                wz::engine::assets::is_mesh_render_style_transparent(
+                    overlay_style);
+            const auto program =
+                transparent
+                    ? BuiltinRenderProgram::MeshWireframeAlpha
+                : overlay_style.depth_test || overlay_style.depth_write
                     ? BuiltinRenderProgram::MeshWireframeDepthDebug
                     : BuiltinRenderProgram::MeshWireframeDebug;
             const auto pipeline_handle = pipeline_cache.get(program);
@@ -1268,7 +1439,7 @@ namespace wz::engine::render_backend::dx12
 
             auto* cmdList =
                 wz::gpu::dx12::internal::get_command_list(device);
-            if (!transparent && mesh_wireframe_wants_prepass(style)) {
+            if (!transparent && mesh_wireframe_wants_prepass(overlay_style)) {
                 const auto prepass_handle = pipeline_cache.get(
                     BuiltinRenderProgram::MeshDepthPrepassDebug);
                 const auto* prepass =
@@ -1285,7 +1456,7 @@ namespace wz::engine::render_backend::dx12
                     cmdList->DrawIndexedInstanced(mesh.index_count, 1, 0, 0, 0);
                 }
             }
-            write_mesh_wireframe_style_constants(constants, style);
+            write_mesh_wireframe_style_constants(constants, overlay_style);
             cmdList->SetGraphicsRootSignature(overlay->root_sig);
             cmdList->SetPipelineState(overlay->pso);
             cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1356,16 +1527,20 @@ namespace wz::engine::render_backend::dx12
                 const bool mesh_mask =
                     is_mesh_mask_program(resolved->program);
                 uint32_t mesh_mask_rule_count = 0u;
-                uint32_t mesh_mask_faces = 0u;
+                uint32_t mesh_mask_elements = 0u;
                 if (mesh_mask) {
-                    mesh_mask_faces = mesh_mask_face_count(device, *resolved);
-                    const wz::gpu::GPUHandle rules =
-                        ensure_mesh_mask_rule_buffer(
+                    const uint32_t fallback_element_count =
+                        resolved->mesh_style.mask.domain
+                                == wz::engine::assets::MeshMaskDomain::Vertex
+                            ? mesh->vertex_count
+                            : mesh->index_count / 3u;
+                    if (!prepare_builtin_mesh_mask_resources(
                             device,
-                            resolved->mesh_style.mask,
-                            mesh_mask_faces,
-                            mesh_mask_rule_count);
-                    if (!rules.valid()) {
+                            *resolved,
+                            fallback_element_count,
+                            mesh_mask_rule_count,
+                            mesh_mask_elements))
+                    {
                         continue;
                     }
                 }
@@ -1380,7 +1555,7 @@ namespace wz::engine::render_backend::dx12
                         constants,
                         resolved->mesh_style,
                         mesh_mask_rule_count,
-                        mesh_mask_faces);
+                        mesh_mask_elements);
                 }
                 else if (mesh_surface) {
                     write_mesh_surface_style_constants(
@@ -1440,13 +1615,19 @@ namespace wz::engine::render_backend::dx12
                 }
                 if (!resolved->render_program.valid()) {
                     uint32_t bound_rule_count = 0u;
-                    uint32_t bound_face_count = 0u;
+                    uint32_t bound_element_count = 0u;
+                    const uint32_t fallback_element_count =
+                        resolved->mesh_style.mask.domain
+                                == wz::engine::assets::MeshMaskDomain::Vertex
+                            ? mesh->vertex_count
+                            : mesh->index_count / 3u;
                     if (!bind_builtin_mesh_mask_resources(
                             device,
                             cmdList,
                             *resolved,
+                            fallback_element_count,
                             bound_rule_count,
-                            bound_face_count))
+                            bound_element_count))
                     {
                         continue;
                     }
@@ -1981,16 +2162,20 @@ namespace wz::engine::render_backend::dx12
             const bool mesh_mask =
                 is_mesh_mask_program(resolved->program);
             uint32_t mesh_mask_rule_count = 0u;
-            uint32_t mesh_mask_faces = 0u;
+            uint32_t mesh_mask_elements = 0u;
             if (mesh_mask) {
-                mesh_mask_faces = mesh_mask_face_count(device, *resolved);
-                const wz::gpu::GPUHandle rules =
-                    ensure_mesh_mask_rule_buffer(
+                const uint32_t fallback_element_count =
+                    resolved->mesh_style.mask.domain
+                            == wz::engine::assets::MeshMaskDomain::Vertex
+                        ? mesh->vertex_count
+                        : mesh->index_count / 3u;
+                if (!prepare_builtin_mesh_mask_resources(
                         device,
-                        resolved->mesh_style.mask,
-                        mesh_mask_faces,
-                        mesh_mask_rule_count);
-                if (!rules.valid()) {
+                        *resolved,
+                        fallback_element_count,
+                        mesh_mask_rule_count,
+                        mesh_mask_elements))
+                {
                     continue;
                 }
             }
@@ -2009,7 +2194,7 @@ namespace wz::engine::render_backend::dx12
                     constants,
                     resolved->mesh_style,
                     mesh_mask_rule_count,
-                    mesh_mask_faces);
+                    mesh_mask_elements);
             }
             else if (mesh_field_heatmap) {
                 write_mesh_field_heatmap_style_constants(
@@ -2055,13 +2240,19 @@ namespace wz::engine::render_backend::dx12
                 continue;
             }
             uint32_t bound_rule_count = 0u;
-            uint32_t bound_face_count = 0u;
+            uint32_t bound_element_count = 0u;
+            const uint32_t fallback_element_count =
+                resolved->mesh_style.mask.domain
+                        == wz::engine::assets::MeshMaskDomain::Vertex
+                    ? mesh->vertex_count
+                    : mesh->index_count / 3u;
             if (!bind_builtin_mesh_mask_resources(
                     device,
                     cmdList,
                     *resolved,
+                    fallback_element_count,
                     bound_rule_count,
-                    bound_face_count))
+                    bound_element_count))
             {
                 continue;
             }
@@ -2205,16 +2396,20 @@ namespace wz::engine::render_backend::dx12
             const bool mesh_mask =
                 is_mesh_mask_program(resolved->program);
             uint32_t mesh_mask_rule_count = 0u;
-            uint32_t mesh_mask_faces = 0u;
+            uint32_t mesh_mask_elements = 0u;
             if (mesh_mask) {
-                mesh_mask_faces = mesh_mask_face_count(device, *resolved);
-                const wz::gpu::GPUHandle rules =
-                    ensure_mesh_mask_rule_buffer(
+                const uint32_t fallback_element_count =
+                    resolved->mesh_style.mask.domain
+                            == wz::engine::assets::MeshMaskDomain::Vertex
+                        ? mesh->vertex_count
+                        : mesh->index_count / 3u;
+                if (!prepare_builtin_mesh_mask_resources(
                         device,
-                        resolved->mesh_style.mask,
-                        mesh_mask_faces,
-                        mesh_mask_rule_count);
-                if (!rules.valid()) {
+                        *resolved,
+                        fallback_element_count,
+                        mesh_mask_rule_count,
+                        mesh_mask_elements))
+                {
                     continue;
                 }
             }
@@ -2233,7 +2428,7 @@ namespace wz::engine::render_backend::dx12
                     constants,
                     resolved->mesh_style,
                     mesh_mask_rule_count,
-                    mesh_mask_faces);
+                    mesh_mask_elements);
             }
             else if (mesh_field_heatmap) {
                 write_mesh_field_heatmap_style_constants(
@@ -2289,13 +2484,19 @@ namespace wz::engine::render_backend::dx12
             }
             if (!resolved->render_program.valid()) {
                 uint32_t bound_rule_count = 0u;
-                uint32_t bound_face_count = 0u;
+                uint32_t bound_element_count = 0u;
+                const uint32_t fallback_element_count =
+                    resolved->mesh_style.mask.domain
+                            == wz::engine::assets::MeshMaskDomain::Vertex
+                        ? mesh->vertex_count
+                        : mesh->index_count / 3u;
                 if (!bind_builtin_mesh_mask_resources(
                         device,
                         cmdList,
                         *resolved,
+                        fallback_element_count,
                         bound_rule_count,
-                        bound_face_count))
+                        bound_element_count))
                 {
                     continue;
                 }

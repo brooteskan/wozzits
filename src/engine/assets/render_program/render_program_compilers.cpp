@@ -190,7 +190,7 @@ namespace wz::engine::assets::internal
                     },
                     {
                         .kind             = DescriptorKind::StructuredBufferSRV,
-                        .visibility       = ShaderVisibility::Pixel,
+                        .visibility       = ShaderVisibility::All,
                         .semantic         = DescriptorSemantic::MeshMaskRules,
                         .shader_register  = 1,
                         .register_space   = 0,

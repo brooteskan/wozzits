@@ -74,12 +74,38 @@ namespace wz::engine::rendering
         // Descriptor bindings: group by visibility (first-occurrence order).
         // Track groups as (visibility, [binding_indices]).
         struct VisGroup { wz::engine::assets::ShaderVisibility vis; std::vector<size_t> indices; };
+        auto can_share_descriptor_table =
+            [&](const VisGroup& group,
+                const wz::engine::assets::DescriptorBinding& binding)
+        {
+            if (group.vis != binding.visibility) {
+                return false;
+            }
+            if (binding.semantic
+                    == wz::engine::assets::DescriptorSemantic::MeshMaskRules)
+            {
+                return false;
+            }
+            for (size_t group_binding_index : group.indices) {
+                if (data->descriptor_bindings[group_binding_index].semantic
+                    == wz::engine::assets::DescriptorSemantic::MeshMaskRules)
+                {
+                    return false;
+                }
+            }
+            return true;
+        };
         std::vector<VisGroup> groups;
         for (size_t i = 0; i < data->descriptor_bindings.size(); ++i)
         {
             auto v = data->descriptor_bindings[i].visibility;
             auto it = std::find_if(groups.begin(), groups.end(),
-                [v](const VisGroup& g){ return g.vis == v; });
+                [&](const VisGroup& g)
+                {
+                    return can_share_descriptor_table(
+                        g,
+                        data->descriptor_bindings[i]);
+                });
             if (it != groups.end())
                 it->indices.push_back(i);
             else
