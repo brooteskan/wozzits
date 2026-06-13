@@ -20,9 +20,11 @@
 // transient-memory aliasing — all as pure logic the backend then executes.
 
 #include <wozzits/rhi/gpu_resource.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -90,6 +92,38 @@ namespace wz::rhi
         [[nodiscard]] size_t pass_count() const noexcept { return order.size(); }
     };
 
+    // What the frame graph and its passes record GPU work into during
+    // execution. Backend-agnostic: a real backend implements this over a
+    // command list; a test implements a recording fake. The frame graph itself
+    // only issues barriers; passes issue their own work via PassContext.
+    class CommandRecorder
+    {
+    public:
+        virtual ~CommandRecorder() = default;
+        virtual void barrier(GpuResourceHandle resource,
+                            ResourceState from,
+                            ResourceState to) = 0;
+    };
+
+    // Handed to each pass's execute callback. Resolves graph resources to their
+    // realized GPU handles and exposes the recorder.
+    struct PassContext
+    {
+        const std::vector<GpuResourceHandle>* realized = nullptr;
+        CommandRecorder*                      recorder = nullptr;
+
+        [[nodiscard]] GpuResourceHandle resolve(FrameGraphResource r) const
+        {
+            return (r.valid() && realized && r.index < realized->size())
+                ? (*realized)[r.index]
+                : GpuResourceHandle{};
+        }
+
+        [[nodiscard]] CommandRecorder& commands() const { return *recorder; }
+    };
+
+    using PassExecuteFn = std::function<void(const PassContext&)>;
+
     class FrameGraph
     {
     public:
@@ -129,7 +163,7 @@ namespace wz::rhi
         uint32_t add_pass(std::string name)
         {
             const uint32_t index = static_cast<uint32_t>(passes_.size());
-            passes_.push_back(PassNode{ std::move(name), {} });
+            passes_.push_back(PassNode{ std::move(name), {}, {} });
             return index;
         }
 
@@ -141,6 +175,14 @@ namespace wz::rhi
         void write(uint32_t pass, FrameGraphResource resource, ResourceState state)
         {
             passes_[pass].accesses.push_back(Access{ resource, state, /*write*/ true });
+        }
+
+        // Attach the GPU work a pass records when executed. Optional — a pass
+        // with no callback contributes only its resource declarations (useful
+        // for ordering/barrier purposes, e.g. a present pass).
+        void set_execute(uint32_t pass, PassExecuteFn fn)
+        {
+            passes_[pass].execute = std::move(fn);
         }
 
         // Plan the frame: cull dead passes, order survivors, derive barriers,
@@ -310,6 +352,64 @@ namespace wz::rhi
             return compiled;
         }
 
+        // Execute a compiled plan: realize transients against the registry
+        // (one backing per alias group, shared by its transients), issue the
+        // derived barriers, run pass callbacks in execution order, then release
+        // the transient backings. Backend work goes through the recorder; the
+        // registry owns the resources, so device-loss / deferred-release policy
+        // all apply uniformly.
+        void execute(const CompiledFrameGraph& plan,
+                     GpuResourceRegistry& registry,
+                     CommandRecorder& recorder,
+                     uint64_t frame_timeline = 0) const
+        {
+            std::vector<GpuResourceHandle> realized(resources_.size());
+            for (uint32_t i = 0; i < resources_.size(); ++i) {
+                if (resources_[i].kind == ResourceKind::Imported) {
+                    realized[i] = resources_[i].imported;
+                }
+            }
+
+            // One backing resource per alias group. v0 sizes it from the first
+            // transient in the group (sorted by first use); real aliasing would
+            // size to the group's max and check format compatibility.
+            std::vector<GpuResourceHandle> group_handle;
+            std::vector<bool>              group_realized;
+            for (const TransientAllocation& t : plan.transients) {
+                if (t.alias_group >= group_handle.size()) {
+                    group_handle.resize(t.alias_group + 1);
+                    group_realized.resize(t.alias_group + 1, false);
+                }
+                if (!group_realized[t.alias_group]) {
+                    group_handle[t.alias_group] =
+                        registry.acquire(resources_[t.resource.index].desc);
+                    group_realized[t.alias_group] = true;
+                }
+                realized[t.resource.index] = group_handle[t.alias_group];
+            }
+
+            for (const PassExecution& pe : plan.order) {
+                for (const Barrier& b : pe.barriers) {
+                    recorder.barrier(realized[b.resource.index], b.from, b.to);
+                }
+                const PassNode& pass = passes_[pe.pass_index];
+                if (pass.execute) {
+                    const PassContext ctx{ &realized, &recorder };
+                    pass.execute(ctx);
+                }
+            }
+
+            // Transients are frame-scoped: record this frame's timeline on each
+            // backing so the registry won't reclaim it until the GPU has passed
+            // that value, then hand it back for deferred release.
+            for (uint32_t g = 0; g < group_handle.size(); ++g) {
+                if (group_realized[g]) {
+                    registry.touch(group_handle[g], frame_timeline);
+                    registry.release(group_handle[g]);
+                }
+            }
+        }
+
     private:
         enum class ResourceKind : uint8_t { Imported, Transient };
 
@@ -334,6 +434,7 @@ namespace wz::rhi
         {
             std::string         name;
             std::vector<Access> accesses;
+            PassExecuteFn       execute;
         };
 
         [[nodiscard]] size_t distinct_writes(uint32_t pass) const

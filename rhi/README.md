@@ -70,6 +70,15 @@ built only from rhi types, so this repo stays free of any engine dependency.
 - **transient aliasing** — lifetime intervals per transient + greedy grouping
   so non-overlapping transients can share backing memory.
 
+`execute(plan, registry, recorder, frame_timeline)` runs the plan: it realizes
+transients against the `GpuResourceRegistry` (one backing per alias group,
+shared by its transients), issues the derived barriers through a backend-
+agnostic `CommandRecorder`, invokes each surviving pass's callback in execution
+order (resolving graph resources to GPU handles via `PassContext`), then records
+the frame timeline on each transient and releases it — so the registry reclaims
+it only once the GPU has passed that value. Pure planning and execution are
+separate calls; both are unit-tested against fakes.
+
 ## GpuResourceRegistry
 
 The single device-scoped owner that replaces the old renderer's scattered,
@@ -121,13 +130,13 @@ ctest --preset clang-debug
 
 ## Roadmap (next)
 
-- Frame-graph execution — wire `compile()`'s plan to a real `GpuBackend`:
-  realize transients against `GpuResourceRegistry`, issue derived barriers, run
-  pass callbacks. v0 is pure planning; this is the execution half.
+- A concrete `GpuBackend` + `CommandRecorder` over DX12 — the first real
+  backend behind the device-agnostic interfaces (registry create/destroy/write,
+  recorder barriers, transient memory aliasing via placed resources).
 - Bindless descriptor-index allocation — a free-list over a global descriptor
   heap, keyed off resource identity (deferred from the registry v0).
-- Engine-side `from_engine()` bridge adapter — gated on the build-topology
-  decision (engine depends on rhi, or a separate integration target).
+- Transient pooling across frames — reuse backings between frames instead of
+  acquire/release each frame.
 - Asset-library bridge, engine-side half — the actual `from_engine()` adapter
   that reads realized `RenderProgramData`. Needs a build-topology decision
   (engine depends on rhi, or a separate integration target depends on both);
