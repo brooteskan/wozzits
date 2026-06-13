@@ -117,6 +117,7 @@ namespace wz::engine::assets
         , mesh_table_{}
         , mesh_derived_field_table_{}
         , mesh_sparse_operator_table_{}
+        , mesh_cluster_hierarchy_table_{}
         , gpu_resident_field_table_{}
         , gpu_resident_mesh_data_table_{}
         , gpu_resident_sparse_operator_table_{}
@@ -151,6 +152,7 @@ namespace wz::engine::assets
                 .mesh_table                = mesh_table_,
                 .mesh_derived_field_table  = mesh_derived_field_table_,
                 .mesh_sparse_operator_table = mesh_sparse_operator_table_,
+                .mesh_cluster_hierarchy_table = mesh_cluster_hierarchy_table_,
                 .gpu_resident_field_table  = gpu_resident_field_table_,
                 .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table_,
                 .terrain_table             = terrain_table_,
@@ -182,6 +184,9 @@ namespace wz::engine::assets
         , meshes_(system_, mesh_table_)
         , mesh_derived_fields_(system_, mesh_derived_field_table_)
         , mesh_sparse_operators_(system_, mesh_sparse_operator_table_)
+        , mesh_cluster_hierarchies_(
+            system_,
+            mesh_cluster_hierarchy_table_)
         , terrains_(system_, logger_, terrain_table_, cache_settings_)
         , terrain_visual_proxies_(system_, logger_, terrain_visual_proxy_table_)
         , collisions_(system_, logger_, collision_table_)

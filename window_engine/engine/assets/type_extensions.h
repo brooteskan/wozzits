@@ -164,6 +164,12 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeMeshSparseOperator =
         static_cast<wz::asset::AssetType>(157);
 
+    // Implemented: CPU-side hierarchy of mesh simplification levels/clusters.
+    // Runtime data is owned by MeshClusterHierarchyTable. V0 stores identity
+    // preview levels; graph-coarsening methods will extend this format.
+    inline constexpr wz::asset::AssetType kAssetTypeMeshClusterHierarchy =
+        static_cast<wz::asset::AssetType>(158);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);

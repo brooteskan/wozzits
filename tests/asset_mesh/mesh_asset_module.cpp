@@ -177,6 +177,91 @@ TEST(MeshAssetModule, ResolvesDecimatedMeshAsset)
     EXPECT_LE(decimated_data->index_count(), source_data->index_count());
 }
 
+TEST(MeshAssetModule, ResolvesIdentityMeshClusterHierarchyAsset)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto hierarchy =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_identity_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::Identity,
+        });
+    ASSERT_TRUE(hierarchy.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 2u);
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto hierarchy_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            hierarchy);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(hierarchy_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* hierarchy_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(hierarchy_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(hierarchy_data, nullptr);
+    ASSERT_TRUE(hierarchy_data->valid());
+    EXPECT_EQ(hierarchy_data->source_mesh_key, source.output);
+    EXPECT_EQ(
+        hierarchy_data->method,
+        wz::engine::assets::MeshClusterHierarchyBuildMethod::Identity);
+    ASSERT_EQ(hierarchy_data->level_count(), 1u);
+
+    const auto& level = hierarchy_data->levels[0];
+    EXPECT_EQ(level.level_index, 0u);
+    EXPECT_EQ(level.cluster_count, 1u);
+    EXPECT_EQ(level.vertex_count, source_data->vertex_count());
+    EXPECT_EQ(level.triangle_count, source_data->index_count() / 3u);
+    EXPECT_FLOAT_EQ(level.conservative_error, 0.0f);
+    EXPECT_EQ(level.preview_mesh.vertex_count(), source_data->vertex_count());
+    EXPECT_EQ(level.preview_mesh.index_count(), source_data->index_count());
+}
+
+TEST(MeshAssetModule, RejectsUnsupportedMeshClusterHierarchyMethod)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto hierarchy =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_graph_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::
+                    GraphCoarsen,
+        });
+
+    EXPECT_FALSE(hierarchy.valid());
+}
+
 TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
 {
     wz::Logger logger;

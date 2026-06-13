@@ -228,6 +228,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Eull
     };
 
+    // Mesh simplification hierarchy recipe. Compiled from one
+    // kAssetTypeMesh dependency and produces kAssetTypeMeshClusterHierarchy.
+    // V0 supports an identity hierarchy used to validate asset/editor plumbing
+    // before graph-coarsening algorithms land.
+    inline constexpr wz::asset::SchemaID kMeshClusterHierarchySchema{
+        0xF11E'CA55'E7'00040Full
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not
