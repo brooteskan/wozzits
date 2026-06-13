@@ -1,0 +1,76 @@
+#pragma once
+
+// engine/rendering/rhi_gpu_backend.h
+//
+// Engine-side implementation of wz::rhi::GpuBackend (topology A: the engine
+// depends on wozzits-rhi). It backs the new renderer's resource registry with
+// the engine's existing, working DX12 functions — reusing the hard-won device,
+// upload, and release plumbing rather than rewriting D3D12.
+//
+// rhi stays pure: it only defines the GpuBackend interface. This adapter lives
+// engine-side, so there is no rhi -> engine dependency (which would be a cycle,
+// since engine -> rhi already exists for the render-program bridge).
+//
+// Increment 1: the BUFFER resource path, delegating to the existing
+// create_structured_buffer / create_rw_structured_buffer / release_compute_buffer.
+// Texture / render-target creation, CPU writes, and the CommandRecorder
+// (barriers) are subsequent increments — see the TODOs in the .cpp.
+
+#include <gpu/compute.h>
+#include <gpu/gpu.h>
+#include <gpu/gpu_types.h>
+
+#include <wozzits/rhi/gpu_resource.h>
+
+#include <cstdint>
+#include <unordered_map>
+
+namespace wz::engine::rendering
+{
+    // True when the resource's usage asks for unordered access (UAV) -> the
+    // read-write structured buffer creator. Pure; unit-tested without a device.
+    [[nodiscard]] inline bool desc_wants_rw(const wz::rhi::GpuResourceDesc& desc)
+    {
+        return (desc.usage & wz::rhi::ResourceUsage_Storage) != 0u;
+    }
+
+    // Map an rhi buffer desc onto the engine's ComputeBufferDesc. A structured
+    // buffer carries its stride; a raw (stride 0) buffer is treated as a
+    // tightly-packed 4-byte-element buffer so it still has a valid SRV stride.
+    // Pure; unit-tested without a device.
+    [[nodiscard]] inline wz::gpu::ComputeBufferDesc to_compute_buffer_desc(
+        const wz::rhi::GpuResourceDesc& desc)
+    {
+        const uint32_t stride = desc.stride_bytes > 0u ? desc.stride_bytes : 4u;
+        wz::gpu::ComputeBufferDesc out;
+        out.stride_bytes = stride;
+        out.element_count = static_cast<uint32_t>(desc.size_bytes / stride);
+        out.initial_data = nullptr;
+        out.initial_data_bytes = 0;
+        return out;
+    }
+
+    class EngineGpuBackend final : public wz::rhi::GpuBackend
+    {
+    public:
+        // The device must outlive the backend.
+        explicit EngineGpuBackend(wz::gpu::Device& device) : device_(&device) {}
+
+        wz::rhi::BackendResource create(
+            const wz::rhi::GpuResourceDesc& desc) override;
+        void destroy(wz::rhi::BackendResource resource) override;
+        bool write(wz::rhi::BackendResource resource,
+                   const void* data,
+                   uint64_t size,
+                   uint64_t offset) override;
+
+    private:
+        wz::gpu::Device* device_;
+
+        // Opaque rhi token -> engine GPUHandle. The token is the backend's own
+        // counter; the full GPUHandle (id + epoch + type) is preserved here
+        // rather than lossily packed into the 64-bit token.
+        std::unordered_map<uint64_t, wz::gpu::GPUHandle> resources_;
+        uint64_t next_token_ = 1;
+    };
+}
