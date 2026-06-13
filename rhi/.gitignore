@@ -1,0 +1,18 @@
+# Build output
+build/
+out/
+
+# AI-agent scratch files (issue drafts, plans, reports) — never commit.
+*.tmp_*
+*AppDataLocalTemp*
+
+# Editor / IDE
+.vs/
+.vscode/
+CMakeUserPresets.json
+CMakeSettings.json
+.cache/
+
+# OS
+Thumbs.db
+.DS_Store
