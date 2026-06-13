@@ -13,10 +13,12 @@ namespace
         int creates = 0;
         int destroys = 0;
         int writes = 0;
+        GpuResourceDesc last_desc{};
 
-        BackendResource create(const GpuResourceDesc&) override
+        BackendResource create(const GpuResourceDesc& desc) override
         {
             ++creates;
+            last_desc = desc;
             return BackendResource{ next_id++ };
         }
         void destroy(BackendResource) override { ++destroys; }
@@ -186,9 +188,34 @@ static void device_loss_is_one_sweep()
     WZ_CHECK_EQ(registry.device_epoch(), epoch_before + 1);
 }
 
+// The desc carries its physical family + view-sufficient fields to the backend
+// through the one registry door — a structured buffer keeps its stride, a 2D
+// texture keeps its format/dims. (No per-semantic-kind create function.)
+static void desc_carries_physical_family_to_backend()
+{
+    FakeBackend backend;
+    GpuResourceRegistry registry(backend);
+
+    registry.acquire(GpuResourceDesc::buffer(
+        /*size*/ 2048, /*stride*/ 32, ResourceUsage_Sampled));
+    WZ_CHECK(backend.last_desc.dimension == ResourceDimension::Buffer);
+    WZ_CHECK_EQ(backend.last_desc.size_bytes, static_cast<uint64_t>(2048));
+    WZ_CHECK_EQ(backend.last_desc.stride_bytes, 32u);
+
+    registry.acquire(GpuResourceDesc::texture_2d(
+        1920, 1080, TextureFormat::RGBA8Unorm, ResourceUsage_RenderTarget));
+    WZ_CHECK(backend.last_desc.dimension == ResourceDimension::Texture2D);
+    WZ_CHECK_EQ(backend.last_desc.width, 1920u);
+    WZ_CHECK_EQ(backend.last_desc.height, 1080u);
+    WZ_CHECK(backend.last_desc.format == TextureFormat::RGBA8Unorm);
+
+    WZ_CHECK_EQ(backend.creates, 2);   // both anonymous -> both created
+}
+
 int main()
 {
     WZ_RUN(acquire_creates_and_get_returns);
+    WZ_RUN(desc_carries_physical_family_to_backend);
     WZ_RUN(same_identity_dedups);
     WZ_RUN(anonymous_always_creates);
     WZ_RUN(variant_distinguishes_identity);
