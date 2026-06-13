@@ -30,7 +30,8 @@ if(WOZZITS_RHI_BUILD_TESTS)
         render_program_registry_tests
         render_program_bridge_tests
         handle_tests
-        gpu_resource_registry_tests)
+        gpu_resource_registry_tests
+        frame_graph_tests)
 
     foreach(test_name ${WZ_RHI_TESTS})
         add_executable(${test_name} tests/${test_name}.cpp)

@@ -45,9 +45,30 @@ include/wozzits/rhi/
   gpu_resource.h            GPU resource contract: identity, residency,
                             cpu_access, usage + the GpuBackend interface
   gpu_resource_registry.h   device-scoped owner of all GPU resources
+  frame_graph.h             per-frame pass DAG: cull + order + barriers + alias
   draw_item.h               flat, sortable render-IR draw item (the seam)
 tests/                      zero-dependency unit tests
 ```
+
+## FrameGraph
+
+The per-frame render graph — a **different DAG** from window-engine's asset
+DAG, sharing nothing with it. The asset DAG is content-addressed and persistent
+(*"what is this, is it current?"*); the frame graph is ephemeral, rebuilt every
+frame and discarded (*"what order, what barriers, what shared memory?"*). It is
+built only from rhi types, so this repo stays free of any engine dependency.
+
+`compile()` does, as pure logic the backend then executes, the work the old
+`dx12_submit` does by hand:
+
+- **dead-pass culling** — ref-count reachability from marked outputs; passes
+  whose results nobody consumes are dropped (transitively);
+- **topological ordering** — producers before consumers, independent of the
+  order passes were declared;
+- **barrier derivation** — transitions emitted from declared per-pass resource
+  state, and *only* on an actual state change (no redundant barriers);
+- **transient aliasing** — lifetime intervals per transient + greedy grouping
+  so non-overlapping transients can share backing memory.
 
 ## GpuResourceRegistry
 
@@ -100,10 +121,13 @@ ctest --preset clang-debug
 
 ## Roadmap (next)
 
-- Frame graph — transient-resource aliasing + barrier derivation from declared
-  usage. Allocates against `GpuResourceRegistry`.
+- Frame-graph execution — wire `compile()`'s plan to a real `GpuBackend`:
+  realize transients against `GpuResourceRegistry`, issue derived barriers, run
+  pass callbacks. v0 is pure planning; this is the execution half.
 - Bindless descriptor-index allocation — a free-list over a global descriptor
   heap, keyed off resource identity (deferred from the registry v0).
+- Engine-side `from_engine()` bridge adapter — gated on the build-topology
+  decision (engine depends on rhi, or a separate integration target).
 - Asset-library bridge, engine-side half — the actual `from_engine()` adapter
   that reads realized `RenderProgramData`. Needs a build-topology decision
   (engine depends on rhi, or a separate integration target depends on both);
