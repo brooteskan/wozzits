@@ -86,14 +86,15 @@ namespace wz::engine::rendering
             {
                 return false;
             }
-            for (size_t group_binding_index : group.indices) {
-                if (data->descriptor_bindings[group_binding_index].semantic
-                    == wz::engine::assets::DescriptorSemantic::MeshMaskRules)
-                {
-                    return false;
-                }
-            }
-            return true;
+            return std::none_of(
+                group.indices.begin(),
+                group.indices.end(),
+                [&](size_t group_binding_index) {
+                    return data->descriptor_bindings[group_binding_index]
+                        .semantic
+                        == wz::engine::assets::DescriptorSemantic
+                               ::MeshMaskRules;
+                });
         };
         std::vector<VisGroup> groups;
         for (size_t i = 0; i < data->descriptor_bindings.size(); ++i)

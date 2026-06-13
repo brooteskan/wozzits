@@ -111,12 +111,14 @@ namespace
             return false;
         }
 
-        for (size_t i = 0; i < a.rules.size(); ++i) {
-            if (!mask_rule_equal(a.rules[i], b.rules[i])) {
-                return false;
-            }
-        }
-        return true;
+        return std::equal(
+            a.rules.begin(),
+            a.rules.end(),
+            b.rules.begin(),
+            [](const wz::engine::assets::MeshMaskRule& lhs,
+               const wz::engine::assets::MeshMaskRule& rhs) {
+                return mask_rule_equal(lhs, rhs);
+            });
     }
 
     void record_mesh_style_live_update(

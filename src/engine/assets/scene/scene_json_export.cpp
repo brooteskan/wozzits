@@ -946,9 +946,12 @@ namespace wz::engine::assets
                 bool_value(mask.show_unmatched));
 
             auto rules = array_value();
-            for (const MeshMaskRule& rule : mask.rules) {
-                rules->array_values.push_back(mesh_mask_rule_value(rule));
-            }
+            std::ranges::transform(
+                mask.rules,
+                std::back_inserter(rules->array_values),
+                [](const MeshMaskRule& rule) {
+                    return mesh_mask_rule_value(rule);
+                });
             add_member(*obj, "rules", std::move(rules));
             return obj;
         }
