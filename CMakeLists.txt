@@ -210,6 +210,18 @@ PRIVATE
     windowsapp
     xinput)
 
+# New renderer (wozzits-rhi) — the engine depends on it (bridge topology A).
+# Header-only INTERFACE library at a sibling path; disable its tests in this
+# build. PUBLIC because engine headers (rhi_render_program_bridge.h) expose rhi
+# types to consumers.
+set(WOZZITS_RHI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-rhi"
+    "${CMAKE_BINARY_DIR}/wozzits-rhi")
+# BUILD_INTERFACE so the header-only dependency does not leak into the engine's
+# install/export set (same idiom as pmp above).
+target_link_libraries(window_engine PUBLIC $<BUILD_INTERFACE:wozzits_rhi>)
+
 add_subdirectory(src)
 
 target_include_directories(window_engine
@@ -549,6 +561,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render storage_reuse_tests)
     rs_add_test_group(render render_frame_sectioned_test_1)
     rs_add_test_group(render pipeline_benchmark_test_1)
+    rs_add_test_group(render rhi_render_program_bridge_tests)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)

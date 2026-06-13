@@ -144,4 +144,5 @@ target_sources(window_engine PRIVATE
     rendering/scene_terrain_visual_proxy_bridge.cpp
     rendering/scene_render_resource_resolver.cpp
     rendering/gpu_scene_render_resource_resolver.cpp
+    rendering/rhi_render_program_bridge.cpp
 )
