@@ -32,30 +32,58 @@ namespace wz::rhi
 
     enum class ShaderStage : uint8_t { All, Vertex, Pixel, Compute };
 
-    enum class BindingModel : uint8_t
+    // How the pipeline sources vertices. A small, closed STRUCTURAL set — not
+    // content names. The engine's BindingModel had MeshIA / SplatVertexInstanced
+    // / ScalarFieldTexture / ParticlePull / ... — those name the *renderables*
+    // that use a strategy, an open set that grew per content. The structural
+    // truth is just these three; instancing rides on per-attribute step rate.
+    enum class VertexSource : uint8_t
     {
-        MeshIA,
-        SplatVertexInstanced,
-        SplatPull,
-        ScalarFieldTexture,
-        Fullscreen,
-        ParticlePull,
+        InputAssembler,   // bind vertex/index buffers (classic IA)
+        Pull,             // no IA; the vertex shader reads from an SRV by index
+        None,             // no vertex input (fullscreen / fully procedural)
     };
 
     enum class PrimitiveTopology : uint8_t { TriangleList, TriangleStrip };
 
-    enum class InputLayout : uint8_t
+    // Vertex attribute format — closed, API-bounded enum (like BlendMode /
+    // TextureFormat). Content uses existing formats; it cannot invent new ones.
+    enum class VertexFormat : uint8_t
     {
-        None,
-        MeshPositionOnly,
-        MeshPositionNormalUV,
-        GaussianSplatVertex,
+        Float32,
+        Float32x2,
+        Float32x3,
+        Float32x4,
+        UInt32,
+        UInt8x4Unorm,
     };
+
+    enum class VertexStepRate : uint8_t { PerVertex, PerInstance };
 
     enum class BlendMode : uint8_t { Opaque, AlphaBlend };
     enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
     enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
     enum class DescriptorKind : uint8_t { StructuredBufferSRV, TextureSRV, Sampler, UAV };
+
+    // ── Vertex input (data, not an enum) ───────────────────────────────────────
+
+    struct VertexAttribute
+    {
+        uint32_t       location    = 0;   // shader input location / semantic slot
+        VertexFormat   format      = VertexFormat::Float32x3;
+        uint32_t       offset      = 0;   // byte offset within its buffer slot
+        uint32_t       buffer_slot = 0;
+        VertexStepRate step        = VertexStepRate::PerVertex;
+    };
+
+    // The vertex input layout as DATA. A new vertex format — a new renderable's
+    // geometry — is a different attribute list, NOT a new enum member plus a new
+    // pipeline-factory switch. This is the D3D12_INPUT_ELEMENT_DESC[] / Vulkan
+    // vertex-input model. Empty for VertexSource::Pull / None.
+    struct VertexLayout
+    {
+        std::vector<VertexAttribute> attributes;
+    };
 
     // ── Binding declarations ──────────────────────────────────────────────────
 
@@ -95,9 +123,9 @@ namespace wz::rhi
         std::string vertex_shader;
         std::string pixel_shader;
 
-        BindingModel      binding_model = BindingModel::MeshIA;
+        VertexSource      vertex_source = VertexSource::InputAssembler;
+        VertexLayout      vertex_layout{};   // data; empty for Pull / None
         PrimitiveTopology topology      = PrimitiveTopology::TriangleList;
-        InputLayout       input_layout  = InputLayout::MeshPositionNormalUV;
         BlendMode         blend_mode    = BlendMode::Opaque;
         DepthMode         depth_mode    = DepthMode::TestWrite;
         RasterMode        raster_mode   = RasterMode::SolidCullBack;

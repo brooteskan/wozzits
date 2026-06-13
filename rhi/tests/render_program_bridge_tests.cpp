@@ -40,9 +40,13 @@ namespace
         desc.vertex_shader = "shaders/mesh_mask_style/mesh_mask_style_vs.hlsl";
         desc.pixel_shader  = "shaders/mesh_mask_style/mesh_mask_style_ps.hlsl";
 
-        desc.binding_model = BindingModel::MeshIA;
+        desc.vertex_source = VertexSource::InputAssembler;
+        desc.vertex_layout.attributes = {
+            VertexAttribute{ 0, VertexFormat::Float32x3, 0,  0, VertexStepRate::PerVertex },
+            VertexAttribute{ 1, VertexFormat::Float32x3, 12, 0, VertexStepRate::PerVertex },
+            VertexAttribute{ 2, VertexFormat::Float32x2, 24, 0, VertexStepRate::PerVertex },
+        };
         desc.topology      = PrimitiveTopology::TriangleList;
-        desc.input_layout  = InputLayout::MeshPositionNormalUV;
         desc.blend_mode    = BlendMode::Opaque;
         desc.depth_mode    = DepthMode::TestWrite;
         desc.raster_mode   = RasterMode::SolidCullBack;
@@ -84,7 +88,8 @@ static void mesh_mask_style_round_trips_through_registry()
     }
 
     WZ_CHECK_EQ(desc->blend_mode, BlendMode::Opaque);
-    WZ_CHECK_EQ(desc->input_layout, InputLayout::MeshPositionNormalUV);
+    WZ_CHECK(desc->vertex_source == VertexSource::InputAssembler);
+    WZ_CHECK_EQ(desc->vertex_layout.attributes.size(), static_cast<size_t>(3));
     WZ_CHECK_EQ(desc->root_constants.size(), static_cast<size_t>(1));
     WZ_CHECK_EQ(desc->descriptor_bindings.size(), static_cast<size_t>(2));
 }
