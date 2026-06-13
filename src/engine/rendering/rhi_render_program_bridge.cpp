@@ -23,23 +23,23 @@ namespace wz::engine::rendering
             return wz::rhi::ShaderStage::All;
         }
 
-        wz::rhi::BindingModel map_binding_model(ea::RenderBindingModel m)
+        // The engine's content-named BindingModel maps onto rhi's small,
+        // structural VertexSource. Several engine renderables share one
+        // structural strategy (Mesh and instanced-splat are both IA-sourced).
+        wz::rhi::VertexSource map_vertex_source(ea::RenderBindingModel m)
         {
             switch (m) {
             case ea::RenderBindingModel::MeshIA:
-                return wz::rhi::BindingModel::MeshIA;
             case ea::RenderBindingModel::SplatVertexInstanced:
-                return wz::rhi::BindingModel::SplatVertexInstanced;
+                return wz::rhi::VertexSource::InputAssembler;
             case ea::RenderBindingModel::SplatPull:
-                return wz::rhi::BindingModel::SplatPull;
-            case ea::RenderBindingModel::ScalarFieldTexture:
-                return wz::rhi::BindingModel::ScalarFieldTexture;
-            case ea::RenderBindingModel::Fullscreen:
-                return wz::rhi::BindingModel::Fullscreen;
             case ea::RenderBindingModel::ParticlePull:
-                return wz::rhi::BindingModel::ParticlePull;
+                return wz::rhi::VertexSource::Pull;
+            case ea::RenderBindingModel::ScalarFieldTexture:
+            case ea::RenderBindingModel::Fullscreen:
+                return wz::rhi::VertexSource::None;
             }
-            return wz::rhi::BindingModel::MeshIA;
+            return wz::rhi::VertexSource::InputAssembler;
         }
 
         wz::rhi::PrimitiveTopology map_topology(ea::RenderPrimitiveTopology t)
@@ -53,19 +53,44 @@ namespace wz::engine::rendering
             return wz::rhi::PrimitiveTopology::TriangleList;
         }
 
-        wz::rhi::InputLayout map_input_layout(ea::InputLayoutKind k)
+        // This is the ONE place the engine's InputLayoutKind enum gets expanded
+        // into rhi's data-driven VertexLayout. rhi never gains a per-format enum
+        // member; a new engine layout adds a case here only.
+        wz::rhi::VertexLayout vertex_layout_for(ea::InputLayoutKind k)
         {
+            using VF = wz::rhi::VertexFormat;
+            using VA = wz::rhi::VertexAttribute;
+            using SR = wz::rhi::VertexStepRate;
+
+            wz::rhi::VertexLayout layout;
             switch (k) {
             case ea::InputLayoutKind::None:
-                return wz::rhi::InputLayout::None;
+                break;
             case ea::InputLayoutKind::MeshPositionOnly:
-                return wz::rhi::InputLayout::MeshPositionOnly;
+                layout.attributes = {
+                    VA{ 0, VF::Float32x3, 0, 0, SR::PerVertex },
+                };
+                break;
             case ea::InputLayoutKind::MeshPositionNormalUV:
-                return wz::rhi::InputLayout::MeshPositionNormalUV;
+                layout.attributes = {
+                    VA{ 0, VF::Float32x3, 0,  0, SR::PerVertex },  // position
+                    VA{ 1, VF::Float32x3, 12, 0, SR::PerVertex },  // normal
+                    VA{ 2, VF::Float32x2, 24, 0, SR::PerVertex },  // uv0
+                };
+                break;
             case ea::InputLayoutKind::GaussianSplatVertex:
-                return wz::rhi::InputLayout::GaussianSplatVertex;
+                // Per-instance splat attributes; refine to the exact packed
+                // layout when the splat path is wired through rhi.
+                layout.attributes = {
+                    VA{ 0, VF::Float32x3, 0,  0, SR::PerInstance },  // position
+                    VA{ 1, VF::Float32,   12, 0, SR::PerInstance },  // opacity
+                    VA{ 2, VF::Float32x3, 16, 0, SR::PerInstance },  // scale
+                    VA{ 3, VF::Float32x4, 28, 0, SR::PerInstance },  // rotation
+                    VA{ 4, VF::Float32x4, 44, 0, SR::PerInstance },  // color
+                };
+                break;
             }
-            return wz::rhi::InputLayout::None;
+            return layout;
         }
 
         wz::rhi::BlendMode map_blend(ea::BlendMode b)

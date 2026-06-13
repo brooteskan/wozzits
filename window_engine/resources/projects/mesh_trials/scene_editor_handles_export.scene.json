@@ -55,172 +55,6 @@
       }
     },
     {
-      "id": "empty_1",
-      "parent": "root",
-      "name": "terrain mesh",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          750,
-          1000,
-          750
-        ]
-      },
-      "visible": false,
-      "mesh_source": {
-        "kind": "glb",
-        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
-        "mesh_index": 0
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:813af2cec5b0710b:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
-        "wireframe": {
-          "enabled": false,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 1
-        },
-        "surface": {
-          "enabled": true,
-          "color": [
-            0.16685889661312103,
-            0.19104644656181335,
-            0.30392158031463623,
-            1
-          ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": false,
-        "hidden_line_prepass": false,
-        "field_visualization_enabled": true,
-        "channel_id": 4608,
-        "value_min": 0.10000000149011612,
-        "value_max": 1,
-        "gamma": 0.63999998569488525,
-        "palette": "heat",
-        "field_visualization_channel_id": 4608,
-        "field_visualization_value_min": 0.10000000149011612,
-        "field_visualization_value_max": 1,
-        "field_visualization_gamma": 0.63999998569488525
-      },
-      "event_trigger": {
-        "event": "gpu.compute.request"
-      },
-      "behaviors": [
-        {
-          "id": "empty_1_behavior_landscape_field",
-          "label": "Landscape field compute",
-          "module": "gpu_trial",
-          "name": "",
-          "enabled": true,
-          "apply_in_editor": true,
-          "events": [
-            "gpu.compute.*"
-          ]
-        }
-      ],
-      "compute_kernel": {
-        "kernel_id": "project/landscape_field",
-        "hlsl_path": "shaders/compute/landscape_field_cs.hlsl",
-        "entry": "main",
-        "target": "cs_5_0",
-        "thread_group_size": [
-          256,
-          1,
-          1
-        ],
-        "ports": [
-          {
-            "name": "positions",
-            "kind": "structured_buffer",
-            "direction": "input",
-            "binding_kind": "srv",
-            "shader_register": 0,
-            "register_space": 0,
-            "stride_bytes": 12
-          },
-          {
-            "name": "output",
-            "kind": "structured_buffer",
-            "direction": "output",
-            "binding_kind": "uav",
-            "shader_register": 0,
-            "register_space": 0,
-            "stride_bytes": 4
-          },
-          {
-            "name": "vertex_count",
-            "kind": "u32",
-            "direction": "input",
-            "root_constant_offset": 0,
-            "root_constant_dwords": 1
-          },
-          {
-            "name": "phase",
-            "kind": "f32",
-            "direction": "input",
-            "root_constant_offset": 1,
-            "root_constant_dwords": 1
-          },
-          {
-            "name": "frequency",
-            "kind": "f32",
-            "direction": "input",
-            "root_constant_offset": 2,
-            "root_constant_dwords": 1
-          },
-          {
-            "name": "bias",
-            "kind": "f32",
-            "direction": "input",
-            "root_constant_offset": 3,
-            "root_constant_dwords": 1
-          }
-        ]
-      },
-      "render_shader": {
-        "program_id": "mesh/landscape_wavelet_surface",
-        "vertex_hlsl_path": "shaders/render/custom_mesh_vs.hlsl",
-        "pixel_hlsl_path": "shaders/render/custom_mesh_ps.hlsl",
-        "vertex_entry": "main",
-        "pixel_entry": "main",
-        "vertex_target": "vs_5_0",
-        "pixel_target": "ps_5_0",
-        "binding_model": "mesh_ia",
-        "input_layout": "mesh_position_normal_uv",
-        "blend": "opaque",
-        "depth": "test_write",
-        "raster": "solid_cull_none",
-        "descriptor_bindings": [
-          {
-            "kind": "structured_buffer_srv",
-            "visibility": "all",
-            "semantic": "mesh_field_visualization",
-            "shader_register": 0,
-            "register_space": 0,
-            "descriptor_count": 1
-          }
-        ]
-      }
-    },
-    {
       "id": "empty_2",
       "parent": "root",
       "name": "mesh test 0",
@@ -243,9 +77,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:79da1fe14abd8600:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000002:0000000000000000:65856441350d8212:638c38d4b3d82672"
-      },
       "mesh_source": {
         "kind": "glb",
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
@@ -288,64 +119,83 @@
         "mode": "smooth",
         "tau": 3.9000000953674316
       },
-      "mesh_level_mask_source": {
+      "mesh_mask_render_style": {
         "enabled": true,
-        "input_field_ref": "field:diffusion_bands",
-        "output_field_id": "masks",
+        "source_field_ref": "field:topology_irregularity",
         "domain": "face",
-        "regions": [
+        "projection_mode": "direct",
+        "overlap_mode": "alpha_blend",
+        "unmatched_color": [
+          0.28627452254295349,
+          0.28627452254295349,
+          0.28627452254295349,
+          1
+        ],
+        "show_unmatched": true,
+        "rules": [
           {
+            "enabled": true,
             "input_channel_id": 8704,
-            "output_channel_id": 12288,
-            "min_value": -1.062999963760376,
-            "max_value": 1.0880000591278076
+            "lo": -0.008999999612569809,
+            "hi": 0,
+            "color": [
+              0.050980392843484879,
+              0.23137255012989044,
+              0.729411780834198,
+              1
+            ],
+            "priority": 0
           },
           {
+            "enabled": false,
+            "input_channel_id": 8705,
+            "lo": 0.0010000000474974513,
+            "hi": 0.20900000631809235,
+            "color": [
+              0.50980395078659058,
+              0.050980392843484879,
+              0.729411780834198,
+              0.7607843279838562
+            ],
+            "priority": 1
+          },
+          {
+            "enabled": false,
+            "input_channel_id": 8707,
+            "lo": -0.0080000003799796104,
+            "hi": 0.0030000000260770321,
+            "color": [
+              0.729411780834198,
+              0.33033451437950134,
+              0.05098038911819458,
+              0.7607843279838562
+            ],
+            "priority": 2
+          },
+          {
+            "enabled": false,
             "input_channel_id": 8704,
-            "output_channel_id": 12289,
-            "min_value": 0.34999999403953552,
-            "max_value": 0.69999998807907104
+            "lo": 0,
+            "hi": 0.0099999997764825821,
+            "color": [
+              0.13079583644866943,
+              0.729411780834198,
+              0.05098038911819458,
+              0.7607843279838562
+            ],
+            "priority": 3
           }
-        ]
-      },
-      "mesh_render_style": {
-        "asset": "asset-key:ea7cd96b09228d66:0000000000000000:f11eca55e7000600:0000000000000000:0000000000000002:0000000000000000:0000000000000000:0000000000000000",
+        ],
         "wireframe": {
-          "enabled": false,
-          "color": [
-            0,
-            1,
-            0.15000000596046448,
-            1
-          ],
-          "emissive_strength": 0.64999997615814209
-        },
-        "surface": {
           "enabled": true,
           "color": [
-            0.10993365943431854,
-            0.89705884456634521,
-            0.23102974891662598,
-            1
+            1,
+            1,
+            1,
+            0.043137256056070328
           ],
-          "emissive_strength": 0
-        },
-        "alpha": 1,
-        "depth_test": true,
-        "depth_write": true,
-        "double_sided": false,
-        "hidden_line_prepass": false,
-        "field_visualization_enabled": true,
-        "channel_id": 12288,
-        "value_min": 0,
-        "value_max": 1,
-        "gamma": 1,
-        "palette": "grayscale",
-        "field_visualization_channel_id": 12288,
-        "field_visualization_value_min": 0,
-        "field_visualization_value_max": 1,
-        "field_visualization_gamma": 1,
-        "field_ref": "field:masks"
+          "emissive_strength": 1
+        }
       }
     }
   ],
@@ -358,15 +208,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        225.31294250488281,
-        121.69952392578125,
-        150.74089050292969
+        -246.73912048339844,
+        144.96208190917969,
+        71.801582336425781
       ],
       "orientation": [
-        0.13690318167209625,
-        -0.86486101150512695,
-        0.22792120277881622,
-        0.42582264542579651
+        -0.14346370100975037,
+        -0.76687109470367432,
+        0.18401174247264862,
+        -0.59788507223129272
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
