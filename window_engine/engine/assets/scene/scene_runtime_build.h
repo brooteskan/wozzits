@@ -3,9 +3,15 @@
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_fingerprint.h>
 #include <engine/assets/scene/scene_instance.h>
+#include <engine/assets/engine_asset_library.h>
+#include <engine/rendering/render_resource_resolver.h>
+#include <engine/rendering/render_program_pipeline_cache.h>
+#include <engine/rendering/renderable_gpu_cache.h>
+#include <engine/rendering/renderable_pipeline_cache.h>
 #include <render/frame/render_frame.h>
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -99,4 +105,65 @@ namespace wz::engine::assets
     bool commit_scene_runtime_build(
         SceneAssetRuntimeBuild& live,
         SceneAssetRuntimeBuild candidate);
+
+    struct SceneRuntimeBundle
+    {
+        explicit SceneRuntimeBundle(
+            wz::gpu::DeferredReleaseQueue& release_queue);
+
+        SceneRuntimeBundle(const SceneRuntimeBundle&) = delete;
+        SceneRuntimeBundle& operator=(const SceneRuntimeBundle&) = delete;
+        SceneRuntimeBundle(SceneRuntimeBundle&&) = delete;
+        SceneRuntimeBundle& operator=(SceneRuntimeBundle&&) = delete;
+
+        std::unique_ptr<EngineAssetLibrary> assets{};
+        SceneAssetData authored_scene{};
+        SceneInstance scene_instance{};
+        wz::engine::rendering::RenderResourceResolver resolver{};
+        wz::engine::rendering::RenderableGpuCache renderable_cache;
+        wz::engine::rendering::RenderablePipelineCache pipeline_cache{};
+        wz::engine::rendering::RenderProgramPipelineCache
+            render_program_cache{};
+        wz::scene::CompiledSceneStorage compiled_scene{};
+        wz::render::RenderIRStorage render_ir{};
+        wz::render::RenderFrameStorage render_frame{};
+        std::vector<wz::render::SkyDrawCommand> sky_commands{};
+        uint64_t scene_hash = 0;
+        std::string scene_hash_text;
+        std::string status;
+        bool valid = false;
+    };
+
+    struct SceneRuntimeBundleBuildResult
+    {
+        std::unique_ptr<SceneRuntimeBundle> bundle{};
+        SceneRuntimeBuildError error{};
+        SceneRuntimeBuildPhase completed_phase =
+            SceneRuntimeBuildPhase::None;
+        SceneRuntimeBuildPhase failed_phase = SceneRuntimeBuildPhase::None;
+        std::string status;
+        std::string error_detail;
+
+        [[nodiscard]] bool ok() const noexcept
+        {
+            return bundle && bundle->valid && !error.any();
+        }
+        explicit operator bool() const noexcept { return ok(); }
+    };
+
+    SceneRuntimeBundleBuildResult build_scene_runtime_bundle(
+        wz::gpu::DeferredReleaseQueue& release_queue,
+        const SceneAssetData& authored,
+        const SceneInstantiateContext& context = {},
+        const SceneRuntimeBuildOptions& options = {});
+
+    SceneRuntimeBundleBuildResult make_scene_runtime_bundle_build_failure(
+        SceneRuntimeBuildPhase phase,
+        SceneRuntimeBuildPhase completed_phase,
+        std::string message,
+        std::string context = {});
+
+    bool commit_scene_runtime_bundle(
+        SceneRuntimeBundle& live,
+        SceneRuntimeBundleBuildResult candidate);
 }

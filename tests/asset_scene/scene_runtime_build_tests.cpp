@@ -251,3 +251,84 @@ TEST(SceneRuntimeBuild, CommitMovesSuccessfulCandidate)
         live.completed_phase,
         SceneRuntimeBuildPhase::BuildRenderFrame);
 }
+
+TEST(SceneRuntimeBundle, BuildsCommittedBundle)
+{
+    using namespace wz::engine::assets;
+
+    wz::gpu::DeferredReleaseQueue release_queue{};
+    SceneRuntimeBundleBuildResult candidate =
+        build_scene_runtime_bundle(
+            release_queue,
+            make_parent_child_scene());
+
+    ASSERT_TRUE(candidate.ok()) << candidate.status;
+    ASSERT_TRUE(candidate.bundle);
+    EXPECT_TRUE(candidate.bundle->valid);
+    EXPECT_EQ(candidate.bundle->authored_scene.name, "runtime_build_scene");
+    EXPECT_TRUE(
+        candidate.bundle->scene_instance.authored_to_runtime.contains(
+            "parent"));
+
+    SceneRuntimeBundle live{ release_queue };
+    EXPECT_TRUE(commit_scene_runtime_bundle(live, std::move(candidate)));
+
+    EXPECT_TRUE(live.valid);
+    EXPECT_EQ(live.authored_scene.name, "runtime_build_scene");
+    EXPECT_TRUE(live.scene_instance.authored_to_runtime.contains("child"));
+    EXPECT_EQ(live.status.find("runtime scene ready"), 0u);
+}
+
+TEST(SceneRuntimeBundle, CommitRejectsFailedCandidateAndPreservesLive)
+{
+    using namespace wz::engine::assets;
+
+    wz::gpu::DeferredReleaseQueue release_queue{};
+    SceneRuntimeBundle live{ release_queue };
+
+    SceneRuntimeBundleBuildResult valid_candidate =
+        build_scene_runtime_bundle(
+            release_queue,
+            make_parent_child_scene());
+    ASSERT_TRUE(valid_candidate.ok()) << valid_candidate.status;
+    ASSERT_TRUE(commit_scene_runtime_bundle(
+        live,
+        std::move(valid_candidate)));
+
+    const std::string live_hash_text = live.scene_hash_text;
+    const auto live_node_count =
+        wz::core::graph::node_count(live.scene_instance.storage.polytree);
+
+    SceneAssetData authored{};
+    authored.name = "failed_bundle_candidate";
+
+    wz::asset::AssetKey missing_renderable{};
+    missing_renderable.content_hash = { 0xABCDu, 0u };
+
+    SceneNodeAsset node{};
+    node.id = "obj";
+    node.renderable_asset = missing_renderable;
+    authored.nodes.push_back(std::move(node));
+
+    SceneRuntimeBundleBuildResult failed_candidate =
+        build_scene_runtime_bundle(release_queue, authored);
+
+    ASSERT_FALSE(failed_candidate.ok());
+    EXPECT_EQ(
+        failed_candidate.failed_phase,
+        SceneRuntimeBuildPhase::Instantiate);
+    EXPECT_EQ(
+        failed_candidate.error.phase,
+        SceneRuntimeBuildPhase::Instantiate);
+
+    EXPECT_FALSE(commit_scene_runtime_bundle(
+        live,
+        std::move(failed_candidate)));
+
+    EXPECT_TRUE(live.valid);
+    EXPECT_EQ(live.scene_hash_text, live_hash_text);
+    EXPECT_EQ(
+        wz::core::graph::node_count(live.scene_instance.storage.polytree),
+        live_node_count);
+    EXPECT_TRUE(live.scene_instance.authored_to_runtime.contains("parent"));
+}
