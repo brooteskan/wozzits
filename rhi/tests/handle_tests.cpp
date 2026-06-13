@@ -55,11 +55,52 @@ static void reused_slot_invalidates_old_handle()
     WZ_CHECK_FALSE(first == second);        // same index, different generation
 }
 
+// for_each visits exactly the occupied slots.
+static void for_each_visits_occupied_slots()
+{
+    SlotMap<int> map;
+    map.insert(10);
+    const auto b = map.insert(20);
+    map.insert(30);
+    map.erase(b);
+
+    int visited = 0;
+    int sum = 0;
+    map.for_each([&](SlotMap<int>::Handle, int& value) {
+        ++visited;
+        sum += value;
+    });
+    WZ_CHECK_EQ(visited, 2);     // b was erased
+    WZ_CHECK_EQ(sum, 40);        // 10 + 30
+}
+
+// clear() erases all slots and bumps generations, so every prior handle goes
+// stale at once — the mechanism device-loss invalidation rides on.
+static void clear_invalidates_all_handles()
+{
+    SlotMap<int> map;
+    const auto a = map.insert(1);
+    const auto b = map.insert(2);
+
+    map.clear();
+    WZ_CHECK_EQ(map.size(), static_cast<size_t>(0));
+    WZ_CHECK(map.get(a) == nullptr);
+    WZ_CHECK(map.get(b) == nullptr);
+
+    // Slots are reusable after clear; a fresh insert does not resurrect old
+    // handles.
+    const auto c = map.insert(3);
+    WZ_CHECK(map.get(c) != nullptr);
+    WZ_CHECK(map.get(a) == nullptr);
+}
+
 int main()
 {
     WZ_RUN(default_handle_is_invalid);
     WZ_RUN(insert_then_get_round_trips);
     WZ_RUN(stale_handle_resolves_to_nullptr);
     WZ_RUN(reused_slot_invalidates_old_handle);
+    WZ_RUN(for_each_visits_occupied_slots);
+    WZ_RUN(clear_invalidates_all_handles);
     WZ_TEST_RETURN();
 }

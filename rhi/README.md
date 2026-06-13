@@ -42,9 +42,31 @@ include/wozzits/rhi/
                             enums + descriptor semantics as Tags (the boundary)
   render_program_registry.h render programs as registered data, no enum
   handle.h                  generational handle + slot map (stale-handle safe)
+  gpu_resource.h            GPU resource contract: identity, residency,
+                            cpu_access, usage + the GpuBackend interface
+  gpu_resource_registry.h   device-scoped owner of all GPU resources
   draw_item.h               flat, sortable render-IR draw item (the seam)
 tests/                      zero-dependency unit tests
 ```
+
+## GpuResourceRegistry
+
+The single device-scoped owner that replaces the old renderer's scattered,
+inconsistent caches (renderable cache, resident-field table, pipeline caches,
+and translation-unit-static leaked buffers). One table owns the four things
+those did inconsistently or not at all:
+
+- **identity & dedup** — find-or-create by `(asset_id, variant)`; the variant
+  is a registered Tag (the generalized `layout` discriminator), not an enum;
+- **lifetime** — precise deferred release keyed on the GPU timeline value that
+  last used a resource, not a fixed frame-latency guess;
+- **mutability** — in-place `update()` for CPU-writable resources (the #145
+  per-frame refresh), with a checkable failure for GPU-only ones;
+- **device loss** — `on_device_lost()` destroys every backend resource and
+  invalidates every handle in one sweep (via slot-generation bump).
+
+It delegates all real GPU work to a `GpuBackend` interface, so it stays
+device-agnostic and is unit-tested against a fake backend.
 
 ## The engine boundary (asset-library bridge)
 
@@ -76,13 +98,12 @@ cmake --build --preset clang-debug
 ctest --preset clang-debug
 ```
 
-## Roadmap (next, not in the seed)
+## Roadmap (next)
 
-- `GpuResourceRegistry` — device-scoped owner of GPU resources, keyed by asset
-  identity + realization variant; generational slot map underneath; one
-  device-loss invalidation sweep.
 - Frame graph — transient-resource aliasing + barrier derivation from declared
-  usage.
+  usage. Allocates against `GpuResourceRegistry`.
+- Bindless descriptor-index allocation — a free-list over a global descriptor
+  heap, keyed off resource identity (deferred from the registry v0).
 - Asset-library bridge, engine-side half — the actual `from_engine()` adapter
   that reads realized `RenderProgramData`. Needs a build-topology decision
   (engine depends on rhi, or a separate integration target depends on both);

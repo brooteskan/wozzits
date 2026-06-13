@@ -35,11 +35,16 @@ namespace wz::rhi
     // A slot map that hands out generational handles. get() returns nullptr for
     // a stale handle (slot reused since the handle was issued), which is the
     // whole point: use-after-free becomes a nullptr you can check.
-    template <typename T>
+    //
+    // HandleTag defaults to the stored type T, so SlotMap<Foo> yields
+    // GenerationalHandle<Foo>. Pass an explicit HandleTag when the public handle
+    // identity should differ from the private storage type (e.g. a registry
+    // storing an internal Entry but exposing a GpuResourceHandle).
+    template <typename T, typename HandleTag = T>
     class SlotMap
     {
     public:
-        using Handle = GenerationalHandle<T>;
+        using Handle = GenerationalHandle<HandleTag>;
 
         Handle insert(T value)
         {
@@ -87,6 +92,33 @@ namespace wz::rhi
         [[nodiscard]] size_t size() const noexcept
         {
             return slots_.size() - free_list_.size();
+        }
+
+        // Visit every occupied slot: fn(Handle, T&).
+        template <typename Fn>
+        void for_each(Fn&& fn)
+        {
+            for (uint32_t i = 0; i < slots_.size(); ++i) {
+                Slot& slot = slots_[i];
+                if (slot.occupied) {
+                    fn(Handle{ i, slot.generation }, slot.value);
+                }
+            }
+        }
+
+        // Erase every slot, bumping each generation so all outstanding handles
+        // become stale at once. The mechanism device-loss invalidation rides on.
+        void clear()
+        {
+            for (uint32_t i = 0; i < slots_.size(); ++i) {
+                Slot& slot = slots_[i];
+                if (slot.occupied) {
+                    slot.occupied = false;
+                    ++slot.generation;
+                    slot.value = T{};
+                    free_list_.push_back(i);
+                }
+            }
         }
 
     private:
