@@ -163,6 +163,13 @@ namespace wz::engine::assets
         std::string message,
         std::string context = {});
 
+    void fail_scene_runtime_bundle_build(
+        SceneRuntimeBundleBuildResult& result,
+        SceneRuntimeBuildPhase phase,
+        SceneRuntimeBuildPhase completed_phase,
+        std::string message,
+        std::string context = {});
+
     bool commit_scene_runtime_bundle(
         SceneRuntimeBundle& live,
         SceneRuntimeBundleBuildResult candidate);

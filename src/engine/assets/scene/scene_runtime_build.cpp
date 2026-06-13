@@ -183,6 +183,29 @@ namespace wz::engine::assets
         });
     }
 
+    void fail_scene_runtime_bundle_build(
+        SceneRuntimeBundleBuildResult& result,
+        SceneRuntimeBuildPhase phase,
+        SceneRuntimeBuildPhase completed_phase,
+        std::string message,
+        std::string context)
+    {
+        result.error = SceneRuntimeBuildError{
+            .phase = phase,
+            .completed_phase = completed_phase,
+            .message = std::move(message),
+            .context = std::move(context),
+        };
+        result.completed_phase = completed_phase;
+        result.failed_phase = phase;
+        result.error_detail = error_detail(result.error);
+        result.status = result.error_detail;
+        if (result.bundle) {
+            result.bundle->status = result.status;
+            result.bundle->valid = false;
+        }
+    }
+
     SceneRuntimeBundleBuildResult build_scene_runtime_bundle(
         wz::gpu::DeferredReleaseQueue& release_queue,
         const SceneAssetData& authored,

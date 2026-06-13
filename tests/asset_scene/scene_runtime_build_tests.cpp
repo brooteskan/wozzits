@@ -332,3 +332,66 @@ TEST(SceneRuntimeBundle, CommitRejectsFailedCandidateAndPreservesLive)
         live_node_count);
     EXPECT_TRUE(live.scene_instance.authored_to_runtime.contains("parent"));
 }
+
+TEST(SceneRuntimeBundle, CommitRejectsPreInstantiateFailureAndPreservesLive)
+{
+    using namespace wz::engine::assets;
+
+    wz::gpu::DeferredReleaseQueue release_queue{};
+    SceneRuntimeBundle live{ release_queue };
+
+    SceneRuntimeBundleBuildResult valid_candidate =
+        build_scene_runtime_bundle(
+            release_queue,
+            make_parent_child_scene());
+    ASSERT_TRUE(valid_candidate.ok()) << valid_candidate.status;
+    ASSERT_TRUE(commit_scene_runtime_bundle(
+        live,
+        std::move(valid_candidate)));
+
+    const std::string live_name = live.authored_scene.name;
+    const std::string live_hash_text = live.scene_hash_text;
+    const auto live_node_count =
+        wz::core::graph::node_count(live.scene_instance.storage.polytree);
+
+    SceneRuntimeBundleBuildResult failed_candidate{};
+    failed_candidate.bundle =
+        std::make_unique<SceneRuntimeBundle>(release_queue);
+    failed_candidate.bundle->authored_scene = make_parent_child_scene();
+
+    fail_scene_runtime_bundle_build(
+        failed_candidate,
+        SceneRuntimeBuildPhase::ResolveAssets,
+        SceneRuntimeBuildPhase::MaterializeAssets,
+        "asset resolve failed",
+        "missing mesh source");
+
+    ASSERT_FALSE(failed_candidate.ok());
+    EXPECT_TRUE(failed_candidate.bundle);
+    EXPECT_FALSE(failed_candidate.bundle->valid);
+    EXPECT_EQ(
+        failed_candidate.failed_phase,
+        SceneRuntimeBuildPhase::ResolveAssets);
+    EXPECT_EQ(
+        failed_candidate.completed_phase,
+        SceneRuntimeBuildPhase::MaterializeAssets);
+    EXPECT_EQ(
+        failed_candidate.error.completed_phase,
+        SceneRuntimeBuildPhase::MaterializeAssets);
+    EXPECT_NE(
+        failed_candidate.status.find("missing mesh source"),
+        std::string::npos);
+
+    EXPECT_FALSE(commit_scene_runtime_bundle(
+        live,
+        std::move(failed_candidate)));
+
+    EXPECT_TRUE(live.valid);
+    EXPECT_EQ(live.authored_scene.name, live_name);
+    EXPECT_EQ(live.scene_hash_text, live_hash_text);
+    EXPECT_EQ(
+        wz::core::graph::node_count(live.scene_instance.storage.polytree),
+        live_node_count);
+    EXPECT_TRUE(live.scene_instance.authored_to_runtime.contains("parent"));
+    EXPECT_TRUE(live.scene_instance.authored_to_runtime.contains("child"));
+}
