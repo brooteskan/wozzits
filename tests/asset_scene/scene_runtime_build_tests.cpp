@@ -118,6 +118,13 @@ TEST(SceneRuntimeBuild, ReportsInstantiateFailure)
     EXPECT_EQ(
         build.failed_phase,
         SceneRuntimeBuildPhase::Instantiate);
+    EXPECT_EQ(build.error.phase, SceneRuntimeBuildPhase::Instantiate);
+    EXPECT_EQ(build.error.completed_phase, SceneRuntimeBuildPhase::Snapshot);
+    EXPECT_EQ(build.error.message, "instantiate failed");
+    EXPECT_TRUE(build.error.any());
+    EXPECT_STREQ(
+        scene_runtime_build_phase_name(build.error.phase),
+        "instantiate");
     EXPECT_EQ(
         build.completed_phase,
         SceneRuntimeBuildPhase::Snapshot);

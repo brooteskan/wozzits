@@ -16,11 +16,34 @@ namespace wz::engine::assets
     {
         None = 0,
         Snapshot,
+        MaterializeAssets,
+        ResolveAssets,
+        RealizeGpuResources,
         Instantiate,
         Propagate,
         CompileScene,
         BuildRenderIr,
         BuildRenderFrame,
+        RebuildSkyCommands,
+    };
+
+    const char* scene_runtime_build_phase_name(
+        SceneRuntimeBuildPhase phase) noexcept;
+
+    struct SceneRuntimeBuildError
+    {
+        SceneRuntimeBuildPhase phase = SceneRuntimeBuildPhase::None;
+        SceneRuntimeBuildPhase completed_phase =
+            SceneRuntimeBuildPhase::None;
+        std::string message;
+        std::string context;
+
+        [[nodiscard]] bool any() const noexcept
+        {
+            return phase != SceneRuntimeBuildPhase::None
+                || !message.empty()
+                || !context.empty();
+        }
     };
 
     struct SceneRuntimeBuildOptions
@@ -50,6 +73,7 @@ namespace wz::engine::assets
         std::string scene_hash_text;
         std::string status;
         std::string error_detail;
+        SceneRuntimeBuildError error{};
         SceneRuntimeBuildPhase completed_phase =
             SceneRuntimeBuildPhase::None;
         SceneRuntimeBuildPhase failed_phase = SceneRuntimeBuildPhase::None;

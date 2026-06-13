@@ -20,13 +20,54 @@ namespace wz::engine::assets
         void mark_failed(
             SceneAssetRuntimeBuild& build,
             SceneRuntimeBuildPhase phase,
-            std::string message)
+            std::string message,
+            std::string context = {})
         {
             build.failed_phase = phase;
-            build.error_detail = std::move(message);
+            build.error = SceneRuntimeBuildError{
+                .phase = phase,
+                .completed_phase = build.completed_phase,
+                .message = std::move(message),
+                .context = std::move(context),
+            };
+            build.error_detail = build.error.message;
+            if (!build.error.context.empty()) {
+                build.error_detail += ": ";
+                build.error_detail += build.error.context;
+            }
             build.status = build.error_detail;
             build.valid = false;
         }
+    }
+
+    const char* scene_runtime_build_phase_name(
+        SceneRuntimeBuildPhase phase) noexcept
+    {
+        switch (phase) {
+        case SceneRuntimeBuildPhase::None:
+            return "none";
+        case SceneRuntimeBuildPhase::Snapshot:
+            return "snapshot";
+        case SceneRuntimeBuildPhase::MaterializeAssets:
+            return "materialize assets";
+        case SceneRuntimeBuildPhase::ResolveAssets:
+            return "resolve assets";
+        case SceneRuntimeBuildPhase::RealizeGpuResources:
+            return "realize gpu resources";
+        case SceneRuntimeBuildPhase::Instantiate:
+            return "instantiate";
+        case SceneRuntimeBuildPhase::Propagate:
+            return "propagate";
+        case SceneRuntimeBuildPhase::CompileScene:
+            return "compile scene";
+        case SceneRuntimeBuildPhase::BuildRenderIr:
+            return "build render ir";
+        case SceneRuntimeBuildPhase::BuildRenderFrame:
+            return "build render frame";
+        case SceneRuntimeBuildPhase::RebuildSkyCommands:
+            return "rebuild sky commands";
+        }
+        return "unknown";
     }
 
     SceneAssetRuntimeBuild build_scene_runtime_from_asset_snapshot(
@@ -48,7 +89,8 @@ namespace wz::engine::assets
             mark_failed(
                 build,
                 SceneRuntimeBuildPhase::Instantiate,
-                "instantiate failed: " + result.error_detail);
+                "instantiate failed",
+                result.error_detail);
             return build;
         }
 
