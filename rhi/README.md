@@ -38,11 +38,32 @@ plain C++ with no framework dependency.
 ```
 include/wozzits/rhi/
   tag_registry.h            runtime name -> handle registry (the no-enums core)
+  render_program.h          declarative program contract: closed pipeline-state
+                            enums + descriptor semantics as Tags (the boundary)
   render_program_registry.h render programs as registered data, no enum
   handle.h                  generational handle + slot map (stale-handle safe)
   draw_item.h               flat, sortable render-IR draw item (the seam)
 tests/                      zero-dependency unit tests
 ```
+
+## The engine boundary (asset-library bridge)
+
+`render_program.h` is the read-only contract for consuming the existing
+engine's render programs. `wozzits-rhi` deliberately does **not** include any
+`wozzits-window-engine` header — it stays standalone-buildable. The
+engine -> rhi adapter lives at the seam (engine-side / an integration target),
+not in this repo, and maps `wz::engine::assets::RenderProgramData` into a
+`RenderProgramDesc`:
+
+- the `BuiltinRenderProgram` enum is dropped — program identity becomes a
+  registered name;
+- closed pipeline-state enums (blend/depth/raster/topology/layout) map 1:1;
+- the engine's `DescriptorSemantic` **enum** becomes a registered **Tag** (the
+  open identity set the engine grows over time);
+- shader `AssetKey`s become resolvable shader refs.
+
+`tests/render_program_bridge_tests.cpp` exercises this against the real
+`mesh_mask_style` program shape with zero engine dependency.
 
 ## Build
 
@@ -62,5 +83,7 @@ ctest --preset clang-debug
   device-loss invalidation sweep.
 - Frame graph — transient-resource aliasing + barrier derivation from declared
   usage.
-- Asset-library bridge — read-only consumption of `wozzits-window-engine`
-  assets at the render-IR boundary.
+- Asset-library bridge, engine-side half — the actual `from_engine()` adapter
+  that reads realized `RenderProgramData`. Needs a build-topology decision
+  (engine depends on rhi, or a separate integration target depends on both);
+  the rhi-side contract it targets already exists (`render_program.h`).

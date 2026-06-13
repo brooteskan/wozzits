@@ -4,15 +4,19 @@
 
 using wz::rhi::RenderProgramDesc;
 using wz::rhi::RenderProgramRegistry;
+using wz::rhi::RootConstantBinding;
+using wz::rhi::ShaderStage;
 using wz::rhi::Tag;
 
-static RenderProgramDesc make_desc(const char* name)
+static RenderProgramDesc make_desc(const char* name, uint32_t root_values = 40)
 {
     RenderProgramDesc desc;
     desc.name = name;
     desc.vertex_shader = std::string(name) + "_vs.hlsl";
     desc.pixel_shader = std::string(name) + "_ps.hlsl";
-    desc.root_constant_count = 40;
+    desc.root_constants.push_back(RootConstantBinding{
+        ShaderStage::All, /*shader_register*/ 0, /*register_space*/ 0,
+        /*value_count*/ root_values });
     return desc;
 }
 
@@ -26,7 +30,10 @@ static void register_then_get_round_trips()
     WZ_CHECK(desc != nullptr);
     if (desc) {
         WZ_CHECK_EQ(desc->name, std::string{ "mesh_mask_style" });
-        WZ_CHECK_EQ(desc->root_constant_count, 40u);
+        WZ_CHECK_EQ(desc->root_constants.size(), static_cast<size_t>(1));
+        if (!desc->root_constants.empty()) {
+            WZ_CHECK_EQ(desc->root_constants[0].value_count, 40u);
+        }
     }
 }
 
@@ -60,16 +67,14 @@ static void reregister_updates_in_place()
     RenderProgramRegistry registry;
     const Tag first = registry.register_program(make_desc("mesh_surface"));
 
-    RenderProgramDesc updated = make_desc("mesh_surface");
-    updated.root_constant_count = 48;
-    const Tag again = registry.register_program(updated);
+    const Tag again = registry.register_program(make_desc("mesh_surface", 48));
 
     WZ_CHECK(first == again);                 // same identity
     WZ_CHECK_EQ(registry.size(), 1u);          // not duplicated
     const RenderProgramDesc* desc = registry.get(again);
     WZ_CHECK(desc != nullptr);
-    if (desc) {
-        WZ_CHECK_EQ(desc->root_constant_count, 48u);  // updated
+    if (desc && !desc->root_constants.empty()) {
+        WZ_CHECK_EQ(desc->root_constants[0].value_count, 48u);  // updated
     }
 }
 

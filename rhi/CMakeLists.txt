@@ -28,6 +28,7 @@ if(WOZZITS_RHI_BUILD_TESTS)
     set(WZ_RHI_TESTS
         tag_registry_tests
         render_program_registry_tests
+        render_program_bridge_tests
         handle_tests)
 
     foreach(test_name ${WZ_RHI_TESTS})

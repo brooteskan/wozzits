@@ -14,29 +14,17 @@
 // by a Tag. There is no enum to drift against. Resolving an unregistered
 // program is a checkable null (nullptr / null Tag), never a silent skip.
 
+#include <wozzits/rhi/render_program.h>
 #include <wozzits/rhi/tag_registry.h>
 
 #include <array>
-#include <cstdint>
-#include <string>
+#include <cstddef>
 #include <string_view>
 #include <utility>
 
 namespace wz::rhi
 {
     inline constexpr size_t kMaxRenderPrograms = 256;
-
-    // The data the scattered switches used to hardcode, gathered in one place.
-    // Fields will grow as the design firms up (binding layout, blend/depth
-    // state, vertex layout) — but they grow here, in one record, not across N
-    // call sites.
-    struct RenderProgramDesc
-    {
-        std::string name;
-        std::string vertex_shader;   // path/ref; resolved by the asset bridge later
-        std::string pixel_shader;
-        uint32_t    root_constant_count = 0;
-    };
 
     class RenderProgramRegistry
     {
