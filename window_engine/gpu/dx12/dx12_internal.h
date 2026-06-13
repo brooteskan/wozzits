@@ -219,8 +219,10 @@ namespace wz::gpu::dx12::internal {
         GPUHandle add(DX12MeshFieldVisualizationResource resource);
         const DX12MeshFieldVisualizationResource* get(
             GPUHandle handle) const;
-        bool release(GPUHandle handle);
-        void destroy();
+        bool release(
+            GPUHandle handle,
+            wz::gpu::dx12::DX12DescriptorAllocator& allocator);
+        void destroy(wz::gpu::dx12::DX12DescriptorAllocator& allocator);
 
     private:
         struct Slot
@@ -370,8 +372,10 @@ namespace wz::gpu::dx12::internal {
 
         GPUHandle add(DX12GaussianSplatCloudResource cloud);
         const DX12GaussianSplatCloudResource* get(GPUHandle handle) const;
-        bool release(GPUHandle handle);
-        void destroy();
+        bool release(
+            GPUHandle handle,
+            wz::gpu::dx12::DX12DescriptorAllocator& allocator);
+        void destroy(wz::gpu::dx12::DX12DescriptorAllocator& allocator);
 
     private:
         struct Slot

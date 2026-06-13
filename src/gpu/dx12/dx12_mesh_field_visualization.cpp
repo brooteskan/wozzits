@@ -60,12 +60,14 @@ namespace wz::gpu::dx12::internal
         }
 
         void release_mesh_field_visualization_resource(
-            DX12MeshFieldVisualizationResource& resource)
+            DX12MeshFieldVisualizationResource& resource,
+            DX12DescriptorAllocator& allocator)
         {
             if (resource.values_buffer) {
                 resource.values_buffer->Release();
                 resource.values_buffer = nullptr;
             }
+            allocator.release(resource.srv_table);
             resource.element_count = 0;
             resource.srv_table = {};
         }
@@ -235,7 +237,9 @@ namespace wz::gpu::dx12::internal
         return &slot.resource;
     }
 
-    bool DX12MeshFieldVisualizationTable::release(GPUHandle handle)
+    bool DX12MeshFieldVisualizationTable::release(
+        GPUHandle handle,
+        DX12DescriptorAllocator& allocator)
     {
         if (!handle.valid()
             || handle.type != kGPUMeshFieldBufferResourceType
@@ -250,7 +254,7 @@ namespace wz::gpu::dx12::internal
             return false;
         }
 
-        release_mesh_field_visualization_resource(slot.resource);
+        release_mesh_field_visualization_resource(slot.resource, allocator);
         slot.occupied = false;
         ++slot.epoch;
         if (slot.epoch == 0u) {
@@ -259,13 +263,16 @@ namespace wz::gpu::dx12::internal
         return true;
     }
 
-    void DX12MeshFieldVisualizationTable::destroy()
+    void DX12MeshFieldVisualizationTable::destroy(
+        DX12DescriptorAllocator& allocator)
     {
         for (Slot& slot : slots_) {
             if (!slot.occupied) {
                 continue;
             }
-            release_mesh_field_visualization_resource(slot.resource);
+            release_mesh_field_visualization_resource(
+                slot.resource,
+                allocator);
             slot.occupied = false;
             ++slot.epoch;
         }
@@ -362,7 +369,9 @@ namespace wz::gpu::dx12::internal
 
         resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
         if (!resource.srv_table.valid()) {
-            release_mesh_field_visualization_resource(resource);
+            release_mesh_field_visualization_resource(
+                resource,
+                impl->srv_cbv_uav_allocator);
             return {};
         }
 
@@ -570,7 +579,9 @@ namespace wz::gpu::dx12::internal
         resource.gpu_updatable = true;
         resource.srv_table = impl->srv_cbv_uav_allocator.allocate(1);
         if (!resource.srv_table.valid()) {
-            release_mesh_field_visualization_resource(resource);
+            release_mesh_field_visualization_resource(
+                resource,
+                impl->srv_cbv_uav_allocator);
             return {};
         }
 
@@ -689,6 +700,10 @@ namespace wz::gpu::dx12::internal
         GPUHandle handle)
     {
         auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
-        return impl ? impl->mesh_field_visualizations.release(handle) : false;
+        return impl
+            ? impl->mesh_field_visualizations.release(
+                handle,
+                impl->srv_cbv_uav_allocator)
+            : false;
     }
 }

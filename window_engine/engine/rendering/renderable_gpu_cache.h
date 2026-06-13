@@ -103,6 +103,8 @@ namespace wz::engine::rendering
         // GPU resources for deferred release — no manual release needed.
         void clear();
 
+        void swap_with(RenderableGpuCache& other) noexcept;
+
     private:
         struct Entry
         {

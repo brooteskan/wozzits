@@ -132,6 +132,13 @@ namespace wz::engine::rendering
         terrain_far_splat_entries_.clear();
     }
 
+    void RenderableGpuCache::swap_with(RenderableGpuCache& other) noexcept
+    {
+        entries_.swap(other.entries_);
+        terrain_mesh_chunk_entries_.swap(other.terrain_mesh_chunk_entries_);
+        terrain_far_splat_entries_.swap(other.terrain_far_splat_entries_);
+    }
+
     PreparedRenderable RenderableGpuCache::find_mesh_data(
         wz::asset::AssetKey cache_key,
         wz::engine::assets::BuiltinRenderProgram program,

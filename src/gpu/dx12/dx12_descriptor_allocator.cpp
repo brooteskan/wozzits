@@ -2,10 +2,31 @@
 
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 
+#include <algorithm>
 #include <cassert>
 
 namespace wz::gpu::dx12
 {
+    namespace
+    {
+        DX12DescriptorTable make_table(
+            ID3D12DescriptorHeap* heap,
+            uint32_t slot,
+            uint32_t count,
+            uint32_t stride)
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE cpu =
+                heap->GetCPUDescriptorHandleForHeapStart();
+            cpu.ptr += static_cast<SIZE_T>(slot) * stride;
+
+            D3D12_GPU_DESCRIPTOR_HANDLE gpu =
+                heap->GetGPUDescriptorHandleForHeapStart();
+            gpu.ptr += static_cast<UINT64>(slot) * stride;
+
+            return DX12DescriptorTable{ cpu, gpu, count, stride };
+        }
+    }
+
     bool DX12DescriptorAllocator::init(ID3D12Device* device, uint32_t capacity)
     {
         assert(device);
@@ -26,6 +47,7 @@ namespace wz::gpu::dx12
                         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         capacity_ = capacity;
         next_     = 0;
+        free_ranges_.clear();
         return true;
     }
 
@@ -40,6 +62,7 @@ namespace wz::gpu::dx12
         stride_   = 0;
         capacity_ = 0;
         next_     = 0;
+        free_ranges_.clear();
     }
 
     void DX12DescriptorAllocator::create_structured_buffer_srv(
@@ -69,20 +92,92 @@ namespace wz::gpu::dx12
     {
         assert(count > 0);
 
-        if (!heap_ || (next_ + count) > capacity_)
+        if (!heap_)
+            return {};
+
+        for (auto it = free_ranges_.begin(); it != free_ranges_.end(); ++it) {
+            if (it->count < count) {
+                continue;
+            }
+
+            const uint32_t slot = it->start;
+            it->start += count;
+            it->count -= count;
+            if (it->count == 0u) {
+                free_ranges_.erase(it);
+            }
+            return make_table(heap_, slot, count, stride_);
+        }
+
+        if ((next_ + count) > capacity_)
             return {};
 
         const uint32_t slot = next_;
         next_ += count;
 
-        D3D12_CPU_DESCRIPTOR_HANDLE cpu =
+        return make_table(heap_, slot, count, stride_);
+    }
+
+    void DX12DescriptorAllocator::release(const DX12DescriptorTable& table)
+    {
+        if (!heap_ || !table.valid() || table.stride != stride_) {
+            return;
+        }
+
+        const D3D12_CPU_DESCRIPTOR_HANDLE heap_cpu =
             heap_->GetCPUDescriptorHandleForHeapStart();
-        cpu.ptr += static_cast<SIZE_T>(slot) * stride_;
+        if (table.cpu_start.ptr < heap_cpu.ptr) {
+            return;
+        }
 
-        D3D12_GPU_DESCRIPTOR_HANDLE gpu =
-            heap_->GetGPUDescriptorHandleForHeapStart();
-        gpu.ptr += static_cast<UINT64>(slot) * stride_;
+        const SIZE_T byte_offset = table.cpu_start.ptr - heap_cpu.ptr;
+        if ((byte_offset % stride_) != 0u) {
+            return;
+        }
 
-        return DX12DescriptorTable{ cpu, gpu, count, stride_ };
+        const uint32_t slot =
+            static_cast<uint32_t>(byte_offset / stride_);
+        if (slot >= capacity_ || table.count > capacity_ - slot) {
+            return;
+        }
+
+        FreeRange released{ slot, table.count };
+        auto it = free_ranges_.begin();
+        while (it != free_ranges_.end() && it->start < released.start) {
+            ++it;
+        }
+        it = free_ranges_.insert(it, released);
+
+        if (it != free_ranges_.begin()) {
+            auto prev = it - 1;
+            if (prev->start + prev->count >= it->start) {
+                const uint32_t end =
+                    (std::max)(prev->start + prev->count,
+                               it->start + it->count);
+                prev->count = end - prev->start;
+                it = free_ranges_.erase(it);
+                it = prev;
+            }
+        }
+
+        auto next = it + 1;
+        while (next != free_ranges_.end()
+            && it->start + it->count >= next->start)
+        {
+            const uint32_t end =
+                (std::max)(it->start + it->count,
+                           next->start + next->count);
+            it->count = end - it->start;
+            next = free_ranges_.erase(next);
+        }
+
+        while (!free_ranges_.empty()) {
+            const FreeRange& tail = free_ranges_.back();
+            if (tail.start + tail.count != next_) {
+                break;
+            }
+            next_ = tail.start;
+            free_ranges_.pop_back();
+        }
     }
 }

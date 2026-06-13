@@ -650,8 +650,10 @@ namespace wz::gpu::dx12
         impl->graphics_pipelines.destroy();
         impl->shaders.destroy();
         impl->meshes.destroy();
-        impl->mesh_field_visualizations.destroy();
-        impl->gaussian_splat_clouds.destroy();
+        impl->mesh_field_visualizations.destroy(
+            impl->srv_cbv_uav_allocator);
+        impl->gaussian_splat_clouds.destroy(
+            impl->srv_cbv_uav_allocator);
         impl->srv_cbv_uav_allocator.destroy();
 
         if (impl->scalar_debug_ctx)

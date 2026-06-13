@@ -39,8 +39,17 @@ TEST(RhiRenderProgramBridge, ConvertsDeclarativeStateAndDescriptors)
         wz::engine::rendering::to_rhi_render_program_desc(src, semantics);
 
     EXPECT_EQ(out.name, "mesh_mask_style");
-    EXPECT_EQ(out.binding_model, wz::rhi::BindingModel::MeshIA);
-    EXPECT_EQ(out.input_layout, wz::rhi::InputLayout::MeshPositionNormalUV);
+    EXPECT_EQ(out.vertex_source, wz::rhi::VertexSource::InputAssembler);
+    ASSERT_EQ(out.vertex_layout.attributes.size(), 3u);
+    EXPECT_EQ(out.vertex_layout.attributes[0].format,
+        wz::rhi::VertexFormat::Float32x3);
+    EXPECT_EQ(out.vertex_layout.attributes[0].offset, 0u);
+    EXPECT_EQ(out.vertex_layout.attributes[1].format,
+        wz::rhi::VertexFormat::Float32x3);
+    EXPECT_EQ(out.vertex_layout.attributes[1].offset, 12u);
+    EXPECT_EQ(out.vertex_layout.attributes[2].format,
+        wz::rhi::VertexFormat::Float32x2);
+    EXPECT_EQ(out.vertex_layout.attributes[2].offset, 24u);
     EXPECT_EQ(out.blend_mode, wz::rhi::BlendMode::Opaque);
     EXPECT_EQ(out.depth_mode, wz::rhi::DepthMode::TestWrite);
     EXPECT_EQ(out.raster_mode, wz::rhi::RasterMode::SolidCullBack);

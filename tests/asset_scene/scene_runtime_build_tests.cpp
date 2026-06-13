@@ -10,6 +10,8 @@
 
 #include <scene/scene_graph.h>
 
+#include <array>
+
 namespace
 {
     wz::engine::assets::SceneAssetData make_parent_child_scene()
@@ -112,5 +114,133 @@ TEST(SceneRuntimeBuild, ReportsInstantiateFailure)
         build_scene_runtime_from_asset_snapshot(authored);
 
     EXPECT_FALSE(build.valid);
+    EXPECT_FALSE(build.ok());
+    EXPECT_EQ(
+        build.failed_phase,
+        SceneRuntimeBuildPhase::Instantiate);
+    EXPECT_EQ(
+        build.completed_phase,
+        SceneRuntimeBuildPhase::Snapshot);
     EXPECT_NE(build.status.find("instantiate failed"), std::string::npos);
+    EXPECT_NE(
+        build.error_detail.find("instantiate failed"),
+        std::string::npos);
+}
+
+TEST(SceneRuntimeBuild, BuildsRenderStorageAndSkyCommands)
+{
+    using namespace wz::engine::assets;
+
+    SceneRuntimeBuildOptions options{};
+    options.initial_view.camera_position = { 1.0f, 2.0f, 3.0f };
+
+    std::array<wz::render::SkyDrawCommand, 1> sky{};
+    sky[0].visual_kind = wz::render::SkyVisualKind::SolidColor;
+    sky[0].solid_color = { 0.25f, 0.5f, 0.75f };
+    options.sky_commands = sky;
+
+    const SceneAssetData authored = make_parent_child_scene();
+    const SceneAssetRuntimeBuild build =
+        build_scene_runtime_from_asset_snapshot(
+            authored,
+            {},
+            options);
+
+    ASSERT_TRUE(build.ok()) << build.status;
+    EXPECT_EQ(
+        build.completed_phase,
+        SceneRuntimeBuildPhase::BuildRenderFrame);
+    EXPECT_EQ(build.failed_phase, SceneRuntimeBuildPhase::None);
+
+    EXPECT_FLOAT_EQ(
+        build.compiled_scene.scene.view.camera_position.x,
+        1.0f);
+    EXPECT_FLOAT_EQ(
+        build.render_ir.ir.source.view.camera_position.y,
+        2.0f);
+    EXPECT_FLOAT_EQ(
+        build.render_frame.frame.view.camera_position.z,
+        3.0f);
+
+    ASSERT_EQ(build.sky_commands.size(), 1u);
+    EXPECT_EQ(
+        build.sky_commands[0].visual_kind,
+        wz::render::SkyVisualKind::SolidColor);
+
+    ASSERT_EQ(build.render_frame.frame.sky.size(), 1u);
+    EXPECT_EQ(
+        build.render_frame.frame.sky[0].visual_kind,
+        wz::render::SkyVisualKind::SolidColor);
+}
+
+TEST(SceneRuntimeBuild, CommitRejectsInvalidCandidateAndPreservesLive)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetRuntimeBuild live =
+        build_scene_runtime_from_asset_snapshot(make_parent_child_scene());
+    ASSERT_TRUE(live.ok()) << live.status;
+
+    const std::string live_name = live.snapshot.name;
+    const std::string live_hash_text = live.scene_hash_text;
+    const auto live_node_count =
+        wz::core::graph::node_count(live.instance.storage.polytree);
+
+    SceneAssetData authored{};
+    authored.name = "failed_candidate";
+
+    wz::asset::AssetKey missing_renderable{};
+    missing_renderable.content_hash = { 0xABCDu, 0u };
+
+    SceneNodeAsset node{};
+    node.id = "obj";
+    node.renderable_asset = missing_renderable;
+    authored.nodes.push_back(std::move(node));
+
+    SceneAssetRuntimeBuild candidate =
+        build_scene_runtime_from_asset_snapshot(authored);
+    ASSERT_FALSE(candidate.ok());
+
+    EXPECT_FALSE(
+        commit_scene_runtime_build(live, std::move(candidate)));
+
+    EXPECT_TRUE(live.ok());
+    EXPECT_EQ(live.snapshot.name, live_name);
+    EXPECT_EQ(live.scene_hash_text, live_hash_text);
+    EXPECT_EQ(
+        wz::core::graph::node_count(live.instance.storage.polytree),
+        live_node_count);
+    EXPECT_TRUE(live.instance.authored_to_runtime.contains("parent"));
+    EXPECT_TRUE(live.instance.authored_to_runtime.contains("child"));
+}
+
+TEST(SceneRuntimeBuild, CommitMovesSuccessfulCandidate)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetRuntimeBuild live =
+        build_scene_runtime_from_asset_snapshot(make_parent_child_scene());
+    ASSERT_TRUE(live.ok()) << live.status;
+
+    SceneAssetData replacement = make_parent_child_scene();
+    replacement.name = "replacement_scene";
+    replacement.nodes[0].id = "replacement_parent";
+    replacement.nodes[1].id = "replacement_child";
+    replacement.nodes[1].parent_id = "replacement_parent";
+
+    SceneAssetRuntimeBuild candidate =
+        build_scene_runtime_from_asset_snapshot(replacement);
+    ASSERT_TRUE(candidate.ok()) << candidate.status;
+
+    EXPECT_TRUE(
+        commit_scene_runtime_build(live, std::move(candidate)));
+
+    EXPECT_TRUE(live.ok());
+    EXPECT_EQ(live.snapshot.name, "replacement_scene");
+    EXPECT_FALSE(live.instance.authored_to_runtime.contains("parent"));
+    EXPECT_TRUE(
+        live.instance.authored_to_runtime.contains("replacement_parent"));
+    EXPECT_EQ(
+        live.completed_phase,
+        SceneRuntimeBuildPhase::BuildRenderFrame);
 }

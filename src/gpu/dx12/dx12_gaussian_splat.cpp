@@ -243,12 +243,23 @@ namespace wz::gpu::dx12::internal
                 cloud.sorted_index_buffer = nullptr;
                 cloud.sorted_index_map    = nullptr;
             }
+            cloud.srv_table = {};
             cloud.vertex_view = {};
             cloud.splat_count = 0;
         }
+
+        void release_splat_cloud_resource(
+            DX12GaussianSplatCloudResource& cloud,
+            DX12DescriptorAllocator& allocator)
+        {
+            allocator.release(cloud.srv_table);
+            release_splat_cloud_resource(cloud);
+        }
     }
 
-    bool DX12GaussianSplatCloudTable::release(GPUHandle handle)
+    bool DX12GaussianSplatCloudTable::release(
+        GPUHandle handle,
+        DX12DescriptorAllocator& allocator)
     {
         if (!handle.valid())
             return false;
@@ -264,7 +275,7 @@ namespace wz::gpu::dx12::internal
         if (!slot.occupied || slot.epoch != handle.epoch)
             return false;
 
-        release_splat_cloud_resource(slot.cloud);
+        release_splat_cloud_resource(slot.cloud, allocator);
         slot.occupied = false;
         ++slot.epoch;
         if (slot.epoch == 0)
@@ -272,13 +283,14 @@ namespace wz::gpu::dx12::internal
         return true;
     }
 
-    void DX12GaussianSplatCloudTable::destroy()
+    void DX12GaussianSplatCloudTable::destroy(
+        DX12DescriptorAllocator& allocator)
     {
         for (Slot& slot : slots_) {
             if (!slot.occupied)
                 continue;
 
-            release_splat_cloud_resource(slot.cloud);
+            release_splat_cloud_resource(slot.cloud, allocator);
             slot.occupied = false;
             ++slot.epoch;
         }
@@ -440,7 +452,9 @@ namespace wz::gpu::dx12::internal
         if (!impl)
             return false;
 
-        return impl->gaussian_splat_clouds.release(handle);
+        return impl->gaussian_splat_clouds.release(
+            handle,
+            impl->srv_cbv_uav_allocator);
     }
 
     const wz::gpu::SplatColorLODSettings& get_lod_settings(Device& device)

@@ -541,6 +541,12 @@ namespace wz::engine::assets::internal
             if (text == "face") {
                 return MeshDerivedFieldDomain::Face;
             }
+            if (text == "edge") {
+                return MeshDerivedFieldDomain::Edge;
+            }
+            if (text == "corner") {
+                return MeshDerivedFieldDomain::Corner;
+            }
             return std::nullopt;
         }
 

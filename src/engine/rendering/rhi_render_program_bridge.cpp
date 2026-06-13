@@ -182,9 +182,9 @@ namespace wz::engine::rendering
         out.vertex_shader = shader_ref(src.vertex_shader);
         out.pixel_shader = shader_ref(src.pixel_shader);
 
-        out.binding_model = map_binding_model(src.binding_model);
+        out.vertex_source = map_vertex_source(src.binding_model);
+        out.vertex_layout = vertex_layout_for(src.input_layout);
         out.topology      = map_topology(src.topology);
-        out.input_layout  = map_input_layout(src.input_layout);
         out.blend_mode    = map_blend(src.blend_mode);
         out.depth_mode    = map_depth(src.depth_mode);
         out.raster_mode   = map_raster(src.raster_mode);
