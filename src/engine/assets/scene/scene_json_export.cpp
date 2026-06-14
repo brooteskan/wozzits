@@ -828,6 +828,21 @@ namespace wz::engine::assets
                 number_value(processing.hausdorff_error));
             add_member(*obj, "preview_level_index",
                 number_value(processing.preview_level_index));
+            if (!(processing.source_mesh_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "source_mesh_asset",
+                    string_value(asset_key_string(
+                        processing.source_mesh_asset)));
+            }
+            if (!(processing.processed_mesh_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "processed_mesh_asset",
+                    string_value(asset_key_string(
+                        processing.processed_mesh_asset)));
+            }
+            if (!(processing.hierarchy_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "hierarchy_asset",
+                    string_value(asset_key_string(
+                        processing.hierarchy_asset)));
+            }
             return obj;
         }
 

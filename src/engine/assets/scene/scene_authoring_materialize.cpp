@@ -28,7 +28,15 @@ namespace wz::engine::assets
 {
     namespace
     {
+        struct SceneMeshProcessingOutputs
+        {
+            MeshAsset mesh{};
+            MeshClusterHierarchyAsset hierarchy{};
+        };
+
         using MeshCache = std::unordered_map<std::string, MeshAsset>;
+        using MeshProcessingCache =
+            std::unordered_map<std::string, SceneMeshProcessingOutputs>;
         using RenderableCache =
             std::unordered_map<std::string, RenderableAsset>;
         using ScalarFieldCache =
@@ -3163,7 +3171,7 @@ namespace wz::engine::assets
             return TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
         }
 
-        MeshAsset create_processed_mesh_asset(
+        SceneMeshProcessingOutputs create_processed_mesh_asset(
             EngineAssetLibrary& assets,
             MeshAsset source_mesh,
             const std::string& name,
@@ -3171,21 +3179,23 @@ namespace wz::engine::assets
         {
             switch (processing.operation) {
             case SceneMeshProcessingOperation::Decimate:
-                return assets.meshes().create_decimated_mesh({
-                    .name = name,
-                    .source_mesh = source_mesh,
-                    .target_vertex_count =
-                        processing.target_vertex_count,
-                    .target_triangle_count =
-                        processing.target_triangle_count,
-                    .target_ratio = processing.target_ratio,
-                    .preserve_boundary = processing.preserve_boundary,
-                    .aspect_ratio = processing.aspect_ratio,
-                    .edge_length = processing.edge_length,
-                    .max_valence = processing.max_valence,
-                    .normal_deviation = processing.normal_deviation,
-                    .hausdorff_error = processing.hausdorff_error,
-                });
+                return SceneMeshProcessingOutputs{
+                    .mesh = assets.meshes().create_decimated_mesh({
+                        .name = name,
+                        .source_mesh = source_mesh,
+                        .target_vertex_count =
+                            processing.target_vertex_count,
+                        .target_triangle_count =
+                            processing.target_triangle_count,
+                        .target_ratio = processing.target_ratio,
+                        .preserve_boundary = processing.preserve_boundary,
+                        .aspect_ratio = processing.aspect_ratio,
+                        .edge_length = processing.edge_length,
+                        .max_valence = processing.max_valence,
+                        .normal_deviation = processing.normal_deviation,
+                        .hausdorff_error = processing.hausdorff_error,
+                    }),
+                };
 
             case SceneMeshProcessingOperation::MeshClusterHierarchyPreview:
             {
@@ -3201,14 +3211,17 @@ namespace wz::engine::assets
                     return {};
                 }
 
-                return assets.mesh_cluster_hierarchies()
-                    .create_mesh_cluster_hierarchy_preview_mesh({
-                        .name = name + "_level_"
-                            + std::to_string(
-                                processing.preview_level_index),
-                        .hierarchy = hierarchy,
-                        .level_index = processing.preview_level_index,
-                    });
+                return SceneMeshProcessingOutputs{
+                    .mesh = assets.mesh_cluster_hierarchies()
+                        .create_mesh_cluster_hierarchy_preview_mesh({
+                            .name = name + "_level_"
+                                + std::to_string(
+                                    processing.preview_level_index),
+                            .hierarchy = hierarchy,
+                            .level_index = processing.preview_level_index,
+                        }),
+                    .hierarchy = hierarchy,
+                };
             }
             }
 
@@ -3218,39 +3231,69 @@ namespace wz::engine::assets
         bool ensure_mesh_for_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
-            const SceneMeshProcessingAsset* processing,
+            SceneMeshProcessingAsset* processing,
             MeshCache& meshes,
+            MeshProcessingCache& processed_meshes,
             MeshAsset& out,
             std::string& error)
         {
-            const std::string source_key = mesh_cache_key(source, processing);
+            const std::string source_key = mesh_source_cache_key(source);
+            MeshAsset source_mesh{};
             if (const auto found = meshes.find(source_key);
                 found != meshes.end())
             {
-                out = found->second;
+                source_mesh = found->second;
+            }
+            else {
+                source_mesh =
+                    create_mesh_asset_for_scene_source(assets, source, error);
+                if (!source_mesh.valid()) {
+                    return false;
+                }
+                meshes.emplace(source_key, source_mesh);
+            }
+
+            if (!processing || !processing->enabled) {
+                if (processing) {
+                    processing->source_mesh_asset = source_mesh.output;
+                    processing->processed_mesh_asset = source_mesh.output;
+                    processing->hierarchy_asset = {};
+                }
+                out = source_mesh;
                 return true;
             }
 
-            MeshAsset mesh =
-                create_mesh_asset_for_scene_source(assets, source, error);
+            processing->source_mesh_asset = source_mesh.output;
+            processing->processed_mesh_asset = {};
+            processing->hierarchy_asset = {};
+
+            const std::string processed_key = mesh_cache_key(source, processing);
+            if (const auto found = processed_meshes.find(processed_key);
+                found != processed_meshes.end())
+            {
+                processing->processed_mesh_asset = found->second.mesh.output;
+                processing->hierarchy_asset = found->second.hierarchy.output;
+                out = found->second.mesh;
+                return true;
+            }
+
+            const SceneMeshProcessingOutputs outputs =
+                create_processed_mesh_asset(
+                    assets,
+                    source_mesh,
+                    "scene_editor/processed_mesh/" + processed_key,
+                    *processing);
+            MeshAsset mesh = outputs.mesh;
+            processing->processed_mesh_asset = mesh.output;
+            processing->hierarchy_asset = outputs.hierarchy.output;
             if (!mesh.valid()) {
+                error = "failed to register processed mesh: "
+                    + processed_key;
                 return false;
             }
 
-            if (processing && processing->enabled) {
-                mesh = create_processed_mesh_asset(
-                    assets,
-                    mesh,
-                    "scene_editor/processed_mesh/" + source_key,
-                    *processing);
-                if (!mesh.valid()) {
-                    error = "failed to register processed mesh: "
-                        + source_key;
-                    return false;
-                }
-            }
-
-            meshes.emplace(source_key, mesh);
+            meshes.emplace(processed_key, mesh);
+            processed_meshes.emplace(processed_key, outputs);
             out = mesh;
             return true;
         }
@@ -3259,30 +3302,46 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             MeshAsset source_mesh,
             const std::string& key,
-            const SceneMeshProcessingAsset* processing,
+            SceneMeshProcessingAsset* processing,
             MeshCache& meshes,
+            MeshProcessingCache& processed_meshes,
             MeshAsset& out,
             std::string& error)
         {
             if (!processing || !processing->enabled) {
+                if (processing) {
+                    processing->source_mesh_asset = source_mesh.output;
+                    processing->processed_mesh_asset = source_mesh.output;
+                    processing->hierarchy_asset = {};
+                }
                 out = source_mesh;
                 return true;
             }
 
+            processing->source_mesh_asset = source_mesh.output;
+            processing->processed_mesh_asset = {};
+            processing->hierarchy_asset = {};
+
             const std::string processed_key =
                 key + mesh_processing_cache_suffix(processing);
-            if (const auto found = meshes.find(processed_key);
-                found != meshes.end())
+            if (const auto found = processed_meshes.find(processed_key);
+                found != processed_meshes.end())
             {
-                out = found->second;
+                processing->processed_mesh_asset = found->second.mesh.output;
+                processing->hierarchy_asset = found->second.hierarchy.output;
+                out = found->second.mesh;
                 return true;
             }
 
-            MeshAsset processed = create_processed_mesh_asset(
-                assets,
-                source_mesh,
-                "scene_editor/processed_mesh/" + processed_key,
-                *processing);
+            const SceneMeshProcessingOutputs outputs =
+                create_processed_mesh_asset(
+                    assets,
+                    source_mesh,
+                    "scene_editor/processed_mesh/" + processed_key,
+                    *processing);
+            MeshAsset processed = outputs.mesh;
+            processing->processed_mesh_asset = processed.output;
+            processing->hierarchy_asset = outputs.hierarchy.output;
             if (!processed.valid()) {
                 error = "failed to register processed mesh: "
                     + processed_key;
@@ -3290,6 +3349,7 @@ namespace wz::engine::assets
             }
 
             meshes.emplace(processed_key, processed);
+            processed_meshes.emplace(processed_key, outputs);
             out = processed;
             return true;
         }
@@ -3297,7 +3357,7 @@ namespace wz::engine::assets
         bool ensure_renderable_for_mesh_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
-            const SceneMeshProcessingAsset* processing,
+            SceneMeshProcessingAsset* processing,
             const SceneMeshDerivedFieldSourceAsset* field_source,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             const SceneMeshComputeFieldAsset* compute_field,
@@ -3306,6 +3366,7 @@ namespace wz::engine::assets
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
             MeshCache& meshes,
+            MeshProcessingCache& processed_meshes,
             RenderableAsset& out,
             MeshAsset& out_mesh,
             std::string& error)
@@ -3343,6 +3404,7 @@ namespace wz::engine::assets
                     source,
                     processing,
                     meshes,
+                    processed_meshes,
                     out_mesh,
                     error))
             {
@@ -3520,6 +3582,7 @@ namespace wz::engine::assets
         SceneAuthoringMaterializeReport report{};
         RenderableCache renderables;
         MeshCache meshes;
+        MeshProcessingCache processed_meshes;
         ScalarFieldCache scalar_fields;
         VectorFieldCache vector_fields;
         MeshFieldRefCache mesh_field_refs;
@@ -3931,6 +3994,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -3978,6 +4042,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -4012,6 +4077,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -4054,6 +4120,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -4096,6 +4163,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -4185,6 +4253,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         mesh,
                         report.error))
                 {
@@ -4249,6 +4318,7 @@ namespace wz::engine::assets
                         render_style,
                         renderables,
                         meshes,
+                        processed_meshes,
                         renderable,
                         mesh,
                         report.error))
@@ -4279,6 +4349,7 @@ namespace wz::engine::assets
                     *node.mesh_source,
                     node.mesh_processing ? &*node.mesh_processing : nullptr,
                     meshes,
+                    processed_meshes,
                     mesh,
                     report.error))
             {
@@ -4428,6 +4499,7 @@ namespace wz::engine::assets
                             ? &*node.mesh_processing
                             : nullptr,
                         meshes,
+                        processed_meshes,
                         terrain_mesh,
                         report.error))
                 {

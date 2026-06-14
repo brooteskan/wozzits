@@ -154,6 +154,17 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
     ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    EXPECT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.processed_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(
+        processing.hierarchy_asset.schema_hash,
+        detail::hash_u64(kMeshClusterHierarchySchema.value));
+    EXPECT_EQ(
+        processing.processed_mesh_asset.schema_hash,
+        detail::hash_u64(kMeshClusterHierarchyPreviewMeshSchema.value));
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
@@ -168,6 +179,7 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
     EXPECT_EQ(
         renderable_data->source_asset.schema_hash,
         detail::hash_u64(kMeshClusterHierarchyPreviewMeshSchema.value));
+    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
 }
 
 TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)

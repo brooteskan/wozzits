@@ -1955,6 +1955,40 @@ namespace wz::engine::assets::internal
                     processing.preview_level_index =
                         static_cast<uint32_t>(*preview_level_index);
                 }
+                if (auto asset = read_string(*mp, "source_mesh_asset");
+                    asset && !asset->empty())
+                {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("mesh_processing.source_mesh_asset on node '"
+                            + node.id + "' could not be parsed");
+                        return std::nullopt;
+                    }
+                    processing.source_mesh_asset = *key;
+                }
+                if (auto asset = read_string(*mp, "processed_mesh_asset");
+                    asset && !asset->empty())
+                {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error(
+                            "mesh_processing.processed_mesh_asset on node '"
+                            + node.id + "' could not be parsed");
+                        return std::nullopt;
+                    }
+                    processing.processed_mesh_asset = *key;
+                }
+                if (auto asset = read_string(*mp, "hierarchy_asset");
+                    asset && !asset->empty())
+                {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("mesh_processing.hierarchy_asset on node '"
+                            + node.id + "' could not be parsed");
+                        return std::nullopt;
+                    }
+                    processing.hierarchy_asset = *key;
+                }
 
                 node.mesh_processing = processing;
             }

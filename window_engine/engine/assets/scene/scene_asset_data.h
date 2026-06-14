@@ -305,6 +305,9 @@ namespace wz::engine::assets
         float normal_deviation = 0.0f;
         float hausdorff_error = 0.0f;
         uint32_t preview_level_index = 0;
+        wz::asset::AssetKey source_mesh_asset{};
+        wz::asset::AssetKey processed_mesh_asset{};
+        wz::asset::AssetKey hierarchy_asset{};
     };
 
     enum class SceneImportSourceKind : uint8_t
