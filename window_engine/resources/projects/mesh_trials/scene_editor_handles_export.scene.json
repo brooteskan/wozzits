@@ -84,7 +84,7 @@
       },
       "mesh_processing": {
         "enabled": true,
-        "operation": "cluster_hierarchy_preview",
+        "operation": "debug_triangle_stride",
         "target_vertex_count": 0,
         "target_triangle_count": 0,
         "target_ratio": 1,
@@ -94,7 +94,9 @@
         "max_valence": 0,
         "normal_deviation": 0,
         "hausdorff_error": 0,
-        "preview_level_index": 0
+        "preview_level_index": 0,
+        "source_mesh_asset": "asset-key:d32f0b9d5e0b79d6:0000000000000000:f11eca55e7000403:0000000000000000:0000000000000002:0000000000000000:f90f3c0b1753645a:d974617c784f67aa",
+        "processed_mesh_asset": "asset-key:4de9286507a52aad:0000000000000000:f11eca55e7000411:0000000000000000:0000000000000002:0000000000000000:236178699b1b52e3:5578d804d61c780c"
       },
       "mesh_derived_field_source": {
         "enabled": true,
@@ -174,13 +176,14 @@
             "priority": 4
           }
         ],
+        "mesh_input": "processed",
         "wireframe": {
           "enabled": true,
           "color": [
             1,
             1,
             1,
-            0.043137256056070328
+            0.16078431904315948
           ],
           "emissive_strength": 1
         }
@@ -196,15 +199,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        61.540359497070312,
-        98.700523376464844,
-        289.00357055664062
+        151.15498352050781,
+        19.948040008544922,
+        136.84779357910156
       ],
       "orientation": [
-        0.011124704033136368,
-        -0.98915696144104004,
-        0.14519624412059784,
-        -0.019047433510422707
+        0.034264929592609406,
+        -0.8356972336769104,
+        0.54744750261306763,
+        0.027153514325618744
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
