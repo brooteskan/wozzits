@@ -910,6 +910,54 @@ TEST(SceneAssetModule, TerrainMeshSourceComponentRoundTripsThroughSceneJSON)
     EXPECT_EQ(runtime_summary.terrains, 0u);
 }
 
+TEST(SceneAssetModule, RejectsOutOfRangeMeshProcessingPreviewLevelIndex)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_processing_preview_level_range_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_processing_preview_level_range_scene",
+  "nodes": [
+    {
+      "id": "source_mesh",
+      "mesh_source": {
+        "kind": "procedural_cube"
+      },
+      "mesh_processing": {
+        "enabled": true,
+        "operation": "cluster_hierarchy_preview",
+        "preview_level_index": 5000000000
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root,
+        "mesh_processing_preview_level_range.scene.json",
+        scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_processing_preview_level_range",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    EXPECT_FALSE(assets.resolve_all().ok());
+}
+
 TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;

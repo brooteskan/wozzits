@@ -18,6 +18,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1942,7 +1943,10 @@ namespace wz::engine::assets::internal
                         read_number(*mp, "preview_level_index"))
                 {
                     if (*preview_level_index < 0.0
-                        || !std::isfinite(*preview_level_index))
+                        || !std::isfinite(*preview_level_index)
+                        || *preview_level_index
+                            > static_cast<double>(
+                                (std::numeric_limits<uint32_t>::max)()))
                     {
                         logger.error("mesh_processing on node '" + node.id
                             + "' has invalid preview_level_index");
