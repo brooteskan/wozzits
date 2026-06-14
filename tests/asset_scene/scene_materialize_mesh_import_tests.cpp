@@ -182,6 +182,118 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
     EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
 }
 
+TEST(SceneAuthoringMaterialize, MeshProcessingDoesNotFeedFieldOrOperatorSources)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_processing_downstream_source_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_processing_downstream_source";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation =
+            SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
+        .preview_level_index = 0,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "height",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .channel_id = 0x2000u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind =
+            SceneMeshDerivedFieldSourceKind::PositionGradient,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+    };
+    node.mesh_sparse_operator_source = SceneMeshSparseOperatorSourceAsset{
+        .enabled = true,
+        .operator_id = "uniform_laplacian",
+        .kind = MeshSparseOperatorKind::UniformVertexLaplacian,
+        .domain = MeshOperatorDomain::Vertex,
+        .value_convention =
+            MeshSparseOperatorValueConvention::NeighborWeights,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .field_visualization_enabled = true,
+        .field_visualization_channel_id = 0x2000u,
+        .field_visualization_value_min = 0.0f,
+        .field_visualization_value_max = 1.0f,
+        .field_visualization_gamma = 1.0f,
+        .field_visualization_field_ref = "field:height",
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_derived_field_source.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_sparse_operator_source.has_value());
+
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    ASSERT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
+    ASSERT_NE(processing.processed_mesh_asset, wz::asset::AssetKey{});
+    ASSERT_NE(processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.source_mesh_asset, processing.processed_mesh_asset);
+
+    const wz::asset::AssetKey field_key =
+        scene.nodes[0].mesh_derived_field_source->resolved_field_asset;
+    const wz::asset::AssetKey operator_key =
+        scene.nodes[0]
+            .mesh_sparse_operator_source->resolved_operator_asset;
+    ASSERT_NE(field_key, wz::asset::AssetKey{});
+    ASSERT_NE(operator_key, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const MeshDerivedFieldHandle field_handle =
+        assets.mesh_derived_fields().get_mesh_derived_field(
+            MeshDerivedFieldAsset{ .output = field_key });
+    ASSERT_TRUE(field_handle.valid());
+    const MeshDerivedFieldData* field_data =
+        assets.mesh_derived_fields().get_mesh_derived_field_data(
+            field_handle);
+    ASSERT_NE(field_data, nullptr);
+    EXPECT_EQ(field_data->source_mesh_key, processing.source_mesh_asset);
+    EXPECT_NE(field_data->source_mesh_key, processing.processed_mesh_asset);
+
+    const MeshSparseOperatorHandle operator_handle =
+        assets.mesh_sparse_operators().get_sparse_operator(
+            MeshSparseOperatorAsset{ .output = operator_key });
+    ASSERT_TRUE(operator_handle.valid());
+    const MeshSparseOperatorData* operator_data =
+        assets.mesh_sparse_operators().get_sparse_operator_data(
+            operator_handle);
+    ASSERT_NE(operator_data, nullptr);
+    EXPECT_EQ(operator_data->source_mesh_key, processing.source_mesh_asset);
+    EXPECT_NE(operator_data->source_mesh_key, processing.processed_mesh_asset);
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->source_asset, processing.source_mesh_asset);
+    EXPECT_EQ(renderable_data->mesh_field_visualization_asset, field_key);
+}
+
 TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)
 {
     using namespace wz::engine::assets;

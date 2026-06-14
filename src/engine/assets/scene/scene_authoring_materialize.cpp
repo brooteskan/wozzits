@@ -3925,7 +3925,60 @@ namespace wz::engine::assets
                 continue;
             }
 
-            MeshAsset mesh{};
+            MeshAsset source_mesh{};
+            auto ensure_source_mesh = [&]() -> bool
+            {
+                if (source_mesh.valid()) {
+                    return true;
+                }
+                if (!ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        nullptr,
+                        meshes,
+                        processed_meshes,
+                        source_mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "mesh source unavailable for "
+                            + node_log_name(node);
+                    }
+                    return false;
+                }
+                if (node.mesh_processing) {
+                    node.mesh_processing->source_mesh_asset =
+                        source_mesh.output;
+                }
+                return true;
+            };
+
+            auto ensure_processed_mesh = [&]() -> bool
+            {
+                if (!node.mesh_processing) {
+                    return true;
+                }
+                MeshAsset processed_mesh{};
+                if (!ensure_mesh_for_source(
+                        assets,
+                        *node.mesh_source,
+                        &*node.mesh_processing,
+                        meshes,
+                        processed_meshes,
+                        processed_mesh,
+                        report.error))
+                {
+                    if (report.error.empty()) {
+                        report.error =
+                            "processed mesh unavailable for "
+                            + node_log_name(node);
+                    }
+                    return false;
+                }
+                return true;
+            };
+
             const bool has_authored_render_style =
                 node.mesh_render_style.has_value();
             SceneMeshRenderStyleAsset render_style =
@@ -3986,29 +4039,13 @@ namespace wz::engine::assets
                 node.mesh_derived_field_source
                 && node.mesh_derived_field_source->enabled;
             if (derived_field_source) {
-                if (!mesh.valid()
-                    && !ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_derived_field_source(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         mesh_field_refs,
                         report.error))
                 {
@@ -4034,29 +4071,13 @@ namespace wz::engine::assets
                         "for " + node_log_name(node);
                     return report;
                 }
-                if (!mesh.valid()
-                    && !ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_sparse_operator_source(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         mesh_field_refs,
                         mesh_operator_refs,
                         report.error))
@@ -4069,29 +4090,13 @@ namespace wz::engine::assets
                 node.mesh_sparse_apply_field
                 && node.mesh_sparse_apply_field->enabled;
             if (sparse_apply_field_source) {
-                if (!mesh.valid()
-                    && !ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_sparse_apply_field(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         mesh_field_refs,
                         mesh_operator_refs,
                         report.error))
@@ -4112,29 +4117,13 @@ namespace wz::engine::assets
                 node.mesh_sparse_diffusion_bands
                 && node.mesh_sparse_diffusion_bands->enabled;
             if (sparse_diffusion_bands_source) {
-                if (!mesh.valid()
-                    && !ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_sparse_diffusion_bands(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         mesh_field_refs,
                         mesh_operator_refs,
                         report.error))
@@ -4155,29 +4144,13 @@ namespace wz::engine::assets
                 node.mesh_level_mask_source
                 && node.mesh_level_mask_source->enabled;
             if (level_mask_source) {
-                if (!mesh.valid()
-                    && !ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_level_mask_source(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         mesh_field_refs,
                         report.error))
                 {
@@ -4246,28 +4219,13 @@ namespace wz::engine::assets
                 // The compute-derived field is a first-class asset on the
                 // node's mesh, materialized whether or not a preview
                 // renderable visualizes one of its channels.
-                if (!ensure_mesh_for_source(
-                        assets,
-                        *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
-                        meshes,
-                        processed_meshes,
-                        mesh,
-                        report.error))
-                {
-                    if (report.error.empty()) {
-                        report.error =
-                            "mesh source unavailable for "
-                            + node_log_name(node);
-                    }
+                if (!ensure_source_mesh()) {
                     return report;
                 }
                 if (!materialize_mesh_compute_field(
                         assets,
                         node,
-                        mesh,
+                        source_mesh,
                         report.error))
                 {
                     return report;
@@ -4291,6 +4249,9 @@ namespace wz::engine::assets
                 render_style);
 
             if (options.create_preview_renderables && node.visible) {
+                if (!ensure_source_mesh()) {
+                    return report;
+                }
                 const SceneMeshDerivedFieldSourceAsset* active_field_source =
                     derived_field_source
                         ? &*node.mesh_derived_field_source
@@ -4299,13 +4260,24 @@ namespace wz::engine::assets
                     compute_field_source
                         ? &*node.mesh_compute_field
                         : nullptr;
+                const bool render_requires_source_mesh =
+                    render_style.field_visualization_enabled
+                    || render_style.mask.enabled;
+                if (render_requires_source_mesh
+                    && !ensure_processed_mesh())
+                {
+                    return report;
+                }
+                SceneMeshProcessingAsset* render_processing =
+                    !render_requires_source_mesh && node.mesh_processing
+                        ? &*node.mesh_processing
+                        : nullptr;
                 RenderableAsset renderable{};
+                MeshAsset render_mesh{};
                 if (!ensure_renderable_for_mesh_source(
                         assets,
                         *node.mesh_source,
-                        node.mesh_processing
-                            ? &*node.mesh_processing
-                            : nullptr,
+                        render_processing,
                         active_field_source,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
@@ -4320,7 +4292,7 @@ namespace wz::engine::assets
                         meshes,
                         processed_meshes,
                         renderable,
-                        mesh,
+                        render_mesh,
                         report.error))
                 {
                     if (report.error.empty()) {
@@ -4344,28 +4316,18 @@ namespace wz::engine::assets
                 }
                 append_unique_renderable(report, renderable.output);
             }
-            else if (!ensure_mesh_for_source(
-                    assets,
-                    *node.mesh_source,
-                    node.mesh_processing ? &*node.mesh_processing : nullptr,
-                    meshes,
-                    processed_meshes,
-                    mesh,
-                    report.error))
-            {
-                if (report.error.empty()) {
-                    report.error =
-                        "mesh source unavailable for "
-                        + node_log_name(node);
-                }
+            else if (!ensure_source_mesh()) {
+                return report;
+            }
+            else if (!ensure_processed_mesh()) {
                 return report;
             }
             else {
                 node.renderable_asset.reset();
             }
 
-            if (mesh.valid()) {
-                mesh_assets_by_node[node.id] = mesh.output;
+            if (source_mesh.valid()) {
+                mesh_assets_by_node[node.id] = source_mesh.output;
             }
         }
         log_phase("mesh_sources", elapsed_ms_since(mesh_started));
