@@ -19,6 +19,7 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <sstream>
 #include <string_view>
@@ -295,7 +296,8 @@ namespace wz::engine::assets
         }
 
         std::string mesh_processing_cache_suffix(
-            const SceneMeshProcessingAsset* processing)
+            const SceneMeshProcessingAsset* processing,
+            const SceneMeshRegionSetAsset* region_set = nullptr)
         {
             if (!processing || !processing->enabled) {
                 return {};
@@ -304,9 +306,34 @@ namespace wz::engine::assets
             if (processing->operation
                 == SceneMeshProcessingOperation::MeshClusterHierarchyPreview)
             {
-                return ":cluster_hierarchy_preview"
+                std::string key = ":cluster_hierarchy_preview"
                     ":level" + std::to_string(
                         processing->preview_level_index);
+                if (region_set && region_set->enabled) {
+                    key += ":region_set:" + region_set->region_set_id
+                        + ":intent:"
+                        + std::to_string(
+                            static_cast<uint32_t>(region_set->intent))
+                        + ":field_ref:" + region_set->source_field_ref
+                        + ":domain:"
+                        + std::to_string(
+                            static_cast<uint32_t>(region_set->mask.domain))
+                        + ":rules:"
+                        + std::to_string(region_set->mask.rules.size());
+                    for (const MeshMaskRule& rule :
+                         region_set->mask.rules)
+                    {
+                        key += ":rule:"
+                            + std::to_string(rule.enabled ? 1 : 0)
+                            + ":ch:"
+                            + std::to_string(rule.input_channel_id)
+                            + ":lo:" + std::to_string(rule.lo)
+                            + ":hi:" + std::to_string(rule.hi)
+                            + ":priority:"
+                            + std::to_string(rule.priority);
+                    }
+                }
+                return key;
             }
 
             if (processing->operation
@@ -336,14 +363,6 @@ namespace wz::engine::assets
             constexpr uint32_t kMaxDebugStrideLevel = 30u;
             level = std::min(level, kMaxDebugStrideLevel);
             return 1u << (level + 1u);
-        }
-
-        std::string mesh_cache_key(
-            const SceneMeshSourceAsset& source,
-            const SceneMeshProcessingAsset* processing)
-        {
-            return mesh_source_cache_key(source)
-                + mesh_processing_cache_suffix(processing);
         }
 
         MeshRenderLayerStyle mesh_render_layer_style_for_scene_layer(
@@ -1761,6 +1780,63 @@ namespace wz::engine::assets
             }
             out = found->second.asset;
             return true;
+        }
+
+        bool resolve_mesh_region_set_field_ref(
+            const SceneNodeAsset& node,
+            const MeshFieldRefCache& field_refs,
+            SceneMeshRegionSetAsset& region_set,
+            std::string& error)
+        {
+            if (!region_set.enabled || region_set.source_field_ref.empty()) {
+                return true;
+            }
+
+            const std::string canonical_ref =
+                canonical_mesh_field_ref_for_node(
+                    node,
+                    region_set.source_field_ref);
+            const auto found = field_refs.find(canonical_ref);
+            if (found == field_refs.end()) {
+                const std::string node_name =
+                    !node.id.empty() ? node.id : node.name;
+                error = "mesh region set source_field_ref '"
+                    + region_set.source_field_ref
+                    + "' did not resolve on " + node_name;
+                return false;
+            }
+            region_set.source_field_asset = found->second.asset;
+            return true;
+        }
+
+        bool processing_uses_region_set(
+            const SceneMeshProcessingAsset& processing,
+            const SceneMeshRegionSetAsset& region_set)
+        {
+            if (!region_set.enabled
+                || region_set.source_field_asset == wz::asset::AssetKey{}
+                || !region_set.mask.enabled
+                || region_set.mask.rules.empty()
+                || processing.region_set_ref.empty())
+            {
+                return false;
+            }
+
+            return processing.region_set_ref == region_set.region_set_id
+                || processing.region_set_ref
+                    == "region_set:" + region_set.region_set_id;
+        }
+
+        const SceneMeshRegionSetAsset* region_set_for_processing(
+            const SceneMeshProcessingAsset& processing,
+            const SceneMeshRegionSetAsset* region_set)
+        {
+            if (!region_set
+                || !processing_uses_region_set(processing, *region_set))
+            {
+                return nullptr;
+            }
+            return region_set;
         }
 
         bool mesh_compute_field_has_channel(
@@ -3190,7 +3266,8 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             MeshAsset source_mesh,
             const std::string& name,
-            const SceneMeshProcessingAsset& processing)
+            const SceneMeshProcessingAsset& processing,
+            const SceneMeshRegionSetAsset* region_set)
         {
             switch (processing.operation) {
             case SceneMeshProcessingOperation::Decimate:
@@ -3214,13 +3291,24 @@ namespace wz::engine::assets
 
             case SceneMeshProcessingOperation::MeshClusterHierarchyPreview:
             {
+                std::optional<MeshClusterHierarchyRegionMaskDesc>
+                    region_mask;
+                if (region_set) {
+                    region_mask = MeshClusterHierarchyRegionMaskDesc{
+                        .field = MeshDerivedFieldAsset{
+                            .output = region_set->source_field_asset,
+                        },
+                        .mask = region_set->mask,
+                    };
+                }
                 const MeshClusterHierarchyAsset hierarchy =
                     assets.mesh_cluster_hierarchies()
                         .create_mesh_cluster_hierarchy({
                             .name = name + "_hierarchy",
                             .source_mesh = source_mesh,
                             .method =
-                                MeshClusterHierarchyBuildMethod::Identity,
+                                MeshClusterHierarchyBuildMethod::GraphCoarsen,
+                            .region_mask = region_mask,
                         });
                 if (!hierarchy.valid()) {
                     return {};
@@ -3259,6 +3347,7 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
             SceneMeshProcessingAsset* processing,
+            const SceneMeshRegionSetAsset* region_set,
             MeshCache& meshes,
             MeshProcessingCache& processed_meshes,
             MeshAsset& out,
@@ -3294,7 +3383,13 @@ namespace wz::engine::assets
             processing->processed_mesh_asset = {};
             processing->hierarchy_asset = {};
 
-            const std::string processed_key = mesh_cache_key(source, processing);
+            const SceneMeshRegionSetAsset* active_region_set =
+                region_set_for_processing(*processing, region_set);
+            const std::string processed_key =
+                mesh_source_cache_key(source)
+                + mesh_processing_cache_suffix(
+                    processing,
+                    active_region_set);
             if (const auto found = processed_meshes.find(processed_key);
                 found != processed_meshes.end())
             {
@@ -3309,7 +3404,8 @@ namespace wz::engine::assets
                     assets,
                     source_mesh,
                     "scene_editor/processed_mesh/" + processed_key,
-                    *processing);
+                    *processing,
+                    active_region_set);
             MeshAsset mesh = outputs.mesh;
             processing->processed_mesh_asset = mesh.output;
             processing->hierarchy_asset = outputs.hierarchy.output;
@@ -3330,6 +3426,7 @@ namespace wz::engine::assets
             MeshAsset source_mesh,
             const std::string& key,
             SceneMeshProcessingAsset* processing,
+            const SceneMeshRegionSetAsset* region_set,
             MeshCache& meshes,
             MeshProcessingCache& processed_meshes,
             MeshAsset& out,
@@ -3349,8 +3446,12 @@ namespace wz::engine::assets
             processing->processed_mesh_asset = {};
             processing->hierarchy_asset = {};
 
+            const SceneMeshRegionSetAsset* active_region_set =
+                region_set_for_processing(*processing, region_set);
             const std::string processed_key =
-                key + mesh_processing_cache_suffix(processing);
+                key + mesh_processing_cache_suffix(
+                    processing,
+                    active_region_set);
             if (const auto found = processed_meshes.find(processed_key);
                 found != processed_meshes.end())
             {
@@ -3365,7 +3466,8 @@ namespace wz::engine::assets
                     assets,
                     source_mesh,
                     "scene_editor/processed_mesh/" + processed_key,
-                    *processing);
+                    *processing,
+                    active_region_set);
             MeshAsset processed = outputs.mesh;
             processing->processed_mesh_asset = processed.output;
             processing->hierarchy_asset = outputs.hierarchy.output;
@@ -3385,6 +3487,7 @@ namespace wz::engine::assets
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
             SceneMeshProcessingAsset* processing,
+            const SceneMeshRegionSetAsset* region_set,
             const SceneMeshDerivedFieldSourceAsset* field_source,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             const SceneMeshComputeFieldAsset* compute_field,
@@ -3400,7 +3503,15 @@ namespace wz::engine::assets
         {
             const bool has_compute_field_source =
                 compute_field && compute_field->enabled;
-            const std::string source_key = mesh_cache_key(source, processing);
+            const SceneMeshRegionSetAsset* active_region_set =
+                processing
+                    ? region_set_for_processing(*processing, region_set)
+                    : nullptr;
+            const std::string source_key =
+                mesh_source_cache_key(source)
+                + mesh_processing_cache_suffix(
+                    processing,
+                    active_region_set);
             const std::string key =
                 source_key + ":"
                 + mesh_render_style_cache_key(style)
@@ -3430,6 +3541,7 @@ namespace wz::engine::assets
                     assets,
                     source,
                     processing,
+                    region_set,
                     meshes,
                     processed_meshes,
                     out_mesh,
@@ -3962,6 +4074,7 @@ namespace wz::engine::assets
                         assets,
                         *node.mesh_source,
                         nullptr,
+                        nullptr,
                         meshes,
                         processed_meshes,
                         source_mesh,
@@ -3991,6 +4104,9 @@ namespace wz::engine::assets
                         assets,
                         *node.mesh_source,
                         &*node.mesh_processing,
+                        node.mesh_region_set
+                            ? &*node.mesh_region_set
+                            : nullptr,
                         meshes,
                         processed_meshes,
                         processed_mesh,
@@ -4026,6 +4142,9 @@ namespace wz::engine::assets
             render_style.mask_source_field_asset = {};
             if (node.mesh_mask_render_style) {
                 node.mesh_mask_render_style->source_field_asset = {};
+            }
+            if (node.mesh_region_set) {
+                node.mesh_region_set->source_field_asset = {};
             }
             if (node.render_shader) {
                 render_style.surface.enabled = true;
@@ -4238,6 +4357,19 @@ namespace wz::engine::assets
                         render_style.mask_source_field_asset;
                 }
             }
+            if (node.mesh_region_set
+                && node.mesh_region_set->enabled
+                && !node.mesh_region_set->source_field_ref.empty())
+            {
+                if (!resolve_mesh_region_set_field_ref(
+                        node,
+                        mesh_field_refs,
+                        *node.mesh_region_set,
+                        report.error))
+                {
+                    return report;
+                }
+            }
 
             const bool compute_field_source =
                 node.mesh_compute_field
@@ -4307,6 +4439,9 @@ namespace wz::engine::assets
                         assets,
                         *node.mesh_source,
                         render_processing,
+                        node.mesh_region_set
+                            ? &*node.mesh_region_set
+                            : nullptr,
                         active_field_source,
                         node.mesh_wavelet_analysis
                             ? &*node.mesh_wavelet_analysis
@@ -4488,6 +4623,9 @@ namespace wz::engine::assets
                         "terrain_mesh:" + node.id,
                         node.mesh_processing
                             ? &*node.mesh_processing
+                            : nullptr,
+                        node.mesh_region_set
+                            ? &*node.mesh_region_set
                             : nullptr,
                         meshes,
                         processed_meshes,

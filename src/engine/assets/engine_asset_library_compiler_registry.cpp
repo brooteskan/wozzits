@@ -49,6 +49,7 @@ namespace wz::engine::assets::internal
             registry,
             ctx.logger,
             ctx.mesh_table,
+            ctx.mesh_derived_field_table,
             ctx.mesh_cluster_hierarchy_table);
         register_terrain_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.cache_settings);
         register_terrain_visual_proxy_compilers(registry, ctx.logger, ctx.terrain_table, ctx.terrain_visual_proxy_table, ctx.cache_settings);

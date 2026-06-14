@@ -6,6 +6,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <vector>
 #include <utility>
 
 namespace wz::engine::assets
@@ -22,9 +23,7 @@ namespace wz::engine::assets
     MeshClusterHierarchyAssetModule::create_mesh_cluster_hierarchy(
         const MeshClusterHierarchyDesc& desc)
     {
-        if (!desc.source_mesh.valid()
-            || desc.method != MeshClusterHierarchyBuildMethod::Identity)
-        {
+        if (!desc.source_mesh.valid()) {
             return {};
         }
 
@@ -40,9 +39,14 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
         node.meta = desc;
 
+        std::vector<wz::asset::AssetKey> deps{ desc.source_mesh.output };
+        if (desc.region_mask && desc.region_mask->field.valid()) {
+            deps.push_back(desc.region_mask->field.output);
+        }
+
         (void)system_.register_asset(
             std::move(node),
-            { desc.source_mesh.output });
+            deps);
 
         return MeshClusterHierarchyAsset{ .output = hierarchy_key };
     }

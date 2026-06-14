@@ -8,6 +8,11 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <cstddef>
+#include <cstring>
+#include <initializer_list>
+#include <vector>
+
 namespace
 {
     wz::engine::assets::EngineAssetLibrary make_assets(
@@ -27,6 +32,77 @@ namespace
             device,
             logger,
             root);
+    }
+
+    bool mesh_referenced_vertices_are_connected(
+        const wz::engine::assets::MeshData& mesh)
+    {
+        if (!mesh.valid()) {
+            return false;
+        }
+
+        std::vector<std::vector<uint32_t>> adjacency(mesh.vertex_count());
+        std::vector<bool> referenced(mesh.vertex_count(), false);
+        for (uint32_t i = 0; i + 2u < mesh.index_count(); i += 3u) {
+            const uint32_t a = mesh.indices[i + 0u];
+            const uint32_t b = mesh.indices[i + 1u];
+            const uint32_t c = mesh.indices[i + 2u];
+            if (a >= mesh.vertex_count()
+                || b >= mesh.vertex_count()
+                || c >= mesh.vertex_count())
+            {
+                return false;
+            }
+            referenced[a] = true;
+            referenced[b] = true;
+            referenced[c] = true;
+            adjacency[a].push_back(b);
+            adjacency[a].push_back(c);
+            adjacency[b].push_back(a);
+            adjacency[b].push_back(c);
+            adjacency[c].push_back(a);
+            adjacency[c].push_back(b);
+        }
+
+        uint32_t start = mesh.vertex_count();
+        for (uint32_t v = 0; v < mesh.vertex_count(); ++v) {
+            if (referenced[v]) {
+                start = v;
+                break;
+            }
+        }
+        if (start == mesh.vertex_count()) {
+            return false;
+        }
+
+        std::vector<bool> visited(mesh.vertex_count(), false);
+        std::vector<uint32_t> stack{ start };
+        visited[start] = true;
+        while (!stack.empty()) {
+            const uint32_t v = stack.back();
+            stack.pop_back();
+            for (const uint32_t next : adjacency[v]) {
+                if (!visited[next]) {
+                    visited[next] = true;
+                    stack.push_back(next);
+                }
+            }
+        }
+
+        for (uint32_t v = 0; v < mesh.vertex_count(); ++v) {
+            if (referenced[v] && !visited[v]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::vector<std::byte> float_field_bytes(
+        std::initializer_list<float> values)
+    {
+        std::vector<std::byte> bytes(values.size() * sizeof(float));
+        std::memcpy(bytes.data(), values.begin(), bytes.size());
+        return bytes;
     }
 }
 
@@ -282,7 +358,7 @@ TEST(MeshAssetModule, ResolvesIdentityMeshClusterHierarchyAsset)
     EXPECT_EQ(level.preview_mesh.index_count(), source_data->index_count());
 }
 
-TEST(MeshAssetModule, RejectsUnsupportedMeshClusterHierarchyMethod)
+TEST(MeshAssetModule, ResolvesGraphCoarsenMeshClusterHierarchyAsset)
 {
     wz::Logger logger;
     wz::gpu::Device device{};
@@ -303,8 +379,149 @@ TEST(MeshAssetModule, RejectsUnsupportedMeshClusterHierarchyMethod)
                 wz::engine::assets::MeshClusterHierarchyBuildMethod::
                     GraphCoarsen,
         });
+    ASSERT_TRUE(hierarchy.valid());
 
-    EXPECT_FALSE(hierarchy.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto hierarchy_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            hierarchy);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(hierarchy_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* hierarchy_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(hierarchy_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(hierarchy_data, nullptr);
+    ASSERT_TRUE(hierarchy_data->valid());
+    EXPECT_EQ(
+        hierarchy_data->method,
+        wz::engine::assets::MeshClusterHierarchyBuildMethod::GraphCoarsen);
+    ASSERT_GE(hierarchy_data->level_count(), 2u);
+    EXPECT_EQ(
+        hierarchy_data->levels[0].triangle_count,
+        source_data->index_count() / 3u);
+    EXPECT_LT(
+        hierarchy_data->levels[1].triangle_count,
+        hierarchy_data->levels[0].triangle_count);
+    EXPECT_LT(
+        hierarchy_data->levels[1].vertex_count,
+        hierarchy_data->levels[0].vertex_count);
+    EXPECT_GT(hierarchy_data->levels[1].conservative_error, 0.0f);
+    EXPECT_TRUE(mesh_referenced_vertices_are_connected(
+        hierarchy_data->levels[1].preview_mesh));
+}
+
+TEST(MeshAssetModule, GraphCoarsenMeshClusterHierarchyUsesRegionMask)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto mask_field =
+        assets.mesh_derived_fields().create_explicit_field({
+            .name = "partial_vertex_mask",
+            .source_mesh = source,
+            .domain = wz::engine::assets::MeshDerivedFieldDomain::Vertex,
+            .element_count = 8u,
+            .channels = {
+                wz::engine::assets::MeshDerivedFieldChannelDesc{
+                    .channel_id = 0x3300u,
+                    .value_type =
+                        wz::engine::assets::MeshDerivedFieldValueType::
+                            Float1,
+                    .values = float_field_bytes({
+                        1.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, 0.0f,
+                    }),
+                },
+            },
+        });
+    ASSERT_TRUE(mask_field.valid());
+
+    const auto unmasked =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_unmasked_graph_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::
+                    GraphCoarsen,
+        });
+    ASSERT_TRUE(unmasked.valid());
+
+    const auto masked =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_masked_graph_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::
+                    GraphCoarsen,
+            .region_mask =
+                wz::engine::assets::MeshClusterHierarchyRegionMaskDesc{
+                    .field = mask_field,
+                    .mask = wz::engine::assets::MeshMaskRenderStyleData{
+                        .enabled = true,
+                        .domain =
+                            wz::engine::assets::MeshMaskDomain::Vertex,
+                        .projection_mode =
+                            wz::engine::assets::MeshMaskProjectionMode::
+                                Direct,
+                        .overlap_mode =
+                            wz::engine::assets::MeshMaskOverlapMode::
+                                Priority,
+                        .rules = {
+                            wz::engine::assets::MeshMaskRule{
+                                .input_channel_id = 0x3300u,
+                                .lo = 0.5f,
+                                .hi = 1.5f,
+                            },
+                        },
+                    },
+                },
+        });
+    ASSERT_TRUE(masked.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto unmasked_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            unmasked);
+    const auto masked_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            masked);
+    ASSERT_TRUE(unmasked_handle.valid());
+    ASSERT_TRUE(masked_handle.valid());
+
+    const auto* unmasked_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(unmasked_handle);
+    const auto* masked_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(masked_handle);
+    ASSERT_NE(unmasked_data, nullptr);
+    ASSERT_NE(masked_data, nullptr);
+    ASSERT_GE(unmasked_data->level_count(), 2u);
+    ASSERT_GE(masked_data->level_count(), 2u);
+
+    EXPECT_LT(
+        masked_data->levels[1].vertex_count,
+        masked_data->levels[0].vertex_count);
+    EXPECT_GT(
+        masked_data->levels[1].vertex_count,
+        unmasked_data->levels[1].vertex_count);
 }
 
 TEST(MeshAssetModule, ResolvesMeshClusterHierarchyPreviewMesh)

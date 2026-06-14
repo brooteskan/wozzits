@@ -5,17 +5,27 @@
 #include <asset/system.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.h>
+#include <engine/assets/mesh_derived_field_asset_module.h>
+#include <engine/assets/mesh_render_style/mesh_render_style.h>
 
+#include <optional>
 #include <string>
 
 namespace wz::engine::assets
 {
+    struct MeshClusterHierarchyRegionMaskDesc
+    {
+        MeshDerivedFieldAsset field{};
+        MeshMaskRenderStyleData mask{};
+    };
+
     struct MeshClusterHierarchyDesc
     {
         std::string name;
         MeshAsset source_mesh;
         MeshClusterHierarchyBuildMethod method =
             MeshClusterHierarchyBuildMethod::Identity;
+        std::optional<MeshClusterHierarchyRegionMaskDesc> region_mask;
     };
 
     struct MeshClusterHierarchyAsset

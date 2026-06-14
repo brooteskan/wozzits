@@ -142,7 +142,7 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
         .enabled = true,
         .operation =
             SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
-        .preview_level_index = 0,
+        .preview_level_index = 1,
     };
     node.mesh_render_style = SceneMeshRenderStyleAsset{
         .depth_test = true,
@@ -180,6 +180,108 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
         renderable_data->source_asset.schema_hash,
         detail::hash_u64(kMeshClusterHierarchyPreviewMeshSchema.value));
     EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
+
+    const auto source_handle = assets.meshes().get_mesh(
+        MeshAsset{ .output = processing.source_mesh_asset });
+    const auto processed_handle = assets.meshes().get_mesh(
+        MeshAsset{ .output = processing.processed_mesh_asset });
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(processed_handle.valid());
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* processed_data =
+        assets.meshes().get_mesh_data(processed_handle);
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(processed_data, nullptr);
+    EXPECT_LT(processed_data->index_count(), source_data->index_count());
+}
+
+TEST(SceneAuthoringMaterialize, MeshProcessingPreviewConsumesRegionSetMask)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_hierarchy_region_mask_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_cluster_hierarchy_region_mask";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation =
+            SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
+        .region_set_ref = "region_set:lod_regions",
+        .preview_level_index = 1,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "height",
+        .domain = MeshDerivedFieldDomain::Vertex,
+        .channel_id = 0x2400u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind =
+            SceneMeshDerivedFieldSourceKind::PositionGradient,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+    };
+    node.mesh_region_set = SceneMeshRegionSetAsset{
+        .enabled = true,
+        .region_set_id = "lod_regions",
+        .intent = SceneMeshRegionSetIntent::RemeshSubset,
+        .source_field_ref = "field:height",
+        .mask = MeshMaskRenderStyleData{
+            .enabled = true,
+            .domain = MeshMaskDomain::Vertex,
+            .projection_mode = MeshMaskProjectionMode::Direct,
+            .overlap_mode = MeshMaskOverlapMode::Priority,
+            .rules = {
+                MeshMaskRule{
+                    .input_channel_id = 0x2400u,
+                    .lo = 0.5f,
+                    .hi = 1.0f,
+                    .priority = 0,
+                },
+            },
+        },
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].mesh_region_set.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& region_set = *scene.nodes[0].mesh_region_set;
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    EXPECT_NE(region_set.source_field_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.processed_mesh_asset, wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto hierarchy_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            MeshClusterHierarchyAsset{ .output = processing.hierarchy_asset });
+    ASSERT_TRUE(hierarchy_handle.valid());
+    const auto* hierarchy_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(hierarchy_handle);
+    ASSERT_NE(hierarchy_data, nullptr);
+    ASSERT_GE(hierarchy_data->level_count(), 2u);
 }
 
 TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)
