@@ -621,4 +621,18 @@ namespace wz::gpu::dx12::internal {
     std::vector<std::byte> readback_buffer_dx12(Device& device, GPUHandle buffer);
     bool release_compute_buffer_dx12(Device& device, GPUHandle handle);
     bool release_compute_pipeline_dx12(Device& device, GPUHandle handle);
+
+    bool transition_compute_buffer_for_graphics_srv(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer);
+
+    bool create_compute_buffer_srv_table(
+        Device& device,
+        std::span<const GPUHandle> buffers,
+        wz::gpu::dx12::DX12DescriptorTable& out_table);
+
+    void release_compute_buffer_srv_table(
+        Device& device,
+        const wz::gpu::dx12::DX12DescriptorTable& table);
 }

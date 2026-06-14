@@ -3,7 +3,9 @@
 #include <engine/rendering/gpu_scene_render_resource_resolver.h>
 
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/mesh_cluster_hierarchy_asset_module.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
+#include <engine/assets/schema_ids.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
 #include <engine/assets/compiler_version_tokens.h>
@@ -12,11 +14,13 @@
 #include <gpu/mesh_field_visualization.h>
 
 #include <algorithm>
+#include <any>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <span>
 #include <string>
@@ -191,6 +195,78 @@ namespace wz::engine::rendering
             return mask.domain == wz::engine::assets::MeshMaskDomain::Vertex
                 ? wz::engine::assets::GpuResidentFieldLayout::VertexRaw
                 : wz::engine::assets::GpuResidentFieldLayout::FaceRaw;
+        }
+
+        std::optional<ResolvedRenderableResource::PulledMeshResource>
+        pulled_mesh_for_hierarchy_preview(
+            const wz::engine::assets::EngineAssetLibrary& assets,
+            const wz::engine::assets::RenderableAssetData& renderable)
+        {
+            if (!renderable.render_program.valid()) {
+                return std::nullopt;
+            }
+
+            const wz::asset::AssetSystem::CompiledAsset* compiled =
+                assets.system().find_compiled(renderable.source_asset);
+            if (!compiled
+                || !compiled->node
+                || compiled->node->schema
+                    != wz::engine::assets
+                        ::kMeshClusterHierarchyPreviewMeshSchema)
+            {
+                return std::nullopt;
+            }
+
+            const auto* desc =
+                std::any_cast<
+                    wz::engine::assets
+                        ::MeshClusterHierarchyPreviewMeshDesc>(
+                    &compiled->node->meta);
+            if (!desc || !desc->hierarchy.valid()) {
+                return std::nullopt;
+            }
+
+            const auto* entry =
+                assets.gpu_resident_mesh_cluster_hierarchies().find(
+                    desc->hierarchy.output);
+            if (!entry) {
+                return std::nullopt;
+            }
+
+            const wz::engine::assets::GpuResidentMeshClusterHierarchyLevel*
+                resident_level = nullptr;
+            for (const auto& level : entry->levels) {
+                if (level.level_index == desc->level_index) {
+                    resident_level = &level;
+                    break;
+                }
+            }
+            if (!resident_level || !resident_level->valid()) {
+                return std::nullopt;
+            }
+
+            uint32_t source_triangle_count = 0u;
+            const auto hierarchy_handle =
+                assets.mesh_cluster_hierarchies()
+                    .get_mesh_cluster_hierarchy(desc->hierarchy);
+            if (hierarchy_handle.valid()) {
+                const auto* hierarchy =
+                    assets.mesh_cluster_hierarchies()
+                        .get_mesh_cluster_hierarchy_data(hierarchy_handle);
+                if (hierarchy && !hierarchy->levels.empty()) {
+                    source_triangle_count =
+                        hierarchy->levels.front().triangle_count;
+                }
+            }
+
+            return ResolvedRenderableResource::PulledMeshResource{
+                .positions = resident_level->positions,
+                .indices = resident_level->indices,
+                .source_vertices = resident_level->source_vertices,
+                .vertex_count = resident_level->vertex_count,
+                .index_count = resident_level->index_count,
+                .source_triangle_count = source_triangle_count,
+            };
         }
 
         wz::fs::Path terrain_render_mesh_cache_directory(
@@ -1373,6 +1449,28 @@ namespace wz::engine::rendering
                         }
                     }
                 }
+            }
+            else if (const auto pulled_mesh =
+                         pulled_mesh_for_hierarchy_preview(
+                             assets_,
+                             renderable))
+            {
+                const wz::scene::MeshHandle scene_mesh =
+                    render_resolver_.register_pulled_mesh(
+                        *pulled_mesh,
+                        renderable.program,
+                        renderable.render_program,
+                        renderable.mesh_style);
+                descriptor.mesh = scene_mesh;
+                if (!wz::engine::assets::is_mesh_render_style_drawable(
+                        renderable.mesh_style))
+                {
+                    descriptor.node_class.default_surface =
+                        wz::scene::SurfaceClass::None;
+                    descriptor.node_class.domains = 0;
+                }
+                descriptor.material = wz::scene::INVALID_MATERIAL;
+                return true;
             }
             else if (cache_) {
                 const PreparedRenderable prepared =

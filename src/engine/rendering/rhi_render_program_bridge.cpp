@@ -33,6 +33,7 @@ namespace wz::engine::rendering
             case ea::RenderBindingModel::SplatVertexInstanced:
                 return wz::rhi::VertexSource::InputAssembler;
             case ea::RenderBindingModel::SplatPull:
+            case ea::RenderBindingModel::MeshVertexPull:
             case ea::RenderBindingModel::ParticlePull:
                 return wz::rhi::VertexSource::Pull;
             case ea::RenderBindingModel::ScalarFieldTexture:
@@ -159,6 +160,12 @@ namespace wz::engine::rendering
                 return "mesh_field_visualization";
             case ea::DescriptorSemantic::MeshMaskRules:
                 return "mesh_mask_rules";
+            case ea::DescriptorSemantic::PulledMeshPositions:
+                return "pulled_mesh_positions";
+            case ea::DescriptorSemantic::PulledMeshIndices:
+                return "pulled_mesh_indices";
+            case ea::DescriptorSemantic::PulledMeshSourceVertices:
+                return "pulled_mesh_source_vertices";
             }
             return "unknown";
         }

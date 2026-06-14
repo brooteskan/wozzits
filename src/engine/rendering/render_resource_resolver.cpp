@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace
 {
@@ -201,7 +202,11 @@ namespace wz::engine::rendering
     {
         const auto index =
             static_cast<wz::scene::SplatHandle>(splat_entries_.size());
-        splat_entries_.push_back({ gpu_resource, program, render_program });
+        Entry entry{};
+        entry.gpu_resource = gpu_resource;
+        entry.program = program;
+        entry.render_program = render_program;
+        splat_entries_.push_back(std::move(entry));
         return index;
     }
 
@@ -216,6 +221,7 @@ namespace wz::engine::rendering
         const Entry& e = splat_entries_[handle];
         return ResolvedRenderableResource{
             e.gpu_resource,
+            e.pulled_mesh,
             e.program,
             e.render_program,
             e.terrain_lighting,
@@ -288,6 +294,23 @@ namespace wz::engine::rendering
         return index;
     }
 
+    wz::scene::MeshHandle RenderResourceResolver::register_pulled_mesh(
+        ResolvedRenderableResource::PulledMeshResource pulled_mesh,
+        wz::engine::assets::BuiltinRenderProgram program,
+        wz::asset::ResourceHandle render_program,
+        wz::engine::assets::MeshRenderStyleData mesh_style)
+    {
+        const auto index =
+            static_cast<wz::scene::MeshHandle>(mesh_entries_.size());
+        Entry entry{};
+        entry.pulled_mesh = pulled_mesh;
+        entry.program = program;
+        entry.render_program = render_program;
+        entry.mesh_style = std::move(mesh_style);
+        mesh_entries_.push_back(std::move(entry));
+        return index;
+    }
+
     bool RenderResourceResolver::register_terrain_proxy(
         wz::engine::assets::TerrainProxyId terrain_proxy_id,
         wz::gpu::GPUHandle                       gpu_resource,
@@ -354,6 +377,7 @@ namespace wz::engine::rendering
         const Entry& e = mesh_entries_[handle];
         return ResolvedRenderableResource{
             e.gpu_resource,
+            e.pulled_mesh,
             e.program,
             e.render_program,
             e.terrain_lighting,
@@ -398,6 +422,7 @@ namespace wz::engine::rendering
 
         return ResolvedRenderableResource{
             e->gpu_resource,
+            e->pulled_mesh,
             e->program,
             e->render_program,
             e->terrain_lighting,

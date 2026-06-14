@@ -104,3 +104,32 @@ TEST(RhiRenderProgramBridge, RepeatedSemanticDedupsToSameTag)
     EXPECT_TRUE(out.descriptor_bindings[0].semantic
         == out.descriptor_bindings[1].semantic);
 }
+
+TEST(RhiRenderProgramBridge, MeshVertexPullMapsToPullSourceAndTags)
+{
+    ea::CustomRenderProgramDesc src;
+    src.name = "mesh_vertex_pull";
+    src.binding_model = ea::RenderBindingModel::MeshVertexPull;
+    src.topology = ea::RenderPrimitiveTopology::TriangleList;
+    src.input_layout = ea::InputLayoutKind::None;
+    src.descriptor_bindings.push_back(ea::DescriptorBinding{
+        ea::DescriptorKind::StructuredBufferSRV, ea::ShaderVisibility::Vertex,
+        ea::DescriptorSemantic::PulledMeshPositions, 0, 0, 1 });
+    src.descriptor_bindings.push_back(ea::DescriptorBinding{
+        ea::DescriptorKind::StructuredBufferSRV, ea::ShaderVisibility::Vertex,
+        ea::DescriptorSemantic::PulledMeshIndices, 1, 0, 1 });
+
+    wz::rhi::DescriptorSemanticRegistry semantics;
+    const wz::rhi::RenderProgramDesc out =
+        wz::engine::rendering::to_rhi_render_program_desc(src, semantics);
+
+    EXPECT_EQ(out.vertex_source, wz::rhi::VertexSource::Pull);
+    EXPECT_TRUE(out.vertex_layout.attributes.empty());
+    ASSERT_EQ(out.descriptor_bindings.size(), 2u);
+    EXPECT_EQ(
+        semantics.name_of(out.descriptor_bindings[0].semantic),
+        std::string_view{ "pulled_mesh_positions" });
+    EXPECT_EQ(
+        semantics.name_of(out.descriptor_bindings[1].semantic),
+        std::string_view{ "pulled_mesh_indices" });
+}

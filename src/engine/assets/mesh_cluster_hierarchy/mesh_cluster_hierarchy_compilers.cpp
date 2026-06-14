@@ -1921,10 +1921,14 @@ namespace wz::engine::assets::internal
             logger.info(
                 "asset compile: mesh cluster hierarchy GPU compact level="
                 + std::to_string(level_index)
+                + " source_triangles="
+                + std::to_string(mesh.index_count() / 3u)
                 + " vertices="
                 + std::to_string(resident_level->vertex_count)
-                + " triangles="
+                + " pulled_triangles="
                 + std::to_string(resident_level->triangle_count)
+                + " submitted_indices="
+                + std::to_string(resident_level->index_count)
                 + " dispatch_ms="
                 + std::to_string(dispatch_ms));
             return resident_level->valid();

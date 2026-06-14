@@ -23,6 +23,7 @@ namespace wz::engine::assets
         MeshIA,
         SplatVertexInstanced,
         SplatPull,
+        MeshVertexPull,
         ScalarFieldTexture,
         Fullscreen,
         ParticlePull,
@@ -92,6 +93,9 @@ namespace wz::engine::assets
         ScalarFieldTexture,
         MeshFieldVisualization,
         MeshMaskRules,
+        PulledMeshPositions,
+        PulledMeshIndices,
+        PulledMeshSourceVertices,
     };
 
     struct DescriptorBinding

@@ -1398,6 +1398,287 @@ namespace wz::engine::render_backend::dx12
             return true;
         }
 
+        bool is_pulled_mesh_semantic(
+            wz::engine::assets::DescriptorSemantic semantic) noexcept
+        {
+            using S = wz::engine::assets::DescriptorSemantic;
+            return semantic == S::PulledMeshPositions
+                || semantic == S::PulledMeshIndices
+                || semantic == S::PulledMeshSourceVertices;
+        }
+
+        wz::gpu::GPUHandle pulled_mesh_handle_for_semantic(
+            const wz::engine::rendering::ResolvedRenderableResource
+                ::PulledMeshResource& pulled,
+            wz::engine::assets::DescriptorSemantic semantic) noexcept
+        {
+            using S = wz::engine::assets::DescriptorSemantic;
+            switch (semantic) {
+            case S::PulledMeshPositions:
+                return pulled.positions;
+            case S::PulledMeshIndices:
+                return pulled.indices;
+            case S::PulledMeshSourceVertices:
+                return pulled.source_vertices;
+            default:
+                return {};
+            }
+        }
+
+        struct PulledMeshSrvTableCacheEntry
+        {
+            void* device_impl = nullptr;
+            ID3D12DescriptorHeap* heap = nullptr;
+            std::vector<wz::gpu::GPUHandle> handles{};
+            wz::gpu::dx12::DX12DescriptorTable table{};
+        };
+
+        constexpr size_t kMaxPulledMeshSrvTables = 64u;
+        std::vector<PulledMeshSrvTableCacheEntry> g_pulled_mesh_srv_tables;
+
+        void evict_pulled_mesh_srv_table(
+            wz::gpu::Device& device,
+            size_t index)
+        {
+            if (index >= g_pulled_mesh_srv_tables.size()) {
+                return;
+            }
+            PulledMeshSrvTableCacheEntry& entry =
+                g_pulled_mesh_srv_tables[index];
+            if (entry.device_impl == device.impl && entry.table.valid()) {
+                wz::gpu::dx12::internal::release_compute_buffer_srv_table(
+                    device,
+                    entry.table);
+            }
+            g_pulled_mesh_srv_tables.erase(
+                g_pulled_mesh_srv_tables.begin()
+                + static_cast<std::ptrdiff_t>(index));
+        }
+
+        const wz::gpu::dx12::DX12DescriptorTable*
+        ensure_pulled_mesh_srv_table(
+            wz::gpu::Device& device,
+            const wz::engine::rendering::ResolvedRenderableResource
+                ::PulledMeshResource& pulled,
+            const wz::engine::rendering::RealizedRenderProgramBindingLayout&
+                layout)
+        {
+            if (!pulled.valid() || layout.descriptors.empty()) {
+                return nullptr;
+            }
+
+            ID3D12DescriptorHeap* heap =
+                wz::gpu::dx12::internal::get_srv_cbv_uav_heap(device);
+            if (!heap) {
+                return nullptr;
+            }
+
+            std::vector<wz::gpu::GPUHandle> buffers;
+            buffers.reserve(layout.descriptors.size());
+            for (const auto& descriptor : layout.descriptors) {
+                if (!is_pulled_mesh_semantic(descriptor.semantic)) {
+                    return nullptr;
+                }
+                wz::gpu::GPUHandle handle =
+                    pulled_mesh_handle_for_semantic(
+                        pulled,
+                        descriptor.semantic);
+                if (!handle.valid()) {
+                    return nullptr;
+                }
+                buffers.push_back(handle);
+            }
+
+            for (size_t i = 0; i < g_pulled_mesh_srv_tables.size();) {
+                const PulledMeshSrvTableCacheEntry& entry =
+                    g_pulled_mesh_srv_tables[i];
+                if (entry.device_impl == device.impl
+                    && entry.heap != heap)
+                {
+                    evict_pulled_mesh_srv_table(device, i);
+                    continue;
+                }
+                ++i;
+            }
+
+            for (size_t i = 0; i < g_pulled_mesh_srv_tables.size(); ++i)
+            {
+                PulledMeshSrvTableCacheEntry& entry =
+                    g_pulled_mesh_srv_tables[i];
+                if (entry.device_impl == device.impl
+                    && entry.heap == heap
+                    && entry.handles == buffers
+                    && entry.table.valid())
+                {
+                    if (i + 1u != g_pulled_mesh_srv_tables.size()) {
+                        PulledMeshSrvTableCacheEntry hit =
+                            std::move(entry);
+                        g_pulled_mesh_srv_tables.erase(
+                            g_pulled_mesh_srv_tables.begin()
+                            + static_cast<std::ptrdiff_t>(i));
+                        g_pulled_mesh_srv_tables.push_back(std::move(hit));
+                        return &g_pulled_mesh_srv_tables.back().table;
+                    }
+                    return &entry.table;
+                }
+            }
+
+            wz::gpu::dx12::DX12DescriptorTable table{};
+            if (!wz::gpu::dx12::internal::create_compute_buffer_srv_table(
+                    device,
+                    buffers,
+                    table))
+            {
+                return nullptr;
+            }
+
+            g_pulled_mesh_srv_tables.push_back({
+                .device_impl = device.impl,
+                .heap = heap,
+                .handles = std::move(buffers),
+                .table = table,
+            });
+            while (g_pulled_mesh_srv_tables.size()
+                > kMaxPulledMeshSrvTables)
+            {
+                evict_pulled_mesh_srv_table(device, 0u);
+            }
+            return &g_pulled_mesh_srv_tables.back().table;
+        }
+
+        bool submit_pulled_mesh_draw(
+            wz::gpu::Device& device,
+            ID3D12GraphicsCommandList* cmdList,
+            const wz::engine::rendering::ResolvedRenderableResource& resolved,
+            const wz::engine::rendering::RenderProgramPipelineCache*
+                render_program_cache,
+            const wz::gpu::dx12::internal::DX12GraphicsPipeline& pipeline,
+            const float constants[48],
+            const char** out_failure_reason = nullptr)
+        {
+            const auto fail =
+                [out_failure_reason](const char* reason)
+                {
+                    if (out_failure_reason) {
+                        *out_failure_reason = reason;
+                    }
+                    return false;
+                };
+            if (out_failure_reason) {
+                *out_failure_reason = nullptr;
+            }
+
+            if (!render_program_cache
+                || !resolved.render_program.valid()
+                || !resolved.pulled_mesh.valid())
+            {
+                return fail("missing render program, cache, or pulled mesh");
+            }
+
+            const auto binding_model =
+                render_program_cache->get_binding_model(
+                    resolved.render_program);
+            if (!binding_model
+                || *binding_model
+                    != wz::engine::assets::RenderBindingModel::MeshVertexPull)
+            {
+                return fail("render program is not MeshVertexPull");
+            }
+
+            const auto* layout =
+                render_program_cache->get_binding_layout(
+                    resolved.render_program);
+            if (!layout || !layout->valid()) {
+                return fail("invalid render-program binding layout");
+            }
+
+            const auto* srv_table =
+                ensure_pulled_mesh_srv_table(
+                    device,
+                    resolved.pulled_mesh,
+                    *layout);
+            if (!srv_table || !srv_table->valid()) {
+                return fail("could not build pulled mesh SRV table");
+            }
+
+            for (const auto& descriptor : layout->descriptors) {
+                if (!is_pulled_mesh_semantic(descriptor.semantic)) {
+                    return fail("layout contains a non-pulled mesh descriptor");
+                }
+                const wz::gpu::GPUHandle handle =
+                    pulled_mesh_handle_for_semantic(
+                        resolved.pulled_mesh,
+                        descriptor.semantic);
+                if (!wz::gpu::dx12::internal
+                        ::transition_compute_buffer_for_graphics_srv(
+                            device,
+                            cmdList,
+                            handle))
+                {
+                    return fail("could not transition pulled mesh buffer");
+                }
+            }
+
+            auto* srv_heap =
+                wz::gpu::dx12::internal::get_srv_cbv_uav_heap(device);
+            if (!srv_heap) {
+                return fail("missing SRV/CBV/UAV heap");
+            }
+
+            cmdList->SetDescriptorHeaps(1, &srv_heap);
+            cmdList->SetGraphicsRootSignature(pipeline.root_sig);
+            cmdList->SetPipelineState(pipeline.pso);
+            cmdList->IASetPrimitiveTopology(
+                D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            for (const auto& rc : layout->root_constants) {
+                cmdList->SetGraphicsRoot32BitConstants(
+                    rc.root_parameter_index,
+                    rc.value_count,
+                    constants,
+                    0);
+            }
+            for (const auto& dt : layout->desc_tables) {
+                cmdList->SetGraphicsRootDescriptorTable(
+                    dt.root_parameter_index,
+                    srv_table->gpu_at(dt.heap_start_slot));
+            }
+
+            cmdList->DrawInstanced(
+                resolved.pulled_mesh.index_count,
+                1,
+                0,
+                0);
+            return true;
+        }
+
+        void log_pulled_mesh_draw_failure(
+            const char* reason,
+            bool fallback_available)
+        {
+            static bool logged_without_fallback = false;
+            static bool logged_with_fallback = false;
+            bool& logged =
+                fallback_available
+                    ? logged_with_fallback
+                    : logged_without_fallback;
+            if (logged) {
+                return;
+            }
+            logged = true;
+
+            char message[256]{};
+            sprintf_s(
+                message,
+                "[scene_editor] pulled mesh draw failed (%s); %s\n",
+                reason ? reason : "unknown reason",
+                fallback_available
+                    ? "using CPU mesh fallback"
+                    : "no CPU mesh fallback available");
+            OutputDebugStringA(message);
+            std::cerr << message;
+        }
+
         void draw_mesh_surface_wireframe_overlay(
             wz::gpu::Device& device,
             const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
@@ -1504,12 +1785,6 @@ namespace wz::engine::render_backend::dx12
                 if (!pl || !pl->valid())
                     continue;
 
-                const auto* mesh = wz::gpu::dx12::internal::get_mesh(
-                    device,
-                    resolved->gpu_resource);
-                if (!mesh || !mesh->vertex_buffer)
-                    continue;
-
                 float constants[48] = {};
                 for (int i = 0; i < 16; ++i) constants[i] = dc.world.m[i];
                 for (int i = 0; i < 16; ++i) {
@@ -1526,6 +1801,56 @@ namespace wz::engine::render_backend::dx12
                     is_mesh_field_heatmap_program(resolved->program);
                 const bool mesh_mask =
                     is_mesh_mask_program(resolved->program);
+
+                bool pulled_cpu_fallback = false;
+                if (resolved->pulled_mesh.valid()) {
+                    if (mesh_wireframe) {
+                        write_mesh_wireframe_style_constants(
+                            constants,
+                            resolved->mesh_style);
+                    }
+                    else {
+                        write_mesh_surface_style_constants(
+                            constants,
+                            resolved->mesh_style);
+                    }
+                    const char* pulled_failure_reason = nullptr;
+                    if (submit_pulled_mesh_draw(
+                            device,
+                            cmdList,
+                            *resolved,
+                            render_program_cache,
+                            *pl,
+                            constants,
+                            &pulled_failure_reason))
+                    {
+                        continue;
+                    }
+
+                    pulled_cpu_fallback = true;
+                    const auto fallback_pipeline_handle =
+                        pipeline_cache.get(resolved->program);
+                    pl = wz::gpu::dx12::internal::get_graphics_pipeline(
+                        device,
+                        fallback_pipeline_handle);
+                    const bool fallback_available =
+                        resolved->gpu_resource.valid()
+                        && pl
+                        && pl->valid();
+                    log_pulled_mesh_draw_failure(
+                        pulled_failure_reason,
+                        fallback_available);
+                    if (!fallback_available) {
+                        continue;
+                    }
+                }
+
+                const auto* mesh = wz::gpu::dx12::internal::get_mesh(
+                    device,
+                    resolved->gpu_resource);
+                if (!mesh || !mesh->vertex_buffer)
+                    continue;
+
                 uint32_t mesh_mask_rule_count = 0u;
                 uint32_t mesh_mask_elements = 0u;
                 if (mesh_mask) {
@@ -1550,17 +1875,17 @@ namespace wz::engine::render_backend::dx12
                         constants,
                         resolved->mesh_style);
                 }
+                else if (mesh_surface) {
+                    write_mesh_surface_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
                 else if (mesh_mask) {
                     write_mesh_mask_style_constants(
                         constants,
                         resolved->mesh_style,
                         mesh_mask_rule_count,
                         mesh_mask_elements);
-                }
-                else if (mesh_surface) {
-                    write_mesh_surface_style_constants(
-                        constants,
-                        resolved->mesh_style);
                 }
                 else if (mesh_field_heatmap) {
                     write_mesh_field_heatmap_style_constants(
@@ -1597,15 +1922,18 @@ namespace wz::engine::render_backend::dx12
                     root_constant_count_for_program(resolved->program),
                     constants,
                     0);
-                if (!bind_custom_render_program_descriptor_resources(
-                        device,
-                        cmdList,
-                        *resolved,
-                        render_program_cache))
+                if (!pulled_cpu_fallback
+                    && !bind_custom_render_program_descriptor_resources(
+                            device,
+                            cmdList,
+                            *resolved,
+                            render_program_cache))
                 {
                     continue;
                 }
-                if (!resolved->render_program.valid()
+                const bool use_builtin_mesh_descriptors =
+                    pulled_cpu_fallback || !resolved->render_program.valid();
+                if (use_builtin_mesh_descriptors
                     && !bind_builtin_mesh_field_heatmap_resource(
                         device,
                         cmdList,
@@ -1613,7 +1941,7 @@ namespace wz::engine::render_backend::dx12
                 {
                     continue;
                 }
-                if (!resolved->render_program.valid()) {
+                if (use_builtin_mesh_descriptors) {
                     uint32_t bound_rule_count = 0u;
                     uint32_t bound_element_count = 0u;
                     const uint32_t fallback_element_count =
@@ -2161,6 +2489,7 @@ namespace wz::engine::render_backend::dx12
                 is_mesh_field_heatmap_program(resolved->program);
             const bool mesh_mask =
                 is_mesh_mask_program(resolved->program);
+
             uint32_t mesh_mask_rule_count = 0u;
             uint32_t mesh_mask_elements = 0u;
             if (mesh_mask) {
@@ -2375,10 +2704,6 @@ namespace wz::engine::render_backend::dx12
             const auto* pl = resolve_pipeline(*resolved);
             if (!pl || !pl->valid()) continue;
 
-            const auto* mesh = wz::gpu::dx12::internal::get_mesh(
-                device, resolved->gpu_resource);
-            if (!mesh || !mesh->vertex_buffer) continue;
-
             float constants[48] = {};
             for (int i = 0; i < 16; ++i) constants[i] = dc.world.m[i];
             for (int i = 0; i < 16; ++i) {
@@ -2395,6 +2720,54 @@ namespace wz::engine::render_backend::dx12
                 is_mesh_field_heatmap_program(resolved->program);
             const bool mesh_mask =
                 is_mesh_mask_program(resolved->program);
+
+            bool pulled_cpu_fallback = false;
+            if (resolved->pulled_mesh.valid()) {
+                if (mesh_wireframe) {
+                    write_mesh_wireframe_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
+                else {
+                    write_mesh_surface_style_constants(
+                        constants,
+                        resolved->mesh_style);
+                }
+                const char* pulled_failure_reason = nullptr;
+                if (submit_pulled_mesh_draw(
+                        device,
+                        cmdList,
+                        *resolved,
+                        &render_program_cache,
+                        *pl,
+                        constants,
+                        &pulled_failure_reason))
+                {
+                    continue;
+                }
+
+                pulled_cpu_fallback = true;
+                const auto fallback_pipeline_handle =
+                    pipeline_cache.get(resolved->program);
+                pl = wz::gpu::dx12::internal::get_graphics_pipeline(
+                    device,
+                    fallback_pipeline_handle);
+                const bool fallback_available =
+                    resolved->gpu_resource.valid()
+                    && pl
+                    && pl->valid();
+                log_pulled_mesh_draw_failure(
+                    pulled_failure_reason,
+                    fallback_available);
+                if (!fallback_available) {
+                    continue;
+                }
+            }
+
+            const auto* mesh = wz::gpu::dx12::internal::get_mesh(
+                device, resolved->gpu_resource);
+            if (!mesh || !mesh->vertex_buffer) continue;
+
             uint32_t mesh_mask_rule_count = 0u;
             uint32_t mesh_mask_elements = 0u;
             if (mesh_mask) {
@@ -2466,15 +2839,18 @@ namespace wz::engine::render_backend::dx12
                 root_constant_count_for_program(resolved->program),
                 constants,
                 0);
-            if (!bind_custom_render_program_descriptor_resources(
-                    device,
-                    cmdList,
-                    *resolved,
-                    &render_program_cache))
+            if (!pulled_cpu_fallback
+                && !bind_custom_render_program_descriptor_resources(
+                        device,
+                        cmdList,
+                        *resolved,
+                        &render_program_cache))
             {
                 continue;
             }
-            if (!resolved->render_program.valid()
+            const bool use_builtin_mesh_descriptors =
+                pulled_cpu_fallback || !resolved->render_program.valid();
+            if (use_builtin_mesh_descriptors
                 && !bind_builtin_mesh_field_heatmap_resource(
                     device,
                     cmdList,
@@ -2482,7 +2858,7 @@ namespace wz::engine::render_backend::dx12
             {
                 continue;
             }
-            if (!resolved->render_program.valid()) {
+            if (use_builtin_mesh_descriptors) {
                 uint32_t bound_rule_count = 0u;
                 uint32_t bound_element_count = 0u;
                 const uint32_t fallback_element_count =

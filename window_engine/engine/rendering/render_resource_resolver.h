@@ -57,7 +57,26 @@ namespace wz::engine::rendering
     // → RenderablePipelineCache path when render_program is invalid.
     struct ResolvedRenderableResource
     {
+        struct PulledMeshResource
+        {
+            wz::gpu::GPUHandle positions{};
+            wz::gpu::GPUHandle indices{};
+            wz::gpu::GPUHandle source_vertices{};
+            uint32_t vertex_count = 0;
+            uint32_t index_count = 0;
+            uint32_t source_triangle_count = 0;
+
+            [[nodiscard]] bool valid() const noexcept
+            {
+                return positions.valid()
+                    && indices.valid()
+                    && vertex_count > 0u
+                    && index_count > 0u;
+            }
+        };
+
         wz::gpu::GPUHandle                       gpu_resource{};
+        PulledMeshResource                       pulled_mesh{};
         wz::engine::assets::BuiltinRenderProgram program{};
         wz::asset::ResourceHandle                render_program{};  // preferred when valid
         wz::engine::assets::TerrainLightingData  terrain_lighting{};
@@ -203,6 +222,12 @@ namespace wz::engine::rendering
             std::span<const TerrainTransitionDrawRange> terrain_transition_ranges = {},
             wz::gpu::GPUHandle                       mesh_field_visualization_resource = {});
 
+        wz::scene::MeshHandle register_pulled_mesh(
+            ResolvedRenderableResource::PulledMeshResource pulled_mesh,
+            wz::engine::assets::BuiltinRenderProgram program,
+            wz::asset::ResourceHandle render_program,
+            wz::engine::assets::MeshRenderStyleData mesh_style = {});
+
         bool register_terrain_proxy(
             wz::engine::assets::TerrainProxyId terrain_proxy_id,
             wz::gpu::GPUHandle                       gpu_resource,
@@ -344,6 +369,7 @@ namespace wz::engine::rendering
             };
 
             wz::gpu::GPUHandle                       gpu_resource{};
+            ResolvedRenderableResource::PulledMeshResource pulled_mesh{};
             wz::engine::assets::BuiltinRenderProgram program{};
             wz::asset::ResourceHandle                render_program{};
             wz::engine::assets::TerrainLightingData  terrain_lighting{};

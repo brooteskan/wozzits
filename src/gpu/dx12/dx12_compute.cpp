@@ -846,4 +846,77 @@ namespace wz::gpu::dx12::internal
         auto* impl = static_cast<DX12Device*>(device.impl);
         return impl ? impl->compute_pipelines.release(handle) : false;
     }
+
+    bool transition_compute_buffer_for_graphics_srv(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !cmd) {
+            return false;
+        }
+
+        DX12ComputeBuffer* resource = impl->compute_buffers.get(buffer);
+        if (!resource || !resource->valid()) {
+            return false;
+        }
+
+        return transition_buffer(
+            cmd,
+            *resource,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    }
+
+    bool create_compute_buffer_srv_table(
+        Device& device,
+        std::span<const GPUHandle> buffers,
+        wz::gpu::dx12::DX12DescriptorTable& out_table)
+    {
+        out_table = {};
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || buffers.empty()) {
+            return false;
+        }
+
+        for (const GPUHandle buffer : buffers) {
+            const DX12ComputeBuffer* resource =
+                impl->compute_buffers.get(buffer);
+            if (!resource || !resource->valid()) {
+                return false;
+            }
+        }
+
+        wz::gpu::dx12::DX12DescriptorTable table =
+            impl->srv_cbv_uav_allocator.allocate(
+                static_cast<uint32_t>(buffers.size()));
+        if (!table.valid()) {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < static_cast<uint32_t>(buffers.size()); ++i) {
+            const DX12ComputeBuffer* resource =
+                impl->compute_buffers.get(buffers[i]);
+            impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                table,
+                i,
+                resource->resource,
+                resource->element_count,
+                resource->stride_bytes);
+        }
+
+        out_table = table;
+        return true;
+    }
+
+    void release_compute_buffer_srv_table(
+        Device& device,
+        const wz::gpu::dx12::DX12DescriptorTable& table)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !table.valid()) {
+            return;
+        }
+        impl->srv_cbv_uav_allocator.release(table);
+    }
 }
