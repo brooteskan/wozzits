@@ -1516,7 +1516,7 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
             .overlap_mode = MeshMaskOverlapMode::Priority,
             .rules = {
                 MeshMaskRule{
-                    .enabled = false,
+                    .enabled = true,
                     .input_channel_id = 0x2200u,
                     .lo = 0.25f,
                     .hi = 0.75f,
@@ -1556,6 +1556,8 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
     EXPECT_EQ(
         renderable_data->mesh_field_visualization_asset,
         scene.nodes[0].mesh_mask_render_style->source_field_asset);
+    ASSERT_EQ(renderable_data->mesh_style.mask.rules.size(), 1u);
+    EXPECT_FALSE(renderable_data->mesh_style.mask.rules[0].enabled);
 }
 
 TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceDomainFollowsInputField)

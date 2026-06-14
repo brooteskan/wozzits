@@ -555,6 +555,11 @@ namespace wz::engine::assets::internal
                                 "mesh styled renderable mask field unavailable; "
                                 "drawing unmatched color: "
                                 + std::string(reason));
+                            for (MeshMaskRule& rule :
+                                 effective_style.mask.rules)
+                            {
+                                rule.enabled = false;
+                            }
                             return;
                         }
                         disable_mask(reason);
