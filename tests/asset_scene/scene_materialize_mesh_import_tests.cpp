@@ -182,6 +182,78 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
     EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
 }
 
+TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_debug_triangle_stride_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_debug_triangle_stride";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralQuad,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation = SceneMeshProcessingOperation::DebugTriangleStride,
+        .preview_level_index = 1,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    EXPECT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.processed_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(
+        processing.processed_mesh_asset.schema_hash,
+        detail::hash_u64(kDebugTriangleStrideMeshSchema.value));
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto source_handle = assets.meshes().get_mesh(
+        MeshAsset{ .output = processing.source_mesh_asset });
+    const auto processed_handle = assets.meshes().get_mesh(
+        MeshAsset{ .output = processing.processed_mesh_asset });
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(processed_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* processed_data =
+        assets.meshes().get_mesh_data(processed_handle);
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(processed_data, nullptr);
+    EXPECT_EQ(source_data->index_count(), 6u);
+    EXPECT_EQ(processed_data->index_count(), 3u);
+    EXPECT_EQ(processed_data->vertex_count(), 3u);
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
+}
+
 TEST(SceneAuthoringMaterialize, MeshProcessingDoesNotFeedFieldOrOperatorSources)
 {
     using namespace wz::engine::assets;

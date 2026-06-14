@@ -309,6 +309,14 @@ namespace wz::engine::assets
                         processing->preview_level_index);
             }
 
+            if (processing->operation
+                == SceneMeshProcessingOperation::DebugTriangleStride)
+            {
+                return ":debug_triangle_stride"
+                    ":level" + std::to_string(
+                        processing->preview_level_index);
+            }
+
             std::ostringstream out;
             out << ":decimate"
                 << ":v" << processing->target_vertex_count
@@ -321,6 +329,13 @@ namespace wz::engine::assets
                 << ":nd" << processing->normal_deviation
                 << ":he" << processing->hausdorff_error;
             return out.str();
+        }
+
+        uint32_t debug_triangle_stride_for_level(uint32_t level) noexcept
+        {
+            constexpr uint32_t kMaxDebugStrideLevel = 30u;
+            level = std::min(level, kMaxDebugStrideLevel);
+            return 1u << level;
         }
 
         std::string mesh_cache_key(
@@ -3235,6 +3250,18 @@ namespace wz::engine::assets
                     .hierarchy = hierarchy,
                 };
             }
+
+            case SceneMeshProcessingOperation::DebugTriangleStride:
+                return SceneMeshProcessingOutputs{
+                    .mesh =
+                        assets.meshes().create_debug_triangle_stride_mesh({
+                            .name = name + "_debug_triangle_stride",
+                            .source_mesh = source_mesh,
+                            .stride = debug_triangle_stride_for_level(
+                                processing.preview_level_index),
+                            .phase = 0,
+                        }),
+                };
             }
 
             return {};

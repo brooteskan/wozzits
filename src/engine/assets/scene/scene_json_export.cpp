@@ -153,6 +153,8 @@ namespace wz::engine::assets
                 return "decimate";
             case SceneMeshProcessingOperation::MeshClusterHierarchyPreview:
                 return "cluster_hierarchy_preview";
+            case SceneMeshProcessingOperation::DebugTriangleStride:
+                return "debug_triangle_stride";
             }
             return "decimate";
         }

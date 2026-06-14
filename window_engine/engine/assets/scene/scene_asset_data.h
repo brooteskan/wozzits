@@ -288,6 +288,7 @@ namespace wz::engine::assets
     {
         Decimate = 0,
         MeshClusterHierarchyPreview,
+        DebugTriangleStride,
     };
 
     struct SceneMeshProcessingAsset

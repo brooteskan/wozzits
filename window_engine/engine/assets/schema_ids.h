@@ -245,6 +245,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000410ull
     };
 
+    // Debug-only mesh filter that keeps every Nth source triangle and compacts
+    // referenced vertices. Produces kAssetTypeMesh for render-path inspection.
+    inline constexpr wz::asset::SchemaID kDebugTriangleStrideMeshSchema{
+        0xF11E'CA55'E7'000411ull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

@@ -67,6 +67,14 @@ namespace wz::engine::assets
         float hausdorff_error = 0.0f;
     };
 
+    struct DebugTriangleStrideMeshDesc
+    {
+        std::string name;
+        MeshAsset source_mesh;
+        uint32_t stride = 1;
+        uint32_t phase = 0;
+    };
+
     class MeshAssetModule
     {
     public:
@@ -82,6 +90,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_decimated_mesh(
             const MeshDecimationAssetDesc& desc);
+
+        [[nodiscard]] MeshAsset create_debug_triangle_stride_mesh(
+            const DebugTriangleStrideMeshDesc& desc);
 
         [[nodiscard]] MeshAsset create_placeholder_mesh(
             std::string name = {});

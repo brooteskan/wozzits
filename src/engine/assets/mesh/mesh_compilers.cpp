@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -501,6 +502,124 @@ namespace wz::engine::assets::internal
             return compiled_mesh_node(input, handle);
         }
 
+        MeshData make_debug_triangle_stride_mesh(
+            const MeshData& source,
+            uint32_t stride,
+            uint32_t phase,
+            wz::Logger& logger)
+        {
+            MeshData out{};
+            out.topology = source.topology;
+            out.index_format = source.index_format;
+            out.has_normals = source.has_normals;
+            out.has_uv0 = source.has_uv0;
+
+            stride = stride == 0u ? 1u : stride;
+            phase %= stride;
+
+            const uint32_t triangle_count =
+                static_cast<uint32_t>(source.indices.size() / 3u);
+            if (triangle_count == 0u) {
+                return {};
+            }
+            if (phase >= triangle_count) {
+                phase = 0u;
+            }
+
+            std::vector<uint32_t> remap(
+                source.vertices.size(),
+                std::numeric_limits<uint32_t>::max());
+            out.indices.reserve(
+                ((triangle_count + stride - 1u) / stride) * 3u);
+
+            const auto append_index =
+                [&](uint32_t source_index) -> bool
+            {
+                if (source_index >= source.vertices.size()) {
+                    logger.error(
+                        "debug triangle stride mesh source index is out "
+                        "of range");
+                    return false;
+                }
+
+                uint32_t& mapped = remap[source_index];
+                if (mapped == std::numeric_limits<uint32_t>::max()) {
+                    if (out.vertices.size()
+                        >= static_cast<size_t>(
+                            std::numeric_limits<uint32_t>::max()))
+                    {
+                        logger.error(
+                            "debug triangle stride mesh has too many "
+                            "vertices");
+                        return false;
+                    }
+                    mapped = static_cast<uint32_t>(out.vertices.size());
+                    out.vertices.push_back(source.vertices[source_index]);
+                }
+                out.indices.push_back(mapped);
+                return true;
+            };
+
+            for (uint32_t tri = phase; tri < triangle_count; tri += stride) {
+                const size_t base = static_cast<size_t>(tri) * 3u;
+                if (!append_index(source.indices[base])
+                    || !append_index(source.indices[base + 1u])
+                    || !append_index(source.indices[base + 2u]))
+                {
+                    return {};
+                }
+            }
+
+            if (!out.valid()) {
+                logger.error("debug triangle stride mesh produced no triangles");
+                return {};
+            }
+            return out;
+        }
+
+        wz::asset::AssetNode compile_debug_triangle_stride_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table)
+        {
+            const auto* desc =
+                std::any_cast<DebugTriangleStrideMeshDesc>(&input.meta);
+            if (!desc) {
+                logger.error("debug triangle stride mesh node missing compile desc");
+                return compile_failed_node(input);
+            }
+            if (dep_handles.size() != 1u) {
+                logger.error(
+                    "debug triangle stride mesh node requires one mesh dependency");
+                return compile_failed_node(input);
+            }
+
+            const MeshData* source = mesh_table.get(dep_handles[0]);
+            if (!source || !source->valid()) {
+                logger.error("debug triangle stride mesh source is invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshData data = make_debug_triangle_stride_mesh(
+                *source,
+                desc->stride,
+                desc->phase,
+                logger);
+            if (!data.valid()) {
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(data));
+            if (!handle.valid()) {
+                logger.error("failed to store debug triangle stride mesh");
+                return compile_failed_node(input);
+            }
+
+            return compiled_mesh_node(input, handle);
+        }
+
     } // anonymous namespace
 
 
@@ -590,6 +709,19 @@ namespace wz::engine::assets::internal
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 return compile_decimated_mesh_node(
+                    input, dep_handles, logger, mesh_table);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kDebugTriangleStrideMeshSchema,
+            .output_type = kAssetTypeMesh,
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
+            {
+                return compile_debug_triangle_stride_mesh_node(
                     input, dep_handles, logger, mesh_table);
             }
             });

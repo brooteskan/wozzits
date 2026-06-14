@@ -177,6 +177,51 @@ TEST(MeshAssetModule, ResolvesDecimatedMeshAsset)
     EXPECT_LE(decimated_data->index_count(), source_data->index_count());
 }
 
+TEST(MeshAssetModule, ResolvesDebugTriangleStrideMeshAsset)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "quad_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Quad,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto strided =
+        assets.meshes().create_debug_triangle_stride_mesh({
+            .name = "quad_stride",
+            .source_mesh = source,
+            .stride = 2u,
+            .phase = 0u,
+        });
+    ASSERT_TRUE(strided.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 2u);
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto strided_handle = assets.meshes().get_mesh(strided);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(strided_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* strided_data = assets.meshes().get_mesh_data(strided_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(strided_data, nullptr);
+    EXPECT_TRUE(strided_data->valid());
+    EXPECT_EQ(source_data->index_count(), 6u);
+    EXPECT_EQ(strided_data->index_count(), 3u);
+    EXPECT_EQ(strided_data->vertex_count(), 3u);
+}
+
 TEST(MeshAssetModule, ResolvesIdentityMeshClusterHierarchyAsset)
 {
     wz::Logger logger;

@@ -95,4 +95,22 @@ namespace wz::engine::assets
             .deps_hash = detail::key_to_dep_hash(source_mesh_key),
         };
     }
+
+    [[nodiscard]] inline wz::asset::AssetKey
+    make_debug_triangle_stride_mesh_key(
+        const wz::asset::AssetKey& source_mesh_key,
+        const DebugTriangleStrideMeshDesc& desc) noexcept
+    {
+        uint64_t h = kDebugTriangleStrideMeshSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.stride));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.phase));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kDebugTriangleStrideMeshSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(source_mesh_key),
+        };
+    }
 }

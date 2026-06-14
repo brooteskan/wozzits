@@ -227,6 +227,9 @@ namespace wz::engine::assets::internal
                 return SceneMeshProcessingOperation::
                     MeshClusterHierarchyPreview;
             }
+            if (text == "debug_triangle_stride") {
+                return SceneMeshProcessingOperation::DebugTriangleStride;
+            }
             return std::nullopt;
         }
 
