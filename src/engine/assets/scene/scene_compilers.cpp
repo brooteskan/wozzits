@@ -214,6 +214,21 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshProcessingOperation>
+        parse_mesh_processing_operation(std::string_view text)
+        {
+            if (text == "decimate" || text == "pmp_decimate") {
+                return SceneMeshProcessingOperation::Decimate;
+            }
+            if (text == "cluster_hierarchy_preview"
+                || text == "mesh_cluster_hierarchy_preview")
+            {
+                return SceneMeshProcessingOperation::
+                    MeshClusterHierarchyPreview;
+            }
+            return std::nullopt;
+        }
+
         std::optional<SceneMeshWaveletAnalysisFunction>
         parse_mesh_wavelet_analysis_function(std::string_view text)
         {
@@ -1841,6 +1856,17 @@ namespace wz::engine::assets::internal
                 if (auto enabled = read_bool(*mp, "enabled")) {
                     processing.enabled = *enabled;
                 }
+                if (auto operation = read_string(*mp, "operation")) {
+                    const auto parsed =
+                        parse_mesh_processing_operation(*operation);
+                    if (!parsed) {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has unknown operation '"
+                            + std::string(*operation) + "'");
+                        return std::nullopt;
+                    }
+                    processing.operation = *parsed;
+                }
                 if (auto target_vertex_count =
                         read_number(*mp, "target_vertex_count"))
                 {
@@ -1911,6 +1937,19 @@ namespace wz::engine::assets::internal
                     processing.hausdorff_error =
                         static_cast<float>(
                             (std::max)(0.0, *hausdorff_error));
+                }
+                if (auto preview_level_index =
+                        read_number(*mp, "preview_level_index"))
+                {
+                    if (*preview_level_index < 0.0
+                        || !std::isfinite(*preview_level_index))
+                    {
+                        logger.error("mesh_processing on node '" + node.id
+                            + "' has invalid preview_level_index");
+                        return std::nullopt;
+                    }
+                    processing.preview_level_index =
+                        static_cast<uint32_t>(*preview_level_index);
                 }
 
                 node.mesh_processing = processing;

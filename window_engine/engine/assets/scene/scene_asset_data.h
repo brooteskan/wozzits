@@ -284,9 +284,17 @@ namespace wz::engine::assets
         uint32_t mesh_index = 0;
     };
 
+    enum class SceneMeshProcessingOperation : uint8_t
+    {
+        Decimate = 0,
+        MeshClusterHierarchyPreview,
+    };
+
     struct SceneMeshProcessingAsset
     {
         bool enabled = false;
+        SceneMeshProcessingOperation operation =
+            SceneMeshProcessingOperation::Decimate;
         uint32_t target_vertex_count = 0;
         uint32_t target_triangle_count = 0;
         float target_ratio = 1.0f;
@@ -296,6 +304,7 @@ namespace wz::engine::assets
         uint32_t max_valence = 0;
         float normal_deviation = 0.0f;
         float hausdorff_error = 0.0f;
+        uint32_t preview_level_index = 0;
     };
 
     enum class SceneImportSourceKind : uint8_t

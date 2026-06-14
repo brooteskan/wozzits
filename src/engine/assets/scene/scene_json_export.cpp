@@ -145,6 +145,18 @@ namespace wz::engine::assets
             return "glb";
         }
 
+        const char* mesh_processing_operation_name(
+            SceneMeshProcessingOperation operation)
+        {
+            switch (operation) {
+            case SceneMeshProcessingOperation::Decimate:
+                return "decimate";
+            case SceneMeshProcessingOperation::MeshClusterHierarchyPreview:
+                return "cluster_hierarchy_preview";
+            }
+            return "decimate";
+        }
+
         const char* mesh_wavelet_analysis_function_name(
             SceneMeshWaveletAnalysisFunction function)
         {
@@ -793,6 +805,9 @@ namespace wz::engine::assets
         {
             auto obj = object_value();
             add_member(*obj, "enabled", bool_value(processing.enabled));
+            add_member(*obj, "operation",
+                string_value(mesh_processing_operation_name(
+                    processing.operation)));
             add_member(*obj, "target_vertex_count",
                 number_value(processing.target_vertex_count));
             add_member(*obj, "target_triangle_count",
@@ -811,6 +826,8 @@ namespace wz::engine::assets
                 number_value(processing.normal_deviation));
             add_member(*obj, "hausdorff_error",
                 number_value(processing.hausdorff_error));
+            add_member(*obj, "preview_level_index",
+                number_value(processing.preview_level_index));
             return obj;
         }
 

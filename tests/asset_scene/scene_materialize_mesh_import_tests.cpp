@@ -1,5 +1,8 @@
 ﻿#include "scene_authoring_materialize_test_support.h"
 
+#include <engine/assets/engine_asset_key_core.h>
+#include <engine/assets/schema_ids.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -113,6 +116,58 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
         BuiltinRenderProgram::MeshWireframeDepthDebug);
     EXPECT_TRUE(renderable_data->mesh_style.depth_test);
     EXPECT_TRUE(renderable_data->mesh_style.depth_write);
+}
+
+TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_hierarchy_preview_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_cluster_hierarchy_preview";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation =
+            SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
+        .preview_level_index = 0,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->kind, RenderableKind::Mesh);
+    EXPECT_EQ(
+        renderable_data->source_asset.schema_hash,
+        detail::hash_u64(kMeshClusterHierarchyPreviewMeshSchema.value));
 }
 
 TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)

@@ -5,6 +5,7 @@
 #include <engine/assets/gltf/gltf_importer.h>
 #include <engine/assets/hdri/hdri_image_loader.h>
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
+#include <engine/assets/mesh_cluster_hierarchy_asset_module.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <asset/key_utils.h>
@@ -290,6 +291,14 @@ namespace wz::engine::assets
         {
             if (!processing || !processing->enabled) {
                 return {};
+            }
+
+            if (processing->operation
+                == SceneMeshProcessingOperation::MeshClusterHierarchyPreview)
+            {
+                return ":cluster_hierarchy_preview"
+                    ":level" + std::to_string(
+                        processing->preview_level_index);
             }
 
             std::ostringstream out;
@@ -3154,6 +3163,58 @@ namespace wz::engine::assets
             return TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface;
         }
 
+        MeshAsset create_processed_mesh_asset(
+            EngineAssetLibrary& assets,
+            MeshAsset source_mesh,
+            const std::string& name,
+            const SceneMeshProcessingAsset& processing)
+        {
+            switch (processing.operation) {
+            case SceneMeshProcessingOperation::Decimate:
+                return assets.meshes().create_decimated_mesh({
+                    .name = name,
+                    .source_mesh = source_mesh,
+                    .target_vertex_count =
+                        processing.target_vertex_count,
+                    .target_triangle_count =
+                        processing.target_triangle_count,
+                    .target_ratio = processing.target_ratio,
+                    .preserve_boundary = processing.preserve_boundary,
+                    .aspect_ratio = processing.aspect_ratio,
+                    .edge_length = processing.edge_length,
+                    .max_valence = processing.max_valence,
+                    .normal_deviation = processing.normal_deviation,
+                    .hausdorff_error = processing.hausdorff_error,
+                });
+
+            case SceneMeshProcessingOperation::MeshClusterHierarchyPreview:
+            {
+                const MeshClusterHierarchyAsset hierarchy =
+                    assets.mesh_cluster_hierarchies()
+                        .create_mesh_cluster_hierarchy({
+                            .name = name + "_hierarchy",
+                            .source_mesh = source_mesh,
+                            .method =
+                                MeshClusterHierarchyBuildMethod::Identity,
+                        });
+                if (!hierarchy.valid()) {
+                    return {};
+                }
+
+                return assets.mesh_cluster_hierarchies()
+                    .create_mesh_cluster_hierarchy_preview_mesh({
+                        .name = name + "_level_"
+                            + std::to_string(
+                                processing.preview_level_index),
+                        .hierarchy = hierarchy,
+                        .level_index = processing.preview_level_index,
+                    });
+            }
+            }
+
+            return {};
+        }
+
         bool ensure_mesh_for_source(
             EngineAssetLibrary& assets,
             const SceneMeshSourceAsset& source,
@@ -3177,21 +3238,11 @@ namespace wz::engine::assets
             }
 
             if (processing && processing->enabled) {
-                mesh = assets.meshes().create_decimated_mesh({
-                    .name = "scene_editor/processed_mesh/" + source_key,
-                    .source_mesh = mesh,
-                    .target_vertex_count =
-                        processing->target_vertex_count,
-                    .target_triangle_count =
-                        processing->target_triangle_count,
-                    .target_ratio = processing->target_ratio,
-                    .preserve_boundary = processing->preserve_boundary,
-                    .aspect_ratio = processing->aspect_ratio,
-                    .edge_length = processing->edge_length,
-                    .max_valence = processing->max_valence,
-                    .normal_deviation = processing->normal_deviation,
-                    .hausdorff_error = processing->hausdorff_error,
-                });
+                mesh = create_processed_mesh_asset(
+                    assets,
+                    mesh,
+                    "scene_editor/processed_mesh/" + source_key,
+                    *processing);
                 if (!mesh.valid()) {
                     error = "failed to register processed mesh: "
                         + source_key;
@@ -3227,19 +3278,11 @@ namespace wz::engine::assets
                 return true;
             }
 
-            MeshAsset processed = assets.meshes().create_decimated_mesh({
-                .name = "scene_editor/processed_mesh/" + processed_key,
-                .source_mesh = source_mesh,
-                .target_vertex_count = processing->target_vertex_count,
-                .target_triangle_count = processing->target_triangle_count,
-                .target_ratio = processing->target_ratio,
-                .preserve_boundary = processing->preserve_boundary,
-                .aspect_ratio = processing->aspect_ratio,
-                .edge_length = processing->edge_length,
-                .max_valence = processing->max_valence,
-                .normal_deviation = processing->normal_deviation,
-                .hausdorff_error = processing->hausdorff_error,
-            });
+            MeshAsset processed = create_processed_mesh_asset(
+                assets,
+                source_mesh,
+                "scene_editor/processed_mesh/" + processed_key,
+                *processing);
             if (!processed.valid()) {
                 error = "failed to register processed mesh: "
                     + processed_key;

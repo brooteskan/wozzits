@@ -320,6 +320,7 @@ namespace wz::engine::assets
             if (node.mesh_processing) {
                 const auto& processing = *node.mesh_processing;
                 fp.mix_value(processing.enabled);
+                fp.mix_value(processing.operation);
                 fp.mix_value(processing.target_vertex_count);
                 fp.mix_value(processing.target_triangle_count);
                 fp.mix_value(processing.target_ratio);
@@ -329,6 +330,7 @@ namespace wz::engine::assets
                 fp.mix_value(processing.max_valence);
                 fp.mix_value(processing.normal_deviation);
                 fp.mix_value(processing.hausdorff_error);
+                fp.mix_value(processing.preview_level_index);
             }
 
             if (node.mesh_wavelet_analysis) {
