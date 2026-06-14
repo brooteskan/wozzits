@@ -192,6 +192,18 @@ namespace wz::asset
         storage_ = std::move(*result);
         index_ = build_asset_index(storage_->dag());
         committed_ = true;
+
+        for (auto it = node_resolve_states_.begin();
+             it != node_resolve_states_.end();)
+        {
+            if (find_asset_node(index_, it->first) == INVALID_ASSET_NODE) {
+                it = node_resolve_states_.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+
         return true;
     }
 
@@ -262,7 +274,6 @@ namespace wz::asset
 
             cache_.evict(key);
             compiled_nodes_.erase(key);
-            set_node_resolve_pending(key);
         }
 
         // Find the compiler for this (schema, type) pair.

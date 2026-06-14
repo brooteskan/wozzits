@@ -2,6 +2,7 @@
 #include <asset/system.h>
 #include <asset/types.h>
 #include <asset/compiler.h>
+#include <jobs/job_types.h>
 
 #include <algorithm>
 #include <optional>
@@ -392,6 +393,23 @@ TEST_F(AssetSystemTest, ResolveAllAfterRecommitKeepsExistingCacheUsable)
     EXPECT_TRUE(second_errors.empty());
     EXPECT_EQ(sys->cache().lookup(kKeyA), first_handle);
     EXPECT_TRUE(sys->cache().contains(kKeyB));
+}
+
+TEST_F(AssetSystemTest, CommitPrunesResolveStateForKeysOutsideCommittedGraph)
+{
+    auto missing = sys->resolve(kKeyB);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(missing));
+    EXPECT_EQ(std::get<ResolveError>(missing), ResolveError::NodeNotFound);
+
+    ASSERT_TRUE(sys->node_resolve_state(kKeyB).has_value());
+    EXPECT_EQ(
+        sys->node_resolve_state(kKeyB)->status,
+        NodeResolveStatus::Failed);
+
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    EXPECT_FALSE(sys->node_resolve_state(kKeyB).has_value());
 }
 
 TEST_F(AssetSystemTest, DuplicateDeterministicKeyAfterCommitIsRejectedWithoutChangingCache)

@@ -27,7 +27,6 @@
 #include "compiler.h"
 #include "cache.h"
 #include "external_cache_provider.h"
-#include <jobs/job_types.h>
 #include <cassert>
 #include <optional>
 #include <span>
@@ -56,40 +55,15 @@ namespace wz::asset {
     };
 
     enum class NodeResolveStatus : uint8_t {
-        Pending = static_cast<uint8_t>(wz::jobs::JobStatus::Pending),
-        Ready = static_cast<uint8_t>(wz::jobs::JobStatus::Ready),
-        Queued = static_cast<uint8_t>(wz::jobs::JobStatus::Queued),
-        Running = static_cast<uint8_t>(wz::jobs::JobStatus::Running),
-        Done = static_cast<uint8_t>(wz::jobs::JobStatus::Done),
-        Skipped = static_cast<uint8_t>(wz::jobs::JobStatus::Skipped),
-        Failed = static_cast<uint8_t>(wz::jobs::JobStatus::Failed),
-        Cancelled = static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled),
+        Pending = 0,
+        Ready = 1,
+        Queued = 2,
+        Running = 3,
+        Done = 4,
+        Skipped = 5,
+        Failed = 6,
+        Cancelled = 7,
     };
-
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Pending)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Pending));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Ready)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Ready));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Queued)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Queued));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Running)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Running));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Done)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Done));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Skipped)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Skipped));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Failed)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Failed));
-    static_assert(
-        static_cast<uint8_t>(NodeResolveStatus::Cancelled)
-            == static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled));
 
     struct NodeResolveState {
         NodeResolveStatus status = NodeResolveStatus::Pending;
