@@ -134,6 +134,8 @@ namespace wz::engine::assets
                 node.mesh_render_style.has_value();
             const bool has_mesh_mask_render_style =
                 node.mesh_mask_render_style.has_value();
+            const bool has_mesh_region_set =
+                node.mesh_region_set.has_value();
             const bool has_scalar_field_source =
                 node.scalar_field_source.has_value();
             const bool has_vector_field_source =
@@ -170,6 +172,7 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_compute_field);
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_mesh_mask_render_style);
+            fp.mix_value(has_mesh_region_set);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
             fp.mix_value(has_collision);
@@ -321,6 +324,7 @@ namespace wz::engine::assets
                 const auto& processing = *node.mesh_processing;
                 fp.mix_value(processing.enabled);
                 fp.mix_value(processing.operation);
+                fp.mix_string(processing.region_set_ref);
                 fp.mix_value(processing.target_vertex_count);
                 fp.mix_value(processing.target_triangle_count);
                 fp.mix_value(processing.target_ratio);
@@ -465,6 +469,35 @@ namespace wz::engine::assets
                 }
                 fp.mix_string(style.source_field_ref);
                 mix_asset_key(fp, style.source_field_asset);
+            }
+
+            if (node.mesh_region_set) {
+                const auto& region_set = *node.mesh_region_set;
+                fp.mix_value(region_set.enabled);
+                fp.mix_string(region_set.region_set_id);
+                fp.mix_value(region_set.intent);
+                fp.mix_value(region_set.mesh_input);
+                fp.mix_value(region_set.mask.enabled);
+                fp.mix_value(region_set.mask.domain);
+                fp.mix_value(region_set.mask.projection_mode);
+                fp.mix_value(region_set.mask.overlap_mode);
+                for (float channel : region_set.mask.unmatched_color) {
+                    fp.mix_value(channel);
+                }
+                fp.mix_value(region_set.mask.show_unmatched);
+                fp.mix_value(region_set.mask.rules.size());
+                for (const MeshMaskRule& rule : region_set.mask.rules) {
+                    fp.mix_value(rule.enabled);
+                    fp.mix_value(rule.input_channel_id);
+                    fp.mix_value(rule.lo);
+                    fp.mix_value(rule.hi);
+                    for (float channel : rule.color) {
+                        fp.mix_value(channel);
+                    }
+                    fp.mix_value(rule.priority);
+                }
+                fp.mix_string(region_set.source_field_ref);
+                mix_asset_key(fp, region_set.source_field_asset);
             }
 
             if (node.scalar_field_source) {

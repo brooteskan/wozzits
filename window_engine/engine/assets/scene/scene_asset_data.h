@@ -296,6 +296,7 @@ namespace wz::engine::assets
         bool enabled = false;
         SceneMeshProcessingOperation operation =
             SceneMeshProcessingOperation::Decimate;
+        std::string region_set_ref;
         uint32_t target_vertex_count = 0;
         uint32_t target_triangle_count = 0;
         float target_ratio = 1.0f;
@@ -389,6 +390,25 @@ namespace wz::engine::assets
             { 1.0f, 1.0f, 1.0f, 0.5f },
             1.0f,
         };
+        MeshMaskRenderStyleData mask{ true };
+        wz::asset::AssetKey source_field_asset{};
+    };
+
+    enum class SceneMeshRegionSetIntent : uint8_t
+    {
+        MaterialMask = 0,
+        RemeshSubset,
+    };
+
+    struct SceneMeshRegionSetAsset
+    {
+        bool enabled = true;
+        std::string region_set_id = "regions";
+        SceneMeshRegionSetIntent intent =
+            SceneMeshRegionSetIntent::RemeshSubset;
+        SceneMeshMaskRenderMeshInput mesh_input =
+            SceneMeshMaskRenderMeshInput::Source;
+        std::string source_field_ref;
         MeshMaskRenderStyleData mask{ true };
         wz::asset::AssetKey source_field_asset{};
     };
@@ -925,6 +945,7 @@ namespace wz::engine::assets
         std::optional<SceneMeshRenderStyleAsset> mesh_render_style;
         std::optional<SceneMeshMaskRenderStyleAsset>
             mesh_mask_render_style;
+        std::optional<SceneMeshRegionSetAsset> mesh_region_set;
         std::optional<SceneScalarFieldSourceAsset> scalar_field_source;
         std::optional<SceneVectorFieldSourceAsset> vector_field_source;
         std::optional<SceneCollisionAsset> collision;
@@ -1008,6 +1029,7 @@ namespace wz::engine::assets
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t mesh_mask_render_styles = 0;
+        uint32_t mesh_region_sets = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
         uint32_t direct_light_sources = 0;
@@ -1245,6 +1267,13 @@ namespace wz::engine::assets
         node.mesh_mask_render_style = std::move(style);
     }
 
+    inline void attach_mesh_region_set(
+        SceneNodeAsset& node,
+        SceneMeshRegionSetAsset region_set = {})
+    {
+        node.mesh_region_set = std::move(region_set);
+    }
+
     inline void attach_mesh_derived_field_source(
         SceneNodeAsset& node,
         SceneMeshDerivedFieldSourceAsset source = {})
@@ -1438,6 +1467,9 @@ namespace wz::engine::assets
         }
         if (node.mesh_mask_render_style) {
             out.push_back(Kind::MeshMaskRenderStyle);
+        }
+        if (node.mesh_region_set) {
+            out.push_back(Kind::MeshRegionSet);
         }
         if (node.scalar_field_source) {
             out.push_back(Kind::ScalarFieldSource);
@@ -1674,6 +1706,7 @@ namespace wz::engine::assets
             || node.mesh_compute_field.has_value()
             || node.mesh_render_style.has_value()
             || node.mesh_mask_render_style.has_value()
+            || node.mesh_region_set.has_value()
             || node.scalar_field_source.has_value()
             || node.vector_field_source.has_value()
             || node.direct_light_source.has_value()
@@ -1774,6 +1807,10 @@ namespace wz::engine::assets
             }
             if (node.mesh_mask_render_style) {
                 ++out.mesh_mask_render_styles;
+                ++out.total_recipes;
+            }
+            if (node.mesh_region_set) {
+                ++out.mesh_region_sets;
                 ++out.total_recipes;
             }
             if (node.scalar_field_source) {
@@ -1912,6 +1949,9 @@ namespace wz::engine::assets
             }
             if (node.mesh_mask_render_style) {
                 ++out.mesh_mask_render_styles;
+            }
+            if (node.mesh_region_set) {
+                ++out.mesh_region_sets;
             }
             if (node.scalar_field_source) {
                 ++out.scalar_field_sources;

@@ -810,6 +810,10 @@ namespace wz::engine::assets
             add_member(*obj, "operation",
                 string_value(mesh_processing_operation_name(
                     processing.operation)));
+            if (!processing.region_set_ref.empty()) {
+                add_member(*obj, "region_set_ref",
+                    string_value(processing.region_set_ref));
+            }
             add_member(*obj, "target_vertex_count",
                 number_value(processing.target_vertex_count));
             add_member(*obj, "target_triangle_count",
@@ -956,6 +960,18 @@ namespace wz::engine::assets
             return "source";
         }
 
+        const char* mesh_region_set_intent_name(
+            SceneMeshRegionSetIntent intent)
+        {
+            switch (intent) {
+            case SceneMeshRegionSetIntent::MaterialMask:
+                return "material_mask";
+            case SceneMeshRegionSetIntent::RemeshSubset:
+                return "remesh_subset";
+            }
+            return "remesh_subset";
+        }
+
         JSONValuePtr mesh_mask_rule_value(const MeshMaskRule& rule)
         {
             auto obj = object_value();
@@ -1061,6 +1077,23 @@ namespace wz::engine::assets
                 *obj,
                 "wireframe",
                 mesh_render_layer_value(style.wireframe));
+            return obj;
+        }
+
+        JSONValuePtr mesh_region_set_value(
+            const SceneMeshRegionSetAsset& region_set)
+        {
+            MeshMaskRenderStyleData mask = region_set.mask;
+            mask.enabled = region_set.enabled;
+            auto obj = mesh_mask_value(mask, region_set.source_field_ref);
+            add_member(*obj, "region_set_id",
+                string_value(region_set.region_set_id));
+            add_member(*obj, "intent",
+                string_value(mesh_region_set_intent_name(
+                    region_set.intent)));
+            add_member(*obj, "mesh_input",
+                string_value(mesh_mask_render_mesh_input_name(
+                    region_set.mesh_input)));
             return obj;
         }
 
@@ -1903,6 +1936,10 @@ namespace wz::engine::assets
                 add_member(*obj, "mesh_mask_render_style",
                     mesh_mask_render_style_value(
                         *node.mesh_mask_render_style));
+            }
+            if (node.mesh_region_set) {
+                add_member(*obj, "mesh_region_set",
+                    mesh_region_set_value(*node.mesh_region_set));
             }
             if (node.scalar_field_source) {
                 add_member(*obj, "scalar_field_source",

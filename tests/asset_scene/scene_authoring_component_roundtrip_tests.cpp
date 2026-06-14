@@ -265,6 +265,122 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
         std::string::npos);
 }
 
+TEST(SceneAssetModule, MeshRegionSetRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_mesh_region_set_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "mesh_region_set_scene",
+  "nodes": [
+    {
+      "id": "mesh",
+      "mesh_source": {
+        "kind": "procedural_quad"
+      },
+      "mesh_processing": {
+        "enabled": true,
+        "operation": "cluster_hierarchy_preview",
+        "region_set_ref": "region_set:lod_regions",
+        "preview_level_index": 0
+      },
+      "mesh_region_set": {
+        "enabled": true,
+        "region_set_id": "lod_regions",
+        "intent": "remesh_subset",
+        "mesh_input": "source",
+        "source_field_ref": "field:detail_masks",
+        "domain": "face",
+        "projection_mode": "direct",
+        "overlap_mode": "alpha_blend",
+        "unmatched_color": [0.0, 0.0, 0.0, 1.0],
+        "show_unmatched": true,
+        "rules": [
+          {
+            "input_channel_id": 12288,
+            "lo": 0.25,
+            "hi": 1.0,
+            "color": [1.0, 0.5, 0.0, 1.0],
+            "priority": 2
+          }
+        ]
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "mesh_region_set.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "mesh_region_set",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& node = scene_data->nodes[0];
+    ASSERT_TRUE(node.mesh_processing.has_value());
+    EXPECT_EQ(
+        node.mesh_processing->region_set_ref,
+        "region_set:lod_regions");
+    ASSERT_TRUE(node.mesh_region_set.has_value());
+    const auto& region_set = *node.mesh_region_set;
+    EXPECT_TRUE(region_set.enabled);
+    EXPECT_EQ(region_set.region_set_id, "lod_regions");
+    EXPECT_EQ(region_set.intent, SceneMeshRegionSetIntent::RemeshSubset);
+    EXPECT_EQ(region_set.mesh_input, SceneMeshMaskRenderMeshInput::Source);
+    EXPECT_EQ(region_set.source_field_ref, "field:detail_masks");
+    EXPECT_EQ(region_set.mask.domain, MeshMaskDomain::Face);
+    EXPECT_EQ(region_set.mask.overlap_mode, MeshMaskOverlapMode::AlphaBlend);
+    ASSERT_EQ(region_set.mask.rules.size(), 1u);
+    EXPECT_EQ(region_set.mask.rules[0].input_channel_id, 12288u);
+    EXPECT_EQ(region_set.mask.rules[0].priority, 2);
+
+    const auto components = authored_components_for_node(node);
+    EXPECT_EQ(
+        std::count(
+            components.begin(),
+            components.end(),
+            wz::scene::SceneAuthoredComponentKind::MeshRegionSet),
+        1);
+
+    const auto summary = summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(summary.mesh_region_sets, 1u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"mesh_region_set\""), std::string::npos);
+    EXPECT_NE(exported.find("\"region_set_id\""), std::string::npos);
+    EXPECT_NE(exported.find("\"lod_regions\""), std::string::npos);
+    EXPECT_NE(exported.find("\"remesh_subset\""), std::string::npos);
+    EXPECT_NE(exported.find("\"region_set_ref\""), std::string::npos);
+    EXPECT_NE(
+        exported.find("\"region_set:lod_regions\""),
+        std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshSparseOperatorSourceComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace wz::engine::assets::internal
 {
@@ -317,6 +318,18 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshRegionSetIntent>
+        parse_mesh_region_set_intent(std::string_view text)
+        {
+            if (text == "material_mask") {
+                return SceneMeshRegionSetIntent::MaterialMask;
+            }
+            if (text == "remesh_subset" || text == "remesh") {
+                return SceneMeshRegionSetIntent::RemeshSubset;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -437,6 +450,54 @@ namespace wz::engine::assets::internal
             {
                 style.mask.enabled = true;
                 style.enabled = true;
+            }
+            return true;
+        }
+
+        bool read_mesh_region_set(
+            const wz::json::JSONValue& obj,
+            const std::string& node_id,
+            wz::Logger& logger,
+            SceneMeshRegionSetAsset& region_set)
+        {
+            SceneMeshMaskRenderStyleAsset style{};
+            if (!read_mesh_mask_render_style(
+                    obj,
+                    node_id,
+                    "mesh_region_set",
+                    logger,
+                    style))
+            {
+                return false;
+            }
+
+            region_set.enabled = style.enabled;
+            region_set.mesh_input = style.mesh_input;
+            region_set.source_field_ref = std::move(style.source_field_ref);
+            region_set.mask = std::move(style.mask);
+            region_set.source_field_asset = style.source_field_asset;
+            if (auto enabled = read_bool(obj, "enabled")) {
+                region_set.enabled = *enabled;
+                region_set.mask.enabled = *enabled;
+            }
+
+            if (auto region_set_id = read_string(obj, "region_set_id")) {
+                region_set.region_set_id = std::string(*region_set_id);
+            }
+            if (region_set.region_set_id.empty()) {
+                logger.error("mesh_region_set on node '" + node_id
+                    + "' has empty region_set_id");
+                return false;
+            }
+            if (auto intent = read_string(obj, "intent")) {
+                const auto parsed = parse_mesh_region_set_intent(*intent);
+                if (!parsed) {
+                    logger.error("mesh_region_set on node '" + node_id
+                        + "' has unknown intent '" + std::string(*intent)
+                        + "'");
+                    return false;
+                }
+                region_set.intent = *parsed;
             }
             return true;
         }
@@ -1894,6 +1955,12 @@ namespace wz::engine::assets::internal
                     }
                     processing.operation = *parsed;
                 }
+                if (auto region_set_ref =
+                        read_string(*mp, "region_set_ref"))
+                {
+                    processing.region_set_ref =
+                        std::string(*region_set_ref);
+                }
                 if (auto target_vertex_count =
                         read_number(*mp, "target_vertex_count"))
                 {
@@ -2310,6 +2377,21 @@ namespace wz::engine::assets::internal
                     return std::nullopt;
                 }
                 node.mesh_mask_render_style = std::move(style);
+            }
+
+            const auto* mregion =
+                find_member(node_val, "mesh_region_set");
+            if (mregion && mregion->kind == wz::json::JSONValueKind::Object) {
+                SceneMeshRegionSetAsset region_set{};
+                if (!read_mesh_region_set(
+                        *mregion,
+                        node.id,
+                        logger,
+                        region_set))
+                {
+                    return std::nullopt;
+                }
+                node.mesh_region_set = std::move(region_set);
             }
 
             const auto* mdfs =

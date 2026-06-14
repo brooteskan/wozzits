@@ -55,6 +55,7 @@ namespace wz::scene
         MeshComputeField,
         MeshRenderStyle,
         MeshMaskRenderStyle,
+        MeshRegionSet,
         ScalarFieldSource,
         VectorFieldSource,
         Camera,
@@ -117,6 +118,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::MeshComputeField:
         case SceneAuthoredComponentKind::MeshRenderStyle:
         case SceneAuthoredComponentKind::MeshMaskRenderStyle:
+        case SceneAuthoredComponentKind::MeshRegionSet:
         case SceneAuthoredComponentKind::ScalarFieldSource:
         case SceneAuthoredComponentKind::VectorFieldSource:
         case SceneAuthoredComponentKind::TerrainRenderStyle:
@@ -197,6 +199,7 @@ namespace wz::scene
         uint32_t mesh_compute_fields = 0;
         uint32_t mesh_render_styles = 0;
         uint32_t mesh_mask_render_styles = 0;
+        uint32_t mesh_region_sets = 0;
         uint32_t scalar_field_sources = 0;
         uint32_t vector_field_sources = 0;
         uint32_t cameras = 0;
