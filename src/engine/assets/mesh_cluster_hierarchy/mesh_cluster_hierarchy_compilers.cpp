@@ -88,6 +88,32 @@ namespace wz::engine::assets::internal
             return a.key < b.key;
         }
 
+        struct EdgeCandidate
+        {
+            std::array<uint32_t, 2> key{};
+            uint32_t a = 0;
+            uint32_t b = 0;
+            uint32_t adjacent_triangle_count = 0;
+            float score = 0.0f;
+        };
+
+        bool edge_candidate_key_less(
+            const EdgeCandidate& a,
+            const EdgeCandidate& b) noexcept
+        {
+            return a.key < b.key;
+        }
+
+        bool edge_candidate_score_less(
+            const EdgeCandidate& a,
+            const EdgeCandidate& b) noexcept
+        {
+            if (a.score != b.score) {
+                return a.score < b.score;
+            }
+            return a.key < b.key;
+        }
+
         struct GraphCoarsenWeights
         {
             bool active = false;
@@ -259,6 +285,177 @@ namespace wz::engine::assets::internal
                 && weights->vertex_weights[b] > 0.0f;
         }
 
+        float triangle_shape_penalty(
+            const float a[3],
+            const float b[3],
+            const float c[3]) noexcept
+        {
+            const float ab[3]{
+                b[0] - a[0],
+                b[1] - a[1],
+                b[2] - a[2],
+            };
+            const float ac[3]{
+                c[0] - a[0],
+                c[1] - a[1],
+                c[2] - a[2],
+            };
+            const float cross[3]{
+                ab[1] * ac[2] - ab[2] * ac[1],
+                ab[2] * ac[0] - ab[0] * ac[2],
+                ab[0] * ac[1] - ab[1] * ac[0],
+            };
+            const float area2_sq =
+                cross[0] * cross[0]
+                + cross[1] * cross[1]
+                + cross[2] * cross[2];
+            const float max_edge_sq = (std::max)(
+                distance_squared(a, b),
+                (std::max)(
+                    distance_squared(b, c),
+                    distance_squared(c, a)));
+            if (max_edge_sq <= 0.0f) {
+                return 1000.0f;
+            }
+
+            const float normalized_area =
+                std::sqrt(area2_sq) / max_edge_sq;
+            return (std::min)(
+                1000.0f,
+                1.0f / ((std::max)(normalized_area, 0.001f)));
+        }
+
+        float collapse_shape_penalty(
+            const MeshData& mesh,
+            uint32_t a,
+            uint32_t b) noexcept
+        {
+            float midpoint[3]{
+                (mesh.vertices[a].position[0]
+                    + mesh.vertices[b].position[0]) * 0.5f,
+                (mesh.vertices[a].position[1]
+                    + mesh.vertices[b].position[1]) * 0.5f,
+                (mesh.vertices[a].position[2]
+                    + mesh.vertices[b].position[2]) * 0.5f,
+            };
+
+            float penalty = 0.0f;
+            const uint32_t triangle_count = mesh.index_count() / 3u;
+            for (uint32_t tri = 0; tri < triangle_count; ++tri) {
+                const uint32_t i0 = mesh.indices[tri * 3u + 0u];
+                const uint32_t i1 = mesh.indices[tri * 3u + 1u];
+                const uint32_t i2 = mesh.indices[tri * 3u + 2u];
+                const bool has_a = i0 == a || i1 == a || i2 == a;
+                const bool has_b = i0 == b || i1 == b || i2 == b;
+                if (!has_a && !has_b) {
+                    continue;
+                }
+                if (has_a && has_b) {
+                    continue;
+                }
+
+                const float* p0 = i0 == a || i0 == b
+                    ? midpoint
+                    : mesh.vertices[i0].position;
+                const float* p1 = i1 == a || i1 == b
+                    ? midpoint
+                    : mesh.vertices[i1].position;
+                const float* p2 = i2 == a || i2 == b
+                    ? midpoint
+                    : mesh.vertices[i2].position;
+                penalty = (std::max)(
+                    penalty,
+                    triangle_shape_penalty(p0, p1, p2));
+            }
+
+            return penalty;
+        }
+
+        std::vector<EdgeCandidate> graph_coarsen_edge_candidates(
+            const MeshData& mesh,
+            const GraphCoarsenWeights* weights)
+        {
+            const uint32_t vertex_count = mesh.vertex_count();
+            const uint32_t triangle_count = mesh.index_count() / 3u;
+            std::vector<EdgeCandidate> candidates;
+            candidates.reserve(triangle_count * 3u);
+
+            const auto add_edge = [&](uint32_t a, uint32_t b) {
+                if (a >= vertex_count || b >= vertex_count || a == b) {
+                    return;
+                }
+                if (!graph_coarsen_edge_allowed(weights, a, b)) {
+                    return;
+                }
+                EdgeCandidate candidate{};
+                candidate.a = a;
+                candidate.b = b;
+                candidate.key = {
+                    (std::min)(a, b),
+                    (std::max)(a, b),
+                };
+                candidate.adjacent_triangle_count = 1u;
+                candidates.push_back(candidate);
+            };
+
+            for (uint32_t tri = 0; tri < triangle_count; ++tri) {
+                const uint32_t i0 = mesh.indices[tri * 3u + 0u];
+                const uint32_t i1 = mesh.indices[tri * 3u + 1u];
+                const uint32_t i2 = mesh.indices[tri * 3u + 2u];
+                add_edge(i0, i1);
+                add_edge(i1, i2);
+                add_edge(i2, i0);
+            }
+
+            std::sort(
+                candidates.begin(),
+                candidates.end(),
+                edge_candidate_key_less);
+
+            std::vector<EdgeCandidate> unique;
+            unique.reserve(candidates.size());
+            for (const EdgeCandidate& candidate : candidates) {
+                if (!unique.empty()
+                    && unique.back().key == candidate.key)
+                {
+                    ++unique.back().adjacent_triangle_count;
+                    continue;
+                }
+                unique.push_back(candidate);
+            }
+
+            for (EdgeCandidate& candidate : unique) {
+                const float length_sq = distance_squared(
+                    mesh.vertices[candidate.a].position,
+                    mesh.vertices[candidate.b].position);
+                const float shape_penalty = collapse_shape_penalty(
+                    mesh,
+                    candidate.a,
+                    candidate.b);
+                const float boundary_penalty =
+                    candidate.adjacent_triangle_count <= 1u ? 4.0f : 1.0f;
+                float mask_pressure = 0.0f;
+                if (weights && weights->active) {
+                    mask_pressure =
+                        (weights->vertex_weights[candidate.a]
+                            + weights->vertex_weights[candidate.b])
+                        * 0.5f;
+                }
+                const float mask_bias = 1.0f / (1.0f + mask_pressure);
+                candidate.score =
+                    length_sq
+                    * (1.0f + shape_penalty)
+                    * boundary_penalty
+                    * mask_bias;
+            }
+
+            std::sort(
+                unique.begin(),
+                unique.end(),
+                edge_candidate_score_less);
+            return unique;
+        }
+
         MeshData graph_coarsen_once(
             const MeshData& source_mesh,
             const GraphCoarsenWeights* weights,
@@ -280,13 +477,9 @@ namespace wz::engine::assets::internal
                 (std::numeric_limits<uint32_t>::max)();
             std::vector<uint32_t> partner(vertex_count, kUnassigned);
 
-            const auto try_pair = [&](uint32_t a, uint32_t b) {
-                if (a >= vertex_count || b >= vertex_count || a == b) {
-                    return;
-                }
-                if (!graph_coarsen_edge_allowed(weights, a, b)) {
-                    return;
-                }
+            const auto try_pair = [&](const EdgeCandidate& candidate) {
+                const uint32_t a = candidate.a;
+                const uint32_t b = candidate.b;
                 if (partner[a] != kUnassigned
                     || partner[b] != kUnassigned)
                 {
@@ -296,13 +489,10 @@ namespace wz::engine::assets::internal
                 partner[b] = a;
             };
 
-            for (uint32_t tri = 0; tri < triangle_count; ++tri) {
-                const uint32_t i0 = source_mesh.indices[tri * 3u + 0u];
-                const uint32_t i1 = source_mesh.indices[tri * 3u + 1u];
-                const uint32_t i2 = source_mesh.indices[tri * 3u + 2u];
-                try_pair(i0, i1);
-                try_pair(i1, i2);
-                try_pair(i2, i0);
+            const std::vector<EdgeCandidate> candidates =
+                graph_coarsen_edge_candidates(source_mesh, weights);
+            for (const EdgeCandidate& candidate : candidates) {
+                try_pair(candidate);
             }
 
             std::vector<uint32_t> cluster_for_vertex(vertex_count, kUnassigned);
