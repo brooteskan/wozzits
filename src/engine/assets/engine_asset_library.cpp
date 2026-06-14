@@ -121,6 +121,7 @@ namespace wz::engine::assets
         , gpu_resident_field_table_{}
         , gpu_resident_mesh_data_table_{}
         , gpu_resident_sparse_operator_table_{}
+        , gpu_resident_mesh_cluster_hierarchy_table_{}
         , terrain_table_{}
         , terrain_visual_proxy_table_{}
         , collision_table_{}
@@ -155,6 +156,10 @@ namespace wz::engine::assets
                 .mesh_cluster_hierarchy_table = mesh_cluster_hierarchy_table_,
                 .gpu_resident_field_table  = gpu_resident_field_table_,
                 .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table_,
+                .gpu_resident_sparse_operator_table =
+                    gpu_resident_sparse_operator_table_,
+                .gpu_resident_mesh_cluster_hierarchy_table =
+                    gpu_resident_mesh_cluster_hierarchy_table_,
                 .terrain_table             = terrain_table_,
                 .terrain_visual_proxy_table = terrain_visual_proxy_table_,
                 .collision_table           = collision_table_,
@@ -244,6 +249,8 @@ namespace wz::engine::assets
         gpu_resident_field_table_.destroy(*mesh_field_compute_);
         gpu_resident_mesh_data_table_.destroy(*mesh_field_compute_);
         gpu_resident_sparse_operator_table_.destroy(*mesh_field_compute_);
+        gpu_resident_mesh_cluster_hierarchy_table_.destroy(
+            *mesh_field_compute_);
     }
 
 

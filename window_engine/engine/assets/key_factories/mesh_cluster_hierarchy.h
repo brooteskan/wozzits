@@ -17,6 +17,12 @@ namespace wz::engine::assets
     {
         uint64_t h = kMeshClusterHierarchySchema.value;
         h = detail::mix64(h, static_cast<uint64_t>(desc.method));
+        h = detail::mix64(h, desc.max_level_index);
+        h = detail::mix64(h, desc.graph_operator.valid() ? 1ull : 0ull);
+        h = detail::mix64(h, desc.graph_cells_pipeline.valid() ? 1ull : 0ull);
+        h = detail::mix64(
+            h,
+            desc.graph_cells_compact_pipeline.valid() ? 1ull : 0ull);
         h = detail::mix64(h, desc.region_mask.has_value() ? 1ull : 0ull);
         if (desc.region_mask) {
             const MeshMaskRenderStyleData& mask = desc.region_mask->mask;
@@ -58,6 +64,22 @@ namespace wz::engine::assets
             deps_hash = detail::combine_dep_hashes(
                 deps_hash,
                 detail::key_to_dep_hash(desc.region_mask->field.output));
+        }
+        if (desc.graph_operator.valid()) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash,
+                detail::key_to_dep_hash(desc.graph_operator.output));
+        }
+        if (desc.graph_cells_pipeline.valid()) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash,
+                detail::key_to_dep_hash(desc.graph_cells_pipeline.key));
+        }
+        if (desc.graph_cells_compact_pipeline.valid()) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash,
+                detail::key_to_dep_hash(
+                    desc.graph_cells_compact_pipeline.key));
         }
 
         return wz::asset::AssetKey{

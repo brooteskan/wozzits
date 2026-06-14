@@ -524,6 +524,66 @@ TEST(MeshAssetModule, GraphCoarsenMeshClusterHierarchyUsesRegionMask)
         unmasked_data->levels[1].vertex_count);
 }
 
+TEST(MeshAssetModule, ResolvesLaplacianGraphCellsMeshClusterHierarchyAsset)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto hierarchy =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_graph_cells_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::
+                    LaplacianGraphCells,
+        });
+    ASSERT_TRUE(hierarchy.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto hierarchy_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            hierarchy);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(hierarchy_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* hierarchy_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(hierarchy_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(hierarchy_data, nullptr);
+    ASSERT_TRUE(hierarchy_data->valid());
+    EXPECT_EQ(
+        hierarchy_data->method,
+        wz::engine::assets::MeshClusterHierarchyBuildMethod::
+            LaplacianGraphCells);
+    ASSERT_GE(hierarchy_data->level_count(), 2u);
+    EXPECT_EQ(
+        hierarchy_data->levels[0].triangle_count,
+        source_data->index_count() / 3u);
+    EXPECT_LT(
+        hierarchy_data->levels[1].triangle_count,
+        hierarchy_data->levels[0].triangle_count);
+    EXPECT_LT(
+        hierarchy_data->levels[1].vertex_count,
+        hierarchy_data->levels[0].vertex_count);
+    EXPECT_GT(hierarchy_data->levels[1].conservative_error, 0.0f);
+    EXPECT_TRUE(mesh_referenced_vertices_are_connected(
+        hierarchy_data->levels[1].preview_mesh));
+}
+
 TEST(MeshAssetModule, ResolvesMeshClusterHierarchyPreviewMesh)
 {
     wz::Logger logger;

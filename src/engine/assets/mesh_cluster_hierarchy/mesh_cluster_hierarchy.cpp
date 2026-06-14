@@ -1,4 +1,5 @@
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.h>
+#include <engine/assets/mesh_derived_field/mesh_field_compute.h>
 #include <engine/assets/type_extensions.h>
 
 #include <cstddef>
@@ -73,5 +74,84 @@ namespace wz::engine::assets
     {
         slots_.clear();
         slots_.emplace_back();
+    }
+
+    GpuResidentMeshClusterHierarchyEntry*
+    GpuResidentMeshClusterHierarchyTable::find_or_add(
+        wz::asset::AssetKey hierarchy_key)
+    {
+        if (hierarchy_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (GpuResidentMeshClusterHierarchyEntry& entry : entries_) {
+            if (entry.hierarchy_key == hierarchy_key) {
+                return &entry;
+            }
+        }
+        entries_.push_back(GpuResidentMeshClusterHierarchyEntry{
+            .hierarchy_key = hierarchy_key,
+        });
+        return &entries_.back();
+    }
+
+    const GpuResidentMeshClusterHierarchyEntry*
+    GpuResidentMeshClusterHierarchyTable::find(
+        wz::asset::AssetKey hierarchy_key) const
+    {
+        if (hierarchy_key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        for (const GpuResidentMeshClusterHierarchyEntry& entry : entries_) {
+            if (entry.hierarchy_key == hierarchy_key) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    GpuResidentMeshClusterHierarchyLevel*
+    GpuResidentMeshClusterHierarchyTable::find_or_add_level(
+        wz::asset::AssetKey hierarchy_key,
+        uint32_t level_index)
+    {
+        GpuResidentMeshClusterHierarchyEntry* entry =
+            find_or_add(hierarchy_key);
+        if (!entry) {
+            return nullptr;
+        }
+        for (GpuResidentMeshClusterHierarchyLevel& level : entry->levels) {
+            if (level.level_index == level_index) {
+                return &level;
+            }
+        }
+        entry->levels.push_back(GpuResidentMeshClusterHierarchyLevel{
+            .level_index = level_index,
+        });
+        return &entry->levels.back();
+    }
+
+    void GpuResidentMeshClusterHierarchyTable::destroy(
+        MeshFieldComputeBackend& compute)
+    {
+        for (GpuResidentMeshClusterHierarchyEntry& entry : entries_) {
+            for (GpuResidentMeshClusterHierarchyLevel& level : entry.levels) {
+                for (wz::asset::ResourceHandle* handle : {
+                    &level.positions,
+                    &level.indices,
+                    &level.source_vertices })
+                {
+                    if (handle->valid()) {
+                        compute.release_buffer(*handle);
+                        *handle = {};
+                    }
+                }
+            }
+        }
+        entries_.clear();
+    }
+
+    size_t GpuResidentMeshClusterHierarchyTable::size() const noexcept
+    {
+        return entries_.size();
     }
 }

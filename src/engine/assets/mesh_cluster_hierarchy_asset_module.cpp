@@ -43,6 +43,15 @@ namespace wz::engine::assets
         if (desc.region_mask && desc.region_mask->field.valid()) {
             deps.push_back(desc.region_mask->field.output);
         }
+        if (desc.graph_operator.valid()) {
+            deps.push_back(desc.graph_operator.output);
+        }
+        if (desc.graph_cells_pipeline.valid()) {
+            deps.push_back(desc.graph_cells_pipeline.key);
+        }
+        if (desc.graph_cells_compact_pipeline.valid()) {
+            deps.push_back(desc.graph_cells_compact_pipeline.key);
+        }
 
         (void)system_.register_asset(
             std::move(node),

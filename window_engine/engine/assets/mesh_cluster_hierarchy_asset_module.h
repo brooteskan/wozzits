@@ -3,10 +3,12 @@
 // engine/assets/mesh_cluster_hierarchy_asset_module.h
 
 #include <asset/system.h>
+#include <engine/assets/compute_pipeline_asset_module.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
 #include <engine/assets/mesh_render_style/mesh_render_style.h>
+#include <engine/assets/mesh_sparse_operator_asset_module.h>
 
 #include <optional>
 #include <string>
@@ -25,6 +27,10 @@ namespace wz::engine::assets
         MeshAsset source_mesh;
         MeshClusterHierarchyBuildMethod method =
             MeshClusterHierarchyBuildMethod::Identity;
+        uint32_t max_level_index = 3;
+        MeshSparseOperatorAsset graph_operator{};
+        ComputePipelineAsset graph_cells_pipeline{};
+        ComputePipelineAsset graph_cells_compact_pipeline{};
         std::optional<MeshClusterHierarchyRegionMaskDesc> region_mask;
     };
 

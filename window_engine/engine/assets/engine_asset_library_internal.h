@@ -75,6 +75,9 @@ namespace wz::engine::assets::internal {
         MeshClusterHierarchyTable&  mesh_cluster_hierarchy_table;
         GpuResidentFieldTable&      gpu_resident_field_table;
         GpuResidentMeshDataTable&   gpu_resident_mesh_data_table;
+        GpuResidentSparseOperatorTable& gpu_resident_sparse_operator_table;
+        GpuResidentMeshClusterHierarchyTable&
+            gpu_resident_mesh_cluster_hierarchy_table;
         TerrainAssetTable&          terrain_table;
         TerrainVisualProxyTable&     terrain_visual_proxy_table;
         CollisionAssetTable&        collision_table;

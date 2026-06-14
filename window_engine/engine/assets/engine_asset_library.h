@@ -242,6 +242,16 @@ namespace wz::engine::assets
         GpuResidentSparseOperatorTable&       gpu_resident_sparse_operators()       { return gpu_resident_sparse_operator_table_; }
         const GpuResidentSparseOperatorTable& gpu_resident_sparse_operators() const { return gpu_resident_sparse_operator_table_; }
 
+        GpuResidentMeshClusterHierarchyTable& gpu_resident_mesh_cluster_hierarchies()
+        {
+            return gpu_resident_mesh_cluster_hierarchy_table_;
+        }
+        const GpuResidentMeshClusterHierarchyTable&
+            gpu_resident_mesh_cluster_hierarchies() const
+        {
+            return gpu_resident_mesh_cluster_hierarchy_table_;
+        }
+
         MeshFieldComputeBackend& mesh_field_compute() { return *mesh_field_compute_; }
 
         bool gpu_device_valid() const { return device_.valid(); }
@@ -274,6 +284,8 @@ namespace wz::engine::assets
         GpuResidentFieldTable       gpu_resident_field_table_;
         GpuResidentMeshDataTable    gpu_resident_mesh_data_table_;
         GpuResidentSparseOperatorTable gpu_resident_sparse_operator_table_;
+        GpuResidentMeshClusterHierarchyTable
+            gpu_resident_mesh_cluster_hierarchy_table_;
         TerrainAssetTable           terrain_table_;
         TerrainVisualProxyTable      terrain_visual_proxy_table_;
         CollisionAssetTable         collision_table_;

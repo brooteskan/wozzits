@@ -84,7 +84,8 @@
       },
       "mesh_processing": {
         "enabled": true,
-        "operation": "debug_triangle_stride",
+        "operation": "cluster_hierarchy_preview",
+        "region_set_ref": "region_set:regions",
         "target_vertex_count": 0,
         "target_triangle_count": 0,
         "target_ratio": 1,
@@ -94,9 +95,10 @@
         "max_valence": 0,
         "normal_deviation": 0,
         "hausdorff_error": 0,
-        "preview_level_index": 0,
+        "preview_level_index": 3,
         "source_mesh_asset": "asset-key:d32f0b9d5e0b79d6:0000000000000000:f11eca55e7000403:0000000000000000:0000000000000002:0000000000000000:f90f3c0b1753645a:d974617c784f67aa",
-        "processed_mesh_asset": "asset-key:4de9286507a52aad:0000000000000000:f11eca55e7000411:0000000000000000:0000000000000002:0000000000000000:236178699b1b52e3:5578d804d61c780c"
+        "processed_mesh_asset": "asset-key:d32f0b9d5e0b850c:0000000000000000:f11eca55e7000410:0000000000000000:0000000000000001:0000000000000000:f50c2477e4b8137c:0420ca3ffdde09cb",
+        "hierarchy_asset": "asset-key:4fd9094d1db15793:0000000000000000:f11eca55e700040f:0000000000000000:0000000000000001:0000000000000000:1b62d322330633a8:a83c7345518dd96f"
       },
       "mesh_derived_field_source": {
         "enabled": true,
@@ -150,7 +152,7 @@
         "show_unmatched": true,
         "rules": [
           {
-            "enabled": false,
+            "enabled": true,
             "input_channel_id": 8704,
             "lo": -0.063000001013278961,
             "hi": 0.0010000000474974513,
@@ -163,7 +165,7 @@
             "priority": 0
           },
           {
-            "enabled": false,
+            "enabled": true,
             "input_channel_id": 8705,
             "lo": -0.0010000000474974513,
             "hi": 0.0030000000260770321,
@@ -187,6 +189,51 @@
           ],
           "emissive_strength": 1
         }
+      },
+      "mesh_region_set": {
+        "enabled": true,
+        "source_field_ref": "field:topology_irregularity",
+        "domain": "face",
+        "projection_mode": "direct",
+        "overlap_mode": "alpha_blend",
+        "unmatched_color": [
+          0.86274474859237671,
+          0.093041159212589264,
+          0.86274510622024536,
+          1
+        ],
+        "show_unmatched": true,
+        "rules": [
+          {
+            "enabled": true,
+            "input_channel_id": 8704,
+            "lo": -0.063000001013278961,
+            "hi": 0.0010000000474974513,
+            "color": [
+              0.050980392843484879,
+              0.23137255012989044,
+              0.729411780834198,
+              1
+            ],
+            "priority": 0
+          },
+          {
+            "enabled": true,
+            "input_channel_id": 8705,
+            "lo": -0.0010000000474974513,
+            "hi": 0.0030000000260770321,
+            "color": [
+              0.729411780834198,
+              0.68950408697128296,
+              0.05098038911819458,
+              0.7607843279838562
+            ],
+            "priority": 4
+          }
+        ],
+        "region_set_id": "regions",
+        "intent": "remesh_subset",
+        "mesh_input": "source"
       }
     }
   ],
@@ -199,15 +246,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        151.15498352050781,
-        19.948040008544922,
-        136.84779357910156
+        115.19181060791016,
+        108.41920471191406,
+        -97.597412109375
       ],
       "orientation": [
-        0.034264929592609406,
-        -0.8356972336769104,
-        0.54744750261306763,
-        0.027153514325618744
+        0.125138059258461,
+        -0.56250804662704468,
+        0.069533154368400574,
+        0.81430363655090332
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

@@ -185,13 +185,24 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
         MeshAsset{ .output = processing.source_mesh_asset });
     const auto processed_handle = assets.meshes().get_mesh(
         MeshAsset{ .output = processing.processed_mesh_asset });
+    const auto hierarchy_handle =
+        assets.mesh_cluster_hierarchies().get_mesh_cluster_hierarchy(
+            MeshClusterHierarchyAsset{ .output = processing.hierarchy_asset });
     ASSERT_TRUE(source_handle.valid());
     ASSERT_TRUE(processed_handle.valid());
+    ASSERT_TRUE(hierarchy_handle.valid());
     const auto* source_data = assets.meshes().get_mesh_data(source_handle);
     const auto* processed_data =
         assets.meshes().get_mesh_data(processed_handle);
+    const auto* hierarchy_data =
+        assets.mesh_cluster_hierarchies()
+            .get_mesh_cluster_hierarchy_data(hierarchy_handle);
     ASSERT_NE(source_data, nullptr);
     ASSERT_NE(processed_data, nullptr);
+    ASSERT_NE(hierarchy_data, nullptr);
+    EXPECT_EQ(
+        hierarchy_data->method,
+        MeshClusterHierarchyBuildMethod::LaplacianGraphCells);
     EXPECT_LT(processed_data->index_count(), source_data->index_count());
 }
 
@@ -282,6 +293,9 @@ TEST(SceneAuthoringMaterialize, MeshProcessingPreviewConsumesRegionSetMask)
             .get_mesh_cluster_hierarchy_data(hierarchy_handle);
     ASSERT_NE(hierarchy_data, nullptr);
     ASSERT_GE(hierarchy_data->level_count(), 2u);
+    EXPECT_EQ(
+        hierarchy_data->method,
+        MeshClusterHierarchyBuildMethod::LaplacianGraphCells);
 }
 
 TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)

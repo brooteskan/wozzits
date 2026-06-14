@@ -633,6 +633,159 @@ namespace wz::engine::assets
             });
         }
 
+        ComputePipelineAsset create_builtin_mesh_cluster_graph_cells_pipeline(
+            EngineAssetLibrary& assets)
+        {
+            if (!assets.gpu_device_valid()) {
+                return {};
+            }
+
+            const ComputeShaderAsset shader =
+                assets.shaders().create_compute_shader({
+                    .name = "mesh_cluster_hierarchy/laplacian_graph_cells_neighbors",
+                    .path =
+                        "shaders/mesh_cluster_hierarchy/laplacian_graph_cells_neighbors_cs.hlsl",
+                    .entry = "main",
+                    .target = "cs_5_0",
+                });
+            if (!shader.valid()) {
+                return {};
+            }
+
+            return assets.compute_pipelines().create_compute_pipeline({
+                .name =
+                    "mesh_cluster_hierarchy/laplacian_graph_cells_neighbors_pipeline",
+                .compute_shader = shader.shader,
+                .bindings = {
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::MeshVertices,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float) * 3u,
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 1,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 2,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                },
+                .root_constant_dwords = 4,
+                .thread_group_size_x = 128,
+                .thread_group_size_y = 1,
+                .thread_group_size_z = 1,
+            });
+        }
+
+        ComputePipelineAsset create_builtin_mesh_cluster_graph_cells_compact_pipeline(
+            EngineAssetLibrary& assets)
+        {
+            if (!assets.gpu_device_valid()) {
+                return {};
+            }
+
+            const ComputeShaderAsset shader =
+                assets.shaders().create_compute_shader({
+                    .name =
+                        "mesh_cluster_hierarchy/laplacian_graph_cells_compact",
+                    .path =
+                        "shaders/mesh_cluster_hierarchy/laplacian_graph_cells_compact_cs.hlsl",
+                    .entry = "main",
+                    .target = "cs_5_0",
+                });
+            if (!shader.valid()) {
+                return {};
+            }
+
+            return assets.compute_pipelines().create_compute_pipeline({
+                .name =
+                    "mesh_cluster_hierarchy/laplacian_graph_cells_compact_pipeline",
+                .compute_shader = shader.shader,
+                .bindings = {
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::MeshVertices,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float) * 3u,
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::MeshIndices,
+                        .shader_register = 1,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 2,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferSRV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 3,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(float) * 3u,
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 1,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                    ComputeBindingDesc{
+                        .kind = ComputeBindingKind::StructuredBufferUAV,
+                        .semantic = ComputeBindingSemantic::Scratch,
+                        .shader_register = 2,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                        .stride_bytes = sizeof(uint32_t),
+                    },
+                },
+                .root_constant_dwords = 4,
+                .thread_group_size_x = 128,
+                .thread_group_size_y = 1,
+                .thread_group_size_z = 1,
+            });
+        }
+
         ComputeBindingKind compute_binding_kind_for_scene_port(
             const SceneComputeKernelPortAsset& port)
         {
@@ -3301,13 +3454,34 @@ namespace wz::engine::assets
                         .mask = region_set->mask,
                     };
                 }
+                const MeshSparseOperatorAsset graph_operator =
+                    assets.mesh_sparse_operators().create_sparse_operator({
+                        .name = name + "_graph_operator",
+                        .source_mesh = source_mesh,
+                        .kind =
+                            MeshSparseOperatorKind::UniformVertexLaplacian,
+                        .domain = MeshOperatorDomain::Vertex,
+                    });
+                const ComputePipelineAsset graph_cells_pipeline =
+                    create_builtin_mesh_cluster_graph_cells_pipeline(
+                        assets);
+                const ComputePipelineAsset graph_cells_compact_pipeline =
+                    create_builtin_mesh_cluster_graph_cells_compact_pipeline(
+                        assets);
                 const MeshClusterHierarchyAsset hierarchy =
                     assets.mesh_cluster_hierarchies()
                         .create_mesh_cluster_hierarchy({
                             .name = name + "_hierarchy",
                             .source_mesh = source_mesh,
                             .method =
-                                MeshClusterHierarchyBuildMethod::GraphCoarsen,
+                                MeshClusterHierarchyBuildMethod::
+                                    LaplacianGraphCells,
+                            .max_level_index =
+                                processing.preview_level_index,
+                            .graph_operator = graph_operator,
+                            .graph_cells_pipeline = graph_cells_pipeline,
+                            .graph_cells_compact_pipeline =
+                                graph_cells_compact_pipeline,
                             .region_mask = region_mask,
                         });
                 if (!hierarchy.valid()) {
