@@ -1482,98 +1482,109 @@ namespace wz::engine::rendering
             && !(renderable.mesh_field_visualization_asset
                 == wz::asset::AssetKey{}))
         {
-            if (!mesh_data || !mesh_data->valid()) {
-                return false;
-            }
-
-            const wz::engine::assets::MeshDerivedFieldAsset field_asset{
-                .output = renderable.mesh_field_visualization_asset,
-            };
-            const wz::engine::assets::MeshDerivedFieldHandle field_handle =
-                assets_.mesh_derived_fields().get_mesh_derived_field(
-                    field_asset);
-            if (!field_handle.valid()) {
-                const bool wants_mask =
-                    renderable.program
-                        == wz::engine::assets::BuiltinRenderProgram::
-                            MeshMaskStyle
-                    && renderable.mesh_style.mask.enabled;
-                if (wants_mask) {
-                    mesh_field_visualization_resource = {};
-                }
-                else {
-                    return false;
-                }
-            }
-
-            const wz::engine::assets::MeshDerivedFieldData* field_data =
-                field_handle.valid()
-                    ? assets_.mesh_derived_fields().get_mesh_derived_field_data(
-                        field_handle)
-                    : nullptr;
-
             const bool wants_mask =
                 renderable.program
                     == wz::engine::assets::BuiltinRenderProgram::MeshMaskStyle
                 && renderable.mesh_style.mask.enabled;
-            if ((!field_data || !field_data->valid()) && !wants_mask) {
-                return false;
-            }
-            if (wants_mask) {
-                const std::vector<uint32_t> channels =
-                    mesh_mask_channel_ids(renderable.mesh_style.mask);
-                if (channels.empty()) {
-                    mesh_field_visualization_resource = {};
-                }
-                else if (field_data && field_data->valid()) {
-                    if (renderable.mesh_style.mask.domain
-                        == wz::engine::assets::MeshMaskDomain::Vertex)
-                    {
-                        mesh_field_visualization_resource =
-                            wz::gpu::upload_mesh_field_raw_vertices(
-                                device_,
-                                wz::gpu::MeshFieldRawVertexUploadDesc{
-                                    .mesh = mesh_data,
-                                    .field = field_data,
-                                    .channel_ids = channels.data(),
-                                    .channel_count =
-                                        static_cast<uint32_t>(channels.size()),
-                                });
-                    }
-                    else {
-                        mesh_field_visualization_resource =
-                            wz::gpu::upload_mesh_field_raw_faces(
-                                device_,
-                                wz::gpu::MeshFieldRawFaceUploadDesc{
-                                    .mesh = mesh_data,
-                                    .field = field_data,
-                                    .channel_ids = channels.data(),
-                                    .channel_count =
-                                        static_cast<uint32_t>(channels.size()),
-                                });
-                    }
-                }
+            if (wants_mask
+                && mesh_mask_channel_set_id(renderable.mesh_style.mask) == 0u)
+            {
+                mesh_field_visualization_resource = {};
             }
             else {
-                mesh_field_visualization_resource =
-                    wz::gpu::upload_mesh_field_visualization(
-                        device_,
-                        wz::gpu::MeshFieldVisualizationUploadDesc{
-                            .mesh = mesh_data,
-                            .field = field_data,
-                            .channel_id =
-                                renderable.mesh_style
-                                    .field_visualization.channel_id,
-                        });
-            }
-            if (!mesh_field_visualization_resource.valid() && !wants_mask) {
-                return false;
-            }
+                if (!mesh_data || !mesh_data->valid()) {
+                    return false;
+                }
 
-            if (mesh_field_visualization_resource.valid()) {
-                preview_gpu_resources_.emplace_back(
-                    preview_release_queue_,
-                    mesh_field_visualization_resource);
+                const wz::engine::assets::MeshDerivedFieldAsset field_asset{
+                    .output = renderable.mesh_field_visualization_asset,
+                };
+                const wz::engine::assets::MeshDerivedFieldHandle field_handle =
+                    assets_.mesh_derived_fields().get_mesh_derived_field(
+                        field_asset);
+                if (!field_handle.valid()) {
+                    const bool wants_mask =
+                        renderable.program
+                            == wz::engine::assets::BuiltinRenderProgram::
+                                MeshMaskStyle
+                        && renderable.mesh_style.mask.enabled;
+                    if (wants_mask) {
+                        mesh_field_visualization_resource = {};
+                    }
+                    else {
+                        return false;
+                    }
+                }
+
+                const wz::engine::assets::MeshDerivedFieldData* field_data =
+                    field_handle.valid()
+                        ? assets_.mesh_derived_fields().get_mesh_derived_field_data(
+                            field_handle)
+                        : nullptr;
+
+                const bool wants_mask =
+                    renderable.program
+                        == wz::engine::assets::BuiltinRenderProgram::MeshMaskStyle
+                    && renderable.mesh_style.mask.enabled;
+                if ((!field_data || !field_data->valid()) && !wants_mask) {
+                    return false;
+                }
+                if (wants_mask) {
+                    const std::vector<uint32_t> channels =
+                        mesh_mask_channel_ids(renderable.mesh_style.mask);
+                    if (channels.empty()) {
+                        mesh_field_visualization_resource = {};
+                    }
+                    else if (field_data && field_data->valid()) {
+                        if (renderable.mesh_style.mask.domain
+                            == wz::engine::assets::MeshMaskDomain::Vertex)
+                        {
+                            mesh_field_visualization_resource =
+                                wz::gpu::upload_mesh_field_raw_vertices(
+                                    device_,
+                                    wz::gpu::MeshFieldRawVertexUploadDesc{
+                                        .mesh = mesh_data,
+                                        .field = field_data,
+                                        .channel_ids = channels.data(),
+                                        .channel_count =
+                                            static_cast<uint32_t>(channels.size()),
+                                    });
+                        }
+                        else {
+                            mesh_field_visualization_resource =
+                                wz::gpu::upload_mesh_field_raw_faces(
+                                    device_,
+                                    wz::gpu::MeshFieldRawFaceUploadDesc{
+                                        .mesh = mesh_data,
+                                        .field = field_data,
+                                        .channel_ids = channels.data(),
+                                        .channel_count =
+                                            static_cast<uint32_t>(channels.size()),
+                                    });
+                        }
+                    }
+                }
+                else {
+                    mesh_field_visualization_resource =
+                        wz::gpu::upload_mesh_field_visualization(
+                            device_,
+                            wz::gpu::MeshFieldVisualizationUploadDesc{
+                                .mesh = mesh_data,
+                                .field = field_data,
+                                .channel_id =
+                                    renderable.mesh_style
+                                        .field_visualization.channel_id,
+                            });
+                }
+                if (!mesh_field_visualization_resource.valid() && !wants_mask) {
+                    return false;
+                }
+
+                if (mesh_field_visualization_resource.valid()) {
+                    preview_gpu_resources_.emplace_back(
+                        preview_release_queue_,
+                        mesh_field_visualization_resource);
+                }
             }
         }
 
