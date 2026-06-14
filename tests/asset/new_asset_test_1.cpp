@@ -465,6 +465,107 @@ TEST_F(AssetSystemTest, DependentDoesNotResolveAgainstFailedDependency)
     EXPECT_EQ(sys2.find_compiled(kKeyB), nullptr);
 }
 
+TEST_F(AssetSystemTest, NodeResolveStatusMirrorsJobStatus)
+{
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Pending),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Pending));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Ready),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Ready));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Queued),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Queued));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Running),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Running));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Done),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Done));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Skipped),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Skipped));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Failed),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Failed));
+    EXPECT_EQ(
+        static_cast<uint8_t>(NodeResolveStatus::Cancelled),
+        static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled));
+}
+
+TEST_F(AssetSystemTest, FailedNodesKeepQueryableResolveState)
+{
+    CompilerRegistry reg2;
+    reg2.register_compiler(make_failing_compiler(kMeshSchema, AssetType::Mesh));
+    reg2.register_compiler(make_stub_compiler(kTexSchema, AssetType::Texture));
+
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.register_asset(
+        make_node(kKeyB, AssetType::Texture, kTexSchema),
+        { kKeyA }));
+    ASSERT_TRUE(sys2.commit());
+
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(sys2.resolve_all(&errors), 0u);
+
+    const auto source_state = sys2.node_resolve_state(kKeyA);
+    ASSERT_TRUE(source_state.has_value());
+    EXPECT_EQ(source_state->status, NodeResolveStatus::Failed);
+    ASSERT_TRUE(source_state->error.has_value());
+    EXPECT_EQ(*source_state->error, ResolveError::CompileFailed);
+
+    const auto dependent_state = sys2.node_resolve_state(kKeyB);
+    ASSERT_TRUE(dependent_state.has_value());
+    EXPECT_EQ(dependent_state->status, NodeResolveStatus::Failed);
+    ASSERT_TRUE(dependent_state->error.has_value());
+    EXPECT_EQ(*dependent_state->error, ResolveError::DependencyFailed);
+}
+
+TEST_F(AssetSystemTest, SuccessfulReresolveClearsPreviousError)
+{
+    bool fail_compile = true;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&fail_compile](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            if (fail_compile) {
+                return input;
+            }
+
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ 9, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    auto failed = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(failed));
+    ASSERT_TRUE(sys2.node_resolve_state(kKeyA).has_value());
+    EXPECT_EQ(
+        sys2.node_resolve_state(kKeyA)->status,
+        NodeResolveStatus::Failed);
+
+    fail_compile = false;
+    auto resolved = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(resolved));
+
+    const auto state = sys2.node_resolve_state(kKeyA);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->status, NodeResolveStatus::Done);
+    EXPECT_FALSE(state->error.has_value());
+}
+
 TEST_F(AssetSystemTest, CompiledResourceHandleMustBeValid)
 {
     CompilerRegistry reg2;
@@ -1087,6 +1188,12 @@ TEST_F(AssetSystemTest, ResolveRoots_CacheRequiredMissDoesNotResolvePrerequisite
     EXPECT_EQ(source_compile_count, 0u);
     EXPECT_FALSE(sys2.cache().contains(kKeyA));
     EXPECT_FALSE(sys2.cache().contains(kKeyB));
+
+    const auto state = sys2.node_resolve_state(kKeyB);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->status, NodeResolveStatus::Failed);
+    ASSERT_TRUE(state->error.has_value());
+    EXPECT_EQ(*state->error, ResolveError::ExternalCacheMiss);
 }
 
 TEST_F(AssetSystemTest, ResolveRoots_CachePreferredHitSkipsPrerequisites)
@@ -1225,6 +1332,57 @@ TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileIgnoresExternalProvider)
     const auto* compiled = sys2.find_compiled(kKeyA);
     ASSERT_NE(compiled, nullptr);
     EXPECT_EQ(compiled->handle.id, 5u);
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileRefreshesCachedState)
+{
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload =
+                ResourceHandle{ compile_count, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    auto first = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(first));
+    EXPECT_EQ(std::get<ResourceHandle>(first).id, 1u);
+
+    const AssetKey roots[]{ kKeyA };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::ForceRecompile,
+            nullptr,
+            &errors),
+        1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(compile_count, 2u);
+
+    const auto* compiled = sys2.find_compiled(kKeyA);
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_EQ(compiled->handle.id, 2u);
+
+    const auto state = sys2.node_resolve_state(kKeyA);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->status, NodeResolveStatus::Done);
+    EXPECT_FALSE(state->error.has_value());
 }
 
 TEST_F(AssetSystemTest, ResolveRoots_DemandRootCountsAssetsNotRoot)

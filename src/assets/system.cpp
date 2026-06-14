@@ -195,16 +195,44 @@ namespace wz::asset
         return true;
     }
 
+    void AssetSystem::set_node_resolve_pending(const AssetKey& key)
+    {
+        node_resolve_states_.insert_or_assign(
+            key,
+            NodeResolveState{ NodeResolveStatus::Pending, std::nullopt });
+    }
+
+    void AssetSystem::set_node_resolve_done(const AssetKey& key)
+    {
+        node_resolve_states_.insert_or_assign(
+            key,
+            NodeResolveState{ NodeResolveStatus::Done, std::nullopt });
+    }
+
+    void AssetSystem::set_node_resolve_failed(
+        const AssetKey& key,
+        ResolveError error)
+    {
+        node_resolve_states_.insert_or_assign(
+            key,
+            NodeResolveState{ NodeResolveStatus::Failed, error });
+    }
+
 
     Result<ResourceHandle> AssetSystem::resolve(const AssetKey& key) {
+        auto fail = [&](ResolveError error) -> Result<ResourceHandle> {
+            set_node_resolve_failed(key, error);
+            return error;
+        };
+
         // Resolving before commit is not a crash — the node simply cannot exist
         // in a graph that hasn't been built yet.
-        if (!committed_) return ResolveError::NodeNotFound;
+        if (!committed_) return fail(ResolveError::NodeNotFound);
 
         // Locate node in committed DAG.
         const AssetGraph& g = storage_->dag();
         const NodeHandle  nh = find_asset_node(index_, key);
-        if (nh == INVALID_ASSET_NODE) return ResolveError::NodeNotFound;
+        if (nh == INVALID_ASSET_NODE) return fail(ResolveError::NodeNotFound);
 
         const AssetNode& node = wz::core::graph::node_data(g, nh);
 
@@ -217,28 +245,34 @@ namespace wz::asset
                 if (const auto* compiled_handle =
                     std::get_if<ResourceHandle>(&it->second.payload))
                 {
-                    if (*compiled_handle == *h)
+                    if (*compiled_handle == *h) {
+                        set_node_resolve_done(key);
                         return *h;
+                    }
                 }
                 else if (std::holds_alternative<std::vector<uint8_t>>(
                     it->second.payload))
                 {
-                    if (!h->valid())
+                    if (!h->valid()) {
+                        set_node_resolve_done(key);
                         return *h;
+                    }
                 }
             }
 
             cache_.evict(key);
             compiled_nodes_.erase(key);
+            set_node_resolve_pending(key);
         }
 
         // Find the compiler for this (schema, type) pair.
         const AssetCompiler* compiler = registry_.find(node.schema, node.type);
-        if (!compiler) return ResolveError::CompilerNotFound;
+        if (!compiler) return fail(ResolveError::CompilerNotFound);
 
         // This resolve attempt is rebuilding the node. If it fails, stale query
         // results from a previous successful compile must not remain visible.
         compiled_nodes_.erase(key);
+        set_node_resolve_pending(key);
 
         // Recursively resolve all prerequisites.
         // Because we call resolve() on each, they are memoized in the cache
@@ -255,7 +289,7 @@ namespace wz::asset
 
             auto dep_result = resolve(dep_key);
             if (std::holds_alternative<ResolveError>(dep_result))
-                return ResolveError::DependencyFailed;
+                return fail(ResolveError::DependencyFailed);
 
             // Use the post-compile node from compiled_nodes_ so compilers
             // see the live payload (e.g. bytes preserved by a carrier compiler),
@@ -271,21 +305,21 @@ namespace wz::asset
         // ResourceHandle (GPU-backed asset) or vector<uint8_t> (carrier node
         // that carries bytes for its dependents but has no GPU resource itself).
         if (compiled.stage != AssetStage::Compiled)
-            return ResolveError::CompileFailed;
+            return fail(ResolveError::CompileFailed);
 
         if (!(compiled.key == key)
             || compiled.type != node.type
             || !(compiled.schema == node.schema))
-            return ResolveError::CompileFailed;
+            return fail(ResolveError::CompileFailed);
 
         ResourceHandle handle{};
         if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload)) {
             if (!h->valid())
-                return ResolveError::CompileFailed;
+                return fail(ResolveError::CompileFailed);
             handle = *h;
         }
         else if (!std::holds_alternative<std::vector<uint8_t>>(compiled.payload)) {
-            return ResolveError::CompileFailed;
+            return fail(ResolveError::CompileFailed);
         }
         // Carrier nodes (bytes payload) legitimately have no handle — that is fine.
 
@@ -293,6 +327,7 @@ namespace wz::asset
         compiled_nodes_.insert_or_assign(key, std::move(compiled));
 
         cache_.store(key, handle);
+        set_node_resolve_done(key);
         return handle;
     }
 
@@ -328,6 +363,9 @@ namespace wz::asset
         std::vector<std::pair<AssetKey, ResolveError>>* errors)
     {
         if (!committed_) {
+            for (const AssetKey& root : roots) {
+                set_node_resolve_failed(root, ResolveError::NodeNotFound);
+            }
             if (errors) {
                 for (const AssetKey& root : roots) {
                     errors->emplace_back(root, ResolveError::NodeNotFound);
@@ -342,6 +380,7 @@ namespace wz::asset
         uint32_t ok = 0;
 
         auto record_error = [&](const AssetKey& key, ResolveError error) {
+            set_node_resolve_failed(key, error);
             if (errors && error_keys.insert(key).second) {
                 errors->emplace_back(key, error);
             }
@@ -350,6 +389,13 @@ namespace wz::asset
         auto valid_cached_handle =
             [&](const AssetNode& node) -> std::optional<ResourceHandle>
         {
+            if (policy == ResolvePolicy::ForceRecompile) {
+                cache_.evict(node.key);
+                compiled_nodes_.erase(node.key);
+                set_node_resolve_pending(node.key);
+                return std::nullopt;
+            }
+
             if (auto h = cache_.lookup(node.key)) {
                 auto it = compiled_nodes_.find(node.key);
                 if (it != compiled_nodes_.end()) {
@@ -357,6 +403,7 @@ namespace wz::asset
                         std::get_if<ResourceHandle>(&it->second.payload))
                     {
                         if (*compiled_handle == *h) {
+                            set_node_resolve_done(node.key);
                             return *h;
                         }
                     }
@@ -364,6 +411,7 @@ namespace wz::asset
                         it->second.payload))
                     {
                         if (!h->valid()) {
+                            set_node_resolve_done(node.key);
                             return *h;
                         }
                     }
@@ -371,6 +419,7 @@ namespace wz::asset
 
                 cache_.evict(node.key);
                 compiled_nodes_.erase(node.key);
+                set_node_resolve_pending(node.key);
             }
             return std::nullopt;
         };
@@ -404,6 +453,7 @@ namespace wz::asset
             compiled.payload = *loaded;
             compiled_nodes_.insert_or_assign(node.key, std::move(compiled));
             cache_.store(node.key, *loaded);
+            set_node_resolve_done(node.key);
             return std::nullopt;
         };
 
@@ -415,9 +465,13 @@ namespace wz::asset
             if (node.kind == AssetNodeKind::DemandRoot) {
                 for (const NodeHandle prereq : prerequisites(g, nh)) {
                     if (const auto error = resolve_node(prereq)) {
+                        set_node_resolve_failed(
+                            node.key,
+                            ResolveError::DependencyFailed);
                         return ResolveError::DependencyFailed;
                     }
                 }
+                set_node_resolve_done(node.key);
                 return std::nullopt;
             }
 
@@ -432,21 +486,29 @@ namespace wz::asset
             }
 
             if (const auto external_error = load_external(node)) {
+                set_node_resolve_failed(node.key, *external_error);
                 return *external_error;
             }
 
             if (cache_.contains(node.key)) {
+                set_node_resolve_done(node.key);
                 resolved_assets.insert(node.key);
                 ++ok;
                 return std::nullopt;
             }
 
             if (policy == ResolvePolicy::CacheRequired) {
+                set_node_resolve_failed(
+                    node.key,
+                    ResolveError::ExternalCacheMiss);
                 return ResolveError::ExternalCacheMiss;
             }
 
             for (const NodeHandle prereq : prerequisites(g, nh)) {
                 if (resolve_node(prereq).has_value()) {
+                    set_node_resolve_failed(
+                        node.key,
+                        ResolveError::DependencyFailed);
                     return ResolveError::DependencyFailed;
                 }
             }
@@ -525,6 +587,7 @@ namespace wz::asset
         for (const AssetKey& key : evict_keys) {
             cache_.evict(key);
             compiled_nodes_.erase(key);
+            set_node_resolve_pending(key);
         }
 
         return static_cast<uint32_t>(evict_keys.size());

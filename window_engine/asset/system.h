@@ -27,10 +27,12 @@
 #include "compiler.h"
 #include "cache.h"
 #include "external_cache_provider.h"
+#include <jobs/job_types.h>
 #include <cassert>
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -51,6 +53,47 @@ namespace wz::asset {
         CacheRequired,  // disk-cache miss is an error; do not wake prerequisites
         CachePreferred, // disk-cache hit skips prerequisites; miss resolves from source
         ForceRecompile, // ignore disk cache and resolve from source
+    };
+
+    enum class NodeResolveStatus : uint8_t {
+        Pending = static_cast<uint8_t>(wz::jobs::JobStatus::Pending),
+        Ready = static_cast<uint8_t>(wz::jobs::JobStatus::Ready),
+        Queued = static_cast<uint8_t>(wz::jobs::JobStatus::Queued),
+        Running = static_cast<uint8_t>(wz::jobs::JobStatus::Running),
+        Done = static_cast<uint8_t>(wz::jobs::JobStatus::Done),
+        Skipped = static_cast<uint8_t>(wz::jobs::JobStatus::Skipped),
+        Failed = static_cast<uint8_t>(wz::jobs::JobStatus::Failed),
+        Cancelled = static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled),
+    };
+
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Pending)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Pending));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Ready)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Ready));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Queued)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Queued));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Running)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Running));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Done)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Done));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Skipped)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Skipped));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Failed)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Failed));
+    static_assert(
+        static_cast<uint8_t>(NodeResolveStatus::Cancelled)
+            == static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled));
+
+    struct NodeResolveState {
+        NodeResolveStatus status = NodeResolveStatus::Pending;
+        std::optional<ResolveError> error{};
     };
 
     template<typename T>
@@ -246,6 +289,14 @@ namespace wz::asset {
             return &lookup_buf_;
         }
 
+        [[nodiscard]] inline std::optional<NodeResolveState>
+        node_resolve_state(const AssetKey& key) const
+        {
+            auto it = node_resolve_states_.find(key);
+            if (it == node_resolve_states_.end()) return std::nullopt;
+            return it->second;
+        }
+
         // ── Accessors ─────────────────────────────────────────────────────────────
 
         // Returns the committed graph, or nullptr if not yet committed.
@@ -291,6 +342,12 @@ namespace wz::asset {
         // bytes in a carrier node) is available to dependents via dep_nodes.
         // Keyed by AssetKey, parallel to the cache.
         std::unordered_map<AssetKey, AssetNode, AssetKeyHash> compiled_nodes_;
+        std::unordered_map<AssetKey, NodeResolveState, AssetKeyHash>
+            node_resolve_states_;
+
+        void set_node_resolve_pending(const AssetKey& key);
+        void set_node_resolve_done(const AssetKey& key);
+        void set_node_resolve_failed(const AssetKey& key, ResolveError error);
 
         // Scratch buffer for find_compiled() — avoids allocating a CompiledAsset
         // on the heap for single-key lookups.
