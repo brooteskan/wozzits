@@ -206,6 +206,66 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
     EXPECT_LT(processed_data->index_count(), source_data->index_count());
 }
 
+TEST(SceneAuthoringMaterialize, InvisibleMeshProcessingSkipsPreviewHierarchy)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_hidden_hierarchy_preview_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "hidden_mesh_cluster_hierarchy_preview";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.visible = false;
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation =
+            SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
+        .preview_level_index = 1,
+    };
+    node.mesh_render_style = SceneMeshRenderStyleAsset{
+        .depth_test = true,
+        .depth_write = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    EXPECT_EQ(processing.processed_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_EQ(processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_TRUE(report.renderables_to_realize.empty());
+
+    scene.nodes[0].visible = true;
+    const auto visible_report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(visible_report.ok) << visible_report.error;
+    EXPECT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& visible_processing = *scene.nodes[0].mesh_processing;
+    EXPECT_NE(
+        visible_processing.processed_mesh_asset,
+        wz::asset::AssetKey{});
+    EXPECT_NE(visible_processing.hierarchy_asset, wz::asset::AssetKey{});
+    EXPECT_FALSE(visible_report.renderables_to_realize.empty());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+}
+
 TEST(SceneAuthoringMaterialize, MeshProcessingPreviewConsumesRegionSetMask)
 {
     using namespace wz::engine::assets;

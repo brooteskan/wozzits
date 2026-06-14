@@ -446,6 +446,9 @@ namespace wz::engine::assets::internal
                 bool field_visualization_active = wants_field_visualization;
                 const bool wants_mask = effective_style.mask.enabled;
                 bool mask_active = wants_mask;
+                const bool allow_custom_face_mask_field =
+                    !(desc->render_program_asset == wz::asset::AssetKey{})
+                    && effective_style.mask.domain == MeshMaskDomain::Face;
 
                 if (wants_field_visualization) {
                     auto disable_field_visualization =
@@ -596,7 +599,9 @@ namespace wz::engine::assets::internal
                             disable_mask_or_show_unmatched(
                                 "field data is invalid");
                         }
-                        else if (field->source_mesh_key != desc->mesh_asset) {
+                        else if (field->source_mesh_key != desc->mesh_asset
+                            && !allow_custom_face_mask_field)
+                        {
                             disable_mask_or_show_unmatched(
                                 "field source mesh mismatch");
                         }
@@ -617,7 +622,12 @@ namespace wz::engine::assets::internal
                                         ? "field is not vertex-domain"
                                         : "field is not face-domain");
                             }
-                            else if (field->element_count != required_count) {
+                            else if (field->element_count != required_count
+                                && !(allow_custom_face_mask_field
+                                    && required_domain
+                                        == MeshDerivedFieldDomain::Face
+                                    && field->element_count >= required_count))
+                            {
                                 disable_mask_or_show_unmatched(
                                     required_domain
                                             == MeshDerivedFieldDomain::Vertex

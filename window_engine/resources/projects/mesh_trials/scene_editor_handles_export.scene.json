@@ -57,7 +57,7 @@
     {
       "id": "empty_2",
       "parent": "root",
-      "name": "mesh test 0",
+      "name": "terrain masks",
       "transform": {
         "translation": [
           0,
@@ -76,7 +76,7 @@
           500
         ]
       },
-      "visible": true,
+      "visible": false,
       "mesh_source": {
         "kind": "glb",
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
@@ -95,10 +95,10 @@
         "max_valence": 0,
         "normal_deviation": 0,
         "hausdorff_error": 0,
-        "preview_level_index": 3,
+        "preview_level_index": 1,
         "source_mesh_asset": "asset-key:d32f0b9d5e0b79d6:0000000000000000:f11eca55e7000403:0000000000000000:0000000000000002:0000000000000000:f90f3c0b1753645a:d974617c784f67aa",
-        "processed_mesh_asset": "asset-key:d32f0b9d5e0b850c:0000000000000000:f11eca55e7000410:0000000000000000:0000000000000001:0000000000000000:f50c2477e4b8137c:0420ca3ffdde09cb",
-        "hierarchy_asset": "asset-key:4fd9094d1db15793:0000000000000000:f11eca55e700040f:0000000000000000:0000000000000001:0000000000000000:1b62d322330633a8:a83c7345518dd96f"
+        "processed_mesh_asset": "asset-key:d32f0b9d5e0b850a:0000000000000000:f11eca55e7000410:0000000000000000:0000000000000001:0000000000000000:812bed0687a5a297:86f42f074e355b72",
+        "hierarchy_asset": "asset-key:ca1323aeed53f5fa:0000000000000000:f11eca55e700040f:0000000000000000:0000000000000005:0000000000000000:81c945be031f796b:26e8167d00788af8"
       },
       "mesh_derived_field_source": {
         "enabled": true,
@@ -235,6 +235,59 @@
         "intent": "remesh_subset",
         "mesh_input": "source"
       }
+    },
+    {
+      "id": "empty_1",
+      "parent": "empty_3",
+      "name": "mesh source",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          500,
+          1000,
+          500
+        ]
+      },
+      "visible": true,
+      "mesh_source": {
+        "kind": "glb",
+        "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
+        "mesh_index": 0
+      }
+    },
+    {
+      "id": "empty_3",
+      "parent": "root",
+      "name": "MPT",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true
     }
   ],
   "defaults": {
@@ -246,15 +299,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        115.19181060791016,
-        108.41920471191406,
-        -97.597412109375
+        -133.58027648925781,
+        181.91696166992188,
+        230.13632202148438
       ],
       "orientation": [
-        0.125138059258461,
-        -0.56250804662704468,
-        0.069533154368400574,
-        0.81430363655090332
+        -0.053644049912691116,
+        -0.92991548776626587,
+        0.29040291905403137,
+        -0.21919308602809906
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

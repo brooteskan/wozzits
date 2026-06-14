@@ -845,6 +845,82 @@ namespace wz::engine::assets
             });
         }
 
+        RenderProgramAsset create_builtin_mesh_vertex_pull_mask_program(
+            EngineAssetLibrary& assets)
+        {
+            const ShaderPairAsset shaders =
+                assets.shaders().create_shader_pair({
+                    .name = "mesh_vertex_pull/mesh_vertex_pull_mask",
+                    .vertex_path =
+                        "shaders/mesh_vertex_pull/"
+                        "mesh_vertex_pull_mask_vs.hlsl",
+                    .pixel_path =
+                        "shaders/mesh_mask_style/mesh_mask_style_ps.hlsl",
+                    .vertex_entry = "main",
+                    .pixel_entry = "main",
+                    .vertex_target = "vs_5_0",
+                    .pixel_target = "ps_5_0",
+                });
+            if (!shaders.valid()) {
+                return {};
+            }
+
+            return assets.render_programs().create_custom({
+                .name = "mesh_vertex_pull/mesh_vertex_pull_mask",
+                .vertex_shader = shaders.vertex_shader,
+                .pixel_shader = shaders.pixel_shader,
+                .binding_model = RenderBindingModel::MeshVertexPull,
+                .topology = RenderPrimitiveTopology::TriangleList,
+                .default_domain = RenderDomain::Opaque,
+                .default_policy_flags =
+                    RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+                .input_layout = InputLayoutKind::None,
+                .blend_mode = BlendMode::Opaque,
+                .depth_mode = DepthMode::TestWrite,
+                .raster_mode = RasterMode::SolidCullNone,
+                .root_constants = {{
+                    .visibility = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space = 0,
+                    .value_count = 48,
+                }},
+                .descriptor_bindings = {
+                    DescriptorBinding{
+                        .kind = DescriptorKind::StructuredBufferSRV,
+                        .visibility = ShaderVisibility::Vertex,
+                        .semantic = DescriptorSemantic::PulledMeshPositions,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                    },
+                    DescriptorBinding{
+                        .kind = DescriptorKind::StructuredBufferSRV,
+                        .visibility = ShaderVisibility::Vertex,
+                        .semantic = DescriptorSemantic::PulledMeshIndices,
+                        .shader_register = 1,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                    },
+                    DescriptorBinding{
+                        .kind = DescriptorKind::StructuredBufferSRV,
+                        .visibility = ShaderVisibility::Pixel,
+                        .semantic = DescriptorSemantic::MeshFieldVisualization,
+                        .shader_register = 0,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                    },
+                    DescriptorBinding{
+                        .kind = DescriptorKind::StructuredBufferSRV,
+                        .visibility = ShaderVisibility::Pixel,
+                        .semantic = DescriptorSemantic::MeshMaskRules,
+                        .shader_register = 1,
+                        .register_space = 0,
+                        .descriptor_count = 1,
+                    },
+                },
+            });
+        }
+
         ComputeBindingKind compute_binding_kind_for_scene_port(
             const SceneComputeKernelPortAsset& port)
         {
@@ -2026,6 +2102,8 @@ namespace wz::engine::assets
             const SceneMeshRegionSetAsset& region_set)
         {
             if (!region_set.enabled
+                || region_set.intent
+                    != SceneMeshRegionSetIntent::RemeshSubset
                 || region_set.source_field_asset == wz::asset::AssetKey{}
                 || !region_set.mask.enabled
                 || region_set.mask.rules.empty()
@@ -3737,8 +3815,13 @@ namespace wz::engine::assets
         {
             const bool has_compute_field_source =
                 compute_field && compute_field->enabled;
+            const bool use_mesh_vertex_pull_mask_program =
+                style.mask.enabled
+                && style.mask.domain == MeshMaskDomain::Face;
             const bool use_mesh_vertex_pull_program =
                 !render_shader
+                && !style.field_visualization_enabled
+                && (!style.mask.enabled || use_mesh_vertex_pull_mask_program)
                 && processing
                 && processing->enabled
                 && processing->operation
@@ -3765,7 +3848,11 @@ namespace wz::engine::assets
                 + mesh_compute_field_cache_key(
                     has_compute_field_source ? compute_field : nullptr)
                 + render_shader_cache_key(render_shader)
-                + (use_mesh_vertex_pull_program ? ":mesh_vertex_pull" : "")
+                + (use_mesh_vertex_pull_program
+                    ? use_mesh_vertex_pull_mask_program
+                        ? ":mesh_vertex_pull_mask"
+                        : ":mesh_vertex_pull"
+                    : "")
                 + (has_behavior_field_source
                     ? ":behavior_field" : "");
             if (const auto found = renderables.find(key);
@@ -3783,7 +3870,9 @@ namespace wz::engine::assets
             wz::asset::AssetKey render_program_asset_override{};
             if (use_mesh_vertex_pull_program) {
                 const RenderProgramAsset pull_program =
-                    create_builtin_mesh_vertex_pull_program(assets);
+                    use_mesh_vertex_pull_mask_program
+                        ? create_builtin_mesh_vertex_pull_mask_program(assets)
+                        : create_builtin_mesh_vertex_pull_program(assets);
                 render_program_asset_override = pull_program.key;
             }
 
@@ -4730,6 +4819,12 @@ namespace wz::engine::assets
                     node.mesh_render_style = materialized_style;
                 }
                 append_unique_renderable(report, renderable.output);
+            }
+            else if (options.create_preview_renderables && !node.visible) {
+                if (!ensure_source_mesh()) {
+                    return report;
+                }
+                node.renderable_asset.reset();
             }
             else if (!ensure_source_mesh()) {
                 return report;
