@@ -82,6 +82,20 @@
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
         "mesh_index": 0
       },
+      "mesh_processing": {
+        "enabled": true,
+        "operation": "cluster_hierarchy_preview",
+        "target_vertex_count": 0,
+        "target_triangle_count": 0,
+        "target_ratio": 1,
+        "preserve_boundary": true,
+        "aspect_ratio": 0,
+        "edge_length": 0,
+        "max_valence": 0,
+        "normal_deviation": 0,
+        "hausdorff_error": 0,
+        "preview_level_index": 0
+      },
       "mesh_derived_field_source": {
         "enabled": true,
         "field_id": "face_density",
@@ -134,7 +148,7 @@
         "show_unmatched": true,
         "rules": [
           {
-            "enabled": true,
+            "enabled": false,
             "input_channel_id": 8704,
             "lo": -0.063000001013278961,
             "hi": 0.0010000000474974513,
@@ -147,7 +161,7 @@
             "priority": 0
           },
           {
-            "enabled": true,
+            "enabled": false,
             "input_channel_id": 8705,
             "lo": -0.0010000000474974513,
             "hi": 0.0030000000260770321,
@@ -182,15 +196,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -179.15989685058594,
-        165.17135620117188,
-        -179.72257995605469
+        61.540359497070312,
+        98.700523376464844,
+        289.00357055664062
       ],
       "orientation": [
-        0.19295565783977509,
-        0.50295084714889526,
-        -0.11630270630121231,
-        0.83443528413772583
+        0.011124704033136368,
+        -0.98915696144104004,
+        0.14519624412059784,
+        -0.019047433510422707
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
