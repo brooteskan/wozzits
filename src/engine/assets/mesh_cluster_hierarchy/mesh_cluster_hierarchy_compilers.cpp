@@ -92,6 +92,51 @@ namespace wz::engine::assets::internal
                 ? compiled_node(input, handle)
                 : compile_failed_node(input);
         }
+
+        wz::asset::AssetNode compile_mesh_cluster_hierarchy_preview_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
+            wz::Logger& logger,
+            MeshTable& mesh_table,
+            MeshClusterHierarchyTable& hierarchy_table)
+        {
+            const auto* desc =
+                std::any_cast<MeshClusterHierarchyPreviewMeshDesc>(
+                    &input.meta);
+            if (!desc || dep_handles.size() != 1u) {
+                logger.error(
+                    "mesh cluster hierarchy preview mesh node missing desc");
+                return compile_failed_node(input);
+            }
+
+            const MeshClusterHierarchyData* hierarchy =
+                hierarchy_table.get(dep_handles[0]);
+            if (!hierarchy || !hierarchy->valid()) {
+                logger.error(
+                    "mesh cluster hierarchy preview source is invalid");
+                return compile_failed_node(input);
+            }
+
+            if (desc->level_index >= hierarchy->level_count()) {
+                logger.error(
+                    "mesh cluster hierarchy preview level is out of range");
+                return compile_failed_node(input);
+            }
+
+            const MeshData& preview =
+                hierarchy->levels[desc->level_index].preview_mesh;
+            if (!preview.valid()) {
+                logger.error(
+                    "mesh cluster hierarchy preview level is invalid");
+                return compile_failed_node(input);
+            }
+
+            const wz::asset::ResourceHandle handle =
+                mesh_table.add(preview);
+            return handle.valid()
+                ? compiled_node(input, handle)
+                : compile_failed_node(input);
+        }
     }
 
     void register_mesh_cluster_hierarchy_compilers(
@@ -113,6 +158,27 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_cluster_hierarchy_node(
+                    input,
+                    dep_handles,
+                    logger,
+                    mesh_table,
+                    hierarchy_table);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshClusterHierarchyPreviewMeshSchema,
+            .output_type = kAssetTypeMesh,
+            .compile = [
+                &logger,
+                &mesh_table,
+                &hierarchy_table](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                return compile_mesh_cluster_hierarchy_preview_mesh_node(
                     input,
                     dep_handles,
                     logger,

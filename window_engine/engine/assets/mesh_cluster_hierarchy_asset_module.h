@@ -28,6 +28,13 @@ namespace wz::engine::assets
         }
     };
 
+    struct MeshClusterHierarchyPreviewMeshDesc
+    {
+        std::string name;
+        MeshClusterHierarchyAsset hierarchy;
+        uint32_t level_index = 0;
+    };
+
     struct MeshClusterHierarchyHandle
     {
         wz::asset::ResourceHandle handle{};
@@ -47,6 +54,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshClusterHierarchyAsset create_mesh_cluster_hierarchy(
             const MeshClusterHierarchyDesc& desc);
+
+        [[nodiscard]] MeshAsset create_mesh_cluster_hierarchy_preview_mesh(
+            const MeshClusterHierarchyPreviewMeshDesc& desc);
 
         [[nodiscard]] MeshClusterHierarchyHandle get_mesh_cluster_hierarchy(
             const MeshClusterHierarchyAsset& asset) const;

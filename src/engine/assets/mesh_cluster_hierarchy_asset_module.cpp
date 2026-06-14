@@ -47,6 +47,33 @@ namespace wz::engine::assets
         return MeshClusterHierarchyAsset{ .output = hierarchy_key };
     }
 
+    MeshAsset
+    MeshClusterHierarchyAssetModule::create_mesh_cluster_hierarchy_preview_mesh(
+        const MeshClusterHierarchyPreviewMeshDesc& desc)
+    {
+        if (!desc.hierarchy.valid()) {
+            return {};
+        }
+
+        const wz::asset::AssetKey mesh_key =
+            make_mesh_cluster_hierarchy_preview_mesh_key(
+                desc.hierarchy.output,
+                desc);
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kMeshClusterHierarchyPreviewMeshSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        (void)system_.register_asset(
+            std::move(node),
+            { desc.hierarchy.output });
+
+        return MeshAsset{ .output = mesh_key };
+    }
+
     MeshClusterHierarchyHandle
     MeshClusterHierarchyAssetModule::get_mesh_cluster_hierarchy(
         const MeshClusterHierarchyAsset& asset) const

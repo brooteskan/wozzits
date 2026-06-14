@@ -236,6 +236,15 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Full
     };
 
+    // Mesh preview extracted from a MeshClusterHierarchy level. Compiled from
+    // one kAssetTypeMeshClusterHierarchy dependency and produces
+    // kAssetTypeMesh so existing renderable/material paths can inspect
+    // hierarchy levels before renderer-native cluster selection exists.
+    inline constexpr wz::asset::SchemaID
+    kMeshClusterHierarchyPreviewMeshSchema{
+        0xF11E'CA55'E7'000410ull
+    };
+
     // CSR sparse mesh operator built from one kAssetTypeMesh dependency.
     // One schema for the whole format: the operator kind and its
     // parameters are compiler arguments mixed into the content hash, not

@@ -262,6 +262,59 @@ TEST(MeshAssetModule, RejectsUnsupportedMeshClusterHierarchyMethod)
     EXPECT_FALSE(hierarchy.valid());
 }
 
+TEST(MeshAssetModule, ResolvesMeshClusterHierarchyPreviewMesh)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto source = assets.meshes().create_procedural_mesh({
+        .name = "cube_source",
+        .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(source.valid());
+
+    const auto hierarchy =
+        assets.mesh_cluster_hierarchies().create_mesh_cluster_hierarchy({
+            .name = "cube_identity_hierarchy",
+            .source_mesh = source,
+            .method =
+                wz::engine::assets::MeshClusterHierarchyBuildMethod::Identity,
+        });
+    ASSERT_TRUE(hierarchy.valid());
+
+    const auto preview =
+        assets.mesh_cluster_hierarchies()
+            .create_mesh_cluster_hierarchy_preview_mesh({
+                .name = "cube_identity_preview_level_0",
+                .hierarchy = hierarchy,
+                .level_index = 0u,
+            });
+    ASSERT_TRUE(preview.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 3u);
+
+    const auto source_handle = assets.meshes().get_mesh(source);
+    const auto preview_handle = assets.meshes().get_mesh(preview);
+    ASSERT_TRUE(source_handle.valid());
+    ASSERT_TRUE(preview_handle.valid());
+
+    const auto* source_data = assets.meshes().get_mesh_data(source_handle);
+    const auto* preview_data = assets.meshes().get_mesh_data(preview_handle);
+
+    ASSERT_NE(source_data, nullptr);
+    ASSERT_NE(preview_data, nullptr);
+    EXPECT_TRUE(preview_data->valid());
+    EXPECT_EQ(preview_data->vertex_count(), source_data->vertex_count());
+    EXPECT_EQ(preview_data->index_count(), source_data->index_count());
+}
+
 TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
 {
     wz::Logger logger;
