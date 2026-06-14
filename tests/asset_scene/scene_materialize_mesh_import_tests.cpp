@@ -205,7 +205,7 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)
     node.mesh_processing = SceneMeshProcessingAsset{
         .enabled = true,
         .operation = SceneMeshProcessingOperation::DebugTriangleStride,
-        .preview_level_index = 1,
+        .preview_level_index = 0,
     };
     node.mesh_render_style = SceneMeshRenderStyleAsset{
         .depth_test = true,

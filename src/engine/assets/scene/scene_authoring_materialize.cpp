@@ -335,7 +335,7 @@ namespace wz::engine::assets
         {
             constexpr uint32_t kMaxDebugStrideLevel = 30u;
             level = std::min(level, kMaxDebugStrideLevel);
-            return 1u << level;
+            return 1u << (level + 1u);
         }
 
         std::string mesh_cache_key(
