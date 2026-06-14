@@ -552,6 +552,18 @@ namespace wz::engine::assets
             return key;
         }
 
+        bool mesh_mask_has_active_channels(
+            const MeshMaskRenderStyleData& mask)
+        {
+            return std::any_of(
+                mask.rules.begin(),
+                mask.rules.end(),
+                [](const MeshMaskRule& rule)
+                {
+                    return rule.enabled && rule.input_channel_id != 0u;
+                });
+        }
+
         ComputePipelineAsset create_builtin_mesh_wavelet_pipeline(
             EngineAssetLibrary& assets)
         {
@@ -4262,7 +4274,12 @@ namespace wz::engine::assets
                         : nullptr;
                 const bool render_requires_source_mesh =
                     render_style.field_visualization_enabled
-                    || render_style.mask.enabled;
+                    || (render_style.mask.enabled
+                        && (!node.mesh_mask_render_style
+                            || node.mesh_mask_render_style->mesh_input
+                                == SceneMeshMaskRenderMeshInput::Source
+                            || mesh_mask_has_active_channels(
+                                node.mesh_mask_render_style->mask)));
                 if (render_requires_source_mesh
                     && !ensure_processed_mesh())
                 {

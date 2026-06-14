@@ -371,9 +371,17 @@ namespace wz::engine::assets
         wz::asset::AssetKey mask_source_field_asset{};
     };
 
+    enum class SceneMeshMaskRenderMeshInput : uint8_t
+    {
+        Source = 0,
+        Processed,
+    };
+
     struct SceneMeshMaskRenderStyleAsset
     {
         bool enabled = true;
+        SceneMeshMaskRenderMeshInput mesh_input =
+            SceneMeshMaskRenderMeshInput::Source;
         std::string source_field_ref;
         SceneMeshRenderLayerAsset wireframe{
             true,

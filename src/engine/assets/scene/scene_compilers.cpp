@@ -302,6 +302,18 @@ namespace wz::engine::assets::internal
             return std::nullopt;
         }
 
+        std::optional<SceneMeshMaskRenderMeshInput>
+        parse_mesh_mask_render_mesh_input(std::string_view text)
+        {
+            if (text == "source") {
+                return SceneMeshMaskRenderMeshInput::Source;
+            }
+            if (text == "processed") {
+                return SceneMeshMaskRenderMeshInput::Processed;
+            }
+            return std::nullopt;
+        }
+
         void read_mesh_render_layer(
             const wz::json::JSONValue& obj,
             const char* field_name,
@@ -317,6 +329,17 @@ namespace wz::engine::assets::internal
             if (auto enabled = read_bool(obj, "enabled")) {
                 style.enabled = *enabled;
                 style.mask.enabled = *enabled;
+            }
+            if (auto mesh_input = read_string(obj, "mesh_input")) {
+                const auto parsed =
+                    parse_mesh_mask_render_mesh_input(*mesh_input);
+                if (!parsed) {
+                    logger.error(std::string(field_name) + " on node '"
+                        + node_id + "' has unknown mesh_input '"
+                        + std::string(*mesh_input) + "'");
+                    return false;
+                }
+                style.mesh_input = *parsed;
             }
             if (auto source_ref = read_string(obj, "source_field_ref")) {
                 style.source_field_ref = std::string(*source_ref);

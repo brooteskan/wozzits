@@ -942,6 +942,18 @@ namespace wz::engine::assets
             return "priority";
         }
 
+        const char* mesh_mask_render_mesh_input_name(
+            SceneMeshMaskRenderMeshInput input)
+        {
+            switch (input) {
+            case SceneMeshMaskRenderMeshInput::Source:
+                return "source";
+            case SceneMeshMaskRenderMeshInput::Processed:
+                return "processed";
+            }
+            return "source";
+        }
+
         JSONValuePtr mesh_mask_rule_value(const MeshMaskRule& rule)
         {
             auto obj = object_value();
@@ -1040,6 +1052,9 @@ namespace wz::engine::assets
             MeshMaskRenderStyleData mask = style.mask;
             mask.enabled = style.enabled;
             auto obj = mesh_mask_value(mask, style.source_field_ref);
+            add_member(*obj, "mesh_input",
+                string_value(mesh_mask_render_mesh_input_name(
+                    style.mesh_input)));
             add_member(
                 *obj,
                 "wireframe",

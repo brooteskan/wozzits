@@ -1396,6 +1396,96 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleDoesNotReattachBaseStyle)
         0x2200u);
 }
 
+TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_authoring_mesh_mask_processed_mesh_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    SceneAssetData scene{};
+    scene.name = "mesh_mask_processed_mesh";
+    SceneNodeAsset node = make_scene_node("mesh");
+    node.mesh_source = SceneMeshSourceAsset{
+        .kind = SceneMeshSourceKind::ProceduralCube,
+    };
+    node.mesh_processing = SceneMeshProcessingAsset{
+        .enabled = true,
+        .operation =
+            SceneMeshProcessingOperation::MeshClusterHierarchyPreview,
+        .preview_level_index = 0,
+    };
+    node.mesh_derived_field_source = SceneMeshDerivedFieldSourceAsset{
+        .enabled = true,
+        .field_id = "face_density",
+        .domain = MeshDerivedFieldDomain::Face,
+        .channel_id = 0x2200u,
+        .value_type = MeshDerivedFieldValueType::Float1,
+        .source_kind = SceneMeshDerivedFieldSourceKind::Constant,
+        .component = SceneMeshDerivedFieldComponent::Y,
+        .normalize = true,
+        .constant_value = 0.5f,
+    };
+    node.mesh_mask_render_style = SceneMeshMaskRenderStyleAsset{
+        .enabled = true,
+        .mesh_input = SceneMeshMaskRenderMeshInput::Processed,
+        .source_field_ref = "field:face_density",
+        .mask = MeshMaskRenderStyleData{
+            .enabled = true,
+            .domain = MeshMaskDomain::Face,
+            .projection_mode = MeshMaskProjectionMode::Direct,
+            .overlap_mode = MeshMaskOverlapMode::Priority,
+            .rules = {
+                MeshMaskRule{
+                    .enabled = false,
+                    .input_channel_id = 0x2200u,
+                    .lo = 0.25f,
+                    .hi = 0.75f,
+                    .color = { 1.0f, 0.15f, 0.05f, 1.0f },
+                    .priority = 0,
+                },
+            },
+        },
+    };
+    scene.nodes.push_back(std::move(node));
+
+    const auto report =
+        materialize_scene_authoring_components(scene, assets);
+    ASSERT_TRUE(report.ok) << report.error;
+    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
+    const auto& processing = *scene.nodes[0].mesh_processing;
+    ASSERT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
+    ASSERT_NE(processing.processed_mesh_asset, wz::asset::AssetKey{});
+    EXPECT_NE(processing.source_mesh_asset, processing.processed_mesh_asset);
+    ASSERT_TRUE(scene.nodes[0].mesh_mask_render_style.has_value());
+    ASSERT_NE(
+        scene.nodes[0].mesh_mask_render_style->source_field_asset,
+        wz::asset::AssetKey{});
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto renderable = assets.renderables().get_renderable(
+        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
+    ASSERT_TRUE(renderable.valid());
+    const auto* renderable_data =
+        assets.renderables().get_renderable_data(renderable);
+    ASSERT_NE(renderable_data, nullptr);
+    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshMaskStyle);
+    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
+    EXPECT_EQ(
+        renderable_data->mesh_field_visualization_asset,
+        scene.nodes[0].mesh_mask_render_style->source_field_asset);
+}
+
 TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceDomainFollowsInputField)
 {
     using namespace wz::engine::assets;

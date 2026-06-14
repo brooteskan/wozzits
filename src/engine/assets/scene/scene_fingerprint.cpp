@@ -442,6 +442,7 @@ namespace wz::engine::assets
                         fp.mix_value(layer.emissive_strength);
                 };
                 fp.mix_value(style.enabled);
+                fp.mix_value(style.mesh_input);
                 mix_layer(style.wireframe);
                 fp.mix_value(style.mask.enabled);
                 fp.mix_value(style.mask.domain);

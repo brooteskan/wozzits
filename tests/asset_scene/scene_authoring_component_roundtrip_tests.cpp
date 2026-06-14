@@ -179,6 +179,7 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
       },
       "mesh_mask_render_style": {
         "enabled": true,
+        "mesh_input": "processed",
         "source_field_ref": "field:selected_faces",
         "wireframe": {
           "enabled": true,
@@ -228,6 +229,9 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
     ASSERT_TRUE(node.mesh_mask_render_style.has_value());
     const auto& style = *node.mesh_mask_render_style;
     EXPECT_TRUE(style.enabled);
+    EXPECT_EQ(
+        style.mesh_input,
+        SceneMeshMaskRenderMeshInput::Processed);
     EXPECT_TRUE(style.wireframe.enabled);
     EXPECT_FLOAT_EQ(style.wireframe.color[3], 0.5f);
     EXPECT_TRUE(style.mask.enabled);
@@ -248,6 +252,8 @@ TEST(SceneAssetModule, MeshMaskRenderStyleRoundTripsThroughSceneJSON)
     EXPECT_NE(
         exported.find("\"mesh_mask_render_style\""),
         std::string::npos);
+    EXPECT_NE(exported.find("\"mesh_input\""), std::string::npos);
+    EXPECT_NE(exported.find("\"processed\""), std::string::npos);
     EXPECT_NE(exported.find("\"overlap_mode\""), std::string::npos);
     EXPECT_NE(exported.find("\"source_field_ref\""), std::string::npos);
     EXPECT_NE(exported.find("\"wireframe\""), std::string::npos);
