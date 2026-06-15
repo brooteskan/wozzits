@@ -11,6 +11,7 @@
 #include <engine/assets/type_extensions.h>
 
 #include <algorithm>
+#include <array>
 #include <any>
 #include <chrono>
 #include <cfloat>
@@ -580,6 +581,124 @@ namespace wz::engine::assets::internal
             out.stage = wz::asset::AssetStage::Compiled;
             out.payload = handle;
             return out;
+        }
+
+        constexpr std::array<std::string_view, 2>
+            kMeshCollisionBuildMethodOptions = {
+                "Bounds",
+                "Triangle mesh",
+            };
+
+        constexpr std::array<CollisionBuildMethod, 2>
+            kMeshCollisionBuildMethodValues = {
+                CollisionBuildMethod::Bounds,
+                CollisionBuildMethod::TriangleMesh,
+            };
+
+        constexpr std::array<std::string_view, 3>
+            kTerrainCollisionBuildMethodOptions = {
+                "Bounds",
+                "Terrain surface",
+                "Projection height field",
+            };
+
+        constexpr std::array<CollisionBuildMethod, 3>
+            kTerrainCollisionBuildMethodValues = {
+                CollisionBuildMethod::Bounds,
+                CollisionBuildMethod::TerrainSurface,
+                CollisionBuildMethod::TerrainProjectionHeightField,
+            };
+
+        constexpr std::array<std::string_view, 4>
+            kCollisionOccupancyKindOptions = {
+                "Solid",
+                "Surface",
+                "Walkable surface",
+                "Sensor",
+            };
+
+        template<std::size_t Count>
+        CollisionBuildMethod build_method_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            CollisionBuildMethod fallback,
+            const std::array<CollisionBuildMethod, Count>& values)
+        {
+            const int64_t value = params.get<int64_t>(name, -1);
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return values[static_cast<size_t>(value)];
+            }
+            return fallback;
+        }
+
+        CollisionOccupancyData occupancy_param(
+            const wz::asset::ParamBlock& params,
+            const CollisionOccupancyData& fallback)
+        {
+            CollisionOccupancyData occupancy = fallback;
+            const int64_t kind =
+                params.get<int64_t>(
+                    "occupancy_kind",
+                    static_cast<int64_t>(occupancy.kind));
+            if (kind >= 0
+                && kind
+                    < static_cast<int64_t>(
+                        kCollisionOccupancyKindOptions.size()))
+            {
+                occupancy.kind = static_cast<CollisionOccupancyKind>(kind);
+            }
+            occupancy.blocks_movement =
+                params.get<bool>(
+                    "occupancy_blocks_movement",
+                    occupancy.blocks_movement);
+            occupancy.queryable =
+                params.get<bool>("occupancy_queryable", occupancy.queryable);
+            return occupancy;
+        }
+
+        CollisionFromMeshCompileDesc collision_from_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            CollisionFromMeshCompileDesc desc{};
+            if (!dep_nodes.empty()) {
+                desc.mesh = dep_nodes[0].key;
+            }
+            desc.build_method =
+                build_method_param(
+                    params,
+                    "build_method",
+                    desc.build_method,
+                    kMeshCollisionBuildMethodValues);
+            desc.occupancy = occupancy_param(params, desc.occupancy);
+            return desc;
+        }
+
+        CollisionFromTerrainCompileDesc
+        collision_from_terrain_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            CollisionFromTerrainCompileDesc desc{};
+            if (!dep_nodes.empty()) {
+                desc.terrain = dep_nodes[0].key;
+            }
+            desc.build_method =
+                build_method_param(
+                    params,
+                    "build_method",
+                    desc.build_method,
+                    kTerrainCollisionBuildMethodValues);
+            desc.occupancy = occupancy_param(params, desc.occupancy);
+            desc.projection_resolution_x =
+                params.get<uint32_t>(
+                    "projection_resolution_x",
+                    desc.projection_resolution_x);
+            desc.projection_resolution_y =
+                params.get<uint32_t>(
+                    "projection_resolution_y",
+                    desc.projection_resolution_y);
+            return desc;
         }
 
         void copy_mesh_bounds(
@@ -1288,14 +1407,56 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "build_method",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Build method",
+                    .default_num = 1.0,
+                    .options = kMeshCollisionBuildMethodOptions,
+                },
+                {
+                    .name = "occupancy_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Occupancy",
+                    .default_num =
+                        static_cast<double>(CollisionOccupancyKind::Solid),
+                    .options = kCollisionOccupancyKindOptions,
+                },
+                {
+                    .name = "occupancy_blocks_movement",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Blocks movement",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "occupancy_queryable",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Queryable",
+                    .default_num = 1.0,
+                },
+            },
             .compile = [&logger, &mesh_table, &collision_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                CollisionFromMeshCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<CollisionFromMeshCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            collision_from_mesh_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
                 if (!desc) {
                     logger.error("collision mesh missing compile desc");
                     return compile_failed_node(input);
@@ -1334,15 +1495,74 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "terrain", kAssetTypeTerrain },
             },
+            .parameters = {
+                {
+                    .name = "build_method",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Build method",
+                    .default_num = 1.0,
+                    .options = kTerrainCollisionBuildMethodOptions,
+                },
+                {
+                    .name = "occupancy_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Occupancy",
+                    .default_num =
+                        static_cast<double>(
+                            CollisionOccupancyKind::WalkableSurface),
+                    .options = kCollisionOccupancyKindOptions,
+                },
+                {
+                    .name = "occupancy_blocks_movement",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Blocks movement",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "occupancy_queryable",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Queryable",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "projection_resolution_x",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Projection resolution X",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+                {
+                    .name = "projection_resolution_y",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Projection resolution Y",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+            },
             .compile = [&logger, &terrain_table, &collision_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                CollisionFromTerrainCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<CollisionFromTerrainCompileDesc>(
                         &input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            collision_from_terrain_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
                 if (!desc) {
                     logger.error("collision terrain missing compile desc");
                     return compile_failed_node(input);
