@@ -71,6 +71,7 @@
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene_asset_module.h>
 
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -126,10 +127,19 @@ namespace wz::engine::assets
         // ── Graph lifecycle ───────────────────────────────────────────────────────
 
         bool          commit();
-        ResolveReport resolve_all();
-        ResolveReport resolve_runtime();
-        ResolveReport resolve_editor();
-        ResolveReport resolve_demanded(wz::asset::ResolvePolicy policy);
+        ResolveReport resolve_all(
+            std::source_location caller =
+                std::source_location::current());
+        ResolveReport resolve_runtime(
+            std::source_location caller =
+                std::source_location::current());
+        ResolveReport resolve_editor(
+            std::source_location caller =
+                std::source_location::current());
+        ResolveReport resolve_demanded(
+            wz::asset::ResolvePolicy policy,
+            std::source_location caller =
+                std::source_location::current());
 
         const wz::fs::Path& resource_root() const noexcept
         {
@@ -341,7 +351,8 @@ namespace wz::engine::assets
         ResolveReport resolve_roots_with_report(
             std::span<const wz::asset::AssetKey> roots,
             wz::asset::ResolvePolicy policy,
-            const char* label);
+            const char* label,
+            std::source_location caller);
         std::vector<wz::asset::AssetKey> active_demand_roots(
             std::span<const wz::asset::DemandRoot> roots) const;
         std::vector<wz::asset::AssetKey> all_active_demand_roots() const;

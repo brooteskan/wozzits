@@ -1,5 +1,6 @@
 #include <asset/system.h>
 
+#include <chrono>
 #include <functional>
 #include <iomanip>
 #include <sstream>
@@ -211,23 +212,35 @@ namespace wz::asset
     {
         node_resolve_states_.insert_or_assign(
             key,
-            NodeResolveState{ NodeResolveStatus::Pending, std::nullopt });
+            NodeResolveState{
+                NodeResolveStatus::Pending,
+                std::nullopt,
+                std::nullopt });
     }
 
-    void AssetSystem::set_node_resolve_done(const AssetKey& key)
+    void AssetSystem::set_node_resolve_done(
+        const AssetKey& key,
+        std::optional<uint64_t> compile_duration_us)
     {
         node_resolve_states_.insert_or_assign(
             key,
-            NodeResolveState{ NodeResolveStatus::Done, std::nullopt });
+            NodeResolveState{
+                NodeResolveStatus::Done,
+                std::nullopt,
+                compile_duration_us });
     }
 
     void AssetSystem::set_node_resolve_failed(
         const AssetKey& key,
-        ResolveError error)
+        ResolveError error,
+        std::optional<uint64_t> compile_duration_us)
     {
         node_resolve_states_.insert_or_assign(
             key,
-            NodeResolveState{ NodeResolveStatus::Failed, error });
+            NodeResolveState{
+                NodeResolveStatus::Failed,
+                error,
+                compile_duration_us });
     }
 
 
@@ -310,27 +323,40 @@ namespace wz::asset
         }
 
         // Compile.
+        const auto compile_started = std::chrono::steady_clock::now();
         AssetNode compiled = compiler->compile(node, dep_nodes, dep_handles);
+        const uint64_t compile_duration_us =
+            static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - compile_started)
+                    .count());
+
+        auto fail_after_compile =
+            [&](ResolveError error) -> Result<ResourceHandle>
+        {
+            set_node_resolve_failed(key, error, compile_duration_us);
+            return error;
+        };
 
         // Validate: stage must be Compiled. Payload may be either a
         // ResourceHandle (GPU-backed asset) or vector<uint8_t> (carrier node
         // that carries bytes for its dependents but has no GPU resource itself).
         if (compiled.stage != AssetStage::Compiled)
-            return fail(ResolveError::CompileFailed);
+            return fail_after_compile(ResolveError::CompileFailed);
 
         if (!(compiled.key == key)
             || compiled.type != node.type
             || !(compiled.schema == node.schema))
-            return fail(ResolveError::CompileFailed);
+            return fail_after_compile(ResolveError::CompileFailed);
 
         ResourceHandle handle{};
         if (const auto* h = std::get_if<ResourceHandle>(&compiled.payload)) {
             if (!h->valid())
-                return fail(ResolveError::CompileFailed);
+                return fail_after_compile(ResolveError::CompileFailed);
             handle = *h;
         }
         else if (!std::holds_alternative<std::vector<uint8_t>>(compiled.payload)) {
-            return fail(ResolveError::CompileFailed);
+            return fail_after_compile(ResolveError::CompileFailed);
         }
         // Carrier nodes (bytes payload) legitimately have no handle — that is fine.
 
@@ -338,7 +364,7 @@ namespace wz::asset
         compiled_nodes_.insert_or_assign(key, std::move(compiled));
 
         cache_.store(key, handle);
-        set_node_resolve_done(key);
+        set_node_resolve_done(key, compile_duration_us);
         return handle;
     }
 

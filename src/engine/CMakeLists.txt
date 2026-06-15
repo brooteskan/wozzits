@@ -16,6 +16,7 @@ target_sources(window_engine PRIVATE
     assets/engine_asset_library_compiler_registry.cpp
     assets/engine_asset_library_file_carriers.cpp
     assets/engine_disk_cache_provider.cpp
+    assets/type_extensions.cpp
 
     assets/file_carrier_asset_module.cpp
     assets/shader_asset_module.cpp

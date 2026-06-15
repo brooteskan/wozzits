@@ -68,6 +68,7 @@ namespace wz::asset {
     struct NodeResolveState {
         NodeResolveStatus status = NodeResolveStatus::Pending;
         std::optional<ResolveError> error{};
+        std::optional<uint64_t> compile_duration_us{};
     };
 
     template<typename T>
@@ -77,6 +78,11 @@ namespace wz::asset {
 
     class AssetSystem {
     public:
+        struct RegistrationEntry {
+            AssetNode            node;
+            std::vector<AssetKey> dep_keys;
+        };
+
         explicit AssetSystem(CompilerRegistry registry, uint32_t cache_reserve = 256)
             : registry_(std::move(registry))
             , cache_(cache_reserve)
@@ -108,6 +114,12 @@ namespace wz::asset {
         [[nodiscard]] inline bool is_registered(const AssetKey& key) const
         {
             return registered_index_.count(key) != 0u;
+        }
+
+        [[nodiscard]] inline std::span<const RegistrationEntry>
+        registered_assets() const
+        {
+            return registered_;
         }
 
         inline bool register_demand_root(
@@ -293,11 +305,6 @@ namespace wz::asset {
     private:
         // ── Registered source graph state ─────────────────────────────────────────
 
-        struct RegistrationEntry {
-            AssetNode            node;
-            std::vector<AssetKey> dep_keys;
-        };
-
         std::vector<RegistrationEntry>                        registered_;
         std::unordered_map<AssetKey, uint32_t, AssetKeyHash>  registered_index_;
 
@@ -320,8 +327,13 @@ namespace wz::asset {
             node_resolve_states_;
 
         void set_node_resolve_pending(const AssetKey& key);
-        void set_node_resolve_done(const AssetKey& key);
-        void set_node_resolve_failed(const AssetKey& key, ResolveError error);
+        void set_node_resolve_done(
+            const AssetKey& key,
+            std::optional<uint64_t> compile_duration_us = std::nullopt);
+        void set_node_resolve_failed(
+            const AssetKey& key,
+            ResolveError error,
+            std::optional<uint64_t> compile_duration_us = std::nullopt);
 
         // Scratch buffer for find_compiled() — avoids allocating a CompiledAsset
         // on the heap for single-key lookups.

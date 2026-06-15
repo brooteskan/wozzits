@@ -2,6 +2,7 @@
 #include <asset/system.h>
 #include <asset/types.h>
 #include <asset/compiler.h>
+#include <engine/assets/type_extensions.h>
 #include <jobs/job_types.h>
 
 #include <algorithm>
@@ -177,6 +178,25 @@ TEST_F(AssetSystemTest, RegisterAsset_WithValidDependency)
     EXPECT_TRUE(sys->register_asset(make_node(kKeyB, AssetType::Mesh, kMeshSchema),
         { kKeyA }));
     EXPECT_TRUE(sys->commit());
+}
+
+TEST_F(AssetSystemTest, RegisteredAssetsExposeUncommittedAssetCatalog)
+{
+    EXPECT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    EXPECT_TRUE(sys->register_asset(
+        make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        { kKeyA }));
+
+    const auto registered_assets = sys->registered_assets();
+    ASSERT_EQ(registered_assets.size(), 2u);
+    EXPECT_EQ(registered_assets[0].node.key, kKeyA);
+    EXPECT_EQ(registered_assets[0].node.type, AssetType::Texture);
+    EXPECT_TRUE(registered_assets[0].dep_keys.empty());
+    EXPECT_EQ(registered_assets[1].node.key, kKeyB);
+    EXPECT_EQ(registered_assets[1].node.type, AssetType::Mesh);
+    ASSERT_EQ(registered_assets[1].dep_keys.size(), 1u);
+    EXPECT_EQ(registered_assets[1].dep_keys[0], kKeyA);
+    EXPECT_EQ(sys->graph(), nullptr);
 }
 
 
@@ -511,6 +531,33 @@ TEST_F(AssetSystemTest, NodeResolveStatusMirrorsJobStatus)
         static_cast<uint8_t>(wz::jobs::JobStatus::Cancelled));
 }
 
+TEST_F(AssetSystemTest, AssetTypeDisplayNameIncludesEngineExtensions)
+{
+    EXPECT_STREQ(
+        wz::engine::assets::asset_type_display_name(
+            wz::engine::assets::kAssetTypeMeshRenderStyle),
+        "Mesh render style");
+    EXPECT_STREQ(
+        wz::engine::assets::asset_type_display_name(
+            wz::engine::assets::kAssetTypeMeshDerivedField),
+        "Mesh derived field");
+}
+
+TEST_F(AssetSystemTest, AssetTypeDisplayNameRegistryIsEngineOwned)
+{
+    const auto& names = wz::engine::assets::asset_type_display_names();
+
+    EXPECT_TRUE(names.contains(wz::asset::AssetType::Mesh));
+    EXPECT_TRUE(names.contains(wz::engine::assets::kAssetTypeManifest));
+    EXPECT_TRUE(names.contains(
+        wz::engine::assets::kAssetTypeMeshRenderStyle));
+    EXPECT_TRUE(names.contains(
+        wz::engine::assets::kAssetTypeGaussianSplatColorLOD));
+    EXPECT_EQ(
+        names.at(wz::engine::assets::kAssetTypeMeshRenderStyle),
+        "Mesh render style");
+}
+
 TEST_F(AssetSystemTest, FailedNodesKeepQueryableResolveState)
 {
     CompilerRegistry reg2;
@@ -582,6 +629,20 @@ TEST_F(AssetSystemTest, SuccessfulReresolveClearsPreviousError)
     ASSERT_TRUE(state.has_value());
     EXPECT_EQ(state->status, NodeResolveStatus::Done);
     EXPECT_FALSE(state->error.has_value());
+}
+
+TEST_F(AssetSystemTest, ResolveStateRecordsCompileDuration)
+{
+    ASSERT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys->commit());
+
+    auto resolved = sys->resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResourceHandle>(resolved));
+
+    const auto state = sys->node_resolve_state(kKeyA);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->status, NodeResolveStatus::Done);
+    ASSERT_TRUE(state->compile_duration_us.has_value());
 }
 
 TEST_F(AssetSystemTest, CompiledResourceHandleMustBeValid)

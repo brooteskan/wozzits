@@ -83,6 +83,59 @@ namespace wz::engine::assets
             return out.str();
         }
 
+        const char* resolve_policy_name(
+            wz::asset::ResolvePolicy policy) noexcept
+        {
+            switch (policy) {
+            case wz::asset::ResolvePolicy::CacheRequired:
+                return "cache-required";
+            case wz::asset::ResolvePolicy::CachePreferred:
+                return "cache-preferred";
+            case wz::asset::ResolvePolicy::ForceRecompile:
+                return "force-recompile";
+            }
+            return "unknown";
+        }
+
+        uint32_t graph_node_count(const wz::asset::AssetSystem& system)
+        {
+            const wz::asset::AssetGraph* graph = system.graph();
+            return graph ? wz::core::graph::node_count(*graph) : 0u;
+        }
+
+        std::string caller_string(std::source_location caller)
+        {
+            std::string file = caller.file_name();
+            const size_t slash = file.find_last_of("/\\");
+            if (slash != std::string::npos) {
+                file = file.substr(slash + 1u);
+            }
+
+            return file
+                + ":"
+                + std::to_string(caller.line())
+                + " "
+                + caller.function_name();
+        }
+
+        std::string root_keys_string(
+            std::span<const wz::asset::AssetKey> roots)
+        {
+            if (roots.empty()) {
+                return "[]";
+            }
+
+            std::string out = "[";
+            for (size_t i = 0; i < roots.size(); ++i) {
+                if (i != 0u) {
+                    out += ", ";
+                }
+                out += short_asset_key_hex(roots[i]);
+            }
+            out += "]";
+            return out;
+        }
+
     } //  namespace internal
 
 
@@ -284,9 +337,27 @@ namespace wz::engine::assets
         return true;
     }
 
-    ResolveReport EngineAssetLibrary::resolve_all()
+    ResolveReport EngineAssetLibrary::resolve_all(
+        std::source_location caller)
     {
         ResolveReport report{};
+
+        logger_.info(
+            "asset resolve_all called"
+            " caller="
+            + internal::caller_string(caller)
+            + " committed="
+            + std::to_string(system_.committed() ? 1u : 0u)
+            + " graph_nodes="
+            + std::to_string(internal::graph_node_count(system_))
+            + " cache_entries="
+            + std::to_string(system_.cache().size())
+            + " cache_enabled="
+            + std::to_string(cache_settings_.enabled ? 1u : 0u)
+            + " cache_root="
+            + (cache_settings_.root.empty() ? "<empty>" : cache_settings_.root)
+            + " resource_root="
+            + (resource_root_.empty() ? "<empty>" : resource_root_));
 
         const auto started = std::chrono::steady_clock::now();
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> raw_errors;
@@ -314,7 +385,8 @@ namespace wz::engine::assets
         return report;
     }
 
-    ResolveReport EngineAssetLibrary::resolve_runtime()
+    ResolveReport EngineAssetLibrary::resolve_runtime(
+        std::source_location caller)
     {
         constexpr std::array<wz::asset::DemandRoot, 2> roots{
             wz::asset::DemandRoot::GPURuntime,
@@ -325,10 +397,12 @@ namespace wz::engine::assets
         return resolve_roots_with_report(
             active,
             wz::asset::ResolvePolicy::CachePreferred,
-            "resolve_runtime");
+            "resolve_runtime",
+            caller);
     }
 
-    ResolveReport EngineAssetLibrary::resolve_editor()
+    ResolveReport EngineAssetLibrary::resolve_editor(
+        std::source_location caller)
     {
         constexpr std::array<wz::asset::DemandRoot, 1> roots{
             wz::asset::DemandRoot::Editor,
@@ -338,22 +412,54 @@ namespace wz::engine::assets
         return resolve_roots_with_report(
             active,
             wz::asset::ResolvePolicy::CachePreferred,
-            "resolve_editor");
+            "resolve_editor",
+            caller);
     }
 
     ResolveReport EngineAssetLibrary::resolve_demanded(
-        wz::asset::ResolvePolicy policy)
+        wz::asset::ResolvePolicy policy,
+        std::source_location caller)
     {
         std::vector<wz::asset::AssetKey> active = all_active_demand_roots();
-        return resolve_roots_with_report(active, policy, "resolve_demanded");
+        return resolve_roots_with_report(
+            active,
+            policy,
+            "resolve_demanded",
+            caller);
     }
 
     ResolveReport EngineAssetLibrary::resolve_roots_with_report(
         std::span<const wz::asset::AssetKey> roots,
         wz::asset::ResolvePolicy policy,
-        const char* label)
+        const char* label,
+        std::source_location caller)
     {
         ResolveReport report{};
+
+        logger_.info(
+            std::string("asset ")
+            + label
+            + " called"
+            + " caller="
+            + internal::caller_string(caller)
+            + " policy="
+            + internal::resolve_policy_name(policy)
+            + " roots="
+            + std::to_string(roots.size())
+            + " root_keys="
+            + internal::root_keys_string(roots)
+            + " committed="
+            + std::to_string(system_.committed() ? 1u : 0u)
+            + " graph_nodes="
+            + std::to_string(internal::graph_node_count(system_))
+            + " cache_entries="
+            + std::to_string(system_.cache().size())
+            + " cache_enabled="
+            + std::to_string(cache_settings_.enabled ? 1u : 0u)
+            + " cache_root="
+            + (cache_settings_.root.empty() ? "<empty>" : cache_settings_.root)
+            + " resource_root="
+            + (resource_root_.empty() ? "<empty>" : resource_root_));
 
         const auto started = std::chrono::steady_clock::now();
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>

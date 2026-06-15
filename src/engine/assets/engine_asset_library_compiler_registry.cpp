@@ -1,6 +1,7 @@
 // src/engine/assets/engine_asset_library_compiler_registry.cpp
 
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/type_extensions.h>
 
 #include <engine/assets/shader/shader_compilers.h>
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
@@ -14,6 +15,8 @@ namespace wz::engine::assets::internal
 {
     wz::asset::CompilerRegistry make_engine_compiler_registry(const EngineAssetContext& ctx)
     {
+        validate_asset_type_display_names();
+
         wz::asset::CompilerRegistry registry;
 
         register_file_carrier_compilers(registry, ctx.logger);

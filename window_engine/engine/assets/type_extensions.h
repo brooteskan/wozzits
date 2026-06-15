@@ -4,6 +4,9 @@
 
 #include <engine/assets/engine_asset_key_core.h>
 
+#include <map>
+#include <string_view>
+
 namespace wz::engine::assets {
 
     // ─── Engine AssetType extensions ─────────────────────────────────────────────
@@ -1464,4 +1467,14 @@ namespace wz::engine::assets {
     // GaussianSplatColorLODTable.
     inline constexpr wz::asset::AssetType kAssetTypeGaussianSplatColorLOD =
         static_cast<wz::asset::AssetType>(4114);
+
+    using AssetTypeDisplayNameMap =
+        std::map<wz::asset::AssetType, std::string_view>;
+
+    const AssetTypeDisplayNameMap& asset_type_display_names();
+    void validate_asset_type_display_names();
+    std::string_view asset_type_display_name_view(
+        wz::asset::AssetType type) noexcept;
+    const char* asset_type_display_name(
+        wz::asset::AssetType type) noexcept;
 } // namespace wz::engine::assets
