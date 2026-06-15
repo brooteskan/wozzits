@@ -6,6 +6,7 @@
 #include <engine/assets/type_extensions.h>
 
 #include <algorithm>
+#include <array>
 #include <any>
 #include <chrono>
 #include <cmath>
@@ -17,6 +18,252 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr std::array<std::string_view, 16>
+            kBuiltinRenderProgramOptions = {
+                "Mesh wireframe debug",
+                "Mesh wireframe depth debug",
+                "Mesh depth prepass debug",
+                "Mesh wireframe alpha",
+                "Mesh surface",
+                "Mesh surface alpha",
+                "Mesh field heatmap",
+                "Mesh mask style",
+                "Terrain mesh surface",
+                "Gaussian splat debug",
+                "Terrain surfel surface",
+                "Scalar field debug",
+                "Gaussian splat pull debug",
+                "Gaussian splat neighborhood color blend",
+                "Gaussian splat terrain coverage debug",
+                "Sky surface",
+            };
+
+        constexpr std::array<std::string_view, 5> kRenderDomainOptions = {
+            "Debug",
+            "Sky",
+            "Opaque",
+            "Transparent",
+            "Splat",
+        };
+
+        constexpr std::array<std::string_view, 2>
+            kTerrainLightingModeOptions = {
+                "Scene lights",
+                "HDRI environment",
+            };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        wz::asset::AssetKey dep_key(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            size_t index)
+        {
+            if (index < dep_nodes.size()) {
+                return dep_nodes[index].key;
+            }
+            return {};
+        }
+
+        void assign_float3(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            float values[3])
+        {
+            const auto xyz =
+                params.get<std::array<float, 3>>(
+                    name,
+                    { values[0], values[1], values[2] });
+            values[0] = xyz[0];
+            values[1] = xyz[1];
+            values[2] = xyz[2];
+        }
+
+        MeshWireframeRenderableCompileDesc
+        mesh_wireframe_renderable_desc_from_editor(
+            const wz::asset::ParamBlock* params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshWireframeRenderableCompileDesc desc{};
+            desc.mesh_asset = dep_key(dep_nodes, 0);
+            if (params) {
+                desc.program =
+                    enum_param(
+                        *params,
+                        "program",
+                        desc.program,
+                        kBuiltinRenderProgramOptions);
+                desc.domain =
+                    enum_param(
+                        *params,
+                        "domain",
+                        desc.domain,
+                        kRenderDomainOptions);
+                desc.policy_flags =
+                    params->get<uint32_t>(
+                        "policy_flags",
+                        desc.policy_flags);
+            }
+            return desc;
+        }
+
+        MeshStyledRenderableCompileDesc mesh_styled_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshStyledRenderableCompileDesc desc{};
+            desc.mesh_asset = dep_key(dep_nodes, 0);
+            desc.style_asset = dep_key(dep_nodes, 1);
+            for (size_t i = 2u; i < dep_nodes.size(); ++i) {
+                if (dep_nodes[i].type == kAssetTypeMeshDerivedField
+                    && desc.mesh_field_visualization_asset
+                        == wz::asset::AssetKey{})
+                {
+                    desc.mesh_field_visualization_asset = dep_nodes[i].key;
+                }
+                else if (dep_nodes[i].type == kAssetTypeRenderProgram
+                    && desc.render_program_asset == wz::asset::AssetKey{})
+                {
+                    desc.render_program_asset = dep_nodes[i].key;
+                }
+            }
+            return desc;
+        }
+
+        GaussianSplatDebugRenderableCompileDesc
+        gaussian_splat_debug_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            GaussianSplatDebugRenderableCompileDesc desc{};
+            desc.splat_cloud_asset = dep_key(dep_nodes, 0);
+            for (size_t i = 1u; i < dep_nodes.size(); ++i) {
+                if (dep_nodes[i].type == kAssetTypeGaussianSplatColorLOD) {
+                    desc.color_lod_asset = dep_nodes[i].key;
+                    break;
+                }
+            }
+            return desc;
+        }
+
+        ScalarFieldDebugRenderableCompileDesc
+        scalar_field_debug_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            ScalarFieldDebugRenderableCompileDesc desc{};
+            desc.scalar_field_asset = dep_key(dep_nodes, 0);
+            return desc;
+        }
+
+        TerrainDebugRenderableCompileDesc
+        terrain_debug_renderable_desc_from_editor(
+            const wz::asset::ParamBlock* params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            TerrainDebugRenderableCompileDesc desc{};
+            desc.terrain_asset = dep_key(dep_nodes, 0);
+            if (params) {
+                desc.mesh_program =
+                    enum_param(
+                        *params,
+                        "mesh_program",
+                        desc.mesh_program,
+                        kBuiltinRenderProgramOptions);
+                desc.domain =
+                    enum_param(
+                        *params,
+                        "domain",
+                        desc.domain,
+                        kRenderDomainOptions);
+                desc.mesh_policy_flags =
+                    params->get<uint32_t>(
+                        "mesh_policy_flags",
+                        desc.mesh_policy_flags);
+            }
+            return desc;
+        }
+
+        TerrainSurfaceRenderableCompileDesc
+        terrain_surface_renderable_desc_from_editor(
+            const wz::asset::ParamBlock* params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            TerrainSurfaceRenderableCompileDesc desc{};
+            desc.terrain_asset = dep_key(dep_nodes, 0);
+            desc.visual_proxy_asset = dep_key(dep_nodes, 1);
+            if (params) {
+                desc.mesh_program =
+                    enum_param(
+                        *params,
+                        "mesh_program",
+                        desc.mesh_program,
+                        kBuiltinRenderProgramOptions);
+                desc.domain =
+                    enum_param(
+                        *params,
+                        "domain",
+                        desc.domain,
+                        kRenderDomainOptions);
+                desc.mesh_policy_flags =
+                    params->get<uint32_t>(
+                        "mesh_policy_flags",
+                        desc.mesh_policy_flags);
+                desc.lighting.mode =
+                    enum_param(
+                        *params,
+                        "lighting_mode",
+                        desc.lighting.mode,
+                        kTerrainLightingModeOptions);
+                assign_float3(
+                    *params,
+                    "environment_color",
+                    desc.lighting.environment_color);
+                desc.lighting.environment_intensity =
+                    params->get<float>(
+                        "environment_intensity",
+                        desc.lighting.environment_intensity);
+                assign_float3(
+                    *params,
+                    "dominant_light_direction",
+                    desc.lighting.dominant_light_direction);
+                assign_float3(
+                    *params,
+                    "dominant_light_color",
+                    desc.lighting.dominant_light_color);
+                desc.lighting.dominant_light_intensity =
+                    params->get<float>(
+                        "dominant_light_intensity",
+                        desc.lighting.dominant_light_intensity);
+                desc.lighting.sky_visibility_strength =
+                    params->get<float>(
+                        "sky_visibility_strength",
+                        desc.lighting.sky_visibility_strength);
+                desc.lighting.normal_lighting_strength =
+                    params->get<float>(
+                        "normal_lighting_strength",
+                        desc.lighting.normal_lighting_strength);
+                desc.lighting.terrain_bounce_strength =
+                    params->get<float>(
+                        "terrain_bounce_strength",
+                        desc.lighting.terrain_bounce_strength);
+                desc.target_pixels_per_triangle =
+                    params->get<float>(
+                        "target_pixels_per_triangle",
+                        desc.target_pixels_per_triangle);
+            }
+            return desc;
+        }
+
         void copy_bounds(
             float dst_min[3],
             float dst_max[3],
@@ -222,18 +469,52 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "program",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Program",
+                    .default_num = static_cast<double>(
+                        BuiltinRenderProgram::MeshWireframeDebug),
+                    .options = kBuiltinRenderProgramOptions,
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num = static_cast<double>(RenderDomain::Debug),
+                    .options = kRenderDomainOptions,
+                },
+                {
+                    .name = "policy_flags",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Policy flags",
+                    .default_num = RenderPolicy_Wireframe,
+                },
+            },
             .compile = [logger, mesh_table, renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                MeshWireframeRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<MeshWireframeRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger->error("mesh wireframe renderable missing compile desc");
-                    return compile_failed_node(input);
+                    const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta);
+                    editor_desc =
+                        mesh_wireframe_renderable_desc_from_editor(
+                            params,
+                            dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 1) {
+                        logger->error("mesh wireframe renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 if (dep_handles.size() != 1) {
@@ -290,19 +571,55 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "terrain", kAssetTypeTerrain },
             },
+            .parameters = {
+                {
+                    .name = "mesh_program",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Mesh program",
+                    .default_num = static_cast<double>(
+                        BuiltinRenderProgram::MeshWireframeDepthDebug),
+                    .options = kBuiltinRenderProgramOptions,
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num = static_cast<double>(RenderDomain::Debug),
+                    .options = kRenderDomainOptions,
+                },
+                {
+                    .name = "mesh_policy_flags",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Mesh policy flags",
+                    .default_num = RenderPolicy_Wireframe
+                        | RenderPolicy_DepthTest
+                        | RenderPolicy_DepthWrite,
+                },
+            },
             .compile = [logger, terrain_table, renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                TerrainDebugRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<TerrainDebugRenderableCompileDesc>(
                         &input.meta);
 
                 if (!desc) {
-                    logger->error("terrain debug renderable missing compile desc");
-                    return compile_failed_node(input);
+                    const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta);
+                    editor_desc =
+                        terrain_debug_renderable_desc_from_editor(
+                            params,
+                            dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 1) {
+                        logger->error("terrain debug renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 if (dep_handles.size() != 1) {
@@ -390,17 +707,24 @@ namespace wz::engine::assets::internal
                          mesh_derived_field_table,
                          renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                MeshStyledRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<MeshStyledRenderableCompileDesc>(
                         &input.meta);
 
                 if (!desc) {
-                    logger->error("mesh styled renderable missing compile desc");
-                    return compile_failed_node(input);
+                    editor_desc =
+                        mesh_styled_renderable_desc_from_deps(dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() < 2 || dep_handles.size() > 4) {
+                        logger->error("mesh styled renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 if (dep_handles.size() < 2 || dep_handles.size() > 4) {
@@ -856,20 +1180,126 @@ namespace wz::engine::assets::internal
                 { "terrain", kAssetTypeTerrain },
                 { "visual_proxy", kAssetTypeTerrainVisualProxy },
             },
+            .parameters = {
+                {
+                    .name = "mesh_program",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Mesh program",
+                    .default_num = static_cast<double>(
+                        BuiltinRenderProgram::TerrainMeshSurface),
+                    .options = kBuiltinRenderProgramOptions,
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num = static_cast<double>(RenderDomain::Opaque),
+                    .options = kRenderDomainOptions,
+                },
+                {
+                    .name = "mesh_policy_flags",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Mesh policy flags",
+                    .default_num =
+                        RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+                },
+                {
+                    .name = "lighting_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Lighting mode",
+                    .default_num = static_cast<double>(
+                        TerrainLightingMode::SceneLights),
+                    .options = kTerrainLightingModeOptions,
+                },
+                {
+                    .name = "environment_color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Environment color",
+                },
+                {
+                    .name = "environment_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Environment intensity",
+                    .default_num = 0.25,
+                    .min = 0.0,
+                    .max = 10.0,
+                },
+                {
+                    .name = "dominant_light_direction",
+                    .type = wz::asset::ParamType::Float3,
+                    .label = "Dominant light direction",
+                },
+                {
+                    .name = "dominant_light_color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Dominant light color",
+                },
+                {
+                    .name = "dominant_light_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Dominant light intensity",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 10.0,
+                },
+                {
+                    .name = "sky_visibility_strength",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Sky visibility strength",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "normal_lighting_strength",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Normal lighting strength",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 4.0,
+                },
+                {
+                    .name = "terrain_bounce_strength",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Terrain bounce strength",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 4.0,
+                },
+                {
+                    .name = "target_pixels_per_triangle",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Target pixels per triangle",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 512.0,
+                },
+            },
             .compile = [logger, terrain_table, terrain_visual_proxy_table,
                         renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                TerrainSurfaceRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<TerrainSurfaceRenderableCompileDesc>(
                         &input.meta);
 
                 if (!desc) {
-                    logger->error("terrain surface renderable missing compile desc");
-                    return compile_failed_node(input);
+                    const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta);
+                    editor_desc =
+                        terrain_surface_renderable_desc_from_editor(
+                            params,
+                            dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 2) {
+                        logger->error("terrain surface renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 if (dep_handles.size() != 2) {
@@ -959,16 +1389,24 @@ namespace wz::engine::assets::internal
             },
             .compile = [logger, scalar_fields_table, renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                ScalarFieldDebugRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<ScalarFieldDebugRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger->error("scalar field debug renderable missing compile desc");
-                    return compile_failed_node(input);
+                    editor_desc =
+                        scalar_field_debug_renderable_desc_from_deps(
+                            dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 1) {
+                        logger->error("scalar field debug renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 if (dep_handles.size() != 1) {
@@ -1015,16 +1453,24 @@ namespace wz::engine::assets::internal
             },
             .compile = [logger, gaussian_splat_cloud_table, renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                GaussianSplatDebugRenderableCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<GaussianSplatDebugRenderableCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger->error("gaussian splat debug renderable missing compile desc");
-                    return compile_failed_node(input);
+                    editor_desc =
+                        gaussian_splat_debug_renderable_desc_from_deps(
+                            dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() < 1 || dep_handles.size() > 2) {
+                        logger->error("gaussian splat debug renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 // Accept 1 (cloud only) or 2 (cloud + optional LOD) deps.
