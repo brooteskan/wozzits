@@ -77,6 +77,32 @@ namespace wz::engine::assets
                 static_cast<int32_t>(std::floor(pos[2] * inv)),
             };
         }
+
+        GaussianSplatColorLODCompileDesc
+        gaussian_splat_color_lod_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            GaussianSplatColorLODCompileDesc desc{};
+            desc.neighbor_radius_world =
+                params.get<float>(
+                    "neighbor_radius_world",
+                    desc.neighbor_radius_world);
+            desc.gaussian_sigma_world =
+                params.get<float>(
+                    "gaussian_sigma_world",
+                    desc.gaussian_sigma_world);
+            desc.include_self =
+                params.get<bool>("include_self", desc.include_self);
+            desc.use_opacity_weight =
+                params.get<bool>(
+                    "use_opacity_weight",
+                    desc.use_opacity_weight);
+            desc.color_variance_gain =
+                params.get<float>(
+                    "color_variance_gain",
+                    desc.color_variance_gain);
+            return desc;
+        }
     }
 
     GaussianSplatColorLODData compute_gaussian_splat_color_lod(
@@ -292,14 +318,64 @@ namespace wz::engine::assets
                 .input_ports = {
                     { "splat_cloud", kAssetTypeGaussianSplatCloud },
                 },
+                .parameters = {
+                    {
+                        .name = "neighbor_radius_world",
+                        .type = wz::asset::ParamType::Float,
+                        .label = "Neighbor radius",
+                        .default_num = 0.05,
+                        .min = 0.0,
+                        .max = 10.0,
+                    },
+                    {
+                        .name = "gaussian_sigma_world",
+                        .type = wz::asset::ParamType::Float,
+                        .label = "Gaussian sigma",
+                        .default_num = 0.025,
+                        .min = 0.0,
+                        .max = 10.0,
+                    },
+                    {
+                        .name = "include_self",
+                        .type = wz::asset::ParamType::Bool,
+                        .label = "Include self",
+                        .default_num = 1.0,
+                    },
+                    {
+                        .name = "use_opacity_weight",
+                        .type = wz::asset::ParamType::Bool,
+                        .label = "Use opacity weight",
+                        .default_num = 1.0,
+                    },
+                    {
+                        .name = "color_variance_gain",
+                        .type = wz::asset::ParamType::Float,
+                        .label = "Color variance gain",
+                        .default_num = 4.0,
+                        .min = 0.0,
+                        .max = 100.0,
+                    },
+                },
                 .compile = [&logger, &cloud_table, &lod_table](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> /*dep_nodes*/,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
                 {
+                    GaussianSplatColorLODCompileDesc param_desc{};
                     const auto* desc =
                         std::any_cast<GaussianSplatColorLODCompileDesc>(&input.meta);
+                    if (!desc) {
+                        if (const auto* params =
+                                std::any_cast<wz::asset::ParamBlock>(
+                                    &input.meta))
+                        {
+                            param_desc =
+                                gaussian_splat_color_lod_desc_from_params(
+                                    *params);
+                            desc = &param_desc;
+                        }
+                    }
 
                     if (!desc) {
                         logger.error(
