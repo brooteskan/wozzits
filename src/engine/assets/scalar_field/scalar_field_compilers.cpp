@@ -9,6 +9,7 @@
 #include <engine/assets/type_extensions.h>
 #include <file/filesystem.h>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -16,6 +17,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace wz::engine::assets::internal
 {
@@ -23,6 +25,83 @@ namespace wz::engine::assets::internal
     {
         constexpr uint32_t kScalarFieldDiskCacheMagic = 0x53465a57u;
         constexpr uint32_t kScalarFieldDiskCacheVersion = 1u;
+
+        constexpr std::array<std::string_view, 6>
+            kScalarFieldDomainOptions = {
+                "Unknown",
+                "Spatial 1D",
+                "Spatial 2D",
+                "Lookup 1D",
+                "Lookup 2D",
+                "Baked computation",
+            };
+
+        constexpr std::array<std::string_view, 5>
+            kScalarFieldGeneratorOptions = {
+                "Gradient X",
+                "Gradient Y",
+                "Radial gradient",
+                "Checkerboard",
+                "Sine waves",
+            };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        ScalarFieldCompileDesc scalar_field_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            ScalarFieldCompileDesc desc{};
+            desc.width = params.get<uint32_t>("width", desc.width);
+            desc.height = params.get<uint32_t>("height", desc.height);
+            desc.depth = params.get<uint32_t>("depth", desc.depth);
+            desc.domain_kind =
+                enum_param(
+                    params,
+                    "domain_kind",
+                    desc.domain_kind,
+                    kScalarFieldDomainOptions);
+            return desc;
+        }
+
+        ProceduralScalarFieldCompileDesc
+        procedural_scalar_field_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            ProceduralScalarFieldCompileDesc desc{};
+            desc.width = params.get<uint32_t>("width", desc.width);
+            desc.height = params.get<uint32_t>("height", desc.height);
+            desc.depth = params.get<uint32_t>("depth", desc.depth);
+            desc.generator =
+                enum_param(
+                    params,
+                    "generator",
+                    desc.generator,
+                    kScalarFieldGeneratorOptions);
+            desc.frequency =
+                params.get<float>("frequency", desc.frequency);
+            desc.amplitude =
+                params.get<float>("amplitude", desc.amplitude);
+            desc.domain_kind =
+                enum_param(
+                    params,
+                    "domain_kind",
+                    desc.domain_kind,
+                    kScalarFieldDomainOptions);
+            return desc;
+        }
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -351,6 +430,41 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", kAssetTypeRawFile },
             },
+            .parameters = {
+                {
+                    .name = "width",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Width",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+                {
+                    .name = "height",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Height",
+                    .default_num = 1,
+                    .min = 1,
+                    .max = 65536,
+                },
+                {
+                    .name = "depth",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Depth",
+                    .default_num = 1,
+                    .min = 1,
+                    .max = 65536,
+                },
+                {
+                    .name = "domain_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(
+                            ScalarFieldDomainKind::Spatial2D),
+                    .options = kScalarFieldDomainOptions,
+                },
+            },
             .compile = [&logger, &scalar_field_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -358,8 +472,18 @@ namespace wz::engine::assets::internal
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
 
+                ScalarFieldCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<ScalarFieldCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc = scalar_field_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
 
                 if (!desc) {
                     logger.error("scalar field node missing ScalarFieldCompileDesc");
@@ -480,6 +604,66 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldProceduralSchema,
             .output_type = kAssetTypeScalarField,
+            .parameters = {
+                {
+                    .name = "width",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Width",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+                {
+                    .name = "height",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Height",
+                    .default_num = 1,
+                    .min = 1,
+                    .max = 65536,
+                },
+                {
+                    .name = "depth",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Depth",
+                    .default_num = 1,
+                    .min = 1,
+                    .max = 1,
+                },
+                {
+                    .name = "generator",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Generator",
+                    .default_num =
+                        static_cast<double>(
+                            ScalarFieldGenerator::GradientX),
+                    .options = kScalarFieldGeneratorOptions,
+                },
+                {
+                    .name = "frequency",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Frequency",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 1024.0,
+                },
+                {
+                    .name = "amplitude",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Amplitude",
+                    .default_num = 1.0,
+                    .min = -1024.0,
+                    .max = 1024.0,
+                },
+                {
+                    .name = "domain_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(
+                            ScalarFieldDomainKind::Spatial2D),
+                    .options = kScalarFieldDomainOptions,
+                },
+            },
             .compile = [&logger, &scalar_field_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -487,8 +671,19 @@ namespace wz::engine::assets::internal
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
 
+                ProceduralScalarFieldCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<ProceduralScalarFieldCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            procedural_scalar_field_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
 
                 if (!desc) {
                     logger.error("procedural scalar field node missing "
