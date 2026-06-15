@@ -2314,6 +2314,22 @@ namespace wz::engine::assets::internal
             out.payload = handle;
             return out;
         }
+
+        wz::asset::AssetKey terrain_visual_proxy_source_key(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            if (const auto* terrain_key =
+                    std::any_cast<wz::asset::AssetKey>(&input.meta);
+                terrain_key && *terrain_key != wz::asset::AssetKey{})
+            {
+                return *terrain_key;
+            }
+            if (!dep_nodes.empty()) {
+                return dep_nodes[0].key;
+            }
+            return {};
+        }
     }
 
     void register_terrain_visual_proxy_compilers(
@@ -2331,7 +2347,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &terrain_table, &terrain_visual_proxy_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -2366,15 +2382,15 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                const wz::asset::AssetKey* terrain_key =
-                    std::any_cast<wz::asset::AssetKey>(&input.meta);
-                if (!terrain_key || *terrain_key == wz::asset::AssetKey{}) {
+                const wz::asset::AssetKey terrain_key =
+                    terrain_visual_proxy_source_key(input, dep_nodes);
+                if (terrain_key == wz::asset::AssetKey{}) {
                     logger.error("terrain visual proxy missing source terrain key");
                     return compile_failed_node(input);
                 }
 
                 TerrainVisualProxyData proxy =
-                    compile_multi_lod_proxy(input.key, *terrain_key, *terrain);
+                    compile_multi_lod_proxy(input.key, terrain_key, *terrain);
                 if (!proxy.valid()) {
                     logger.error("compiled terrain visual proxy is invalid");
                     return compile_failed_node(input);
