@@ -20,6 +20,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,81 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr std::array<std::string_view, 3> kHierarchyMethodOptions = {
+            "Identity",
+            "Graph coarsen",
+            "Laplacian graph cells",
+        };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        MeshAsset mesh_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            MeshAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.output = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        MeshClusterHierarchyAsset hierarchy_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            MeshClusterHierarchyAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.output = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        MeshClusterHierarchyDesc hierarchy_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshClusterHierarchyDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.method =
+                enum_param(
+                    params,
+                    "method",
+                    desc.method,
+                    kHierarchyMethodOptions);
+            desc.max_level_index =
+                params.get<uint32_t>(
+                    "max_level_index",
+                    desc.max_level_index);
+            return desc;
+        }
+
+        MeshClusterHierarchyPreviewMeshDesc preview_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshClusterHierarchyPreviewMeshDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.hierarchy = hierarchy_asset_from_dep(dep_nodes, 0u);
+            desc.level_index =
+                params.get<uint32_t>("level_index", desc.level_index);
+            return desc;
+        }
+
         wz::asset::AssetNode compiled_node(
             const wz::asset::AssetNode& input,
             wz::asset::ResourceHandle handle)
@@ -2125,6 +2201,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_cluster_hierarchy_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -2138,8 +2215,19 @@ namespace wz::engine::assets::internal
                 gpu_resident_mesh_cluster_hierarchy_table,
             MeshClusterHierarchyTable& hierarchy_table)
         {
+            MeshClusterHierarchyDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshClusterHierarchyDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc = hierarchy_desc_from_params(
+                        *params,
+                        dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.empty())
             {
                 logger.error("mesh cluster hierarchy node missing desc");
@@ -2304,14 +2392,26 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_cluster_hierarchy_preview_mesh_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshClusterHierarchyTable& hierarchy_table)
         {
+            MeshClusterHierarchyPreviewMeshDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshClusterHierarchyPreviewMeshDesc>(
                     &input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc = preview_mesh_desc_from_params(
+                        *params,
+                        dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 1u) {
                 logger.error(
                     "mesh cluster hierarchy preview mesh node missing desc");
@@ -2385,6 +2485,30 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "method",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Method",
+                    .default_num =
+                        static_cast<double>(
+                            MeshClusterHierarchyBuildMethod::Identity),
+                    .options = kHierarchyMethodOptions,
+                },
+                {
+                    .name = "max_level_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Max level index",
+                    .default_num = 3.0,
+                    .min = 0.0,
+                    .max = 7.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -2397,12 +2521,13 @@ namespace wz::engine::assets::internal
                 &gpu_resident_mesh_cluster_hierarchy_table,
                 &hierarchy_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_cluster_hierarchy_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_field_compute,
@@ -2423,17 +2548,33 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "hierarchy", kAssetTypeMeshClusterHierarchy },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "level_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Level index",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 7.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &hierarchy_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_cluster_hierarchy_preview_mesh_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
