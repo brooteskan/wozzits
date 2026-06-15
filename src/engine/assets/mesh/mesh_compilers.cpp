@@ -318,6 +318,59 @@ namespace wz::engine::assets::internal
             return out;
         }
 
+        GLBMeshDesc glb_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            GLBMeshDesc desc{};
+            desc.mesh_index =
+                params.get<uint32_t>("mesh_index", desc.mesh_index);
+            return desc;
+        }
+
+        MeshDecimationAssetDesc mesh_decimation_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            MeshDecimationAssetDesc desc{};
+            desc.target_vertex_count =
+                params.get<uint32_t>(
+                    "target_vertex_count",
+                    desc.target_vertex_count);
+            desc.target_triangle_count =
+                params.get<uint32_t>(
+                    "target_triangle_count",
+                    desc.target_triangle_count);
+            desc.target_ratio =
+                params.get<float>("target_ratio", desc.target_ratio);
+            desc.preserve_boundary =
+                params.get<bool>(
+                    "preserve_boundary",
+                    desc.preserve_boundary);
+            desc.aspect_ratio =
+                params.get<float>("aspect_ratio", desc.aspect_ratio);
+            desc.edge_length =
+                params.get<float>("edge_length", desc.edge_length);
+            desc.max_valence =
+                params.get<uint32_t>("max_valence", desc.max_valence);
+            desc.normal_deviation =
+                params.get<float>(
+                    "normal_deviation",
+                    desc.normal_deviation);
+            desc.hausdorff_error =
+                params.get<float>(
+                    "hausdorff_error",
+                    desc.hausdorff_error);
+            return desc;
+        }
+
+        DebugTriangleStrideMeshDesc debug_triangle_stride_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            DebugTriangleStrideMeshDesc desc{};
+            desc.stride = params.get<uint32_t>("stride", desc.stride);
+            desc.phase = params.get<uint32_t>("phase", desc.phase);
+            return desc;
+        }
+
         wz::asset::AssetNode compile_procedural_mesh_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::AssetNode> dep_nodes,
@@ -420,9 +473,20 @@ namespace wz::engine::assets::internal
                 return compile_failed_node(input);
             }
 
+            GLBMeshDesc param_desc{};
             uint32_t mesh_index = 0;
-            if (const auto* desc = std::any_cast<GLBMeshDesc>(&input.meta))
+            const auto* desc = std::any_cast<GLBMeshDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc = glb_mesh_desc_from_params(*params);
+                    desc = &param_desc;
+                }
+            }
+            if (desc) {
                 mesh_index = desc->mesh_index;
+            }
 
             if (mesh_index >= imported.meshes.size()) {
                 logger.error("GLB mesh_index is out of range");
@@ -450,8 +514,17 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             MeshTable& mesh_table)
         {
+            MeshDecimationAssetDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshDecimationAssetDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc = mesh_decimation_desc_from_params(*params);
+                    desc = &param_desc;
+                }
+            }
             if (!desc) {
                 logger.error("decimated mesh node missing compile desc");
                 return compile_failed_node(input);
@@ -583,8 +656,18 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             MeshTable& mesh_table)
         {
+            DebugTriangleStrideMeshDesc param_desc{};
             const auto* desc =
                 std::any_cast<DebugTriangleStrideMeshDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        debug_triangle_stride_mesh_desc_from_params(*params);
+                    desc = &param_desc;
+                }
+            }
             if (!desc) {
                 logger.error("debug triangle stride mesh node missing compile desc");
                 return compile_failed_node(input);
@@ -693,6 +776,16 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", kAssetTypeBinaryBlob },
             },
+            .parameters = {
+                {
+                    .name = "mesh_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Mesh index",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 1024,
+                },
+            },
             .compile = [&logger, &mesh_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -709,6 +802,78 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "target_vertex_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Target vertices",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 100000000,
+                },
+                {
+                    .name = "target_triangle_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Target triangles",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 100000000,
+                },
+                {
+                    .name = "target_ratio",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Target ratio",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "preserve_boundary",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Preserve boundary",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "aspect_ratio",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Aspect ratio",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "edge_length",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Edge length",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "max_valence",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Max valence",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 1024,
+                },
+                {
+                    .name = "normal_deviation",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Normal deviation",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 180.0,
+                },
+                {
+                    .name = "hausdorff_error",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Hausdorff error",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -724,6 +889,24 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeMesh,
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
+            },
+            .parameters = {
+                {
+                    .name = "stride",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Stride",
+                    .default_num = 1,
+                    .min = 1,
+                    .max = 1000000,
+                },
+                {
+                    .name = "phase",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Phase",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 1000000,
+                },
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
