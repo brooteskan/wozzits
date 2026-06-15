@@ -9,6 +9,37 @@
 
 namespace wz::engine::assets::internal
 {
+    namespace
+    {
+        ComputePipelineDesc compute_pipeline_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            ComputePipelineDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            if (!dep_nodes.empty()) {
+                desc.compute_shader = dep_nodes[0].key;
+            }
+            desc.root_constant_dwords =
+                params.get<uint32_t>(
+                    "root_constant_dwords",
+                    desc.root_constant_dwords);
+            desc.thread_group_size_x =
+                params.get<uint32_t>(
+                    "thread_group_size_x",
+                    desc.thread_group_size_x);
+            desc.thread_group_size_y =
+                params.get<uint32_t>(
+                    "thread_group_size_y",
+                    desc.thread_group_size_y);
+            desc.thread_group_size_z =
+                params.get<uint32_t>(
+                    "thread_group_size_z",
+                    desc.thread_group_size_z);
+            return desc;
+        }
+    }
+
     void register_compute_pipeline_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
@@ -20,19 +51,54 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "compute_shader", wz::asset::AssetType::Shader },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "root_constant_dwords",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Root constant dwords",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 256.0,
+                },
+                {
+                    .name = "thread_group_size_x",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Thread group size X",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 1024.0,
+                },
+                {
+                    .name = "thread_group_size_y",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Thread group size Y",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 1024.0,
+                },
+                {
+                    .name = "thread_group_size_z",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Thread group size Z",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 1024.0,
+                },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                ComputePipelineDesc param_desc{};
                 const auto* desc =
                     std::any_cast<ComputePipelineDesc>(&input.meta);
-
-                if (!desc) {
-                    logger.error("compute pipeline missing ComputePipelineDesc");
-                    return compile_failed_node(input);
-                }
 
                 if (dep_handles.size() != 1) {
                     logger.error("compute pipeline requires exactly one compute shader dependency");
@@ -41,6 +107,26 @@ namespace wz::engine::assets::internal
 
                 if (!dep_handles[0].valid()) {
                     logger.error("compute pipeline shader dependency did not resolve");
+                    return compile_failed_node(input);
+                }
+
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            compute_pipeline_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error(
+                        "compute pipeline missing ComputePipelineDesc or "
+                        "ParamBlock");
                     return compile_failed_node(input);
                 }
 
