@@ -10,6 +10,7 @@
 #include <engine/assets/type_extensions.h>
 
 #include <algorithm>
+#include <array>
 #include <any>
 #include <chrono>
 #include <cmath>
@@ -19,6 +20,7 @@
 #include <sstream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -506,6 +508,137 @@ namespace wz::engine::assets::internal
             out.stage = wz::asset::AssetStage::Compiled;
             out.payload = handle;
             return out;
+        }
+
+        constexpr std::array<std::string_view, 2> kTerrainRenderModeOptions = {
+            "None",
+            "Debug mesh",
+        };
+
+        constexpr std::array<std::string_view, 3>
+            kTerrainCollisionModeOptions = {
+                "None",
+                "Height only",
+                "Mesh surface",
+            };
+
+        constexpr std::array<std::string_view, 1>
+            kTerrainMeshHeightPolicyOptions = {
+                "Highest accepted surface",
+            };
+
+        constexpr std::array<std::string_view, 3>
+            kTerrainNormalSourceOptions = {
+                "Derived geometry",
+                "Mesh vertex normal",
+                "Imported field",
+            };
+
+        constexpr std::array<std::string_view, 4> kTerrainUVSourceOptions = {
+            "None",
+            "Mesh UV0",
+            "Planar XZ",
+            "Imported field",
+        };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        TerrainFromHeightFieldCompileDesc
+        terrain_from_height_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            TerrainFromHeightFieldCompileDesc desc{};
+            if (!dep_nodes.empty()) {
+                desc.height_field = dep_nodes[0].key;
+            }
+            desc.origin[0] = params.get<float>("origin_x", desc.origin[0]);
+            desc.origin[1] = params.get<float>("origin_z", desc.origin[1]);
+            desc.size[0] = params.get<float>("size_x", desc.size[0]);
+            desc.size[1] = params.get<float>("size_z", desc.size[1]);
+            desc.vertical_scale =
+                params.get<float>("vertical_scale", desc.vertical_scale);
+            desc.base_height =
+                params.get<float>("base_height", desc.base_height);
+            desc.render_mode =
+                enum_param(
+                    params,
+                    "render_mode",
+                    desc.render_mode,
+                    kTerrainRenderModeOptions);
+            desc.collision_mode =
+                enum_param(
+                    params,
+                    "collision_mode",
+                    desc.collision_mode,
+                    kTerrainCollisionModeOptions);
+            return desc;
+        }
+
+        TerrainFromMeshCompileDesc terrain_from_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            TerrainFromMeshCompileDesc desc{};
+            if (!dep_nodes.empty()) {
+                desc.mesh = dep_nodes[0].key;
+            }
+            desc.height_policy =
+                enum_param(
+                    params,
+                    "height_policy",
+                    desc.height_policy,
+                    kTerrainMeshHeightPolicyOptions);
+            desc.min_surface_normal_y =
+                params.get<float>(
+                    "min_surface_normal_y",
+                    desc.min_surface_normal_y);
+            desc.include_backfaces =
+                params.get<bool>(
+                    "include_backfaces",
+                    desc.include_backfaces);
+            desc.preferred_normal_source =
+                enum_param(
+                    params,
+                    "preferred_normal_source",
+                    desc.preferred_normal_source,
+                    kTerrainNormalSourceOptions);
+            desc.preferred_uv_source =
+                enum_param(
+                    params,
+                    "preferred_uv_source",
+                    desc.preferred_uv_source,
+                    kTerrainUVSourceOptions);
+            desc.render_mode =
+                enum_param(
+                    params,
+                    "render_mode",
+                    desc.render_mode,
+                    kTerrainRenderModeOptions);
+            desc.collision_mode =
+                enum_param(
+                    params,
+                    "collision_mode",
+                    desc.collision_mode,
+                    kTerrainCollisionModeOptions);
+            desc.visual_chunk_count =
+                params.get<uint32_t>(
+                    "visual_chunk_count",
+                    desc.visual_chunk_count);
+            return desc;
         }
 
         void copy_mesh_bounds(
@@ -998,15 +1131,91 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "height_field", kAssetTypeScalarField },
             },
+            .parameters = {
+                {
+                    .name = "origin_x",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Origin X",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "origin_z",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Origin Z",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "size_x",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Size X",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "size_z",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Size Z",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "vertical_scale",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Vertical scale",
+                    .default_num = 1.0,
+                    .min = -100000.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "base_height",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Base height",
+                    .default_num = 0.0,
+                    .min = -100000.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "render_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Render mode",
+                    .default_num =
+                        static_cast<double>(TerrainRenderMode::DebugMesh),
+                    .options = kTerrainRenderModeOptions,
+                },
+                {
+                    .name = "collision_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Collision mode",
+                    .default_num =
+                        static_cast<double>(
+                            TerrainCollisionMode::HeightOnly),
+                    .options = kTerrainCollisionModeOptions,
+                },
+            },
             .compile = [&logger, &scalar_fields_table, &terrain_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                TerrainFromHeightFieldCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<TerrainFromHeightFieldCompileDesc>(
                         &input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            terrain_from_height_field_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
                 if (!desc) {
                     logger.error("terrain heightfield missing compile desc");
                     return compile_failed_node(input);
@@ -1084,14 +1293,95 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "height_policy",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Height policy",
+                    .default_num =
+                        static_cast<double>(
+                            TerrainMeshSurfaceHeightPolicy
+                                ::HighestAcceptedSurface),
+                    .options = kTerrainMeshHeightPolicyOptions,
+                },
+                {
+                    .name = "min_surface_normal_y",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Min normal Y",
+                    .default_num = 0.2,
+                    .min = -1.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "include_backfaces",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Include backfaces",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "preferred_normal_source",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Normal source",
+                    .default_num =
+                        static_cast<double>(
+                            TerrainNormalSource::MeshVertexNormal),
+                    .options = kTerrainNormalSourceOptions,
+                },
+                {
+                    .name = "preferred_uv_source",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "UV source",
+                    .default_num =
+                        static_cast<double>(TerrainUVSource::MeshUV0),
+                    .options = kTerrainUVSourceOptions,
+                },
+                {
+                    .name = "render_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Render mode",
+                    .default_num =
+                        static_cast<double>(TerrainRenderMode::DebugMesh),
+                    .options = kTerrainRenderModeOptions,
+                },
+                {
+                    .name = "collision_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Collision mode",
+                    .default_num =
+                        static_cast<double>(
+                            TerrainCollisionMode::MeshSurface),
+                    .options = kTerrainCollisionModeOptions,
+                },
+                {
+                    .name = "visual_chunk_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Visual chunks",
+                    .default_num = 4096,
+                    .min = 0,
+                    .max = 1048576,
+                },
+            },
             .compile = [&logger, &mesh_table, &terrain_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                TerrainFromMeshCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<TerrainFromMeshCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            terrain_from_mesh_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
                 if (!desc) {
                     logger.error("terrain mesh missing compile desc");
                     return compile_failed_node(input);
