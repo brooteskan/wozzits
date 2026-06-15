@@ -5,11 +5,40 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <array>
 #include <charconv>
 #include <cmath>
+#include <string_view>
 
 namespace wz::engine::assets::internal
 {
+    namespace
+    {
+        constexpr std::array<std::string_view, 3> kCSVHeaderModeOptions = {
+            "Auto",
+            "Force header",
+            "Force data",
+        };
+
+        CSVCompileDesc csv_compile_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            CSVCompileDesc desc{};
+            const int64_t header_mode =
+                params.get<int64_t>(
+                    "header_mode",
+                    static_cast<int64_t>(desc.header_mode));
+            if (header_mode >= 0
+                && header_mode
+                    < static_cast<int64_t>(kCSVHeaderModeOptions.size()))
+            {
+                desc.header_mode =
+                    static_cast<CSVHeaderMode>(header_mode);
+            }
+            return desc;
+        }
+    }
+
     void register_csv_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
@@ -41,6 +70,16 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", kAssetTypeRawFile },
             },
+            .parameters = {
+                {
+                    .name = "header_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Header mode",
+                    .default_num =
+                        static_cast<double>(CSVHeaderMode::Auto),
+                    .options = kCSVHeaderModeOptions,
+                },
+            },
             .compile = [&logger, &csv_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -48,8 +87,18 @@ namespace wz::engine::assets::internal
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
 
+                CSVCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<CSVCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc = csv_compile_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
 
                 if (!desc) {
                     logger.error("CSV table node missing CSVCompileDesc");
