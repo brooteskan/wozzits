@@ -380,6 +380,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticResampledTimeSeriesToDataTableSchema,
             .output_type  = kAssetTypeDataTable,
+            .input_ports = {
+                { "time_series", kAssetTypeDiagnosticResampledTimeSeries },
+            },
             .compile = [&logger, &data_table, &resampled_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -437,6 +440,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTableResampleTimeSeriesSchema,
             .output_type = kAssetTypeDiagnosticResampledTimeSeries,
+            .input_ports = {
+                { "source_table", kAssetTypeDataTable },
+            },
             .compile = [&logger, &data_table, &resampled_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

@@ -1470,6 +1470,7 @@ namespace wz::engine::assets {
 
     using AssetTypeDisplayNameMap =
         std::map<wz::asset::AssetType, std::string_view>;
+    using SchemaDisplayNameMap = std::map<uint64_t, std::string_view>;
 
     const AssetTypeDisplayNameMap& asset_type_display_names();
     void validate_asset_type_display_names();
@@ -1477,4 +1478,9 @@ namespace wz::engine::assets {
         wz::asset::AssetType type) noexcept;
     const char* asset_type_display_name(
         wz::asset::AssetType type) noexcept;
+
+    const SchemaDisplayNameMap& schema_display_names();
+    std::string_view schema_display_name_view(
+        wz::asset::SchemaID schema) noexcept;
+    const char* schema_display_name(wz::asset::SchemaID schema) noexcept;
 } // namespace wz::engine::assets

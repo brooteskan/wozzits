@@ -2326,6 +2326,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainVisualProxySchema,
             .output_type = kAssetTypeTerrainVisualProxy,
+            .input_ports = {
+                { "terrain", kAssetTypeTerrain },
+            },
             .compile = [&logger, &terrain_table, &terrain_visual_proxy_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,

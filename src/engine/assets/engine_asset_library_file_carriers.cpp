@@ -19,17 +19,28 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             std::string_view label)
         {
+            std::string path;
             const auto* file =
                 std::any_cast<FileSourceDesc>(&input.meta);
+            if (file) {
+                path = file->full_path;
+            }
+            else if (const auto* params =
+                         std::any_cast<wz::asset::ParamBlock>(&input.meta))
+            {
+                path = params->get<std::string>("source_path", {});
+            }
 
-            if (!file) {
-                logger.error(std::string(label) + " missing FileSourceDesc");
+            if (path.empty()) {
+                logger.error(
+                    std::string(label)
+                    + " missing FileSourceDesc or source_path parameter");
                 return compile_failed_node(input);
             }
 
-            auto file_result = wz::fs::read_file(file->full_path);
+            auto file_result = wz::fs::read_file(path);
             if (!file_result) {
-                logger.error("failed to read file: " + file->full_path);
+                logger.error("failed to read file: " + path);
                 return compile_failed_node(input);
             }
 
@@ -49,6 +60,13 @@ namespace wz::engine::assets::internal
             registry.register_compiler(wz::asset::AssetCompiler{
                 .input_schema = schema,
                 .output_type = type,
+                .parameters = {
+                    {
+                        .name = "source_path",
+                        .type = wz::asset::ParamType::FilePath,
+                        .label = "Path",
+                    },
+                },
                 .compile = [&logger, label](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode>,

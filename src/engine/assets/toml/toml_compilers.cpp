@@ -19,6 +19,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTOMLDocumentSchema,
             .output_type = kAssetTypeTOMLDocument,
+            .input_ports = {
+                { "source_file", kAssetTypeTextFile },
+            },
             .compile = [&logger, &toml_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

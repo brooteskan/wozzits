@@ -219,6 +219,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWireframeRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "mesh", kAssetTypeMesh },
+            },
             .compile = [logger, mesh_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -284,6 +287,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "terrain", kAssetTypeTerrain },
+            },
             .compile = [logger, terrain_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -372,6 +378,12 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshStyledRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "mesh", kAssetTypeMesh },
+                { "style", kAssetTypeMeshRenderStyle },
+                { "mesh_field", kAssetTypeMeshDerivedField },
+                { "render_program", kAssetTypeRenderProgram },
+            },
             .compile = [logger,
                          mesh_table,
                          mesh_render_style_table,
@@ -840,6 +852,10 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainSurfaceRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "terrain", kAssetTypeTerrain },
+                { "visual_proxy", kAssetTypeTerrainVisualProxy },
+            },
             .compile = [logger, terrain_table, terrain_visual_proxy_table,
                         renderable_table](
                 const wz::asset::AssetNode& input,
@@ -938,6 +954,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "scalar_field", kAssetTypeScalarField },
+            },
             .compile = [logger, scalar_fields_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -990,6 +1009,10 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "splat_cloud", kAssetTypeGaussianSplatCloud },
+                { "color_lod", kAssetTypeGaussianSplatColorLOD },
+            },
             .compile = [logger, gaussian_splat_cloud_table, renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,

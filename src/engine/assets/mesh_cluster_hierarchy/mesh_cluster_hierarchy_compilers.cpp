@@ -2382,6 +2382,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshClusterHierarchySchema,
             .output_type = kAssetTypeMeshClusterHierarchy,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -2417,6 +2420,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshClusterHierarchyPreviewMeshSchema,
             .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "hierarchy", kAssetTypeMeshClusterHierarchy },
+            },
             .compile = [
                 &logger,
                 &mesh_table,

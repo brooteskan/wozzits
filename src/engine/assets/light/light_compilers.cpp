@@ -7,11 +7,200 @@
 #include <engine/assets/type_extensions.h>
 
 #include <mutex>
+#include <array>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace wz::engine::assets::internal
 {
+    namespace
+    {
+        constexpr std::array<std::string_view, 3> kDirectLightKindOptions = {
+            "Directional",
+            "Point",
+            "Spot",
+        };
+
+        constexpr std::array<std::string_view, 2>
+            kAmbientLightingModeOptions = {
+                "Constant",
+                "Field modulated",
+            };
+
+        constexpr std::array<std::string_view, 2>
+            kAmbientLightingDomainMappingOptions = {
+                "Terrain UV",
+                "World XZ",
+            };
+
+        constexpr std::array<std::string_view, 3> kHDRIFormatOptions = {
+            "Auto",
+            "Radiance HDR",
+            "OpenEXR",
+        };
+
+        std::array<float, 3> param_float3(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            const float fallback[3])
+        {
+            return params.get<std::array<float, 3>>(
+                name,
+                { fallback[0], fallback[1], fallback[2] });
+        }
+
+        DirectLightCompileDesc direct_light_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            DirectLightCompileDesc desc{};
+            const int64_t kind =
+                params.get<int64_t>("kind", static_cast<int64_t>(desc.kind));
+            if (kind >= 0
+                && kind < static_cast<int64_t>(kDirectLightKindOptions.size()))
+            {
+                desc.kind = static_cast<DirectLightKind>(kind);
+            }
+            const auto color = param_float3(params, "color", desc.color);
+            desc.color[0] = color[0];
+            desc.color[1] = color[1];
+            desc.color[2] = color[2];
+            desc.intensity = params.get<float>("intensity", desc.intensity);
+            desc.range = params.get<float>("range", desc.range);
+            desc.inner_cone_radians =
+                params.get<float>(
+                    "inner_cone_radians",
+                    desc.inner_cone_radians);
+            desc.outer_cone_radians =
+                params.get<float>(
+                    "outer_cone_radians",
+                    desc.outer_cone_radians);
+            return desc;
+        }
+
+        AmbientLightingCompileDesc ambient_lighting_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            AmbientLightingCompileDesc desc{};
+            const int64_t mode =
+                params.get<int64_t>("mode", static_cast<int64_t>(desc.mode));
+            if (mode >= 0
+                && mode
+                    < static_cast<int64_t>(
+                        kAmbientLightingModeOptions.size()))
+            {
+                desc.mode = static_cast<AmbientLightingMode>(mode);
+            }
+            const auto color = param_float3(params, "color", desc.color);
+            desc.color[0] = color[0];
+            desc.color[1] = color[1];
+            desc.color[2] = color[2];
+            desc.intensity = params.get<float>("intensity", desc.intensity);
+            const int64_t domain_mapping =
+                params.get<int64_t>(
+                    "domain_mapping",
+                    static_cast<int64_t>(desc.domain_mapping));
+            if (domain_mapping >= 0
+                && domain_mapping
+                    < static_cast<int64_t>(
+                        kAmbientLightingDomainMappingOptions.size()))
+            {
+                desc.domain_mapping =
+                    static_cast<AmbientLightingDomainMapping>(
+                        domain_mapping);
+            }
+            return desc;
+        }
+
+        HDRIEnvironmentCompileDesc hdri_environment_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            wz::asset::AssetKey source_file)
+        {
+            HDRIEnvironmentCompileDesc desc{};
+            desc.source_file = source_file;
+
+            const int64_t format =
+                params.get<int64_t>(
+                    "format",
+                    static_cast<int64_t>(desc.format));
+            if (format >= 0
+                && format < static_cast<int64_t>(kHDRIFormatOptions.size()))
+            {
+                desc.format = static_cast<HDRIEnvironmentFormat>(format);
+            }
+
+            desc.exposure = params.get<float>("exposure", desc.exposure);
+            desc.rotation_x_radians =
+                params.get<float>(
+                    "rotation_x_radians",
+                    desc.rotation_x_radians);
+            desc.rotation_y_radians =
+                params.get<float>(
+                    "rotation_y_radians",
+                    desc.rotation_y_radians);
+            desc.rotation_z_radians =
+                params.get<float>(
+                    "rotation_z_radians",
+                    desc.rotation_z_radians);
+            desc.lighting_intensity =
+                params.get<float>(
+                    "lighting_intensity",
+                    desc.lighting_intensity);
+            desc.reflection_intensity =
+                params.get<float>(
+                    "reflection_intensity",
+                    desc.reflection_intensity);
+            desc.background_intensity =
+                params.get<float>(
+                    "background_intensity",
+                    desc.background_intensity);
+            desc.lighting_sample_resolution =
+                params.get<uint32_t>(
+                    "lighting_sample_resolution",
+                    desc.lighting_sample_resolution);
+
+            const auto environment_color =
+                param_float3(
+                    params,
+                    "environment_light_color",
+                    desc.environment_light_color);
+            desc.environment_light_color[0] = environment_color[0];
+            desc.environment_light_color[1] = environment_color[1];
+            desc.environment_light_color[2] = environment_color[2];
+            desc.environment_light_intensity =
+                params.get<float>(
+                    "environment_light_intensity",
+                    desc.environment_light_intensity);
+
+            const auto dominant_direction =
+                param_float3(
+                    params,
+                    "dominant_light_direction",
+                    desc.dominant_light_direction);
+            desc.dominant_light_direction[0] = dominant_direction[0];
+            desc.dominant_light_direction[1] = dominant_direction[1];
+            desc.dominant_light_direction[2] = dominant_direction[2];
+
+            const auto dominant_color =
+                param_float3(
+                    params,
+                    "dominant_light_color",
+                    desc.dominant_light_color);
+            desc.dominant_light_color[0] = dominant_color[0];
+            desc.dominant_light_color[1] = dominant_color[1];
+            desc.dominant_light_color[2] = dominant_color[2];
+            desc.dominant_light_intensity =
+                params.get<float>(
+                    "dominant_light_intensity",
+                    desc.dominant_light_intensity);
+            desc.dominant_light_confidence =
+                params.get<float>(
+                    "dominant_light_confidence",
+                    desc.dominant_light_confidence);
+            return desc;
+        }
+    }
+
     void register_light_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
@@ -22,16 +211,77 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDirectLightSchema,
             .output_type = kAssetTypeDirectLight,
+            .parameters = {
+                {
+                    .name = "kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Kind",
+                    .default_num =
+                        static_cast<double>(
+                            DirectLightKind::Directional),
+                    .options = kDirectLightKindOptions,
+                },
+                {
+                    .name = "color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Color",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Intensity",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 32.0,
+                },
+                {
+                    .name = "range",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Range",
+                    .default_num = 10.0,
+                    .min = 0.0,
+                    .max = 1000.0,
+                },
+                {
+                    .name = "inner_cone_radians",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Inner cone radians",
+                    .default_num = 0.4,
+                    .min = 0.0,
+                    .max = 3.14159,
+                },
+                {
+                    .name = "outer_cone_radians",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Outer cone radians",
+                    .default_num = 0.8,
+                    .min = 0.0,
+                    .max = 3.14159,
+                },
+            },
             .compile = [&logger, &direct_light_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
+                DirectLightCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<DirectLightCompileDesc>(&input.meta);
                 if (!desc) {
-                    logger.error("direct light node missing DirectLightCompileDesc");
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc = direct_light_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
+                if (!desc) {
+                    logger.error(
+                        "direct light node missing DirectLightCompileDesc or "
+                        "ParamBlock");
                     return compile_failed_node(input);
                 }
                 if (!desc->valid()) {
@@ -49,17 +299,63 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kAmbientLightingSchema,
             .output_type = kAssetTypeAmbientLighting,
+            .parameters = {
+                {
+                    .name = "mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Mode",
+                    .default_num =
+                        static_cast<double>(
+                            AmbientLightingMode::Constant),
+                    .options = kAmbientLightingModeOptions,
+                },
+                {
+                    .name = "color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Color",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Intensity",
+                    .default_num = 0.2,
+                    .min = 0.0,
+                    .max = 8.0,
+                },
+                {
+                    .name = "domain_mapping",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain mapping",
+                    .default_num =
+                        static_cast<double>(
+                            AmbientLightingDomainMapping::TerrainUV),
+                    .options = kAmbientLightingDomainMappingOptions,
+                },
+            },
             .compile = [&logger, &ambient_lighting_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
+                AmbientLightingCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<AmbientLightingCompileDesc>(&input.meta);
                 if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            ambient_lighting_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
+                if (!desc) {
                     logger.error(
-                        "ambient lighting node missing AmbientLightingCompileDesc");
+                        "ambient lighting node missing "
+                        "AmbientLightingCompileDesc or ParamBlock");
                     return compile_failed_node(input);
                 }
                 if (!desc->valid()) {
@@ -77,26 +373,154 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kHDRIEnvironmentSchema,
             .output_type = kAssetTypeEnvironmentMap,
+            .input_ports = {
+                { "source_image", kAssetTypeRawFile },
+            },
+            .parameters = {
+                {
+                    .name = "format",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Format",
+                    .default_num =
+                        static_cast<double>(HDRIEnvironmentFormat::Auto),
+                    .options = kHDRIFormatOptions,
+                },
+                {
+                    .name = "exposure",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Exposure",
+                    .default_num = 0.0,
+                    .min = -16.0,
+                    .max = 16.0,
+                },
+                {
+                    .name = "rotation_x_radians",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Rotation X radians",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "rotation_y_radians",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Rotation Y radians",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "rotation_z_radians",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Rotation Z radians",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "lighting_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Lighting intensity",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 8.0,
+                },
+                {
+                    .name = "reflection_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Reflection intensity",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 8.0,
+                },
+                {
+                    .name = "background_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Background intensity",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 8.0,
+                },
+                {
+                    .name = "lighting_sample_resolution",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Lighting sample resolution",
+                    .default_num = 1024.0,
+                    .min = 16.0,
+                    .max = 4096.0,
+                },
+                {
+                    .name = "environment_light_color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Environment light color",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "environment_light_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Environment light intensity",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 32.0,
+                },
+                {
+                    .name = "dominant_light_direction",
+                    .type = wz::asset::ParamType::Float3,
+                    .label = "Dominant light direction",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "dominant_light_color",
+                    .type = wz::asset::ParamType::Color,
+                    .label = "Dominant light color",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "dominant_light_intensity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Dominant light intensity",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 32.0,
+                },
+                {
+                    .name = "dominant_light_confidence",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Dominant light confidence",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+            },
             .compile = [&logger, &hdri_environment_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
+                if (dep_nodes.size() != 1) {
+                    logger.error(
+                        "HDRI environment node must have one source file dependency");
+                    return compile_failed_node(input);
+                }
+
+                HDRIEnvironmentCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<HDRIEnvironmentCompileDesc>(&input.meta);
                 if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            hdri_environment_desc_from_params(
+                                *params,
+                                dep_nodes[0].key);
+                        desc = &param_desc;
+                    }
+                }
+                if (!desc) {
                     logger.error(
-                        "HDRI environment node missing HDRIEnvironmentCompileDesc");
+                        "HDRI environment node missing "
+                        "HDRIEnvironmentCompileDesc or ParamBlock");
                     return compile_failed_node(input);
                 }
                 if (!desc->valid()) {
                     logger.error("HDRI environment compile desc is invalid");
-                    return compile_failed_node(input);
-                }
-                if (dep_nodes.size() != 1) {
-                    logger.error(
-                        "HDRI environment node must have one source file dependency");
                     return compile_failed_node(input);
                 }
                 if (!(dep_nodes[0].key == desc->source_file)) {

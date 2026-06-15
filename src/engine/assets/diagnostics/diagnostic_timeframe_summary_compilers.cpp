@@ -279,6 +279,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTimeframeSummaryToDataTableSchema,
             .output_type  = kAssetTypeDataTable,
+            .input_ports = {
+                { "summary", kAssetTypeDiagnosticTimeframeSummary },
+            },
             .compile = [&logger, &summary_table, &data_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -325,6 +328,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDiagnosticTimeframeSummarySchema,
             .output_type  = kAssetTypeDiagnosticTimeframeSummary,
+            .input_ports = {
+                { "source_table", kAssetTypeDataTable },
+            },
             .compile = [&logger, &data_table, &summary_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

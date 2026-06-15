@@ -21,22 +21,41 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kHLSLFileSchema,
             .output_type = wz::asset::AssetType::ShaderSource,
+            .parameters = {
+                {
+                    .name = "source_path",
+                    .type = wz::asset::ParamType::FilePath,
+                    .label = "Path",
+                },
+            },
             .compile = [&logger](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
+                std::string path;
                 const auto* file =
                     std::any_cast<FileSourceDesc>(&input.meta);
+                if (file) {
+                    path = file->full_path;
+                }
+                else if (const auto* params =
+                             std::any_cast<wz::asset::ParamBlock>(
+                                 &input.meta))
+                {
+                    path = params->get<std::string>("source_path", {});
+                }
 
-                if (!file) {
-                    logger.error("HLSL file carrier missing FileSourceDesc");
+                if (path.empty()) {
+                    logger.error(
+                        "HLSL file carrier missing FileSourceDesc or "
+                        "source_path parameter");
                     return compile_failed_node(input);
                 }
 
-                auto file_result = wz::fs::read_file(file->full_path);
+                auto file_result = wz::fs::read_file(path);
                 if (!file_result) {
-                    logger.error("failed to read file: " + file->full_path);
+                    logger.error("failed to read file: " + path);
                     return compile_failed_node(input);
                 }
 
@@ -53,6 +72,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kHLSLShaderSchema,
             .output_type = wz::asset::AssetType::Shader,
+            .input_ports = {
+                { "source_file", wz::asset::AssetType::ShaderSource },
+            },
             .compile = [&logger, &device](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

@@ -348,6 +348,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kScalarFieldFromRawF32Schema,
             .output_type = kAssetTypeScalarField,
+            .input_ports = {
+                { "source_file", kAssetTypeRawFile },
+            },
             .compile = [&logger, &scalar_field_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

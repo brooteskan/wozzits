@@ -690,6 +690,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGLBMeshSchema,
             .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "source_file", kAssetTypeBinaryBlob },
+            },
             .compile = [&logger, &mesh_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -703,6 +706,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshDecimationSchema,
             .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -716,6 +722,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDebugTriangleStrideMeshSchema,
             .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,

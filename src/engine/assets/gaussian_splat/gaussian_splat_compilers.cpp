@@ -305,6 +305,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatFromPLYSchema,
             .output_type = kAssetTypeGaussianSplatCloud,
+            .input_ports = {
+                { "source_file", kAssetTypeRawFile },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -318,6 +321,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatFromFieldSchema,
             .output_type = kAssetTypeGaussianSplatCloud,
+            .input_ports = {
+                { "scalar_field", kAssetTypeScalarField },
+            },
             .compile = [&logger, &table, &scalar_field_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> /*dep_nodes*/,

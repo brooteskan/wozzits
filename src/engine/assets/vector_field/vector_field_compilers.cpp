@@ -68,6 +68,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kVectorFieldFromRawF32Schema,
             .output_type = kAssetTypeVectorField,
+            .input_ports = {
+                { "source_file", kAssetTypeRawFile },
+            },
             .compile = [&logger, &vector_field_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

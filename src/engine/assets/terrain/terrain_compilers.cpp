@@ -995,6 +995,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainFromHeightFieldSchema,
             .output_type = kAssetTypeTerrain,
+            .input_ports = {
+                { "height_field", kAssetTypeScalarField },
+            },
             .compile = [&logger, &scalar_fields_table, &terrain_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -1078,6 +1081,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainFromMeshSchema,
             .output_type = kAssetTypeTerrain,
+            .input_ports = {
+                { "mesh", kAssetTypeMesh },
+            },
             .compile = [&logger, &mesh_table, &terrain_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,

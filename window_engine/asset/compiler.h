@@ -12,9 +12,16 @@
 // caching correct.
 
 #include "types.h"
+#include <array>
+#include <cstdint>
 #include <functional>
 #include <unordered_map>
 #include <span>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <variant>
+#include <vector>
 
 namespace wz::asset {
 
@@ -37,11 +44,100 @@ using CompileFn = std::function<AssetNode(
 
 // ─── AssetCompiler ────────────────────────────────────────────────────────────
 
-struct AssetCompiler {
-    SchemaID  input_schema;   // schema the input node must carry
-    AssetType output_type;    // asset type this compiler produces
-    CompileFn compile;
+struct InputPort {
+    std::string_view     name;   // "base", "target", "source_file"  (static storage)
+    wz::asset::AssetType type;
 };
+
+// closed, bounded set of editable widget kinds → enum (exhaustiveness-checked, like blend mode)
+enum class ParamType : uint8_t {
+    Bool, Int, Float, Float3, Color, String, FilePath, Enum
+};
+
+struct ParamDecl {
+    std::string_view name;          // "tau", "iterations", "source_path"
+    ParamType        type;
+    std::string_view label = {};    // optional; defaults to name
+    double           default_num = 0;   // Bool(0/1) / Int / Float
+    std::string_view default_str = {};  // String / FilePath
+    double           min = 0, max = 0;  // slider range when max > min
+    std::span<const std::string_view> options = {};  // Enum choices
+};
+
+using ParamValue = std::variant<
+    bool,
+    int64_t,
+    double,
+    std::array<float, 3>,
+    std::string>;
+
+struct ParamBlock {
+    std::unordered_map<std::string, ParamValue> values;
+
+    template<class T>
+    T get(std::string_view name, T fallback) const {
+        const auto it = values.find(std::string(name));
+        if (it == values.end()) {
+            return fallback;
+        }
+
+        if constexpr (std::is_same_v<T, bool>) {
+            if (const auto* value = std::get_if<bool>(&it->second)) {
+                return *value;
+            }
+            if (const auto* value = std::get_if<int64_t>(&it->second)) {
+                return *value != 0;
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::string_view>) {
+            if (const auto* text = std::get_if<std::string>(&it->second)) {
+                return std::string_view(*text);
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
+            if (const auto* text = std::get_if<std::string>(&it->second)) {
+                return *text;
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::array<float, 3>>) {
+            if (const auto* value =
+                    std::get_if<std::array<float, 3>>(&it->second))
+            {
+                return *value;
+            }
+        }
+        else if constexpr (
+            std::is_integral_v<T> && !std::is_same_v<T, bool>)
+        {
+            if (const auto* value = std::get_if<int64_t>(&it->second)) {
+                return static_cast<T>(*value);
+            }
+            if (const auto* value = std::get_if<double>(&it->second)) {
+                return static_cast<T>(*value);
+            }
+        }
+        else if constexpr (std::is_floating_point_v<T>) {
+            if (const auto* value = std::get_if<double>(&it->second)) {
+                return static_cast<T>(*value);
+            }
+            if (const auto* value = std::get_if<int64_t>(&it->second)) {
+                return static_cast<T>(*value);
+            }
+        }
+
+        return fallback;
+    }
+};
+
+struct AssetCompiler {
+    SchemaID                input_schema;
+    AssetType               output_type;
+    std::vector<InputPort>  input_ports;   
+    std::vector<ParamDecl>  parameters;
+    CompileFn               compile;
+};
+
+
 
 // ─── CompilerKey / Hash ───────────────────────────────────────────────────────
 
@@ -68,6 +164,9 @@ struct CompilerKeyHash {
 
 class CompilerRegistry {
 public:
+    using CompilerTable =
+        std::unordered_map<CompilerKey, AssetCompiler, CompilerKeyHash>;
+
     // Register (or overwrite) a compiler for its (schema, output_type) pair.
     void register_compiler(AssetCompiler c) {
         table_[{ c.input_schema, c.output_type }] = std::move(c);
@@ -85,8 +184,10 @@ public:
 
     uint32_t size() const { return static_cast<uint32_t>(table_.size()); }
 
+    const CompilerTable& compilers() const { return table_; }
+
 private:
-    std::unordered_map<CompilerKey, AssetCompiler, CompilerKeyHash> table_;
+    CompilerTable table_;
 };
 
 } // namespace wz::asset

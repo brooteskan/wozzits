@@ -623,6 +623,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshSparseOperatorSchema,
             .output_type = kAssetTypeMeshSparseOperator,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [
                 &logger,
                 &mesh_table,

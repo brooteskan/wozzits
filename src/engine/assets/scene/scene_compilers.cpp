@@ -4817,6 +4817,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kSceneFromJSONSchema,
             .output_type = kAssetTypeScene,
+            .input_ports = {
+                { "scene_json", kAssetTypeJSONDocument },
+            },
             .compile = [&logger, &json_table, &scene_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -4926,6 +4929,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kSceneFromGLBSchema,
             .output_type = kAssetTypeScene,
+            .input_ports = {
+                { "source_file", kAssetTypeBinaryBlob },
+            },
             .compile = [&logger, &scene_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

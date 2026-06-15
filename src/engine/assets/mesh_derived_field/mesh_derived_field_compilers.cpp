@@ -3685,6 +3685,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshDerivedFieldExplicitSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3708,6 +3711,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kBuiltinMeshDerivedFieldSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3731,6 +3737,11 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshSparseApplyFieldSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+                { "source_field", kAssetTypeMeshDerivedField },
+                { "operator", kAssetTypeMeshSparseOperator },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3756,6 +3767,11 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshSparseDiffusionBandsSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+                { "source_field", kAssetTypeMeshDerivedField },
+                { "operator", kAssetTypeMeshSparseOperator },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3781,6 +3797,10 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshFieldLevelMaskSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+                { "source_field", kAssetTypeMeshDerivedField },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3804,6 +3824,10 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWaveletAnalysisSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+                { "compute_pipeline", kAssetTypeComputePipeline },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -3833,6 +3857,10 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshComputeDerivedFieldSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+                { "compute_pipeline", kAssetTypeComputePipeline },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -3864,6 +3892,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kBehaviorFieldPlaceholderSchema,
             .output_type = kAssetTypeMeshDerivedField,
+            .input_ports = {
+                { "source_mesh", kAssetTypeMesh },
+            },
             .compile = [
                 &logger,
                 &mesh_table,

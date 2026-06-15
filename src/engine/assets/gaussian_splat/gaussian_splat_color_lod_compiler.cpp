@@ -289,6 +289,9 @@ namespace wz::engine::assets
             registry.register_compiler(wz::asset::AssetCompiler{
                 .input_schema = kGaussianSplatColorLODSchema,
                 .output_type  = kAssetTypeGaussianSplatColorLOD,
+                .input_ports = {
+                    { "splat_cloud", kAssetTypeGaussianSplatCloud },
+                },
                 .compile = [&logger, &cloud_table, &lod_table](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> /*dep_nodes*/,

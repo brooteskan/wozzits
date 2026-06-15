@@ -17,6 +17,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kComputePipelineSchema,
             .output_type = kAssetTypeComputePipeline,
+            .input_ports = {
+                { "compute_shader", wz::asset::AssetType::Shader },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,

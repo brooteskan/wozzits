@@ -80,6 +80,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kCSVExportSchema,
             .output_type  = kAssetTypeCSVExport,
+            .input_ports = {
+                { "source_table", kAssetTypeDataTable },
+            },
             .compile = [&logger, &data_table, &csv_export_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,

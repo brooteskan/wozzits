@@ -325,6 +325,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGaussianSplatTerrainSurfaceFromHeightFieldSchema,
             .output_type  = kAssetTypeGaussianSplatCloud,
+            .input_ports = {
+                { "height_field", kAssetTypeScalarField },
+            },
             .compile = [&logger, &cloud_table, &scalar_field_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> /*dep_nodes*/,

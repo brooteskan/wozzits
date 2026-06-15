@@ -1285,6 +1285,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kCollisionFromMeshSchema,
             .output_type = kAssetTypeCollisionAsset,
+            .input_ports = {
+                { "mesh", kAssetTypeMesh },
+            },
             .compile = [&logger, &mesh_table, &collision_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
@@ -1328,6 +1331,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kCollisionFromTerrainSchema,
             .output_type = kAssetTypeCollisionAsset,
+            .input_ports = {
+                { "terrain", kAssetTypeTerrain },
+            },
             .compile = [&logger, &terrain_table, &collision_table, cache_settings](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode>,
