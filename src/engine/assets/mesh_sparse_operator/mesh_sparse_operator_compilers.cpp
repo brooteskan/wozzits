@@ -13,9 +13,11 @@
 #include <file/filesystem.h>
 
 #include <algorithm>
+#include <array>
 #include <any>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -24,6 +26,56 @@ namespace wz::engine::assets::internal
     {
         constexpr uint32_t kMeshSparseOperatorDiskCacheMagic = 0x4f535a57u;
         constexpr uint32_t kMeshSparseOperatorDiskCacheVersion = 1u;
+
+        constexpr std::array<std::string_view, 1> kOperatorKindOptions = {
+            "Uniform adjacency",
+        };
+
+        constexpr std::array<std::string_view, 4> kDomainOptions = {
+            "Vertex",
+            "Edge",
+            "Face",
+            "Corner",
+        };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        MeshSparseOperatorDesc mesh_sparse_operator_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshSparseOperatorDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            if (!dep_nodes.empty()) {
+                desc.source_mesh.output = dep_nodes[0].key;
+            }
+            desc.kind =
+                enum_param(
+                    params,
+                    "kind",
+                    desc.kind,
+                    kOperatorKindOptions);
+            desc.domain =
+                enum_param(
+                    params,
+                    "domain",
+                    desc.domain,
+                    kDomainOptions);
+            return desc;
+        }
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -516,14 +568,27 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_operator_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshSparseOperatorTable& operator_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshSparseOperatorDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshSparseOperatorDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        mesh_sparse_operator_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 1u) {
                 logger.error("mesh sparse operator node missing desc");
                 return compile_failed_node(input);
@@ -626,18 +691,43 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Kind",
+                    .default_num =
+                        static_cast<double>(
+                            MeshSparseOperatorKind::UniformAdjacency),
+                    .options = kOperatorKindOptions,
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshOperatorDomain::Vertex),
+                    .options = kDomainOptions,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_sparse_operator_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
