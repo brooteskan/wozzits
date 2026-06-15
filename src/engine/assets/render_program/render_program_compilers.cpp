@@ -5,13 +5,178 @@
 // include whatever header owns compile_failed_node(...)
 #include <engine/assets/engine_asset_library_internal.h>
 
+#include <array>
 #include <any>
 #include <span>
+#include <string_view>
 
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        constexpr std::array<std::string_view, 15> kBuiltinProgramOptions = {
+            "Mesh wireframe debug",
+            "Mesh wireframe depth debug",
+            "Mesh depth prepass debug",
+            "Mesh wireframe alpha",
+            "Mesh surface",
+            "Mesh surface alpha",
+            "Mesh field heatmap",
+            "Mesh mask style",
+            "Terrain mesh surface",
+            "Terrain surfel surface",
+            "Scalar field debug",
+            "Gaussian splat pull debug",
+            "Gaussian splat neighborhood color blend",
+            "Gaussian splat terrain coverage debug",
+            "Sky surface",
+        };
+
+        constexpr std::array<std::string_view, 7> kBindingModelOptions = {
+            "Mesh IA",
+            "Splat vertex instanced",
+            "Splat pull",
+            "Mesh vertex pull",
+            "Scalar field texture",
+            "Fullscreen",
+            "Particle pull",
+        };
+
+        constexpr std::array<std::string_view, 2> kTopologyOptions = {
+            "Triangle list",
+            "Triangle strip",
+        };
+
+        constexpr std::array<std::string_view, 5> kRenderDomainOptions = {
+            "Debug",
+            "Sky",
+            "Opaque",
+            "Transparent",
+            "Splat",
+        };
+
+        constexpr std::array<std::string_view, 4> kInputLayoutOptions = {
+            "None",
+            "Mesh position only",
+            "Mesh position normal UV",
+            "Gaussian splat vertex",
+        };
+
+        constexpr std::array<std::string_view, 2> kBlendModeOptions = {
+            "Opaque",
+            "Alpha blend",
+        };
+
+        constexpr std::array<std::string_view, 3> kDepthModeOptions = {
+            "Disabled",
+            "Test no write",
+            "Test write",
+        };
+
+        constexpr std::array<std::string_view, 3> kRasterModeOptions = {
+            "Solid cull back",
+            "Solid cull none",
+            "Wireframe cull none",
+        };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        BuiltinRenderProgramDesc builtin_render_program_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            BuiltinRenderProgramDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.program =
+                enum_param(
+                    params,
+                    "program",
+                    desc.program,
+                    kBuiltinProgramOptions);
+            if (dep_nodes.size() > 0u) {
+                desc.vertex_shader = dep_nodes[0].key;
+            }
+            if (dep_nodes.size() > 1u) {
+                desc.pixel_shader = dep_nodes[1].key;
+            }
+            return desc;
+        }
+
+        CustomRenderProgramDesc custom_render_program_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            CustomRenderProgramDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            if (dep_nodes.size() > 0u) {
+                desc.vertex_shader = dep_nodes[0].key;
+            }
+            if (dep_nodes.size() > 1u) {
+                desc.pixel_shader = dep_nodes[1].key;
+            }
+
+            desc.binding_model =
+                enum_param(
+                    params,
+                    "binding_model",
+                    desc.binding_model,
+                    kBindingModelOptions);
+            desc.topology =
+                enum_param(
+                    params,
+                    "topology",
+                    desc.topology,
+                    kTopologyOptions);
+            desc.default_domain =
+                enum_param(
+                    params,
+                    "default_domain",
+                    desc.default_domain,
+                    kRenderDomainOptions);
+            desc.default_policy_flags =
+                params.get<uint32_t>(
+                    "default_policy_flags",
+                    desc.default_policy_flags);
+            desc.input_layout =
+                enum_param(
+                    params,
+                    "input_layout",
+                    desc.input_layout,
+                    kInputLayoutOptions);
+            desc.blend_mode =
+                enum_param(
+                    params,
+                    "blend_mode",
+                    desc.blend_mode,
+                    kBlendModeOptions);
+            desc.depth_mode =
+                enum_param(
+                    params,
+                    "depth_mode",
+                    desc.depth_mode,
+                    kDepthModeOptions);
+            desc.raster_mode =
+                enum_param(
+                    params,
+                    "raster_mode",
+                    desc.raster_mode,
+                    kRasterModeOptions);
+            return desc;
+        }
+
         bool fill_builtin_render_program_defaults(
             BuiltinRenderProgram program,
             RenderProgramData& out)
@@ -239,6 +404,9 @@ namespace wz::engine::assets::internal
                 }};
                 return true;
 
+            case BuiltinRenderProgram::TerrainSurfelSurface:
+                return false;
+
             case BuiltinRenderProgram::ScalarFieldDebug:
                 out.binding_model        = RenderBindingModel::ScalarFieldTexture;
                 out.topology             = RenderPrimitiveTopology::TriangleList;
@@ -418,19 +586,31 @@ namespace wz::engine::assets::internal
                 { "vertex_shader", wz::asset::AssetType::Shader },
                 { "pixel_shader", wz::asset::AssetType::Shader },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "program",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Program",
+                    .default_num =
+                        static_cast<double>(
+                            BuiltinRenderProgram::MeshWireframeDebug),
+                    .options = kBuiltinProgramOptions,
+                },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                BuiltinRenderProgramDesc param_desc{};
                 const auto* desc =
                     std::any_cast<BuiltinRenderProgramDesc>(&input.meta);
-
-                if (!desc) {
-                    logger.error("render program missing BuiltinRenderProgramDesc");
-                    return compile_failed_node(input);
-                }
 
                 if (dep_handles.size() != 2) {
                     logger.error("render program requires exactly two shader dependencies (vertex, pixel)");
@@ -439,6 +619,26 @@ namespace wz::engine::assets::internal
 
                 if (!dep_handles[0].valid() || !dep_handles[1].valid()) {
                     logger.error("render program shader dependencies did not resolve");
+                    return compile_failed_node(input);
+                }
+
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            builtin_render_program_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error(
+                        "render program missing BuiltinRenderProgramDesc or "
+                        "ParamBlock");
                     return compile_failed_node(input);
                 }
 
@@ -471,19 +671,87 @@ namespace wz::engine::assets::internal
                 { "vertex_shader", wz::asset::AssetType::Shader },
                 { "pixel_shader", wz::asset::AssetType::Shader },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "binding_model",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Binding model",
+                    .default_num =
+                        static_cast<double>(RenderBindingModel::MeshIA),
+                    .options = kBindingModelOptions,
+                },
+                {
+                    .name = "topology",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Topology",
+                    .default_num =
+                        static_cast<double>(
+                            RenderPrimitiveTopology::TriangleList),
+                    .options = kTopologyOptions,
+                },
+                {
+                    .name = "default_domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Default domain",
+                    .default_num =
+                        static_cast<double>(RenderDomain::Debug),
+                    .options = kRenderDomainOptions,
+                },
+                {
+                    .name = "default_policy_flags",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Default policy flags",
+                    .default_num = RenderPolicy_None,
+                    .min = 0.0,
+                    .max = 15.0,
+                },
+                {
+                    .name = "input_layout",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Input layout",
+                    .default_num =
+                        static_cast<double>(InputLayoutKind::None),
+                    .options = kInputLayoutOptions,
+                },
+                {
+                    .name = "blend_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Blend mode",
+                    .default_num =
+                        static_cast<double>(BlendMode::Opaque),
+                    .options = kBlendModeOptions,
+                },
+                {
+                    .name = "depth_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Depth mode",
+                    .default_num =
+                        static_cast<double>(DepthMode::Disabled),
+                    .options = kDepthModeOptions,
+                },
+                {
+                    .name = "raster_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Raster mode",
+                    .default_num =
+                        static_cast<double>(RasterMode::SolidCullBack),
+                    .options = kRasterModeOptions,
+                },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                CustomRenderProgramDesc param_desc{};
                 const auto* desc =
                     std::any_cast<CustomRenderProgramDesc>(&input.meta);
-
-                if (!desc) {
-                    logger.error("render program missing CustomRenderProgramDesc");
-                    return compile_failed_node(input);
-                }
 
                 if (dep_handles.size() != 2) {
                     logger.error("custom render program requires exactly two shader dependencies (vertex, pixel)");
@@ -492,6 +760,26 @@ namespace wz::engine::assets::internal
 
                 if (!dep_handles[0].valid() || !dep_handles[1].valid()) {
                     logger.error("custom render program shader dependencies did not resolve");
+                    return compile_failed_node(input);
+                }
+
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            custom_render_program_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error(
+                        "render program missing CustomRenderProgramDesc or "
+                        "ParamBlock");
                     return compile_failed_node(input);
                 }
 
