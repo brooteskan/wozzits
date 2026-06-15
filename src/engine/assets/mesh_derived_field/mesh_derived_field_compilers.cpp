@@ -21,6 +21,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -32,6 +33,323 @@ namespace wz::engine::assets::internal
         constexpr uint32_t kMeshDerivedFieldDiskCacheMagic = 0x4d445a57u;
         constexpr uint32_t kMeshDerivedFieldDiskCacheVersion = 1u;
         constexpr uint32_t kWaveletGpuThreadGroupSize = 128u;
+
+        constexpr std::array<std::string_view, 4> kDomainOptions = {
+            "Vertex",
+            "Edge",
+            "Face",
+            "Corner",
+        };
+
+        constexpr std::array<std::string_view, 5> kValueTypeOptions = {
+            "Float1",
+            "Float2",
+            "Float3",
+            "Float4",
+            "UInt1",
+        };
+
+        constexpr std::array<std::string_view, 9> kBuiltinSourceOptions = {
+            "Constant",
+            "Position gradient",
+            "Vertex index gradient",
+            "Triangle corner count",
+            "Vertex area",
+            "Triangle area",
+            "Mean edge length",
+            "Inverse area density",
+            "Log density",
+        };
+
+        constexpr std::array<std::string_view, 3> kBuiltinComponentOptions = {
+            "X",
+            "Y",
+            "Z",
+        };
+
+        constexpr std::array<std::string_view, 1> kSparseApplyModeOptions = {
+            "Residual",
+        };
+
+        constexpr std::array<std::string_view, 2> kSparseDiffusionModeOptions = {
+            "Smooth",
+            "Diffusion step",
+        };
+
+        template<class Enum, std::size_t Count>
+        Enum enum_param(
+            const wz::asset::ParamBlock& params,
+            std::string_view name,
+            Enum fallback,
+            const std::array<std::string_view, Count>&)
+        {
+            const int64_t value =
+                params.get<int64_t>(name, static_cast<int64_t>(fallback));
+            if (value >= 0 && value < static_cast<int64_t>(Count)) {
+                return static_cast<Enum>(value);
+            }
+            return fallback;
+        }
+
+        MeshAsset mesh_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            MeshAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.output = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        ComputePipelineAsset compute_pipeline_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            ComputePipelineAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.key = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        MeshDerivedFieldAsset mesh_field_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            MeshDerivedFieldAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.output = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        MeshSparseOperatorAsset sparse_operator_asset_from_dep(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::size_t index)
+        {
+            MeshSparseOperatorAsset asset{};
+            if (dep_nodes.size() > index) {
+                asset.output = dep_nodes[index].key;
+            }
+            return asset;
+        }
+
+        ExplicitMeshDerivedFieldDesc explicit_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            ExplicitMeshDerivedFieldDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.domain =
+                enum_param(
+                    params,
+                    "domain",
+                    desc.domain,
+                    kDomainOptions);
+            desc.element_count =
+                params.get<uint32_t>("element_count", desc.element_count);
+
+            const uint32_t channel_id =
+                params.get<uint32_t>("channel_id", 0x2000u);
+            const MeshDerivedFieldValueType value_type =
+                enum_param(
+                    params,
+                    "value_type",
+                    MeshDerivedFieldValueType::Float1,
+                    kValueTypeOptions);
+            if (channel_id != 0u) {
+                desc.channels.push_back(MeshDerivedFieldChannelDesc{
+                    .channel_id = channel_id,
+                    .value_type = value_type,
+                });
+            }
+            return desc;
+        }
+
+        BuiltinMeshDerivedFieldDesc builtin_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            BuiltinMeshDerivedFieldDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.domain =
+                enum_param(params, "domain", desc.domain, kDomainOptions);
+            desc.channel_id =
+                params.get<uint32_t>("channel_id", desc.channel_id);
+            desc.value_type =
+                enum_param(
+                    params,
+                    "value_type",
+                    desc.value_type,
+                    kValueTypeOptions);
+            desc.source_kind =
+                enum_param(
+                    params,
+                    "source_kind",
+                    desc.source_kind,
+                    kBuiltinSourceOptions);
+            desc.component =
+                enum_param(
+                    params,
+                    "component",
+                    desc.component,
+                    kBuiltinComponentOptions);
+            desc.normalize =
+                params.get<bool>("normalize", desc.normalize);
+            desc.constant_value =
+                params.get<float>("constant_value", desc.constant_value);
+            return desc;
+        }
+
+        MeshSparseApplyFieldDesc sparse_apply_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshSparseApplyFieldDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.input_field = mesh_field_asset_from_dep(dep_nodes, 1u);
+            desc.sparse_operator = sparse_operator_asset_from_dep(dep_nodes, 2u);
+            desc.input_channel_id =
+                params.get<uint32_t>(
+                    "input_channel_id",
+                    desc.input_channel_id);
+            desc.output_channel_id =
+                params.get<uint32_t>(
+                    "output_channel_id",
+                    desc.output_channel_id);
+            desc.apply_mode =
+                enum_param(
+                    params,
+                    "apply_mode",
+                    desc.apply_mode,
+                    kSparseApplyModeOptions);
+            return desc;
+        }
+
+        MeshSparseDiffusionBandsDesc sparse_diffusion_bands_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshSparseDiffusionBandsDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.input_field = mesh_field_asset_from_dep(dep_nodes, 1u);
+            desc.sparse_operator = sparse_operator_asset_from_dep(dep_nodes, 2u);
+            desc.input_channel_id =
+                params.get<uint32_t>(
+                    "input_channel_id",
+                    desc.input_channel_id);
+            desc.output_base_channel_id =
+                params.get<uint32_t>(
+                    "output_base_channel_id",
+                    desc.output_base_channel_id);
+            desc.band_count =
+                params.get<uint32_t>("band_count", desc.band_count);
+            desc.iterations_per_band =
+                params.get<uint32_t>(
+                    "iterations_per_band",
+                    desc.iterations_per_band);
+            desc.mode =
+                enum_param(
+                    params,
+                    "mode",
+                    desc.mode,
+                    kSparseDiffusionModeOptions);
+            desc.tau = params.get<float>("tau", desc.tau);
+            return desc;
+        }
+
+        MeshFieldLevelMaskDesc field_level_mask_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshFieldLevelMaskDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.input_field = mesh_field_asset_from_dep(dep_nodes, 1u);
+            desc.domain =
+                enum_param(params, "domain", desc.domain, kDomainOptions);
+            const uint32_t input_channel_id =
+                params.get<uint32_t>("input_channel_id", 0u);
+            const uint32_t output_channel_id =
+                params.get<uint32_t>("output_channel_id", 0u);
+            if (input_channel_id != 0u && output_channel_id != 0u) {
+                desc.regions.push_back(MeshFieldLevelMaskRegionDesc{
+                    .input_channel_id = input_channel_id,
+                    .output_channel_id = output_channel_id,
+                    .min_value = params.get<float>("min_value", 0.0f),
+                    .max_value = params.get<float>("max_value", 1.0f),
+                });
+            }
+            return desc;
+        }
+
+        MeshWaveletAnalysisDesc wavelet_analysis_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshWaveletAnalysisDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.compute_pipeline = compute_pipeline_asset_from_dep(
+                dep_nodes,
+                1u);
+            desc.scale_count =
+                params.get<uint32_t>("scale_count", desc.scale_count);
+            desc.lambda_max_estimate =
+                params.get<float>(
+                    "lambda_max_estimate",
+                    desc.lambda_max_estimate);
+            desc.gamma = params.get<float>("gamma", desc.gamma);
+            return desc;
+        }
+
+        MeshComputeDerivedFieldDesc compute_derived_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            MeshComputeDerivedFieldDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.compute_pipeline = compute_pipeline_asset_from_dep(
+                dep_nodes,
+                1u);
+            desc.domain =
+                enum_param(params, "domain", desc.domain, kDomainOptions);
+            const uint32_t channel_id =
+                params.get<uint32_t>("channel_id", 0x2000u);
+            if (channel_id != 0u) {
+                desc.channels.push_back(MeshDerivedFieldChannelDesc{
+                    .channel_id = channel_id,
+                    .value_type =
+                        enum_param(
+                            params,
+                            "value_type",
+                            MeshDerivedFieldValueType::Float1,
+                            kValueTypeOptions),
+                });
+            }
+            desc.inputs.push_back(MeshComputeInput::Positions);
+            return desc;
+        }
+
+        BehaviorFieldPlaceholderDesc behavior_placeholder_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            BehaviorFieldPlaceholderDesc desc{};
+            desc.name = params.get<std::string>("name", {});
+            desc.source_mesh = mesh_asset_from_dep(dep_nodes, 0u);
+            desc.domain =
+                enum_param(params, "domain", desc.domain, kDomainOptions);
+            desc.channel_id =
+                params.get<uint32_t>("channel_id", desc.channel_id);
+            return desc;
+        }
 
         struct WaveletGpuVertexSignal
         {
@@ -3003,6 +3321,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_compute_derived_field_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -3013,8 +3332,20 @@ namespace wz::engine::assets::internal
             GpuResidentMeshDataTable& gpu_resident_mesh_data_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshComputeDerivedFieldDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshComputeDerivedFieldDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        compute_derived_field_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 2u) {
                 logger.error(
                     "mesh compute derived field node missing desc");
@@ -3092,14 +3423,25 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_explicit_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshDerivedFieldTable& field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            ExplicitMeshDerivedFieldDesc param_desc{};
             const auto* desc =
                 std::any_cast<ExplicitMeshDerivedFieldDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        explicit_field_desc_from_params(*params, dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 1u) {
                 logger.error("mesh derived field node missing explicit desc");
                 return compile_failed_node(input);
@@ -3159,6 +3501,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_apply_field_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3166,8 +3509,20 @@ namespace wz::engine::assets::internal
             MeshSparseOperatorTable& sparse_operator_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshSparseApplyFieldDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshSparseApplyFieldDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        sparse_apply_field_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 3u) {
                 logger.error("mesh sparse apply field node missing desc");
                 return compile_failed_node(input);
@@ -3248,6 +3603,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_diffusion_bands_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3255,8 +3611,20 @@ namespace wz::engine::assets::internal
             MeshSparseOperatorTable& sparse_operator_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshSparseDiffusionBandsDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshSparseDiffusionBandsDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        sparse_diffusion_bands_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 3u) {
                 logger.error(
                     "mesh sparse diffusion bands node missing desc");
@@ -3341,14 +3709,27 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_field_level_mask_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshDerivedFieldTable& field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshFieldLevelMaskDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshFieldLevelMaskDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        field_level_mask_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 2u) {
                 logger.error("mesh field level mask node missing desc");
                 return compile_failed_node(input);
@@ -3422,14 +3803,25 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshDerivedFieldTable& field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            BuiltinMeshDerivedFieldDesc param_desc{};
             const auto* desc =
                 std::any_cast<BuiltinMeshDerivedFieldDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        builtin_field_desc_from_params(*params, dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 1u) {
                 logger.error(
                     "mesh derived field node missing builtin source desc");
@@ -3520,6 +3912,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_wavelet_analysis_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -3529,8 +3922,18 @@ namespace wz::engine::assets::internal
             GpuResidentFieldTable& gpu_resident_field_table,
             const EngineAssetCacheSettings& cache_settings)
         {
+            MeshWaveletAnalysisDesc param_desc{};
             const auto* desc =
                 std::any_cast<MeshWaveletAnalysisDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        wavelet_analysis_desc_from_params(*params, dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc
                 || (dep_handles.size() != 1u && dep_handles.size() != 2u))
             {
@@ -3613,13 +4016,26 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_behavior_field_placeholder_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshDerivedFieldTable& field_table)
         {
+            BehaviorFieldPlaceholderDesc param_desc{};
             const auto* desc =
                 std::any_cast<BehaviorFieldPlaceholderDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        behavior_placeholder_desc_from_params(
+                            *params,
+                            dep_nodes);
+                    desc = &param_desc;
+                }
+            }
             if (!desc || dep_handles.size() != 1u) {
                 logger.error(
                     "behavior field placeholder node missing desc");
@@ -3688,18 +4104,59 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshDerivedFieldDomain::Vertex),
+                    .options = kDomainOptions,
+                },
+                {
+                    .name = "element_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Element count",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 10000000.0,
+                },
+                {
+                    .name = "channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Channel id",
+                    .default_num = 8192.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "value_type",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Value type",
+                    .default_num =
+                        static_cast<double>(
+                            MeshDerivedFieldValueType::Float1),
+                    .options = kValueTypeOptions,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_explicit_mesh_derived_field_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
@@ -3714,18 +4171,84 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshDerivedFieldDomain::Vertex),
+                    .options = kDomainOptions,
+                },
+                {
+                    .name = "channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Channel id",
+                    .default_num = 8192.0,
+                    .min = 1.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "value_type",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Value type",
+                    .default_num =
+                        static_cast<double>(
+                            MeshDerivedFieldValueType::Float1),
+                    .options = kValueTypeOptions,
+                },
+                {
+                    .name = "source_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Source kind",
+                    .default_num =
+                        static_cast<double>(
+                            BuiltinMeshDerivedFieldSourceKind::
+                                PositionGradient),
+                    .options = kBuiltinSourceOptions,
+                },
+                {
+                    .name = "component",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Component",
+                    .default_num =
+                        static_cast<double>(
+                            BuiltinMeshDerivedFieldComponent::Y),
+                    .options = kBuiltinComponentOptions,
+                },
+                {
+                    .name = "normalize",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Normalize",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "constant_value",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Constant value",
+                    .default_num = 0.5,
+                    .min = -1000000.0,
+                    .max = 1000000.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_builtin_mesh_derived_field_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
@@ -3742,6 +4265,37 @@ namespace wz::engine::assets::internal
                 { "source_field", kAssetTypeMeshDerivedField },
                 { "operator", kAssetTypeMeshSparseOperator },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "input_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Input channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "output_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Output channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "apply_mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Apply mode",
+                    .default_num =
+                        static_cast<double>(MeshSparseApplyMode::Residual),
+                    .options = kSparseApplyModeOptions,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3749,12 +4303,13 @@ namespace wz::engine::assets::internal
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_sparse_apply_field_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
@@ -3772,6 +4327,61 @@ namespace wz::engine::assets::internal
                 { "source_field", kAssetTypeMeshDerivedField },
                 { "operator", kAssetTypeMeshSparseOperator },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "input_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Input channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "output_base_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Output base channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "band_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Band count",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 64.0,
+                },
+                {
+                    .name = "iterations_per_band",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Iterations per band",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 4096.0,
+                },
+                {
+                    .name = "mode",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Mode",
+                    .default_num =
+                        static_cast<double>(MeshSparseDiffusionMode::Smooth),
+                    .options = kSparseDiffusionModeOptions,
+                },
+                {
+                    .name = "tau",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Tau",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 1000.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
@@ -3779,12 +4389,13 @@ namespace wz::engine::assets::internal
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_sparse_diffusion_bands_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
@@ -3801,18 +4412,62 @@ namespace wz::engine::assets::internal
                 { "source_mesh", kAssetTypeMesh },
                 { "source_field", kAssetTypeMeshDerivedField },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshDerivedFieldDomain::Face),
+                    .options = kDomainOptions,
+                },
+                {
+                    .name = "input_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Input channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "output_channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Output channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "min_value",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Min value",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "max_value",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Max value",
+                    .default_num = 1.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_field_level_mask_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
@@ -3828,6 +4483,37 @@ namespace wz::engine::assets::internal
                 { "source_mesh", kAssetTypeMesh },
                 { "compute_pipeline", kAssetTypeComputePipeline },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "scale_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Scale count",
+                    .default_num = 3.0,
+                    .min = 1.0,
+                    .max = 32.0,
+                },
+                {
+                    .name = "lambda_max_estimate",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Lambda max estimate",
+                    .default_num = 2.0,
+                    .min = 0.0001,
+                    .max = 1000.0,
+                },
+                {
+                    .name = "gamma",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Gamma",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -3837,12 +4523,13 @@ namespace wz::engine::assets::internal
                 &gpu_resident_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_wavelet_analysis_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_field_compute,
@@ -3861,6 +4548,38 @@ namespace wz::engine::assets::internal
                 { "source_mesh", kAssetTypeMesh },
                 { "compute_pipeline", kAssetTypeComputePipeline },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshDerivedFieldDomain::Vertex),
+                    .options = kDomainOptions,
+                },
+                {
+                    .name = "channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Channel id",
+                    .default_num = 8192.0,
+                    .min = 1.0,
+                    .max = 65535.0,
+                },
+                {
+                    .name = "value_type",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Value type",
+                    .default_num =
+                        static_cast<double>(
+                            MeshDerivedFieldValueType::Float1),
+                    .options = kValueTypeOptions,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_field_compute,
@@ -3871,12 +4590,13 @@ namespace wz::engine::assets::internal
                 &gpu_resident_mesh_data_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_mesh_compute_derived_field_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_field_compute,
@@ -3895,17 +4615,41 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_mesh", kAssetTypeMesh },
             },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "domain",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(MeshDerivedFieldDomain::Vertex),
+                    .options = kDomainOptions,
+                },
+                {
+                    .name = "channel_id",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Channel id",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 65535.0,
+                },
+            },
             .compile = [
                 &logger,
                 &mesh_table,
                 &mesh_derived_field_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_behavior_field_placeholder_node(
                     input,
+                    dep_nodes,
                     dep_handles,
                     logger,
                     mesh_table,
