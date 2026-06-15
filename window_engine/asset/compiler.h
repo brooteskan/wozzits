@@ -44,10 +44,37 @@ using CompileFn = std::function<AssetNode(
 
 // ─── AssetCompiler ────────────────────────────────────────────────────────────
 
+enum class InputPortRequirement : uint8_t {
+    Required = 0,
+    Optional,
+};
+
+enum class InputPortArity : uint8_t {
+    Single = 0,
+    Many,
+};
+
 struct InputPort {
     std::string_view     name;   // "base", "target", "source_file"  (static storage)
     wz::asset::AssetType type;
+    InputPortRequirement requirement = InputPortRequirement::Required;
+    InputPortArity       arity = InputPortArity::Single;
 };
+
+[[nodiscard]] inline bool input_port_required(const InputPort& port) noexcept
+{
+    return port.requirement == InputPortRequirement::Required;
+}
+
+[[nodiscard]] inline bool input_port_optional(const InputPort& port) noexcept
+{
+    return port.requirement == InputPortRequirement::Optional;
+}
+
+[[nodiscard]] inline bool input_port_many(const InputPort& port) noexcept
+{
+    return port.arity == InputPortArity::Many;
+}
 
 // closed, bounded set of editable widget kinds → enum (exhaustiveness-checked, like blend mode)
 enum class ParamType : uint8_t {

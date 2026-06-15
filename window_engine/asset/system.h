@@ -111,6 +111,11 @@ namespace wz::asset {
             return true;
         }
 
+        // Atomically replace the registered authoring DAG and rebuild the
+        // committed graph. On failure, the previous registrations and committed
+        // graph remain active.
+        bool replace_registered_assets(std::vector<RegistrationEntry> entries);
+
         [[nodiscard]] inline bool is_registered(const AssetKey& key) const
         {
             return registered_index_.count(key) != 0u;

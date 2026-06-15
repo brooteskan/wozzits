@@ -418,6 +418,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset scalar_field_set_tests)
     rs_add_test_group(asset foundational_assets)
     rs_add_test_group(asset key_utils)
+    rs_add_test_group(asset asset_graph_draft)
     rs_add_test_group(asset csv_tests)
     rs_add_test_group(asset engine_disk_cache_provider_tests)
 

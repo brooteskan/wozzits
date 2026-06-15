@@ -208,6 +208,67 @@ namespace wz::asset
         return true;
     }
 
+    bool AssetSystem::replace_registered_assets(
+        std::vector<RegistrationEntry> entries)
+    {
+        std::unordered_map<AssetKey, uint32_t, AssetKeyHash> index;
+        index.reserve(entries.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(entries.size()); ++i) {
+            const AssetKey& key = entries[i].node.key;
+            if (key == AssetKey{} || index.count(key) != 0u) {
+                return false;
+            }
+            index.emplace(key, i);
+        }
+
+        AssetBuilder builder;
+        for (const auto& e : entries) {
+            wz::core::graph::add_node(builder, e.node);
+        }
+
+        for (uint32_t i = 0; i < static_cast<uint32_t>(entries.size()); ++i) {
+            for (const AssetKey& dep_key : entries[i].dep_keys) {
+                if (dep_key == AssetKey{}) {
+                    continue;
+                }
+
+                auto it = index.find(dep_key);
+                if (it == index.end()) {
+                    return false;
+                }
+
+                wz::core::graph::add_edge(
+                    builder,
+                    static_cast<NodeHandle>(it->second),
+                    static_cast<NodeHandle>(i));
+            }
+        }
+
+        auto result = asset_build(std::move(builder));
+        if (!result.has_value()) {
+            return false;
+        }
+
+        registered_ = std::move(entries);
+        registered_index_ = std::move(index);
+        storage_ = std::move(*result);
+        index_ = build_asset_index(storage_->dag());
+        committed_ = true;
+
+        for (auto it = node_resolve_states_.begin();
+             it != node_resolve_states_.end();)
+        {
+            if (find_asset_node(index_, it->first) == INVALID_ASSET_NODE) {
+                it = node_resolve_states_.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+
+        return true;
+    }
+
     void AssetSystem::set_node_resolve_pending(const AssetKey& key)
     {
         node_resolve_states_.insert_or_assign(

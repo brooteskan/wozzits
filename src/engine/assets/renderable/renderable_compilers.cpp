@@ -698,8 +698,16 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "mesh", kAssetTypeMesh },
                 { "style", kAssetTypeMeshRenderStyle },
-                { "mesh_field", kAssetTypeMeshDerivedField },
-                { "render_program", kAssetTypeRenderProgram },
+                {
+                    "mesh_field",
+                    kAssetTypeMeshDerivedField,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "render_program",
+                    kAssetTypeRenderProgram,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .compile = [logger,
                          mesh_table,
@@ -1449,7 +1457,11 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeRenderable,
             .input_ports = {
                 { "splat_cloud", kAssetTypeGaussianSplatCloud },
-                { "color_lod", kAssetTypeGaussianSplatColorLOD },
+                {
+                    "color_lod",
+                    kAssetTypeGaussianSplatColorLOD,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .compile = [logger, gaussian_splat_cloud_table, renderable_table](
                 const wz::asset::AssetNode& input,
