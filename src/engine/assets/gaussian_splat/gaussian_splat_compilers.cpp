@@ -93,6 +93,41 @@ namespace wz::engine::assets::internal
             return cloud;
         }
 
+        ProceduralGaussianSplatCloudCompileDesc
+        procedural_gaussian_splat_cloud_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            ProceduralGaussianSplatCloudCompileDesc desc{};
+            desc.count = params.get<uint32_t>("count", desc.count);
+            desc.radius = params.get<float>("radius", desc.radius);
+            desc.splat_scale =
+                params.get<float>("splat_scale", desc.splat_scale);
+            return desc;
+        }
+
+        GaussianSplatFromScalarFieldCompileDesc
+        gaussian_splat_from_scalar_field_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            GaussianSplatFromScalarFieldCompileDesc desc{};
+            desc.height_scale =
+                params.get<float>("height_scale", desc.height_scale);
+            desc.step_x = params.get<float>("step_x", desc.step_x);
+            desc.step_z = params.get<float>("step_z", desc.step_z);
+            desc.splat_scale =
+                params.get<float>("splat_scale", desc.splat_scale);
+            desc.opacity = params.get<float>("opacity", desc.opacity);
+            desc.normalize_values =
+                params.get<bool>(
+                    "normalize_values",
+                    desc.normalize_values);
+            desc.use_threshold =
+                params.get<bool>("use_threshold", desc.use_threshold);
+            desc.emit_threshold =
+                params.get<float>("emit_threshold", desc.emit_threshold);
+            return desc;
+        }
+
         wz::asset::AssetNode compile_ply_gaussian_splat_cloud_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::AssetNode> dep_nodes,
@@ -248,13 +283,50 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralGaussianSplatCloudSchema,
             .output_type = kAssetTypeGaussianSplatCloud,
+            .parameters = {
+                {
+                    .name = "count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Count",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 1000000,
+                },
+                {
+                    .name = "radius",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Radius",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "splat_scale",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Splat scale",
+                    .default_num = 0.05,
+                    .min = 0.0,
+                    .max = 10.0,
+                },
+            },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
+                ProceduralGaussianSplatCloudCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<ProceduralGaussianSplatCloudCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        param_desc =
+                            procedural_gaussian_splat_cloud_desc_from_params(
+                                *params);
+                        desc = &param_desc;
+                    }
+                }
 
                 if (!desc) {
                     logger.error("procedural gaussian splat cloud missing compile desc");
@@ -324,13 +396,86 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "scalar_field", kAssetTypeScalarField },
             },
+            .parameters = {
+                {
+                    .name = "height_scale",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Height scale",
+                    .default_num = 1.0,
+                    .min = -100.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "step_x",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Step X",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "step_z",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Step Z",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "splat_scale",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Splat scale",
+                    .default_num = 0.05,
+                    .min = 0.0,
+                    .max = 10.0,
+                },
+                {
+                    .name = "opacity",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Opacity",
+                    .default_num = 0.9,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "normalize_values",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Normalize values",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "use_threshold",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Use threshold",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "emit_threshold",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Emit threshold",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+            },
             .compile = [&logger, &table, &scalar_field_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> /*dep_nodes*/,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
+                GaussianSplatFromScalarFieldCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<GaussianSplatFromScalarFieldCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        param_desc =
+                            gaussian_splat_from_scalar_field_desc_from_params(
+                                *params);
+                        desc = &param_desc;
+                    }
+                }
 
                 if (!desc) {
                     logger.error("gaussian splat from scalar field missing compile desc");
