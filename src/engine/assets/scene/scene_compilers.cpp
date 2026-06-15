@@ -35,6 +35,15 @@ namespace wz::engine::assets::internal
         using wz::json::read_float3;
         using wz::json::read_float4;
 
+        SceneFromGLBCompileDesc scene_from_glb_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            SceneFromGLBCompileDesc desc{};
+            desc.scene_index =
+                params.get<uint32_t>("scene_index", desc.scene_index);
+            return desc;
+        }
+
         AuthoredTransform parse_transform(const wz::json::JSONValue& obj)
         {
             AuthoredTransform t{};
@@ -4932,6 +4941,16 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", kAssetTypeBinaryBlob },
             },
+            .parameters = {
+                {
+                    .name = "scene_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Scene index",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 64.0,
+                },
+            },
             .compile = [&logger, &scene_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -4950,11 +4969,21 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                SceneFromGLBCompileDesc editor_desc{};
                 const auto* desc =
                     std::any_cast<SceneFromGLBCompileDesc>(&input.meta);
                 if (!desc) {
-                    logger.error("GLB scene node missing compile descriptor");
-                    return compile_failed_node(input);
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        editor_desc = scene_from_glb_desc_from_params(*params);
+                        desc = &editor_desc;
+                    }
+                    else {
+                        logger.error(
+                            "GLB scene node missing compile descriptor");
+                        return compile_failed_node(input);
+                    }
                 }
 
                 ImportedGLTFScene imported{};
