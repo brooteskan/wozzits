@@ -14,6 +14,20 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
+        CSVExportCompileDesc csv_export_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            CSVExportCompileDesc desc{};
+            const std::string separator =
+                params.get<std::string>("separator", std::string(1, desc.separator));
+            if (!separator.empty()) {
+                desc.separator = separator.front();
+            }
+            desc.include_header =
+                params.get<bool>("include_header", desc.include_header);
+            return desc;
+        }
+
         std::string escape_csv_field(const std::string& field, char separator)
         {
             const bool needs_quoting =
@@ -83,23 +97,50 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_table", kAssetTypeDataTable },
             },
+            .parameters = {
+                {
+                    .name = "separator",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Separator",
+                    .default_str = ",",
+                },
+                {
+                    .name = "include_header",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Include header",
+                    .default_num = 1.0,
+                },
+            },
             .compile = [&logger, &data_table, &csv_export_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
+                CSVExportCompileDesc param_desc{};
                 const auto* desc =
                     std::any_cast<CSVExportCompileDesc>(&input.meta);
-
-                if (!desc) {
-                    logger.error("csv export missing compile desc");
-                    return compile_failed_node(input);
-                }
 
                 if (dep_nodes.size() != 1 || dep_handles.size() != 1) {
                     logger.error(
                         "csv export requires exactly one source table dependency");
+                    return compile_failed_node(input);
+                }
+
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc = csv_export_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error(
+                        "csv export missing CSVExportCompileDesc or "
+                        "ParamBlock");
                     return compile_failed_node(input);
                 }
 
