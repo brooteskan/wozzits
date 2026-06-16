@@ -180,6 +180,9 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         scene_component_domain(SceneAuthoredComponentKind::SceneImportSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
+        scene_component_domain(SceneAuthoredComponentKind::AssetReference),
+        SceneComponentDomain::EditorAuthoring);
+    EXPECT_EQ(
         scene_component_domain(SceneAuthoredComponentKind::MeshSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
@@ -226,6 +229,10 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         SceneAuthoredComponentKind::SceneImportSource));
     EXPECT_TRUE(is_editor_authoring_component(
         SceneAuthoredComponentKind::SceneImportSource));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_TRUE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::AssetReference));
     EXPECT_FALSE(is_runtime_relevant_component(
         SceneAuthoredComponentKind::MeshSource));
     EXPECT_TRUE(is_editor_authoring_component(

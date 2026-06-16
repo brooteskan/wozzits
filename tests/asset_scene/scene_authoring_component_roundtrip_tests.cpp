@@ -1,5 +1,116 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+TEST(SceneAssetModule, AssetReferenceComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_asset_reference_component_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "asset_reference_component_scene",
+  "nodes": [
+    {
+      "id": "mesh_slot",
+      "asset_reference": {
+        "asset": "asset-key:0000000000000011:0000000000000022:0000000000000033:0000000000000044:0000000000000055:0000000000000066:0000000000000077:0000000000000088",
+        "stable_asset_id": "asset-slot:hero_mesh",
+        "expected_type": 1003,
+        "label": "Hero mesh"
+      }
+    },
+    {
+      "id": "empty_slot",
+      "asset_reference": {
+        "expected_type": 1003
+      }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "asset_reference_component.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "asset_reference_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
+
+    const auto& assigned = scene_data->nodes[0];
+    ASSERT_TRUE(assigned.asset_reference.has_value());
+    EXPECT_FALSE(
+        assigned.asset_reference->asset == wz::asset::AssetKey{});
+    EXPECT_EQ(
+        assigned.asset_reference->stable_asset_id,
+        "asset-slot:hero_mesh");
+    EXPECT_EQ(
+        static_cast<uint16_t>(assigned.asset_reference->expected_type),
+        1003u);
+    EXPECT_EQ(assigned.asset_reference->label, "Hero mesh");
+    EXPECT_FALSE(has_runtime_relevant_components(assigned));
+    EXPECT_FALSE(has_asset_authoring_recipes(assigned));
+
+    const auto& empty = scene_data->nodes[1];
+    ASSERT_TRUE(empty.asset_reference.has_value());
+    EXPECT_TRUE(empty.asset_reference->stable_asset_id.empty());
+    EXPECT_EQ(
+        static_cast<uint16_t>(empty.asset_reference->expected_type),
+        1003u);
+
+    const auto components = authored_components_for_node(assigned);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::AssetReference), 1);
+
+    const auto recipe_summary =
+        summarize_scene_asset_authoring_recipes(*scene_data);
+    EXPECT_EQ(recipe_summary.nodes_with_recipes, 0u);
+    EXPECT_EQ(recipe_summary.total_recipes, 0u);
+
+    const auto authored_summary =
+        summarize_authored_scene_components(*scene_data);
+    EXPECT_EQ(authored_summary.asset_references, 2u);
+
+    auto result = instantiate_scene(*scene_data);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    const auto runtime_summary =
+        summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime_summary.runtime_entities, 2u);
+    EXPECT_EQ(runtime_summary.cameras, 0u);
+    EXPECT_EQ(runtime_summary.lights, 0u);
+    EXPECT_EQ(runtime_summary.terrains, 0u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"asset_reference\""), std::string::npos);
+    EXPECT_NE(exported.find("\"asset-key:"), std::string::npos);
+    EXPECT_NE(exported.find("\"asset-slot:hero_mesh\""), std::string::npos);
+    EXPECT_NE(exported.find("\"expected_type\""), std::string::npos);
+    EXPECT_NE(exported.find("\"Hero mesh\""), std::string::npos);
+}
+
 TEST(SceneAssetModule, MeshDerivedFieldSourceComponentRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =

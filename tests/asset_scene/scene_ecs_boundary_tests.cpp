@@ -499,6 +499,259 @@ TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
         == terrain_key);
 }
 
+TEST(SceneECSBoundary, AssetReferenceResolvesAssignedRenderableWhenAvailable)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_asset_reference_resolve_renderable");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    EngineAssetLibrary assets{ device, logger, root };
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "asset_reference/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "asset_reference/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_resolve_renderable";
+
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.asset_reference = SceneAssetReferenceAsset{
+        .asset = renderable.output,
+        .stable_asset_id = "slot:hero_visual",
+        .expected_type = kAssetTypeRenderable,
+        .label = "Hero visual",
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.asset_reference_resolutions.size(), 1u);
+    const auto& resolution =
+        result.instance.asset_reference_resolutions.front();
+    EXPECT_EQ(
+        resolution.status,
+        SceneAssetReferenceResolveStatus::Resolved);
+    EXPECT_TRUE(resolution.resolved_key == renderable.output);
+    EXPECT_EQ(resolution.resolved_type, kAssetTypeRenderable);
+
+    const wz::scene::RuntimeEntityId visual_entity =
+        result.instance.authored_to_runtime.at("visual");
+    ASSERT_LT(visual_entity, result.instance.renderables.size());
+    EXPECT_EQ(
+        result.instance.renderables[visual_entity].node_class.role,
+        wz::scene::SceneRole::Renderable);
+}
+
+TEST(SceneECSBoundary, AssetReferenceEmptyAssignmentResolvesToNull)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_empty_assignment";
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.asset_reference = SceneAssetReferenceAsset{
+        .expected_type = kAssetTypeRenderable,
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.asset_reference_resolutions.size(), 1u);
+    EXPECT_EQ(
+        result.instance.asset_reference_resolutions.front().status,
+        SceneAssetReferenceResolveStatus::Unassigned);
+
+    const wz::scene::RuntimeEntityId visual_entity =
+        result.instance.authored_to_runtime.at("visual");
+    ASSERT_LT(visual_entity, result.instance.renderables.size());
+    EXPECT_EQ(
+        result.instance.renderables[visual_entity].node_class.role,
+        wz::scene::SceneRole::None);
+}
+
+TEST(SceneECSBoundary, AssetReferenceMissingAssignedRenderableResolvesToNull)
+{
+    using namespace wz::engine::assets;
+
+    wz::asset::AssetKey missing{};
+    missing.content_hash = { 0xabc0u, 0x0001u };
+    missing.schema_hash = { 0xabc0u, 0x0002u };
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_missing_assigned_renderable";
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.asset_reference = SceneAssetReferenceAsset{
+        .asset = missing,
+        .expected_type = kAssetTypeRenderable,
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    class EmptyRenderableResolver final : public SceneRenderableResolver
+    {
+    public:
+        const RenderableAssetData* get(wz::asset::AssetKey) const override
+        {
+            return nullptr;
+        }
+    };
+
+    EmptyRenderableResolver renderable_resolver;
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.asset_reference_resolutions.size(), 1u);
+    const auto& resolution =
+        result.instance.asset_reference_resolutions.front();
+    EXPECT_EQ(
+        resolution.status,
+        SceneAssetReferenceResolveStatus::Unavailable);
+    EXPECT_TRUE(resolution.resolved_key == missing);
+
+    const wz::scene::RuntimeEntityId visual_entity =
+        result.instance.authored_to_runtime.at("visual");
+    ASSERT_LT(visual_entity, result.instance.renderables.size());
+    EXPECT_EQ(
+        result.instance.renderables[visual_entity].node_class.role,
+        wz::scene::SceneRole::None);
+}
+
+TEST(SceneECSBoundary, AssetReferenceRenderableRealizeFailureResolvesToNull)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_asset_reference_realize_failure");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    EngineAssetLibrary assets{ device, logger, root };
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "asset_reference_realize/cube",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_mesh_wireframe({
+        .name = "asset_reference_realize/cube_wireframe",
+        .mesh = mesh,
+    });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_realize_failure";
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.asset_reference = SceneAssetReferenceAsset{
+        .asset = renderable.output,
+        .expected_type = kAssetTypeRenderable,
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    class FailingResourceResolver final
+        : public SceneRenderResourceResolver
+    {
+    public:
+        bool realize_renderable_descriptor(
+            const RenderableAssetData&,
+            wz::scene::RenderableDescriptor&) const override
+        {
+            return false;
+        }
+    };
+
+    TestRenderableResolver renderable_resolver(assets.renderables());
+    FailingResourceResolver resource_resolver;
+    SceneInstantiateContext context{
+        .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
+    };
+
+    auto result = instantiate_scene(scene, context);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.asset_reference_resolutions.size(), 1u);
+    EXPECT_EQ(
+        result.instance.asset_reference_resolutions.front().status,
+        SceneAssetReferenceResolveStatus::Unavailable);
+    EXPECT_EQ(result.error, SceneInstantiateError::None);
+
+    const wz::scene::RuntimeEntityId visual_entity =
+        result.instance.authored_to_runtime.at("visual");
+    ASSERT_LT(visual_entity, result.instance.renderables.size());
+    EXPECT_EQ(
+        result.instance.renderables[visual_entity].node_class.role,
+        wz::scene::SceneRole::None);
+}
+
+TEST(SceneECSBoundary, AssetReferenceWrongExpectedTypeResolvesToNull)
+{
+    using namespace wz::engine::assets;
+
+    wz::asset::AssetKey assigned{};
+    assigned.content_hash = { 0xabc1u, 0x0001u };
+    assigned.schema_hash = { 0xabc1u, 0x0002u };
+
+    SceneAssetData scene{};
+    scene.name = "asset_reference_wrong_expected_type";
+    SceneNodeAsset visual{};
+    visual.id = "visual";
+    visual.asset_reference = SceneAssetReferenceAsset{
+        .asset = assigned,
+        .expected_type = kAssetTypeMesh,
+    };
+    scene.nodes.push_back(std::move(visual));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.asset_reference_resolutions.size(), 1u);
+    EXPECT_EQ(
+        result.instance.asset_reference_resolutions.front().status,
+        SceneAssetReferenceResolveStatus::TypeMismatch);
+
+    const wz::scene::RuntimeEntityId visual_entity =
+        result.instance.authored_to_runtime.at("visual");
+    ASSERT_LT(visual_entity, result.instance.renderables.size());
+    EXPECT_EQ(
+        result.instance.renderables[visual_entity].node_class.role,
+        wz::scene::SceneRole::None);
+}
+
 TEST(SceneECSBoundary, TerrainSourceCandidateHelpersMatchEditorRules)
 {
     using namespace wz::engine::assets;

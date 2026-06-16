@@ -44,6 +44,7 @@ namespace wz::scene
         MotionType,
         ParentLink,
         Renderable,
+        AssetReference,
         SceneImportSource,
         MeshSource,
         MeshDerivedFieldSource,
@@ -107,6 +108,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::RenderShader:
             return SceneComponentDomain::Exportable;
 
+        case SceneAuthoredComponentKind::AssetReference:
         case SceneAuthoredComponentKind::SceneImportSource:
         case SceneAuthoredComponentKind::MeshSource:
         case SceneAuthoredComponentKind::MeshDerivedFieldSource:
@@ -188,6 +190,7 @@ namespace wz::scene
         uint32_t motion_types = 0;
         uint32_t parent_links = 0;
         uint32_t renderables = 0;
+        uint32_t asset_references = 0;
         uint32_t scene_import_sources = 0;
         uint32_t mesh_sources = 0;
         uint32_t mesh_derived_field_sources = 0;

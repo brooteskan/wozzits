@@ -587,6 +587,24 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr asset_reference_value(
+            const SceneAssetReferenceAsset& reference)
+        {
+            auto obj = object_value();
+            if (!(reference.asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(reference.asset)));
+            }
+            add_member(*obj, "stable_asset_id",
+                string_value(reference.stable_asset_id));
+            add_member(*obj, "expected_type",
+                number_value(static_cast<uint16_t>(reference.expected_type)));
+            if (!reference.label.empty()) {
+                add_member(*obj, "label", string_value(reference.label));
+            }
+            return obj;
+        }
+
         JSONValuePtr camera_value(const SceneCameraAsset& camera)
         {
             auto obj = object_value();
@@ -1834,6 +1852,10 @@ namespace wz::engine::assets
             {
                 add_member(*obj, "renderable",
                     renderable_asset_value(*node.renderable_asset));
+            }
+            if (node.asset_reference) {
+                add_member(*obj, "asset_reference",
+                    asset_reference_value(*node.asset_reference));
             }
             if (node.camera) {
                 add_member(*obj, "camera", camera_value(*node.camera));

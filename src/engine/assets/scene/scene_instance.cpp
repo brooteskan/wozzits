@@ -2,6 +2,7 @@
 
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_fingerprint.h>
+#include <engine/assets/type_extensions.h>
 
 #include <scene/scene_graph.h>
 #include <scene/compile/scene_node_class.h>
@@ -137,6 +138,55 @@ namespace wz::engine::assets
         std::string node_log_name(const SceneNodeAsset& node)
         {
             return "node id='" + node.id + "' name='" + node.name + "'";
+        }
+
+        SceneAssetReferenceResolveRecord resolve_asset_reference(
+            const SceneNodeAsset& node,
+            const SceneInstantiateContext& context)
+        {
+            SceneAssetReferenceResolveRecord record{};
+            record.node_id = node.id;
+
+            if (!node.asset_reference) {
+                return record;
+            }
+
+            const SceneAssetReferenceAsset& reference =
+                *node.asset_reference;
+            record.stable_asset_id = reference.stable_asset_id;
+            record.expected_type = reference.expected_type;
+
+            if (!(reference.asset == wz::asset::AssetKey{})) {
+                record.resolved_key = reference.asset;
+                record.resolved_type =
+                    reference.expected_type != wz::asset::AssetType::Unknown
+                        ? reference.expected_type
+                        : kAssetTypeRenderable;
+                if (reference.expected_type != wz::asset::AssetType::Unknown
+                    && reference.expected_type != kAssetTypeRenderable)
+                {
+                    record.status =
+                        SceneAssetReferenceResolveStatus::TypeMismatch;
+                    record.detail =
+                        "assigned asset type does not match renderable instantiation path";
+                    return record;
+                }
+                record.status = SceneAssetReferenceResolveStatus::Resolved;
+                record.detail = "resolved from assigned asset key";
+                return record;
+            }
+
+            if (reference.stable_asset_id.empty()) {
+                record.status =
+                    SceneAssetReferenceResolveStatus::Unassigned;
+                record.detail = "asset reference is unassigned";
+                return record;
+            }
+
+            record.status = SceneAssetReferenceResolveStatus::NotFound;
+            record.detail =
+                "stable asset id has no assigned asset key in this build";
+            return record;
         }
 
         void log_instantiate_start(
@@ -435,6 +485,19 @@ namespace wz::engine::assets
         SceneBuilder builder;
         auto& inst = result.instance;
 
+        std::unordered_map<std::string, std::size_t>
+            asset_reference_record_by_node;
+        for (const auto& node : scene.nodes) {
+            if (!node.asset_reference) {
+                continue;
+            }
+            const std::size_t index =
+                inst.asset_reference_resolutions.size();
+            inst.asset_reference_resolutions.push_back(
+                resolve_asset_reference(node, context));
+            asset_reference_record_by_node[node.id] = index;
+        }
+
         // Create all nodes first
         std::unordered_map<std::string, NodeHandle> id_to_handle;
         for (const auto& node : scene.nodes) {
@@ -442,7 +505,20 @@ namespace wz::engine::assets
             tn.local = compose_scene_transform(node.local);
             tn.motion_type = node.motion_type;
 
-            if (node.renderable || node.renderable_asset) {
+            bool has_resolved_renderable_reference = false;
+            if (const auto record_it =
+                    asset_reference_record_by_node.find(node.id);
+                record_it != asset_reference_record_by_node.end())
+            {
+                has_resolved_renderable_reference =
+                    inst.asset_reference_resolutions[record_it->second]
+                        .resolved();
+            }
+
+            if (node.renderable
+                || node.renderable_asset
+                || has_resolved_renderable_reference)
+            {
                 tn.flags = TransformNodeFlag::RenderDomain;
             }
 
@@ -494,6 +570,7 @@ namespace wz::engine::assets
             NodeHandle node{};
             const RenderableAssetData* renderable = nullptr;
             std::string node_name;
+            std::optional<std::size_t> asset_reference_record{};
         };
         std::vector<PendingRenderableRealize> pending_renderable_realize;
 
@@ -559,6 +636,54 @@ namespace wz::engine::assets
                     .local_bounds = rb.local_bounds,
                     .visible = rb.visible && node.visible,
                 };
+            }
+            else if (const auto record_it =
+                         asset_reference_record_by_node.find(node.id);
+                     record_it != asset_reference_record_by_node.end()
+                     && inst.asset_reference_resolutions[record_it->second]
+                            .resolved())
+            {
+                SceneAssetReferenceResolveRecord& record =
+                    inst.asset_reference_resolutions[record_it->second];
+                const RenderableAssetData* rdata = nullptr;
+                if (context.renderable_resolver) {
+                    rdata = context.renderable_resolver->get(
+                        record.resolved_key);
+                }
+
+                if (!rdata) {
+                    record.status =
+                        SceneAssetReferenceResolveStatus::Unavailable;
+                    record.detail =
+                        "resolved renderable asset is not available";
+                    inst.renderables[h] = RenderableDescriptor{};
+                    continue;
+                }
+
+                auto desc = descriptor_from_renderable_asset(
+                    *rdata, node.visible);
+
+                if (!context.resource_resolver
+                    && rdata->kind != RenderableKind::Mesh)
+                {
+                    record.status =
+                        SceneAssetReferenceResolveStatus::Unavailable;
+                    record.detail =
+                        "non-mesh renderable requires a resource resolver";
+                    inst.renderables[h] = RenderableDescriptor{};
+                    continue;
+                }
+
+                inst.renderables[h] = desc;
+                if (context.resource_resolver) {
+                    pending_renderable_realize.push_back(
+                        PendingRenderableRealize{
+                            .node = h,
+                            .renderable = rdata,
+                            .node_name = node_log_name(node),
+                            .asset_reference_record = record_it->second,
+                        });
+                }
             }
             else {
                 inst.renderables[h] = RenderableDescriptor{};
@@ -868,6 +993,18 @@ namespace wz::engine::assets
                     *pending.renderable,
                     inst.renderables[pending.node]))
             {
+                if (pending.asset_reference_record) {
+                    SceneAssetReferenceResolveRecord& record =
+                        inst.asset_reference_resolutions[
+                            *pending.asset_reference_record];
+                    record.status =
+                        SceneAssetReferenceResolveStatus::Unavailable;
+                    record.detail =
+                        "resolved renderable descriptor could not be realized";
+                    inst.renderables[pending.node] = RenderableDescriptor{};
+                    continue;
+                }
+
                 result.error =
                     SceneInstantiateError::RenderableRealizeFailed;
                 result.error_detail = pending.node_name

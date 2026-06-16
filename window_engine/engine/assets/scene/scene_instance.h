@@ -13,9 +13,11 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <new>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -342,6 +344,32 @@ namespace wz::engine::assets
         uint32_t channel_id = 0u;
     };
 
+    enum class SceneAssetReferenceResolveStatus : uint8_t
+    {
+        Unassigned = 0,
+        NotFound,
+        TypeMismatch,
+        Unavailable,
+        Resolved,
+    };
+
+    struct SceneAssetReferenceResolveRecord
+    {
+        wz::scene::AuthoredEntityId node_id;
+        std::string stable_asset_id;
+        wz::asset::AssetType expected_type = wz::asset::AssetType::Unknown;
+        wz::asset::AssetType resolved_type = wz::asset::AssetType::Unknown;
+        wz::asset::AssetKey resolved_key{};
+        SceneAssetReferenceResolveStatus status =
+            SceneAssetReferenceResolveStatus::Unassigned;
+        std::string detail;
+
+        [[nodiscard]] bool resolved() const noexcept
+        {
+            return status == SceneAssetReferenceResolveStatus::Resolved;
+        }
+    };
+
     struct SceneInstance
     {
         // Runtime projection of authored SceneAssetData. instantiate_scene(...)
@@ -377,6 +405,8 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;
         std::vector<SceneComponentRecord<MeshFieldVisualizationTargetComponent>>
             mesh_field_visualization_targets;
+        std::vector<SceneAssetReferenceResolveRecord>
+            asset_reference_resolutions;
 
         std::vector<wz::scene::AuthoredEntityId> runtime_to_authored;
         std::vector<std::string> runtime_names;

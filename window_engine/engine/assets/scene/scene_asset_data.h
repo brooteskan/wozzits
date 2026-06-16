@@ -177,6 +177,19 @@ namespace wz::engine::assets
         float aspect = 16.0f / 9.0f;
     };
 
+    struct SceneAssetReferenceAsset
+    {
+        // Direct assignment for the first authorable path. Empty means this
+        // component resolves to null.
+        wz::asset::AssetKey asset{};
+
+        // Future stable authored asset identity. Preserved, but the editor can
+        // already work immediately through the direct key above.
+        std::string stable_asset_id;
+        wz::asset::AssetType expected_type = wz::asset::AssetType::Unknown;
+        std::string label;
+    };
+
     struct AuthoredTransform
     {
         float translation[3]{ 0.f, 0.f, 0.f };
@@ -915,6 +928,7 @@ namespace wz::engine::assets
         // Preferred authored Renderable component. Scene JSON may provide a
         // symbolic renderable asset reference; compilation resolves it here.
         std::optional<wz::asset::AssetKey> renderable_asset;
+        std::optional<SceneAssetReferenceAsset> asset_reference;
         std::optional<SceneCameraAsset> camera;
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
         std::optional<SceneAmbientLightingAsset> ambient_lighting;
@@ -1169,6 +1183,13 @@ namespace wz::engine::assets
         node.renderable_asset = renderable_asset;
     }
 
+    inline void attach_asset_reference(
+        SceneNodeAsset& node,
+        SceneAssetReferenceAsset reference = {})
+    {
+        node.asset_reference = std::move(reference);
+    }
+
     inline void attach_camera(
         SceneNodeAsset& node,
         SceneCameraAsset camera = {})
@@ -1404,6 +1425,9 @@ namespace wz::engine::assets
         }
         if (node.renderable || node.renderable_asset) {
             out.push_back(Kind::Renderable);
+        }
+        if (node.asset_reference) {
+            out.push_back(Kind::AssetReference);
         }
         if (node.scene_import_source) {
             out.push_back(Kind::SceneImportSource);
@@ -1886,6 +1910,9 @@ namespace wz::engine::assets
             }
             if (has_authored_renderable_component(node)) {
                 ++out.renderables;
+            }
+            if (node.asset_reference) {
+                ++out.asset_references;
             }
             if (node.scene_import_source) {
                 ++out.scene_import_sources;

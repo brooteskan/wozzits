@@ -1293,6 +1293,59 @@ namespace wz::engine::assets::internal
                 return std::nullopt;
             }
 
+            const auto* asset_reference =
+                find_member(node_val, "asset_reference");
+            if (asset_reference
+                && asset_reference->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneAssetReferenceAsset reference{};
+                if (auto asset = read_string(*asset_reference, "asset")) {
+                    if (!asset->empty()) {
+                        auto key = parse_asset_key_string(*asset);
+                        if (!key) {
+                            const auto it =
+                                renderable_asset_references.find(
+                                    std::string(*asset));
+                            if (it == renderable_asset_references.end()) {
+                                logger.error(
+                                    "asset_reference.asset on node '"
+                                    + node.id
+                                    + "' could not be resolved: "
+                                    + std::string(*asset));
+                                return std::nullopt;
+                            }
+                            key = it->second;
+                        }
+                        reference.asset = *key;
+                    }
+                }
+                if (auto stable_asset_id =
+                        read_string(*asset_reference, "stable_asset_id"))
+                {
+                    reference.stable_asset_id =
+                        std::string(*stable_asset_id);
+                }
+                if (auto expected_type =
+                        read_number(*asset_reference, "expected_type"))
+                {
+                    if (!std::isfinite(*expected_type)
+                        || *expected_type < 0.0
+                        || *expected_type > 65535.0)
+                    {
+                        logger.error("asset_reference on node '" + node.id
+                            + "' has invalid expected_type");
+                        return std::nullopt;
+                    }
+                    reference.expected_type =
+                        static_cast<wz::asset::AssetType>(
+                            static_cast<uint16_t>(*expected_type));
+                }
+                if (auto label = read_string(*asset_reference, "label")) {
+                    reference.label = std::string(*label);
+                }
+                node.asset_reference = std::move(reference);
+            }
+
             const auto* cam = find_member(node_val, "camera");
             if (cam && cam->kind == wz::json::JSONValueKind::Object) {
                 SceneCameraAsset camera{};

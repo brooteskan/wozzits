@@ -111,6 +111,7 @@ namespace wz::engine::assets
 
             const bool has_inline_renderable = node.renderable.has_value();
             const bool has_renderable_asset = node.renderable_asset.has_value();
+            const bool has_asset_reference = node.asset_reference.has_value();
             const bool has_camera = node.camera.has_value();
             const bool has_direct_light_source =
                 node.direct_light_source.has_value();
@@ -158,6 +159,7 @@ namespace wz::engine::assets
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
             fp.mix_value(has_renderable_asset);
+            fp.mix_value(has_asset_reference);
             fp.mix_value(has_camera);
             fp.mix_value(has_direct_light_source);
             fp.mix_value(has_ambient_lighting);
@@ -191,6 +193,13 @@ namespace wz::engine::assets
 
             if (node.renderable_asset) {
                 mix_asset_key(fp, *node.renderable_asset);
+            }
+
+            if (node.asset_reference) {
+                mix_asset_key(fp, node.asset_reference->asset);
+                fp.mix_string(node.asset_reference->stable_asset_id);
+                fp.mix_value(node.asset_reference->expected_type);
+                fp.mix_string(node.asset_reference->label);
             }
 
             if (node.renderable) {
