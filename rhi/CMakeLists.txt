@@ -29,6 +29,14 @@ if(WOZZITS_RHI_BUILD_TESTS)
         tag_registry_tests
         render_program_registry_tests
         render_program_bridge_tests
+        constants_layout_tests
+        shader_resource_group_layout_tests
+        shader_resource_group_tests
+        geometry_view_tests
+        draw_list_tag_tests
+        draw_packet_tests
+        render_packet_validation_tests
+        render_packet_contract_tests
         compute_program_tests
         handle_tests
         gpu_resource_registry_tests

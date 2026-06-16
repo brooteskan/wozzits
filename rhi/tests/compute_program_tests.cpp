@@ -8,22 +8,29 @@ namespace
 {
     // A landscape-field-CS-shaped program: 64-wide thread group, one root
     // constant (vertex count).
-    ComputeProgramDesc make_landscape_field()
+    ComputeProgramDesc make_landscape_field(
+        ConstantSemanticRegistry& constants)
     {
         ComputeProgramDesc d;
         d.name = "landscape_field";
         d.compute_shader = "shaders/compute/landscape_field_cs.hlsl";
         d.thread_group_size[0] = 64;
         d.root_constants.push_back(
-            RootConstantBinding{ ShaderStage::Compute, 0, 0, 1 });
+            RootConstantBinding{
+                ShaderStage::Compute,
+                constants.acquire("dispatch_constants"),
+                0,
+                0,
+                1 });
         return d;
     }
 }
 
 static void register_then_get_round_trips()
 {
+    ConstantSemanticRegistry constants;
     ComputeProgramRegistry registry;
-    const Tag tag = registry.register_program(make_landscape_field());
+    const Tag tag = registry.register_program(make_landscape_field(constants));
     WZ_CHECK(tag.valid());
 
     const ComputeProgramDesc* desc = registry.get(tag);
@@ -38,8 +45,9 @@ static void register_then_get_round_trips()
 // is a checkable miss, not a silent fallthrough.
 static void unregistered_is_a_checkable_miss()
 {
+    ConstantSemanticRegistry constants;
     ComputeProgramRegistry registry;
-    registry.register_program(make_landscape_field());
+    registry.register_program(make_landscape_field(constants));
     const Tag missing = registry.find("not_registered");
     WZ_CHECK_FALSE(missing.valid());
     WZ_CHECK(registry.get(missing) == nullptr);
@@ -50,7 +58,8 @@ static void unregistered_is_a_checkable_miss()
 static void uav_binding_semantic_is_a_tag()
 {
     DescriptorSemanticRegistry semantics;
-    ComputeProgramDesc d = make_landscape_field();
+    ConstantSemanticRegistry constants;
+    ComputeProgramDesc d = make_landscape_field(constants);
     d.descriptor_bindings.push_back(DescriptorBinding{
         DescriptorKind::UAV, ShaderStage::Compute,
         semantics.acquire("mesh_field_output"), 0, 0, 1 });
@@ -70,10 +79,11 @@ static void uav_binding_semantic_is_a_tag()
 
 static void reregister_updates_in_place()
 {
+    ConstantSemanticRegistry constants;
     ComputeProgramRegistry registry;
-    const Tag first = registry.register_program(make_landscape_field());
+    const Tag first = registry.register_program(make_landscape_field(constants));
 
-    ComputeProgramDesc updated = make_landscape_field();
+    ComputeProgramDesc updated = make_landscape_field(constants);
     updated.thread_group_size[0] = 128;
     const Tag again = registry.register_program(updated);
 

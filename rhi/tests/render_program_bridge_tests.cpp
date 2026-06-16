@@ -3,6 +3,8 @@
 #include <wozzits/rhi/render_program.h>
 #include <wozzits/rhi/render_program_registry.h>
 
+#include <span>
+
 // Bridge contract test.
 //
 // wozzits-rhi stays dependency-free: it does NOT include any engine header.
@@ -17,9 +19,8 @@
 //     identity becomes its registered name in RenderProgramRegistry.
 //   - src.binding_model / topology / input_layout / blend / depth / raster map
 //     1:1 to the rhi enums (closed value sets, intentionally enums).
-//   - each src.descriptor_bindings[i].semantic (engine enum DescriptorSemantic)
-//     becomes semantics.acquire("<name>") -> Tag (open set, intentionally a
-//     registry, not an enum).
+//   - src SRG layouts become RenderProgramDesc::shader_resource_groups by
+//     binding slot; descriptor and constant semantics are Tags inside the SRG.
 //   - shader AssetKeys become resolved shader refs (strings here).
 //
 // This test constructs what that adapter would OUTPUT for the real
@@ -33,7 +34,9 @@ namespace
     // Stand-in for the engine adapter's output. In production this is produced
     // by from_engine() at the boundary; here we build it by hand so the test
     // has zero engine dependency.
-    RenderProgramDesc adapt_mesh_mask_style(DescriptorSemanticRegistry& semantics)
+    RenderProgramDesc adapt_mesh_mask_style(
+        DescriptorSemanticRegistry& descriptors,
+        ConstantSemanticRegistry& constants)
     {
         RenderProgramDesc desc;
         desc.name = "mesh_mask_style";
@@ -51,21 +54,34 @@ namespace
         desc.depth_mode    = DepthMode::TestWrite;
         desc.raster_mode   = RasterMode::SolidCullBack;
 
-        // 48 root constants (transform + view_proj + mask params), matching the
-        // mesh_mask_style root signature.
-        desc.root_constants.push_back(RootConstantBinding{
-            ShaderStage::All, /*reg*/ 0, /*space*/ 0, /*value_count*/ 48 });
+        // Object-frequency SRG: 48 dwords (transform + view_proj + mask params),
+        // plus t0/t1 resources. The engine's DescriptorSemantic enum entries
+        // become registered Tags inside this group layout.
+        const RootConstantBinding object_constants{
+            ShaderStage::All,
+            constants.acquire("object_constants"),
+            /*reg*/ 0, /*space*/ 2, /*value_count*/ 48 };
+
+        ShaderResourceGroupLayout object_srg;
+        object_srg.binding_slot = 2;
+        const auto object_layout =
+            make_constants_layout(
+                std::span<const RootConstantBinding>{ &object_constants, 1 });
+        WZ_CHECK(object_layout.has_value());
+        if (object_layout) {
+            object_srg.constants = *object_layout;
+        }
 
         // t0: the face-domain field values. t1: the packed mask rules.
-        // The engine's DescriptorSemantic enum entries become registered Tags.
-        desc.descriptor_bindings.push_back(DescriptorBinding{
+        object_srg.descriptors.push_back(DescriptorBinding{
             DescriptorKind::StructuredBufferSRV, ShaderStage::Pixel,
-            semantics.acquire("mesh_field_visualization"),
-            /*reg*/ 0, /*space*/ 0, /*count*/ 1 });
-        desc.descriptor_bindings.push_back(DescriptorBinding{
+            descriptors.acquire("mesh_field_visualization"),
+            /*reg*/ 0, /*space*/ 2, /*count*/ 1 });
+        object_srg.descriptors.push_back(DescriptorBinding{
             DescriptorKind::StructuredBufferSRV, ShaderStage::Pixel,
-            semantics.acquire("mesh_mask_rules"),
-            /*reg*/ 1, /*space*/ 0, /*count*/ 1 });
+            descriptors.acquire("mesh_mask_rules"),
+            /*reg*/ 1, /*space*/ 2, /*count*/ 1 });
+        desc.shader_resource_groups.push_back(object_srg);
 
         return desc;
     }
@@ -76,9 +92,11 @@ namespace
 static void mesh_mask_style_round_trips_through_registry()
 {
     DescriptorSemanticRegistry semantics;
+    ConstantSemanticRegistry constants;
     RenderProgramRegistry programs;
 
-    const Tag program = programs.register_program(adapt_mesh_mask_style(semantics));
+    const Tag program =
+        programs.register_program(adapt_mesh_mask_style(semantics, constants));
     WZ_CHECK(program.valid());
 
     const RenderProgramDesc* desc = programs.get(programs.find("mesh_mask_style"));
@@ -90,8 +108,14 @@ static void mesh_mask_style_round_trips_through_registry()
     WZ_CHECK_EQ(desc->blend_mode, BlendMode::Opaque);
     WZ_CHECK(desc->vertex_source == VertexSource::InputAssembler);
     WZ_CHECK_EQ(desc->vertex_layout.attributes.size(), static_cast<size_t>(3));
-    WZ_CHECK_EQ(desc->root_constants.size(), static_cast<size_t>(1));
-    WZ_CHECK_EQ(desc->descriptor_bindings.size(), static_cast<size_t>(2));
+    WZ_CHECK_EQ(desc->shader_resource_groups.size(), static_cast<size_t>(1));
+    const ShaderResourceGroupLayout* object_srg =
+        find_shader_resource_group_layout(desc->shader_resource_groups, 2);
+    WZ_CHECK(object_srg != nullptr);
+    if (object_srg) {
+        WZ_CHECK_EQ(object_srg->constants.dword_count(), 48u);
+        WZ_CHECK_EQ(object_srg->descriptors.size(), static_cast<size_t>(2));
+    }
 }
 
 // Descriptor semantics survive as registered Tags, and resolve back to their
@@ -99,18 +123,22 @@ static void mesh_mask_style_round_trips_through_registry()
 static void descriptor_semantics_resolve_by_name_not_enum()
 {
     DescriptorSemanticRegistry semantics;
+    ConstantSemanticRegistry constants;
     RenderProgramRegistry programs;
-    programs.register_program(adapt_mesh_mask_style(semantics));
+    programs.register_program(adapt_mesh_mask_style(semantics, constants));
 
     const RenderProgramDesc* desc = programs.get(programs.find("mesh_mask_style"));
     WZ_CHECK(desc != nullptr);
-    if (!desc || desc->descriptor_bindings.size() < 2) {
+    const ShaderResourceGroupLayout* object_srg =
+        desc ? find_shader_resource_group_layout(desc->shader_resource_groups, 2)
+             : nullptr;
+    if (!object_srg || object_srg->descriptors.size() < 2) {
         WZ_CHECK(false);
         return;
     }
 
-    const Tag t0 = desc->descriptor_bindings[0].semantic;
-    const Tag t1 = desc->descriptor_bindings[1].semantic;
+    const Tag t0 = object_srg->descriptors[0].semantic;
+    const Tag t1 = object_srg->descriptors[1].semantic;
     WZ_CHECK(t0.valid());
     WZ_CHECK(t1.valid());
     WZ_CHECK_FALSE(t0 == t1);

@@ -2,37 +2,59 @@
 
 #include <wozzits/rhi/render_program_registry.h>
 
+#include <span>
+
 using wz::rhi::RenderProgramDesc;
 using wz::rhi::RenderProgramRegistry;
 using wz::rhi::RootConstantBinding;
+using wz::rhi::ShaderResourceGroupLayout;
 using wz::rhi::ShaderStage;
 using wz::rhi::Tag;
 
-static RenderProgramDesc make_desc(const char* name, uint32_t root_values = 40)
+static RenderProgramDesc make_desc(
+    wz::rhi::ConstantSemanticRegistry& constants,
+    const char* name,
+    uint32_t root_values = 40)
 {
     RenderProgramDesc desc;
     desc.name = name;
     desc.vertex_shader = std::string(name) + "_vs.hlsl";
     desc.pixel_shader = std::string(name) + "_ps.hlsl";
-    desc.root_constants.push_back(RootConstantBinding{
-        ShaderStage::All, /*shader_register*/ 0, /*register_space*/ 0,
-        /*value_count*/ root_values });
+    const RootConstantBinding object_constants{
+        ShaderStage::All,
+        constants.acquire("object_constants"),
+        /*shader_register*/ 0, /*register_space*/ 0,
+        /*value_count*/ root_values };
+    const auto constants_layout =
+        wz::rhi::make_constants_layout(
+            std::span<const RootConstantBinding>{ &object_constants, 1 });
+    WZ_CHECK(constants_layout.has_value());
+
+    ShaderResourceGroupLayout object_srg;
+    object_srg.binding_slot = 2;
+    if (constants_layout) {
+        object_srg.constants = *constants_layout;
+    }
+    desc.shader_resource_groups.push_back(object_srg);
     return desc;
 }
 
 static void register_then_get_round_trips()
 {
+    wz::rhi::ConstantSemanticRegistry constants;
     RenderProgramRegistry registry;
-    const Tag tag = registry.register_program(make_desc("mesh_mask_style"));
+    const Tag tag =
+        registry.register_program(make_desc(constants, "mesh_mask_style"));
     WZ_CHECK(tag.valid());
 
     const RenderProgramDesc* desc = registry.get(tag);
     WZ_CHECK(desc != nullptr);
     if (desc) {
         WZ_CHECK_EQ(desc->name, std::string{ "mesh_mask_style" });
-        WZ_CHECK_EQ(desc->root_constants.size(), static_cast<size_t>(1));
-        if (!desc->root_constants.empty()) {
-            WZ_CHECK_EQ(desc->root_constants[0].value_count, 40u);
+        WZ_CHECK_EQ(desc->shader_resource_groups.size(), static_cast<size_t>(1));
+        if (!desc->shader_resource_groups.empty()) {
+            WZ_CHECK_EQ(desc->shader_resource_groups[0].binding_slot, 2u);
+            WZ_CHECK_EQ(desc->shader_resource_groups[0].constants.dword_count(), 40u);
         }
     }
 }
@@ -42,8 +64,9 @@ static void register_then_get_round_trips()
 // fallthrough that renders nothing. This is the bug that motivated the repo.
 static void unregistered_program_is_a_checkable_miss()
 {
+    wz::rhi::ConstantSemanticRegistry constants;
     RenderProgramRegistry registry;
-    registry.register_program(make_desc("mesh_surface"));
+    registry.register_program(make_desc(constants, "mesh_surface"));
 
     // Asking for a program nobody registered yields a null Tag...
     const Tag missing = registry.find("mesh_mask_style");
@@ -56,25 +79,30 @@ static void unregistered_program_is_a_checkable_miss()
 
 static void find_resolves_registered_program_by_name()
 {
+    wz::rhi::ConstantSemanticRegistry constants;
     RenderProgramRegistry registry;
-    const Tag registered = registry.register_program(make_desc("mesh_surface"));
+    const Tag registered =
+        registry.register_program(make_desc(constants, "mesh_surface"));
     const Tag found = registry.find("mesh_surface");
     WZ_CHECK(found == registered);
 }
 
 static void reregister_updates_in_place()
 {
+    wz::rhi::ConstantSemanticRegistry constants;
     RenderProgramRegistry registry;
-    const Tag first = registry.register_program(make_desc("mesh_surface"));
+    const Tag first =
+        registry.register_program(make_desc(constants, "mesh_surface"));
 
-    const Tag again = registry.register_program(make_desc("mesh_surface", 48));
+    const Tag again =
+        registry.register_program(make_desc(constants, "mesh_surface", 48));
 
     WZ_CHECK(first == again);                 // same identity
     WZ_CHECK_EQ(registry.size(), 1u);          // not duplicated
     const RenderProgramDesc* desc = registry.get(again);
     WZ_CHECK(desc != nullptr);
-    if (desc && !desc->root_constants.empty()) {
-        WZ_CHECK_EQ(desc->root_constants[0].value_count, 48u);  // updated
+    if (desc && !desc->shader_resource_groups.empty()) {
+        WZ_CHECK_EQ(desc->shader_resource_groups[0].constants.dword_count(), 48u);
     }
 }
 
@@ -82,10 +110,11 @@ static void reregister_updates_in_place()
 // rather than a hand-maintained list that can fall behind: enumeration.
 static void visit_enumerates_every_registered_program()
 {
+    wz::rhi::ConstantSemanticRegistry constants;
     RenderProgramRegistry registry;
-    registry.register_program(make_desc("mesh_surface"));
-    registry.register_program(make_desc("mesh_wireframe"));
-    registry.register_program(make_desc("mesh_mask_style"));
+    registry.register_program(make_desc(constants, "mesh_surface"));
+    registry.register_program(make_desc(constants, "mesh_wireframe"));
+    registry.register_program(make_desc(constants, "mesh_mask_style"));
 
     size_t seen = 0;
     registry.visit([&](Tag tag, const RenderProgramDesc& desc) {

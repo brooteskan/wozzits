@@ -15,26 +15,37 @@
 // instance args). The shape — references not ownership, sort key separate — is
 // the part that matters now.
 
+#include <wozzits/rhi/draw_list_tag.h>
+#include <wozzits/rhi/geometry_view.h>
 #include <wozzits/rhi/tag_registry.h>
 
 #include <cstdint>
 
 namespace wz::rhi
 {
+    class ShaderResourceGroup;
+
+    using DrawItemSortKey = uint64_t;
+
     struct DrawItem
     {
         // Which render program this draw uses — a registry Tag, never an enum.
         Tag program{};
 
-        // Whether this item should render. A cheap visibility/enable toggle
-        // that does not require removing the item from any list.
-        bool enabled = true;
+        // Closed surface/sort class, independent of which pass consumes it.
+        RenderDomain render_domain = RenderDomain::Opaque;
 
-        // Resource bindings (geometry view, shader-resource groups, root
-        // constants) attach here as handles in subsequent commits.
+        // Open pass route ("depth", "forward", "shadow", "debug", ...).
+        DrawListTag pass{};
+
+        // Per-pass resources and routing state. Geometry/root constants/shared
+        // SRGs live on DrawPacket; only the unique per-pass SRG pointer is here.
+        StreamBufferIndices streams;
+        const ShaderResourceGroup* unique_srg = nullptr;
+        DrawItemSortKey sort_key = 0;
+        DrawListMask filter_mask{};
+        uint32_t stencil_ref = 0;
     };
-
-    using DrawItemSortKey = uint64_t;
 
     // The sortable view over a DrawItem. Build an array of these, sort by
     // sort_key, then submit — the item itself never moves.

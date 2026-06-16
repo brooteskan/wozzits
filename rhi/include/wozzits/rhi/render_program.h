@@ -20,17 +20,18 @@
 //     many call sites — exactly the open-identity enum this repo refuses. Here
 //     it is a Tag, registered by name like a render program.
 
-#include <wozzits/rhi/tag_registry.h>
+#include <wozzits/rhi/constants_layout.h>
+#include <wozzits/rhi/shader_resource_group_layout.h>
 
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace wz::rhi
 {
     // ── Closed, bounded pipeline-state value sets: correctly enums ────────────
-
-    enum class ShaderStage : uint8_t { All, Vertex, Pixel, Compute };
 
     // How the pipeline sources vertices. A small, closed STRUCTURAL set — not
     // content names. The engine's BindingModel had MeshIA / SplatVertexInstanced
@@ -63,8 +64,6 @@ namespace wz::rhi
     enum class BlendMode : uint8_t { Opaque, AlphaBlend };
     enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
     enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
-    enum class DescriptorKind : uint8_t { StructuredBufferSRV, TextureSRV, Sampler, UAV };
-
     // ── Vertex input (data, not an enum) ───────────────────────────────────────
 
     struct VertexAttribute
@@ -90,25 +89,10 @@ namespace wz::rhi
     struct RootConstantBinding
     {
         ShaderStage visibility = ShaderStage::All;
+        Tag semantic{};
         uint32_t shader_register = 0;
         uint32_t register_space = 0;
         uint32_t value_count = 0;
-    };
-
-    struct DescriptorBinding
-    {
-        DescriptorKind kind = DescriptorKind::StructuredBufferSRV;
-        ShaderStage    visibility = ShaderStage::Pixel;
-
-        // The OPEN identity: which logical resource this binding wants. A Tag
-        // from a DescriptorSemanticRegistry, never an enum. A binding whose
-        // semantic resolves to a null Tag is a checkable error at bind time,
-        // not a silent default.
-        Tag semantic{};
-
-        uint32_t shader_register = 0;
-        uint32_t register_space = 0;
-        uint32_t descriptor_count = 1;
     };
 
     // ── The program description (the boundary contract) ───────────────────────
@@ -130,14 +114,24 @@ namespace wz::rhi
         DepthMode         depth_mode    = DepthMode::TestWrite;
         RasterMode        raster_mode   = RasterMode::SolidCullBack;
 
-        // Root signature layout in declaration order.
-        std::vector<RootConstantBinding> root_constants;
-        std::vector<DescriptorBinding>   descriptor_bindings;
+        // Slotted SRG layouts in declaration order. Convention: view=0,
+        // material=1, object=2. Descriptor and constant Tags live inside
+        // these layouts, not on a flat program-wide binding list.
+        std::vector<ShaderResourceGroupLayout> shader_resource_groups;
     };
 
-    // Descriptor semantics are registered by name, exactly like render
-    // programs. The adapter (or test) acquires a Tag per semantic and stamps it
-    // into DescriptorBinding::semantic.
-    inline constexpr size_t kMaxDescriptorSemantics = 128;
-    using DescriptorSemanticRegistry = TagRegistry<kMaxDescriptorSemantics>;
+    [[nodiscard]] inline std::optional<ConstantsLayout>
+    make_constants_layout(std::span<const RootConstantBinding> bindings)
+    {
+        ConstantsLayout layout;
+        for (const RootConstantBinding& binding : bindings) {
+            if (!layout.append(
+                    binding.semantic,
+                    binding.value_count * sizeof(uint32_t)))
+            {
+                return std::nullopt;
+            }
+        }
+        return layout;
+    }
 }
