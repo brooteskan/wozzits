@@ -180,9 +180,6 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         scene_component_domain(SceneAuthoredComponentKind::SceneImportSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
-        scene_component_domain(SceneAuthoredComponentKind::AssetReference),
-        SceneComponentDomain::EditorAuthoring);
-    EXPECT_EQ(
         scene_component_domain(SceneAuthoredComponentKind::MeshSource),
         SceneComponentDomain::EditorAuthoring);
     EXPECT_EQ(
@@ -229,10 +226,6 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         SceneAuthoredComponentKind::SceneImportSource));
     EXPECT_TRUE(is_editor_authoring_component(
         SceneAuthoredComponentKind::SceneImportSource));
-    EXPECT_FALSE(is_runtime_relevant_component(
-        SceneAuthoredComponentKind::AssetReference));
-    EXPECT_TRUE(is_editor_authoring_component(
-        SceneAuthoredComponentKind::AssetReference));
     EXPECT_FALSE(is_runtime_relevant_component(
         SceneAuthoredComponentKind::MeshSource));
     EXPECT_TRUE(is_editor_authoring_component(
@@ -281,6 +274,26 @@ TEST(SceneECSBoundary, ClassifiesEditorAuthoringComponents)
         SceneAuthoredComponentKind::TerrainHeightFieldSource));
     EXPECT_TRUE(is_editor_authoring_component(
         SceneAuthoredComponentKind::TerrainHeightFieldSource));
+}
+
+TEST(SceneECSBoundary, ClassifiesAssetReferenceComponents)
+{
+    EXPECT_EQ(
+        scene_component_domain(SceneAuthoredComponentKind::AssetReference),
+        SceneComponentDomain::AssetReference);
+
+    EXPECT_TRUE(is_asset_reference_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_FALSE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_FALSE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_FALSE(is_exportable_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_FALSE(is_core_node_component(
+        SceneAuthoredComponentKind::AssetReference));
+    EXPECT_FALSE(is_editor_only_component(
+        SceneAuthoredComponentKind::AssetReference));
 }
 
 TEST(SceneECSBoundary, ClassifiesEditorOnlyComponents)

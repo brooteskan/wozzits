@@ -1,0 +1,45 @@
+{
+  "schema": "wozzits.scene_editor.assets.graph.v1",
+  "version": 1,
+  "nodes": [
+    {
+      "key": "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
+      "type": 130,
+      "schema": "0xf11eca55e7000402",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": []
+    },
+    {
+      "key": "asset-key:496c99992f98a27b:99903fbbbdaf9e56:f11eca55e7000700:0000000000000000:9e3779b97f4b8704:0000000000000000:53198cbf4d109726:b6cec782206a7ac7",
+      "type": 1048,
+      "schema": "0xf11eca55e7000700",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000"
+      ],
+      "params": [
+        {
+          "name": "program",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "policy_flags",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "domain",
+          "type": "int",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

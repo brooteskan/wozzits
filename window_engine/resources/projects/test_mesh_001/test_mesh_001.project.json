@@ -1,8 +1,9 @@
 {
   "schema": "wozzits.scene_editor.project.v1",
   "version": 1,
-  "name": "scene_editor_project",
-  "scene": "scene_editor_handles_export.scene.json",
+  "name": "test_mesh_005",
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json",
   "behavior_project_folder": "behavior",
   "behavior_module_folder": "behavior/build/clang-debug"
 }

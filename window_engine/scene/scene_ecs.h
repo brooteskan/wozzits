@@ -35,6 +35,7 @@ namespace wz::scene
         EditorOnly,
         Exportable,
         EditorAuthoring,
+        AssetReference,
     };
 
     enum class SceneAuthoredComponentKind : uint8_t
@@ -109,6 +110,8 @@ namespace wz::scene
             return SceneComponentDomain::Exportable;
 
         case SceneAuthoredComponentKind::AssetReference:
+            return SceneComponentDomain::AssetReference;
+
         case SceneAuthoredComponentKind::SceneImportSource:
         case SceneAuthoredComponentKind::MeshSource:
         case SceneAuthoredComponentKind::MeshDerivedFieldSource:
@@ -166,6 +169,13 @@ namespace wz::scene
     {
         return scene_component_domain(kind)
             == SceneComponentDomain::EditorAuthoring;
+    }
+
+    constexpr bool is_asset_reference_component(
+        SceneAuthoredComponentKind kind) noexcept
+    {
+        return scene_component_domain(kind)
+            == SceneComponentDomain::AssetReference;
     }
 
     constexpr bool is_exportable_component(

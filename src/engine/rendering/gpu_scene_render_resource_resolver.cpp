@@ -233,15 +233,17 @@ namespace wz::engine::rendering
                 return std::nullopt;
             }
 
-            const wz::engine::assets::GpuResidentMeshClusterHierarchyLevel*
-                resident_level = nullptr;
-            for (const auto& level : entry->levels) {
-                if (level.level_index == desc->level_index) {
-                    resident_level = &level;
-                    break;
-                }
-            }
-            if (!resident_level || !resident_level->valid()) {
+            const auto resident_level_it = std::ranges::find_if(
+                entry->levels,
+                [level_index = desc->level_index](
+                    const wz::engine::assets
+                        ::GpuResidentMeshClusterHierarchyLevel& level)
+                {
+                    return level.level_index == level_index;
+                });
+            if (resident_level_it == entry->levels.end()
+                || !resident_level_it->valid())
+            {
                 return std::nullopt;
             }
 
@@ -260,11 +262,11 @@ namespace wz::engine::rendering
             }
 
             return ResolvedRenderableResource::PulledMeshResource{
-                .positions = resident_level->positions,
-                .indices = resident_level->indices,
-                .source_vertices = resident_level->source_vertices,
-                .vertex_count = resident_level->vertex_count,
-                .index_count = resident_level->index_count,
+                .positions = resident_level_it->positions,
+                .indices = resident_level_it->indices,
+                .source_vertices = resident_level_it->source_vertices,
+                .vertex_count = resident_level_it->vertex_count,
+                .index_count = resident_level_it->index_count,
                 .source_triangle_count = source_triangle_count,
             };
         }

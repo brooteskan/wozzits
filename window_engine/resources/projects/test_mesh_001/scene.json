@@ -28,6 +28,7 @@
     {
       "id": "empty_1",
       "parent": "root",
+      "name": "cube",
       "transform": {
         "translation": [
           0,
@@ -61,8 +62,8 @@
     "camera": {
       "position": [
         0,
-        2,
-        -18
+        1,
+        -6
       ],
       "orientation": [
         0,
