@@ -12,18 +12,16 @@
 // ── Key construction philosophy ───────────────────────────────────────────────
 //
 // File carrier nodes (Source stage):
+//   Editor draft keys are content-aware when the source full path is known.
 //   content_hash  — derived from the canonical relative path string
 //   schema_hash   — derived from the schema ID constant
 //   compiler_hash — zero (carriers perform no transformation)
 //   deps_hash     — zero (file nodes have no DAG prerequisites)
 //
-//   IMPORTANT: content_hash is PATH-BASED, not FILE-CONTENT-BASED.
-//   File bytes are read lazily at resolve() time. Constructing a content-
-//   addressed key from file bytes at registration time would require reading
-//   every file upfront, which contradicts the deferred-resolution model.
-//   Path-based identity is sufficient for session caching. If you need
-//   content-change detection across sessions (hot reload, build system),
-//   call AssetCache::invalidate() externally when a file's mtime changes.
+//   The editor draft key factory uses file bytes when a full path is available,
+//   mixed with the canonical path, so same-path file edits invalidate the file
+//   source node and downstream compiled assets. The path-only helper remains as
+//   a fallback for callers that cannot read file bytes.
 //
 // Compiled nodes (Intermediate → Compiled stage):
 //   content_hash  — derived from recipe-specific parameters (entry, target, …)
@@ -44,6 +42,7 @@
 #include <string_view>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
 #include <file/filesystem.h>
 
@@ -77,6 +76,24 @@ namespace wz::engine::assets {
                 hi ^= static_cast<uint64_t>(c);
                 hi *= 16777619ull;
             }
+            return { lo, hi };
+        }
+
+        [[nodiscard]] inline wz::asset::Hash hash_bytes(
+            std::span<const std::uint8_t> bytes) noexcept
+        {
+            uint64_t lo = 14695981039346656037ull;
+            for (const std::uint8_t c : bytes) {
+                lo ^= static_cast<uint64_t>(c);
+                lo *= 1099511628211ull;
+            }
+
+            uint64_t hi = 2166136261ull;
+            for (const std::uint8_t c : bytes) {
+                hi ^= static_cast<uint64_t>(c);
+                hi *= 16777619ull;
+            }
+
             return { lo, hi };
         }
 

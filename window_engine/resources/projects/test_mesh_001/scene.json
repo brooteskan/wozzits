@@ -23,12 +23,44 @@
           1
         ]
       },
-      "visible": true
+      "visible": true,
+      "renderable": {
+        "asset_graph_node_id": 7
+      }
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          2,
+          -8
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
     },
     {
       "id": "empty_1",
       "parent": "root",
-      "name": "cube",
+      "name": "mesh",
       "transform": {
         "translation": [
           0,
@@ -49,36 +81,28 @@
       },
       "visible": true,
       "renderable": {
-        "asset": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8"
-      },
-      "asset_reference": {
-        "asset": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8",
-        "stable_asset_id": "",
-        "expected_type": 0
-      },
-      "editor_handle": {
-        "kind": "transform",
-        "enabled": true,
-        "visible": true,
-        "size": 1
+        "asset_graph_node_id": 7
       }
     }
   ],
+  "defaults": {
+    "active_camera": "camera_01"
+  },
   "scene_editor_metadata": {
     "schema": "wozzits.scene_editor_metadata.v1",
     "version": 1,
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -5.2271213531494141,
-        -2.9965684413909912,
-        -10.169985771179199
+        0,
+        2,
+        -18
       ],
       "orientation": [
-        0.12656499445438385,
-        -0.095412068068981171,
-        -0.01223138440400362,
-        -0.98728334903717041
+        0,
+        0,
+        0,
+        1
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

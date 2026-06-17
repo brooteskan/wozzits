@@ -4,6 +4,7 @@
 
 #include <asset/system.h>
 #include <asset/compiler.h>
+#include <asset/draft.h>
 #include <asset/types.h>
 
 #include <file/filesystem.h>
@@ -127,6 +128,36 @@ namespace wz::engine::assets
         // ── Graph lifecycle ───────────────────────────────────────────────────────
 
         bool          commit();
+        struct AssetGraphDraftCommitReport
+        {
+            enum class Status
+            {
+                Success,
+                MaterializeFailed,
+                ReplaceFailed,
+            };
+
+            Status status = Status::Success;
+            uint32_t registration_count = 0u;
+            int64_t elapsed_ms = 0;
+            // Populated for successful commits and ReplaceFailed diagnostics.
+            // Callers that act on registrations must gate on success() first.
+            std::vector<wz::asset::AssetGraphDraftRegistration>
+                registrations;
+
+            [[nodiscard]] bool success() const noexcept
+            {
+                return status == Status::Success;
+            }
+        };
+
+        // On success, replaces the registered authoring graph and reloads draft
+        // to a clean Existing baseline. On failure, the registered graph is
+        // unchanged; MaterializeFailed leaves the draft unmaterialized, while
+        // ReplaceFailed may leave materialized keys in the caller's draft.
+        AssetGraphDraftCommitReport commit_asset_graph_draft(
+            wz::asset::AssetGraphDraft& draft);
+
         ResolveReport resolve_all(
             std::source_location caller =
                 std::source_location::current());
@@ -155,6 +186,8 @@ namespace wz::engine::assets
         {
             return cache_settings_.root;
         }
+
+        wz::asset::AssetKeyFactoryFn draft_key_factory() const;
 
         wz::Logger& logger() const noexcept
         {

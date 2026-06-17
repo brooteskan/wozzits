@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/engine_asset_key_factory.h>
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/key_factories/file_carrier.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
 #include <gpu/gpu.h>
 #include <window/window2.h>
 
@@ -95,6 +100,149 @@ float4 main(PSIn input) : SV_TARGET
 }
 )"
 );
+    }
+
+    wz::asset::AssetNode make_file_carrier_node(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type,
+        const std::string& canonical_path,
+        const fs::path& full_path)
+    {
+        wz::asset::AssetNode node{};
+        node.type = type;
+        node.schema = schema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.residency = wz::asset::ResidencyIntent::CompileOnly;
+        node.meta = wz::engine::assets::internal::FileSourceDesc{
+            .full_path = full_path.string(),
+            .canonical_path = canonical_path,
+        };
+        return node;
+    }
+
+    const wz::asset::AssetGraphDraftNode* find_draft_node_by_key(
+        const wz::asset::AssetGraphDraft& draft,
+        const wz::asset::AssetKey& key)
+    {
+        for (const wz::asset::AssetGraphDraftNode& node : draft.nodes) {
+            if (node.node.key == key) {
+                return &node;
+            }
+        }
+        return nullptr;
+    }
+
+    struct Phase2KeyFactoryAllowlistEntry
+    {
+        wz::asset::SchemaID schema;
+        wz::asset::AssetType type;
+    };
+
+    bool engine_key_factory_phase2_allowlisted(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type)
+    {
+        using namespace wz::engine::assets;
+
+        // These real engine compilers still materialize through the generic
+        // draft key path. Keep this list explicit until each recipe gets a
+        // schema-aware key factory.
+        constexpr Phase2KeyFactoryAllowlistEntry kAllowlist[] = {
+            { kBuiltinRenderProgramSchema, kAssetTypeRenderProgram },
+            { kComputePipelineSchema, kAssetTypeComputePipeline },
+            { kCustomRenderProgramSchema, kAssetTypeRenderProgram },
+
+            { kScalarFieldFromRawF32Schema, kAssetTypeScalarField },
+            { kScalarFieldProceduralSchema, kAssetTypeScalarField },
+            { kVectorFieldFromRawF32Schema, kAssetTypeVectorField },
+
+            { kProceduralTriangleMeshSchema, kAssetTypeMesh },
+            { kProceduralQuadMeshSchema, kAssetTypeMesh },
+            { kProceduralCubeMeshSchema, kAssetTypeMesh },
+            { kGLBMeshSchema, kAssetTypeMesh },
+            { kPlaceholderMeshSchema, kAssetTypeMesh },
+            { kMeshDecimationSchema, kAssetTypeMesh },
+            { kMeshDerivedFieldExplicitSchema, kAssetTypeMeshDerivedField },
+            { kMeshWaveletAnalysisSchema, kAssetTypeMeshDerivedField },
+            { kBehaviorFieldPlaceholderSchema, kAssetTypeMeshDerivedField },
+            { kMeshComputeDerivedFieldSchema, kAssetTypeMeshDerivedField },
+            { kMeshSparseOperatorSchema, kAssetTypeMeshSparseOperator },
+            { kBuiltinMeshDerivedFieldSchema, kAssetTypeMeshDerivedField },
+            { kMeshSparseApplyFieldSchema, kAssetTypeMeshDerivedField },
+            { kMeshSparseDiffusionBandsSchema, kAssetTypeMeshDerivedField },
+            { kMeshFieldLevelMaskSchema, kAssetTypeMeshDerivedField },
+            { kMeshClusterHierarchySchema, kAssetTypeMeshClusterHierarchy },
+            { kMeshClusterHierarchyPreviewMeshSchema, kAssetTypeMesh },
+            { kDebugTriangleStrideMeshSchema, kAssetTypeMesh },
+
+            { kGaussianSplatFromPLYSchema, kAssetTypeGaussianSplatCloud },
+            { kGaussianSplatFromFieldSchema, kAssetTypeGaussianSplatCloud },
+            {
+                kGaussianSplatColorLODSchema,
+                kAssetTypeGaussianSplatColorLOD,
+            },
+            {
+                kGaussianSplatTerrainSurfaceFromHeightFieldSchema,
+                kAssetTypeGaussianSplatCloud,
+            },
+            { kTerrainSplatFromGaeaR32Schema, kAssetTypeGaussianSplatCloud },
+            {
+                kProceduralGaussianSplatCloudSchema,
+                kAssetTypeGaussianSplatCloud,
+            },
+
+            { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
+            { kMeshWireframeRenderableSchema, kAssetTypeRenderable },
+            { kGaussianSplatDebugRenderableSchema, kAssetTypeRenderable },
+            { kScalarFieldDebugRenderableSchema, kAssetTypeRenderable },
+            { kTerrainDebugRenderableSchema, kAssetTypeRenderable },
+            { kTerrainSurfaceRenderableSchema, kAssetTypeRenderable },
+            { kMeshStyledRenderableSchema, kAssetTypeRenderable },
+            { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
+            { kSceneFromJSONSchema, kAssetTypeScene },
+            { kSceneFromGLBSchema, kAssetTypeScene },
+
+            { kTerrainFromHeightFieldSchema, kAssetTypeTerrain },
+            { kTerrainFromMeshSchema, kAssetTypeTerrain },
+            { kTerrainVisualProxySchema, kAssetTypeTerrainVisualProxy },
+            { kCollisionFromMeshSchema, kAssetTypeCollisionAsset },
+            { kCollisionFromTerrainSchema, kAssetTypeCollisionAsset },
+
+            { kJSONDocumentSchema, kAssetTypeJSONDocument },
+            { kTOMLDocumentSchema, kAssetTypeTOMLDocument },
+            { kCSVTableSchema, kAssetTypeCSVTable },
+
+            { kInlineDataTableSchema, kAssetTypeDataTable },
+            {
+                kDiagnosticTableResampleTimeSeriesSchema,
+                kAssetTypeDiagnosticResampledTimeSeries,
+            },
+            { kCSVExportSchema, kAssetTypeCSVExport },
+            {
+                kDiagnosticResampledTimeSeriesToDataTableSchema,
+                kAssetTypeDataTable,
+            },
+            {
+                kDiagnosticTimeframeSummarySchema,
+                kAssetTypeDiagnosticTimeframeSummary,
+            },
+            {
+                kDiagnosticTimeframeSummaryToDataTableSchema,
+                kAssetTypeDataTable,
+            },
+
+            { kDirectLightSchema, kAssetTypeDirectLight },
+            { kAmbientLightingSchema, kAssetTypeAmbientLighting },
+            { kHDRIEnvironmentSchema, kAssetTypeEnvironmentMap },
+        };
+
+        for (const Phase2KeyFactoryAllowlistEntry& entry : kAllowlist) {
+            if (entry.schema == schema && entry.type == type) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Minimal real GPU fixture.
@@ -200,6 +348,225 @@ TEST_F(AssetLibraryGpuFixture, CommitSucceedsAfterShaderPairRegistration)
 
     ASSERT_TRUE(pair.valid());
     EXPECT_TRUE(assets.commit());
+}
+
+TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftAddsCarrierAndReloadsDraft)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    wz::asset::AssetGraphDraft draft{};
+    wz::asset::load_asset_graph_draft_from_registered_assets(
+        draft,
+        assets.system().registered_assets());
+
+    const std::string canonical_path = "data/raw.bin";
+    const wz::asset::AssetKey expected_key =
+        wz::engine::assets::make_file_key(
+            canonical_path,
+            wz::engine::assets::kRawFileSchema);
+    const wz::asset::AssetGraphDraftNodeId file_node =
+        add_asset_graph_draft_node(
+        draft,
+        make_file_carrier_node(
+            wz::engine::assets::kRawFileSchema,
+            wz::engine::assets::kAssetTypeRawFile,
+            canonical_path,
+            resources.root / canonical_path));
+
+    auto report = assets.commit_asset_graph_draft(draft);
+
+    ASSERT_TRUE(report.success());
+    EXPECT_EQ(report.registration_count, 1u);
+    ASSERT_EQ(report.registrations.size(), 1u);
+    EXPECT_EQ(report.registrations[0].node.key, expected_key);
+    EXPECT_TRUE(assets.system().is_registered(expected_key));
+    ASSERT_EQ(draft.nodes.size(), 1u);
+    EXPECT_EQ(draft.nodes[0].id, file_node);
+    EXPECT_EQ(
+        draft.nodes[0].state,
+        wz::asset::AssetGraphDraftNodeState::Existing);
+    EXPECT_EQ(draft.nodes[0].node.key, expected_key);
+}
+
+TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftReloadsAfterRemoval)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    wz::asset::AssetGraphDraft draft{};
+    const std::string raw_path = "data/raw.bin";
+    const std::string text_path = "data/text.txt";
+    const wz::asset::AssetKey raw_key =
+        wz::engine::assets::make_file_key(
+            raw_path,
+            wz::engine::assets::kRawFileSchema);
+    const wz::asset::AssetKey text_key =
+        wz::engine::assets::make_file_key(
+            text_path,
+            wz::engine::assets::kTextFileSchema);
+    add_asset_graph_draft_node(
+        draft,
+        make_file_carrier_node(
+            wz::engine::assets::kRawFileSchema,
+            wz::engine::assets::kAssetTypeRawFile,
+            raw_path,
+            resources.root / raw_path));
+    const wz::asset::AssetGraphDraftNodeId text_node =
+        add_asset_graph_draft_node(
+        draft,
+        make_file_carrier_node(
+            wz::engine::assets::kTextFileSchema,
+            wz::engine::assets::kAssetTypeTextFile,
+            text_path,
+            resources.root / text_path));
+
+    ASSERT_TRUE(assets.commit_asset_graph_draft(draft).success());
+    ASSERT_TRUE(assets.system().is_registered(raw_key));
+    ASSERT_TRUE(assets.system().is_registered(text_key));
+
+    const wz::asset::AssetGraphDraftNode* raw_node =
+        find_draft_node_by_key(draft, raw_key);
+    ASSERT_NE(raw_node, nullptr);
+    ASSERT_TRUE(wz::asset::remove_asset_graph_draft_node(draft, raw_node->id));
+
+    auto report = assets.commit_asset_graph_draft(draft);
+
+    ASSERT_TRUE(report.success());
+    EXPECT_EQ(report.registration_count, 1u);
+    EXPECT_FALSE(assets.system().is_registered(raw_key));
+    EXPECT_TRUE(assets.system().is_registered(text_key));
+    ASSERT_EQ(draft.nodes.size(), 1u);
+    EXPECT_EQ(draft.nodes[0].id, text_node);
+    EXPECT_EQ(draft.nodes[0].node.key, text_key);
+    EXPECT_EQ(
+        draft.nodes[0].state,
+        wz::asset::AssetGraphDraftNodeState::Existing);
+}
+
+TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftLeavesDraftOnMaterializeFailure)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    wz::asset::AssetNode node{};
+    node.type = wz::asset::AssetType::Mesh;
+    node.schema = wz::asset::SchemaID{ 0xFADEu };
+    node.stage = wz::asset::AssetStage::Source;
+
+    wz::asset::AssetGraphDraft draft{};
+    const wz::asset::AssetGraphDraftNodeId id =
+        add_asset_graph_draft_node(draft, node);
+
+    auto report = assets.commit_asset_graph_draft(draft);
+
+    EXPECT_FALSE(report.success());
+    EXPECT_EQ(
+        report.status,
+        wz::engine::assets::EngineAssetLibrary::AssetGraphDraftCommitReport::
+            Status::MaterializeFailed);
+    EXPECT_TRUE(assets.system().registered_assets().empty());
+    EXPECT_NE(wz::asset::find_asset_graph_draft_node(draft, id), nullptr);
+}
+
+TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftReportsReplaceFailure)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    wz::asset::AssetGraphDraft draft{};
+    const std::string canonical_path = "data/duplicate.bin";
+    const wz::asset::AssetKey duplicate_key =
+        wz::engine::assets::make_file_key(
+            canonical_path,
+            wz::engine::assets::kRawFileSchema);
+
+    const wz::asset::AssetGraphDraftNodeId first =
+        add_asset_graph_draft_node(
+            draft,
+            make_file_carrier_node(
+                wz::engine::assets::kRawFileSchema,
+                wz::engine::assets::kAssetTypeRawFile,
+                canonical_path,
+                resources.root / canonical_path));
+    const wz::asset::AssetGraphDraftNodeId second =
+        add_asset_graph_draft_node(
+            draft,
+            make_file_carrier_node(
+                wz::engine::assets::kRawFileSchema,
+                wz::engine::assets::kAssetTypeRawFile,
+                canonical_path,
+                resources.root / canonical_path));
+
+    auto report = assets.commit_asset_graph_draft(draft);
+
+    EXPECT_FALSE(report.success());
+    EXPECT_EQ(
+        report.status,
+        wz::engine::assets::EngineAssetLibrary::AssetGraphDraftCommitReport::
+            Status::ReplaceFailed);
+    EXPECT_EQ(report.registration_count, 2u);
+    ASSERT_EQ(report.registrations.size(), 2u);
+    EXPECT_EQ(report.registrations[0].node.key, duplicate_key);
+    EXPECT_EQ(report.registrations[1].node.key, duplicate_key);
+    EXPECT_TRUE(assets.system().registered_assets().empty());
+
+    const wz::asset::AssetGraphDraftNode* first_node =
+        wz::asset::find_asset_graph_draft_node(draft, first);
+    const wz::asset::AssetGraphDraftNode* second_node =
+        wz::asset::find_asset_graph_draft_node(draft, second);
+    ASSERT_NE(first_node, nullptr);
+    ASSERT_NE(second_node, nullptr);
+    EXPECT_EQ(first_node->state, wz::asset::AssetGraphDraftNodeState::Created);
+    EXPECT_EQ(second_node->state, wz::asset::AssetGraphDraftNodeState::Created);
+    EXPECT_EQ(first_node->node.key, duplicate_key);
+    EXPECT_EQ(second_node->node.key, duplicate_key);
+}
+
+TEST_F(AssetLibraryGpuFixture, EveryRegisteredCompilerIsHandledOrAllowlisted)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    for (const auto& entry : assets.system().registry().compilers()) {
+        const wz::asset::AssetCompiler& compiler = entry.second;
+        const bool handled = wz::engine::assets::engine_key_factory_handles(
+            compiler.input_schema,
+            compiler.output_type);
+        const bool allowlisted = engine_key_factory_phase2_allowlisted(
+            compiler.input_schema,
+            compiler.output_type);
+        EXPECT_TRUE(handled || allowlisted)
+            << "schema=" << compiler.input_schema.value
+            << " type="
+            << static_cast<uint32_t>(
+                static_cast<uint16_t>(compiler.output_type));
+    }
 }
 
 TEST_F(AssetLibraryGpuFixture, ResolveShaderPairProducesValidHandles)

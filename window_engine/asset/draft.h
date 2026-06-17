@@ -119,6 +119,18 @@ namespace wz::asset {
         std::vector<AssetKey> dep_keys;
     };
 
+    struct AuthoredGraphNode {
+        AssetGraphDraftNodeId node_id = INVALID_ASSET_GRAPH_DRAFT_NODE;
+        AssetNode node{};
+    };
+
+    struct AuthoredGraphEdge {
+        AssetGraphDraftNodeId from = INVALID_ASSET_GRAPH_DRAFT_NODE;
+        AssetGraphDraftNodeId to = INVALID_ASSET_GRAPH_DRAFT_NODE;
+        uint32_t to_input_port = 0;
+        AssetEdge edge{};
+    };
+
     struct AssetGraphDraft {
         // Editable source of truth.
         std::vector<AssetGraphDraftNode> nodes;
@@ -160,6 +172,10 @@ namespace wz::asset {
     {
         return !(key == AssetKey{});
     }
+
+    using AssetKeyFactoryFn = std::function<std::optional<AssetKey>(
+        const AssetNode& node,
+        std::span<const AssetKey> dep_keys)>;
 
     namespace asset_graph_draft_detail
     {
@@ -324,6 +340,19 @@ namespace wz::asset {
         };
     }
 
+    [[nodiscard]] inline AssetKey resolve_asset_graph_draft_key(
+        const AssetNode& node,
+        std::span<const AssetKey> dep_keys,
+        const AssetKeyFactoryFn& key_factory)
+    {
+        if (key_factory) {
+            if (std::optional<AssetKey> key = key_factory(node, dep_keys)) {
+                return *key;
+            }
+        }
+        return make_asset_key(node, dep_keys);
+    }
+
     inline void rebuild_asset_graph_draft_indexes(AssetGraphDraft& draft)
     {
         draft.node_index.clear();
@@ -419,6 +448,36 @@ namespace wz::asset {
             .node = std::move(node),
             .state = state,
         });
+        draft.dirty = true;
+        rebuild_asset_graph_draft_indexes(draft);
+        return id;
+    }
+
+    inline AssetGraphDraftNodeId add_asset_graph_draft_node_with_id(
+        AssetGraphDraft& draft,
+        AssetNode node,
+        AssetGraphDraftNodeId id,
+        AssetGraphDraftNodeState state = AssetGraphDraftNodeState::Existing)
+    {
+        if (id == INVALID_ASSET_GRAPH_DRAFT_NODE
+            || state == AssetGraphDraftNodeState::Deleted)
+        {
+            return INVALID_ASSET_GRAPH_DRAFT_NODE;
+        }
+
+        rebuild_asset_graph_draft_indexes(draft);
+        if (draft.node_index.find(id) != draft.node_index.end()) {
+            return INVALID_ASSET_GRAPH_DRAFT_NODE;
+        }
+
+        draft.nodes.push_back(AssetGraphDraftNode{
+            .id = id,
+            .node = std::move(node),
+            .state = state,
+        });
+        if (draft.next_node_id <= id) {
+            draft.next_node_id = id + 1u;
+        }
         draft.dirty = true;
         rebuild_asset_graph_draft_indexes(draft);
         return id;
@@ -684,7 +743,8 @@ namespace wz::asset {
     inline std::vector<AssetGraphDraftRegistration>
     asset_graph_draft_to_registrations(
         const AssetGraphDraft& draft,
-        const CompilerRegistry* registry);
+        const CompilerRegistry* registry = nullptr,
+        const AssetKeyFactoryFn& key_factory = {});
 
     template<class Registration>
     inline void load_asset_graph_draft_from_registered_assets(
@@ -739,9 +799,38 @@ namespace wz::asset {
         rebuild_asset_graph_draft_indexes(draft);
     }
 
+    inline void load_asset_graph_draft_from_authored(
+        AssetGraphDraft& draft,
+        std::span<const AuthoredGraphNode> nodes,
+        std::span<const AuthoredGraphEdge> edges)
+    {
+        draft = AssetGraphDraft{};
+
+        for (const AuthoredGraphNode& authored_node : nodes) {
+            add_asset_graph_draft_node_with_id(
+                draft,
+                authored_node.node,
+                authored_node.node_id,
+                AssetGraphDraftNodeState::Existing);
+        }
+
+        for (const AuthoredGraphEdge& authored_edge : edges) {
+            connect_asset_graph_draft_nodes(
+                draft,
+                authored_edge.from,
+                authored_edge.to,
+                authored_edge.to_input_port,
+                authored_edge.edge);
+        }
+
+        draft.dirty = false;
+        rebuild_asset_graph_draft_indexes(draft);
+    }
+
     inline bool validate_asset_graph_draft(
         AssetGraphDraft& draft,
-        const CompilerRegistry& registry)
+        const CompilerRegistry& registry,
+        bool allow_missing_existing_keys = false)
     {
         using namespace asset_graph_draft_detail;
 
@@ -760,7 +849,8 @@ namespace wz::asset {
                 continue;
             }
 
-            if (node.state == AssetGraphDraftNodeState::Existing
+            if (!allow_missing_existing_keys
+                && node.state == AssetGraphDraftNodeState::Existing
                 && !asset_graph_draft_key_valid(node.node.key))
             {
                 add_validation_message(
@@ -973,9 +1063,14 @@ namespace wz::asset {
 
     inline bool materialize_asset_graph_draft_keys(
         AssetGraphDraft& draft,
-        const CompilerRegistry& registry)
+        const CompilerRegistry& registry,
+        const AssetKeyFactoryFn& key_factory = {})
     {
-        if (!validate_asset_graph_draft(draft, registry)) {
+        if (!validate_asset_graph_draft(
+                draft,
+                registry,
+                true))
+        {
             return false;
         }
 
@@ -1018,6 +1113,28 @@ namespace wz::asset {
                 || node->state == AssetGraphDraftNodeState::Modified
                 || !asset_graph_draft_key_valid(node->node.key);
 
+            std::vector<AssetKey> dep_keys;
+            for (const AssetGraphDraftRegistration& registration :
+                 asset_graph_draft_to_registrations(
+                     draft,
+                     &registry,
+                     key_factory))
+            {
+                if (registration.draft_node == node->id) {
+                    dep_keys = registration.dep_keys;
+                    break;
+                }
+            }
+
+            const std::optional<AssetKey> factory_key =
+                key_factory
+                    ? key_factory(node->node, dep_keys)
+                    : std::nullopt;
+
+            if (factory_key && *factory_key != node->node.key) {
+                must_materialize = true;
+            }
+
             for (const AssetGraphDraftEdge& edge : draft.edges) {
                 if (edge.to == node->id
                     && rematerialized.count(edge.from) != 0u)
@@ -1031,17 +1148,13 @@ namespace wz::asset {
                 continue;
             }
 
-            std::vector<AssetKey> dep_keys;
-            for (const AssetGraphDraftRegistration& registration :
-                 asset_graph_draft_to_registrations(draft, &registry))
-            {
-                if (registration.draft_node == node->id) {
-                    dep_keys = registration.dep_keys;
-                    break;
-                }
-            }
-
-            node->node.key = make_asset_key(node->node, dep_keys);
+            node->node.key =
+                factory_key
+                    ? *factory_key
+                    : resolve_asset_graph_draft_key(
+                        node->node,
+                        dep_keys,
+                        key_factory);
             rematerialized.insert(node->id);
         }
 
@@ -1052,7 +1165,8 @@ namespace wz::asset {
     inline std::vector<AssetGraphDraftRegistration>
     asset_graph_draft_to_registrations(
         const AssetGraphDraft& draft,
-        const CompilerRegistry* registry = nullptr)
+        const CompilerRegistry* registry,
+        const AssetKeyFactoryFn& key_factory)
     {
         std::vector<AssetGraphDraftRegistration> registrations;
         std::unordered_map<AssetGraphDraftNodeId, const AssetGraphDraftNode*>
@@ -1186,7 +1300,10 @@ namespace wz::asset {
                 if (must_materialize) {
                     const std::vector<AssetKey> dep_keys =
                         dep_keys_for_node(node);
-                    key = make_asset_key(node.node, dep_keys);
+                    key = resolve_asset_graph_draft_key(
+                        node.node,
+                        dep_keys,
+                        key_factory);
                 }
 
                 visiting.erase(id);

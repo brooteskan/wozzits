@@ -108,6 +108,7 @@ namespace wz::asset {
             const uint32_t slot = static_cast<uint32_t>(registered_.size());
             registered_index_.emplace(node.key, slot);
             registered_.push_back({ std::move(node), std::move(dep_keys) });
+            ++registration_epoch_;
             return true;
         }
 
@@ -125,6 +126,11 @@ namespace wz::asset {
         registered_assets() const
         {
             return registered_;
+        }
+
+        [[nodiscard]] inline uint32_t registration_epoch() const noexcept
+        {
+            return registration_epoch_;
         }
 
         inline bool register_demand_root(
@@ -320,6 +326,7 @@ namespace wz::asset {
 
         std::vector<RegistrationEntry>                        registered_;
         std::unordered_map<AssetKey, uint32_t, AssetKeyHash>  registered_index_;
+        uint32_t                                              registration_epoch_ = 0u;
 
         // ── Post-commit state ─────────────────────────────────────────────────────
 

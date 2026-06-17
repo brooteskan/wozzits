@@ -202,6 +202,44 @@ TEST_F(AssetSystemTest, RegisteredAssetsExposeUncommittedAssetCatalog)
 
 // ─── Commit ───────────────────────────────────────────────────────────────────
 
+TEST_F(AssetSystemTest, RegistrationEpochTracksRegisteredSetChanges)
+{
+    EXPECT_EQ(sys->registration_epoch(), 0u);
+
+    EXPECT_TRUE(sys->register_asset(
+        make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    EXPECT_EQ(sys->registration_epoch(), 1u);
+
+    EXPECT_FALSE(sys->register_asset(
+        make_node(kKeyA, AssetType::Texture, kTexSchema)));
+    EXPECT_EQ(sys->registration_epoch(), 1u);
+
+    ASSERT_TRUE(sys->commit());
+    EXPECT_EQ(sys->registration_epoch(), 1u);
+
+    std::vector<AssetSystem::RegistrationEntry> duplicate_entries;
+    duplicate_entries.push_back(AssetSystem::RegistrationEntry{
+        .node = make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        .dep_keys = {},
+    });
+    duplicate_entries.push_back(AssetSystem::RegistrationEntry{
+        .node = make_node(kKeyB, AssetType::Mesh, kMeshSchema),
+        .dep_keys = {},
+    });
+    EXPECT_FALSE(sys->replace_registered_assets(std::move(duplicate_entries)));
+    EXPECT_EQ(sys->registration_epoch(), 1u);
+
+    std::vector<AssetSystem::RegistrationEntry> replacement_entries;
+    replacement_entries.push_back(AssetSystem::RegistrationEntry{
+        .node = make_node(kKeyC, AssetType::Material, kMatSchema),
+        .dep_keys = {},
+    });
+    ASSERT_TRUE(sys->replace_registered_assets(std::move(replacement_entries)));
+    EXPECT_EQ(sys->registration_epoch(), 2u);
+    ASSERT_EQ(sys->registered_assets().size(), 1u);
+    EXPECT_EQ(sys->registered_assets()[0].node.key, kKeyC);
+}
+
 TEST_F(AssetSystemTest, RegisterAsset_EmptyDependencySlotsAreOptional)
 {
     EXPECT_TRUE(sys->register_asset(make_node(kKeyA, AssetType::Texture, kTexSchema)));

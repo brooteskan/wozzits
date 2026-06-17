@@ -37,6 +37,10 @@ See [`authored_scene_components.md`](authored_scene_components.md).
 The transactional rebuild boundary for committed scene runtime state is tracked
 in [`scene_runtime_bundle_contract.md`](scene_runtime_bundle_contract.md).
 
+Draft key parity between the editor authoring graph and engine registration
+paths is tracked in
+[`asset_graph_draft_key_parity.md`](asset_graph_draft_key_parity.md).
+
 ---
 
 ## File Carriers and Source Nodes

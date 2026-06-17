@@ -2,15 +2,27 @@
 
 #include <asset/draft.h>
 #include <asset/system.h>
+#include <engine/assets/engine_asset_key_factory.h>
+#include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/key_factories/file_carrier.h>
+#include <engine/assets/key_factories/hlsl_shader.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
 #include <graph/static_dag.h>
+#include <gpu/shader_types.h>
 
 #include <any>
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <span>
 #include <string>
 
 namespace
 {
     using namespace wz::asset;
+    namespace fs = std::filesystem;
 
     SchemaID schema(uint64_t value)
     {
@@ -118,6 +130,92 @@ namespace
     {
         int value = 0;
     };
+
+    struct TempDraftFile
+    {
+        fs::path root;
+        fs::path path;
+
+        explicit TempDraftFile(std::string_view filename)
+        {
+            const auto unique =
+                std::chrono::steady_clock::now()
+                    .time_since_epoch()
+                    .count();
+            root = fs::temp_directory_path()
+                / ("wozzits_asset_graph_draft_" + std::to_string(unique));
+            path = root / std::string(filename);
+            fs::create_directories(path.parent_path());
+        }
+
+        ~TempDraftFile()
+        {
+            std::error_code ec;
+            fs::remove_all(root, ec);
+        }
+    };
+
+    void write_text(const fs::path& path, std::string_view text)
+    {
+        std::ofstream out(path, std::ios::binary);
+        ASSERT_TRUE(out.good()) << "failed to open " << path.string();
+        out << text;
+    }
+
+    void register_test_file_carrier(
+        CompilerRegistry& registry,
+        SchemaID schema_id,
+        AssetType type)
+    {
+        registry.register_compiler(AssetCompiler{
+            .input_schema = schema_id,
+            .output_type = type,
+            .parameters = {
+                ParamDecl{
+                    .name = "source_path",
+                    .type = ParamType::FilePath,
+                    .label = "Path",
+                },
+            },
+        });
+    }
+
+    CompilerRegistry make_engine_draft_key_test_registry()
+    {
+        CompilerRegistry registry{};
+        register_test_file_carrier(
+            registry,
+            wz::engine::assets::kHLSLFileSchema,
+            AssetType::ShaderSource);
+        registry.register_compiler(AssetCompiler{
+            .input_schema = wz::engine::assets::kHLSLShaderSchema,
+            .output_type = AssetType::Shader,
+            .input_ports = {
+                InputPort{ "source_file", AssetType::ShaderSource },
+            },
+            .parameters = {
+                ParamDecl{
+                    .name = "stage",
+                    .type = ParamType::Enum,
+                    .label = "Stage",
+                    .default_num = 0.0,
+                },
+                ParamDecl{
+                    .name = "entry",
+                    .type = ParamType::String,
+                    .label = "Entry",
+                    .default_str = "main",
+                },
+                ParamDecl{
+                    .name = "target",
+                    .type = ParamType::String,
+                    .label = "Target",
+                    .default_str = "vs_5_1",
+                },
+            },
+        });
+        return registry;
+    }
 }
 
 TEST(AssetGraphDraft, InputPortMetadataDefaultsToRequiredSingle)
@@ -180,6 +278,90 @@ TEST(AssetGraphDraft, AddNodeAssignsStableIdsAndIndexesNonEmptyKeys)
     ASSERT_NE(deleted, nullptr);
     EXPECT_EQ(deleted->state, AssetGraphDraftNodeState::Deleted);
     EXPECT_EQ(draft.node_by_key.find(make_key(0x20)), draft.node_by_key.end());
+}
+
+TEST(AssetGraphDraft, AddNodeWithIdPreservesExplicitIdAndAdvancesNextId)
+{
+    AssetGraphDraft draft{};
+
+    const AssetGraphDraftNodeId explicit_id =
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Mesh, schema(10), 0x10),
+            42u,
+            AssetGraphDraftNodeState::Existing);
+
+    EXPECT_EQ(explicit_id, 42u);
+    EXPECT_EQ(draft.next_node_id, 43u);
+    ASSERT_NE(find_asset_graph_draft_node(draft, 42u), nullptr);
+    EXPECT_EQ(draft.node_by_key.at(make_key(0x10)), 42u);
+
+    const AssetGraphDraftNodeId next_id =
+        add_asset_graph_draft_node(
+            draft,
+            make_node(AssetType::Texture, schema(11), 0x11));
+    EXPECT_EQ(next_id, 43u);
+    EXPECT_EQ(draft.next_node_id, 44u);
+}
+
+TEST(AssetGraphDraft, AddNodeWithIdRejectsInvalidDuplicateAndDeletedIds)
+{
+    AssetGraphDraft draft{};
+
+    ASSERT_EQ(
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Mesh, schema(10)),
+            5u),
+        5u);
+
+    EXPECT_EQ(
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Texture, schema(11)),
+            5u),
+        INVALID_ASSET_GRAPH_DRAFT_NODE);
+    EXPECT_EQ(
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Texture, schema(11)),
+            INVALID_ASSET_GRAPH_DRAFT_NODE),
+        INVALID_ASSET_GRAPH_DRAFT_NODE);
+    EXPECT_EQ(
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Texture, schema(11)),
+            6u,
+            AssetGraphDraftNodeState::Deleted),
+        INVALID_ASSET_GRAPH_DRAFT_NODE);
+
+    EXPECT_EQ(draft.nodes.size(), 1u);
+    EXPECT_EQ(draft.next_node_id, 6u);
+}
+
+TEST(AssetGraphDraft, RemovedExplicitIdIsNotReused)
+{
+    AssetGraphDraft draft{};
+
+    ASSERT_EQ(
+        add_asset_graph_draft_node_with_id(
+            draft,
+            make_node(AssetType::Mesh, schema(10)),
+            7u),
+        7u);
+    ASSERT_TRUE(remove_asset_graph_draft_node(draft, 7u));
+
+    const AssetGraphDraftNodeId next_id =
+        add_asset_graph_draft_node(
+            draft,
+            make_node(AssetType::Texture, schema(11)));
+
+    EXPECT_EQ(next_id, 8u);
+    EXPECT_EQ(draft.next_node_id, 9u);
+    ASSERT_NE(find_asset_graph_draft_node(draft, 7u), nullptr);
+    EXPECT_EQ(
+        find_asset_graph_draft_node(draft, 7u)->state,
+        AssetGraphDraftNodeState::Deleted);
 }
 
 TEST(AssetGraphDraft, SetParamsInvalidatesExistingKeyAndMarksModified)
@@ -640,6 +822,424 @@ TEST(AssetGraphDraft, MaterializeKeysAllowsCreatedNodesToCommit)
     EXPECT_TRUE(system.commit());
 }
 
+TEST(AssetGraphDraft, EngineHookFallsBackToGenericKey)
+{
+    CompilerRegistry registry = make_draft_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    AssetGraphDraft draft{};
+    const auto mesh = add_asset_graph_draft_node(
+        draft,
+        make_node(AssetType::Mesh, schema(10)));
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* node =
+        find_asset_graph_draft_node(draft, mesh);
+    ASSERT_NE(node, nullptr);
+    EXPECT_EQ(node->node.key, make_asset_key(node->node, {}));
+}
+
+TEST(AssetGraphDraft, EngineHookMaterializesFileCarrierKey)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    AssetNode source{};
+    source.type = AssetType::ShaderSource;
+    source.schema = wz::engine::assets::kHLSLFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = "D:/project/assets/shaders/test.hlsl",
+            .canonical_path = "assets/shaders/test.hlsl",
+        };
+
+    AssetGraphDraft draft{};
+    const auto source_id = add_asset_graph_draft_node(draft, source);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* node =
+        find_asset_graph_draft_node(draft, source_id);
+    ASSERT_NE(node, nullptr);
+    EXPECT_EQ(
+        node->node.key,
+        wz::engine::assets::make_file_key(
+            "assets/shaders/test.hlsl",
+            wz::engine::assets::kHLSLFileSchema));
+}
+
+TEST(AssetGraphDraft, EngineHookMaterializesParamBlockFileCarrierKey)
+{
+    CompilerRegistry registry{};
+    register_test_file_carrier(
+        registry,
+        wz::engine::assets::kJSONFileSchema,
+        wz::engine::assets::kAssetTypeTextFile);
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    ParamBlock params{};
+    params.values["source_path"] =
+        std::string("\\assets\\data\\scene.json");
+
+    AssetNode source{};
+    source.type = wz::engine::assets::kAssetTypeTextFile;
+    source.schema = wz::engine::assets::kJSONFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta = params;
+
+    AssetGraphDraft draft{};
+    const auto source_id = add_asset_graph_draft_node(draft, source);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* node =
+        find_asset_graph_draft_node(draft, source_id);
+    ASSERT_NE(node, nullptr);
+    EXPECT_EQ(
+        node->node.key,
+        wz::engine::assets::make_file_key(
+            "assets/data/scene.json",
+            wz::engine::assets::kJSONFileSchema));
+}
+
+TEST(AssetGraphDraft, EngineHookFileCarrierKeyTracksFileContent)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    TempDraftFile temp("test.hlsl");
+    write_text(temp.path, "float4 main() : SV_Target { return 1; }\n");
+
+    AssetNode source{};
+    source.type = AssetType::ShaderSource;
+    source.schema = wz::engine::assets::kHLSLFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = temp.path.string(),
+            .canonical_path = "assets/shaders/test.hlsl",
+        };
+
+    AssetGraphDraft draft{};
+    const auto source_id =
+        add_asset_graph_draft_node(
+            draft,
+            source,
+            AssetGraphDraftNodeState::Existing);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetKey first_key =
+        find_asset_graph_draft_node(draft, source_id)->node.key;
+
+    write_text(temp.path, "float4 main() : SV_Target { return 0; }\n");
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* source_node =
+        find_asset_graph_draft_node(draft, source_id);
+    ASSERT_NE(source_node, nullptr);
+    EXPECT_NE(source_node->node.key, first_key);
+
+    const auto bytes = wz::fs::read_file(temp.path.string());
+    ASSERT_TRUE(bytes);
+    EXPECT_EQ(
+        source_node->node.key,
+        wz::engine::assets::make_file_content_key(
+            "assets/shaders/test.hlsl",
+            bytes.value,
+            wz::engine::assets::kHLSLFileSchema));
+}
+
+TEST(AssetGraphDraft, EngineHookParamBlockFileCarrierKeyTracksFileContent)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    TempDraftFile temp("test.hlsl");
+    write_text(temp.path, "float4 main() : SV_Target { return 1; }\n");
+
+    ParamBlock params{};
+    params.values["source_path"] = temp.path.string();
+
+    AssetNode source{};
+    source.type = AssetType::ShaderSource;
+    source.schema = wz::engine::assets::kHLSLFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta = params;
+
+    AssetGraphDraft draft{};
+    const auto source_id =
+        add_asset_graph_draft_node(
+            draft,
+            source,
+            AssetGraphDraftNodeState::Existing);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetKey first_key =
+        find_asset_graph_draft_node(draft, source_id)->node.key;
+
+    write_text(temp.path, "float4 main() : SV_Target { return 0; }\n");
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* source_node =
+        find_asset_graph_draft_node(draft, source_id);
+    ASSERT_NE(source_node, nullptr);
+    EXPECT_NE(source_node->node.key, first_key);
+
+    const auto bytes = wz::fs::read_file(temp.path.string());
+    ASSERT_TRUE(bytes);
+    EXPECT_EQ(
+        source_node->node.key,
+        wz::engine::assets::make_file_content_key(
+            wz::engine::assets::detail::canonical_asset_path(
+                temp.path.string()),
+            bytes.value,
+            wz::engine::assets::kHLSLFileSchema));
+}
+
+TEST(AssetGraphDraft, EngineHookMaterializesHlslShaderKey)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    AssetNode source{};
+    source.type = AssetType::ShaderSource;
+    source.schema = wz::engine::assets::kHLSLFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = "D:/project/assets/shaders/test.hlsl",
+            .canonical_path = "assets/shaders/test.hlsl",
+        };
+
+    AssetNode shader{};
+    shader.type = AssetType::Shader;
+    shader.schema = wz::engine::assets::kHLSLShaderSchema;
+    shader.stage = AssetStage::Source;
+    shader.meta = wz::gpu::HLSLCompileDesc{
+        .stage = wz::gpu::ShaderStage::Pixel,
+        .entry = "main_ps",
+        .target = "ps_5_0",
+    };
+
+    AssetGraphDraft draft{};
+    const auto source_id = add_asset_graph_draft_node(draft, source);
+    const auto shader_id = add_asset_graph_draft_node(draft, shader);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, source_id, shader_id, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* source_node =
+        find_asset_graph_draft_node(draft, source_id);
+    const AssetGraphDraftNode* shader_node =
+        find_asset_graph_draft_node(draft, shader_id);
+    ASSERT_NE(source_node, nullptr);
+    ASSERT_NE(shader_node, nullptr);
+
+    const AssetKey expected_source =
+        wz::engine::assets::make_file_key(
+            "assets/shaders/test.hlsl",
+            wz::engine::assets::kHLSLFileSchema);
+    const AssetKey expected_shader =
+        wz::engine::assets::make_hlsl_shader_key(
+            expected_source,
+            static_cast<uint8_t>(wz::gpu::ShaderStage::Pixel),
+            "main_ps",
+            "ps_5_0");
+
+    EXPECT_EQ(source_node->node.key, expected_source);
+    EXPECT_EQ(shader_node->node.key, expected_shader);
+
+    const auto registrations =
+        asset_graph_draft_to_registrations(
+            draft,
+            &registry,
+            key_factory);
+    const auto* shader_registration =
+        find_registration(registrations, shader_id);
+    ASSERT_NE(shader_registration, nullptr);
+    ASSERT_EQ(shader_registration->dep_keys.size(), 1u);
+    EXPECT_EQ(shader_registration->dep_keys[0], expected_source);
+    EXPECT_EQ(shader_registration->node.key, expected_shader);
+}
+
+TEST(AssetGraphDraft, EngineHookShaderKeyTracksSourceFileContentChanges)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    TempDraftFile temp("test.hlsl");
+    write_text(temp.path, "float4 main() : SV_Target { return 1; }\n");
+
+    AssetNode source{};
+    source.type = AssetType::ShaderSource;
+    source.schema = wz::engine::assets::kHLSLFileSchema;
+    source.stage = AssetStage::Source;
+    source.residency = ResidencyIntent::CompileOnly;
+    source.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = temp.path.string(),
+            .canonical_path = "assets/shaders/test.hlsl",
+        };
+
+    AssetNode shader{};
+    shader.type = AssetType::Shader;
+    shader.schema = wz::engine::assets::kHLSLShaderSchema;
+    shader.stage = AssetStage::Source;
+    shader.meta = wz::gpu::HLSLCompileDesc{
+        .stage = wz::gpu::ShaderStage::Pixel,
+        .entry = "main",
+        .target = "ps_5_0",
+    };
+
+    AssetGraphDraft draft{};
+    const auto source_id =
+        add_asset_graph_draft_node(
+            draft,
+            source,
+            AssetGraphDraftNodeState::Existing);
+    const auto shader_id =
+        add_asset_graph_draft_node(
+            draft,
+            shader,
+            AssetGraphDraftNodeState::Existing);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, source_id, shader_id, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetKey first_source_key =
+        find_asset_graph_draft_node(draft, source_id)->node.key;
+    const AssetKey first_shader_key =
+        find_asset_graph_draft_node(draft, shader_id)->node.key;
+
+    write_text(temp.path, "float4 main() : SV_Target { return 0; }\n");
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft,
+        registry,
+        key_factory));
+
+    const AssetGraphDraftNode* source_node =
+        find_asset_graph_draft_node(draft, source_id);
+    const AssetGraphDraftNode* shader_node =
+        find_asset_graph_draft_node(draft, shader_id);
+    ASSERT_NE(source_node, nullptr);
+    ASSERT_NE(shader_node, nullptr);
+    EXPECT_NE(source_node->node.key, first_source_key);
+    EXPECT_NE(shader_node->node.key, first_shader_key);
+}
+
+TEST(AssetGraphDraft, EngineHookPropagatesCanonicalDependencyKeys)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    AssetNode source_a{};
+    source_a.type = AssetType::ShaderSource;
+    source_a.schema = wz::engine::assets::kHLSLFileSchema;
+    source_a.stage = AssetStage::Source;
+    source_a.residency = ResidencyIntent::CompileOnly;
+    source_a.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = "D:/project/assets/shaders/a.hlsl",
+            .canonical_path = "assets/shaders/a.hlsl",
+        };
+
+    AssetNode source_b = source_a;
+    source_b.meta =
+        wz::engine::assets::internal::FileSourceDesc{
+            .full_path = "D:/project/assets/shaders/b.hlsl",
+            .canonical_path = "assets/shaders/b.hlsl",
+        };
+
+    AssetNode shader{};
+    shader.type = AssetType::Shader;
+    shader.schema = wz::engine::assets::kHLSLShaderSchema;
+    shader.stage = AssetStage::Source;
+    shader.meta = wz::gpu::HLSLCompileDesc{
+        .stage = wz::gpu::ShaderStage::Vertex,
+        .entry = "main",
+        .target = "vs_5_0",
+    };
+
+    AssetGraphDraft draft_a{};
+    const auto source_a_id = add_asset_graph_draft_node(draft_a, source_a);
+    const auto shader_a_id = add_asset_graph_draft_node(draft_a, shader);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft_a, source_a_id, shader_a_id, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft_a,
+        registry,
+        key_factory));
+
+    AssetGraphDraft draft_b{};
+    const auto source_b_id = add_asset_graph_draft_node(draft_b, source_b);
+    const auto shader_b_id = add_asset_graph_draft_node(draft_b, shader);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft_b, source_b_id, shader_b_id, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(
+        draft_b,
+        registry,
+        key_factory));
+
+    const AssetKey shader_a_key =
+        find_asset_graph_draft_node(draft_a, shader_a_id)->node.key;
+    const AssetKey shader_b_key =
+        find_asset_graph_draft_node(draft_b, shader_b_id)->node.key;
+    EXPECT_NE(shader_a_key, shader_b_key);
+}
+
 TEST(AssetGraphDraft, MaterializeKeysCascadesProviderChangesToDependents)
 {
     CompilerRegistry registry = make_draft_test_registry();
@@ -770,6 +1370,88 @@ TEST(AssetGraphDraft, LoadFromRegisteredAssetsReconstructsInputPorts)
     EXPECT_EQ(material_registration->dep_keys[0], mesh_key);
     EXPECT_EQ(material_registration->dep_keys[1], AssetKey{});
     EXPECT_EQ(material_registration->dep_keys[2], shader_key);
+}
+
+TEST(AssetGraphDraft, LoadFromAuthoredPreservesSparseIdsEdgesAndMeta)
+{
+    ParamBlock params{};
+    params.values["source_path"] = std::string("assets/test.mesh");
+
+    AssetNode source = make_node(AssetType::Mesh, schema(10), 0x10);
+    source.meta = params;
+    AssetNode material = make_node(AssetType::Material, schema(20));
+
+    const std::vector<AuthoredGraphNode> nodes{
+        AuthoredGraphNode{ .node_id = 5u, .node = source },
+        AuthoredGraphNode{ .node_id = 9u, .node = material },
+    };
+    const std::vector<AuthoredGraphEdge> edges{
+        AuthoredGraphEdge{
+            .from = 5u,
+            .to = 9u,
+            .to_input_port = 0u,
+        },
+    };
+
+    AssetGraphDraft draft{};
+    load_asset_graph_draft_from_authored(draft, nodes, edges);
+
+    EXPECT_FALSE(draft.dirty);
+    EXPECT_EQ(draft.next_node_id, 10u);
+    ASSERT_EQ(draft.nodes.size(), 2u);
+    ASSERT_EQ(draft.edges.size(), 1u);
+    EXPECT_NE(find_asset_graph_draft_node(draft, 5u), nullptr);
+    EXPECT_NE(find_asset_graph_draft_node(draft, 9u), nullptr);
+    EXPECT_EQ(draft.edges[0].from, 5u);
+    EXPECT_EQ(draft.edges[0].to, 9u);
+    EXPECT_EQ(draft.edges[0].to_input_port, 0u);
+
+    const auto* stored_params = std::any_cast<ParamBlock>(
+        &find_asset_graph_draft_node(draft, 5u)->node.meta);
+    ASSERT_NE(stored_params, nullptr);
+    EXPECT_EQ(
+        stored_params->get<std::string>("source_path", {}),
+        "assets/test.mesh");
+}
+
+TEST(AssetGraphDraft, LoadFromAuthoredMaterializesKeysWithoutChangingIds)
+{
+    CompilerRegistry registry = make_draft_test_registry();
+    AssetNode mesh = make_node(AssetType::Mesh, schema(10));
+    AssetNode material = make_node(AssetType::Material, schema(20));
+
+    const std::vector<AuthoredGraphNode> nodes{
+        AuthoredGraphNode{ .node_id = 5u, .node = mesh },
+        AuthoredGraphNode{ .node_id = 9u, .node = material },
+    };
+    const std::vector<AuthoredGraphEdge> edges{
+        AuthoredGraphEdge{
+            .from = 5u,
+            .to = 9u,
+            .to_input_port = 0u,
+        },
+    };
+
+    AssetGraphDraft draft{};
+    load_asset_graph_draft_from_authored(draft, nodes, edges);
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+
+    ASSERT_NE(find_asset_graph_draft_node(draft, 5u), nullptr);
+    ASSERT_NE(find_asset_graph_draft_node(draft, 9u), nullptr);
+    EXPECT_NE(find_asset_graph_draft_node(draft, 5u)->node.key, AssetKey{});
+    EXPECT_NE(find_asset_graph_draft_node(draft, 9u)->node.key, AssetKey{});
+    EXPECT_EQ(draft.next_node_id, 10u);
+
+    const auto registrations =
+        asset_graph_draft_to_registrations(draft, &registry);
+    const auto* material_registration =
+        find_registration(registrations, 9u);
+    ASSERT_NE(material_registration, nullptr);
+    ASSERT_EQ(material_registration->dep_keys.size(), 3u);
+    EXPECT_EQ(
+        material_registration->dep_keys[0],
+        find_asset_graph_draft_node(draft, 5u)->node.key);
 }
 
 TEST(AssetGraphDraftAdversarial, DuplicateAssetKeysAreValidationErrors)

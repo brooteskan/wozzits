@@ -3,10 +3,10 @@
 #include <engine/assets/shader/shader_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
+#include <engine/assets/shader/hlsl_compile_desc.h>
 #include <file/filesystem.h>
 #include <gpu/shader.h>
 
-#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
@@ -21,55 +21,6 @@ namespace wz::engine::assets::internal
             "Pixel",
             "Compute",
         };
-
-        wz::gpu::ShaderStage shader_stage_from_index(int64_t value)
-        {
-            if (value == 1) {
-                return wz::gpu::ShaderStage::Pixel;
-            }
-            if (value == 2) {
-                return wz::gpu::ShaderStage::Compute;
-            }
-            return wz::gpu::ShaderStage::Vertex;
-        }
-
-        std::string default_target_for_stage(wz::gpu::ShaderStage stage)
-        {
-            switch (stage) {
-            case wz::gpu::ShaderStage::Vertex:
-                return "vs_5_1";
-            case wz::gpu::ShaderStage::Pixel:
-                return "ps_5_1";
-            case wz::gpu::ShaderStage::Compute:
-                return "cs_5_1";
-            }
-            return "vs_5_1";
-        }
-
-        wz::gpu::HLSLCompileDesc hlsl_compile_desc_from_params(
-            const wz::asset::ParamBlock& params)
-        {
-            wz::gpu::HLSLCompileDesc desc{};
-            desc.stage =
-                shader_stage_from_index(params.get<int64_t>("stage", 0));
-            desc.entry = params.get<std::string>("entry", "main");
-            desc.target =
-                params.get<std::string>(
-                    "target",
-                    default_target_for_stage(desc.stage));
-            desc.primary_source_index =
-                static_cast<uint32_t>(
-                    std::max<int64_t>(
-                        0,
-                        params.get<int64_t>("primary_source_index", 0)));
-            if (desc.entry.empty()) {
-                desc.entry = "main";
-            }
-            if (desc.target.empty()) {
-                desc.target = default_target_for_stage(desc.stage);
-            }
-            return desc;
-        }
 
         std::string trim_quoted_path(std::string_view raw)
         {

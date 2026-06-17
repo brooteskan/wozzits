@@ -1,8 +1,9 @@
 {
-  "schema": "wozzits.scene_editor.assets.graph.v1",
-  "version": 1,
+  "schema": "wozzits.scene_editor.assets.graph.v2",
+  "version": 2,
   "nodes": [
     {
+      "node_id": 1,
       "key": "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
       "type": 130,
       "schema": "0xf11eca55e7000402",
@@ -13,7 +14,8 @@
       "deps": []
     },
     {
-      "key": "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+      "node_id": 2,
+      "key": "asset-key:c3ccaedef1706535:772d83af4b9e6115:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
       "type": 7,
       "schema": "0xf11eca55e7000002",
       "stage": 0,
@@ -21,16 +23,19 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [],
-      "params": [
-        {
-          "name": "source_path",
-          "type": "string",
-          "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_vs.hlsl"
-        }
-      ]
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_vs.hlsl"
+          }
+        ]
+      }
     },
     {
-      "key": "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+      "node_id": 3,
+      "key": "asset-key:67b69cae317063d3:0ab05ae5719a7af3:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
       "type": 7,
       "schema": "0xf11eca55e7000002",
       "stage": 0,
@@ -38,16 +43,19 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [],
-      "params": [
-        {
-          "name": "source_path",
-          "type": "string",
-          "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_ps.hlsl"
-        }
-      ]
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_ps.hlsl"
+          }
+        ]
+      }
     },
     {
-      "key": "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
+      "node_id": 4,
+      "key": "asset-key:e94154689eb5d88c:50b269856e66d290:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:f6462473d9a539df:7c5dbf12026c1282",
       "type": 4,
       "schema": "0xf11eca55e7000100",
       "stage": 0,
@@ -55,33 +63,39 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [
-        "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000"
-      ],
-      "params": [
         {
-          "name": "stage",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "entry",
-          "type": "string",
-          "value": "main"
-        },
-        {
-          "name": "target",
-          "type": "string",
-          "value": "vs_5_1"
-        },
-        {
-          "name": "primary_source_index",
-          "type": "int",
-          "value": 0
+          "from_node_id": 2,
+          "to_input_port": 0
         }
-      ]
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "stage",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "entry",
+            "type": "string",
+            "value": "main"
+          },
+          {
+            "name": "target",
+            "type": "string",
+            "value": "vs_5_1"
+          },
+          {
+            "name": "primary_source_index",
+            "type": "int",
+            "value": 0
+          }
+        ]
+      }
     },
     {
-      "key": "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906",
+      "node_id": 5,
+      "key": "asset-key:128bc31f02104228:06cea8b09d7316b5:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:21757a042d4c92a8:a6cc51e0b3201160",
       "type": 4,
       "schema": "0xf11eca55e7000100",
       "stage": 0,
@@ -89,33 +103,39 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [
-        "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000"
-      ],
-      "params": [
         {
-          "name": "stage",
-          "type": "int",
-          "value": 1
-        },
-        {
-          "name": "entry",
-          "type": "string",
-          "value": "main"
-        },
-        {
-          "name": "target",
-          "type": "string",
-          "value": "ps_5_1"
-        },
-        {
-          "name": "primary_source_index",
-          "type": "int",
-          "value": 0
+          "from_node_id": 3,
+          "to_input_port": 0
         }
-      ]
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "stage",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "entry",
+            "type": "string",
+            "value": "main"
+          },
+          {
+            "name": "target",
+            "type": "string",
+            "value": "ps_5_1"
+          },
+          {
+            "name": "primary_source_index",
+            "type": "int",
+            "value": 0
+          }
+        ]
+      }
     },
     {
-      "key": "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b",
+      "node_id": 6,
+      "key": "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dff082c366c10bec:ce16ce505a554446",
       "type": 1049,
       "schema": "0xf11eca55e7000103",
       "stage": 0,
@@ -123,64 +143,73 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [
-        "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
-        "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906"
-      ],
-      "params": [
         {
-          "name": "name",
-          "type": "string",
-          "value": ""
+          "from_node_id": 4,
+          "to_input_port": 0
         },
         {
-          "name": "binding_model",
-          "type": "int",
-          "value": 3
-        },
-        {
-          "name": "topology",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "default_domain",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "default_policy_flags",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "input_layout",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "blend_mode",
-          "type": "int",
-          "value": 0
-        },
-        {
-          "name": "depth_mode",
-          "type": "int",
-          "value": 2
-        },
-        {
-          "name": "raster_mode",
-          "type": "int",
-          "value": 1
-        },
-        {
-          "name": "binding_layout",
-          "type": "int",
-          "value": 1
+          "from_node_id": 5,
+          "to_input_port": 1
         }
-      ]
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": ""
+          },
+          {
+            "name": "topology",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "binding_model",
+            "type": "int",
+            "value": 3
+          },
+          {
+            "name": "default_domain",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "default_policy_flags",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "blend_mode",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "input_layout",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "depth_mode",
+            "type": "int",
+            "value": 2
+          },
+          {
+            "name": "raster_mode",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "binding_layout",
+            "type": "int",
+            "value": 1
+          }
+        ]
+      }
     },
     {
-      "key": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8",
+      "node_id": 7,
+      "key": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:da27e4cb283da47d:0e3852da70b6d2ed",
       "type": 1048,
       "schema": "0xf11eca55e7000706",
       "stage": 0,
@@ -188,50 +217,55 @@
       "kind": 0,
       "demand_root": 0,
       "deps": [
-        "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
-        "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b"
+        {
+          "from_node_id": 1,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 6,
+          "to_input_port": 1
+        }
       ]
     }
   ],
   "layout": {
-    "version": 1,
-    "committed_nodes": [
+    "version": 2,
+    "nodes": [
       {
-        "key": "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
-        "x": 54,
-        "y": -260
+        "node_id": 1,
+        "x": 0,
+        "y": 300
       },
       {
-        "key": "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
-        "x": -92,
-        "y": -100
+        "node_id": 2,
+        "x": 0,
+        "y": 150
       },
       {
-        "key": "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
-        "x": 36,
-        "y": 76
+        "node_id": 3,
+        "x": 0,
+        "y": 0
       },
       {
-        "key": "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
-        "x": 374,
-        "y": -84
+        "node_id": 4,
+        "x": 260,
+        "y": 150
       },
       {
-        "key": "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906",
-        "x": 377,
-        "y": 124
+        "node_id": 5,
+        "x": 260,
+        "y": 0
       },
       {
-        "key": "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b",
-        "x": 734,
-        "y": -35
+        "node_id": 6,
+        "x": 520,
+        "y": 0
       },
       {
-        "key": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8",
-        "x": 1062,
-        "y": -277
+        "node_id": 7,
+        "x": 780,
+        "y": 0
       }
-    ],
-    "candidate_nodes": []
+    ]
   }
 }

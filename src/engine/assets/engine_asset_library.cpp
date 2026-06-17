@@ -1,6 +1,7 @@
 // engine/assets/engine_asset_library.cpp
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/engine_asset_key_factory.h>
 #include <engine/assets/engine_disk_cache_provider.h>
 #include <engine/assets/engine_asset_library_internal.h>
 
@@ -312,6 +313,11 @@ namespace wz::engine::assets
             *mesh_field_compute_);
     }
 
+    wz::asset::AssetKeyFactoryFn EngineAssetLibrary::draft_key_factory() const
+    {
+        return make_engine_asset_key_factory(system_.registry());
+    }
+
 
 
 
@@ -341,6 +347,82 @@ namespace wz::engine::assets
             "asset graph commit complete ms="
             + std::to_string(elapsed));
         return true;
+    }
+
+    EngineAssetLibrary::AssetGraphDraftCommitReport
+        EngineAssetLibrary::commit_asset_graph_draft(
+            wz::asset::AssetGraphDraft& draft)
+    {
+        AssetGraphDraftCommitReport report{};
+
+        const auto started = std::chrono::steady_clock::now();
+        const wz::asset::AssetKeyFactoryFn key_factory = draft_key_factory();
+        if (!wz::asset::materialize_asset_graph_draft_keys(
+                draft,
+                system_.registry(),
+                key_factory))
+        {
+            report.status =
+                AssetGraphDraftCommitReport::Status::MaterializeFailed;
+            report.elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger_.error(
+                "asset graph draft commit rejected during materialization");
+            return report;
+        }
+
+        report.registrations =
+            wz::asset::asset_graph_draft_to_registrations(
+                draft,
+                &system_.registry(),
+                key_factory);
+        report.registration_count =
+            static_cast<uint32_t>(report.registrations.size());
+
+        std::vector<wz::asset::AssetSystem::RegistrationEntry>
+            replacement_entries;
+        replacement_entries.reserve(report.registrations.size());
+        for (const wz::asset::AssetGraphDraftRegistration& registration :
+             report.registrations)
+        {
+            replacement_entries.push_back(
+                wz::asset::AssetSystem::RegistrationEntry{
+                    .node = registration.node,
+                    .dep_keys = registration.dep_keys,
+                });
+        }
+
+        if (!system_.replace_registered_assets(std::move(replacement_entries))) {
+            report.status =
+                AssetGraphDraftCommitReport::Status::ReplaceFailed;
+            report.elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger_.error("asset graph draft commit rejected during replace");
+            return report;
+        }
+
+        wz::asset::compact_asset_graph_draft(draft);
+        for (wz::asset::AssetGraphDraftNode& node : draft.nodes) {
+            node.state = wz::asset::AssetGraphDraftNodeState::Existing;
+            node.graph_node = wz::asset::INVALID_ASSET_NODE;
+        }
+        draft.storage.reset();
+        draft.validation_messages.clear();
+        draft.dirty = false;
+        wz::asset::rebuild_asset_graph_draft_indexes(draft);
+
+        report.status = AssetGraphDraftCommitReport::Status::Success;
+        report.elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+        logger_.info(
+            "asset graph draft commit complete registrations="
+            + std::to_string(report.registration_count)
+            + " ms="
+            + std::to_string(report.elapsed_ms));
+        return report;
     }
 
     ResolveReport EngineAssetLibrary::resolve_all(

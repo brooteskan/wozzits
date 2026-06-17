@@ -251,6 +251,7 @@ namespace wz::asset
 
         registered_ = std::move(entries);
         registered_index_ = std::move(index);
+        ++registration_epoch_;
         storage_ = std::move(*result);
         index_ = build_asset_index(storage_->dag());
         committed_ = true;

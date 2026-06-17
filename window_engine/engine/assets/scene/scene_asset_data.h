@@ -2,6 +2,7 @@
 
 // engine/assets/scene/scene_asset_data.h
 
+#include <asset/draft.h>
 #include <asset/types.h>
 
 #include <engine/assets/light/light.h>
@@ -925,8 +926,10 @@ namespace wz::engine::assets
         // renderable_asset for new authored scenes.
         std::optional<SceneRenderableBinding> renderable;
 
-        // Preferred authored Renderable component. Scene JSON may provide a
-        // symbolic renderable asset reference; compilation resolves it here.
+        // Preferred authored Renderable component. The node id points at the
+        // authored asset graph; renderable_asset is the current resolved key.
+        std::optional<wz::asset::AssetGraphDraftNodeId>
+            renderable_asset_node_id;
         std::optional<wz::asset::AssetKey> renderable_asset;
         std::optional<SceneAssetReferenceAsset> asset_reference;
         std::optional<SceneCameraAsset> camera;
@@ -1183,6 +1186,21 @@ namespace wz::engine::assets
         node.renderable_asset = renderable_asset;
     }
 
+    inline void attach_renderable_asset_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        wz::asset::AssetKey renderable_asset = {})
+    {
+        node.renderable_asset_node_id = node_id;
+        node.renderable_asset = renderable_asset;
+    }
+
+    inline void detach_renderable_asset_node(SceneNodeAsset& node)
+    {
+        node.renderable_asset_node_id.reset();
+        node.renderable_asset.reset();
+    }
+
     inline void attach_asset_reference(
         SceneNodeAsset& node,
         SceneAssetReferenceAsset reference = {})
@@ -1423,7 +1441,7 @@ namespace wz::engine::assets
         if (node.parent_id) {
             out.push_back(Kind::ParentLink);
         }
-        if (node.renderable || node.renderable_asset) {
+        if (node.renderable || node.renderable_asset_node_id) {
             out.push_back(Kind::Renderable);
         }
         if (node.asset_reference) {
@@ -1553,7 +1571,8 @@ namespace wz::engine::assets
     inline bool has_authored_renderable_component(
         const SceneNodeAsset& node) noexcept
     {
-        return node.renderable.has_value() || node.renderable_asset.has_value();
+        return node.renderable.has_value()
+            || node.renderable_asset_node_id.has_value();
     }
 
     inline bool has_authored_camera_component(
@@ -1685,6 +1704,7 @@ namespace wz::engine::assets
         }
 
         return node.renderable.has_value()
+            || node.renderable_asset_node_id.has_value()
             || node.mesh_source.has_value()
             || node.imported_node.has_value()
             || node.scalar_field_source.has_value()
@@ -1702,7 +1722,7 @@ namespace wz::engine::assets
             if (node.renderable_asset
                 && !can_own_materialized_renderable_asset(scene, node))
             {
-                node.renderable_asset.reset();
+                detach_renderable_asset_node(node);
                 ++detached;
             }
         }

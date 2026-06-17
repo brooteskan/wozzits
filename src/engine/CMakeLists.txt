@@ -13,6 +13,7 @@ target_sources(window_engine PRIVATE
     input_events.cpp
     render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp
+    assets/engine_asset_key_factory.cpp
     assets/engine_asset_library_compiler_registry.cpp
     assets/engine_asset_library_file_carriers.cpp
     assets/engine_disk_cache_provider.cpp

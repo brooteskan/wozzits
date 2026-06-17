@@ -96,9 +96,7 @@ namespace wz::engine::assets::internal
         std::optional<wz::asset::AssetKey> parse_asset_key_string(
             std::string_view text)
         {
-            // Transitional concrete AssetKey syntax for renderable.asset.
-            // Symbolic asset://renderables/... refs are resolved separately
-            // through SceneFromJSONCompileDesc metadata.
+            // Concrete AssetKey syntax used by asset-reference fields.
             constexpr std::string_view kPrefix = "asset-key:";
             if (!text.starts_with(kPrefix)) {
                 return std::nullopt;
@@ -1282,15 +1280,27 @@ namespace wz::engine::assets::internal
             }
 
             node.renderable = parse_debug_renderable(node_val);
-            if (!parse_asset_reference_object(
-                    node_val,
-                    node.id,
-                    "renderable",
-                    logger,
-                    renderable_asset_references,
-                    node.renderable_asset))
+            if (const auto* renderable =
+                    find_member(node_val, "renderable"))
             {
-                return std::nullopt;
+                if (renderable->kind != wz::json::JSONValueKind::Object) {
+                    logger.error(
+                        "renderable on node '" + node.id
+                        + "' is not an object");
+                    return std::nullopt;
+                }
+                const auto node_id =
+                    read_number(*renderable, "asset_graph_node_id");
+                if (!node_id || *node_id <= 0.0) {
+                    logger.error(
+                        "renderable on node '" + node.id
+                        + "' missing asset_graph_node_id");
+                    return std::nullopt;
+                }
+                node.renderable_asset_node_id =
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(
+                        *node_id);
+                node.renderable_asset.reset();
             }
 
             const auto* asset_reference =

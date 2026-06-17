@@ -536,9 +536,7 @@ namespace wz::engine::assets
 
         std::string asset_key_string(const wz::asset::AssetKey& key)
         {
-            // Transitional concrete AssetKey syntax for renderable.asset.
-            // This preserves authored data without requiring symbolic asset
-            // URI/name resolution in the scene exporter.
+            // Concrete AssetKey syntax used by asset-reference fields.
             std::ostringstream out;
             out << "asset-key:"
                 << std::hex << std::setfill('0')
@@ -580,10 +578,14 @@ namespace wz::engine::assets
             return obj;
         }
 
-        JSONValuePtr renderable_asset_value(const wz::asset::AssetKey& key)
+        JSONValuePtr renderable_asset_value(
+            wz::asset::AssetGraphDraftNodeId node_id)
         {
             auto obj = object_value();
-            add_member(*obj, "asset", string_value(asset_key_string(key)));
+            add_member(
+                *obj,
+                "asset_graph_node_id",
+                number_value(static_cast<double>(node_id)));
             return obj;
         }
 
@@ -1846,12 +1848,10 @@ namespace wz::engine::assets
                 add_member(*obj, "debug_renderable",
                     renderable_value(*node.renderable));
             }
-            if (!node.mesh_source
-                && node.renderable_asset
-                && !(*node.renderable_asset == wz::asset::AssetKey{}))
+            if (!node.mesh_source && node.renderable_asset_node_id)
             {
                 add_member(*obj, "renderable",
-                    renderable_asset_value(*node.renderable_asset));
+                    renderable_asset_value(*node.renderable_asset_node_id));
             }
             if (node.asset_reference) {
                 add_member(*obj, "asset_reference",
