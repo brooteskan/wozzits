@@ -17,13 +17,19 @@
 
 #include <wozzits/rhi/render_program.h>
 
+#include <optional>
+#include <string>
+
 namespace wz::engine::rendering
 {
+    std::string shader_ref(const wz::asset::AssetKey& key);
+
     // Convert an authored custom render-program description to the rhi contract.
     // Descriptor semantics are resolved into Tags in the provided rhi registry
     // (the open-identity-enum -> registry conversion). Shader AssetKeys are
     // carried as stable string refs for rhi's shader subsystem to resolve.
-    wz::rhi::RenderProgramDesc to_rhi_render_program_desc(
+    std::optional<wz::rhi::RenderProgramDesc> to_rhi_render_program_desc(
         const wz::engine::assets::CustomRenderProgramDesc& src,
-        wz::rhi::DescriptorSemanticRegistry& semantics);
+        wz::rhi::DescriptorSemanticRegistry& descriptors,
+        wz::rhi::ConstantSemanticRegistry& constants);
 }

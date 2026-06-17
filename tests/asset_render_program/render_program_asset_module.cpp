@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/key_factories/render_program.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/type_extensions.h>
@@ -184,6 +185,29 @@ TEST(RenderProgramAssetModule, CreateBuiltinRejectsCountProgram)
         });
 
     EXPECT_FALSE(program.valid());
+}
+
+TEST(RenderProgramAssetModule, CustomKeyIncludesRootConstantSemantic)
+{
+    using namespace wz::engine::assets;
+
+    CustomRenderProgramDesc a;
+    a.name = "custom/key_semantic";
+    a.root_constants.push_back(RootConstantBinding{
+        .visibility = ShaderVisibility::All,
+        .shader_register = 0,
+        .register_space = 2,
+        .value_count = 16,
+        .semantic = "world",
+    });
+
+    CustomRenderProgramDesc b = a;
+    b.root_constants[0].semantic = "object_constants";
+
+    const wz::asset::AssetKey key_a = make_custom_render_program_key(a);
+    const wz::asset::AssetKey key_b = make_custom_render_program_key(b);
+
+    EXPECT_FALSE(key_a == key_b);
 }
 
 // ── Full resolution test (GPU + real shader compilation required) ─────────────

@@ -619,6 +619,12 @@ namespace wz::gpu::dx12::internal {
 
     bool dispatch_compute_dx12(Device& device, const wz::gpu::ComputeDispatchDesc& desc);
     std::vector<std::byte> readback_buffer_dx12(Device& device, GPUHandle buffer);
+    bool update_compute_buffer_dx12(
+        Device& device,
+        GPUHandle destination,
+        const void* data,
+        uint64_t byte_count,
+        uint64_t byte_offset = 0);
     bool release_compute_buffer_dx12(Device& device, GPUHandle handle);
     bool release_compute_pipeline_dx12(Device& device, GPUHandle handle);
 

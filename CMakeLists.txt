@@ -336,6 +336,35 @@ if(WINDOW_ENGINE_BUILD_EXAMPLES)
         PRIVATE
             window_engine
     )
+
+    add_executable(rhi_pull_cube
+        examples/rhi_pull_cube/main.cpp
+    )
+
+    target_link_libraries(rhi_pull_cube
+        PRIVATE
+            window_engine
+    )
+
+    find_program(WZ_FXC_EXECUTABLE
+        NAMES fxc.exe
+        HINTS
+            "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64"
+            "C:/Program Files (x86)/Windows Kits/10/bin/10.0.22621.0/x64"
+    )
+    if(WZ_FXC_EXECUTABLE)
+        add_custom_command(TARGET rhi_pull_cube POST_BUILD
+            COMMAND "${WZ_FXC_EXECUTABLE}" /nologo /T vs_5_1 /E main
+                /Fo "$<TARGET_FILE_DIR:rhi_pull_cube>/pull_cube_vs.cso"
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/rhi_pull_cube/shaders/pull_cube_vs.hlsl"
+            COMMAND "${WZ_FXC_EXECUTABLE}" /nologo /T ps_5_1 /E main
+                /Fo "$<TARGET_FILE_DIR:rhi_pull_cube>/pull_cube_ps.cso"
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/rhi_pull_cube/shaders/pull_cube_ps.hlsl"
+            COMMENT "Compiling rhi_pull_cube HLSL"
+        )
+    else()
+        message(WARNING "fxc.exe not found; rhi_pull_cube will build but needs pull_cube_vs.cso and pull_cube_ps.cso next to the executable.")
+    endif()
 endif()
 
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
@@ -562,7 +591,9 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render storage_reuse_tests)
     rs_add_test_group(render render_frame_sectioned_test_1)
     rs_add_test_group(render pipeline_benchmark_test_1)
+    rs_add_test_group(render rhi_dx12_pipeline_tests)
     rs_add_test_group(render rhi_render_program_bridge_tests)
+    rs_add_test_group(render rhi_dummy_backend_integration_tests)
     rs_add_test_group(render rhi_gpu_backend_tests)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)

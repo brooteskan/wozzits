@@ -835,6 +835,81 @@ namespace wz::gpu::dx12::internal
         return out;
     }
 
+    bool update_compute_buffer_dx12(
+        Device& device,
+        GPUHandle destination,
+        const void* data,
+        uint64_t byte_count,
+        uint64_t byte_offset)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !data || byte_count == 0u) {
+            return false;
+        }
+
+        DX12ComputeBuffer* buffer = impl->compute_buffers.get(destination);
+        if (!buffer || !buffer->valid()) {
+            return false;
+        }
+
+        const uint64_t dst_byte_count = buffer_byte_count(*buffer);
+        if (byte_offset > dst_byte_count
+            || byte_count > dst_byte_count - byte_offset)
+        {
+            return false;
+        }
+
+        const D3D12_HEAP_PROPERTIES upload_heap =
+            CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        const D3D12_RESOURCE_DESC upload_desc =
+            CD3DX12_RESOURCE_DESC::Buffer(byte_count);
+
+        ID3D12Resource* upload = nullptr;
+        HRESULT hr = impl->device->CreateCommittedResource(
+            &upload_heap,
+            D3D12_HEAP_FLAG_NONE,
+            &upload_desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&upload));
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        void* mapped = nullptr;
+        const D3D12_RANGE read_range{ 0, 0 };
+        hr = upload->Map(0, &read_range, &mapped);
+        if (FAILED(hr) || !mapped) {
+            upload->Release();
+            return false;
+        }
+        std::memcpy(mapped, data, static_cast<size_t>(byte_count));
+        upload->Unmap(0, nullptr);
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        if (!create_one_shot_command_list(impl, &allocator, &cmd)) {
+            upload->Release();
+            return false;
+        }
+
+        const D3D12_RESOURCE_STATES final_state = buffer->state;
+        transition_buffer(cmd, *buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+        cmd->CopyBufferRegion(
+            buffer->resource,
+            byte_offset,
+            upload,
+            0,
+            byte_count);
+        transition_buffer(cmd, *buffer, final_state);
+
+        const bool ok = execute_and_wait(impl, allocator, cmd);
+        cmd->Release();
+        allocator->Release();
+        upload->Release();
+        return ok;
+    }
+
     bool release_compute_buffer_dx12(Device& device, GPUHandle handle)
     {
         auto* impl = static_cast<DX12Device*>(device.impl);

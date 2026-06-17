@@ -51,6 +51,12 @@ namespace wz::engine::assets
             lo = detail::mix64(lo, value);
             hi = detail::mix64(hi, detail::mix64(value, 0x9e3779b97f4a7c15ull));
         };
+        auto mix_string = [&](std::string_view value)
+        {
+            const wz::asset::Hash h = detail::hash_str(value);
+            lo = detail::mix64(lo, h.lo);
+            hi = detail::mix64(hi, h.hi);
+        };
 
         mix_enum(static_cast<uint64_t>(desc.binding_model));
         mix_enum(static_cast<uint64_t>(desc.topology));
@@ -67,6 +73,7 @@ namespace wz::engine::assets
             mix_enum(binding.shader_register);
             mix_enum(binding.register_space);
             mix_enum(binding.value_count);
+            mix_string(binding.semantic);
         }
 
         mix_enum(desc.descriptor_bindings.size());

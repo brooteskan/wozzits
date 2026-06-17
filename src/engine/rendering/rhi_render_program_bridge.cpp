@@ -1,6 +1,9 @@
 #include <engine/rendering/rhi_render_program_bridge.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <optional>
+#include <vector>
 #include <string>
 
 namespace wz::engine::rendering
@@ -170,19 +173,21 @@ namespace wz::engine::rendering
             return "unknown";
         }
 
-        std::string shader_ref(const wz::asset::AssetKey& key)
-        {
-            char buffer[40];
-            std::snprintf(buffer, sizeof(buffer), "asset:%016llx%016llx",
-                static_cast<unsigned long long>(key.content_hash.hi),
-                static_cast<unsigned long long>(key.content_hash.lo));
-            return std::string(buffer);
-        }
     }
 
-    wz::rhi::RenderProgramDesc to_rhi_render_program_desc(
+    std::string shader_ref(const wz::asset::AssetKey& key)
+    {
+        char buffer[40];
+        std::snprintf(buffer, sizeof(buffer), "asset:%016llx%016llx",
+            static_cast<unsigned long long>(key.content_hash.hi),
+            static_cast<unsigned long long>(key.content_hash.lo));
+        return std::string(buffer);
+    }
+
+    std::optional<wz::rhi::RenderProgramDesc> to_rhi_render_program_desc(
         const ea::CustomRenderProgramDesc& src,
-        wz::rhi::DescriptorSemanticRegistry& semantics)
+        wz::rhi::DescriptorSemanticRegistry& descriptors,
+        wz::rhi::ConstantSemanticRegistry& constants)
     {
         wz::rhi::RenderProgramDesc out;
         out.name = src.name;
@@ -196,24 +201,71 @@ namespace wz::engine::rendering
         out.depth_mode    = map_depth(src.depth_mode);
         out.raster_mode   = map_raster(src.raster_mode);
 
-        out.root_constants.reserve(src.root_constants.size());
+        std::vector<uint32_t> register_spaces;
+        register_spaces.reserve(
+            src.root_constants.size() + src.descriptor_bindings.size());
         for (const ea::RootConstantBinding& rc : src.root_constants) {
-            out.root_constants.push_back(wz::rhi::RootConstantBinding{
-                map_visibility(rc.visibility),
-                rc.shader_register,
-                rc.register_space,
-                rc.value_count });
+            register_spaces.push_back(rc.register_space);
         }
-
-        out.descriptor_bindings.reserve(src.descriptor_bindings.size());
         for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
-            out.descriptor_bindings.push_back(wz::rhi::DescriptorBinding{
-                map_descriptor_kind(db.kind),
-                map_visibility(db.visibility),
-                semantics.acquire(descriptor_semantic_name(db.semantic)),
-                db.shader_register,
-                db.register_space,
-                db.descriptor_count });
+            register_spaces.push_back(db.register_space);
+        }
+        std::sort(register_spaces.begin(), register_spaces.end());
+        register_spaces.erase(
+            std::unique(register_spaces.begin(), register_spaces.end()),
+            register_spaces.end());
+
+        out.shader_resource_groups.reserve(register_spaces.size());
+        for (const uint32_t space : register_spaces) {
+            wz::rhi::ShaderResourceGroupLayout layout;
+            layout.binding_slot = space;
+
+            for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
+                if (db.register_space != space) {
+                    continue;
+                }
+                if (db.semantic == ea::DescriptorSemantic::Unknown) {
+                    return std::nullopt;
+                }
+                const wz::rhi::Tag semantic =
+                    descriptors.acquire(descriptor_semantic_name(db.semantic));
+                if (!semantic.valid()) {
+                    return std::nullopt;
+                }
+                layout.descriptors.push_back(wz::rhi::DescriptorBinding{
+                    map_descriptor_kind(db.kind),
+                    map_visibility(db.visibility),
+                    semantic,
+                    db.shader_register,
+                    db.register_space,
+                    db.descriptor_count });
+            }
+
+            for (const ea::RootConstantBinding& rc : src.root_constants) {
+                if (rc.register_space != space) {
+                    continue;
+                }
+                const wz::rhi::RootConstantsBinding binding{
+                    map_visibility(rc.visibility),
+                    rc.shader_register,
+                    rc.register_space
+                };
+                if (layout.constants.empty()) {
+                    layout.constants_binding = binding;
+                }
+                else if (!(layout.constants_binding == binding)) {
+                    return std::nullopt;
+                }
+                if (rc.semantic.empty()
+                    || !layout.constants.append(
+                        constants.acquire(rc.semantic),
+                        rc.value_count * sizeof(uint32_t)))
+                {
+                    return std::nullopt;
+                }
+            }
+
+            out.shader_resource_groups.push_back(layout);
         }
 
         return out;

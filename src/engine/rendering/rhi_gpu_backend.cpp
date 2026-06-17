@@ -1,5 +1,7 @@
 #include <engine/rendering/rhi_gpu_backend.h>
 
+#include <gpu/dx12/dx12_internal.h>
+
 namespace wz::engine::rendering
 {
     wz::rhi::BackendResource EngineGpuBackend::create(
@@ -40,15 +42,27 @@ namespace wz::engine::rendering
     }
 
     bool EngineGpuBackend::write(
-        wz::rhi::BackendResource /*resource*/,
-        const void* /*data*/,
-        uint64_t /*size*/,
-        uint64_t /*offset*/)
+        wz::rhi::BackendResource resource,
+        const void* data,
+        uint64_t size,
+        uint64_t offset)
     {
-        // TODO(rhi-backend): the engine has no generic CPU-write-to-existing-
-        // buffer primitive yet (compute buffers take initial_data at creation,
-        // and the #145 mutable path uses a GPU-source copy). Wire CPU writes /
-        // the in-place update path in a later increment.
-        return false;
+        const wz::gpu::GPUHandle handle = gpu_handle_for(resource);
+        if (!handle.valid()) {
+            return false;
+        }
+        return wz::gpu::dx12::internal::update_compute_buffer_dx12(
+            *device_,
+            handle,
+            data,
+            size,
+            offset);
+    }
+
+    wz::gpu::GPUHandle EngineGpuBackend::gpu_handle_for(
+        wz::rhi::BackendResource resource) const
+    {
+        const auto it = resources_.find(resource.id);
+        return it != resources_.end() ? it->second : wz::gpu::GPUHandle{};
     }
 }

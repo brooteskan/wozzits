@@ -73,6 +73,12 @@ namespace wz::engine::assets
         uint32_t shader_register = 0;
         uint32_t register_space  = 0;
         uint32_t value_count     = 0;
+
+        // Open-vocabulary name for this constant range (e.g. "world",
+        // "view_proj"), sourced from semantic_names.h. The rhi bridge resolves
+        // it to a ConstantSemantic Tag at the boundary; an rhi Tag is never
+        // stored in asset data.
+        std::string semantic;
     };
 
     enum class DescriptorKind : uint8_t

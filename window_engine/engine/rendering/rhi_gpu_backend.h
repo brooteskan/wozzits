@@ -64,6 +64,9 @@ namespace wz::engine::rendering
                    uint64_t size,
                    uint64_t offset) override;
 
+        [[nodiscard]] wz::gpu::GPUHandle gpu_handle_for(
+            wz::rhi::BackendResource resource) const;
+
     private:
         wz::gpu::Device* device_;
 
