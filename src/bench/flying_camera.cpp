@@ -6,8 +6,31 @@
 #include <bench/flying_camera.h>
 #include <math/quaternion.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace wz::bench
 {
+    namespace
+    {
+        constexpr float kHalfPi = 1.5707963267948966f;
+        constexpr float kPitchLimitEpsilon = 0.001f;
+        constexpr float kMaxMousePitch = kHalfPi - kPitchLimitEpsilon;
+
+        float clamped_pitch_delta(const CameraBasis& basis, float requested)
+        {
+            const float current = std::asin(std::clamp(
+                -basis.forward.y,
+                -1.0f,
+                1.0f));
+            const float target = std::clamp(
+                current + requested,
+                -kMaxMousePitch,
+                kMaxMousePitch);
+            return target - current;
+        }
+    }
+
     CameraBasis camera_basis(const FlyingCamera& cam)
     {
         using namespace wz::math;
@@ -41,7 +64,11 @@ namespace wz::bench
             cam.orientation = mul(from_axis_angle(world_up, dx), cam.orientation);
         if (dy != 0.0f) {
             const CameraBasis b_yaw = camera_basis(cam);
-            cam.orientation = mul(from_axis_angle(b_yaw.right, dy), cam.orientation);
+            const float pitch_step = clamped_pitch_delta(b_yaw, dy);
+            if (pitch_step != 0.0f) {
+                cam.orientation =
+                    mul(from_axis_angle(b_yaw.right, pitch_step), cam.orientation);
+            }
         }
 
         // Z/C: roll around forward axis at a fixed angular rate (rad/sec),

@@ -213,10 +213,13 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        for (DescriptorTableCache::Entry& entry : descriptor_tables_->entries) {
-            if (entry.binding_slot == slot && entry.buffers == buffers) {
-                return &entry.table;
-            }
+        const auto existing = std::ranges::find_if(
+            descriptor_tables_->entries,
+            [slot, &buffers](const DescriptorTableCache::Entry& entry) {
+                return entry.binding_slot == slot && entry.buffers == buffers;
+            });
+        if (existing != descriptor_tables_->entries.end()) {
+            return &existing->table;
         }
 
         wz::gpu::dx12::DX12DescriptorTable table{};

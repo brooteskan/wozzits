@@ -48,11 +48,15 @@ namespace
         if (layout.descriptors.empty()) {
             return D3D12_SHADER_VISIBILITY_ALL;
         }
-        const wz::rhi::ShaderStage first = layout.descriptors.front().visibility;
-        for (const wz::rhi::DescriptorBinding& descriptor : layout.descriptors) {
-            if (descriptor.visibility != first) {
-                return D3D12_SHADER_VISIBILITY_ALL;
-            }
+        const wz::rhi::ShaderStage first =
+            layout.descriptors.front().visibility;
+        if (!std::ranges::all_of(
+                layout.descriptors,
+                [first](const wz::rhi::DescriptorBinding& descriptor) {
+                    return descriptor.visibility == first;
+                }))
+        {
+            return D3D12_SHADER_VISIBILITY_ALL;
         }
         return shader_visibility(first);
     }
@@ -338,10 +342,13 @@ namespace wz::engine::rendering
     std::optional<uint32_t> RhiDx12PipelineLayout::root_param_for_slot(
         uint32_t binding_slot) const noexcept
     {
-        for (const RhiDx12DescriptorTableParam& table : descriptor_tables) {
-            if (table.binding_slot == binding_slot) {
-                return table.root_parameter_index;
-            }
+        const auto table = std::ranges::find_if(
+            descriptor_tables,
+            [binding_slot](const RhiDx12DescriptorTableParam& candidate) {
+                return candidate.binding_slot == binding_slot;
+            });
+        if (table != descriptor_tables.end()) {
+            return table->root_parameter_index;
         }
         return std::nullopt;
     }
@@ -421,10 +428,13 @@ namespace wz::engine::rendering
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
         wz::rhi::Tag program) const noexcept
     {
-        for (const Entry& entry : entries_) {
-            if (entry.program == program) {
-                return &entry.realized;
-            }
+        const auto entry = std::ranges::find_if(
+            entries_,
+            [program](const Entry& candidate) {
+                return candidate.program == program;
+            });
+        if (entry != entries_.end()) {
+            return &entry->realized;
         }
         return nullptr;
     }

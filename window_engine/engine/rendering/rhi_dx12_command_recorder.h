@@ -49,6 +49,15 @@ namespace wz::engine::rendering
 
         [[nodiscard]] bool ready() const noexcept { return ready_; }
 
+#ifdef WZ_ENABLE_TESTING
+        void set_current_for_testing(
+            const RhiDx12RealizedPipeline* pipeline) noexcept
+        {
+            current_ = pipeline;
+            ready_ = pipeline != nullptr;
+        }
+#endif
+
     private:
         struct DescriptorTableCache;
 
