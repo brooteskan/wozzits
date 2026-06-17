@@ -27,6 +27,17 @@ namespace wz::rhi
 
     using DrawItemSortKey = uint64_t;
 
+    struct DrawArgs
+    {
+        bool     indexed        = false;
+        uint32_t index_count    = 0;
+        uint32_t vertex_count   = 0;
+        uint32_t instance_count = 1;
+        uint32_t first_index    = 0;
+        uint32_t first_vertex   = 0;
+        int32_t  vertex_offset  = 0;
+    };
+
     struct DrawItem
     {
         // Which render program this draw uses — a registry Tag, never an enum.

@@ -19,12 +19,16 @@
 // dead ones, deriving barriers from declared resource usage, and planning
 // transient-memory aliasing — all as pure logic the backend then executes.
 
+#include <wozzits/rhi/draw_item.h>
+#include <wozzits/rhi/geometry_view.h>
 #include <wozzits/rhi/gpu_resource.h>
 #include <wozzits/rhi/gpu_resource_registry.h>
+#include <wozzits/rhi/shader_resource_group.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -103,6 +107,13 @@ namespace wz::rhi
         virtual void barrier(GpuResourceHandle resource,
                             ResourceState from,
                             ResourceState to) = 0;
+        virtual void set_pipeline(Tag) {}
+        virtual void set_root_constants(std::span<const uint8_t>) {}
+        virtual void bind_resource_group(uint32_t,
+                                         const ShaderResourceGroup&) {}
+        virtual void set_geometry(const GeometryView&,
+                                  const StreamBufferIndices&) {}
+        virtual void draw(const DrawArgs&) {}
     };
 
     // Handed to each pass's execute callback. Resolves graph resources to their

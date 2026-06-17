@@ -40,6 +40,16 @@ namespace wz::rhi
         uint32_t descriptor_count = 1;
     };
 
+    struct RootConstantsBinding
+    {
+        ShaderStage visibility = ShaderStage::All;
+        uint32_t shader_register = 0;
+        uint32_t register_space = 0;
+
+        friend bool operator==(const RootConstantsBinding&,
+                               const RootConstantsBinding&) = default;
+    };
+
     struct ShaderResourceGroupLayout
     {
         // Frequency/register-space slot. Convention: view=0, material=1,
@@ -48,12 +58,16 @@ namespace wz::rhi
 
         std::vector<DescriptorBinding> descriptors;
         ConstantsLayout constants;
+        RootConstantsBinding constants_binding{};
 
         [[nodiscard]] uint64_t hash() const noexcept
         {
             uint64_t h = 1469598103934665603ull;
             hash_combine(h, static_cast<uint64_t>(binding_slot));
             hash_combine(h, constants.hash());
+            hash_combine(h, static_cast<uint64_t>(constants_binding.visibility));
+            hash_combine(h, static_cast<uint64_t>(constants_binding.shader_register));
+            hash_combine(h, static_cast<uint64_t>(constants_binding.register_space));
             hash_combine(h, static_cast<uint64_t>(descriptors.size()));
             for (const DescriptorBinding& descriptor : descriptors) {
                 hash_combine(h, static_cast<uint64_t>(descriptor.kind));
