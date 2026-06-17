@@ -147,6 +147,29 @@ namespace wz::engine::assets
         };
     }
 
+    [[nodiscard]] inline wz::asset::AssetKey make_rhi_pull_mesh_renderable_key(
+        std::string_view name,
+        const wz::asset::AssetKey& mesh_key,
+        const wz::asset::AssetKey& render_program_key) noexcept
+    {
+        const uint64_t h = detail::fnv1a_64(name);
+        const wz::asset::Hash mesh_dep = detail::key_to_dep_hash(mesh_key);
+        const wz::asset::Hash program_dep =
+            detail::key_to_dep_hash(render_program_key);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash =
+                detail::hash_u64(kRhiPullMeshRenderableSchema.value),
+            .compiler_hash =
+                detail::hash_u64(kRhiPullMeshRenderableCompilerVersion),
+            .deps_hash = wz::asset::Hash{
+                detail::mix64(mesh_dep.lo, program_dep.lo),
+                detail::mix64(mesh_dep.hi, program_dep.hi),
+            },
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_terrain_debug_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& terrain_key,

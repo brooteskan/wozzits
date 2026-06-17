@@ -13,10 +13,12 @@ namespace wz::engine::assets
     RenderableAssetModule::RenderableAssetModule(
         wz::asset::AssetSystem& system,
         wz::Logger& logger,
-        RenderableAssetTable& table)
+        RenderableAssetTable& table,
+        RhiRenderableTable& rhi_table)
         : system_(system)
         , logger_(logger)
         , table_(table)
+        , rhi_table_(rhi_table)
     {
     }
 
@@ -312,6 +314,50 @@ namespace wz::engine::assets
         };
     }
 
+    RenderableAsset RenderableAssetModule::create_rhi_pull_mesh(
+        const RhiPullMeshRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("RHI pull mesh renderable has empty name");
+            return {};
+        }
+
+        if (!desc.mesh.valid()) {
+            logger_.error("RHI pull mesh renderable has invalid mesh: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error("RHI pull mesh renderable has invalid render program: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_rhi_pull_mesh_renderable_key(
+                desc.name,
+                desc.mesh.output,
+                desc.program.key);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kRhiPullMeshRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = RhiPullMeshRenderableCompileDesc{
+            .mesh_asset = desc.mesh.output,
+            .render_program_asset = desc.program.key,
+        };
+
+        (void)system_.register_asset(
+            std::move(node),
+            { desc.mesh.output, desc.program.key });
+
+        return RenderableAsset{ .output = key };
+    }
+
     RenderableHandle RenderableAssetModule::get_renderable(
         const RenderableAsset& asset) const
     {
@@ -320,8 +366,14 @@ namespace wz::engine::assets
 
         RenderableHandle out{};
 
-        if (const auto* compiled = system_.find_compiled(asset.output))
+        if (const auto* compiled = system_.find_compiled(asset.output)) {
+            if (compiled->node
+                && compiled->node->schema == kRhiPullMeshRenderableSchema)
+            {
+                return {};
+            }
             out.handle = compiled->handle;
+        }
 
         if (!out.valid())
             logger_.error("renderable handle not found");
@@ -336,5 +388,24 @@ namespace wz::engine::assets
             return nullptr;
 
         return table_.get(handle.handle);
+    }
+
+    const RhiRenderableRecipe*
+    RenderableAssetModule::get_rhi_renderable_recipe(
+        const RenderableAsset& asset) const
+    {
+        if (!asset.valid()) {
+            return nullptr;
+        }
+
+        const auto* compiled = system_.find_compiled(asset.output);
+        if (!compiled
+            || !compiled->node
+            || compiled->node->schema != kRhiPullMeshRenderableSchema)
+        {
+            return nullptr;
+        }
+
+        return rhi_table_.get(compiled->handle);
     }
 }

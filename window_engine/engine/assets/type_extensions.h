@@ -555,6 +555,11 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeComputePipeline =
         static_cast<wz::asset::AssetType>(1050);
 
+    // Runtime-table handle for graph-authored RHI renderable recipes. The asset
+    // node remains kAssetTypeRenderable; this identifies its payload table.
+    inline constexpr wz::asset::AssetType kAssetTypeRhiRenderableRecipe =
+        static_cast<wz::asset::AssetType>(1051);
+
 
 
     // ─── Material asset types: 1060–1099 ─────────────────────────────────────────

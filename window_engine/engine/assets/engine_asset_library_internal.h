@@ -89,6 +89,7 @@ namespace wz::engine::assets::internal {
         CSVExportTable&                     csv_export_table;
         MeshRenderStyleTable&               mesh_render_style_table;
         RenderableAssetTable&               renderable_table;
+        RhiRenderableTable&                 rhi_renderable_table;
         RenderProgramTable&                 render_program_table;
         ComputePipelineTable&               compute_pipeline_table;
         DirectLightTable&                   direct_light_table;

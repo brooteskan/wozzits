@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <cstdio>
 #include <optional>
+#include <span>
 #include <vector>
 #include <string>
 
 namespace wz::engine::rendering
 {
+    std::string shader_ref(const wz::asset::AssetKey& key);
+
     namespace
     {
         namespace ea = wz::engine::assets;
@@ -173,6 +176,121 @@ namespace wz::engine::rendering
             return "unknown";
         }
 
+        std::string program_ref(const wz::asset::AssetKey& key)
+        {
+            char buffer[72];
+            std::snprintf(
+                buffer,
+                sizeof(buffer),
+                "program#%016llx%016llx",
+                static_cast<unsigned long long>(key.content_hash.hi),
+                static_cast<unsigned long long>(key.content_hash.lo));
+            return std::string(buffer);
+        }
+
+        struct RenderProgramBridgeSource
+        {
+            std::string name;
+            wz::asset::AssetKey vertex_shader;
+            wz::asset::AssetKey pixel_shader;
+            ea::RenderBindingModel binding_model{};
+            ea::RenderPrimitiveTopology topology{};
+            ea::InputLayoutKind input_layout{};
+            ea::BlendMode blend_mode{};
+            ea::DepthMode depth_mode{};
+            ea::RasterMode raster_mode{};
+            std::span<const ea::RootConstantBinding> root_constants;
+            std::span<const ea::DescriptorBinding> descriptor_bindings;
+        };
+
+        std::optional<wz::rhi::RenderProgramDesc>
+        convert_render_program_desc(
+            const RenderProgramBridgeSource& src,
+            wz::rhi::DescriptorSemanticRegistry& descriptors,
+            wz::rhi::ConstantSemanticRegistry& constants)
+        {
+            wz::rhi::RenderProgramDesc out;
+            out.name = src.name;
+            out.vertex_shader = shader_ref(src.vertex_shader);
+            out.pixel_shader = shader_ref(src.pixel_shader);
+
+            out.vertex_source = map_vertex_source(src.binding_model);
+            out.vertex_layout = vertex_layout_for(src.input_layout);
+            out.topology      = map_topology(src.topology);
+            out.blend_mode    = map_blend(src.blend_mode);
+            out.depth_mode    = map_depth(src.depth_mode);
+            out.raster_mode   = map_raster(src.raster_mode);
+
+            std::vector<uint32_t> register_spaces;
+            register_spaces.reserve(
+                src.root_constants.size() + src.descriptor_bindings.size());
+            for (const ea::RootConstantBinding& rc : src.root_constants) {
+                register_spaces.push_back(rc.register_space);
+            }
+            for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
+                register_spaces.push_back(db.register_space);
+            }
+            std::sort(register_spaces.begin(), register_spaces.end());
+            register_spaces.erase(
+                std::unique(register_spaces.begin(), register_spaces.end()),
+                register_spaces.end());
+
+            out.shader_resource_groups.reserve(register_spaces.size());
+            for (const uint32_t space : register_spaces) {
+                wz::rhi::ShaderResourceGroupLayout layout;
+                layout.binding_slot = space;
+
+                for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
+                    if (db.register_space != space) {
+                        continue;
+                    }
+                    if (db.semantic == ea::DescriptorSemantic::Unknown) {
+                        return std::nullopt;
+                    }
+                    const wz::rhi::Tag semantic =
+                        descriptors.acquire(descriptor_semantic_name(db.semantic));
+                    if (!semantic.valid()) {
+                        return std::nullopt;
+                    }
+                    layout.descriptors.push_back(wz::rhi::DescriptorBinding{
+                        map_descriptor_kind(db.kind),
+                        map_visibility(db.visibility),
+                        semantic,
+                        db.shader_register,
+                        db.register_space,
+                        db.descriptor_count });
+                }
+
+                for (const ea::RootConstantBinding& rc : src.root_constants) {
+                    if (rc.register_space != space) {
+                        continue;
+                    }
+                    const wz::rhi::RootConstantsBinding binding{
+                        map_visibility(rc.visibility),
+                        rc.shader_register,
+                        rc.register_space
+                    };
+                    if (layout.constants.empty()) {
+                        layout.constants_binding = binding;
+                    }
+                    else if (!(layout.constants_binding == binding)) {
+                        return std::nullopt;
+                    }
+                    if (rc.semantic.empty()
+                        || !layout.constants.append(
+                            constants.acquire(rc.semantic),
+                            rc.value_count * sizeof(uint32_t)))
+                    {
+                        return std::nullopt;
+                    }
+                }
+
+                out.shader_resource_groups.push_back(layout);
+            }
+
+            return out;
+        }
+
     }
 
     std::string shader_ref(const wz::asset::AssetKey& key)
@@ -189,85 +307,45 @@ namespace wz::engine::rendering
         wz::rhi::DescriptorSemanticRegistry& descriptors,
         wz::rhi::ConstantSemanticRegistry& constants)
     {
-        wz::rhi::RenderProgramDesc out;
-        out.name = src.name;
-        out.vertex_shader = shader_ref(src.vertex_shader);
-        out.pixel_shader = shader_ref(src.pixel_shader);
+        return convert_render_program_desc(
+            RenderProgramBridgeSource{
+                src.name,
+                src.vertex_shader,
+                src.pixel_shader,
+                src.binding_model,
+                src.topology,
+                src.input_layout,
+                src.blend_mode,
+                src.depth_mode,
+                src.raster_mode,
+                src.root_constants,
+                src.descriptor_bindings },
+            descriptors,
+            constants);
+    }
 
-        out.vertex_source = map_vertex_source(src.binding_model);
-        out.vertex_layout = vertex_layout_for(src.input_layout);
-        out.topology      = map_topology(src.topology);
-        out.blend_mode    = map_blend(src.blend_mode);
-        out.depth_mode    = map_depth(src.depth_mode);
-        out.raster_mode   = map_raster(src.raster_mode);
-
-        std::vector<uint32_t> register_spaces;
-        register_spaces.reserve(
-            src.root_constants.size() + src.descriptor_bindings.size());
-        for (const ea::RootConstantBinding& rc : src.root_constants) {
-            register_spaces.push_back(rc.register_space);
-        }
-        for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
-            register_spaces.push_back(db.register_space);
-        }
-        std::sort(register_spaces.begin(), register_spaces.end());
-        register_spaces.erase(
-            std::unique(register_spaces.begin(), register_spaces.end()),
-            register_spaces.end());
-
-        out.shader_resource_groups.reserve(register_spaces.size());
-        for (const uint32_t space : register_spaces) {
-            wz::rhi::ShaderResourceGroupLayout layout;
-            layout.binding_slot = space;
-
-            for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
-                if (db.register_space != space) {
-                    continue;
-                }
-                if (db.semantic == ea::DescriptorSemantic::Unknown) {
-                    return std::nullopt;
-                }
-                const wz::rhi::Tag semantic =
-                    descriptors.acquire(descriptor_semantic_name(db.semantic));
-                if (!semantic.valid()) {
-                    return std::nullopt;
-                }
-                layout.descriptors.push_back(wz::rhi::DescriptorBinding{
-                    map_descriptor_kind(db.kind),
-                    map_visibility(db.visibility),
-                    semantic,
-                    db.shader_register,
-                    db.register_space,
-                    db.descriptor_count });
-            }
-
-            for (const ea::RootConstantBinding& rc : src.root_constants) {
-                if (rc.register_space != space) {
-                    continue;
-                }
-                const wz::rhi::RootConstantsBinding binding{
-                    map_visibility(rc.visibility),
-                    rc.shader_register,
-                    rc.register_space
-                };
-                if (layout.constants.empty()) {
-                    layout.constants_binding = binding;
-                }
-                else if (!(layout.constants_binding == binding)) {
-                    return std::nullopt;
-                }
-                if (rc.semantic.empty()
-                    || !layout.constants.append(
-                        constants.acquire(rc.semantic),
-                        rc.value_count * sizeof(uint32_t)))
-                {
-                    return std::nullopt;
-                }
-            }
-
-            out.shader_resource_groups.push_back(layout);
-        }
-
-        return out;
+    std::optional<wz::rhi::RenderProgramDesc> to_rhi_render_program_desc(
+        const ea::RenderProgramData& data,
+        const wz::asset::AssetKey& program_key,
+        const wz::asset::AssetKey& vertex_key,
+        const wz::asset::AssetKey& pixel_key,
+        wz::rhi::DescriptorSemanticRegistry& descriptors,
+        wz::rhi::ConstantSemanticRegistry& constants)
+    {
+        return convert_render_program_desc(
+            RenderProgramBridgeSource{
+                program_ref(program_key),
+                vertex_key,
+                pixel_key,
+                data.binding_model,
+                data.topology,
+                data.input_layout,
+                data.blend_mode,
+                data.depth_mode,
+                data.raster_mode,
+                data.root_constants,
+                data.descriptor_bindings },
+            descriptors,
+            constants);
     }
 }

@@ -32,4 +32,14 @@ namespace wz::engine::rendering
         const wz::engine::assets::CustomRenderProgramDesc& src,
         wz::rhi::DescriptorSemanticRegistry& descriptors,
         wz::rhi::ConstantSemanticRegistry& constants);
+
+    // Convert a resolved render-program table entry plus its shader AssetKeys.
+    // The table owns declarative state; the graph program node owns shader deps.
+    std::optional<wz::rhi::RenderProgramDesc> to_rhi_render_program_desc(
+        const wz::engine::assets::RenderProgramData& data,
+        const wz::asset::AssetKey& program_key,
+        const wz::asset::AssetKey& vertex_key,
+        const wz::asset::AssetKey& pixel_key,
+        wz::rhi::DescriptorSemanticRegistry& descriptors,
+        wz::rhi::ConstantSemanticRegistry& constants);
 }

@@ -13,33 +13,225 @@
       "deps": []
     },
     {
-      "key": "asset-key:496c99992f98a27b:99903fbbbdaf9e56:f11eca55e7000700:0000000000000000:9e3779b97f4b8704:0000000000000000:53198cbf4d109726:b6cec782206a7ac7",
-      "type": 1048,
-      "schema": "0xf11eca55e7000700",
+      "key": "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "params": [
+        {
+          "name": "source_path",
+          "type": "string",
+          "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_vs.hlsl"
+        }
+      ]
+    },
+    {
+      "key": "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "params": [
+        {
+          "name": "source_path",
+          "type": "string",
+          "value": "D:\\code\\wozzits\\wozzits-window-engine\\examples\\rhi_pull_cube\\shaders\\pull_cube_ps.hlsl"
+        }
+      ]
+    },
+    {
+      "key": "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
       "stage": 0,
       "residency": 1,
       "kind": 0,
       "demand_root": 0,
       "deps": [
-        "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000"
+        "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000"
       ],
       "params": [
         {
-          "name": "program",
+          "name": "stage",
           "type": "int",
           "value": 0
         },
         {
-          "name": "policy_flags",
-          "type": "int",
-          "value": 1
+          "name": "entry",
+          "type": "string",
+          "value": "main"
         },
         {
-          "name": "domain",
+          "name": "target",
+          "type": "string",
+          "value": "vs_5_1"
+        },
+        {
+          "name": "primary_source_index",
           "type": "int",
           "value": 0
         }
       ]
+    },
+    {
+      "key": "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906",
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000"
+      ],
+      "params": [
+        {
+          "name": "stage",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "entry",
+          "type": "string",
+          "value": "main"
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "value": "ps_5_1"
+        },
+        {
+          "name": "primary_source_index",
+          "type": "int",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "key": "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b",
+      "type": 1049,
+      "schema": "0xf11eca55e7000103",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
+        "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "string",
+          "value": ""
+        },
+        {
+          "name": "binding_model",
+          "type": "int",
+          "value": 3
+        },
+        {
+          "name": "topology",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "default_domain",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "default_policy_flags",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "input_layout",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "blend_mode",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "depth_mode",
+          "type": "int",
+          "value": 2
+        },
+        {
+          "name": "raster_mode",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "binding_layout",
+          "type": "int",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "key": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8",
+      "type": 1048,
+      "schema": "0xf11eca55e7000706",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
+        "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b"
+      ]
     }
-  ]
+  ],
+  "layout": {
+    "version": 1,
+    "committed_nodes": [
+      {
+        "key": "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
+        "x": 54,
+        "y": -260
+      },
+      {
+        "key": "asset-key:cb8f3ff154da1b83:c4877a78f2da94fa:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+        "x": -92,
+        "y": -100
+      },
+      {
+        "key": "asset-key:cb8f3ff154da1b83:2c940077a6dbf2b4:f11eca55e7000002:0000000000000000:9e3779b97f4a7dd0:0000000000000000:0000000000000000:0000000000000000",
+        "x": 36,
+        "y": 76
+      },
+      {
+        "key": "asset-key:fbd79b38e8303e9e:619053f5b0f180b6:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:1e8656dc3ce4ba32",
+        "x": 374,
+        "y": -84
+      },
+      {
+        "key": "asset-key:fbd79b38e8303e9e:619053f5b0f181f7:f11eca55e7000100:0000000000000000:9e3779b97f4a7d13:0000000000000000:2433c09148f57d64:63c70a71cebc1906",
+        "x": 377,
+        "y": 124
+      },
+      {
+        "key": "asset-key:9384cd1d234456b0:262a6912f4008eb9:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dd60c2a041eb0bfb:cad7120c5aa2382b",
+        "x": 734,
+        "y": -35
+      },
+      {
+        "key": "asset-key:b253576b6b5e62e7:9e3779b97f4a7c15:f11eca55e7000706:0000000000000000:9e3779b97f4b8704:0000000000000000:d6972da0851ba466:0bf81d96711be6f8",
+        "x": 1062,
+        "y": -277
+      }
+    ],
+    "candidate_nodes": []
+  }
 }

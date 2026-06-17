@@ -13,6 +13,7 @@
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
 #include <engine/assets/terrain_visual_proxy_asset_module.h>
+#include <engine/assets/render_program/render_program_asset_module.h>
 
 #include <logging/logger.h>
 
@@ -85,6 +86,13 @@ namespace wz::engine::assets
         float target_pixels_per_triangle = 0.0f;
     };
 
+    struct RhiPullMeshRenderableDesc
+    {
+        std::string name;
+        MeshAsset mesh{};
+        RenderProgramAsset program{};
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -111,7 +119,8 @@ namespace wz::engine::assets
         RenderableAssetModule(
             wz::asset::AssetSystem& system,
             wz::Logger& logger,
-            RenderableAssetTable& table);
+            RenderableAssetTable& table,
+            RhiRenderableTable& rhi_table);
 
         RenderableAsset create_mesh_wireframe(
             const MeshWireframeRenderableDesc& desc);
@@ -131,15 +140,22 @@ namespace wz::engine::assets
         RenderableAsset create_terrain_surface(
             const TerrainSurfaceRenderableDesc& desc);
 
+        RenderableAsset create_rhi_pull_mesh(
+            const RhiPullMeshRenderableDesc& desc);
+
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;
 
         const RenderableAssetData* get_renderable_data(
             RenderableHandle handle) const;
 
+        const RhiRenderableRecipe* get_rhi_renderable_recipe(
+            const RenderableAsset& asset) const;
+
     private:
         wz::asset::AssetSystem& system_;
         wz::Logger& logger_;
         RenderableAssetTable& table_;
+        RhiRenderableTable& rhi_table_;
     };
 }

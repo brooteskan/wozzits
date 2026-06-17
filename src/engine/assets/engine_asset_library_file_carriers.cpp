@@ -7,13 +7,51 @@
 #include <file/filesystem.h>
 
 #include <any>
+#include <cctype>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        std::string trim_quoted_path(std::string_view raw)
+        {
+            while (!raw.empty()
+                && std::isspace(static_cast<unsigned char>(raw.front())))
+            {
+                raw.remove_prefix(1);
+            }
+            while (!raw.empty()
+                && std::isspace(static_cast<unsigned char>(raw.back())))
+            {
+                raw.remove_suffix(1);
+            }
+            if (raw.size() >= 2
+                && ((raw.front() == '"' && raw.back() == '"')
+                    || (raw.front() == '\'' && raw.back() == '\'')))
+            {
+                raw.remove_prefix(1);
+                raw.remove_suffix(1);
+            }
+            else {
+                const size_t first_quote = raw.find('"');
+                const size_t last_quote = raw.rfind('"');
+                if (first_quote != std::string_view::npos
+                    && last_quote != first_quote)
+                {
+                    const std::string embedded{
+                        raw.substr(first_quote + 1u, last_quote - first_quote - 1u) };
+                    if (wz::fs::is_absolute(embedded)) {
+                        return embedded;
+                    }
+                }
+            }
+            return std::string(raw);
+        }
+
         wz::asset::AssetNode compile_file_byte_carrier(
             const wz::asset::AssetNode& input,
             wz::Logger& logger,
@@ -30,6 +68,7 @@ namespace wz::engine::assets::internal
             {
                 path = params->get<std::string>("source_path", {});
             }
+            path = trim_quoted_path(path);
 
             if (path.empty()) {
                 logger.error(

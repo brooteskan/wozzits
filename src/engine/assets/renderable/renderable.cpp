@@ -65,4 +65,55 @@ namespace wz::engine::assets
         renderables_.emplace_back();
         epochs_.push_back(0);
     }
+
+    RhiRenderableTable::RhiRenderableTable()
+    {
+        recipes_.emplace_back();
+        epochs_.push_back(0);
+    }
+
+    wz::asset::ResourceHandle RhiRenderableTable::add(
+        RhiRenderableRecipe recipe)
+    {
+        if (!recipe.valid()) {
+            return {};
+        }
+
+        const uint32_t id = static_cast<uint32_t>(recipes_.size());
+        recipes_.push_back(std::move(recipe));
+        epochs_.push_back(1);
+
+        return wz::asset::ResourceHandle{
+            .id = id,
+            .epoch = epochs_[id],
+            .type = kAssetTypeRhiRenderableRecipe,
+        };
+    }
+
+    const RhiRenderableRecipe* RhiRenderableTable::get(
+        wz::asset::ResourceHandle handle) const
+    {
+        if (!handle.valid()) {
+            return nullptr;
+        }
+        if (handle.type != kAssetTypeRhiRenderableRecipe) {
+            return nullptr;
+        }
+        if (handle.id >= recipes_.size()) {
+            return nullptr;
+        }
+        if (epochs_[handle.id] != handle.epoch) {
+            return nullptr;
+        }
+        return &recipes_[handle.id];
+    }
+
+    void RhiRenderableTable::destroy()
+    {
+        recipes_.clear();
+        epochs_.clear();
+
+        recipes_.emplace_back();
+        epochs_.push_back(0);
+    }
 }

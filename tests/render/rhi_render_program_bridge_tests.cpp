@@ -222,6 +222,52 @@ TEST(RhiRenderProgramBridge, UnknownDescriptorSemanticIsMalformed)
     EXPECT_FALSE(converted.has_value());
 }
 
+TEST(RhiRenderProgramBridge, ConvertsResolvedRenderProgramDataWithShaderKeys)
+{
+    const ea::CustomRenderProgramDesc src = make_mask_style_desc();
+    ea::RenderProgramData data;
+    data.binding_model = src.binding_model;
+    data.topology = src.topology;
+    data.input_layout = src.input_layout;
+    data.blend_mode = src.blend_mode;
+    data.depth_mode = src.depth_mode;
+    data.raster_mode = src.raster_mode;
+    data.root_constants = src.root_constants;
+    data.descriptor_bindings = src.descriptor_bindings;
+
+    const wz::asset::AssetKey program_key = shader_key(0xCC00, 0xDD00);
+    const wz::asset::AssetKey vertex_key = shader_key(0xAA01, 0xBB01);
+    const wz::asset::AssetKey pixel_key = shader_key(0xAA02, 0xBB02);
+
+    wz::rhi::DescriptorSemanticRegistry descriptors;
+    wz::rhi::ConstantSemanticRegistry constants;
+    const auto converted =
+        wz::engine::rendering::to_rhi_render_program_desc(
+            data,
+            program_key,
+            vertex_key,
+            pixel_key,
+            descriptors,
+            constants);
+
+    ASSERT_TRUE(converted.has_value());
+    EXPECT_EQ(converted->name, "program#000000000000dd00000000000000cc00");
+    EXPECT_EQ(converted->vertex_shader,
+        wz::engine::rendering::shader_ref(vertex_key));
+    EXPECT_EQ(converted->pixel_shader,
+        wz::engine::rendering::shader_ref(pixel_key));
+
+    const wz::rhi::ShaderResourceGroupLayout* object_layout =
+        wz::rhi::find_shader_resource_group_layout(
+            converted->shader_resource_groups, 2);
+    ASSERT_NE(object_layout, nullptr);
+    EXPECT_EQ(object_layout->constants.dword_count(), 48u);
+    ASSERT_EQ(object_layout->descriptors.size(), 2u);
+    EXPECT_EQ(
+        descriptors.name_of(object_layout->descriptors[0].semantic),
+        std::string_view{ "mesh_field_visualization" });
+}
+
 TEST(RhiShaderBridge, RegisteredProgramShadersResolveThroughConvertedProgram)
 {
     ea::CustomRenderProgramDesc src = make_mask_style_desc();

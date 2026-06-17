@@ -1,7 +1,8 @@
 {
   "schema": "wozzits.scene_editor.project.v1",
   "version": 1,
-  "name": "test_mesh_005",
+  "name": "test_mesh_001",
+  "rhi_render_path": true,
   "scene": "scene.json",
   "asset_graph": "assets.graph.json",
   "behavior_project_folder": "behavior",

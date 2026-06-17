@@ -136,6 +136,34 @@ namespace wz::engine::assets
         std::vector<uint32_t> epochs_;
     };
 
+    struct RhiRenderableRecipe
+    {
+        wz::asset::AssetKey mesh_key{};
+        wz::asset::AssetKey program_key{};
+
+        bool valid() const noexcept
+        {
+            return !(mesh_key == wz::asset::AssetKey{})
+                && !(program_key == wz::asset::AssetKey{});
+        }
+    };
+
+    class RhiRenderableTable
+    {
+    public:
+        RhiRenderableTable();
+
+        wz::asset::ResourceHandle add(RhiRenderableRecipe recipe);
+        const RhiRenderableRecipe* get(
+            wz::asset::ResourceHandle handle) const;
+
+        void destroy();
+
+    private:
+        std::vector<RhiRenderableRecipe> recipes_;
+        std::vector<uint32_t> epochs_;
+    };
+
     struct MeshWireframeRenderableCompileDesc
     {
         wz::asset::AssetKey mesh_asset{};
@@ -189,5 +217,11 @@ namespace wz::engine::assets
             | RenderPolicy_DepthWrite;
         TerrainLightingData lighting{};
         float target_pixels_per_triangle = 0.0f;
+    };
+
+    struct RhiPullMeshRenderableCompileDesc
+    {
+        wz::asset::AssetKey mesh_asset{};
+        wz::asset::AssetKey render_program_asset{};
     };
 }

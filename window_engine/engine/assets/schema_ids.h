@@ -453,6 +453,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000705ull
     };
 
+    // RHI-native mesh renderable recipe. Compiled from one mesh dependency
+    // and one render-program dependency; produces kAssetTypeRenderable output
+    // containing an RhiRenderableRecipe in the RHI renderable table.
+    inline constexpr wz::asset::SchemaID kRhiPullMeshRenderableSchema{
+        0xF11E'CA55'E7'000706ull
+    };
+
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
         0xF11E'CA55'E7'000701ull
     };

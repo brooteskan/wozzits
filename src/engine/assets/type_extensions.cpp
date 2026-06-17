@@ -154,6 +154,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeRenderable);
             WZ_ADD_TYPE(kAssetTypeRenderProgram);
             WZ_ADD_TYPE(kAssetTypeComputePipeline);
+            WZ_ADD_TYPE(kAssetTypeRhiRenderableRecipe);
             WZ_ADD_TYPE(kAssetTypeMaterialDefinition);
             WZ_ADD_TYPE(kAssetTypeMaterialInstance);
             WZ_ADD_TYPE(kAssetTypeMaterialTemplate);
@@ -357,6 +358,9 @@ namespace wz::engine::assets
             WZ_SET_TYPE_NAME(kAssetTypeRenderable, "Renderable");
             WZ_SET_TYPE_NAME(kAssetTypeRenderProgram, "Render program");
             WZ_SET_TYPE_NAME(kAssetTypeComputePipeline, "Compute pipeline");
+            WZ_SET_TYPE_NAME(
+                kAssetTypeRhiRenderableRecipe,
+                "RHI renderable recipe");
             WZ_SET_TYPE_NAME(kAssetTypeMeshRenderStyle, "Mesh render style");
             WZ_SET_TYPE_NAME(kAssetTypeScene, "Scene");
             WZ_SET_TYPE_NAME(kAssetTypeDirectLight, "Direct light");
@@ -482,6 +486,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kMeshRenderStyleSchema, "Mesh render style");
             WZ_ADD_SCHEMA(kMeshWireframeRenderableSchema, "Mesh wireframe renderable");
             WZ_ADD_SCHEMA(kMeshStyledRenderableSchema, "Mesh styled renderable");
+            WZ_ADD_SCHEMA(kRhiPullMeshRenderableSchema, "RHI pull mesh renderable");
             WZ_ADD_SCHEMA(
                 kGaussianSplatDebugRenderableSchema,
                 "Gaussian splat debug renderable");

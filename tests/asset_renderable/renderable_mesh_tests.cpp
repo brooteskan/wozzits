@@ -1,6 +1,11 @@
 ﻿#include "renderable_asset_module_test_support.h"
 
 #include <cstddef>
+#include <asset/draft.h>
+#include <asset/system.h>
+#include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/key_factories/renderable.h>
+#include <engine/assets/schema_ids.h>
 #include <cstring>
 #include <vector>
 
@@ -19,6 +24,334 @@ namespace
         std::memcpy(bytes.data(), values.begin(), bytes.size());
         return bytes;
     }
+
+    constexpr wz::asset::SchemaID kRhiRenderableTestMeshSchema{
+        0x7111'0000'0000'0001ull
+    };
+
+    constexpr wz::asset::SchemaID kRhiRenderableTestProgramSchema{
+        0x7111'0000'0000'0002ull
+    };
+
+    wz::asset::AssetKey test_asset_key(uint64_t id)
+    {
+        return wz::asset::AssetKey{
+            .content_hash = { id, 0x71110000ull },
+            .schema_hash = { id ^ 0x1000ull, 0x71110001ull },
+            .compiler_hash = { id ^ 0x2000ull, 0x71110002ull },
+            .deps_hash = { id ^ 0x3000ull, 0x71110003ull },
+        };
+    }
+
+    wz::asset::AssetNode test_source_node(
+        wz::asset::AssetKey key,
+        wz::asset::AssetType type,
+        wz::asset::SchemaID schema)
+    {
+        wz::asset::AssetNode node{};
+        node.key = key;
+        node.type = type;
+        node.schema = schema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        return node;
+    }
+
+    wz::engine::assets::MeshData test_triangle_mesh()
+    {
+        wz::engine::assets::MeshData mesh{};
+        mesh.vertices.resize(3);
+        mesh.vertices[0].position[0] = 0.0f;
+        mesh.vertices[0].position[1] = 0.0f;
+        mesh.vertices[0].position[2] = 0.0f;
+        mesh.vertices[1].position[0] = 1.0f;
+        mesh.vertices[1].position[1] = 0.0f;
+        mesh.vertices[1].position[2] = 0.0f;
+        mesh.vertices[2].position[0] = 0.0f;
+        mesh.vertices[2].position[1] = 1.0f;
+        mesh.vertices[2].position[2] = 0.0f;
+        mesh.indices = { 0u, 1u, 2u };
+        return mesh;
+    }
+
+    class NullMeshFieldComputeBackend final
+        : public wz::engine::assets::MeshFieldComputeBackend
+    {
+    public:
+        bool available() const noexcept override { return false; }
+
+        wz::asset::ResourceHandle create_compute_pipeline(
+            const wz::engine::assets::ComputePipelineData&,
+            wz::asset::ResourceHandle) override
+        {
+            return {};
+        }
+
+        wz::asset::ResourceHandle create_structured_buffer(
+            const BufferDesc&) override
+        {
+            return {};
+        }
+
+        wz::asset::ResourceHandle create_rw_structured_buffer(
+            const BufferDesc&) override
+        {
+            return {};
+        }
+
+        bool dispatch(const DispatchDesc&) override { return false; }
+
+        std::vector<std::byte> readback_buffer(
+            wz::asset::ResourceHandle) override
+        {
+            return {};
+        }
+
+        bool release_buffer(wz::asset::ResourceHandle) override
+        {
+            return false;
+        }
+
+        bool release_pipeline(wz::asset::ResourceHandle) override
+        {
+            return false;
+        }
+
+        wz::asset::ResourceHandle create_field_visualization_from_gpu_source(
+            wz::asset::ResourceHandle,
+            uint64_t,
+            uint32_t,
+            uint32_t) override
+        {
+            return {};
+        }
+
+        bool release_field_visualization(wz::asset::ResourceHandle) override
+        {
+            return false;
+        }
+    };
+}
+
+TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys)
+{
+    using namespace wz::asset;
+    using namespace wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    NullMeshFieldComputeBackend mesh_field_compute;
+
+    ScalarFieldTable scalar_fields_table;
+    VectorFieldTable vector_fields_table;
+    CSVTable csv_table;
+    JSONTable json_table;
+    TOMLTable toml_table;
+    MeshTable mesh_table;
+    MeshDerivedFieldTable mesh_derived_field_table;
+    MeshSparseOperatorTable mesh_sparse_operator_table;
+    MeshClusterHierarchyTable mesh_cluster_hierarchy_table;
+    GpuResidentFieldTable gpu_resident_field_table;
+    GpuResidentMeshDataTable gpu_resident_mesh_data_table;
+    GpuResidentSparseOperatorTable gpu_resident_sparse_operator_table;
+    GpuResidentMeshClusterHierarchyTable
+        gpu_resident_mesh_cluster_hierarchy_table;
+    TerrainAssetTable terrain_table;
+    TerrainVisualProxyTable terrain_visual_proxy_table;
+    CollisionAssetTable collision_table;
+    GaussianSplatCloudTable gaussian_splat_cloud_table;
+    GaussianSplatColorLODTable gaussian_splat_color_lod_table;
+    DataTable data_table;
+    DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table;
+    DiagnosticTimeframeSummaryTable diagnostic_timeframe_summary_table;
+    CSVExportTable csv_export_table;
+    MeshRenderStyleTable mesh_render_style_table;
+    RenderableAssetTable renderable_table;
+    RhiRenderableTable rhi_renderable_table;
+    RenderProgramTable render_program_table;
+    ComputePipelineTable compute_pipeline_table;
+    DirectLightTable direct_light_table;
+    AmbientLightingTable ambient_lighting_table;
+    HDRIEnvironmentTable hdri_environment_table;
+    SceneAssetTable scene_table;
+    EngineAssetCacheSettings cache_settings{};
+
+    CompilerRegistry registry;
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kRhiRenderableTestMeshSchema,
+        .output_type = kAssetTypeMesh,
+        .compile = [&mesh_table](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = mesh_table.add(test_triangle_mesh());
+            return out;
+        },
+    });
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kRhiRenderableTestProgramSchema,
+        .output_type = kAssetTypeRenderProgram,
+        .compile = [&render_program_table](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            RenderProgramData data{};
+            data.binding_model = RenderBindingModel::MeshVertexPull;
+            data.input_layout = InputLayoutKind::None;
+            data.vertex_shader = ResourceHandle{
+                .id = 1,
+                .epoch = 1,
+                .type = AssetType::Shader,
+            };
+            data.pixel_shader = ResourceHandle{
+                .id = 2,
+                .epoch = 1,
+                .type = AssetType::Shader,
+            };
+
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = render_program_table.add(std::move(data));
+            return out;
+        },
+    });
+
+    const internal::EngineAssetContext ctx{
+        .device = device,
+        .logger = logger,
+        .mesh_field_compute = mesh_field_compute,
+        .scalar_fields_table = scalar_fields_table,
+        .vector_fields_table = vector_fields_table,
+        .csv_table = csv_table,
+        .json_table = json_table,
+        .toml_table = toml_table,
+        .mesh_table = mesh_table,
+        .mesh_derived_field_table = mesh_derived_field_table,
+        .mesh_sparse_operator_table = mesh_sparse_operator_table,
+        .mesh_cluster_hierarchy_table = mesh_cluster_hierarchy_table,
+        .gpu_resident_field_table = gpu_resident_field_table,
+        .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table,
+        .gpu_resident_sparse_operator_table =
+            gpu_resident_sparse_operator_table,
+        .gpu_resident_mesh_cluster_hierarchy_table =
+            gpu_resident_mesh_cluster_hierarchy_table,
+        .terrain_table = terrain_table,
+        .terrain_visual_proxy_table = terrain_visual_proxy_table,
+        .collision_table = collision_table,
+        .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
+        .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table,
+        .data_table = data_table,
+        .diagnostic_resampled_time_series_table =
+            diagnostic_resampled_time_series_table,
+        .diagnostic_timeframe_summary_table =
+            diagnostic_timeframe_summary_table,
+        .csv_export_table = csv_export_table,
+        .mesh_render_style_table = mesh_render_style_table,
+        .renderable_table = renderable_table,
+        .rhi_renderable_table = rhi_renderable_table,
+        .render_program_table = render_program_table,
+        .compute_pipeline_table = compute_pipeline_table,
+        .direct_light_table = direct_light_table,
+        .ambient_lighting_table = ambient_lighting_table,
+        .hdri_environment_table = hdri_environment_table,
+        .scene_table = scene_table,
+        .cache_settings = cache_settings,
+    };
+    internal::register_renderable_compilers(registry, ctx);
+
+    const AssetKey mesh_key = test_asset_key(1);
+    const AssetKey program_key = test_asset_key(2);
+    const AssetKey renderable_key =
+        make_rhi_pull_mesh_renderable_key(
+            "test/rhi_pull_mesh_renderable",
+            mesh_key,
+            program_key);
+
+    AssetGraphDraft draft{};
+    const AssetGraphDraftNodeId mesh_node =
+        add_asset_graph_draft_node(
+            draft,
+            test_source_node(
+                mesh_key,
+                kAssetTypeMesh,
+                kRhiRenderableTestMeshSchema),
+            AssetGraphDraftNodeState::Existing);
+    const AssetGraphDraftNodeId program_node =
+        add_asset_graph_draft_node(
+            draft,
+            test_source_node(
+                program_key,
+                kAssetTypeRenderProgram,
+                kRhiRenderableTestProgramSchema),
+            AssetGraphDraftNodeState::Existing);
+
+    AssetNode renderable_node =
+        test_source_node(
+            renderable_key,
+            kAssetTypeRenderable,
+            kRhiPullMeshRenderableSchema);
+    renderable_node.meta = RhiPullMeshRenderableCompileDesc{
+        .mesh_asset = mesh_key,
+        .render_program_asset = program_key,
+    };
+    const AssetGraphDraftNodeId renderable_draft_node =
+        add_asset_graph_draft_node(
+            draft,
+            std::move(renderable_node),
+            AssetGraphDraftNodeState::Existing);
+
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(
+            draft,
+            mesh_node,
+            renderable_draft_node,
+            0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(
+            draft,
+            program_node,
+            renderable_draft_node,
+            1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    ASSERT_TRUE(validate_asset_graph_draft(draft, registry));
+
+    const std::vector<AssetGraphDraftRegistration> registrations =
+        asset_graph_draft_to_registrations(draft, &registry);
+    std::vector<AssetSystem::RegistrationEntry> entries;
+    entries.reserve(registrations.size());
+    for (const AssetGraphDraftRegistration& registration : registrations) {
+        entries.push_back(AssetSystem::RegistrationEntry{
+            .node = registration.node,
+            .dep_keys = registration.dep_keys,
+        });
+    }
+
+    AssetSystem system(std::move(registry));
+    ASSERT_TRUE(system.replace_registered_assets(std::move(entries)));
+
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(system.resolve_all(&errors), 3u);
+    EXPECT_TRUE(errors.empty());
+
+    const AssetSystem::CompiledAsset* compiled =
+        system.find_compiled(renderable_key);
+    ASSERT_NE(compiled, nullptr);
+    ASSERT_TRUE(compiled->handle.valid());
+    EXPECT_EQ(compiled->node->type, kAssetTypeRenderable);
+    EXPECT_EQ(compiled->handle.type, kAssetTypeRhiRenderableRecipe);
+    EXPECT_EQ(renderable_table.get(compiled->handle), nullptr);
+
+    const RhiRenderableRecipe* recipe =
+        rhi_renderable_table.get(compiled->handle);
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(recipe->mesh_key, mesh_key);
+    EXPECT_EQ(recipe->program_key, program_key);
 }
 
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)

@@ -141,6 +141,15 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        RhiPullMeshRenderableCompileDesc rhi_pull_mesh_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            RhiPullMeshRenderableCompileDesc desc{};
+            desc.mesh_asset = dep_key(dep_nodes, 0);
+            desc.render_program_asset = dep_key(dep_nodes, 1);
+            return desc;
+        }
+
         GaussianSplatDebugRenderableCompileDesc
         gaussian_splat_debug_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -462,6 +471,8 @@ namespace wz::engine::assets::internal
         auto* mesh_derived_field_table = &ctx.mesh_derived_field_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
         auto* renderable_table = &ctx.renderable_table;
+        auto* rhi_renderable_table = &ctx.rhi_renderable_table;
+        auto* render_program_table = &ctx.render_program_table;
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWireframeRenderableSchema,
@@ -691,6 +702,76 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kRhiPullMeshRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "geometry", kAssetTypeMesh },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .compile = [logger, mesh_table, render_program_table,
+                        rhi_renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                RhiPullMeshRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<RhiPullMeshRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    editor_desc =
+                        rhi_pull_mesh_renderable_desc_from_deps(dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 2) {
+                        logger->error(
+                            "RHI pull mesh renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "RHI pull mesh renderable requires geometry and program dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const MeshData* mesh = mesh_table->get(dep_handles[0]);
+                if (!mesh || !mesh->valid()) {
+                    logger->error(
+                        "RHI pull mesh renderable source mesh is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[1]);
+                if (!program) {
+                    logger->error(
+                        "RHI pull mesh renderable program is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .mesh_key = desc->mesh_asset,
+                        .program_key = desc->render_program_asset,
+                    });
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store RHI pull mesh renderable recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshStyledRenderableSchema,

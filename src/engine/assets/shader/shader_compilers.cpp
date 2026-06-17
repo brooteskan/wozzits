@@ -6,8 +6,107 @@
 #include <file/filesystem.h>
 #include <gpu/shader.h>
 
+#include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
+#include <cctype>
+
 namespace wz::engine::assets::internal
 {
+    namespace
+    {
+        constexpr std::array<std::string_view, 3> kShaderStageOptions = {
+            "Vertex",
+            "Pixel",
+            "Compute",
+        };
+
+        wz::gpu::ShaderStage shader_stage_from_index(int64_t value)
+        {
+            if (value == 1) {
+                return wz::gpu::ShaderStage::Pixel;
+            }
+            if (value == 2) {
+                return wz::gpu::ShaderStage::Compute;
+            }
+            return wz::gpu::ShaderStage::Vertex;
+        }
+
+        std::string default_target_for_stage(wz::gpu::ShaderStage stage)
+        {
+            switch (stage) {
+            case wz::gpu::ShaderStage::Vertex:
+                return "vs_5_1";
+            case wz::gpu::ShaderStage::Pixel:
+                return "ps_5_1";
+            case wz::gpu::ShaderStage::Compute:
+                return "cs_5_1";
+            }
+            return "vs_5_1";
+        }
+
+        wz::gpu::HLSLCompileDesc hlsl_compile_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            wz::gpu::HLSLCompileDesc desc{};
+            desc.stage =
+                shader_stage_from_index(params.get<int64_t>("stage", 0));
+            desc.entry = params.get<std::string>("entry", "main");
+            desc.target =
+                params.get<std::string>(
+                    "target",
+                    default_target_for_stage(desc.stage));
+            desc.primary_source_index =
+                static_cast<uint32_t>(
+                    std::max<int64_t>(
+                        0,
+                        params.get<int64_t>("primary_source_index", 0)));
+            if (desc.entry.empty()) {
+                desc.entry = "main";
+            }
+            if (desc.target.empty()) {
+                desc.target = default_target_for_stage(desc.stage);
+            }
+            return desc;
+        }
+
+        std::string trim_quoted_path(std::string_view raw)
+        {
+            while (!raw.empty()
+                && std::isspace(static_cast<unsigned char>(raw.front())))
+            {
+                raw.remove_prefix(1);
+            }
+            while (!raw.empty()
+                && std::isspace(static_cast<unsigned char>(raw.back())))
+            {
+                raw.remove_suffix(1);
+            }
+            if (raw.size() >= 2
+                && ((raw.front() == '"' && raw.back() == '"')
+                    || (raw.front() == '\'' && raw.back() == '\'')))
+            {
+                raw.remove_prefix(1);
+                raw.remove_suffix(1);
+            }
+            else {
+                const size_t first_quote = raw.find('"');
+                const size_t last_quote = raw.rfind('"');
+                if (first_quote != std::string_view::npos
+                    && last_quote != first_quote)
+                {
+                    const std::string embedded{
+                        raw.substr(first_quote + 1u, last_quote - first_quote - 1u) };
+                    if (wz::fs::is_absolute(embedded)) {
+                        return embedded;
+                    }
+                }
+            }
+            return std::string(raw);
+        }
+    }
+
     void register_shader_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
@@ -45,6 +144,7 @@ namespace wz::engine::assets::internal
                 {
                     path = params->get<std::string>("source_path", {});
                 }
+                path = trim_quoted_path(path);
 
                 if (path.empty()) {
                     logger.error(
@@ -75,16 +175,54 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", wz::asset::AssetType::ShaderSource },
             },
+            .parameters = {
+                {
+                    .name = "stage",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Stage",
+                    .default_num = 0.0,
+                    .options = kShaderStageOptions,
+                },
+                {
+                    .name = "entry",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Entry",
+                    .default_str = "main",
+                },
+                {
+                    .name = "target",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Target",
+                    .default_str = "vs_5_1",
+                },
+                {
+                    .name = "primary_source_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Primary source index",
+                    .default_num = 0.0,
+                },
+            },
             .compile = [&logger, &device](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
-                const auto* desc =
+                wz::gpu::HLSLCompileDesc param_desc{};
+                auto* desc =
                     std::any_cast<wz::gpu::HLSLCompileDesc>(&input.meta);
 
                 if (!desc) {
-                    logger.error("shader node missing HLSLCompileDesc");
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        param_desc = hlsl_compile_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error(
+                        "shader node missing HLSLCompileDesc or ParamBlock");
                     return compile_failed_node(input);
                 }
 

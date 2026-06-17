@@ -79,6 +79,11 @@ namespace wz::engine::assets::internal
             "Wireframe cull none",
         };
 
+        constexpr std::array<std::string_view, 2> kBindingLayoutOptions = {
+            "Manual",
+            "RHI pull mesh MVP",
+        };
+
         template<class Enum, std::size_t Count>
         Enum enum_param(
             const wz::asset::ParamBlock& params,
@@ -174,6 +179,34 @@ namespace wz::engine::assets::internal
                     "raster_mode",
                     desc.raster_mode,
                     kRasterModeOptions);
+
+            const int64_t binding_layout =
+                params.get<int64_t>("binding_layout", 0);
+            if (binding_layout == 1) {
+                desc.root_constants.push_back(RootConstantBinding{
+                    .visibility = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .value_count = 16,
+                    .semantic = "mvp",
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshPositions,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshIndices,
+                    .shader_register = 1,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+            }
             return desc;
         }
 
@@ -741,6 +774,13 @@ namespace wz::engine::assets::internal
                     .default_num =
                         static_cast<double>(RasterMode::SolidCullBack),
                     .options = kRasterModeOptions,
+                },
+                {
+                    .name = "binding_layout",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Binding layout",
+                    .default_num = 0.0,
+                    .options = kBindingLayoutOptions,
                 },
             },
             .compile = [&logger, &table](

@@ -307,6 +307,7 @@ namespace wz::engine::assets
         CSVExportTable                      csv_export_table_;
         MeshRenderStyleTable        mesh_render_style_table_;
         RenderableAssetTable        renderable_table_;
+        RhiRenderableTable          rhi_renderable_table_;
         RenderProgramTable          render_program_table_;
         ComputePipelineTable        compute_pipeline_table_;
         DirectLightTable            direct_light_table_;

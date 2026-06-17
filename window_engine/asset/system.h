@@ -280,6 +280,14 @@ namespace wz::asset {
             return &lookup_buf_;
         }
 
+        // Look up a compiled node by key, including carrier nodes whose payload
+        // is bytes rather than a ResourceHandle.
+        inline const AssetNode* find_compiled_node(const AssetKey& key) const {
+            auto it = compiled_nodes_.find(key);
+            if (it == compiled_nodes_.end()) return nullptr;
+            return &it->second;
+        }
+
         [[nodiscard]] inline std::optional<NodeResolveState>
         node_resolve_state(const AssetKey& key) const
         {
