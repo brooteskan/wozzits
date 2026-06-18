@@ -264,7 +264,7 @@ namespace wz::engine::assets {
     // mesh view and sparse operator identity, while GPU buffers live in the
     // runtime resident sparse mesh table.
     inline constexpr wz::asset::SchemaID kGpuSparseMeshFromMeshSchema{
-        0xF11E'CA55'E7'00040Bull
+        0xF11E'CA55'E7'000412ull
     };
 
     // Semantic terrain asset generated from a 2D scalar height field.
