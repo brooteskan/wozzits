@@ -47,6 +47,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshSparseDiffusionBandsCompilerVersion = 2;
     inline constexpr uint64_t kMeshFieldLevelMaskCompilerVersion = 1;
     inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 2;
+    inline constexpr uint64_t kGpuSparseMeshCompilerVersion = 1;
     inline constexpr uint64_t kMeshClusterHierarchyCompilerVersion = 5;
     inline constexpr uint64_t kMeshClusterHierarchyPreviewMeshCompilerVersion = 1;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;

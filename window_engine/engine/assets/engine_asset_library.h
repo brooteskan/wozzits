@@ -39,6 +39,8 @@
 
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/mesh_sparse_operator_asset_module.h>
+#include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh.h>
+#include <engine/assets/gpu_sparse_mesh_asset_module.h>
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.h>
 #include <engine/assets/mesh_cluster_hierarchy_asset_module.h>
 
@@ -223,6 +225,9 @@ namespace wz::engine::assets
         MeshSparseOperatorAssetModule&       mesh_sparse_operators()       { return mesh_sparse_operators_; }
         const MeshSparseOperatorAssetModule& mesh_sparse_operators() const { return mesh_sparse_operators_; }
 
+        GpuSparseMeshAssetModule&       gpu_sparse_meshes()       { return gpu_sparse_meshes_; }
+        const GpuSparseMeshAssetModule& gpu_sparse_meshes() const { return gpu_sparse_meshes_; }
+
         MeshClusterHierarchyAssetModule&       mesh_cluster_hierarchies()       { return mesh_cluster_hierarchies_; }
         const MeshClusterHierarchyAssetModule& mesh_cluster_hierarchies() const { return mesh_cluster_hierarchies_; }
 
@@ -285,6 +290,9 @@ namespace wz::engine::assets
         GpuResidentSparseOperatorTable&       gpu_resident_sparse_operators()       { return gpu_resident_sparse_operator_table_; }
         const GpuResidentSparseOperatorTable& gpu_resident_sparse_operators() const { return gpu_resident_sparse_operator_table_; }
 
+        GpuResidentSparseMeshTable&       gpu_resident_sparse_meshes()       { return gpu_resident_sparse_mesh_table_; }
+        const GpuResidentSparseMeshTable& gpu_resident_sparse_meshes() const { return gpu_resident_sparse_mesh_table_; }
+
         GpuResidentMeshClusterHierarchyTable& gpu_resident_mesh_cluster_hierarchies()
         {
             return gpu_resident_mesh_cluster_hierarchy_table_;
@@ -323,10 +331,12 @@ namespace wz::engine::assets
         MeshTable                   mesh_table_;
         MeshDerivedFieldTable       mesh_derived_field_table_;
         MeshSparseOperatorTable     mesh_sparse_operator_table_;
+        GpuSparseMeshTable          gpu_sparse_mesh_table_;
         MeshClusterHierarchyTable   mesh_cluster_hierarchy_table_;
         GpuResidentFieldTable       gpu_resident_field_table_;
         GpuResidentMeshDataTable    gpu_resident_mesh_data_table_;
         GpuResidentSparseOperatorTable gpu_resident_sparse_operator_table_;
+        GpuResidentSparseMeshTable  gpu_resident_sparse_mesh_table_;
         GpuResidentMeshClusterHierarchyTable
             gpu_resident_mesh_cluster_hierarchy_table_;
         TerrainAssetTable           terrain_table_;
@@ -365,6 +375,7 @@ namespace wz::engine::assets
         MeshAssetModule             meshes_;
         MeshDerivedFieldAssetModule mesh_derived_fields_;
         MeshSparseOperatorAssetModule mesh_sparse_operators_;
+        GpuSparseMeshAssetModule    gpu_sparse_meshes_;
         MeshClusterHierarchyAssetModule mesh_cluster_hierarchies_;
         TerrainAssetModule          terrains_;
         TerrainVisualProxyAssetModule terrain_visual_proxies_;

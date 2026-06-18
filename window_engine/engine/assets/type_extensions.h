@@ -167,6 +167,12 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeMeshSparseOperator =
         static_cast<wz::asset::AssetType>(157);
 
+    // Implemented: logical GPU-resident sparse mesh view. Runtime CPU data is
+    // owned by GpuSparseMeshTable; GPU buffers are cached in
+    // GpuResidentSparseMeshTable.
+    inline constexpr wz::asset::AssetType kAssetTypeGpuSparseMesh =
+        static_cast<wz::asset::AssetType>(159);
+
     // Implemented: CPU-side hierarchy of mesh simplification levels/clusters.
     // Runtime data is owned by MeshClusterHierarchyTable. V0 stores identity
     // preview levels; graph-coarsening methods will extend this format.

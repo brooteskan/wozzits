@@ -48,6 +48,13 @@ namespace wz::engine::assets::internal
             ctx.mesh_table,
             ctx.mesh_sparse_operator_table,
             ctx.cache_settings);
+        register_gpu_sparse_mesh_compilers(
+            registry,
+            ctx.logger,
+            ctx.mesh_field_compute,
+            ctx.mesh_table,
+            ctx.gpu_sparse_mesh_table,
+            ctx.gpu_resident_sparse_mesh_table);
         register_mesh_cluster_hierarchy_compilers(
             registry,
             ctx.logger,

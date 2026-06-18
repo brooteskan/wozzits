@@ -54,6 +54,9 @@ target_sources(window_engine PRIVATE
     assets/mesh_sparse_operator/mesh_sparse_operator.cpp
     assets/mesh_sparse_operator/mesh_sparse_operator_compilers.cpp
     assets/mesh_sparse_operator_asset_module.cpp
+    assets/gpu_sparse_mesh/gpu_sparse_mesh.cpp
+    assets/gpu_sparse_mesh/gpu_sparse_mesh_compilers.cpp
+    assets/gpu_sparse_mesh_asset_module.cpp
     assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.cpp
     assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy_compilers.cpp
     assets/mesh_cluster_hierarchy_asset_module.cpp

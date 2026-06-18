@@ -259,6 +259,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00040Aull
     };
 
+    // GPU-resident sparse mesh view built from one kAssetTypeMesh dependency.
+    // Produces kAssetTypeGpuSparseMesh output; the CPU payload describes the
+    // mesh view and sparse operator identity, while GPU buffers live in the
+    // runtime resident sparse mesh table.
+    inline constexpr wz::asset::SchemaID kGpuSparseMeshFromMeshSchema{
+        0xF11E'CA55'E7'00040Bull
+    };
+
     // Semantic terrain asset generated from a 2D scalar height field.
     // Produces kAssetTypeTerrain output.
     inline constexpr wz::asset::SchemaID kTerrainFromHeightFieldSchema{

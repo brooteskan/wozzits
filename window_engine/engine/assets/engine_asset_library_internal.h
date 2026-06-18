@@ -16,6 +16,8 @@
 #include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator_compilers.h>
+#include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh.h>
+#include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh_compilers.h>
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy.h>
 #include <engine/assets/mesh_cluster_hierarchy/mesh_cluster_hierarchy_compilers.h>
 #include <engine/assets/terrain/terrain.h>
@@ -72,10 +74,12 @@ namespace wz::engine::assets::internal {
         MeshTable&                  mesh_table;
         MeshDerivedFieldTable&      mesh_derived_field_table;
         MeshSparseOperatorTable&    mesh_sparse_operator_table;
+        GpuSparseMeshTable&         gpu_sparse_mesh_table;
         MeshClusterHierarchyTable&  mesh_cluster_hierarchy_table;
         GpuResidentFieldTable&      gpu_resident_field_table;
         GpuResidentMeshDataTable&   gpu_resident_mesh_data_table;
         GpuResidentSparseOperatorTable& gpu_resident_sparse_operator_table;
+        GpuResidentSparseMeshTable& gpu_resident_sparse_mesh_table;
         GpuResidentMeshClusterHierarchyTable&
             gpu_resident_mesh_cluster_hierarchy_table;
         TerrainAssetTable&          terrain_table;

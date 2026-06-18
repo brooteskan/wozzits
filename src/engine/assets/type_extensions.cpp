@@ -75,6 +75,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeTerrainVisualProxy);
             WZ_ADD_TYPE(kAssetTypeMeshDerivedField);
             WZ_ADD_TYPE(kAssetTypeMeshSparseOperator);
+            WZ_ADD_TYPE(kAssetTypeGpuSparseMesh);
             WZ_ADD_TYPE(kAssetTypeMeshClusterHierarchy);
             WZ_ADD_TYPE(kAssetTypePointCloud);
             WZ_ADD_TYPE(kAssetTypeVoxelGrid);
@@ -438,6 +439,7 @@ namespace wz::engine::assets
                 "Mesh cluster hierarchy preview mesh");
             WZ_ADD_SCHEMA(kDebugTriangleStrideMeshSchema, "Debug triangle-stride mesh");
             WZ_ADD_SCHEMA(kMeshSparseOperatorSchema, "Mesh sparse operator");
+            WZ_ADD_SCHEMA(kGpuSparseMeshFromMeshSchema, "GPU sparse mesh from mesh");
             WZ_ADD_SCHEMA(kTerrainFromHeightFieldSchema, "Terrain from height field");
             WZ_ADD_SCHEMA(kTerrainFromMeshSchema, "Terrain from mesh");
             WZ_ADD_SCHEMA(kTerrainVisualProxySchema, "Terrain visual proxy");
