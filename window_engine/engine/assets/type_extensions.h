@@ -171,7 +171,7 @@ namespace wz::engine::assets {
     // owned by GpuSparseMeshTable; GPU buffers are cached in
     // GpuResidentSparseMeshTable.
     inline constexpr wz::asset::AssetType kAssetTypeGpuSparseMesh =
-        static_cast<wz::asset::AssetType>(159);
+        static_cast<wz::asset::AssetType>(537);
 
     // Implemented: CPU-side hierarchy of mesh simplification levels/clusters.
     // Runtime data is owned by MeshClusterHierarchyTable. V0 stores identity
