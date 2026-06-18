@@ -271,6 +271,42 @@ namespace wz::engine::rendering
             };
         }
 
+        std::optional<ResolvedRenderableResource::PulledMeshResource>
+        pulled_mesh_for_gpu_sparse_mesh(
+            const wz::engine::assets::EngineAssetLibrary& assets,
+            const wz::engine::assets::RenderableAssetData& renderable)
+        {
+            if (!renderable.render_program.valid()) {
+                return std::nullopt;
+            }
+
+            const wz::asset::AssetSystem::CompiledAsset* compiled =
+                assets.system().find_compiled(renderable.source_asset);
+            if (!compiled
+                || !compiled->node
+                || compiled->node->schema
+                    != wz::engine::assets::kGpuSparseMeshFromMeshSchema)
+            {
+                return std::nullopt;
+            }
+
+            const wz::engine::assets::GpuResidentSparseMeshEntry* entry =
+                assets.gpu_resident_sparse_meshes().find(
+                    renderable.source_asset);
+            if (!entry || !entry->valid()) {
+                return std::nullopt;
+            }
+
+            return ResolvedRenderableResource::PulledMeshResource{
+                .positions = entry->positions,
+                .indices = entry->indices,
+                .source_vertices = entry->source_vertices,
+                .vertex_count = entry->vertex_count,
+                .index_count = entry->index_count,
+                .source_triangle_count = entry->source_triangle_count,
+            };
+        }
+
         wz::fs::Path terrain_render_mesh_cache_directory(
             const wz::engine::assets::EngineAssetCacheSettings& cache)
         {
@@ -1451,6 +1487,28 @@ namespace wz::engine::rendering
                         }
                     }
                 }
+            }
+            else if (const auto pulled_mesh =
+                         pulled_mesh_for_gpu_sparse_mesh(
+                             assets_,
+                             renderable))
+            {
+                const wz::scene::MeshHandle scene_mesh =
+                    render_resolver_.register_pulled_mesh(
+                        *pulled_mesh,
+                        renderable.program,
+                        renderable.render_program,
+                        renderable.mesh_style);
+                descriptor.mesh = scene_mesh;
+                if (!wz::engine::assets::is_mesh_render_style_drawable(
+                        renderable.mesh_style))
+                {
+                    descriptor.node_class.default_surface =
+                        wz::scene::SurfaceClass::None;
+                    descriptor.node_class.domains = 0;
+                }
+                descriptor.material = wz::scene::INVALID_MATERIAL;
+                return true;
             }
             else if (const auto pulled_mesh =
                          pulled_mesh_for_hierarchy_preview(

@@ -1679,11 +1679,30 @@ namespace wz::engine::render_backend::dx12
             cmdList->IASetPrimitiveTopology(
                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+            float mvp_constants[16]{};
+            bool mvp_constants_ready = false;
             for (const auto& rc : layout->root_constants) {
+                const float* source_constants = constants;
+                if (rc.semantic == "mvp") {
+                    if (!mvp_constants_ready) {
+                        Mat4 world{};
+                        Mat4 view_proj{};
+                        for (int i = 0; i < 16; ++i) {
+                            world.m[i] = constants[i];
+                            view_proj.m[i] = constants[16 + i];
+                        }
+                        const Mat4 mvp = wz::math::mul(view_proj, world);
+                        for (int i = 0; i < 16; ++i) {
+                            mvp_constants[i] = mvp.m[i];
+                        }
+                        mvp_constants_ready = true;
+                    }
+                    source_constants = mvp_constants;
+                }
                 cmdList->SetGraphicsRoot32BitConstants(
                     rc.root_parameter_index,
                     rc.value_count,
-                    constants,
+                    source_constants,
                     0);
             }
             if (!bind_custom_render_program_descriptor_resources(

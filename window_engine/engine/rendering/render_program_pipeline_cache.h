@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace wz::engine::rendering
@@ -32,6 +33,7 @@ namespace wz::engine::rendering
         uint32_t value_count          = 0;
         uint32_t shader_register      = 0;
         uint32_t register_space       = 0;
+        std::string semantic{};
     };
 
     // Per-binding descriptor record: used by the submit path to locate a

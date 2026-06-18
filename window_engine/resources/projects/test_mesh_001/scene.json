@@ -23,10 +23,7 @@
           1
         ]
       },
-      "visible": true,
-      "renderable": {
-        "asset_graph_node_id": 7
-      }
+      "visible": true
     },
     {
       "id": "camera_01",
@@ -74,14 +71,14 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          500,
+          1000,
+          500
         ]
       },
       "visible": true,
       "renderable": {
-        "asset_graph_node_id": 7
+        "asset_graph_node_id": 8
       }
     }
   ],
@@ -94,15 +91,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        0,
-        2,
-        -18
+        -392.50045776367188,
+        258.18655395507812,
+        91.717140197753906
       ],
       "orientation": [
-        0,
-        0,
-        0,
-        1
+        -0.15275567770004272,
+        -0.82532024383544922,
+        0.28689712285995483,
+        -0.46173828840255737
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

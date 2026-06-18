@@ -68,6 +68,7 @@ namespace wz::engine::rendering
                 .value_count          = rc.value_count,
                 .shader_register      = rc.shader_register,
                 .register_space       = rc.register_space,
+                .semantic             = rc.semantic,
             });
         }
 

@@ -8,6 +8,7 @@
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_render_style_asset_module.h>
 #include <engine/assets/mesh_derived_field_asset_module.h>
+#include <engine/assets/gpu_sparse_mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
@@ -93,6 +94,13 @@ namespace wz::engine::assets
         RenderProgramAsset program{};
     };
 
+    struct GpuSparseMeshRenderableDesc
+    {
+        std::string name;
+        GpuSparseMeshAsset sparse_mesh{};
+        RenderProgramAsset program{};
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -142,6 +150,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_rhi_pull_mesh(
             const RhiPullMeshRenderableDesc& desc);
+
+        RenderableAsset create_gpu_sparse_mesh_renderable(
+            const GpuSparseMeshRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;

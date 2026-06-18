@@ -358,6 +358,53 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    RenderableAsset
+    RenderableAssetModule::create_gpu_sparse_mesh_renderable(
+        const GpuSparseMeshRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("GPU sparse mesh renderable has empty name");
+            return {};
+        }
+
+        if (!desc.sparse_mesh.valid()) {
+            logger_.error(
+                "GPU sparse mesh renderable has invalid sparse mesh: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "GPU sparse mesh renderable has invalid render program: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_gpu_sparse_mesh_renderable_key(
+                desc.name,
+                desc.sparse_mesh.output,
+                desc.program.key);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kGpuSparseMeshRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = GpuSparseMeshRenderableCompileDesc{
+            .sparse_mesh_asset = desc.sparse_mesh.output,
+            .render_program_asset = desc.program.key,
+        };
+
+        (void)system_.register_asset(
+            std::move(node),
+            { desc.sparse_mesh.output, desc.program.key });
+
+        return RenderableAsset{ .output = key };
+    }
+
     RenderableHandle RenderableAssetModule::get_renderable(
         const RenderableAsset& asset) const
     {

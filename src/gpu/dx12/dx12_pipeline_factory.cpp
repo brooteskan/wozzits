@@ -1119,14 +1119,17 @@ namespace wz::gpu::dx12::internal
             range_start += group.binding_indices.size();
         }
 
-        const bool has_ia = (data.input_layout != wz::engine::assets::InputLayoutKind::None);
+        const bool uses_input_assembler =
+            data.input_layout != wz::engine::assets::InputLayoutKind::None
+            || data.binding_model
+                == wz::engine::assets::RenderBindingModel::MeshVertexPull;
 
         D3D12_ROOT_SIGNATURE_DESC desc{};
         desc.NumParameters     = static_cast<UINT>(params.size());
         desc.pParameters       = params.empty() ? nullptr : params.data();
         desc.NumStaticSamplers = 0;
         desc.pStaticSamplers   = nullptr;
-        desc.Flags             = has_ia
+        desc.Flags             = uses_input_assembler
             ? D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
             : D3D12_ROOT_SIGNATURE_FLAG_NONE;
 

@@ -24,6 +24,8 @@ namespace wz::engine::assets
         uint32_t vertex_count = 0;
         uint32_t index_count = 0;
         uint32_t source_triangle_count = 0;
+        float bounds_min[3]{};
+        float bounds_max[3]{};
 
         bool valid() const noexcept;
     };

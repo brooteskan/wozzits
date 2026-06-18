@@ -47,7 +47,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshSparseDiffusionBandsCompilerVersion = 2;
     inline constexpr uint64_t kMeshFieldLevelMaskCompilerVersion = 1;
     inline constexpr uint64_t kMeshSparseOperatorCompilerVersion = 2;
-    inline constexpr uint64_t kGpuSparseMeshCompilerVersion = 1;
+    inline constexpr uint64_t kGpuSparseMeshCompilerVersion = 2;
     inline constexpr uint64_t kMeshClusterHierarchyCompilerVersion = 5;
     inline constexpr uint64_t kMeshClusterHierarchyPreviewMeshCompilerVersion = 1;
     inline constexpr uint64_t kProceduralGaussianSplatCloudCompilerVersion = 1;
@@ -58,6 +58,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshWireframeRenderableCompilerVersion = 1;
     inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 4;
     inline constexpr uint64_t kRhiPullMeshRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kGpuSparseMeshRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;

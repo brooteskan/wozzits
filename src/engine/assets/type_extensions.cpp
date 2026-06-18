@@ -490,6 +490,9 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kMeshStyledRenderableSchema, "Mesh styled renderable");
             WZ_ADD_SCHEMA(kRhiPullMeshRenderableSchema, "RHI pull mesh renderable");
             WZ_ADD_SCHEMA(
+                kGpuSparseMeshRenderableSchema,
+                "GPU sparse mesh renderable");
+            WZ_ADD_SCHEMA(
                 kGaussianSplatDebugRenderableSchema,
                 "Gaussian splat debug renderable");
             WZ_ADD_SCHEMA(

@@ -150,10 +150,12 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     MeshTable mesh_table;
     MeshDerivedFieldTable mesh_derived_field_table;
     MeshSparseOperatorTable mesh_sparse_operator_table;
+    GpuSparseMeshTable gpu_sparse_mesh_table;
     MeshClusterHierarchyTable mesh_cluster_hierarchy_table;
     GpuResidentFieldTable gpu_resident_field_table;
     GpuResidentMeshDataTable gpu_resident_mesh_data_table;
     GpuResidentSparseOperatorTable gpu_resident_sparse_operator_table;
+    GpuResidentSparseMeshTable gpu_resident_sparse_mesh_table;
     GpuResidentMeshClusterHierarchyTable
         gpu_resident_mesh_cluster_hierarchy_table;
     TerrainAssetTable terrain_table;
@@ -219,6 +221,34 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
             return out;
         },
     });
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kGpuSparseMeshFromMeshSchema,
+        .output_type = kAssetTypeGpuSparseMesh,
+        .compile = [&gpu_sparse_mesh_table](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            GpuSparseMeshData data{};
+            data.source_mesh_key = test_asset_key(40);
+            data.sparse_operator_key = test_asset_key(41);
+            data.source_topology_hash = { 42, 43 };
+            data.vertex_count = 3;
+            data.index_count = 3;
+            data.source_triangle_count = 1;
+            data.bounds_min[0] = -1.0f;
+            data.bounds_min[1] = -2.0f;
+            data.bounds_min[2] = -3.0f;
+            data.bounds_max[0] = 1.0f;
+            data.bounds_max[1] = 2.0f;
+            data.bounds_max[2] = 3.0f;
+
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = gpu_sparse_mesh_table.add(data);
+            return out;
+        },
+    });
 
     const internal::EngineAssetContext ctx{
         .device = device,
@@ -232,11 +262,14 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .mesh_table = mesh_table,
         .mesh_derived_field_table = mesh_derived_field_table,
         .mesh_sparse_operator_table = mesh_sparse_operator_table,
+        .gpu_sparse_mesh_table = gpu_sparse_mesh_table,
         .mesh_cluster_hierarchy_table = mesh_cluster_hierarchy_table,
         .gpu_resident_field_table = gpu_resident_field_table,
         .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table,
         .gpu_resident_sparse_operator_table =
             gpu_resident_sparse_operator_table,
+        .gpu_resident_sparse_mesh_table =
+            gpu_resident_sparse_mesh_table,
         .gpu_resident_mesh_cluster_hierarchy_table =
             gpu_resident_mesh_cluster_hierarchy_table,
         .terrain_table = terrain_table,
@@ -332,6 +365,89 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         });
     }
 
+    const AssetKey sparse_mesh_key = test_asset_key(3);
+    const AssetKey sparse_renderable_key =
+        make_gpu_sparse_mesh_renderable_key(
+            "test/gpu_sparse_mesh_renderable",
+            sparse_mesh_key,
+            program_key);
+
+    AssetGraphDraft sparse_draft{};
+    const AssetGraphDraftNodeId sparse_mesh_node =
+        add_asset_graph_draft_node(
+            sparse_draft,
+            test_source_node(
+                sparse_mesh_key,
+                kAssetTypeGpuSparseMesh,
+                kGpuSparseMeshFromMeshSchema),
+            AssetGraphDraftNodeState::Existing);
+    const AssetGraphDraftNodeId sparse_program_node =
+        add_asset_graph_draft_node(
+            sparse_draft,
+            test_source_node(
+                program_key,
+                kAssetTypeRenderProgram,
+                kRhiRenderableTestProgramSchema),
+            AssetGraphDraftNodeState::Existing);
+
+    AssetNode sparse_renderable_node =
+        test_source_node(
+            sparse_renderable_key,
+            kAssetTypeRenderable,
+            kGpuSparseMeshRenderableSchema);
+    sparse_renderable_node.meta = GpuSparseMeshRenderableCompileDesc{
+        .sparse_mesh_asset = sparse_mesh_key,
+        .render_program_asset = program_key,
+    };
+    const AssetGraphDraftNodeId sparse_renderable_draft_node =
+        add_asset_graph_draft_node(
+            sparse_draft,
+            std::move(sparse_renderable_node),
+            AssetGraphDraftNodeState::Existing);
+
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(
+            sparse_draft,
+            sparse_mesh_node,
+            sparse_renderable_draft_node,
+            0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(
+            sparse_draft,
+            sparse_program_node,
+            sparse_renderable_draft_node,
+            1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    if (!validate_asset_graph_draft(sparse_draft, registry)) {
+        for (const AssetGraphDraftValidationMessage& message :
+             sparse_draft.validation_messages)
+        {
+            ADD_FAILURE()
+                << "draft validation error code="
+                << static_cast<int>(message.code)
+                << " node=" << message.node
+                << " edge=" << message.edge
+                << " port=" << message.input_port
+                << " message=" << message.message;
+        }
+    }
+    ASSERT_TRUE(sparse_draft.validation_messages.empty());
+
+    const std::vector<AssetGraphDraftRegistration> sparse_registrations =
+        asset_graph_draft_to_registrations(sparse_draft, &registry);
+    std::vector<AssetSystem::RegistrationEntry> sparse_entries;
+    sparse_entries.reserve(sparse_registrations.size());
+    for (const AssetGraphDraftRegistration& registration :
+         sparse_registrations)
+    {
+        sparse_entries.push_back(AssetSystem::RegistrationEntry{
+            .node = registration.node,
+            .dep_keys = registration.dep_keys,
+        });
+    }
+
     AssetSystem system(std::move(registry));
     ASSERT_TRUE(system.replace_registered_assets(std::move(entries)));
 
@@ -352,6 +468,26 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     ASSERT_NE(recipe, nullptr);
     EXPECT_EQ(recipe->mesh_key, mesh_key);
     EXPECT_EQ(recipe->program_key, program_key);
+
+    ASSERT_TRUE(system.replace_registered_assets(std::move(sparse_entries)));
+    errors.clear();
+    EXPECT_EQ(system.resolve_all(&errors), 3u);
+    EXPECT_TRUE(errors.empty());
+
+    compiled = system.find_compiled(sparse_renderable_key);
+    ASSERT_NE(compiled, nullptr);
+    ASSERT_TRUE(compiled->handle.valid());
+    EXPECT_EQ(compiled->node->type, kAssetTypeRenderable);
+    EXPECT_EQ(compiled->handle.type, kAssetTypeRenderable);
+
+    const RenderableAssetData* sparse_renderable =
+        renderable_table.get(compiled->handle);
+    ASSERT_NE(sparse_renderable, nullptr);
+    EXPECT_EQ(sparse_renderable->kind, RenderableKind::Mesh);
+    EXPECT_EQ(sparse_renderable->source_asset, sparse_mesh_key);
+    EXPECT_EQ(sparse_renderable->render_program.type, kAssetTypeRenderProgram);
+    EXPECT_FLOAT_EQ(sparse_renderable->bounds_min[0], -1.0f);
+    EXPECT_FLOAT_EQ(sparse_renderable->bounds_max[2], 3.0f);
 }
 
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)

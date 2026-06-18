@@ -150,6 +150,16 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        GpuSparseMeshRenderableCompileDesc
+        gpu_sparse_mesh_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            GpuSparseMeshRenderableCompileDesc desc{};
+            desc.sparse_mesh_asset = dep_key(dep_nodes, 0);
+            desc.render_program_asset = dep_key(dep_nodes, 1);
+            return desc;
+        }
+
         GaussianSplatDebugRenderableCompileDesc
         gaussian_splat_debug_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -473,6 +483,7 @@ namespace wz::engine::assets::internal
         auto* renderable_table = &ctx.renderable_table;
         auto* rhi_renderable_table = &ctx.rhi_renderable_table;
         auto* render_program_table = &ctx.render_program_table;
+        auto* gpu_sparse_mesh_table = &ctx.gpu_sparse_mesh_table;
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWireframeRenderableSchema,
@@ -763,6 +774,93 @@ namespace wz::engine::assets::internal
                 if (!handle.valid()) {
                     logger->error(
                         "failed to store RHI pull mesh renderable recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kGpuSparseMeshRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "gpu_sparse_mesh", kAssetTypeGpuSparseMesh },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .compile = [logger, gpu_sparse_mesh_table, render_program_table,
+                        renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                GpuSparseMeshRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<GpuSparseMeshRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    editor_desc =
+                        gpu_sparse_mesh_renderable_desc_from_deps(dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 2) {
+                        logger->error(
+                            "GPU sparse mesh renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "GPU sparse mesh renderable requires sparse mesh and program dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const GpuSparseMeshData* sparse_mesh =
+                    gpu_sparse_mesh_table->get(dep_handles[0]);
+                if (!sparse_mesh || !sparse_mesh->valid()) {
+                    logger->error(
+                        "GPU sparse mesh renderable source mesh is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[1]);
+                if (!program || !program->valid()) {
+                    logger->error(
+                        "GPU sparse mesh renderable program is invalid");
+                    return compile_failed_node(input);
+                }
+                if (program->binding_model != RenderBindingModel::MeshVertexPull) {
+                    logger->error(
+                        "GPU sparse mesh renderable program must use MeshVertexPull");
+                    return compile_failed_node(input);
+                }
+
+                RenderableAssetData data{};
+                data.kind = RenderableKind::Mesh;
+                data.source_asset = desc->sparse_mesh_asset;
+                data.companion_asset = sparse_mesh->source_mesh_key;
+                data.program = BuiltinRenderProgram::MeshWireframeDepthDebug;
+                data.domain = program->default_domain;
+                data.policy_flags = program->default_policy_flags;
+                data.render_program = dep_handles[1];
+                copy_bounds(
+                    data.bounds_min,
+                    data.bounds_max,
+                    sparse_mesh->bounds_min,
+                    sparse_mesh->bounds_max);
+
+                wz::asset::ResourceHandle handle =
+                    renderable_table->add(std::move(data));
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store GPU sparse mesh renderable");
                     return compile_failed_node(input);
                 }
 

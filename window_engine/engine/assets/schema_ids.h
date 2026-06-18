@@ -468,6 +468,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000706ull
     };
 
+    // Renderable recipe for a GPU sparse mesh and custom render program.
+    // The render program must use the MeshVertexPull binding model.
+    inline constexpr wz::asset::SchemaID kGpuSparseMeshRenderableSchema{
+        0xF11E'CA55'E7'000707ull
+    };
+
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
         0xF11E'CA55'E7'000701ull
     };

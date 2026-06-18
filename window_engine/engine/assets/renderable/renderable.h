@@ -224,4 +224,10 @@ namespace wz::engine::assets
         wz::asset::AssetKey mesh_asset{};
         wz::asset::AssetKey render_program_asset{};
     };
+
+    struct GpuSparseMeshRenderableCompileDesc
+    {
+        wz::asset::AssetKey sparse_mesh_asset{};
+        wz::asset::AssetKey render_program_asset{};
+    };
 }

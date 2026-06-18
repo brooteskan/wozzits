@@ -10,6 +10,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <algorithm>
 #include <any>
 #include <chrono>
 #include <cstddef>
@@ -24,6 +25,26 @@ namespace wz::engine::assets::internal
         {
             float position[3] = {};
         };
+
+        void copy_mesh_bounds(
+            float dst_min[3],
+            float dst_max[3],
+            const MeshData& mesh)
+        {
+            for (int axis = 0; axis < 3; ++axis) {
+                dst_min[axis] = mesh.vertices[0].position[axis];
+                dst_max[axis] = mesh.vertices[0].position[axis];
+            }
+
+            for (const MeshVertex& vertex : mesh.vertices) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    dst_min[axis] =
+                        (std::min)(dst_min[axis], vertex.position[axis]);
+                    dst_max[axis] =
+                        (std::max)(dst_max[axis], vertex.position[axis]);
+                }
+            }
+        }
 
         constexpr std::string_view kOperatorKindOptions[] = {
             "Uniform adjacency",
@@ -238,6 +259,7 @@ namespace wz::engine::assets::internal
                 .index_count = source_mesh->index_count(),
                 .source_triangle_count = source_mesh->index_count() / 3u,
             };
+            copy_mesh_bounds(data.bounds_min, data.bounds_max, *source_mesh);
             if (!data.valid()) {
                 logger.error("GPU sparse mesh produced invalid data");
                 return compile_failed_node(input);

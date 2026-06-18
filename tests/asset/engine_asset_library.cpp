@@ -199,6 +199,7 @@ float4 main(PSIn input) : SV_TARGET
             { kTerrainSurfaceRenderableSchema, kAssetTypeRenderable },
             { kMeshStyledRenderableSchema, kAssetTypeRenderable },
             { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
+            { kGpuSparseMeshRenderableSchema, kAssetTypeRenderable },
             { kSceneFromJSONSchema, kAssetTypeScene },
             { kSceneFromGLBSchema, kAssetTypeScene },
 
