@@ -367,6 +367,29 @@ if(WINDOW_ENGINE_BUILD_EXAMPLES)
     endif()
 endif()
 
+# ----------------------------
+# wozzits_app_v1 — RHI-native app (Atom "Bootstrap" role): owns window + device
+# and drives a RhiSceneRenderer. Built unconditionally; this is the app, not an
+# example.
+# ----------------------------
+add_executable(wozzits_app_v1
+    src/app/wozzits_app_v1/main.cpp
+    src/app/wozzits_app_v1/wozzits_app_v1.cpp
+)
+
+target_link_libraries(wozzits_app_v1
+    PRIVATE
+        window_engine
+)
+
+# Copy resources next to the exe so load_project can find projects/scenes.
+add_custom_command(TARGET wozzits_app_v1 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
+        "$<TARGET_FILE_DIR:wozzits_app_v1>/resources"
+    COMMENT "Copying resources for wozzits_app_v1"
+)
+
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
         examples/v8_script_smoke/v8_script_smoke.cpp

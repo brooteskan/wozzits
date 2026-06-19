@@ -141,6 +141,7 @@ target_sources(window_engine PRIVATE
     assets/scene/scene_instance.cpp
     assets/scene/scene_runtime_build.cpp
     assets/scene/scene_json_export.cpp
+    assets/scene/asset_graph_json.cpp
     assets/scene_asset_module.cpp
 
     rendering/renderable_gpu_cache.cpp
@@ -157,4 +158,5 @@ target_sources(window_engine PRIVATE
     rendering/rhi_render_program_bridge.cpp
     rendering/rhi_shader_bridge.cpp
     rendering/rhi_gpu_backend.cpp
+    rendering/rhi_scene_renderer.cpp
 )
