@@ -44,6 +44,46 @@ namespace wz::engine::project
         std::string error;
     };
 
+    enum class ProjectManifestProbeStatus
+    {
+        Missing,
+        Invalid,
+        Valid,
+    };
+
+    struct ProjectManifestProbeResult
+    {
+        ProjectManifestProbeStatus status =
+            ProjectManifestProbeStatus::Invalid;
+        ProjectManifest manifest;
+        std::string error;
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return status == ProjectManifestProbeStatus::Valid;
+        }
+
+        [[nodiscard]] bool missing() const noexcept
+        {
+            return status == ProjectManifestProbeStatus::Missing;
+        }
+    };
+
+    struct ProjectManifestCreateDesc
+    {
+        wz::fs::Path project_root;
+        wz::fs::Path resource_root;
+        std::string name;
+    };
+
+    struct ProjectManifestCreateResult
+    {
+        bool ok = false;
+        bool created = false;
+        ProjectManifest manifest;
+        std::string error;
+    };
+
     wz::fs::Path project_manifest_path(const wz::fs::Path& project_root);
 
     wz::fs::Path resolve_project_authored_path(
@@ -52,4 +92,10 @@ namespace wz::engine::project
 
     ProjectManifestLoadResult load_project_manifest(
         const ProjectManifestLoadDesc& desc);
+
+    ProjectManifestProbeResult probe_project_manifest(
+        const ProjectManifestLoadDesc& desc);
+
+    ProjectManifestCreateResult create_project_manifest(
+        const ProjectManifestCreateDesc& desc);
 }

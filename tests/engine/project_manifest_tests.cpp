@@ -125,3 +125,77 @@ TEST(ProjectManifest, MinimalManifestAllowsEmptyEditorProject)
     EXPECT_TRUE(loaded.manifest.behavior_project_folder.empty());
     EXPECT_TRUE(loaded.manifest.behavior_module_folder.empty());
 }
+
+TEST(ProjectManifest, ProbeDistinguishesMissingInvalidAndValid)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "probe_project";
+
+    const auto missing = wz::engine::project::probe_project_manifest(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    EXPECT_EQ(
+        missing.status,
+        wz::engine::project::ProjectManifestProbeStatus::Missing);
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "formatVersion": 1
+})json");
+
+    const auto invalid = wz::engine::project::probe_project_manifest(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    EXPECT_EQ(
+        invalid.status,
+        wz::engine::project::ProjectManifestProbeStatus::Invalid);
+    EXPECT_FALSE(invalid.error.empty());
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Probe"
+})json");
+
+    const auto valid = wz::engine::project::probe_project_manifest(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    EXPECT_EQ(
+        valid.status,
+        wz::engine::project::ProjectManifestProbeStatus::Valid);
+    EXPECT_EQ(valid.manifest.name, "Probe");
+}
+
+TEST(ProjectManifest, CreateWritesEngineDefinedDefaultManifest)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "created_project";
+
+    const auto created = wz::engine::project::create_project_manifest(
+        wz::engine::project::ProjectManifestCreateDesc{
+            .project_root = project_root.string(),
+            .name = "Created",
+        });
+
+    ASSERT_TRUE(created.ok) << created.error;
+    EXPECT_TRUE(created.created);
+    EXPECT_EQ(created.manifest.schema, "wozzits.project.v1");
+    EXPECT_EQ(created.manifest.format_version, 1u);
+    EXPECT_EQ(created.manifest.name, "Created");
+    EXPECT_TRUE(fs::exists(manifest_path(project_root)));
+
+    const auto probed = wz::engine::project::probe_project_manifest(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    EXPECT_EQ(
+        probed.status,
+        wz::engine::project::ProjectManifestProbeStatus::Valid);
+    EXPECT_EQ(probed.manifest.name, "Created");
+}
