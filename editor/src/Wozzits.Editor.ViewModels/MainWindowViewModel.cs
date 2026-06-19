@@ -28,6 +28,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             : "Project directory does not exist.";
     }
 
+    public MainWindowViewModel(ProjectDirectory projectDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(projectDirectory);
+
+        ProjectDirectory = projectDirectory.FullPath;
+        ProjectStatus = "Project opened.";
+    }
+
     public string Title { get; } = "Wozzits Editor";
 
     public string ProjectStatus { get; }

@@ -34,4 +34,41 @@ public sealed class ProjectOpeningTests
             Path.GetFullPath(@"E:\shared\textures\stone.png"),
             path.Resolve(projectDirectory));
     }
+
+    [Fact]
+    public void ProjectFilesLiveUnderPassedProjectDirectory()
+    {
+        var projectDirectory = new ProjectDirectory(@"D:\work\project");
+        var projectFiles = new ProjectFileSet(projectDirectory);
+
+        Assert.Equal(
+            Path.GetFullPath(@"D:\work\project\.wozzits\project.json"),
+            projectFiles.ManifestPath);
+    }
+
+    [Fact]
+    public void CreateProjectFilesCreatesManifestInsidePassedDirectory()
+    {
+        var projectRoot = Path.Combine(Path.GetTempPath(), "wozzits-editor-tests", Guid.NewGuid().ToString("N"));
+        var projectDirectory = new ProjectDirectory(projectRoot);
+        var projectFiles = new ProjectFileSet(projectDirectory);
+
+        try
+        {
+            Assert.False(projectFiles.Exists());
+
+            var manifest = projectFiles.Create();
+
+            Assert.Equal(ProjectManifest.CurrentFormatVersion, manifest.FormatVersion);
+            Assert.True(projectFiles.Exists());
+            Assert.True(File.Exists(Path.Combine(projectRoot, ".wozzits", "project.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(projectRoot))
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+        }
+    }
 }
