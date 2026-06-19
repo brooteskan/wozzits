@@ -74,6 +74,22 @@ namespace wz::rhi
             });
         }
 
+        // Drop every registered program: free the name slots AND reset the
+        // descriptors so any heap they own (e.g. shader bytecode) is released.
+        // After this, size() == 0 and get()/find() miss for every prior Tag.
+        // For wholesale replacement (asset-graph swap), not incremental edits.
+        //
+        // INVARIANT: discard every Tag obtained before clear() (see
+        // TagRegistry::clear) — a stale Tag reused afterwards addresses a
+        // recycled slot.
+        void clear()
+        {
+            tags_.clear();
+            for (Desc& desc : descs_) {
+                desc = Desc{};
+            }
+        }
+
     private:
         [[nodiscard]] bool is_unregistered(Tag tag) const
         {

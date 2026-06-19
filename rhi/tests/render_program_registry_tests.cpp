@@ -125,6 +125,29 @@ static void visit_enumerates_every_registered_program()
     WZ_CHECK_EQ(seen, static_cast<size_t>(3));
 }
 
+// clear() retires every registered program at once (the asset-graph-swap
+// reset): size() drops to zero, prior Tags miss, and the registry is reusable.
+static void clear_drops_all_programs()
+{
+    wz::rhi::ConstantSemanticRegistry constants;
+    RenderProgramRegistry registry;
+    const Tag a = registry.register_program(make_desc(constants, "mesh_surface"));
+    const Tag b = registry.register_program(make_desc(constants, "mesh_wireframe"));
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(2));
+
+    registry.clear();
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(0));
+    WZ_CHECK_FALSE(registry.find("mesh_surface").valid());
+    WZ_CHECK(registry.get(a) == nullptr);
+    WZ_CHECK(registry.get(b) == nullptr);
+
+    // Reusable after clear: a fresh registration resolves cleanly.
+    const Tag c = registry.register_program(make_desc(constants, "mesh_surface"));
+    WZ_CHECK(c.valid());
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(1));
+    WZ_CHECK(registry.get(c) != nullptr);
+}
+
 int main()
 {
     WZ_RUN(register_then_get_round_trips);
@@ -132,5 +155,6 @@ int main()
     WZ_RUN(find_resolves_registered_program_by_name);
     WZ_RUN(reregister_updates_in_place);
     WZ_RUN(visit_enumerates_every_registered_program);
+    WZ_RUN(clear_drops_all_programs);
     WZ_TEST_RETURN();
 }

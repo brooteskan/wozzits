@@ -146,6 +146,23 @@ namespace wz::rhi
             }
         }
 
+        // Free every slot at once. After this, all previously-issued Tags are
+        // unregistered (find/name_of miss) and the registry is empty. For
+        // wholesale replacement (e.g. an asset-graph swap that retires the
+        // entire registered set), not for incremental release.
+        //
+        // INVARIANT: callers must discard every Tag obtained before clear().
+        // Tags are bare slot indices (not generational), so a stale Tag reused
+        // after clear() + new acquires would silently address a recycled slot.
+        void clear() noexcept
+        {
+            for (Entry& entry : entries_) {
+                entry.name.clear();
+                entry.ref_count = 0;
+            }
+            allocated_ = 0;
+        }
+
     private:
         struct Entry
         {

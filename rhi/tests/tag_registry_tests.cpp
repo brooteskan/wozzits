@@ -99,6 +99,27 @@ static void visit_enumerates_allocated_tags()
     WZ_CHECK_EQ(seen, static_cast<size_t>(2));
 }
 
+// clear() retires the whole registry at once: every prior name misses, the
+// count is zero, and freed slots are reusable (the asset-graph-swap reset).
+static void clear_frees_all_slots()
+{
+    TagRegistry<8> registry;
+    const Tag a = registry.acquire("Forward");
+    const Tag b = registry.acquire("Shadow");
+    WZ_CHECK_EQ(registry.allocated_count(), static_cast<size_t>(2));
+
+    registry.clear();
+    WZ_CHECK_EQ(registry.allocated_count(), static_cast<size_t>(0));
+    WZ_CHECK_FALSE(registry.find("Forward").valid());
+    WZ_CHECK_FALSE(registry.find("Shadow").valid());
+    WZ_CHECK(registry.name_of(a).empty());
+    WZ_CHECK(registry.name_of(b).empty());
+
+    // Slots are reusable after clear.
+    WZ_CHECK(registry.acquire("Lighting").valid());
+    WZ_CHECK_EQ(registry.allocated_count(), static_cast<size_t>(1));
+}
+
 int main()
 {
     WZ_RUN(default_tag_is_null);
@@ -110,5 +131,6 @@ int main()
     WZ_RUN(full_registry_returns_null);
     WZ_RUN(released_slot_is_reused);
     WZ_RUN(visit_enumerates_allocated_tags);
+    WZ_RUN(clear_frees_all_slots);
     WZ_TEST_RETURN();
 }
