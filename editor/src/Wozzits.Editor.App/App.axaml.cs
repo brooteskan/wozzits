@@ -84,7 +84,11 @@ public partial class App : Application
         {
             return new MainWindow
             {
-                DataContext = new MainWindowViewModel(projectDirectory, project.Project),
+                DataContext = new MainWindowViewModel(
+                    projectDirectory,
+                    project.Project,
+                    new WozzitsEditorHostSession(
+                        editorHost.HostExecutablePath)),
             };
         }
 

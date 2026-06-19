@@ -72,4 +72,23 @@ public sealed class ProjectOpeningTests
         Assert.False(viewModel.CanCreateProject);
         Assert.Equal("bad project", viewModel.ErrorMessage);
     }
+
+    [Fact]
+    public void MainWindowDisplaysEditorHostStartupErrors()
+    {
+        var viewModel = new MainWindowViewModel(
+            new ProjectDirectory(@"D:\work\project"),
+            project: null,
+            editorHostSession: new WozzitsEditorHostSession(
+                @"D:\definitely\missing\wozzits_editor_host.exe"));
+
+        try
+        {
+            Assert.Contains("Editor host executable not found", viewModel.EngineLogText);
+        }
+        finally
+        {
+            viewModel.Shutdown();
+        }
+    }
 }

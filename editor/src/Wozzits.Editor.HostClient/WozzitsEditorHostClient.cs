@@ -22,6 +22,8 @@ public sealed class WozzitsEditorHostClient
             : hostExecutablePath;
     }
 
+    public string HostExecutablePath => _hostExecutablePath;
+
     public EngineProjectResponse ProbeProject(string projectDirectory)
     {
         return Invoke("probe", projectDirectory, name: null);
@@ -105,7 +107,7 @@ public sealed class WozzitsEditorHostClient
         };
     }
 
-    private static string ResolveDefaultHostExecutablePath()
+    public static string ResolveDefaultHostExecutablePath()
     {
         var configured = Environment.GetEnvironmentVariable(HostPathEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(configured))

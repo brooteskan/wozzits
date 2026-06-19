@@ -15,7 +15,7 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*" Margin="16" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,*" Margin="16" RowSpacing="12">
         <StackPanel Spacing="4">
             <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding ProjectStatus}" Opacity="0.75"/>
@@ -29,6 +29,25 @@
                 <TextBlock Text="Project Directory" FontWeight="SemiBold"/>
                 <TextBlock Text="{Binding ProjectDirectory}" TextWrapping="Wrap"/>
             </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource SystemControlForegroundChromeDisabledLowBrush}"
+                BorderThickness="1"
+                Padding="12">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <TextBlock Text="Editor Host Log" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="1"
+                         Text="{Binding EngineLogText, Mode=OneWay}"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="NoWrap"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         MinHeight="220"/>
+            </Grid>
         </Border>
     </Grid>
 
