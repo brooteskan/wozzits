@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Wozzits.Editor.App/Wozzits.Editor.App.csproj" />
+    <Project Path="src/Wozzits.Editor.Core/Wozzits.Editor.Core.csproj" />
+    <Project Path="src/Wozzits.Editor.HostClient/Wozzits.Editor.HostClient.csproj" />
+    <Project Path="src/Wozzits.Editor.Protocol/Wozzits.Editor.Protocol.csproj" />
+    <Project Path="src/Wozzits.Editor.ViewModels/Wozzits.Editor.ViewModels.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Wozzits.Editor.Tests/Wozzits.Editor.Tests.csproj" />
+  </Folder>
+</Solution>
