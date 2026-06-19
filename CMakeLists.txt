@@ -488,6 +488,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset foundational_assets)
     rs_add_test_group(asset key_utils)
     rs_add_test_group(asset asset_graph_draft)
+    rs_add_test_group(asset param_defaults)
+    rs_add_test_group(asset asset_graph_authoring)
     rs_add_test_group(asset csv_tests)
     rs_add_test_group(asset engine_disk_cache_provider_tests)
 
@@ -572,6 +574,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(asset_hdri hdri_image_loader)
 
+    rs_add_test_group(asset_scene scene_authoring)
     rs_add_test_group(asset_scene scene_asset_compile_tests)
     rs_add_test_group(asset_scene scene_instantiation_transform_tests)
     rs_add_test_group(asset_scene scene_runtime_component_roundtrip_tests)

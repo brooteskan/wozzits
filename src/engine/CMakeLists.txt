@@ -145,6 +145,9 @@ target_sources(window_engine PRIVATE
     assets/scene/asset_graph_json.cpp
     assets/scene_asset_module.cpp
 
+    assets/authoring/asset_graph_authoring.cpp
+    assets/authoring/scene_authoring.cpp
+
     rendering/renderable_gpu_cache.cpp
     rendering/renderable_debug_runtime.cpp
     rendering/renderable_pipeline_cache.cpp

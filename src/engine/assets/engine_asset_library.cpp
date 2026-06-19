@@ -325,6 +325,18 @@ namespace wz::engine::assets
         return make_engine_asset_key_factory(system_.registry());
     }
 
+    authoring::GraphAuthoringContext
+        EngineAssetLibrary::graph_authoring_context()
+    {
+        return authoring::GraphAuthoringContext{
+            system_.registry(),
+            [this](const wz::fs::Path& path)
+            {
+                return files_.resolve_path(path);
+            },
+        };
+    }
+
 
 
 

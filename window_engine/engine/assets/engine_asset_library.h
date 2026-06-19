@@ -74,6 +74,8 @@
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene_asset_module.h>
 
+#include <engine/assets/authoring/asset_graph_authoring.h>
+
 #include <source_location>
 #include <string>
 #include <vector>
@@ -190,6 +192,13 @@ namespace wz::engine::assets
         }
 
         wz::asset::AssetKeyFactoryFn draft_key_factory() const;
+
+        // Explicit context for the UI-agnostic graph-authoring verbs in
+        // engine/assets/authoring/asset_graph_authoring.h: the compiler registry
+        // plus this library's file-path resolver. Centralizes the wiring so call
+        // sites (e.g. the scene editor) don't re-derive it. The returned context
+        // borrows this library and must not outlive it.
+        authoring::GraphAuthoringContext graph_authoring_context();
 
         wz::Logger& logger() const noexcept
         {

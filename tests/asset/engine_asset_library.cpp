@@ -395,6 +395,55 @@ TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftAddsCarrierAndReloadsDraft)
     EXPECT_EQ(draft.nodes[0].node.key, expected_key);
 }
 
+TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftViaAddSourceAssetNode)
+{
+    TempResourceDir resources;
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        resources.wz_root()
+    };
+
+    wz::asset::AssetGraphDraft draft{};
+    wz::asset::load_asset_graph_draft_from_registered_assets(
+        draft,
+        assets.system().registered_assets());
+
+    const std::string canonical_path = "data/raw.bin";
+    const wz::asset::AssetKey expected_key =
+        wz::engine::assets::make_file_key(
+            canonical_path,
+            wz::engine::assets::kRawFileSchema);
+
+    // Build the node through the new authoring helper + the library's wired
+    // context, then prove it against the real commit API (not just materialize).
+    const auto ctx = assets.graph_authoring_context();
+    const wz::asset::AssetGraphDraftNodeId file_node =
+        wz::engine::assets::authoring::add_source_asset_node(
+            draft,
+            ctx,
+            wz::engine::assets::kRawFileSchema,
+            wz::engine::assets::kAssetTypeRawFile,
+            /*params=*/{},
+            wz::fs::Path{ canonical_path });
+    ASSERT_NE(file_node, wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE);
+
+    auto report = assets.commit_asset_graph_draft(draft);
+
+    ASSERT_TRUE(report.success());
+    EXPECT_EQ(report.registration_count, 1u);
+    ASSERT_EQ(report.registrations.size(), 1u);
+    EXPECT_EQ(report.registrations[0].node.key, expected_key);
+    EXPECT_TRUE(assets.system().is_registered(expected_key));
+    ASSERT_EQ(draft.nodes.size(), 1u);
+    EXPECT_EQ(draft.nodes[0].id, file_node);
+    EXPECT_EQ(
+        draft.nodes[0].state,
+        wz::asset::AssetGraphDraftNodeState::Existing);
+    EXPECT_EQ(draft.nodes[0].node.key, expected_key);
+}
+
 TEST_F(AssetLibraryGpuFixture, CommitAssetGraphDraftReloadsAfterRemoval)
 {
     TempResourceDir resources;
