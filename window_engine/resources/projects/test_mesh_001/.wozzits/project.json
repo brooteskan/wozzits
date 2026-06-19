@@ -1,6 +1,6 @@
 {
-  "schema": "wozzits.scene_editor.project.v1",
-  "version": 1,
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
   "name": "test_mesh_001",
   "rhi_render_path": true,
   "scene": "scene.json",

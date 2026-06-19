@@ -70,8 +70,9 @@ namespace wz::app
         // move (future async/baked handoff). True on success.
         bool adopt_asset_graph(wz::asset::AssetGraph&& resolved);
 
-        // Load a project (scene + asset graph), compile the graph once, bind.
-        bool load_project(const wz::fs::Path& project);
+        // Load a project directory (scene + asset graph), reading its manifest
+        // from .wozzits/project.json, then compile the graph once and bind.
+        bool load_project(const wz::fs::Path& project_root);
 
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present).

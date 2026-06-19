@@ -35,6 +35,22 @@ namespace wz::app
                 std::istreambuf_iterator<char>());
         }
 
+        wz::fs::Path project_manifest_path(const wz::fs::Path& project_root)
+        {
+            return wz::fs::join(
+                wz::fs::join(project_root, ".wozzits"),
+                "project.json");
+        }
+
+        wz::fs::Path project_authored_path(
+            const wz::fs::Path& project_root,
+            const std::string& authored_path)
+        {
+            return wz::fs::is_absolute(authored_path)
+                ? authored_path
+                : wz::fs::join(project_root, authored_path);
+        }
+
         // A provisional fixed camera until scene cameras are wired: a left-handed
         // perspective with the eye backed well off the origin, far plane large
         // enough for the (heavily scaled) test mesh.
@@ -192,7 +208,7 @@ namespace wz::app
         return false;
     }
 
-    bool WozzitsApp_v1::load_project(const wz::fs::Path& project)
+    bool WozzitsApp_v1::load_project(const wz::fs::Path& project_root)
     {
         if (!ctx_.assets) {
             ctx_.logger.error("load_project: no asset library");
@@ -200,13 +216,14 @@ namespace wz::app
         }
         wz::asset::AssetSystem& sys = ctx_.assets->system();
 
-        // Project paths are resource-root-relative; resolve_path prefixes
-        // resource_root (e.g. "resources/") for our own direct file reads, and
-        // create_scene_from_json does the same internally for the scene.
+        // Project roots are resource-root-relative or absolute. The manifest
+        // always lives under .wozzits, while authored paths inside it are rooted
+        // at the project directory unless they are already absolute.
+        const wz::fs::Path manifest = project_manifest_path(project_root);
         const std::string project_text =
-            read_text_file(ctx_.assets->files().resolve_path(project));
+            read_text_file(ctx_.assets->files().resolve_path(manifest));
         if (project_text.empty()) {
-            ctx_.logger.error("load_project: cannot read project: " + project);
+            ctx_.logger.error("load_project: cannot read project: " + manifest);
             return false;
         }
         const wz::json::JSONParseResult pj =
@@ -216,14 +233,14 @@ namespace wz::app
             return false;
         }
         const wz::json::JSONValue& proot = *pj.document.root;
-        const wz::fs::Path dir = wz::fs::parent_path(project);
 
         // Compile the project's asset graph (the unproven path): read the v2
         // graph JSON -> draft (shared engine loader) -> bind (swap + resolve).
         bool graph_ok = false;
         if (const auto graph_rel = wz::json::read_string(proot, "asset_graph")) {
-            const wz::fs::Path graph_path =
-                wz::fs::join(dir, std::string(*graph_rel));
+            const wz::fs::Path graph_path = project_authored_path(
+                project_root,
+                std::string(*graph_rel));
             const std::string graph_text =
                 read_text_file(ctx_.assets->files().resolve_path(graph_path));
             if (graph_text.empty()) {
@@ -270,11 +287,12 @@ namespace wz::app
             }
         }
 
-        // Load + resolve the scene. The path stays resource-root-relative;
-        // create_scene_from_json prefixes resource_root via resolve_path.
+        // Load + resolve the scene. Relative scene paths are project-root
+        // relative; absolute scene paths are passed through unchanged.
         if (const auto scene_rel = wz::json::read_string(proot, "scene")) {
-            const wz::fs::Path scene_path =
-                wz::fs::join(dir, std::string(*scene_rel));
+            const wz::fs::Path scene_path = project_authored_path(
+                project_root,
+                std::string(*scene_rel));
             const wz::engine::assets::SceneAsset scene =
                 ctx_.assets->scenes().create_scene_from_json(
                     wz::engine::assets::SceneFromJSONDesc{ .path = scene_path });

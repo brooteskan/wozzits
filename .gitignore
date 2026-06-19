@@ -5,7 +5,9 @@
 
 .claude
 .codex/
-.wozzits/
+**/.wozzits/cache/
+!**/.wozzits/
+!**/.wozzits/project.json
 build/
 
 # AI-agent scratch files (issue drafts, plans, reports) — never commit.

@@ -27,9 +27,8 @@
 
 namespace
 {
-    constexpr const char* kProject =
-        "projects/test_mesh_001/test_mesh_001.project.json";
-    // The project references this graph relative to its own folder.
+    constexpr const char* kProject = "projects/test_mesh_001";
+    // The project references this graph relative to its own root.
     constexpr const char* kGraph = "projects/test_mesh_001/assets.graph.json";
 
     std::string read_text_file(const wz::fs::Path& path)

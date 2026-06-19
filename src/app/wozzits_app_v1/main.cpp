@@ -40,9 +40,9 @@ int main(int /*argc*/, char** /*argv*/)
         }
 
         // Compile-once: load the project's scene + asset graph and bind it.
-        // Path is resource-root-relative (the asset library prefixes "resources/").
-        app.load_project(
-            "projects/test_mesh_001/test_mesh_001.project.json");
+        // Project root is resource-root-relative (the asset library prefixes
+        // "resources/"); the manifest lives at .wozzits/project.json.
+        app.load_project("projects/test_mesh_001");
 
         bool running = true;
         while (running && !wz::window::window_should_close(ctx.window)) {
