@@ -293,7 +293,7 @@ namespace wz::engine::rendering
     void RhiSceneRenderer::on_graph_changed()
     {
         // First bind (nothing realized yet): nothing to release or invalidate,
-        // and no need to flush the GPU. Keeps load_project's initial bind cheap.
+        // and no need to flush the GPU. Keeps load_scene's initial bind cheap.
         if (realized_renderables_.empty() && realized_programs_.empty()
             && registered_shaders_.empty())
         {

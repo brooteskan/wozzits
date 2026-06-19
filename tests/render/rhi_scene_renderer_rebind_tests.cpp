@@ -15,6 +15,7 @@
 #include <engine/app/wozzits_app_v1.h>
 #include <engine/app_context.h>
 #include <engine/assets/scene/asset_graph_json.h>
+#include <engine/project/project_manifest.h>
 
 #include <asset/draft.h>
 #include <external/json/json_parser.h>
@@ -27,9 +28,7 @@
 
 namespace
 {
-    constexpr const char* kProject = "projects/test_mesh_001";
-    // The project references this graph relative to its own root.
-    constexpr const char* kGraph = "projects/test_mesh_001/assets.graph.json";
+    constexpr const char* kProjectRoot = "projects/test_mesh_001";
 
     std::string read_text_file(const wz::fs::Path& path)
     {
@@ -77,13 +76,36 @@ namespace
             wz::gpu::present(ctx.device, /*sync_interval*/ 0);
         }
 
+        wz::engine::project::ProjectManifestLoadResult load_test_project() const
+        {
+            return wz::engine::project::load_project_manifest(
+                wz::engine::project::ProjectManifestLoadDesc{
+                    .project_root = kProjectRoot,
+                    .resource_root = ctx.assets->resource_root(),
+                });
+        }
+
+        wz::app::WozzitsAppSceneLoadDesc scene_load_desc(
+            const wz::engine::project::ProjectManifest& project) const
+        {
+            return wz::app::WozzitsAppSceneLoadDesc{
+                .asset_graph = project.asset_graph_path,
+                .scene = project.scene_path,
+            };
+        }
+
         // Parse a fresh AssetGraphDraft from the project's graph JSON — the same
-        // input load_project consumes, but built independently so we can feed it
+        // input load_scene consumes, but built independently so we can feed it
         // to bind_asset_graph the way the editor re-binds an edited draft.
         bool load_graph_draft(wz::asset::AssetGraphDraft& out)
         {
+            const auto project = load_test_project();
+            if (!project.ok || project.manifest.asset_graph_path.empty()) {
+                return false;
+            }
             const std::string text =
-                read_text_file(ctx.assets->files().resolve_path(kGraph));
+                read_text_file(ctx.assets->files().resolve_path(
+                    project.manifest.asset_graph_path));
             if (text.empty()) {
                 return false;
             }
@@ -114,8 +136,10 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
 {
     wz::app::WozzitsApp_v1 app(ctx);
 
-    ASSERT_TRUE(app.load_project(kProject))
-        << "test_mesh_001 project failed to load/compile";
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)))
+        << "test_mesh_001 scene failed to load/compile";
 
     // Realize the first graph's renderables.
     render_one_frame(app);
@@ -161,8 +185,10 @@ TEST_F(WozzitsAppFixture, RebindToGraphWithoutRenderableClearsStaleKey)
 {
     wz::app::WozzitsApp_v1 app(ctx);
 
-    ASSERT_TRUE(app.load_project(kProject))
-        << "test_mesh_001 project failed to load/compile";
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)))
+        << "test_mesh_001 scene failed to load/compile";
     render_one_frame(app);
     ASSERT_GT(app.resident_gpu_resource_count(), 0u);
     ASSERT_EQ(app.resolved_renderable_node_count(), 1u)

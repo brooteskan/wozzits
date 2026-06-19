@@ -47,6 +47,14 @@ namespace wz::app
         std::vector<wz::asset::AssetGraphDraftValidationMessage> diagnostics;
     };
 
+    struct WozzitsAppSceneLoadDesc
+    {
+        // Paths are resource-root-relative or absolute. Project manifest loading
+        // belongs outside this runtime render app.
+        wz::fs::Path asset_graph;
+        wz::fs::Path scene;
+    };
+
     class WozzitsApp_v1
     {
     public:
@@ -70,9 +78,8 @@ namespace wz::app
         // move (future async/baked handoff). True on success.
         bool adopt_asset_graph(wz::asset::AssetGraph&& resolved);
 
-        // Load a project directory (scene + asset graph), reading its manifest
-        // from .wozzits/project.json, then compile the graph once and bind.
-        bool load_project(const wz::fs::Path& project_root);
+        // Load a scene + asset graph, then compile the graph once and bind.
+        bool load_scene(const WozzitsAppSceneLoadDesc& desc);
 
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present).

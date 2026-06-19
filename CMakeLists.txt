@@ -404,7 +404,7 @@ target_link_libraries(wozzits_app_v1
         window_engine
 )
 
-# Stage resources (shared, once) so load_project can find projects/scenes.
+# Stage resources (shared, once) so runtime project manifests can find scenes.
 add_dependencies(wozzits_app_v1 wz_stage_resources)
 
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
@@ -434,6 +434,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine frame_storage_tests)
     rs_add_test_group(engine runtime_camera_tests)
     rs_add_test_group(engine flying_camera_tests)
+    rs_add_test_group(engine project_manifest_tests)
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)

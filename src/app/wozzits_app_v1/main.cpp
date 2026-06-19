@@ -12,6 +12,7 @@
 #include <engine/app/wozzits_app_v1.h>
 
 #include <engine/app_context.h>
+#include <engine/project/project_manifest.h>
 
 #include <gpu/gpu.h>
 #include <window/window2.h>
@@ -32,17 +33,30 @@ int main(int /*argc*/, char** /*argv*/)
 
         // Present one cleared frame BEFORE the (possibly multi-second) asset
         // compile, so the window shows the background instead of an
-        // uninitialized white backbuffer while load_project blocks.
+        // uninitialized white backbuffer while load_scene blocks.
         if (wz::gpu::begin_frame(ctx.device)) {
             wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
             wz::gpu::end_frame(ctx.device);
             wz::gpu::present(ctx.device);
         }
 
-        // Compile-once: load the project's scene + asset graph and bind it.
-        // Project root is resource-root-relative (the asset library prefixes
-        // "resources/"); the manifest lives at .wozzits/project.json.
-        app.load_project("projects/test_mesh_001");
+        // Compile-once: the driver chooses a project, then hands explicit
+        // runtime paths to WozzitsApp_v1.
+        const auto project = wz::engine::project::load_project_manifest(
+            wz::engine::project::ProjectManifestLoadDesc{
+                .project_root = "projects/test_mesh_001",
+                .resource_root = ctx.assets ? ctx.assets->resource_root() : "",
+            });
+        if (!project.ok) {
+            ctx.logger.error(
+                "load project manifest failed: " + project.error);
+        } else if (!app.load_scene(wz::app::WozzitsAppSceneLoadDesc{
+                       .asset_graph = project.manifest.asset_graph_path,
+                       .scene = project.manifest.scene_path,
+                   }))
+        {
+            ctx.logger.error("load scene failed");
+        }
 
         bool running = true;
         while (running && !wz::window::window_should_close(ctx.window)) {

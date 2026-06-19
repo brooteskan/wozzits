@@ -2,6 +2,7 @@ target_sources(window_engine PRIVATE
     engine.cpp
     app_context.cpp
     app/wozzits_app_v1.cpp
+    project/project_manifest.cpp
     behavior/behavior_registry.cpp
     behavior/behavior_dispatch.cpp
     behavior/behavior_command_apply.cpp

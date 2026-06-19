@@ -9,7 +9,6 @@
 #include <asset/system.h>
 
 #include <external/json/json_parser.h>
-#include <external/json/json_read_helpers.h>
 #include <file/filesystem.h>
 #include <math/math_types.h>
 #include <math/mat4.h>
@@ -33,22 +32,6 @@ namespace wz::app
             return std::string(
                 (std::istreambuf_iterator<char>(file)),
                 std::istreambuf_iterator<char>());
-        }
-
-        wz::fs::Path project_manifest_path(const wz::fs::Path& project_root)
-        {
-            return wz::fs::join(
-                wz::fs::join(project_root, ".wozzits"),
-                "project.json");
-        }
-
-        wz::fs::Path project_authored_path(
-            const wz::fs::Path& project_root,
-            const std::string& authored_path)
-        {
-            return wz::fs::is_absolute(authored_path)
-                ? authored_path
-                : wz::fs::join(project_root, authored_path);
         }
 
         // A provisional fixed camera until scene cameras are wired: a left-handed
@@ -191,8 +174,8 @@ namespace wz::app
         renderer_.on_graph_changed();
 
         // The swap minted new AssetKeys; re-point the scene's renderables at
-        // them. (On the first bind during load_project the scene is not loaded
-        // yet, so this is a no-op there and load_project re-runs it after.)
+        // them. (On the first bind during load_scene the scene is not loaded
+        // yet, so this is a no-op there and load_scene re-runs it after.)
         bridge_scene_renderables(draft);
 
         result.ok = true;
@@ -208,126 +191,102 @@ namespace wz::app
         return false;
     }
 
-    bool WozzitsApp_v1::load_project(const wz::fs::Path& project_root)
+    bool WozzitsApp_v1::load_scene(const WozzitsAppSceneLoadDesc& desc)
     {
         if (!ctx_.assets) {
-            ctx_.logger.error("load_project: no asset library");
+            ctx_.logger.error("load_scene: no asset library");
+            return false;
+        }
+        if (desc.asset_graph.empty()) {
+            ctx_.logger.error("load_scene: asset graph path is empty");
+            return false;
+        }
+        if (desc.scene.empty()) {
+            ctx_.logger.error("load_scene: scene path is empty");
             return false;
         }
         wz::asset::AssetSystem& sys = ctx_.assets->system();
 
-        // Project roots are resource-root-relative or absolute. The manifest
-        // always lives under .wozzits, while authored paths inside it are rooted
-        // at the project directory unless they are already absolute.
-        const wz::fs::Path manifest = project_manifest_path(project_root);
-        const std::string project_text =
-            read_text_file(ctx_.assets->files().resolve_path(manifest));
-        if (project_text.empty()) {
-            ctx_.logger.error("load_project: cannot read project: " + manifest);
+        // Compile the asset graph (the unproven path): read the v2 graph JSON
+        // -> draft (shared engine loader) -> bind (swap + resolve).
+        const std::string graph_text =
+            read_text_file(ctx_.assets->files().resolve_path(desc.asset_graph));
+        if (graph_text.empty()) {
+            ctx_.logger.error(
+                "load_scene: cannot read asset graph: " + desc.asset_graph);
             return false;
         }
-        const wz::json::JSONParseResult pj =
-            wz::json::parse_json_string(project_text);
-        if (!pj.ok || !pj.document.root) {
-            ctx_.logger.error("load_project: invalid project json");
+        const wz::json::JSONParseResult gj =
+            wz::json::parse_json_string(graph_text);
+        if (!gj.ok || !gj.document.root) {
+            ctx_.logger.error("load_scene: invalid asset graph json");
             return false;
         }
-        const wz::json::JSONValue& proot = *pj.document.root;
 
-        // Compile the project's asset graph (the unproven path): read the v2
-        // graph JSON -> draft (shared engine loader) -> bind (swap + resolve).
-        bool graph_ok = false;
-        if (const auto graph_rel = wz::json::read_string(proot, "asset_graph")) {
-            const wz::fs::Path graph_path = project_authored_path(
-                project_root,
-                std::string(*graph_rel));
-            const std::string graph_text =
-                read_text_file(ctx_.assets->files().resolve_path(graph_path));
-            if (graph_text.empty()) {
-                ctx_.logger.error(
-                    "load_project: cannot read asset graph: " + graph_path);
-                return false;
-            }
-            const wz::json::JSONParseResult gj =
-                wz::json::parse_json_string(graph_text);
-            if (!gj.ok || !gj.document.root) {
-                ctx_.logger.error("load_project: invalid asset graph json");
-                return false;
-            }
+        graph_draft_ = wz::asset::AssetGraphDraft{};
+        std::string error;
+        if (!wz::engine::assets::load_asset_graph_draft_from_v2_json(
+                *gj.document.root, graph_draft_, error))
+        {
+            ctx_.logger.error(
+                "load_scene: asset graph parse failed: " + error);
+            return false;
+        }
 
-            graph_draft_ = wz::asset::AssetGraphDraft{};
-            std::string error;
-            if (!wz::engine::assets::load_asset_graph_draft_from_v2_json(
-                    *gj.document.root, graph_draft_, error))
+        const AssetGraphCompileResult bound = bind_asset_graph(graph_draft_);
+        const bool graph_ok = bound.ok;
+        ctx_.logger.info(
+            "load_scene: asset graph "
+            + std::string(bound.ok ? "compiled" : "FAILED")
+            + " (registered="
+            + std::to_string(ctx_.assets->system().registered_assets().size())
+            + ", diagnostics=" + std::to_string(bound.diagnostics.size())
+            + ")");
+        for (const auto& d : bound.diagnostics) {
+            if (d.severity
+                == wz::asset::AssetGraphDraftValidationSeverity::Error)
             {
-                ctx_.logger.error(
-                    "load_project: asset graph parse failed: " + error);
-                return false;
-            }
-
-            const AssetGraphCompileResult bound = bind_asset_graph(graph_draft_);
-            graph_ok = bound.ok;
-            ctx_.logger.info(
-                "load_project: asset graph "
-                + std::string(bound.ok ? "compiled" : "FAILED")
-                + " (registered="
-                + std::to_string(
-                    ctx_.assets->system().registered_assets().size())
-                + ", diagnostics="
-                + std::to_string(bound.diagnostics.size()) + ")");
-            for (const auto& d : bound.diagnostics) {
-                if (d.severity
-                    == wz::asset::AssetGraphDraftValidationSeverity::Error)
-                {
-                    ctx_.logger.error("load_project:   " + d.message);
-                }
-            }
-            if (!bound.ok) {
-                return false;
+                ctx_.logger.error("load_scene:   " + d.message);
             }
         }
-
-        // Load + resolve the scene. Relative scene paths are project-root
-        // relative; absolute scene paths are passed through unchanged.
-        if (const auto scene_rel = wz::json::read_string(proot, "scene")) {
-            const wz::fs::Path scene_path = project_authored_path(
-                project_root,
-                std::string(*scene_rel));
-            const wz::engine::assets::SceneAsset scene =
-                ctx_.assets->scenes().create_scene_from_json(
-                    wz::engine::assets::SceneFromJSONDesc{ .path = scene_path });
-            if (!scene.valid()) {
-                ctx_.logger.error("load_project: scene registration failed");
-                return false;
-            }
-
-            // create_scene_from_json only REGISTERS the scene + its deps (staged
-            // after the graph commit); commit + resolve to actually compile it.
-            sys.commit();
-            std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
-                scene_errors;
-            sys.resolve_all(&scene_errors);
-
-            const wz::engine::assets::SceneHandle scene_handle =
-                ctx_.assets->scenes().get_scene(scene);
-            const wz::engine::assets::SceneAssetData* scene_data =
-                ctx_.assets->scenes().get_scene_data(scene_handle);
-            if (!scene_data || !scene_errors.empty()) {
-                ctx_.logger.error(
-                    "load_project: scene resolve FAILED (errors="
-                    + std::to_string(scene_errors.size()) + ")");
-                return false;
-            }
-            // bind_asset_graph already ran above, but scene_nodes_ was empty
-            // then; now the scene is loaded, so bridge its renderables to the
-            // committed graph keys.
-            scene_nodes_ = scene_data->nodes;
-            const uint32_t bridged = bridge_scene_renderables(graph_draft_);
-            ctx_.logger.info(
-                "load_project: scene resolved (nodes="
-                + std::to_string(scene_data->nodes.size())
-                + ", renderables bridged=" + std::to_string(bridged) + ")");
+        if (!bound.ok) {
+            return false;
         }
+
+        const wz::engine::assets::SceneAsset scene =
+            ctx_.assets->scenes().create_scene_from_json(
+                wz::engine::assets::SceneFromJSONDesc{ .path = desc.scene });
+        if (!scene.valid()) {
+            ctx_.logger.error("load_scene: scene registration failed");
+            return false;
+        }
+
+        // create_scene_from_json only REGISTERS the scene + its deps (staged
+        // after the graph commit); commit + resolve to actually compile it.
+        sys.commit();
+        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
+            scene_errors;
+        sys.resolve_all(&scene_errors);
+
+        const wz::engine::assets::SceneHandle scene_handle =
+            ctx_.assets->scenes().get_scene(scene);
+        const wz::engine::assets::SceneAssetData* scene_data =
+            ctx_.assets->scenes().get_scene_data(scene_handle);
+        if (!scene_data || !scene_errors.empty()) {
+            ctx_.logger.error(
+                "load_scene: scene resolve FAILED (errors="
+                + std::to_string(scene_errors.size()) + ")");
+            return false;
+        }
+        // bind_asset_graph already ran above, but scene_nodes_ was empty then;
+        // now the scene is loaded, so bridge its renderables to the committed
+        // graph keys.
+        scene_nodes_ = scene_data->nodes;
+        const uint32_t bridged = bridge_scene_renderables(graph_draft_);
+        ctx_.logger.info(
+            "load_scene: scene resolved (nodes="
+            + std::to_string(scene_data->nodes.size())
+            + ", renderables bridged=" + std::to_string(bridged) + ")");
 
         return graph_ok;
     }
