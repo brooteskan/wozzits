@@ -11,6 +11,7 @@
 #include <wozzits/rhi/frame_graph.h>
 #include <wozzits/rhi/gpu_resource_registry.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -48,6 +49,18 @@ namespace wz::engine::rendering
         void draw(const wz::rhi::DrawArgs& args) override;
 
         [[nodiscard]] bool ready() const noexcept { return ready_; }
+
+        // Release every cached SRV descriptor table and drop the cache. The
+        // cache keys tables by the engine GPUHandles of the buffers they view;
+        // a graph swap retires those buffers, so the tables must be released
+        // too — otherwise descriptor-heap ranges leak across swaps and a table
+        // could be reused for a recycled handle. Caller must have flushed the
+        // GPU (wait_idle) first, since in-flight command lists may reference them.
+        void release_cached_descriptor_tables();
+
+        // Number of SRV descriptor tables currently cached. Drops to 0 after
+        // release_cached_descriptor_tables(); the rebind test asserts on this.
+        [[nodiscard]] std::size_t cached_descriptor_table_count() const;
 
 #ifdef WZ_ENABLE_TESTING
         void set_current_for_testing(

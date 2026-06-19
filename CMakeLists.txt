@@ -270,6 +270,32 @@ if(WOZZITS_ENABLE_V8_SCRIPTING)
 endif()
 
 # ----------------------------
+# Shared resource staging
+# ----------------------------
+# Tests and apps that need runtime resources all run from CMAKE_BINARY_DIR, so
+# they share ONE staged copy there. Routing every resource-needing target through
+# a single staging target (instead of a per-target POST_BUILD copy_directory)
+# fixes two problems with the old per-target copies:
+#   - the parallel-build race where several targets copy into the same directory
+#     at once (on Windows: a "Permission denied" sharing violation), and
+#   - re-copying the whole resources tree (multiple GB: HDRIs + committed asset
+#     caches) on every relink of every resource target.
+# A stamp gates the copy so it runs once, not on every build. The committed
+# resources tree is large and effectively static; to force a re-stage after
+# editing it, delete ${CMAKE_BINARY_DIR}/wz_resources.stamp (or reconfigure).
+set(WZ_RESOURCE_STAMP "${CMAKE_BINARY_DIR}/wz_resources.stamp")
+add_custom_command(
+    OUTPUT "${WZ_RESOURCE_STAMP}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
+        "${CMAKE_BINARY_DIR}/resources"
+    COMMAND ${CMAKE_COMMAND} -E touch "${WZ_RESOURCE_STAMP}"
+    COMMENT "Staging window_engine resources (shared, once)"
+    VERBATIM
+)
+add_custom_target(wz_stage_resources DEPENDS "${WZ_RESOURCE_STAMP}")
+
+# ----------------------------
 # Test helpers
 # ----------------------------
 
@@ -305,15 +331,11 @@ function(rs_add_test_group category name)
     test_mesh_wireframe
     test_gaussian_splat
     game_app_main
+    rhi_scene_renderer_rebind_tests
     )
 
     if(name IN_LIST WZ_TESTS_REQUIRING_RESOURCES)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
-                "$<TARGET_FILE_DIR:${target}>/resources"
-            COMMENT "Copying resources for ${target}"
-        )
+        add_dependencies(${target} wz_stage_resources)
     endif()
 
 
@@ -369,12 +391,12 @@ endif()
 
 # ----------------------------
 # wozzits_app_v1 — RHI-native app (Atom "Bootstrap" role): owns window + device
-# and drives a RhiSceneRenderer. Built unconditionally; this is the app, not an
-# example.
+# and drives a WozzitsApp_v1. Built unconditionally; this is the app, not an
+# example. WozzitsApp_v1 itself lives in the window_engine library (so the
+# editor can compose it too); only the thin main.cpp driver is in this target.
 # ----------------------------
 add_executable(wozzits_app_v1
     src/app/wozzits_app_v1/main.cpp
-    src/app/wozzits_app_v1/wozzits_app_v1.cpp
 )
 
 target_link_libraries(wozzits_app_v1
@@ -382,13 +404,8 @@ target_link_libraries(wozzits_app_v1
         window_engine
 )
 
-# Copy resources next to the exe so load_project can find projects/scenes.
-add_custom_command(TARGET wozzits_app_v1 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
-        "$<TARGET_FILE_DIR:wozzits_app_v1>/resources"
-    COMMENT "Copying resources for wozzits_app_v1"
-)
+# Stage resources (shared, once) so load_project can find projects/scenes.
+add_dependencies(wozzits_app_v1 wz_stage_resources)
 
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
@@ -620,6 +637,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render rhi_render_program_bridge_tests)
     rs_add_test_group(render rhi_dummy_backend_integration_tests)
     rs_add_test_group(render rhi_gpu_backend_tests)
+    rs_add_test_group(render rhi_scene_renderer_rebind_tests)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)
@@ -657,11 +675,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             window_engine
     )
 
-    add_custom_command(TARGET ${BENCHMARK_APP_TARGET} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
-            "$<TARGET_FILE_DIR:${BENCHMARK_APP_TARGET}>/resources"
-        COMMENT "Copying resources for ${BENCHMARK_APP_TARGET}"
-    )
+    add_dependencies(${BENCHMARK_APP_TARGET} wz_stage_resources)
 
 endif()

@@ -38,6 +38,11 @@ namespace wz::engine::rendering
 
     RhiDx12CommandRecorder::~RhiDx12CommandRecorder()
     {
+        release_cached_descriptor_tables();
+    }
+
+    void RhiDx12CommandRecorder::release_cached_descriptor_tables()
+    {
         if (!device_ || !descriptor_tables_) {
             return;
         }
@@ -48,6 +53,12 @@ namespace wz::engine::rendering
                 *device_,
                 entry.table);
         }
+        descriptor_tables_->entries.clear();
+    }
+
+    std::size_t RhiDx12CommandRecorder::cached_descriptor_table_count() const
+    {
+        return descriptor_tables_ ? descriptor_tables_->entries.size() : 0u;
     }
 
     void RhiDx12CommandRecorder::barrier(

@@ -29,6 +29,7 @@
 #include <wozzits/rhi/gpu_resource.h>
 #include <wozzits/rhi/shader_resource_group.h>
 
+#include <cstddef>
 #include <span>
 #include <unordered_map>
 
@@ -61,6 +62,46 @@ namespace wz::engine::rendering
             std::span<const wz::engine::assets::SceneNodeAsset> nodes,
             wz::engine::assets::EngineAssetLibrary& assets,
             const wz::math::Mat4& view_projection);
+
+        // Invalidate every realized cache after a wholesale asset-graph swap.
+        // The caches (realized programs/renderables/registered shaders) are
+        // keyed by the OUTGOING graph's AssetKeys, so on a swap they go stale —
+        // the renderer would keep drawing the previous graph's GPU resources.
+        // This deferred-releases the outgoing graph's pull buffers (the only
+        // GpuResourceRegistry resources the renderer owns) and clears the caches
+        // so the next render re-realizes against the new keys. A graph swap is a
+        // rare, heavy editor action (replace-the-draft), so the flush this does
+        // to make the release safe is acceptable here; it is NOT a per-frame path.
+        void on_graph_changed();
+
+        // GPU resources currently resident in the resource registry. Flat across
+        // a graph swap once the new graph is realized (the outgoing graph's were
+        // released): diagnostics + the rebind regression test read this.
+        [[nodiscard]] std::size_t resident_gpu_resource_count() const
+        {
+            return ctx_.resources.resident_count();
+        }
+
+        // Render programs / shader modules currently registered in the rhi
+        // context. Both drop to 0 on a graph swap (on_graph_changed clears them)
+        // so the fixed-capacity registries don't grow across binds — the rebind
+        // test asserts this.
+        [[nodiscard]] std::size_t registered_program_count() const
+        {
+            return ctx_.programs.size();
+        }
+        [[nodiscard]] std::size_t registered_shader_count() const
+        {
+            return ctx_.shaders.size();
+        }
+
+        // SRV descriptor tables cached by the command recorder. Resets to 0 on a
+        // graph swap (on_graph_changed releases them) so descriptor-heap ranges
+        // don't leak across binds.
+        [[nodiscard]] std::size_t cached_descriptor_table_count() const
+        {
+            return recorder_.cached_descriptor_table_count();
+        }
 
     private:
         struct RealizedProgram

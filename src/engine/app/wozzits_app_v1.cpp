@@ -1,6 +1,6 @@
-// src/app/wozzits_app_v1/wozzits_app_v1.cpp
+// src/engine/app/wozzits_app_v1.cpp
 
-#include "wozzits_app_v1.h"
+#include <engine/app/wozzits_app_v1.h>
 
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/scene/scene_asset_data.h>
@@ -59,6 +59,32 @@ namespace wz::app
         : ctx_(ctx)
         , renderer_(ctx.device, ctx.logger)
     {
+    }
+
+    uint32_t WozzitsApp_v1::bridge_scene_renderables(
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        // Bridge each scene node's authored renderable graph-node id to its
+        // resolved AssetKey (the draft node's key), like the editor's
+        // resolve_renderable_asset_node, so the renderer can find it. Re-run on
+        // every (re)bind: a graph swap mints new keys, and scene_nodes_ must
+        // point at the new ones or the renderer draws nothing (or stale keys).
+        uint32_t bridged = 0;
+        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (!node.renderable_asset_node_id) {
+                continue;
+            }
+            // Clear first: if the new graph removed/renamed this authored
+            // renderable, the node must stop drawing the previous graph's key
+            // (old compiled payloads can still resolve), not keep it stale.
+            node.renderable_asset.reset();
+            const auto it = draft.node_index.find(*node.renderable_asset_node_id);
+            if (it != draft.node_index.end()) {
+                node.renderable_asset = draft.nodes[it->second].node.key;
+                ++bridged;
+            }
+        }
+        return bridged;
     }
 
     AssetGraphCompileResult WozzitsApp_v1::bind_asset_graph(
@@ -142,9 +168,16 @@ namespace wz::app
 
         graph_epoch_ = sys.registration_epoch();
 
-        // TODO(next): rebind the renderer to the new graph — re-resolve the
-        // scene's renderables against the freshly committed assets and realize
-        // them. The previous graph's GPU resources are released (deferred) here.
+        // Rebind the renderer to the new graph: invalidate the realized caches
+        // (keyed by the OUTGOING graph's AssetKeys) and deferred-release the
+        // outgoing graph's GPU resources, so renderables re-realize against the
+        // freshly committed keys instead of drawing the previous graph.
+        renderer_.on_graph_changed();
+
+        // The swap minted new AssetKeys; re-point the scene's renderables at
+        // them. (On the first bind during load_project the scene is not loaded
+        // yet, so this is a no-op there and load_project re-runs it after.)
+        bridge_scene_renderables(draft);
 
         result.ok = true;
         result.diagnostics = draft.validation_messages;
@@ -267,23 +300,11 @@ namespace wz::app
                     + std::to_string(scene_errors.size()) + ")");
                 return false;
             }
-            // Bridge each scene node's authored renderable graph-node id to its
-            // resolved AssetKey (the draft node's key), like the editor's
-            // resolve_renderable_asset_node, so the renderer can find it.
+            // bind_asset_graph already ran above, but scene_nodes_ was empty
+            // then; now the scene is loaded, so bridge its renderables to the
+            // committed graph keys.
             scene_nodes_ = scene_data->nodes;
-            uint32_t bridged = 0;
-            for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
-                if (!node.renderable_asset_node_id) {
-                    continue;
-                }
-                const auto it = graph_draft_.node_index.find(
-                    *node.renderable_asset_node_id);
-                if (it != graph_draft_.node_index.end()) {
-                    node.renderable_asset =
-                        graph_draft_.nodes[it->second].node.key;
-                    ++bridged;
-                }
-            }
+            const uint32_t bridged = bridge_scene_renderables(graph_draft_);
             ctx_.logger.info(
                 "load_project: scene resolved (nodes="
                 + std::to_string(scene_data->nodes.size())
@@ -305,5 +326,36 @@ namespace wz::app
         }
         return renderer_.render_scene(
             scene_nodes_, *ctx_.assets, default_view_projection());
+    }
+
+    std::size_t WozzitsApp_v1::resident_gpu_resource_count() const
+    {
+        return renderer_.resident_gpu_resource_count();
+    }
+
+    std::size_t WozzitsApp_v1::resolved_renderable_node_count() const
+    {
+        std::size_t count = 0;
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (node.renderable_asset) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    std::size_t WozzitsApp_v1::registered_program_count() const
+    {
+        return renderer_.registered_program_count();
+    }
+
+    std::size_t WozzitsApp_v1::registered_shader_count() const
+    {
+        return renderer_.registered_shader_count();
+    }
+
+    std::size_t WozzitsApp_v1::cached_descriptor_table_count() const
+    {
+        return renderer_.cached_descriptor_table_count();
     }
 }

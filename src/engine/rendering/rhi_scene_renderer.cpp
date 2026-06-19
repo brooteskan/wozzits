@@ -288,6 +288,62 @@ namespace wz::engine::rendering
     {
     }
 
+    void RhiSceneRenderer::on_graph_changed()
+    {
+        // First bind (nothing realized yet): nothing to release or invalidate,
+        // and no need to flush the GPU. Keeps load_project's initial bind cheap.
+        if (realized_renderables_.empty() && realized_programs_.empty()
+            && registered_shaders_.empty())
+        {
+            return;
+        }
+
+        // The outgoing graph's pull buffers may still be referenced by frames
+        // the GPU has not finished. The registry's deferred release reclaims on
+        // a GPU timeline value, but that timeline is not yet wired (nothing
+        // calls touch()), so flush here to guarantee the GPU is done before we
+        // collect — then release + collect is unambiguously safe.
+        wz::gpu::wait_idle(device_);
+
+        for (auto& [key, renderable] : realized_renderables_) {
+            (void)key;
+            if (renderable.positions.valid()) {
+                ctx_.resources.release(renderable.positions);
+            }
+            if (renderable.indices.valid()) {
+                ctx_.resources.release(renderable.indices);
+            }
+        }
+
+        // The GPU is idle after wait_idle, so every pending resource is past its
+        // last-use timeline: reclaim them all now (UINT64_MAX = "all timelines
+        // completed"). Without this the released buffers would linger resident.
+        ctx_.resources.collect(UINT64_MAX);
+
+        // Release the realized PSOs + root signatures. These are keyed by rhi
+        // program Tag; leaving them resident leaks device objects across swaps,
+        // and a re-realize must rebuild them against the new graph anyway.
+        cache_.clear();
+
+        // Release the recorder's cached SRV descriptor tables. They view the
+        // outgoing graph's pull buffers (just released); keeping them leaks
+        // descriptor-heap ranges across swaps and could reuse a table for a
+        // recycled handle. Safe now: wait_idle above flushed the GPU.
+        recorder_.release_cached_descriptor_tables();
+
+        // Retire the outgoing graph's render programs + shader modules. Their
+        // names are content-addressed, so a distinct-content graph mints new
+        // names -> new slots; without this reset the fixed-capacity registries
+        // (256 each) would grow across editor graph swaps and eventually fill.
+        // The semantic/variant/pass registries are graph-independent and stay.
+        ctx_.programs.clear();
+        ctx_.shaders.clear();
+
+        realized_renderables_.clear();
+        realized_programs_.clear();
+        registered_shaders_.clear();
+    }
+
     bool RhiSceneRenderer::register_shader_from_source(
         ea::EngineAssetLibrary& assets,
         const wz::asset::AssetKey& shader_key,

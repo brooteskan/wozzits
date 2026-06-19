@@ -9,7 +9,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
-#include "wozzits_app_v1.h"
+#include <engine/app/wozzits_app_v1.h>
 
 #include <engine/app_context.h>
 
