@@ -1,5 +1,6 @@
 using System.IO;
 using Wozzits.Editor.Core.Projects;
+using Wozzits.Editor.Protocol;
 
 namespace Wozzits.Editor.ViewModels;
 
@@ -28,12 +29,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             : "Project directory does not exist.";
     }
 
-    public MainWindowViewModel(ProjectDirectory projectDirectory)
+    public MainWindowViewModel(ProjectDirectory projectDirectory, EngineProjectManifest? project = null)
     {
         ArgumentNullException.ThrowIfNull(projectDirectory);
 
         ProjectDirectory = projectDirectory.FullPath;
         ProjectStatus = "Project opened.";
+        Project = project;
     }
 
     public string Title { get; } = "Wozzits Editor";
@@ -41,4 +43,5 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public string ProjectStatus { get; }
 
     public string ProjectDirectory { get; }
+    public EngineProjectManifest? Project { get; }
 }

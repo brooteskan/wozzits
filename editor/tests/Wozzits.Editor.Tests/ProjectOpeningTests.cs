@@ -1,5 +1,8 @@
 using System.IO;
 using Wozzits.Editor.Core.Projects;
+using Wozzits.Editor.HostClient;
+using Wozzits.Editor.Protocol;
+using Wozzits.Editor.ViewModels;
 
 namespace Wozzits.Editor.Tests;
 
@@ -36,39 +39,37 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
-    public void ProjectFilesLiveUnderPassedProjectDirectory()
+    public void BootstrapAllowsCreateOnlyWhenEngineReportsMissingProject()
     {
-        var projectDirectory = new ProjectDirectory(@"D:\work\project");
-        var projectFiles = new ProjectFileSet(projectDirectory);
+        var viewModel = new ProjectBootstrapViewModel(
+            new ProjectDirectory(@"D:\work\project"),
+            new EngineProjectHostClient("unused.exe"),
+            new EngineProjectResponse
+            {
+                Status = EngineProjectStatus.Missing,
+                Error = "missing",
+            },
+            openProject: _ => { },
+            quit: () => { });
 
-        Assert.Equal(
-            Path.GetFullPath(@"D:\work\project\.wozzits\project.json"),
-            projectFiles.ManifestPath);
+        Assert.True(viewModel.CanCreateProject);
     }
 
     [Fact]
-    public void CreateProjectFilesCreatesManifestInsidePassedDirectory()
+    public void BootstrapDisablesCreateWhenEngineReportsInvalidProject()
     {
-        var projectRoot = Path.Combine(Path.GetTempPath(), "wozzits-editor-tests", Guid.NewGuid().ToString("N"));
-        var projectDirectory = new ProjectDirectory(projectRoot);
-        var projectFiles = new ProjectFileSet(projectDirectory);
-
-        try
-        {
-            Assert.False(projectFiles.Exists());
-
-            var manifest = projectFiles.Create();
-
-            Assert.Equal(ProjectManifest.CurrentFormatVersion, manifest.FormatVersion);
-            Assert.True(projectFiles.Exists());
-            Assert.True(File.Exists(Path.Combine(projectRoot, ".wozzits", "project.json")));
-        }
-        finally
-        {
-            if (Directory.Exists(projectRoot))
+        var viewModel = new ProjectBootstrapViewModel(
+            new ProjectDirectory(@"D:\work\project"),
+            new EngineProjectHostClient("unused.exe"),
+            new EngineProjectResponse
             {
-                Directory.Delete(projectRoot, recursive: true);
-            }
-        }
+                Status = EngineProjectStatus.Invalid,
+                Error = "bad project",
+            },
+            openProject: _ => { },
+            quit: () => { });
+
+        Assert.False(viewModel.CanCreateProject);
+        Assert.Equal("bad project", viewModel.ErrorMessage);
     }
 }

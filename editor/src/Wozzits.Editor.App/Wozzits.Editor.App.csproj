@@ -27,5 +27,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Wozzits.Editor.ViewModels\Wozzits.Editor.ViewModels.csproj" />
     <ProjectReference Include="..\Wozzits.Editor.Core\Wozzits.Editor.Core.csproj" />
+    <ProjectReference Include="..\Wozzits.Editor.HostClient\Wozzits.Editor.HostClient.csproj" />
   </ItemGroup>
 </Project>

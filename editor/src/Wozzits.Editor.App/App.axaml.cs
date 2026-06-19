@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Wozzits.Editor.Core.Projects;
+using Wozzits.Editor.HostClient;
 using Wozzits.Editor.App.Views;
 using Wozzits.Editor.ViewModels;
 
@@ -28,6 +29,7 @@ public partial class App : Application
 
     private static Window CreateStartupWindow(IClassicDesktopStyleApplicationLifetime desktop)
     {
+        var projectHost = new EngineProjectHostClient();
         var launchOptions = ProjectLaunchOptions.FromCommandLine(desktop.Args ?? []);
 
         if (launchOptions.ProjectDirectory is null)
@@ -36,7 +38,7 @@ public partial class App : Application
         }
 
         var projectDirectory = new ProjectDirectory(launchOptions.ProjectDirectory);
-        return CreateProjectWindow(desktop, projectDirectory);
+        return CreateProjectWindow(desktop, projectDirectory, projectHost);
     }
 
     private static Window CreateProjectDirectoryPickerWindow(IClassicDesktopStyleApplicationLifetime desktop)
@@ -60,7 +62,8 @@ public partial class App : Application
             }
 
             var projectDirectory = new ProjectDirectory(selectedPath);
-            var projectWindow = CreateProjectWindow(desktop, projectDirectory);
+            var projectHost = new EngineProjectHostClient();
+            var projectWindow = CreateProjectWindow(desktop, projectDirectory, projectHost);
 
             desktop.MainWindow = projectWindow;
             projectWindow.Show();
@@ -70,30 +73,35 @@ public partial class App : Application
         return pickerWindow;
     }
 
-    private static Window CreateProjectWindow(IClassicDesktopStyleApplicationLifetime desktop, ProjectDirectory projectDirectory)
+    private static Window CreateProjectWindow(
+        IClassicDesktopStyleApplicationLifetime desktop,
+        ProjectDirectory projectDirectory,
+        EngineProjectHostClient projectHost)
     {
-        var projectFiles = new ProjectFileSet(projectDirectory);
+        var project = projectHost.ProbeProject(projectDirectory.FullPath);
 
-        if (projectFiles.Exists())
+        if (project.IsValid)
         {
             return new MainWindow
             {
-                DataContext = new MainWindowViewModel(projectDirectory),
+                DataContext = new MainWindowViewModel(projectDirectory, project.Project),
             };
         }
 
         var bootstrapWindow = new ProjectBootstrapWindow();
         bootstrapWindow.DataContext = new ProjectBootstrapViewModel(
             projectDirectory,
+            projectHost,
+            project,
             openProject: openedDirectory =>
             {
-                var mainWindow = new MainWindow
-                {
-                    DataContext = new MainWindowViewModel(openedDirectory),
-                };
+                var projectWindow = CreateProjectWindow(
+                    desktop,
+                    openedDirectory,
+                    projectHost);
 
-                desktop.MainWindow = mainWindow;
-                mainWindow.Show();
+                desktop.MainWindow = projectWindow;
+                projectWindow.Show();
                 bootstrapWindow.Close();
             },
             quit: () => desktop.Shutdown());
