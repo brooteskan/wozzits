@@ -407,11 +407,11 @@ target_link_libraries(wozzits_app_v1
 # Stage resources (shared, once) so runtime project manifests can find scenes.
 add_dependencies(wozzits_app_v1 wz_stage_resources)
 
-add_executable(wozzits_project_host
-    src/tools/wozzits_project_host/main.cpp
+add_executable(wozzits_editor_host
+    src/tools/wozzits_editor_host/main.cpp
 )
 
-target_link_libraries(wozzits_project_host
+target_link_libraries(wozzits_editor_host
     PRIVATE
         window_engine
 )

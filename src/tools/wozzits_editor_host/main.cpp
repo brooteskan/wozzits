@@ -94,7 +94,7 @@ namespace
     {
         if (argc < 3) {
             error =
-                "usage: wozzits_project_host <probe|create> <project-root> "
+                "usage: wozzits_editor_host <probe|create> <project-root> "
                 "[--resource-root <path>] [--name <name>]";
             return false;
         }
