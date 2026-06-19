@@ -90,11 +90,17 @@ namespace
         std::cout << "}\n";
     }
 
+    void write_log(const char* level, const std::string& message)
+    {
+        std::cout << '[' << level << "] " << message << '\n';
+        std::cout.flush();
+    }
+
     bool parse_options(int argc, char** argv, Options& out, std::string& error)
     {
         if (argc < 3) {
             error =
-                "usage: wozzits_editor_host <probe|create> <project-root> "
+                "usage: wozzits_editor_host <probe|create|serve> <project-root> "
                 "[--resource-root <path>] [--name <name>]";
             return false;
         }
@@ -116,7 +122,8 @@ namespace
             }
         }
 
-        if (out.command != "probe" && out.command != "create") {
+        if (out.command != "probe" && out.command != "create"
+            && out.command != "serve") {
             error = "unknown command: " + out.command;
             return false;
         }
@@ -150,6 +157,40 @@ int main(int argc, char** argv)
             false,
             result.error,
             result.manifest);
+        return 0;
+    }
+
+    if (options.command == "serve") {
+        write_log("info", "wozzits_editor_host starting");
+        write_log("info", "project root: " + options.project_root);
+
+        const auto result = wz::engine::project::probe_project_manifest(
+            wz::engine::project::ProjectManifestLoadDesc{
+                .project_root = options.project_root,
+                .resource_root = options.resource_root,
+            });
+
+        if (!result.valid()) {
+            write_log("error", result.error);
+            return 1;
+        }
+
+        write_log("info", "project loaded: " + result.manifest.name);
+        write_log("info", "ready");
+
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            if (line == "shutdown" || line == "exit" || line == "quit") {
+                write_log("info", "shutdown requested");
+                return 0;
+            }
+
+            if (!line.empty()) {
+                write_log("warn", "unknown command: " + line);
+            }
+        }
+
+        write_log("info", "stdin closed; exiting");
         return 0;
     }
 
