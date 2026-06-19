@@ -28,6 +28,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -77,12 +78,13 @@ namespace wz::engine::rendering
         const wz::asset::AssetSystem::RegistrationEntry* registration_entry_for(
             const ea::EngineAssetLibrary& assets, const wz::asset::AssetKey& key)
         {
-            for (const auto& entry : assets.system().registered_assets()) {
-                if (entry.node.key == key) {
-                    return &entry;
-                }
-            }
-            return nullptr;
+            const auto registered_assets = assets.system().registered_assets();
+            const auto entry = std::ranges::find_if(
+                registered_assets,
+                [&key](const wz::asset::AssetSystem::RegistrationEntry& candidate) {
+                    return candidate.node.key == key;
+                });
+            return entry != registered_assets.end() ? &*entry : nullptr;
         }
 
         std::string shader_entry_name(const wz::asset::AssetNode& node)
