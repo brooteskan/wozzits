@@ -43,7 +43,7 @@ public sealed class ProjectOpeningTests
     {
         var viewModel = new ProjectBootstrapViewModel(
             new ProjectDirectory(@"D:\work\project"),
-            new EngineProjectHostClient("unused.exe"),
+            new WozzitsEditorHostClient("unused.exe"),
             new EngineProjectResponse
             {
                 Status = EngineProjectStatus.Missing,
@@ -60,7 +60,7 @@ public sealed class ProjectOpeningTests
     {
         var viewModel = new ProjectBootstrapViewModel(
             new ProjectDirectory(@"D:\work\project"),
-            new EngineProjectHostClient("unused.exe"),
+            new WozzitsEditorHostClient("unused.exe"),
             new EngineProjectResponse
             {
                 Status = EngineProjectStatus.Invalid,

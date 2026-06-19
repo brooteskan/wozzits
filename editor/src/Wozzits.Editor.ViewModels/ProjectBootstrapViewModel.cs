@@ -8,19 +8,19 @@ namespace Wozzits.Editor.ViewModels;
 public sealed class ProjectBootstrapViewModel : ViewModelBase
 {
     private readonly ProjectDirectory _projectDirectory;
-    private readonly EngineProjectHostClient _projectHost;
+    private readonly WozzitsEditorHostClient _editorHost;
     private readonly Action<ProjectDirectory> _openProject;
     private string _errorMessage = string.Empty;
 
     public ProjectBootstrapViewModel(
         ProjectDirectory projectDirectory,
-        EngineProjectHostClient projectHost,
+        WozzitsEditorHostClient editorHost,
         EngineProjectResponse projectStatus,
         Action<ProjectDirectory> openProject,
         Action quit)
     {
         _projectDirectory = projectDirectory ?? throw new ArgumentNullException(nameof(projectDirectory));
-        _projectHost = projectHost ?? throw new ArgumentNullException(nameof(projectHost));
+        _editorHost = editorHost ?? throw new ArgumentNullException(nameof(editorHost));
         ArgumentNullException.ThrowIfNull(projectStatus);
         _openProject = openProject ?? throw new ArgumentNullException(nameof(openProject));
 
@@ -60,7 +60,7 @@ public sealed class ProjectBootstrapViewModel : ViewModelBase
         try
         {
             ErrorMessage = string.Empty;
-            var created = _projectHost.CreateProject(_projectDirectory.FullPath);
+            var created = _editorHost.CreateProject(_projectDirectory.FullPath);
             if (!created.Ok)
             {
                 ErrorMessage = created.Error;

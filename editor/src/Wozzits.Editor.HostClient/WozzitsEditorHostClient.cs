@@ -4,9 +4,9 @@ using Wozzits.Editor.Protocol;
 
 namespace Wozzits.Editor.HostClient;
 
-public sealed class EngineProjectHostClient
+public sealed class WozzitsEditorHostClient
 {
-    public const string HostPathEnvironmentVariable = "WOZZITS_PROJECT_HOST";
+    public const string HostPathEnvironmentVariable = "WOZZITS_EDITOR_HOST";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -15,7 +15,7 @@ public sealed class EngineProjectHostClient
 
     private readonly string _hostExecutablePath;
 
-    public EngineProjectHostClient(string? hostExecutablePath = null)
+    public WozzitsEditorHostClient(string? hostExecutablePath = null)
     {
         _hostExecutablePath = string.IsNullOrWhiteSpace(hostExecutablePath)
             ? ResolveDefaultHostExecutablePath()
@@ -36,7 +36,7 @@ public sealed class EngineProjectHostClient
     {
         if (!File.Exists(_hostExecutablePath))
         {
-            return Invalid($"Project host executable not found: {_hostExecutablePath}");
+            return Invalid($"Editor host executable not found: {_hostExecutablePath}");
         }
 
         var startInfo = new ProcessStartInfo
@@ -60,7 +60,7 @@ public sealed class EngineProjectHostClient
             using var process = Process.Start(startInfo);
             if (process is null)
             {
-                return Invalid($"Could not start project host: {_hostExecutablePath}");
+                return Invalid($"Could not start editor host: {_hostExecutablePath}");
             }
 
             var stdout = process.StandardOutput.ReadToEnd();
@@ -68,13 +68,13 @@ public sealed class EngineProjectHostClient
             if (!process.WaitForExit(milliseconds: 10_000))
             {
                 process.Kill(entireProcessTree: true);
-                return Invalid("Project host timed out.");
+                return Invalid("Editor host timed out.");
             }
 
             var response = JsonSerializer.Deserialize<EngineProjectResponse>(stdout, JsonOptions);
             if (response is null)
             {
-                return Invalid("Project host returned an empty response.");
+                return Invalid("Editor host returned an empty response.");
             }
 
             if (process.ExitCode != 0 && string.IsNullOrWhiteSpace(response.Error))
@@ -82,7 +82,7 @@ public sealed class EngineProjectHostClient
                 return response with
                 {
                     Error = string.IsNullOrWhiteSpace(stderr)
-                        ? $"Project host failed with exit code {process.ExitCode}."
+                        ? $"Editor host failed with exit code {process.ExitCode}."
                         : stderr.Trim(),
                 };
             }
@@ -124,12 +124,12 @@ public sealed class EngineProjectHostClient
                     "wozzits-window-engine",
                     "build",
                     "clang-debug",
-                    "wozzits_project_host.exe");
+                    "wozzits_editor_host.exe");
             }
 
             directory = directory.Parent;
         }
 
-        return "wozzits_project_host.exe";
+        return "wozzits_editor_host.exe";
     }
 }

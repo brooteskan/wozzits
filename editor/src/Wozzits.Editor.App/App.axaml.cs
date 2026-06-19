@@ -29,7 +29,7 @@ public partial class App : Application
 
     private static Window CreateStartupWindow(IClassicDesktopStyleApplicationLifetime desktop)
     {
-        var projectHost = new EngineProjectHostClient();
+        var editorHost = new WozzitsEditorHostClient();
         var launchOptions = ProjectLaunchOptions.FromCommandLine(desktop.Args ?? []);
 
         if (launchOptions.ProjectDirectory is null)
@@ -38,7 +38,7 @@ public partial class App : Application
         }
 
         var projectDirectory = new ProjectDirectory(launchOptions.ProjectDirectory);
-        return CreateProjectWindow(desktop, projectDirectory, projectHost);
+        return CreateProjectWindow(desktop, projectDirectory, editorHost);
     }
 
     private static Window CreateProjectDirectoryPickerWindow(IClassicDesktopStyleApplicationLifetime desktop)
@@ -62,8 +62,8 @@ public partial class App : Application
             }
 
             var projectDirectory = new ProjectDirectory(selectedPath);
-            var projectHost = new EngineProjectHostClient();
-            var projectWindow = CreateProjectWindow(desktop, projectDirectory, projectHost);
+            var editorHost = new WozzitsEditorHostClient();
+            var projectWindow = CreateProjectWindow(desktop, projectDirectory, editorHost);
 
             desktop.MainWindow = projectWindow;
             projectWindow.Show();
@@ -76,9 +76,9 @@ public partial class App : Application
     private static Window CreateProjectWindow(
         IClassicDesktopStyleApplicationLifetime desktop,
         ProjectDirectory projectDirectory,
-        EngineProjectHostClient projectHost)
+        WozzitsEditorHostClient editorHost)
     {
-        var project = projectHost.ProbeProject(projectDirectory.FullPath);
+        var project = editorHost.ProbeProject(projectDirectory.FullPath);
 
         if (project.IsValid)
         {
@@ -91,14 +91,14 @@ public partial class App : Application
         var bootstrapWindow = new ProjectBootstrapWindow();
         bootstrapWindow.DataContext = new ProjectBootstrapViewModel(
             projectDirectory,
-            projectHost,
+            editorHost,
             project,
             openProject: openedDirectory =>
             {
                 var projectWindow = CreateProjectWindow(
                     desktop,
                     openedDirectory,
-                    projectHost);
+                    editorHost);
 
                 desktop.MainWindow = projectWindow;
                 projectWindow.Show();
