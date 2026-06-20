@@ -407,6 +407,21 @@ target_link_libraries(wozzits_app_v1
 # Stage resources (shared, once) so runtime project manifests can find scenes.
 add_dependencies(wozzits_app_v1 wz_stage_resources)
 
+# Editor "Launch app" helper: resolves a project root to its runtime paths and
+# spawns wozzits_app_v1 as a separate process (isolated test run), relaying its
+# logs. The editor spawns this; it is NOT used for authoring (that stays the
+# in-process C ABI). See Option Y / issue #189.
+add_executable(wozzits_editor_host
+    src/tools/wozzits_editor_host/main.cpp
+)
+
+target_link_libraries(wozzits_editor_host
+    PRIVATE
+        window_engine
+)
+
+add_dependencies(wozzits_editor_host wozzits_app_v1)
+
 add_library(wozzits_abi SHARED
     src/engine/abi/wozzits_abi.cpp
 )
