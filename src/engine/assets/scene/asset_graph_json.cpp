@@ -10,13 +10,19 @@
 #include <asset/types.h>
 
 #include <external/json/json_read_helpers.h>
+#include <external/json/json_writer.h>
 
 #include <array>
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <span>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace wz::engine::assets
@@ -372,5 +378,270 @@ namespace wz::engine::assets
         }
 
         return true;
+    }
+
+    namespace
+    {
+        // ---- v2 asset-graph JSON writers ------------------------------------
+        // Lifted from the wozzits-imgui scene editor
+        // (scene_editor_main_paths_and_project.inc) — the inverse of the readers
+        // above, so the two stay one format.
+
+        wz::json::JSONValuePtr json_number(double value)
+        {
+            auto out = std::make_unique<wz::json::JSONValue>();
+            out->kind = wz::json::JSONValueKind::Number;
+            out->number_value = value;
+            return out;
+        }
+
+        wz::json::JSONValuePtr json_string(std::string value)
+        {
+            auto out = std::make_unique<wz::json::JSONValue>();
+            out->kind = wz::json::JSONValueKind::String;
+            out->string_value = std::move(value);
+            return out;
+        }
+
+        wz::json::JSONValuePtr json_bool(bool value)
+        {
+            auto out = std::make_unique<wz::json::JSONValue>();
+            out->kind = wz::json::JSONValueKind::Bool;
+            out->bool_value = value;
+            return out;
+        }
+
+        wz::json::JSONValuePtr json_object()
+        {
+            auto out = std::make_unique<wz::json::JSONValue>();
+            out->kind = wz::json::JSONValueKind::Object;
+            return out;
+        }
+
+        wz::json::JSONValuePtr json_array()
+        {
+            auto out = std::make_unique<wz::json::JSONValue>();
+            out->kind = wz::json::JSONValueKind::Array;
+            return out;
+        }
+
+        void json_add_member(
+            wz::json::JSONValue& object,
+            std::string key,
+            wz::json::JSONValuePtr value)
+        {
+            if (object.kind != wz::json::JSONValueKind::Object || !value) {
+                return;
+            }
+            object.object_members.push_back(wz::json::JSONMember{
+                .key = std::move(key),
+                .value = std::move(value),
+            });
+        }
+
+        std::string project_asset_key_text(const wz::asset::AssetKey& key)
+        {
+            if (key == wz::asset::AssetKey{}) {
+                return {};
+            }
+
+            char buffer[192]{};
+            std::snprintf(
+                buffer,
+                sizeof(buffer),
+                "asset-key:%016llx:%016llx:%016llx:%016llx:%016llx:%016llx:"
+                "%016llx:%016llx",
+                static_cast<unsigned long long>(key.content_hash.lo),
+                static_cast<unsigned long long>(key.content_hash.hi),
+                static_cast<unsigned long long>(key.schema_hash.lo),
+                static_cast<unsigned long long>(key.schema_hash.hi),
+                static_cast<unsigned long long>(key.compiler_hash.lo),
+                static_cast<unsigned long long>(key.compiler_hash.hi),
+                static_cast<unsigned long long>(key.deps_hash.lo),
+                static_cast<unsigned long long>(key.deps_hash.hi));
+            return buffer;
+        }
+
+        std::string schema_id_text(wz::asset::SchemaID schema)
+        {
+            char buffer[32]{};
+            std::snprintf(
+                buffer,
+                sizeof(buffer),
+                "0x%016llx",
+                static_cast<unsigned long long>(schema.value));
+            return buffer;
+        }
+
+        wz::json::JSONValuePtr param_value_json(
+            const std::string& name,
+            const wz::asset::ParamValue& value)
+        {
+            auto out = json_object();
+            json_add_member(*out, "name", json_string(name));
+            std::visit(
+                [&](const auto& typed)
+                {
+                    using T = std::decay_t<decltype(typed)>;
+                    if constexpr (std::is_same_v<T, bool>) {
+                        json_add_member(*out, "type", json_string("bool"));
+                        json_add_member(*out, "value", json_bool(typed));
+                    }
+                    else if constexpr (std::is_same_v<T, int64_t>) {
+                        json_add_member(*out, "type", json_string("int"));
+                        json_add_member(
+                            *out,
+                            "value",
+                            json_number(static_cast<double>(typed)));
+                    }
+                    else if constexpr (std::is_same_v<T, double>) {
+                        json_add_member(*out, "type", json_string("float"));
+                        json_add_member(*out, "value", json_number(typed));
+                    }
+                    else if constexpr (
+                        std::is_same_v<T, std::array<float, 3>>)
+                    {
+                        auto array = json_array();
+                        array->array_values.push_back(json_number(typed[0]));
+                        array->array_values.push_back(json_number(typed[1]));
+                        array->array_values.push_back(json_number(typed[2]));
+                        json_add_member(*out, "type", json_string("float3"));
+                        json_add_member(*out, "value", std::move(array));
+                    }
+                    else if constexpr (std::is_same_v<T, std::string>) {
+                        json_add_member(*out, "type", json_string("string"));
+                        json_add_member(*out, "value", json_string(typed));
+                    }
+                },
+                value);
+            return out;
+        }
+
+        wz::json::JSONValuePtr param_block_json(
+            const wz::asset::ParamBlock& block)
+        {
+            auto params = json_array();
+            for (const auto& [name, value] : block.values) {
+                params->array_values.push_back(param_value_json(name, value));
+            }
+            return params;
+        }
+
+        wz::json::JSONValuePtr asset_node_meta_json(
+            const wz::asset::AssetNode& node)
+        {
+            auto meta = json_object();
+            bool has_meta = false;
+            if (const auto* file_source = std::any_cast<
+                    wz::engine::assets::internal::FileSourceDesc>(&node.meta))
+            {
+                auto file_json = json_object();
+                json_add_member(
+                    *file_json,
+                    "full_path",
+                    json_string(file_source->full_path));
+                json_add_member(
+                    *file_json,
+                    "canonical_path",
+                    json_string(file_source->canonical_path));
+                json_add_member(*meta, "file_source", std::move(file_json));
+                has_meta = true;
+            }
+            else if (const auto* params =
+                         std::any_cast<wz::asset::ParamBlock>(&node.meta))
+            {
+                json_add_member(*meta, "params", param_block_json(*params));
+                has_meta = true;
+            }
+            return has_meta ? std::move(meta) : nullptr;
+        }
+
+        wz::json::JSONValuePtr asset_graph_node_json(
+            const wz::asset::AssetGraphDraftNode& node,
+            const wz::asset::AssetGraphDraft& draft)
+        {
+            auto node_json = json_object();
+            json_add_member(
+                *node_json,
+                "node_id",
+                json_number(static_cast<double>(node.id)));
+            if (!(node.node.key == wz::asset::AssetKey{})) {
+                json_add_member(
+                    *node_json,
+                    "key",
+                    json_string(project_asset_key_text(node.node.key)));
+            }
+            json_add_member(
+                *node_json,
+                "type",
+                json_number(static_cast<uint16_t>(node.node.type)));
+            json_add_member(
+                *node_json,
+                "schema",
+                json_string(schema_id_text(node.node.schema)));
+            json_add_member(
+                *node_json,
+                "stage",
+                json_number(static_cast<uint8_t>(node.node.stage)));
+            json_add_member(
+                *node_json,
+                "residency",
+                json_number(static_cast<uint8_t>(node.node.residency)));
+            json_add_member(
+                *node_json,
+                "kind",
+                json_number(static_cast<uint8_t>(node.node.kind)));
+            json_add_member(
+                *node_json,
+                "demand_root",
+                json_number(static_cast<uint8_t>(node.node.demand_root)));
+
+            auto deps = json_array();
+            for (const auto& edge : draft.edges) {
+                if (edge.to != node.id) {
+                    continue;
+                }
+                auto dep_json = json_object();
+                json_add_member(
+                    *dep_json,
+                    "from_node_id",
+                    json_number(static_cast<double>(edge.from)));
+                json_add_member(
+                    *dep_json,
+                    "to_input_port",
+                    json_number(static_cast<double>(edge.to_input_port)));
+                deps->array_values.push_back(std::move(dep_json));
+            }
+            json_add_member(*node_json, "deps", std::move(deps));
+
+            if (auto meta = asset_node_meta_json(node.node)) {
+                json_add_member(*node_json, "meta", std::move(meta));
+            }
+
+            return node_json;
+        }
+    }
+
+    std::string save_asset_graph_draft_to_v2_json(
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        wz::json::JSONValue root;
+        root.kind = wz::json::JSONValueKind::Object;
+        json_add_member(
+            root,
+            "schema",
+            json_string("wozzits.scene_editor.assets.graph.v2"));
+        json_add_member(root, "version", json_number(2));
+
+        auto nodes = json_array();
+        for (const auto& node : draft.nodes) {
+            if (node.state == wz::asset::AssetGraphDraftNodeState::Deleted) {
+                continue;
+            }
+            nodes->array_values.push_back(asset_graph_node_json(node, draft));
+        }
+        json_add_member(root, "nodes", std::move(nodes));
+
+        return wz::json::serialize_json(root);
     }
 }
