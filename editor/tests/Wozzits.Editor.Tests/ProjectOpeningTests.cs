@@ -190,7 +190,7 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
-    public void NativeEngineClientCommitIsStubbedAndCompileNeedsRuntimeWhenEngineAbiIsBuilt()
+    public void NativeEngineClientSavesGraphAndNeedsRuntimeForCompileCommitWhenEngineAbiIsBuilt()
     {
         var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
         if (!File.Exists(abiPath))
@@ -227,15 +227,21 @@ public sealed class ProjectOpeningTests
                 .OpenEditorSession(projectRoot) as IDisposable;
             var editorSession = Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
 
-            var commit = editorSession.CommitAssetGraph();
-            Assert.False(commit.Ok);
-            Assert.Contains("not yet wired", commit.Error);
+            // Save is CPU-only (no engine runtime); it persists the draft.
+            var save = editorSession.SaveAssetGraph();
+            Assert.True(save.Ok, save.Error);
 
-            // Compile routes to the in-process engine runtime; this session was
-            // opened without one (startRuntime defaults false), so it declines.
+            // Compile binds the draft to the in-process engine runtime; this
+            // session was opened without one (startRuntime defaults false).
             var compile = editorSession.CompileAssetGraph();
             Assert.False(compile.Ok);
             Assert.Contains("runtime is not available", compile.Error);
+
+            // Commit = save + bind; the save half succeeds, the bind half needs
+            // the runtime, so commit reports the missing runtime.
+            var commit = editorSession.CommitAssetGraph();
+            Assert.False(commit.Ok);
+            Assert.Contains("runtime is not available", commit.Error);
         }
         finally
         {
@@ -1525,9 +1531,16 @@ public sealed class ProjectOpeningTests
             Ok = true,
         };
 
+        public EngineMutationResponse SaveResponse { get; set; } = new()
+        {
+            Ok = true,
+        };
+
         public int CommitCount { get; private set; }
 
         public int CompileCount { get; private set; }
+
+        public int SaveCount { get; private set; }
 
         public List<AssetGraphPositionEdit> AssetGraphPositions { get; } = [];
 
@@ -1578,6 +1591,12 @@ public sealed class ProjectOpeningTests
         {
             DisconnectedEdges.Add(edgeId);
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SaveAssetGraph()
+        {
+            ++SaveCount;
+            return SaveResponse;
         }
 
         public EngineMutationResponse CommitAssetGraph()

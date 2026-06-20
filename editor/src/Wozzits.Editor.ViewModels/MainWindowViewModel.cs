@@ -10,6 +10,7 @@ namespace Wozzits.Editor.ViewModels;
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly IDisposable? _editorSessionLifetime;
+    private readonly IWozzitsEngineEditorSession? _editorSession;
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -21,6 +22,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EngineProjectSnapshotResponse? projectSnapshot = null,
         IWozzitsEngineEditorSession? editorSession = null)
     {
+        _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
         SaveAllCommand = new RelayCommand(SaveAll);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
@@ -62,8 +64,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _editorSessionLifetime?.Dispose();
     }
 
-    private static void SaveAll()
+    private void SaveAll()
     {
+        _editorSession?.SaveAssetGraph();
     }
 
     private static EngineAssetGraphSnapshotResponse? ChooseAssetGraphSnapshot(

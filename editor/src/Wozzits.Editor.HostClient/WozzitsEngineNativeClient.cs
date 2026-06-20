@@ -22,6 +22,8 @@ public interface IWozzitsEngineEditorSession
 
     EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId);
 
+    EngineMutationResponse SaveAssetGraph();
+
     EngineMutationResponse CommitAssetGraph();
 
     EngineMutationResponse CompileAssetGraph();
@@ -120,11 +122,22 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 
-    public EngineMutationResponse CommitAssetGraph()
+    public EngineMutationResponse SaveAssetGraph()
     {
         return HasNativeSession(out var error)
-            ? _client.CommitAssetGraph(_session)
+            ? _client.SaveAssetGraph(_session)
             : WozzitsEngineNativeClient.InvalidMutation(error);
+    }
+
+    public EngineMutationResponse CommitAssetGraph()
+    {
+        // Commit = persist the draft, then bind it to the running engine.
+        var saved = SaveAssetGraph();
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+        return CompileAssetGraph();
     }
 
     public EngineMutationResponse CompileAssetGraph()
@@ -575,24 +588,14 @@ public sealed class WozzitsEngineNativeClient
             edgeId));
     }
 
-    internal EngineMutationResponse CommitAssetGraph(IntPtr session)
+    internal EngineMutationResponse SaveAssetGraph(IntPtr session)
     {
         if (session == IntPtr.Zero)
         {
             return InvalidMutation("Engine editor session is closed.");
         }
 
-        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphCommit(session));
-    }
-
-    internal EngineMutationResponse CompileAssetGraph(IntPtr session)
-    {
-        if (session == IntPtr.Zero)
-        {
-            return InvalidMutation("Engine editor session is closed.");
-        }
-
-        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphCompile(session));
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorSessionSave(session));
     }
 
     internal EngineMutationResponse BindDraft(IntPtr runtime, IntPtr session)
@@ -1232,7 +1235,7 @@ public sealed class WozzitsEngineNativeClient
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 12;
+    internal const uint AbiVersion = 13;
 
     private static int _resolverRegistered;
 
@@ -1393,13 +1396,8 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_commit")]
-    internal static partial WzResult WzEditorAssetGraphCommit(IntPtr session);
-
-    [LibraryImport(
-        LibraryName,
-        EntryPoint = "wz_editor_asset_graph_compile")]
-    internal static partial WzResult WzEditorAssetGraphCompile(IntPtr session);
+        EntryPoint = "wz_editor_session_save")]
+    internal static partial WzResult WzEditorSessionSave(IntPtr session);
 
     [LibraryImport(
         LibraryName,
