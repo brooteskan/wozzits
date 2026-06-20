@@ -269,6 +269,65 @@ namespace wz::engine::editor
         return AssetGraphLayoutUpdateResult{ .ok = true };
     }
 
+    AssetGraphLayoutUpdateResult save_project_asset_graph(
+        const wz::engine::project::ProjectManifestLoadDesc& desc,
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        const auto loaded = wz::engine::project::load_project_manifest(desc);
+        if (!loaded.ok) {
+            return failure(loaded.error);
+        }
+        if (loaded.manifest.asset_graph_path.empty()) {
+            return failure("project manifest does not define an asset graph");
+        }
+
+        const wz::fs::Path graph_path = resolve_resource_path(
+            desc.resource_root,
+            loaded.manifest.asset_graph_path);
+
+        // Serialize the draft to a fresh v2 document (graph topology + node data).
+        wz::json::JSONParseResult written = wz::json::parse_json_string(
+            wz::engine::assets::save_asset_graph_draft_to_v2_json(draft));
+        if (!written.ok || !written.document.root
+            || written.document.root->kind != wz::json::JSONValueKind::Object)
+        {
+            return failure("failed to serialize asset graph draft");
+        }
+
+        // Preserve the existing file's "layout" object (node positions + zoom),
+        // which the draft does not carry, so saving does not drop it.
+        const std::string existing_text = read_text_file(graph_path);
+        if (!existing_text.empty()) {
+            wz::json::JSONParseResult existing =
+                wz::json::parse_json_string(existing_text);
+            if (existing.ok && existing.document.root
+                && existing.document.root->kind
+                    == wz::json::JSONValueKind::Object)
+            {
+                for (auto& member : existing.document.root->object_members) {
+                    if (member.key == "layout" && member.value) {
+                        written.document.root->object_members.push_back(
+                            wz::json::JSONMember{
+                                .key = "layout",
+                                .value = std::move(member.value),
+                            });
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!write_text_file(
+                graph_path,
+                wz::json::serialize_json(written.document)))
+        {
+            return failure(
+                "cannot write asset graph: " + loaded.manifest.asset_graph_path);
+        }
+
+        return AssetGraphLayoutUpdateResult{ .ok = true };
+    }
+
     AssetGraphLayoutUpdateResult update_project_asset_graph_zoom(
         const wz::engine::project::ProjectManifestLoadDesc& desc,
         double zoom)

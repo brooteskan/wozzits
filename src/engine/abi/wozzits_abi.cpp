@@ -577,7 +577,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_commit(WzEditorSession* session)
+    WzResult wz_editor_session_save(WzEditorSession* session)
     {
         if (const WzResult target = validate_session(session);
             target.code != WZ_RESULT_OK)
@@ -585,22 +585,20 @@ extern "C"
             return target;
         }
 
-        return result(
-            WZ_RESULT_INVALID_ARGUMENT,
-            "asset graph commit is not yet wired into the editor engine");
-    }
-
-    WzResult wz_editor_asset_graph_compile(WzEditorSession* session)
-    {
-        if (const WzResult target = validate_session(session);
-            target.code != WZ_RESULT_OK)
-        {
-            return target;
+        try {
+            const auto saved = wz::engine::editor::save_project_asset_graph(
+                session->editor->desc(),
+                session->editor->draft());
+            return saved.ok
+                ? result(WZ_RESULT_OK, "")
+                : dynamic_error(WZ_RESULT_INTERNAL_ERROR, saved.error);
         }
-
-        return result(
-            WZ_RESULT_INVALID_ARGUMENT,
-            "asset graph compile is not yet wired into the editor engine");
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "asset graph save failed");
+        }
     }
 
     WzEditorRuntime* wz_editor_runtime_start(

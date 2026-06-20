@@ -22,4 +22,11 @@ namespace wz::engine::editor
     AssetGraphLayoutUpdateResult update_project_asset_graph_zoom(
         const wz::engine::project::ProjectManifestLoadDesc& desc,
         double zoom);
+
+    // Persist a draft to the project's asset-graph JSON: writes the serialized
+    // graph (nodes/deps/meta) while preserving the existing file's "layout"
+    // object (node positions + zoom), which is not part of the draft.
+    AssetGraphLayoutUpdateResult save_project_asset_graph(
+        const wz::engine::project::ProjectManifestLoadDesc& desc,
+        const wz::asset::AssetGraphDraft& draft);
 }

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 12u
+#define WZ_ABI_VERSION 13u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -460,9 +460,9 @@ WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
     WzEditorSession* session,
     uint64_t edge_id);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_commit(WzEditorSession* session);
-
-WZ_ABI_API WzResult wz_editor_asset_graph_compile(WzEditorSession* session);
+// Persist the session's current draft to the project's asset-graph JSON on disk
+// (preserving the existing "layout"). CPU-only; no engine runtime required.
+WZ_ABI_API WzResult wz_editor_session_save(WzEditorSession* session);
 
 // Start the in-process engine runtime for a project: spawns an engine-owned
 // thread that creates the device + viewport window and renders until stopped.
