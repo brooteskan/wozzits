@@ -1,4 +1,3 @@
-using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -10,10 +9,7 @@ namespace Wozzits.Editor.ViewModels;
 
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
-    private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
-    private readonly WozzitsEditorHostSession? _editorHostSession;
     private readonly IDisposable? _editorSessionLifetime;
-    private readonly Action<Action>? _dispatch;
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -23,11 +19,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel(
         EngineProjectSnapshotResponse? projectSnapshot = null,
-        WozzitsEditorHostSession? editorHostSession = null,
-        IWozzitsEngineEditorSession? editorSession = null,
-        Action<Action>? dispatch = null)
+        IWozzitsEngineEditorSession? editorSession = null)
     {
-        _dispatch = dispatch;
         _editorSessionLifetime = editorSession as IDisposable;
         SaveAllCommand = new RelayCommand(SaveAll);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
@@ -44,13 +37,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             projectAssetGraph,
             sessionAssetGraph));
         SceneTree.LoadSnapshot(projectSnapshot?.Scene);
-
-        _editorHostSession = editorHostSession;
-        if (_editorHostSession is not null)
-        {
-            _editorHostSession.LogReceived += AppendEngineLog;
-            _editorHostSession.Start();
-        }
     }
 
     public string WindowTitle { get; } = "Wozzits";
@@ -73,36 +59,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         _shutdown = true;
-        _editorHostSession?.Dispose();
         _editorSessionLifetime?.Dispose();
-    }
-
-    private void AppendEngineLog(string line)
-    {
-        if (string.IsNullOrWhiteSpace(line))
-        {
-            return;
-        }
-
-        if (_dispatch is not null)
-        {
-            _dispatch(() => AddEngineLogLine(line));
-            return;
-        }
-
-        if (_syncContext is null || SynchronizationContext.Current == _syncContext)
-        {
-            AddEngineLogLine(line);
-            return;
-        }
-
-        _syncContext.Post(_ => AddEngineLogLine(line), null);
-    }
-
-    private void AddEngineLogLine(string line)
-    {
-        Console.AppendLogLine(line);
-        OnPropertyChanged(nameof(EngineLogText));
     }
 
     private static void SaveAll()
@@ -136,5 +93,4 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         DockFactory = layoutFactory.Factory;
         EditorLayout = layoutFactory.CreateLayout();
     }
-
 }

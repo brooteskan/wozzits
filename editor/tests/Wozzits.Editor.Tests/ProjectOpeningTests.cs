@@ -52,28 +52,6 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
-    public void MainWindowDisplaysEditorHostStartupErrors()
-    {
-        var viewModel = new MainWindowViewModel(
-            projectSnapshot: null,
-            editorHostSession: new WozzitsEditorHostSession(
-                @"D:\definitely\missing\wozzits_editor_host.exe",
-                @"D:\work\project"));
-
-        try
-        {
-            Assert.Contains("Editor host executable not found", viewModel.EngineLogText);
-            Assert.Contains(
-                "Editor host executable not found",
-                viewModel.Console.LogText);
-        }
-        finally
-        {
-            viewModel.Shutdown();
-        }
-    }
-
-    [Fact]
     public void NativeEngineClientRejectsEmptyProjectDirectoryBeforeLoadingAbi()
     {
         var snapshot = new WozzitsEngineNativeClient().LoadProjectSnapshot("");
@@ -212,7 +190,7 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
-    public void NativeEngineClientKeepsCommitAndCompileOutOfInProcessAbiWhenEngineAbiIsBuilt()
+    public void NativeEngineClientCommitAndCompileAreNotYetWiredWhenEngineAbiIsBuilt()
     {
         var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
         if (!File.Exists(abiPath))
@@ -251,11 +229,11 @@ public sealed class ProjectOpeningTests
 
             var commit = editorSession.CommitAssetGraph();
             Assert.False(commit.Ok);
-            Assert.Contains("editor host/runtime channel", commit.Error);
+            Assert.Contains("not yet wired", commit.Error);
 
             var compile = editorSession.CompileAssetGraph();
             Assert.False(compile.Ok);
-            Assert.Contains("editor host/runtime channel", compile.Error);
+            Assert.Contains("not yet wired", compile.Error);
         }
         finally
         {
@@ -263,33 +241,6 @@ public sealed class ProjectOpeningTests
             {
                 Directory.Delete(projectRoot, recursive: true);
             }
-        }
-    }
-
-    [Fact]
-    public void MainWindowCanDispatchEditorHostLogsToConsole()
-    {
-        List<Action> posted = [];
-        var viewModel = new MainWindowViewModel(
-            projectSnapshot: null,
-            editorHostSession: new WozzitsEditorHostSession(
-                @"D:\definitely\missing\wozzits_editor_host.exe",
-                @"D:\work\project"),
-            dispatch: action => posted.Add(action));
-
-        try
-        {
-            Assert.Single(posted);
-
-            posted[0]();
-
-            Assert.Contains(
-                "Editor host executable not found",
-                viewModel.Console.LogText);
-        }
-        finally
-        {
-            viewModel.Shutdown();
         }
     }
 
