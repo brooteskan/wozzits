@@ -1,22 +1,32 @@
 #include <engine/abi/wozzits_abi.h>
 
+#include <engine/app/editor_runtime.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_schema_registry.h>
 #include <engine/editor/project_snapshot_abi.h>
 #include <engine/editor/project_snapshot.h>
+#include <engine/project/project_runtime_launch.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <new>
 #include <string>
+#include <thread>
 #include <vector>
 
 struct WzEditorSession
 {
     wz::asset::CompilerRegistry registry;
     std::unique_ptr<wz::engine::editor::AssetGraphEditorSession> editor;
+};
+
+struct WzEditorRuntime
+{
+    std::atomic_bool stop{ false };
+    std::thread thread;
 };
 
 namespace
@@ -591,6 +601,66 @@ extern "C"
         return result(
             WZ_RESULT_INVALID_ARGUMENT,
             "asset graph compile is not yet wired into the editor engine");
+    }
+
+    WzEditorRuntime* wz_editor_runtime_start(
+        const char* project_root_utf8,
+        const char* resource_root_utf8)
+    {
+        if (!project_root_utf8 || project_root_utf8[0] == '\0') {
+            return nullptr;
+        }
+
+        try {
+            auto runtime = std::make_unique<WzEditorRuntime>();
+            const std::string project_root = project_root_utf8;
+            const std::string resource_root =
+                resource_root_utf8 ? resource_root_utf8 : "";
+
+            WzEditorRuntime* raw = runtime.get();
+            raw->thread = std::thread([raw, project_root, resource_root]() {
+                try {
+                    const auto loaded =
+                        wz::engine::project::load_project_runtime_launch(
+                            wz::engine::project::ProjectRuntimeLaunchDesc{
+                                .project_root = project_root,
+                                .resource_root = resource_root,
+                            });
+                    if (!loaded.ok) {
+                        return;
+                    }
+                    wz::app::run_project_runtime(
+                        "Wozzits Viewport",
+                        loaded.launch.asset_graph_path,
+                        loaded.launch.scene_path,
+                        loaded.launch.resource_root,
+                        [raw]() {
+                            return raw->stop.load(std::memory_order_acquire);
+                        });
+                }
+                catch (...) {
+                    // The runtime thread must not throw across the ABI; a
+                    // failure simply ends the viewport.
+                }
+            });
+
+            return runtime.release();
+        }
+        catch (...) {
+            return nullptr;
+        }
+    }
+
+    void wz_editor_runtime_stop(WzEditorRuntime* runtime)
+    {
+        if (!runtime) {
+            return;
+        }
+        runtime->stop.store(true, std::memory_order_release);
+        if (runtime->thread.joinable()) {
+            runtime->thread.join();
+        }
+        delete runtime;
     }
 
     void wz_free_buffer(WzBuffer* buffer)

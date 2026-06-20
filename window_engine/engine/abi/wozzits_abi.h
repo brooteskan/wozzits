@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 10u
+#define WZ_ABI_VERSION 11u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -39,6 +39,11 @@ typedef struct WzBuffer
 } WzBuffer;
 
 typedef struct WzEditorSession WzEditorSession;
+
+// Opaque handle to a running in-process engine runtime (Option Y, #189): the
+// editor owns one engine instance that renders the project's viewport in its own
+// window on an engine-owned thread. Started/stopped by the editor; no IPC.
+typedef struct WzEditorRuntime WzEditorRuntime;
 
 typedef uint32_t WzEditorProjectStatus;
 enum
@@ -458,6 +463,17 @@ WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
 WZ_ABI_API WzResult wz_editor_asset_graph_commit(WzEditorSession* session);
 
 WZ_ABI_API WzResult wz_editor_asset_graph_compile(WzEditorSession* session);
+
+// Start the in-process engine runtime for a project: spawns an engine-owned
+// thread that creates the device + viewport window and renders until stopped.
+// Returns NULL on invalid arguments or failure to start. GPU lives here, in the
+// editor process — there is exactly one engine instance (Option Y, #189).
+WZ_ABI_API WzEditorRuntime* wz_editor_runtime_start(
+    const char* project_root_utf8,
+    const char* resource_root_utf8);
+
+// Signal the runtime to stop, join its thread, and free it. Safe on NULL.
+WZ_ABI_API void wz_editor_runtime_stop(WzEditorRuntime* runtime);
 
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
