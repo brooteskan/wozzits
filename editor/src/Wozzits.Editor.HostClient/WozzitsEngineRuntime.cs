@@ -36,6 +36,8 @@ public sealed class WozzitsEngineRuntime : IDisposable
 
     public bool IsRunning => _runtime != IntPtr.Zero;
 
+    internal IntPtr Handle => _runtime;
+
     public void Dispose()
     {
         var runtime = _runtime;

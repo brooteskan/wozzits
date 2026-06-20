@@ -52,17 +52,20 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
     private readonly WozzitsEngineNativeClient _client;
     private readonly string _projectDirectory;
     private readonly string _openError;
+    private readonly WozzitsEngineRuntime? _runtime;
     private IntPtr _session;
 
     internal WozzitsEngineNativeEditorSession(
         WozzitsEngineNativeClient client,
         string projectDirectory,
         IntPtr session,
+        WozzitsEngineRuntime? runtime = null,
         string openError = "")
     {
         _client = client;
         _projectDirectory = projectDirectory;
         _session = session;
+        _runtime = runtime;
         _openError = openError;
     }
 
@@ -126,9 +129,18 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
 
     public EngineMutationResponse CompileAssetGraph()
     {
-        return HasNativeSession(out var error)
-            ? _client.CompileAssetGraph(_session)
-            : WozzitsEngineNativeClient.InvalidMutation(error);
+        if (!HasNativeSession(out var error))
+        {
+            return WozzitsEngineNativeClient.InvalidMutation(error);
+        }
+        if (_runtime is null || !_runtime.IsRunning)
+        {
+            return WozzitsEngineNativeClient.InvalidMutation(
+                "Engine runtime is not available.");
+        }
+
+        // Compile = bind the current draft to the one in-process engine.
+        return _client.BindDraft(_runtime.Handle, _session);
     }
 
     public EngineMutationResponse SetSceneNodeProperties(
@@ -184,15 +196,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
 
     public void Dispose()
     {
-        var session = _session;
-        if (session == IntPtr.Zero)
-        {
-            GC.SuppressFinalize(this);
-            return;
-        }
+        // Stop the engine first, then close the authoring session.
+        _runtime?.Dispose();
 
-        _session = IntPtr.Zero;
-        WozzitsEngineAbi.WzEditorCloseSession(session);
+        var session = _session;
+        if (session != IntPtr.Zero)
+        {
+            _session = IntPtr.Zero;
+            WozzitsEngineAbi.WzEditorCloseSession(session);
+        }
         GC.SuppressFinalize(this);
     }
 
@@ -215,7 +227,9 @@ public sealed class WozzitsEngineNativeClient
 {
     public const string AbiPathEnvironmentVariable = "WOZZITS_ABI";
 
-    public IWozzitsEngineEditorSession OpenEditorSession(string projectDirectory)
+    public IWozzitsEngineEditorSession OpenEditorSession(
+        string projectDirectory,
+        bool startRuntime = false)
     {
         if (string.IsNullOrWhiteSpace(projectDirectory))
         {
@@ -223,7 +237,7 @@ public sealed class WozzitsEngineNativeClient
                 this,
                 projectDirectory,
                 IntPtr.Zero,
-                "Project directory is empty.");
+                openError: "Project directory is empty.");
         }
 
         try
@@ -234,12 +248,18 @@ public sealed class WozzitsEngineNativeClient
                 resourceRootUtf8: null,
                 out var session);
             return result.Code == WzResultCode.Ok && session != IntPtr.Zero
-                ? new WozzitsEngineNativeEditorSession(this, projectDirectory, session)
+                ? new WozzitsEngineNativeEditorSession(
+                    this,
+                    projectDirectory,
+                    session,
+                    startRuntime
+                        ? new WozzitsEngineRuntime(projectDirectory)
+                        : null)
                 : new WozzitsEngineNativeEditorSession(
                     this,
                     projectDirectory,
                     IntPtr.Zero,
-                    result.Message);
+                    openError: result.Message);
         }
         catch (DllNotFoundException ex)
         {
@@ -247,7 +267,7 @@ public sealed class WozzitsEngineNativeClient
                 this,
                 projectDirectory,
                 IntPtr.Zero,
-                ex.Message);
+                openError: ex.Message);
         }
         catch (EntryPointNotFoundException ex)
         {
@@ -255,7 +275,7 @@ public sealed class WozzitsEngineNativeClient
                 this,
                 projectDirectory,
                 IntPtr.Zero,
-                ex.Message);
+                openError: ex.Message);
         }
         catch (BadImageFormatException ex)
         {
@@ -263,7 +283,7 @@ public sealed class WozzitsEngineNativeClient
                 this,
                 projectDirectory,
                 IntPtr.Zero,
-                ex.Message);
+                openError: ex.Message);
         }
         catch (InvalidOperationException ex)
         {
@@ -271,7 +291,7 @@ public sealed class WozzitsEngineNativeClient
                 this,
                 projectDirectory,
                 IntPtr.Zero,
-                ex.Message);
+                openError: ex.Message);
         }
     }
 
@@ -573,6 +593,22 @@ public sealed class WozzitsEngineNativeClient
         }
 
         return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphCompile(session));
+    }
+
+    internal EngineMutationResponse BindDraft(IntPtr runtime, IntPtr session)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine runtime is not available.");
+        }
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeBindDraft(
+            runtime,
+            session));
     }
 
     internal EngineMutationResponse SetSceneNodeTransform(
@@ -1196,7 +1232,7 @@ public sealed class WozzitsEngineNativeClient
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 11;
+    internal const uint AbiVersion = 12;
 
     private static int _resolverRegistered;
 
@@ -1375,6 +1411,11 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_stop")]
     internal static partial void WzEditorRuntimeStop(IntPtr runtime);
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_bind_draft")]
+    internal static partial WzResult WzEditorRuntimeBindDraft(
+        IntPtr runtime,
+        IntPtr session);
 
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);

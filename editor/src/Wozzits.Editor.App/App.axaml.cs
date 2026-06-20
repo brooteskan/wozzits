@@ -86,8 +86,9 @@ public partial class App : Application
             return new MainWindow(
                 new MainWindowViewModel(
                     projectSnapshot,
-                    engine.OpenEditorSession(projectDirectory.FullPath),
-                    new WozzitsEngineRuntime(projectDirectory.FullPath)));
+                    engine.OpenEditorSession(
+                        projectDirectory.FullPath,
+                        startRuntime: true)));
         }
 
         var project = new EngineProjectResponse

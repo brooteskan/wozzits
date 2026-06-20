@@ -190,7 +190,7 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
-    public void NativeEngineClientCommitAndCompileAreNotYetWiredWhenEngineAbiIsBuilt()
+    public void NativeEngineClientCommitIsStubbedAndCompileNeedsRuntimeWhenEngineAbiIsBuilt()
     {
         var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
         if (!File.Exists(abiPath))
@@ -231,9 +231,11 @@ public sealed class ProjectOpeningTests
             Assert.False(commit.Ok);
             Assert.Contains("not yet wired", commit.Error);
 
+            // Compile routes to the in-process engine runtime; this session was
+            // opened without one (startRuntime defaults false), so it declines.
             var compile = editorSession.CompileAssetGraph();
             Assert.False(compile.Ok);
-            Assert.Contains("not yet wired", compile.Error);
+            Assert.Contains("runtime is not available", compile.Error);
         }
         finally
         {
