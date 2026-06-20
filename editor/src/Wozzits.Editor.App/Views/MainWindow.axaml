@@ -24,6 +24,10 @@
                 <MenuItem Header="_Save All"
                           Command="{Binding SaveAllCommand}"/>
             </MenuItem>
+            <MenuItem Header="_Run">
+                <MenuItem Header="_Launch App"
+                          Command="{Binding LaunchAppCommand}"/>
+            </MenuItem>
             <MenuItem Header="_Window"/>
         </Menu>
 

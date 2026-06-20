@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Wozzits.Editor.Core.Projects;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.App.Views;
@@ -83,12 +84,17 @@ public partial class App : Application
 
         if (projectSnapshot.IsValid)
         {
+            var editorHost = new WozzitsEditorHostClient();
             return new MainWindow(
                 new MainWindowViewModel(
                     projectSnapshot,
                     engine.OpenEditorSession(
                         projectDirectory.FullPath,
-                        startRuntime: true)));
+                        startRuntime: true),
+                    createHostSession: () => new WozzitsEditorHostSession(
+                        editorHost.HostExecutablePath,
+                        projectDirectory.FullPath),
+                    dispatch: action => Dispatcher.UIThread.Post(action)));
         }
 
         var project = new EngineProjectResponse

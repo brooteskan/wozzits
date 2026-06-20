@@ -1,3 +1,4 @@
+using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -9,8 +10,12 @@ namespace Wozzits.Editor.ViewModels;
 
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
+    private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
     private readonly IDisposable? _editorSessionLifetime;
     private readonly IWozzitsEngineEditorSession? _editorSession;
+    private readonly Func<WozzitsEditorHostSession>? _createHostSession;
+    private readonly Action<Action>? _dispatch;
+    private WozzitsEditorHostSession? _hostSession;
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -20,11 +25,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel(
         EngineProjectSnapshotResponse? projectSnapshot = null,
-        IWozzitsEngineEditorSession? editorSession = null)
+        IWozzitsEngineEditorSession? editorSession = null,
+        Func<WozzitsEditorHostSession>? createHostSession = null,
+        Action<Action>? dispatch = null)
     {
         _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
+        _createHostSession = createHostSession;
+        _dispatch = dispatch;
         SaveAllCommand = new RelayCommand(SaveAll);
+        LaunchAppCommand = new RelayCommand(LaunchApp, () => _createHostSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
         InitializeDockLayout();
@@ -50,6 +60,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IFactory DockFactory { get; private set; } = null!;
     public IRootDock EditorLayout { get; private set; } = null!;
     public IRelayCommand SaveAllCommand { get; }
+    public IRelayCommand LaunchAppCommand { get; }
 
     public string EngineLogText => Console.LogText;
 
@@ -61,12 +72,58 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         _shutdown = true;
+        _hostSession?.Dispose();
         _editorSessionLifetime?.Dispose();
     }
 
     private void SaveAll()
     {
         _editorSession?.SaveAssetGraph();
+    }
+
+    // Launch the project in the standalone runtime as a separate process (an
+    // isolated test run), relaying its logs to the console. Authoring + the
+    // in-process viewport are unaffected.
+    private void LaunchApp()
+    {
+        if (_createHostSession is null)
+        {
+            return;
+        }
+
+        _hostSession?.Dispose();
+        var session = _createHostSession();
+        session.LogReceived += AppendEngineLog;
+        _hostSession = session;
+        session.Start();
+    }
+
+    private void AppendEngineLog(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        if (_dispatch is not null)
+        {
+            _dispatch(() => AddEngineLogLine(line));
+            return;
+        }
+
+        if (_syncContext is null || SynchronizationContext.Current == _syncContext)
+        {
+            AddEngineLogLine(line);
+            return;
+        }
+
+        _syncContext.Post(_ => AddEngineLogLine(line), null);
+    }
+
+    private void AddEngineLogLine(string line)
+    {
+        Console.AppendLogLine(line);
+        OnPropertyChanged(nameof(EngineLogText));
     }
 
     private static EngineAssetGraphSnapshotResponse? ChooseAssetGraphSnapshot(
