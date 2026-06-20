@@ -8,13 +8,22 @@
 #include <string>
 #include <vector>
 
+namespace wz::json
+{
+    struct JSONValue;
+}
+
 namespace wz::engine::editor
 {
     struct AssetGraphSnapshotPort
     {
         uint32_t index = 0;
+        wz::asset::AssetType type = wz::asset::AssetType::Unknown;
+        std::string name;
         std::string label;
         std::string type_name;
+        bool required = true;
+        bool many = false;
     };
 
     struct AssetGraphSnapshotNode
@@ -35,6 +44,8 @@ namespace wz::engine::editor
 
     struct AssetGraphSnapshotEdge
     {
+        wz::asset::AssetGraphDraftEdgeId id =
+            wz::asset::INVALID_ASSET_GRAPH_DRAFT_EDGE;
         wz::asset::AssetGraphDraftNodeId from =
             wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
         wz::asset::AssetGraphDraftNodeId to =
@@ -57,6 +68,15 @@ namespace wz::engine::editor
         std::string error;
     };
 
+    AssetGraphSnapshot build_asset_graph_snapshot(
+        const wz::json::JSONValue& root,
+        const wz::asset::AssetGraphDraft& draft,
+        const wz::asset::CompilerRegistry* registry = nullptr);
+
     AssetGraphSnapshotLoadResult load_project_asset_graph_snapshot(
         const wz::engine::project::ProjectManifestLoadDesc& desc);
+
+    AssetGraphSnapshotLoadResult load_project_asset_graph_snapshot(
+        const wz::engine::project::ProjectManifestLoadDesc& desc,
+        const wz::asset::CompilerRegistry& registry);
 }

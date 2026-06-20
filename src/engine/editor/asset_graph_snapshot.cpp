@@ -180,116 +180,168 @@ namespace wz::engine::editor
             };
         }
 
-        std::vector<AssetGraphSnapshotPort> input_ports_for_node(
+        AssetGraphSnapshotPort port_from_decl(
+            uint32_t index,
+            const wz::asset::InputPort& port)
+        {
+            const std::string type_label = type_name(port.type);
+            return AssetGraphSnapshotPort{
+                .index = index,
+                .type = port.type,
+                .name = std::string(port.name),
+                .label = type_label,
+                .type_name = type_label,
+                .required = wz::asset::input_port_required(port),
+                .many = wz::asset::input_port_many(port),
+            };
+        }
+
+        std::vector<AssetGraphSnapshotPort> declared_input_ports_for_node(
+            const wz::asset::CompilerRegistry& registry,
+            const wz::asset::AssetNode& node)
+        {
+            const wz::asset::AssetCompiler* compiler =
+                registry.find(node.schema, node.type);
+            if (!compiler) {
+                return {};
+            }
+
+            std::vector<AssetGraphSnapshotPort> result;
+            result.reserve(compiler->input_ports.size());
+            for (uint32_t i = 0;
+                 i < static_cast<uint32_t>(compiler->input_ports.size());
+                 ++i)
+            {
+                result.push_back(port_from_decl(i, compiler->input_ports[i]));
+            }
+            return result;
+        }
+
+        std::vector<AssetGraphSnapshotPort> fallback_input_ports_for_node(
             const wz::asset::AssetGraphDraft& draft,
             wz::asset::AssetGraphDraftNodeId node_id,
             const std::unordered_map<
                 wz::asset::AssetGraphDraftNodeId,
                 wz::asset::AssetType>& node_types)
         {
-            std::map<uint32_t, std::string> ports;
+            std::map<uint32_t, wz::asset::AssetType> ports;
             for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
                 if (edge.to == node_id) {
-                    std::string type_label = "Unknown";
+                    wz::asset::AssetType type =
+                        wz::asset::AssetType::Unknown;
                     if (const auto from_type = node_types.find(edge.from);
                         from_type != node_types.end())
                     {
-                        type_label = type_name(from_type->second);
+                        type = from_type->second;
                     }
-                    ports.emplace(edge.to_input_port, std::move(type_label));
+                    ports.emplace(edge.to_input_port, type);
                 }
             }
 
             std::vector<AssetGraphSnapshotPort> result;
             result.reserve(ports.size());
-            for (const auto& [port, type_label] : ports) {
+            for (const auto& [port, type] : ports) {
+                const std::string type_label = type_name(type);
                 result.push_back(AssetGraphSnapshotPort{
                     .index = port,
+                    .type = type,
                     .label = type_label,
                     .type_name = type_label,
                 });
             }
             return result;
         }
+    }
 
-        AssetGraphSnapshot build_snapshot(
-            const wz::json::JSONValue& root,
-            const wz::asset::AssetGraphDraft& draft)
+    AssetGraphSnapshot build_asset_graph_snapshot(
+        const wz::json::JSONValue& root,
+        const wz::asset::AssetGraphDraft& draft,
+        const wz::asset::CompilerRegistry* registry)
+    {
+        AssetGraphSnapshot snapshot;
+        if (const auto schema = wz::json::read_string(root, "schema")) {
+            snapshot.schema = std::string(*schema);
+        }
+        snapshot.zoom = read_zoom(root);
+
+        const auto layout = read_layout(root);
+        std::unordered_map<
+            wz::asset::AssetGraphDraftNodeId,
+            wz::asset::AssetType>
+            node_types;
+        node_types.reserve(draft.nodes.size());
+        for (const wz::asset::AssetGraphDraftNode& draft_node :
+             draft.nodes)
         {
-            AssetGraphSnapshot snapshot;
-            if (const auto schema = wz::json::read_string(root, "schema")) {
-                snapshot.schema = std::string(*schema);
-            }
-            snapshot.zoom = read_zoom(root);
-
-            const auto layout = read_layout(root);
-            std::unordered_map<
-                wz::asset::AssetGraphDraftNodeId,
-                wz::asset::AssetType>
-                node_types;
-            node_types.reserve(draft.nodes.size());
-            for (const wz::asset::AssetGraphDraftNode& draft_node :
-                 draft.nodes)
+            if (draft_node.state
+                == wz::asset::AssetGraphDraftNodeState::Deleted)
             {
-                if (draft_node.state
-                    == wz::asset::AssetGraphDraftNodeState::Deleted)
-                {
-                    continue;
-                }
-                node_types.emplace(draft_node.id, draft_node.node.type);
+                continue;
+            }
+            node_types.emplace(draft_node.id, draft_node.node.type);
+        }
+
+        snapshot.nodes.reserve(draft.nodes.size());
+        for (std::size_t i = 0; i < draft.nodes.size(); ++i) {
+            const wz::asset::AssetGraphDraftNode& draft_node =
+                draft.nodes[i];
+            if (draft_node.state
+                == wz::asset::AssetGraphDraftNodeState::Deleted)
+            {
+                continue;
             }
 
-            snapshot.nodes.reserve(draft.nodes.size());
-            for (std::size_t i = 0; i < draft.nodes.size(); ++i) {
-                const wz::asset::AssetGraphDraftNode& draft_node =
-                    draft.nodes[i];
-                if (draft_node.state
-                    == wz::asset::AssetGraphDraftNodeState::Deleted)
-                {
-                    continue;
-                }
+            LayoutPosition position = fallback_position(i);
+            if (const auto it = layout.find(draft_node.id);
+                it != layout.end())
+            {
+                position = it->second;
+            }
 
-                LayoutPosition position = fallback_position(i);
-                if (const auto it = layout.find(draft_node.id);
-                    it != layout.end())
-                {
-                    position = it->second;
-                }
-
-                const wz::asset::AssetNode& node = draft_node.node;
-                snapshot.nodes.push_back(AssetGraphSnapshotNode{
-                    .id = draft_node.id,
-                    .type = node.type,
-                    .type_name = type_name(node.type),
-                    .schema = node.schema,
-                    .schema_label = schema_tail(node.schema),
-                    .display_name = display_name(node),
-                    .compile_status = "not resolved",
-                    .x = position.x,
-                    .y = position.y,
-                    .input_ports = input_ports_for_node(
+            const wz::asset::AssetNode& node = draft_node.node;
+            std::vector<AssetGraphSnapshotPort> input_ports =
+                registry
+                    ? declared_input_ports_for_node(*registry, node)
+                    : fallback_input_ports_for_node(
                         draft,
                         draft_node.id,
-                        node_types),
-                    .output_ports = { AssetGraphSnapshotPort{
-                        .index = 0u,
-                        .label = type_name(node.type),
-                        .type_name = type_name(node.type),
-                    } },
-                });
-            }
+                        node_types);
 
-            snapshot.edges.reserve(draft.edges.size());
-            for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
-                snapshot.edges.push_back(AssetGraphSnapshotEdge{
-                    .from = edge.from,
-                    .to = edge.to,
-                    .to_input_port = edge.to_input_port,
-                });
-            }
-
-            return snapshot;
+            const std::string output_type = type_name(node.type);
+            snapshot.nodes.push_back(AssetGraphSnapshotNode{
+                .id = draft_node.id,
+                .type = node.type,
+                .type_name = output_type,
+                .schema = node.schema,
+                .schema_label = schema_tail(node.schema),
+                .display_name = display_name(node),
+                .compile_status = "not resolved",
+                .x = position.x,
+                .y = position.y,
+                .input_ports = std::move(input_ports),
+                .output_ports = { AssetGraphSnapshotPort{
+                    .index = 0u,
+                    .type = node.type,
+                    .name = "output",
+                    .label = output_type,
+                    .type_name = output_type,
+                    .required = true,
+                    .many = true,
+                } },
+            });
         }
+
+        snapshot.edges.reserve(draft.edges.size());
+        for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
+            snapshot.edges.push_back(AssetGraphSnapshotEdge{
+                .id = edge.id,
+                .from = edge.from,
+                .to = edge.to,
+                .to_input_port = edge.to_input_port,
+            });
+        }
+
+        return snapshot;
     }
 
     AssetGraphSnapshotLoadResult load_project_asset_graph_snapshot(
@@ -336,7 +388,59 @@ namespace wz::engine::editor
             return result;
         }
 
-        result.snapshot = build_snapshot(*parsed.document.root, draft);
+        result.snapshot =
+            build_asset_graph_snapshot(*parsed.document.root, draft);
+        result.ok = true;
+        return result;
+    }
+
+    AssetGraphSnapshotLoadResult load_project_asset_graph_snapshot(
+        const wz::engine::project::ProjectManifestLoadDesc& desc,
+        const wz::asset::CompilerRegistry& registry)
+    {
+        AssetGraphSnapshotLoadResult result;
+
+        const auto loaded =
+            wz::engine::project::load_project_manifest(desc);
+        if (!loaded.ok) {
+            result.error = loaded.error;
+            return result;
+        }
+        if (loaded.manifest.asset_graph_path.empty()) {
+            result.error = "project manifest does not define an asset graph";
+            return result;
+        }
+
+        const wz::fs::Path graph_path = resolve_resource_path(
+            desc.resource_root,
+            loaded.manifest.asset_graph_path);
+        const std::string graph_text = read_text_file(graph_path);
+        if (graph_text.empty()) {
+            result.error =
+                "cannot read asset graph: " + loaded.manifest.asset_graph_path;
+            return result;
+        }
+
+        const wz::json::JSONParseResult parsed =
+            wz::json::parse_json_string(graph_text);
+        if (!parsed.ok || !parsed.document.root) {
+            result.error = "invalid asset graph json";
+            return result;
+        }
+
+        wz::asset::AssetGraphDraft draft;
+        std::string error;
+        if (!wz::engine::assets::load_asset_graph_draft_from_v2_json(
+                *parsed.document.root,
+                draft,
+                error))
+        {
+            result.error = "asset graph parse failed: " + error;
+            return result;
+        }
+
+        result.snapshot =
+            build_asset_graph_snapshot(*parsed.document.root, draft, &registry);
         result.ok = true;
         return result;
     }

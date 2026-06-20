@@ -1,6 +1,7 @@
 #include <engine/editor/project_snapshot_abi.h>
 
 #include <engine/abi/wozzits_abi.h>
+#include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/project_snapshot.h>
 
 #include <algorithm>
@@ -280,7 +281,18 @@ namespace wz::engine::editor
                 for (const AssetGraphSnapshotPort& port : node.input_ports) {
                     input_ports.push_back(WzEditorAssetGraphPort{
                         .index = port.index,
+                        .type = static_cast<uint32_t>(
+                            static_cast<uint16_t>(port.type)),
+                        .flags =
+                            (port.required
+                                 ? WZ_EDITOR_ASSET_GRAPH_PORT_REQUIRED
+                                 : 0u)
+                            | (port.many
+                                   ? WZ_EDITOR_ASSET_GRAPH_PORT_MANY
+                                   : 0u),
+                        .name = builder.append_string(port.name),
                         .label = builder.append_string(port.label),
+                        .type_name = builder.append_string(port.type_name),
                     });
                 }
 
@@ -289,7 +301,18 @@ namespace wz::engine::editor
                 for (const AssetGraphSnapshotPort& port : node.output_ports) {
                     output_ports.push_back(WzEditorAssetGraphPort{
                         .index = port.index,
+                        .type = static_cast<uint32_t>(
+                            static_cast<uint16_t>(port.type)),
+                        .flags =
+                            (port.required
+                                 ? WZ_EDITOR_ASSET_GRAPH_PORT_REQUIRED
+                                 : 0u)
+                            | (port.many
+                                   ? WZ_EDITOR_ASSET_GRAPH_PORT_MANY
+                                   : 0u),
+                        .name = builder.append_string(port.name),
                         .label = builder.append_string(port.label),
+                        .type_name = builder.append_string(port.type_name),
                     });
                 }
 
@@ -313,6 +336,7 @@ namespace wz::engine::editor
             edges.reserve(result.snapshot.edges.size());
             for (const AssetGraphSnapshotEdge& edge : result.snapshot.edges) {
                 edges.push_back(WzEditorAssetGraphEdge{
+                    .id = edge.id,
                     .from = edge.from,
                     .to = edge.to,
                     .to_input_port = edge.to_input_port,
@@ -322,6 +346,64 @@ namespace wz::engine::editor
             out.nodes = builder.append_table(nodes);
             out.edges = builder.append_table(edges);
             return out;
+        }
+
+        WzEditorAssetGraphSnapshot asset_graph_snapshot_abi(
+            AbiBlobBuilder& builder,
+            const AssetGraphSnapshot& snapshot)
+        {
+            return asset_graph_snapshot_abi(
+                builder,
+                AssetGraphSnapshotLoadResult{
+                    .ok = true,
+                    .snapshot = snapshot,
+                });
+        }
+
+        WzEditorAssetGraphConnectionStatus abi_connection_status(
+            AssetGraphConnectionStatus status)
+        {
+            switch (status) {
+            case AssetGraphConnectionStatus::Compatible:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_COMPATIBLE;
+            case AssetGraphConnectionStatus::MissingNode:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_MISSING_NODE;
+            case AssetGraphConnectionStatus::MissingCompiler:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_MISSING_COMPILER;
+            case AssetGraphConnectionStatus::InvalidInputPort:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_INVALID_INPUT_PORT;
+            case AssetGraphConnectionStatus::TypeMismatch:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_TYPE_MISMATCH;
+            case AssetGraphConnectionStatus::SelfDependency:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_SELF_DEPENDENCY;
+            case AssetGraphConnectionStatus::Cycle:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_CYCLE;
+            case AssetGraphConnectionStatus::DuplicateInputPort:
+                return WZ_EDITOR_ASSET_GRAPH_CONNECTION_DUPLICATE_INPUT_PORT;
+            }
+            return WZ_EDITOR_ASSET_GRAPH_CONNECTION_TYPE_MISMATCH;
+        }
+
+        WzEditorAssetGraphConnectionCheck connection_check_abi(
+            AbiBlobBuilder& builder,
+            const AssetGraphConnectionCheck& check)
+        {
+            return WzEditorAssetGraphConnectionCheck{
+                .abi_version = WZ_ABI_VERSION,
+                .compatible = check.compatible ? 1u : 0u,
+                .status = abi_connection_status(check.status),
+                .replaces_existing = check.replaces_existing ? 1u : 0u,
+                .from = check.from,
+                .to = check.to,
+                .to_input_port = check.to_input_port,
+                .from_type = static_cast<uint32_t>(
+                    static_cast<uint16_t>(check.from_type)),
+                .to_type = static_cast<uint32_t>(
+                    static_cast<uint16_t>(check.to_type)),
+                .message = builder.append_string(check.message),
+                .from_type_name = builder.append_string(check.from_type_name),
+                .to_type_name = builder.append_string(check.to_type_name),
+            };
         }
 
         WzEditorSceneSnapshot scene_snapshot_abi(
@@ -355,6 +437,45 @@ namespace wz::engine::editor
         root.scene = scene_snapshot_abi(builder, result.scene);
 
         builder.patch_struct(root_offset, root);
+        return builder.take();
+    }
+
+    std::vector<uint8_t> asset_graph_snapshot_abi_blob(
+        const AssetGraphSnapshotLoadResult& result)
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorAssetGraphSnapshot{});
+
+        builder.patch_struct(
+            root_offset,
+            asset_graph_snapshot_abi(builder, result));
+        return builder.take();
+    }
+
+    std::vector<uint8_t> asset_graph_snapshot_abi_blob(
+        const AssetGraphSnapshot& snapshot)
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorAssetGraphSnapshot{});
+
+        builder.patch_struct(
+            root_offset,
+            asset_graph_snapshot_abi(builder, snapshot));
+        return builder.take();
+    }
+
+    std::vector<uint8_t> asset_graph_connection_check_abi_blob(
+        const AssetGraphConnectionCheck& check)
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorAssetGraphConnectionCheck{});
+
+        builder.patch_struct(
+            root_offset,
+            connection_check_abi(builder, check));
         return builder.take();
     }
 

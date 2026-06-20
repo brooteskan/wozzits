@@ -1,14 +1,23 @@
 #include <engine/abi/wozzits_abi.h>
 
+#include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/project_snapshot_abi.h>
 #include <engine/editor/project_snapshot.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <new>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+struct WzEditorSession
+{
+    wz::asset::CompilerRegistry registry;
+    std::unique_ptr<wz::engine::editor::AssetGraphEditorSession> editor;
+};
 
 namespace
 {
@@ -75,6 +84,122 @@ namespace
                 "project_root_utf8 must not be empty");
         }
         return result(WZ_RESULT_OK, "");
+    }
+
+    WzResult validate_session(
+        WzEditorSession* session,
+        const char* parameter_name = "session")
+    {
+        if (!session || !session->editor) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                std::string(parameter_name) + " must not be null");
+        }
+        return result(WZ_RESULT_OK, "");
+    }
+
+    WzResult prepare_output_buffer(WzBuffer* out, const char* parameter_name)
+    {
+        if (!out) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                std::string(parameter_name) + " must not be null");
+        }
+
+        out->data = nullptr;
+        out->size = 0u;
+        return result(WZ_RESULT_OK, "");
+    }
+
+    void populate_session_registry_from_draft(WzEditorSession& session)
+    {
+        struct CompilerSeed
+        {
+            wz::asset::SchemaID schema{};
+            wz::asset::AssetType type = wz::asset::AssetType::Unknown;
+            std::vector<wz::asset::InputPort> input_ports;
+        };
+
+        std::unordered_map<
+            wz::asset::CompilerKey,
+            CompilerSeed,
+            wz::asset::CompilerKeyHash>
+            seeds;
+
+        const wz::asset::AssetGraphDraft& draft = session.editor->draft();
+        for (const wz::asset::AssetGraphDraftNode& node : draft.nodes) {
+            if (node.state
+                == wz::asset::AssetGraphDraftNodeState::Deleted)
+            {
+                continue;
+            }
+
+            const wz::asset::CompilerKey key{
+                .schema = node.node.schema,
+                .type = node.node.type,
+            };
+            seeds.try_emplace(
+                key,
+                CompilerSeed{
+                    .schema = node.node.schema,
+                    .type = node.node.type,
+                });
+        }
+
+        for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
+            const wz::asset::AssetGraphDraftNode* from =
+                wz::asset::find_asset_graph_draft_node(draft, edge.from);
+            const wz::asset::AssetGraphDraftNode* to =
+                wz::asset::find_asset_graph_draft_node(draft, edge.to);
+            if (!from || !to
+                || from->state
+                    == wz::asset::AssetGraphDraftNodeState::Deleted
+                || to->state
+                    == wz::asset::AssetGraphDraftNodeState::Deleted)
+            {
+                continue;
+            }
+
+            const wz::asset::CompilerKey key{
+                .schema = to->node.schema,
+                .type = to->node.type,
+            };
+            auto& seed = seeds.try_emplace(
+                key,
+                CompilerSeed{
+                    .schema = to->node.schema,
+                    .type = to->node.type,
+                }).first->second;
+
+            if (seed.input_ports.size() <= edge.to_input_port) {
+                seed.input_ports.resize(
+                    static_cast<std::size_t>(edge.to_input_port) + 1u,
+                    wz::asset::InputPort{
+                        .name = "",
+                        .type = wz::asset::AssetType::Unknown,
+                        .requirement =
+                            wz::asset::InputPortRequirement::Optional,
+                    });
+            }
+
+            wz::asset::InputPort& port =
+                seed.input_ports[edge.to_input_port];
+            if (port.type == wz::asset::AssetType::Unknown) {
+                port.type = from->node.type;
+            }
+            else if (port.type == from->node.type) {
+                port.arity = wz::asset::InputPortArity::Many;
+            }
+        }
+
+        session.registry = {};
+        for (auto& [_, seed] : seeds) {
+            session.registry.register_compiler(wz::asset::AssetCompiler{
+                .input_schema = seed.schema,
+                .output_type = seed.type,
+                .input_ports = std::move(seed.input_ports),
+            });
+        }
     }
 }
 
@@ -330,6 +455,228 @@ extern "C"
                 WZ_RESULT_INTERNAL_ERROR,
                 "asset graph zoom update failed");
         }
+    }
+
+    WzResult wz_editor_open_project_session(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        WzEditorSession** out_session)
+    {
+        if (!out_session) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "out_session must not be null");
+        }
+        *out_session = nullptr;
+
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            auto session = std::make_unique<WzEditorSession>();
+
+            auto opened =
+                wz::engine::editor::open_asset_graph_editor_session(
+                    wz::engine::project::ProjectManifestLoadDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    },
+                    session->registry);
+            if (!opened.ok || !opened.session) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    opened.error);
+            }
+
+            session->editor = std::move(opened.session);
+            populate_session_registry_from_draft(*session);
+            *out_session = session.release();
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "editor session open failed");
+        }
+    }
+
+    void wz_editor_close_session(WzEditorSession* session)
+    {
+        delete session;
+    }
+
+    WzResult wz_editor_session_asset_graph_snapshot(
+        WzEditorSession* session,
+        WzBuffer* out_snapshot)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_snapshot, "out_snapshot");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return copy_bytes_to_buffer(
+                wz::engine::editor::asset_graph_snapshot_abi_blob(
+                    session->editor->snapshot()),
+                out_snapshot);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph snapshot failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_can_connect(
+        WzEditorSession* session,
+        uint64_t from_node_id,
+        uint64_t to_node_id,
+        uint32_t to_input_port,
+        WzBuffer* out_check)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_check, "out_check");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return copy_bytes_to_buffer(
+                wz::engine::editor::asset_graph_connection_check_abi_blob(
+                    session->editor->can_connect(
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            from_node_id),
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            to_node_id),
+                        to_input_port)),
+                out_check);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph connection check failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_connect(
+        WzEditorSession* session,
+        uint64_t from_node_id,
+        uint64_t to_node_id,
+        uint32_t to_input_port,
+        WzBuffer* out_check)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_check, "out_check");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return copy_bytes_to_buffer(
+                wz::engine::editor::asset_graph_connection_check_abi_blob(
+                    session->editor->connect(
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            from_node_id),
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            to_node_id),
+                        to_input_port)),
+                out_check);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph connect failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_disconnect_edge(
+        WzEditorSession* session,
+        uint64_t edge_id)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return session->editor->disconnect_edge(
+                       static_cast<wz::asset::AssetGraphDraftEdgeId>(edge_id))
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "asset graph edge not found");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph disconnect failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_commit(WzEditorSession* session)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        return result(
+            WZ_RESULT_INVALID_ARGUMENT,
+            "asset graph commit must run through the editor host/runtime channel");
+    }
+
+    WzResult wz_editor_asset_graph_compile(WzEditorSession* session)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        return result(
+            WZ_RESULT_INVALID_ARGUMENT,
+            "asset graph compile must run through the editor host/runtime channel");
     }
 
     void wz_free_buffer(WzBuffer* buffer)

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 8u
+#define WZ_ABI_VERSION 10u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -38,6 +38,8 @@ typedef struct WzBuffer
     uint64_t size;
 } WzBuffer;
 
+typedef struct WzEditorSession WzEditorSession;
+
 typedef uint32_t WzEditorProjectStatus;
 enum
 {
@@ -61,9 +63,20 @@ typedef struct WzEditorTableSpan
 typedef struct WzEditorAssetGraphPort
 {
     uint32_t index;
+    uint32_t type;
+    uint32_t flags;
     uint32_t reserved;
+    WzEditorStringSpan name;
     WzEditorStringSpan label;
+    WzEditorStringSpan type_name;
 } WzEditorAssetGraphPort;
+
+typedef uint32_t WzEditorAssetGraphPortFlags;
+enum
+{
+    WZ_EDITOR_ASSET_GRAPH_PORT_REQUIRED = 1u << 0u,
+    WZ_EDITOR_ASSET_GRAPH_PORT_MANY = 1u << 1u,
+};
 
 typedef struct WzEditorAssetGraphNode
 {
@@ -82,11 +95,42 @@ typedef struct WzEditorAssetGraphNode
 
 typedef struct WzEditorAssetGraphEdge
 {
+    uint64_t id;
     uint64_t from;
     uint64_t to;
     uint32_t to_input_port;
     uint32_t reserved;
 } WzEditorAssetGraphEdge;
+
+typedef uint32_t WzEditorAssetGraphConnectionStatus;
+enum
+{
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_COMPATIBLE = 0u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_MISSING_NODE = 1u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_MISSING_COMPILER = 2u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_INVALID_INPUT_PORT = 3u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_TYPE_MISMATCH = 4u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_SELF_DEPENDENCY = 5u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_CYCLE = 6u,
+    WZ_EDITOR_ASSET_GRAPH_CONNECTION_DUPLICATE_INPUT_PORT = 7u,
+};
+
+typedef struct WzEditorAssetGraphConnectionCheck
+{
+    uint32_t abi_version;
+    uint32_t compatible;
+    WzEditorAssetGraphConnectionStatus status;
+    uint32_t replaces_existing;
+    uint64_t from;
+    uint64_t to;
+    uint32_t to_input_port;
+    uint32_t reserved;
+    uint32_t from_type;
+    uint32_t to_type;
+    WzEditorStringSpan message;
+    WzEditorStringSpan from_type_name;
+    WzEditorStringSpan to_type_name;
+} WzEditorAssetGraphConnectionCheck;
 
 typedef struct WzEditorAssetGraphSnapshot
 {
@@ -229,9 +273,13 @@ static_assert(sizeof(WzEditorTableSpan) == 16);
 static_assert(offsetof(WzEditorTableSpan, offset) == 0);
 static_assert(offsetof(WzEditorTableSpan, count) == 8);
 
-static_assert(sizeof(WzEditorAssetGraphPort) == 24);
+static_assert(sizeof(WzEditorAssetGraphPort) == 64);
 static_assert(offsetof(WzEditorAssetGraphPort, index) == 0);
-static_assert(offsetof(WzEditorAssetGraphPort, label) == 8);
+static_assert(offsetof(WzEditorAssetGraphPort, type) == 4);
+static_assert(offsetof(WzEditorAssetGraphPort, flags) == 8);
+static_assert(offsetof(WzEditorAssetGraphPort, name) == 16);
+static_assert(offsetof(WzEditorAssetGraphPort, label) == 32);
+static_assert(offsetof(WzEditorAssetGraphPort, type_name) == 48);
 
 static_assert(sizeof(WzEditorAssetGraphNode) == 128);
 static_assert(offsetof(WzEditorAssetGraphNode, id) == 0);
@@ -241,10 +289,18 @@ static_assert(offsetof(WzEditorAssetGraphNode, x) == 80);
 static_assert(offsetof(WzEditorAssetGraphNode, input_ports) == 96);
 static_assert(offsetof(WzEditorAssetGraphNode, output_ports) == 112);
 
-static_assert(sizeof(WzEditorAssetGraphEdge) == 24);
-static_assert(offsetof(WzEditorAssetGraphEdge, from) == 0);
-static_assert(offsetof(WzEditorAssetGraphEdge, to) == 8);
-static_assert(offsetof(WzEditorAssetGraphEdge, to_input_port) == 16);
+static_assert(sizeof(WzEditorAssetGraphEdge) == 32);
+static_assert(offsetof(WzEditorAssetGraphEdge, id) == 0);
+static_assert(offsetof(WzEditorAssetGraphEdge, from) == 8);
+static_assert(offsetof(WzEditorAssetGraphEdge, to) == 16);
+static_assert(offsetof(WzEditorAssetGraphEdge, to_input_port) == 24);
+
+static_assert(sizeof(WzEditorAssetGraphConnectionCheck) == 96);
+static_assert(offsetof(WzEditorAssetGraphConnectionCheck, abi_version) == 0);
+static_assert(offsetof(WzEditorAssetGraphConnectionCheck, from) == 16);
+static_assert(offsetof(WzEditorAssetGraphConnectionCheck, to_input_port) == 32);
+static_assert(offsetof(WzEditorAssetGraphConnectionCheck, from_type) == 40);
+static_assert(offsetof(WzEditorAssetGraphConnectionCheck, message) == 48);
 
 static_assert(sizeof(WzEditorAssetGraphSnapshot) == 80);
 static_assert(offsetof(WzEditorAssetGraphSnapshot, ok) == 0);
@@ -369,6 +425,39 @@ WZ_ABI_API WzResult wz_editor_asset_graph_set_zoom(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     double zoom);
+
+WZ_ABI_API WzResult wz_editor_open_project_session(
+    const char* project_root_utf8,
+    const char* resource_root_utf8,
+    WzEditorSession** out_session);
+
+WZ_ABI_API void wz_editor_close_session(WzEditorSession* session);
+
+WZ_ABI_API WzResult wz_editor_session_asset_graph_snapshot(
+    WzEditorSession* session,
+    WzBuffer* out_snapshot);
+
+WZ_ABI_API WzResult wz_editor_asset_graph_can_connect(
+    WzEditorSession* session,
+    uint64_t from_node_id,
+    uint64_t to_node_id,
+    uint32_t to_input_port,
+    WzBuffer* out_check);
+
+WZ_ABI_API WzResult wz_editor_asset_graph_connect(
+    WzEditorSession* session,
+    uint64_t from_node_id,
+    uint64_t to_node_id,
+    uint32_t to_input_port,
+    WzBuffer* out_check);
+
+WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
+    WzEditorSession* session,
+    uint64_t edge_id);
+
+WZ_ABI_API WzResult wz_editor_asset_graph_commit(WzEditorSession* session);
+
+WZ_ABI_API WzResult wz_editor_asset_graph_compile(WzEditorSession* session);
 
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
