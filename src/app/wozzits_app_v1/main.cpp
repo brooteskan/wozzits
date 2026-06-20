@@ -70,5 +70,5 @@ int main(int argc, char** argv)
         options.asset_graph,
         options.scene,
         options.resource_root,
-        {});
+        nullptr);
 }

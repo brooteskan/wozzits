@@ -25,7 +25,7 @@ struct WzEditorSession
 
 struct WzEditorRuntime
 {
-    std::atomic_bool stop{ false };
+    wz::app::EditorRuntimeControl control;
     std::thread thread;
 };
 
@@ -626,22 +626,21 @@ extern "C"
                                 .project_root = project_root,
                                 .resource_root = resource_root,
                             });
-                    if (!loaded.ok) {
-                        return;
+                    if (loaded.ok) {
+                        wz::app::run_project_runtime(
+                            "Wozzits Viewport",
+                            loaded.launch.asset_graph_path,
+                            loaded.launch.scene_path,
+                            loaded.launch.resource_root,
+                            &raw->control);
                     }
-                    wz::app::run_project_runtime(
-                        "Wozzits Viewport",
-                        loaded.launch.asset_graph_path,
-                        loaded.launch.scene_path,
-                        loaded.launch.resource_root,
-                        [raw]() {
-                            return raw->stop.load(std::memory_order_acquire);
-                        });
                 }
                 catch (...) {
                     // The runtime thread must not throw across the ABI; a
                     // failure simply ends the viewport.
                 }
+                // Always unblock any pending bind, including the init-fail path.
+                raw->control.mark_finished();
             });
 
             return runtime.release();
@@ -656,11 +655,47 @@ extern "C"
         if (!runtime) {
             return;
         }
-        runtime->stop.store(true, std::memory_order_release);
+        runtime->control.request_stop();
         if (runtime->thread.joinable()) {
             runtime->thread.join();
         }
         delete runtime;
+    }
+
+    WzResult wz_editor_runtime_bind_draft(
+        WzEditorRuntime* runtime,
+        WzEditorSession* session)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            // The draft is moved to the engine thread and the bound draft moved
+            // back into the session in place (AssetGraphDraft is move-only).
+            wz::asset::AssetGraphDraft& draft = session->editor->draft();
+            const wz::app::AssetGraphCompileResult report =
+                runtime->control.bind(draft);
+            if (report.ok) {
+                return result(WZ_RESULT_OK, "");
+            }
+            return dynamic_error(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph compile failed: "
+                    + std::to_string(report.diagnostics.size())
+                    + " diagnostic(s)");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "asset graph bind failed");
+        }
     }
 
     void wz_free_buffer(WzBuffer* buffer)

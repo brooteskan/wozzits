@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 11u
+#define WZ_ABI_VERSION 12u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -474,6 +474,15 @@ WZ_ABI_API WzEditorRuntime* wz_editor_runtime_start(
 
 // Signal the runtime to stop, join its thread, and free it. Safe on NULL.
 WZ_ABI_API void wz_editor_runtime_stop(WzEditorRuntime* runtime);
+
+// Compile the session's current asset-graph draft on the running engine: copies
+// the draft, binds it on the engine thread (materialize -> swap -> resolve ->
+// rebind the renderer), and blocks until done. The draft is the only thing that
+// crosses to the engine thread (Option Y, #189). Returns WZ_RESULT_OK on a
+// clean compile; otherwise an error describing the failure.
+WZ_ABI_API WzResult wz_editor_runtime_bind_draft(
+    WzEditorRuntime* runtime,
+    WzEditorSession* session);
 
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
