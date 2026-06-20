@@ -1,11 +1,20 @@
 #include <gtest/gtest.h>
 
+#include <engine/abi/wozzits_abi.h>
+#include <engine/editor/asset_graph_layout.h>
+#include <engine/editor/asset_graph_snapshot.h>
+#include <engine/editor/project_snapshot.h>
+#include <engine/editor/project_snapshot_abi.h>
 #include <engine/project/project_manifest.h>
+#include <engine/project/project_runtime_launch.h>
+#include <engine/editor/scene_snapshot.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -45,6 +54,26 @@ namespace
     fs::path manifest_path(const fs::path& project_root)
     {
         return project_root / ".wozzits" / "project.json";
+    }
+
+    std::string abi_string(
+        const std::vector<uint8_t>& blob,
+        WzEditorStringSpan span)
+    {
+        EXPECT_LE(span.offset + span.size, blob.size());
+        return std::string(
+            reinterpret_cast<const char*>(blob.data() + span.offset),
+            static_cast<size_t>(span.size));
+    }
+
+    template <typename T>
+    const T* abi_table(
+        const std::vector<uint8_t>& blob,
+        WzEditorTableSpan span)
+    {
+        EXPECT_EQ(span.offset % alignof(T), 0u);
+        EXPECT_LE(span.offset + sizeof(T) * span.count, blob.size());
+        return reinterpret_cast<const T*>(blob.data() + span.offset);
     }
 }
 
@@ -198,4 +227,473 @@ TEST(ProjectManifest, CreateWritesEngineDefinedDefaultManifest)
         probed.status,
         wz::engine::project::ProjectManifestProbeStatus::Valid);
     EXPECT_EQ(probed.manifest.name, "Created");
+}
+
+TEST(ProjectRuntimeLaunch, LoadsExplicitRuntimePaths)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "projects" / "runtime";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Runtime",
+  "rhi_render_path": true,
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json"
+})json");
+
+    const auto loaded = wz::engine::project::load_project_runtime_launch(
+        wz::engine::project::ProjectRuntimeLaunchDesc{
+            .project_root = "projects/runtime",
+            .resource_root = temp.root.string(),
+        });
+
+    const wz::fs::Path expected_root =
+        wz::fs::normalize(project_root.string());
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    EXPECT_EQ(loaded.launch.manifest.name, "Runtime");
+    EXPECT_EQ(loaded.launch.manifest.root, expected_root);
+    EXPECT_EQ(loaded.launch.resource_root, expected_root);
+    EXPECT_EQ(
+        loaded.launch.asset_graph_path,
+        wz::fs::join(expected_root, "assets.graph.json"));
+    EXPECT_EQ(
+        loaded.launch.scene_path,
+        wz::fs::join(expected_root, "scene.json"));
+}
+
+TEST(ProjectRuntimeLaunch, RejectsEditorOnlyManifest)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "editor_only";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Editor Only"
+})json");
+
+    const auto loaded = wz::engine::project::load_project_runtime_launch(
+        wz::engine::project::ProjectRuntimeLaunchDesc{
+            .project_root = project_root.string(),
+        });
+
+    EXPECT_FALSE(loaded.ok);
+    EXPECT_NE(
+        loaded.error.find("project does not enable the RHI render path"),
+        std::string::npos);
+}
+
+TEST(ProjectSceneSnapshot, LoadsSceneTreeFromManifest)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "scene_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Scene Snapshot",
+  "scene": "scene.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "main_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "visible": true,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      }
+    },
+    {
+      "id": "camera",
+      "parent": "root",
+      "camera": {
+        "fov_y": 1.0472,
+        "near": 0.1,
+        "far": 1000,
+        "aspect": 1.7778
+      }
+    },
+    {
+      "id": "mesh",
+      "parent": "root",
+      "name": "mesh node",
+      "renderable": {
+        "asset_graph_node_id": 8
+      }
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    EXPECT_EQ(loaded.snapshot.schema, "wozzits.scene.v0");
+    EXPECT_EQ(loaded.snapshot.name, "main_scene");
+
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& root = loaded.snapshot.roots[0];
+    EXPECT_EQ(root.id, "root");
+    EXPECT_EQ(root.display_name, "root");
+    ASSERT_TRUE(root.visible);
+    EXPECT_TRUE(*root.visible);
+    EXPECT_EQ(root.renderable_source.kind, "none");
+    EXPECT_EQ(root.renderable_source.display_name, "none");
+    ASSERT_TRUE(root.transform);
+    ASSERT_EQ(root.transform->rotation_quat.size(), 4u);
+    EXPECT_DOUBLE_EQ(root.transform->rotation_quat[3], 1.0);
+    ASSERT_EQ(root.transform->rotation_euler_degrees.size(), 3u);
+    EXPECT_DOUBLE_EQ(root.transform->rotation_euler_degrees[0], 0.0);
+    EXPECT_DOUBLE_EQ(root.transform->rotation_euler_degrees[1], 0.0);
+    EXPECT_DOUBLE_EQ(root.transform->rotation_euler_degrees[2], 0.0);
+    EXPECT_EQ(root.transform->display.translation_x, "0");
+    EXPECT_EQ(root.transform->display.rotation_x, "0");
+    EXPECT_EQ(root.transform->display.scale_x, "1");
+    ASSERT_EQ(root.children.size(), 2u);
+
+    const auto& camera = root.children[0];
+    EXPECT_EQ(camera.id, "camera");
+    EXPECT_EQ(camera.parent_id, std::optional<std::string>("root"));
+    EXPECT_EQ(camera.kind, "camera");
+    ASSERT_EQ(camera.components.size(), 1u);
+    EXPECT_EQ(camera.components[0].kind, "camera");
+    EXPECT_EQ(camera.components[0].display_name, "Camera");
+    ASSERT_TRUE(camera.camera);
+    ASSERT_TRUE(camera.camera->fov_y);
+    EXPECT_DOUBLE_EQ(*camera.camera->fov_y, 1.0472);
+
+    const auto& mesh = root.children[1];
+    EXPECT_EQ(mesh.id, "mesh");
+    EXPECT_EQ(mesh.display_name, "mesh node");
+    EXPECT_EQ(mesh.kind, "renderable");
+    EXPECT_EQ(mesh.renderable_source.kind, "asset-graph-node");
+    EXPECT_EQ(mesh.renderable_source.display_name, "asset-node");
+    ASSERT_TRUE(mesh.renderable);
+    ASSERT_TRUE(mesh.renderable->asset_graph_node_id);
+    EXPECT_EQ(*mesh.renderable->asset_graph_node_id, 8u);
+    EXPECT_EQ(mesh.renderable->source.kind, "asset-graph-node");
+    EXPECT_EQ(mesh.renderable->source.display_name, "asset-node");
+}
+
+TEST(ProjectSnapshot, LoadsInitialEditorSnapshotFromProjectManifest)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "editor_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Editor Snapshot",
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "main_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "visible": true,
+      "transform": {
+        "translation": [1, 2.125, 3.4567],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [2, 3, 4]
+      }
+    },
+    {
+      "id": "camera",
+      "parent": "root",
+      "camera": {
+        "fov_y": 1.0472
+      }
+    }
+  ]
+})json");
+
+    write_text_file(
+        project_root / "assets.graph.json",
+        R"json({
+  "schema": "wozzits.scene_editor.assets.graph.v2",
+  "version": 2,
+  "nodes": []
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    EXPECT_EQ(
+        loaded.status,
+        wz::engine::project::ProjectManifestProbeStatus::Valid);
+    EXPECT_EQ(loaded.project_name, "Editor Snapshot");
+    ASSERT_TRUE(loaded.asset_graph.ok) << loaded.asset_graph.error;
+    ASSERT_TRUE(loaded.scene.ok) << loaded.scene.error;
+    ASSERT_EQ(loaded.scene.snapshot.roots.size(), 1u);
+    EXPECT_EQ(loaded.scene.snapshot.roots[0].id, "root");
+    ASSERT_EQ(loaded.scene.snapshot.roots[0].children.size(), 1u);
+    ASSERT_EQ(loaded.scene.snapshot.roots[0].children[0].components.size(), 1u);
+    EXPECT_EQ(
+        loaded.scene.snapshot.roots[0].children[0].components[0].kind,
+        "camera");
+    EXPECT_EQ(
+        loaded.scene.snapshot.roots[0].children[0].components[0].display_name,
+        "Camera");
+
+    const auto blob = wz::engine::editor::project_snapshot_abi_blob(loaded);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+    EXPECT_EQ(abi.ok, 1u);
+    EXPECT_EQ(abi.status, WZ_EDITOR_PROJECT_STATUS_VALID);
+    EXPECT_EQ(abi_string(blob, abi.project_name), "Editor Snapshot");
+    EXPECT_EQ(abi.asset_graph.ok, 1u);
+    EXPECT_EQ(abi.scene.ok, 1u);
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    EXPECT_EQ(abi_string(blob, roots[0].id), "root");
+    EXPECT_EQ(abi_string(blob, roots[0].renderable_source.kind), "none");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].renderable_source.display_name),
+        "none");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].transform.display_translation_x),
+        "1");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].transform.display_translation_y),
+        "2.125");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].transform.display_translation_z),
+        "3.457");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].transform.display_rotation_x),
+        "0");
+    EXPECT_EQ(
+        abi_string(blob, roots[0].transform.display_scale_z),
+        "4");
+
+    ASSERT_EQ(roots[0].children.count, 1u);
+    const WzEditorSceneNode* children =
+        abi_table<WzEditorSceneNode>(blob, roots[0].children);
+    ASSERT_EQ(children[0].components.count, 1u);
+    const WzEditorSceneComponent* components =
+        abi_table<WzEditorSceneComponent>(blob, children[0].components);
+    EXPECT_EQ(abi_string(blob, components[0].kind), "camera");
+    EXPECT_EQ(abi_string(blob, components[0].display_name), "Camera");
+}
+
+TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "asset_graph_layout_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Asset Graph Layout",
+  "asset_graph": "assets.graph.json"
+})json");
+
+    write_text_file(
+        project_root / "assets.graph.json",
+        R"json({
+  "schema": "wozzits.scene_editor.assets.graph.v2",
+  "version": 2,
+  "nodes": [
+    {
+      "node_id": 1,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": []
+    },
+    {
+      "node_id": 2,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 1,
+          "to_input_port": 0
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "version": 2,
+    "zoom": 1.25,
+    "nodes": [
+      {
+        "node_id": 1,
+        "x": 5,
+        "y": 6
+      }
+    ]
+  }
+})json");
+
+    const wz::engine::project::ProjectManifestLoadDesc desc{
+        .project_root = project_root.string(),
+    };
+
+    const auto loaded =
+        wz::engine::editor::load_project_asset_graph_snapshot(desc);
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    EXPECT_DOUBLE_EQ(loaded.snapshot.zoom, 1.25);
+    ASSERT_EQ(loaded.snapshot.nodes.size(), 2u);
+
+    const auto shader_source = std::find_if(
+        loaded.snapshot.nodes.begin(),
+        loaded.snapshot.nodes.end(),
+        [](const wz::engine::editor::AssetGraphSnapshotNode& node)
+        {
+            return node.id == 1u;
+        });
+    ASSERT_NE(shader_source, loaded.snapshot.nodes.end());
+    ASSERT_EQ(shader_source->output_ports.size(), 1u);
+    EXPECT_EQ(shader_source->output_ports[0].label, "Shader source");
+    EXPECT_EQ(shader_source->output_ports[0].type_name, "Shader source");
+    EXPECT_DOUBLE_EQ(shader_source->x, 5.0);
+    EXPECT_DOUBLE_EQ(shader_source->y, 6.0);
+
+    const auto shader = std::find_if(
+        loaded.snapshot.nodes.begin(),
+        loaded.snapshot.nodes.end(),
+        [](const wz::engine::editor::AssetGraphSnapshotNode& node)
+        {
+            return node.id == 2u;
+        });
+    ASSERT_NE(shader, loaded.snapshot.nodes.end());
+    ASSERT_EQ(shader->input_ports.size(), 1u);
+    EXPECT_EQ(shader->input_ports[0].label, "Shader source");
+    EXPECT_EQ(shader->input_ports[0].type_name, "Shader source");
+    ASSERT_EQ(shader->output_ports.size(), 1u);
+    EXPECT_EQ(shader->output_ports[0].label, "Shader");
+    EXPECT_EQ(shader->output_ports[0].type_name, "Shader");
+
+    const auto updated =
+        wz::engine::editor::update_project_asset_graph_node_layout(
+            desc,
+            2u,
+            123.0,
+            234.0);
+    ASSERT_TRUE(updated.ok) << updated.error;
+
+    const auto reloaded =
+        wz::engine::editor::load_project_asset_graph_snapshot(desc);
+    ASSERT_TRUE(reloaded.ok) << reloaded.error;
+
+    const auto moved = std::find_if(
+        reloaded.snapshot.nodes.begin(),
+        reloaded.snapshot.nodes.end(),
+        [](const wz::engine::editor::AssetGraphSnapshotNode& node)
+        {
+            return node.id == 2u;
+        });
+    ASSERT_NE(moved, reloaded.snapshot.nodes.end());
+    EXPECT_DOUBLE_EQ(moved->x, 123.0);
+    EXPECT_DOUBLE_EQ(moved->y, 234.0);
+
+    const auto zoom_updated =
+        wz::engine::editor::update_project_asset_graph_zoom(
+            desc,
+            1.75);
+    ASSERT_TRUE(zoom_updated.ok) << zoom_updated.error;
+
+    const auto zoom_reloaded =
+        wz::engine::editor::load_project_asset_graph_snapshot(desc);
+    ASSERT_TRUE(zoom_reloaded.ok) << zoom_reloaded.error;
+    EXPECT_DOUBLE_EQ(zoom_reloaded.snapshot.zoom, 1.75);
+}
+
+TEST(ProjectSnapshot, PacksMissingProjectForBootstrap)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "missing_project";
+
+    const auto loaded = wz::engine::editor::load_project_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    EXPECT_FALSE(loaded.ok);
+    EXPECT_EQ(
+        loaded.status,
+        wz::engine::project::ProjectManifestProbeStatus::Missing);
+    EXPECT_FALSE(loaded.error.empty());
+
+    const auto blob = wz::engine::editor::project_snapshot_abi_blob(loaded);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.ok, 0u);
+    EXPECT_EQ(abi.status, WZ_EDITOR_PROJECT_STATUS_MISSING);
+    EXPECT_FALSE(abi_string(blob, abi.error).empty());
+    EXPECT_EQ(abi.asset_graph.ok, 0u);
+    EXPECT_EQ(abi.scene.ok, 0u);
+}
+
+TEST(ProjectSnapshot, PacksCreateProjectResponseForEditorAbi)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "created_from_abi";
+
+    const auto created = wz::engine::project::create_project_manifest(
+        wz::engine::project::ProjectManifestCreateDesc{
+            .project_root = project_root.string(),
+            .name = "Created From ABI",
+        });
+
+    ASSERT_TRUE(created.ok) << created.error;
+    EXPECT_TRUE(created.created);
+
+    const auto blob = wz::engine::editor::project_create_abi_blob(created);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectCreate));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectCreate*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+    EXPECT_EQ(abi.ok, 1u);
+    EXPECT_EQ(abi.status, WZ_EDITOR_PROJECT_STATUS_VALID);
+    EXPECT_EQ(abi.created, 1u);
+    EXPECT_TRUE(abi_string(blob, abi.error).empty());
 }

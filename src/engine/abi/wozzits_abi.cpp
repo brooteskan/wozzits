@@ -1,0 +1,344 @@
+#include <engine/abi/wozzits_abi.h>
+
+#include <engine/editor/asset_graph_layout.h>
+#include <engine/editor/project_snapshot_abi.h>
+#include <engine/editor/project_snapshot.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <new>
+#include <string>
+#include <vector>
+
+namespace
+{
+    WzResult result(WzResultCode code, const char* message)
+    {
+        return WzResult{
+            .code = code,
+            .message = message,
+        };
+    }
+
+    WzResult dynamic_error(WzResultCode code, std::string message)
+    {
+        thread_local std::string last_error;
+        last_error = std::move(message);
+        return result(code, last_error.c_str());
+    }
+
+    WzResult copy_bytes_to_buffer(const std::vector<uint8_t>& bytes, WzBuffer* out)
+    {
+        const uint64_t size = static_cast<uint64_t>(bytes.size());
+        auto* data = static_cast<uint8_t*>(std::malloc(size == 0u ? 1u : size));
+        if (!data) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+
+        if (size != 0u) {
+            std::memcpy(data, bytes.data(), static_cast<size_t>(size));
+        }
+        out->data = data;
+        out->size = size;
+        return result(WZ_RESULT_OK, "");
+    }
+
+    WzResult validate_scene_edit_target(
+        const char* project_root_utf8,
+        const char* node_id_utf8)
+    {
+        if (!project_root_utf8 || project_root_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "project_root_utf8 must not be empty");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+        return result(WZ_RESULT_OK, "");
+    }
+
+    WzResult scene_mutations_not_wired_yet()
+    {
+        return result(
+            WZ_RESULT_INTERNAL_ERROR,
+            "scene authoring mutations are not implemented in the engine ABI yet");
+    }
+
+    WzResult validate_project_root(const char* project_root_utf8)
+    {
+        if (!project_root_utf8 || project_root_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "project_root_utf8 must not be empty");
+        }
+        return result(WZ_RESULT_OK, "");
+    }
+}
+
+extern "C"
+{
+    uint32_t wz_abi_version(void)
+    {
+        return WZ_ABI_VERSION;
+    }
+
+    WzResult wz_editor_load_project_snapshot(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        WzBuffer* out_snapshot)
+    {
+        if (!out_snapshot) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "out_snapshot must not be null");
+        }
+
+        out_snapshot->data = nullptr;
+        out_snapshot->size = 0u;
+
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const auto snapshot =
+                wz::engine::editor::load_project_snapshot(
+                    wz::engine::project::ProjectManifestLoadDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    });
+            return copy_bytes_to_buffer(
+                wz::engine::editor::project_snapshot_abi_blob(snapshot),
+                out_snapshot);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "project snapshot load failed");
+        }
+    }
+
+    WzResult wz_editor_create_project(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* name_utf8,
+        WzBuffer* out_project)
+    {
+        if (!out_project) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "out_project must not be null");
+        }
+
+        out_project->data = nullptr;
+        out_project->size = 0u;
+
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const auto created =
+                wz::engine::project::create_project_manifest(
+                    wz::engine::project::ProjectManifestCreateDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                        .name = name_utf8 ? name_utf8 : "",
+                    });
+            return copy_bytes_to_buffer(
+                wz::engine::editor::project_create_abi_blob(created),
+                out_project);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "project creation failed");
+        }
+    }
+
+    WzResult wz_editor_scene_set_node_properties(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* node_id_utf8,
+        const char* name_utf8,
+        uint32_t visible)
+    {
+        (void)resource_root_utf8;
+        (void)name_utf8;
+        (void)visible;
+
+        if (const WzResult target =
+                validate_scene_edit_target(project_root_utf8, node_id_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        return scene_mutations_not_wired_yet();
+    }
+
+    WzResult wz_editor_scene_set_node_transform(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* node_id_utf8,
+        const char* translation_x_utf8,
+        const char* translation_y_utf8,
+        const char* translation_z_utf8,
+        const char* rotation_x_utf8,
+        const char* rotation_y_utf8,
+        const char* rotation_z_utf8,
+        const char* scale_x_utf8,
+        const char* scale_y_utf8,
+        const char* scale_z_utf8)
+    {
+        (void)resource_root_utf8;
+        (void)translation_x_utf8;
+        (void)translation_y_utf8;
+        (void)translation_z_utf8;
+        (void)rotation_x_utf8;
+        (void)rotation_y_utf8;
+        (void)rotation_z_utf8;
+        (void)scale_x_utf8;
+        (void)scale_y_utf8;
+        (void)scale_z_utf8;
+
+        if (const WzResult target =
+                validate_scene_edit_target(project_root_utf8, node_id_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        return scene_mutations_not_wired_yet();
+    }
+
+    WzResult wz_editor_scene_set_camera(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* node_id_utf8,
+        const char* fov_y_utf8,
+        const char* near_plane_utf8,
+        const char* far_plane_utf8,
+        const char* aspect_utf8)
+    {
+        (void)resource_root_utf8;
+        (void)fov_y_utf8;
+        (void)near_plane_utf8;
+        (void)far_plane_utf8;
+        (void)aspect_utf8;
+
+        if (const WzResult target =
+                validate_scene_edit_target(project_root_utf8, node_id_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        return scene_mutations_not_wired_yet();
+    }
+
+    WzResult wz_editor_asset_graph_set_node_position(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        uint64_t node_id,
+        double x,
+        double y)
+    {
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const auto updated =
+                wz::engine::editor::update_project_asset_graph_node_layout(
+                    wz::engine::project::ProjectManifestLoadDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    },
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(node_id),
+                    x,
+                    y);
+            return updated.ok
+                ? result(WZ_RESULT_OK, "")
+                : dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    updated.error);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph layout update failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_set_zoom(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        double zoom)
+    {
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const auto updated =
+                wz::engine::editor::update_project_asset_graph_zoom(
+                    wz::engine::project::ProjectManifestLoadDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    },
+                    zoom);
+            return updated.ok
+                ? result(WZ_RESULT_OK, "")
+                : dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    updated.error);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph zoom update failed");
+        }
+    }
+
+    void wz_free_buffer(WzBuffer* buffer)
+    {
+        if (!buffer) {
+            return;
+        }
+        std::free(buffer->data);
+        buffer->data = nullptr;
+        buffer->size = 0u;
+    }
+}

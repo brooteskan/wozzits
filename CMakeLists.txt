@@ -416,6 +416,27 @@ target_link_libraries(wozzits_editor_host
         window_engine
 )
 
+add_dependencies(wozzits_editor_host wozzits_app_v1)
+
+add_library(wozzits_abi SHARED
+    src/engine/abi/wozzits_abi.cpp
+)
+
+set_target_properties(wozzits_abi
+    PROPERTIES
+        DEBUG_POSTFIX ""
+)
+
+target_compile_definitions(wozzits_abi
+    PRIVATE
+        WZ_ABI_EXPORTS
+)
+
+target_link_libraries(wozzits_abi
+    PRIVATE
+        window_engine
+)
+
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
         examples/v8_script_smoke/v8_script_smoke.cpp

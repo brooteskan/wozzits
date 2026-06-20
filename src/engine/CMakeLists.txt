@@ -3,6 +3,12 @@ target_sources(window_engine PRIVATE
     app_context.cpp
     app/wozzits_app_v1.cpp
     project/project_manifest.cpp
+    project/project_runtime_launch.cpp
+    editor/project_snapshot.cpp
+    editor/project_snapshot_abi.cpp
+    editor/asset_graph_layout.cpp
+    editor/asset_graph_snapshot.cpp
+    editor/scene_snapshot.cpp
     behavior/behavior_registry.cpp
     behavior/behavior_dispatch.cpp
     behavior/behavior_command_apply.cpp
