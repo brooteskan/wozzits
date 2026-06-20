@@ -1196,7 +1196,7 @@ public sealed class WozzitsEngineNativeClient
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 10;
+    internal const uint AbiVersion = 11;
 
     private static int _resolverRegistered;
 
@@ -1364,6 +1364,17 @@ internal static partial class WozzitsEngineAbi
         LibraryName,
         EntryPoint = "wz_editor_asset_graph_compile")]
     internal static partial WzResult WzEditorAssetGraphCompile(IntPtr session);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_start",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial IntPtr WzEditorRuntimeStart(
+        string projectRootUtf8,
+        string? resourceRootUtf8);
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_stop")]
+    internal static partial void WzEditorRuntimeStop(IntPtr runtime);
 
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
