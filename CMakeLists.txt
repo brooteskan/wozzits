@@ -407,17 +407,6 @@ target_link_libraries(wozzits_app_v1
 # Stage resources (shared, once) so runtime project manifests can find scenes.
 add_dependencies(wozzits_app_v1 wz_stage_resources)
 
-add_executable(wozzits_editor_host
-    src/tools/wozzits_editor_host/main.cpp
-)
-
-target_link_libraries(wozzits_editor_host
-    PRIVATE
-        window_engine
-)
-
-add_dependencies(wozzits_editor_host wozzits_app_v1)
-
 add_library(wozzits_abi SHARED
     src/engine/abi/wozzits_abi.cpp
 )
@@ -466,6 +455,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine flying_camera_tests)
     rs_add_test_group(engine project_manifest_tests)
     rs_add_test_group(engine asset_graph_editor_session_tests)
+    rs_add_test_group(engine asset_graph_schema_registry_tests)
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)

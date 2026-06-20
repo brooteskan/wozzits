@@ -2,6 +2,7 @@
 
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
+#include <engine/editor/asset_graph_schema_registry.h>
 #include <engine/editor/project_snapshot_abi.h>
 #include <engine/editor/project_snapshot.h>
 
@@ -10,7 +11,6 @@
 #include <memory>
 #include <new>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 struct WzEditorSession
@@ -109,97 +109,6 @@ namespace
         out->data = nullptr;
         out->size = 0u;
         return result(WZ_RESULT_OK, "");
-    }
-
-    void populate_session_registry_from_draft(WzEditorSession& session)
-    {
-        struct CompilerSeed
-        {
-            wz::asset::SchemaID schema{};
-            wz::asset::AssetType type = wz::asset::AssetType::Unknown;
-            std::vector<wz::asset::InputPort> input_ports;
-        };
-
-        std::unordered_map<
-            wz::asset::CompilerKey,
-            CompilerSeed,
-            wz::asset::CompilerKeyHash>
-            seeds;
-
-        const wz::asset::AssetGraphDraft& draft = session.editor->draft();
-        for (const wz::asset::AssetGraphDraftNode& node : draft.nodes) {
-            if (node.state
-                == wz::asset::AssetGraphDraftNodeState::Deleted)
-            {
-                continue;
-            }
-
-            const wz::asset::CompilerKey key{
-                .schema = node.node.schema,
-                .type = node.node.type,
-            };
-            seeds.try_emplace(
-                key,
-                CompilerSeed{
-                    .schema = node.node.schema,
-                    .type = node.node.type,
-                });
-        }
-
-        for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
-            const wz::asset::AssetGraphDraftNode* from =
-                wz::asset::find_asset_graph_draft_node(draft, edge.from);
-            const wz::asset::AssetGraphDraftNode* to =
-                wz::asset::find_asset_graph_draft_node(draft, edge.to);
-            if (!from || !to
-                || from->state
-                    == wz::asset::AssetGraphDraftNodeState::Deleted
-                || to->state
-                    == wz::asset::AssetGraphDraftNodeState::Deleted)
-            {
-                continue;
-            }
-
-            const wz::asset::CompilerKey key{
-                .schema = to->node.schema,
-                .type = to->node.type,
-            };
-            auto& seed = seeds.try_emplace(
-                key,
-                CompilerSeed{
-                    .schema = to->node.schema,
-                    .type = to->node.type,
-                }).first->second;
-
-            if (seed.input_ports.size() <= edge.to_input_port) {
-                seed.input_ports.resize(
-                    static_cast<std::size_t>(edge.to_input_port) + 1u,
-                    wz::asset::InputPort{
-                        .name = "",
-                        .type = wz::asset::AssetType::Unknown,
-                        .requirement =
-                            wz::asset::InputPortRequirement::Optional,
-                    });
-            }
-
-            wz::asset::InputPort& port =
-                seed.input_ports[edge.to_input_port];
-            if (port.type == wz::asset::AssetType::Unknown) {
-                port.type = from->node.type;
-            }
-            else if (port.type == from->node.type) {
-                port.arity = wz::asset::InputPortArity::Many;
-            }
-        }
-
-        session.registry = {};
-        for (auto& [_, seed] : seeds) {
-            session.registry.register_compiler(wz::asset::AssetCompiler{
-                .input_schema = seed.schema,
-                .output_type = seed.type,
-                .input_ports = std::move(seed.input_ports),
-            });
-        }
     }
 }
 
@@ -478,6 +387,12 @@ extern "C"
         try {
             auto session = std::make_unique<WzEditorSession>();
 
+            // Device-free compiler schemas: lets can_connect/snapshot validate
+            // against the real declared input ports (not draft-inferred ones)
+            // without an EngineAssetLibrary or a GPU device.
+            session->registry =
+                wz::engine::editor::build_asset_graph_schema_registry();
+
             auto opened =
                 wz::engine::editor::open_asset_graph_editor_session(
                     wz::engine::project::ProjectManifestLoadDesc{
@@ -494,7 +409,6 @@ extern "C"
             }
 
             session->editor = std::move(opened.session);
-            populate_session_registry_from_draft(*session);
             *out_session = session.release();
             return result(WZ_RESULT_OK, "");
         }
@@ -663,7 +577,7 @@ extern "C"
 
         return result(
             WZ_RESULT_INVALID_ARGUMENT,
-            "asset graph commit must run through the editor host/runtime channel");
+            "asset graph commit is not yet wired into the editor engine");
     }
 
     WzResult wz_editor_asset_graph_compile(WzEditorSession* session)
@@ -676,7 +590,7 @@ extern "C"
 
         return result(
             WZ_RESULT_INVALID_ARGUMENT,
-            "asset graph compile must run through the editor host/runtime channel");
+            "asset graph compile is not yet wired into the editor engine");
     }
 
     void wz_free_buffer(WzBuffer* buffer)
