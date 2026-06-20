@@ -26,6 +26,12 @@ public sealed class EditorDockLayoutFactory
             Context = _owner.SceneTree,
             CanClose = false,
             CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockGroup = "tools",
             Proportion = 0.24,
         };
 
@@ -35,6 +41,15 @@ public sealed class EditorDockLayoutFactory
             Title = "Scene Tree",
             ActiveDockable = sceneTree,
             VisibleDockables = _factory.CreateList<IDockable>(sceneTree),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "tools",
             Proportion = 0.24,
         };
 
@@ -44,6 +59,12 @@ public sealed class EditorDockLayoutFactory
             Title = "Asset Graph",
             Context = _owner.AssetGraph,
             CanClose = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = DockOverrides(canDockAsDocument: true),
+            DockGroup = "documents",
             Proportion = 0.76,
         };
 
@@ -54,6 +75,15 @@ public sealed class EditorDockLayoutFactory
             ActiveDockable = assetGraph,
             VisibleDockables = _factory.CreateList<IDockable>(assetGraph),
             CanCreateDocument = false,
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = DockOverrides(canDockAsDocument: true),
+            DockCapabilityPolicy = DockPolicy(canDockAsDocument: true),
+            DockGroup = "documents",
             Proportion = 0.56,
         };
 
@@ -64,6 +94,12 @@ public sealed class EditorDockLayoutFactory
             Context = _owner.Inspector,
             CanClose = false,
             CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockGroup = "tools",
             Proportion = 0.20,
         };
 
@@ -73,6 +109,15 @@ public sealed class EditorDockLayoutFactory
             Title = "Inspector",
             ActiveDockable = inspector,
             VisibleDockables = _factory.CreateList<IDockable>(inspector),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "tools",
             Proportion = 0.20,
         };
 
@@ -83,6 +128,12 @@ public sealed class EditorDockLayoutFactory
             Context = _owner.Console,
             CanClose = false,
             CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockGroup = "tools",
         };
 
         var consoleDock = new ToolDock
@@ -91,6 +142,15 @@ public sealed class EditorDockLayoutFactory
             Title = "Console",
             ActiveDockable = console,
             VisibleDockables = _factory.CreateList<IDockable>(console),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "tools",
             Proportion = 0.28,
         };
 
@@ -104,6 +164,15 @@ public sealed class EditorDockLayoutFactory
                 assetGraphDock,
                 _factory.CreateProportionalDockSplitter(),
                 inspectorDock),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "workspace",
             Proportion = 0.72,
         };
 
@@ -115,6 +184,15 @@ public sealed class EditorDockLayoutFactory
                 workspace,
                 _factory.CreateProportionalDockSplitter(),
                 consoleDock),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "shell",
         };
 
         var root = new RootDock
@@ -124,9 +202,57 @@ public sealed class EditorDockLayoutFactory
             ActiveDockable = shell,
             DefaultDockable = shell,
             VisibleDockables = _factory.CreateList<IDockable>(shell),
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockCapabilityPolicy = DockPolicy(),
+            DockGroup = "root",
+            RootDockCapabilityPolicy = DockPolicy(),
         };
 
         _factory.InitLayout(root);
         return root;
+    }
+
+    private static DockCapabilityPolicy DockPolicy(
+        bool canClose = false,
+        bool canPin = false,
+        bool canFloat = false,
+        bool canDrag = true,
+        bool canDrop = true,
+        bool canDockAsDocument = false)
+    {
+        return new DockCapabilityPolicy
+        {
+            CanClose = canClose,
+            CanPin = canPin,
+            CanFloat = canFloat,
+            CanDrag = canDrag,
+            CanDrop = canDrop,
+            CanDockAsDocument = canDockAsDocument,
+        };
+    }
+
+    private static DockCapabilityOverrides DockOverrides(
+        bool canClose = false,
+        bool canPin = false,
+        bool canFloat = false,
+        bool canDrag = true,
+        bool canDrop = true,
+        bool canDockAsDocument = false)
+    {
+        return new DockCapabilityOverrides
+        {
+            CanClose = canClose,
+            CanPin = canPin,
+            CanFloat = canFloat,
+            CanDrag = canDrag,
+            CanDrop = canDrop,
+            CanDockAsDocument = canDockAsDocument,
+        };
     }
 }

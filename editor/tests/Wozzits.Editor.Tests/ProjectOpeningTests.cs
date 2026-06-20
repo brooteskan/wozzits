@@ -101,6 +101,13 @@ public sealed class ProjectOpeningTests
 
         Assert.False(graphMutation.Ok);
         Assert.Contains("Project directory is empty", graphMutation.Error);
+
+        var graphCommit = new WozzitsEngineNativeClient()
+            .OpenEditorSession("")
+            .CommitAssetGraph();
+
+        Assert.False(graphCommit.Ok);
+        Assert.Contains("Project directory is empty", graphCommit.Error);
     }
 
     [Fact]
@@ -157,6 +164,22 @@ public sealed class ProjectOpeningTests
         Assert.True(response.Scene.Ok, response.Scene.Error);
         Assert.NotEmpty(response.AssetGraph.Snapshot.Nodes);
         Assert.NotEmpty(response.Scene.Snapshot.Roots);
+
+        var session = new WozzitsEngineNativeClient().OpenEditorSession(sampleProject);
+        try
+        {
+            var sessionGraph = session.LoadAssetGraphSnapshot();
+
+            Assert.True(sessionGraph.Ok, sessionGraph.Error);
+            Assert.NotEmpty(sessionGraph.Snapshot.Nodes);
+            Assert.Contains(
+                sessionGraph.Snapshot.Nodes,
+                node => node.InputPorts.Count > 0);
+        }
+        finally
+        {
+            (session as IDisposable)?.Dispose();
+        }
     }
 
     [Fact]
@@ -178,6 +201,61 @@ public sealed class ProjectOpeningTests
             Assert.True(created.IsValid, created.Error);
             Assert.True(created.Created);
             Assert.True(File.Exists(Path.Combine(projectRoot, ".wozzits", "project.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(projectRoot))
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void NativeEngineClientKeepsCommitAndCompileOutOfInProcessAbiWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(abiPath))
+        {
+            return;
+        }
+
+        var projectRoot = Path.Combine(
+            Path.GetTempPath(),
+            "wozzits_editor_native_asset_graph_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, ".wozzits"));
+            File.WriteAllText(
+                Path.Combine(projectRoot, ".wozzits", "project.json"),
+                """
+                {
+                  "schema": "wozzits.project.v1",
+                  "formatVersion": 1,
+                  "name": "empty_graph",
+                  "asset_graph": "assets.graph.json"
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "assets.graph.json"),
+                """
+                {
+                  "schema": "wozzits.asset_graph.v2",
+                  "nodes": []
+                }
+                """);
+
+            using var session = new WozzitsEngineNativeClient()
+                .OpenEditorSession(projectRoot) as IDisposable;
+            var editorSession = Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
+
+            var commit = editorSession.CommitAssetGraph();
+            Assert.False(commit.Ok);
+            Assert.Contains("editor host/runtime channel", commit.Error);
+
+            var compile = editorSession.CompileAssetGraph();
+            Assert.False(compile.Ok);
+            Assert.Contains("editor host/runtime channel", compile.Error);
         }
         finally
         {
@@ -370,6 +448,277 @@ public sealed class ProjectOpeningTests
     }
 
     [Fact]
+    public void AssetGraphPaneConnectsPortsThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort
+                                    {
+                                        Index = 0,
+                                        Label = "Shader source",
+                                        TypeName = "shader",
+                                    },
+                                ],
+                            },
+                            new EngineAssetGraphNode
+                            {
+                                Id = 2,
+                                TypeName = "Renderable",
+                                DisplayName = "renderable",
+                                X = 260,
+                                InputPorts =
+                                [
+                                    new EngineAssetGraphPort
+                                    {
+                                        Index = 0,
+                                        Label = "Shader source",
+                                        TypeName = "shader",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        editorSession.AssetGraphSnapshot = new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    new EngineAssetGraphNode
+                    {
+                        Id = 1,
+                        TypeName = "Shader",
+                        DisplayName = "shader",
+                        OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                    },
+                    new EngineAssetGraphNode
+                    {
+                        Id = 2,
+                        TypeName = "Renderable",
+                        DisplayName = "renderable",
+                        X = 260,
+                        InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                    },
+                ],
+                Edges =
+                [
+                    new EngineAssetGraphEdge
+                    {
+                        Id = 42,
+                        From = 1,
+                        To = 2,
+                        ToInputPort = 0,
+                    },
+                ],
+            },
+        };
+
+        var from = viewModel.AssetGraph.Nodes[0];
+        var to = viewModel.AssetGraph.Nodes[1];
+        var output = Assert.Single(from.OutputPorts);
+        var input = Assert.Single(to.InputPorts);
+
+        viewModel.AssetGraph.BeginConnectionPreview(from, output);
+        viewModel.AssetGraph.PreviewConnectionTarget(from, input);
+
+        Assert.True(input.IsConnectionTarget);
+        Assert.False(input.IsConnectionRejected);
+
+        Assert.True(viewModel.AssetGraph.ConnectToInputPort(from, input));
+
+        Assert.Collection(
+            editorSession.ConnectionChecks,
+            check =>
+            {
+                Assert.Equal(1ul, check.FromNodeId);
+                Assert.Equal(2ul, check.ToNodeId);
+                Assert.Equal(0u, check.ToInputPort);
+            });
+        Assert.Collection(
+            editorSession.Connections,
+            connection =>
+            {
+                Assert.Equal(1ul, connection.FromNodeId);
+                Assert.Equal(2ul, connection.ToNodeId);
+                Assert.Equal(0u, connection.ToInputPort);
+            });
+        var edge = Assert.Single(viewModel.AssetGraph.Edges);
+        Assert.Equal(42ul, edge.Id);
+        Assert.True(viewModel.AssetGraph.IsDraftGraph);
+    }
+
+    [Fact]
+    public void AssetGraphPaneFindsPortsByGraphCoordinate()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1,
+                                TypeName = "Renderable",
+                                DisplayName = "renderable",
+                                X = 100,
+                                Y = 40,
+                                InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                                OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Renderable" }],
+                            },
+                        ],
+                    },
+                }));
+
+        var node = Assert.Single(viewModel.AssetGraph.Nodes);
+        var input = Assert.Single(node.InputPorts);
+        var output = Assert.Single(node.OutputPorts);
+
+        Assert.Same(input, viewModel.AssetGraph.FindInputPortAt(node.X + 4, node.Y + 82));
+        Assert.Same(output, viewModel.AssetGraph.FindOutputPortAt(node.X + 218, node.Y + 82));
+        Assert.Null(viewModel.AssetGraph.FindInputPortAt(node.X + 218, node.Y + 82));
+        Assert.Null(viewModel.AssetGraph.FindOutputPortAt(node.X + 4, node.Y + 82));
+    }
+
+    [Fact]
+    public void MainWindowDoesNotReplaceProjectGraphWithEmptySessionGraph()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = new EngineAssetGraphSnapshotResponse
+            {
+                Ok = true,
+                Snapshot = new EngineAssetGraphSnapshot(),
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        var node = Assert.Single(viewModel.AssetGraph.Nodes);
+        Assert.Equal(1ul, node.Id);
+        Assert.Equal("shader", node.DisplayName);
+    }
+
+    [Fact]
+    public void AssetGraphPaneDisconnectsEdgesThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                                OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                            },
+                            new EngineAssetGraphNode
+                            {
+                                Id = 2,
+                                TypeName = "Renderable",
+                                DisplayName = "renderable",
+                                X = 260,
+                                InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                            },
+                        ],
+                        Edges =
+                        [
+                            new EngineAssetGraphEdge
+                            {
+                                Id = 88,
+                                From = 1,
+                                To = 2,
+                                ToInputPort = 0,
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        editorSession.AssetGraphSnapshot = new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    new EngineAssetGraphNode
+                    {
+                        Id = 1,
+                        TypeName = "Shader",
+                        DisplayName = "shader",
+                        OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                    },
+                    new EngineAssetGraphNode
+                    {
+                        Id = 2,
+                        TypeName = "Renderable",
+                        DisplayName = "renderable",
+                        X = 260,
+                        InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
+                    },
+                ],
+            },
+        };
+
+        var edge = Assert.Single(viewModel.AssetGraph.Edges);
+
+        Assert.True(viewModel.AssetGraph.DisconnectEdge(edge));
+
+        Assert.Collection(
+            editorSession.DisconnectedEdges,
+            edgeId => Assert.Equal(88ul, edgeId));
+        Assert.Empty(viewModel.AssetGraph.Edges);
+        Assert.True(viewModel.AssetGraph.IsDraftGraph);
+    }
+
+    [Fact]
     public void AssetGraphPanePersistsMovedNodePositionThroughEngineSession()
     {
         var editorSession = new RecordingEditorSession();
@@ -488,6 +837,52 @@ public sealed class ProjectOpeningTests
                 Assert.Equal(290, position.X);
                 Assert.Equal(40, position.Y);
             });
+    }
+
+    [Fact]
+    public void AssetGraphPaneMovesSelectedNodesByGraphDelta()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Zoom = 0.5,
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                                X = 10,
+                                Y = 20,
+                            },
+                            new EngineAssetGraphNode
+                            {
+                                Id = 2,
+                                TypeName = "Mesh",
+                                DisplayName = "mesh",
+                                X = 280,
+                                Y = 20,
+                            },
+                        ],
+                    },
+                }));
+
+        var first = viewModel.AssetGraph.Nodes[0];
+        var second = viewModel.AssetGraph.Nodes[1];
+
+        viewModel.AssetGraph.SelectNode(first);
+        viewModel.AssetGraph.ToggleNodeSelection(second);
+        viewModel.AssetGraph.MoveSelectedNodesByGraphDelta(first, 12, 8);
+
+        Assert.Equal(50, first.X);
+        Assert.Equal(56, first.Y);
+        Assert.Equal(320, second.X);
+        Assert.Equal(56, second.Y);
     }
 
     [Fact]
@@ -629,6 +1024,121 @@ public sealed class ProjectOpeningTests
         Assert.True(viewModel.AssetGraph.HasCommitSucceeded);
         Assert.False(viewModel.AssetGraph.HasCommitFailed);
         Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
+    }
+
+    [Fact]
+    public void AssetGraphPaneCommitCommandCommitsThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 4,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.MarkGraphDraft();
+        viewModel.AssetGraph.CommitGraphCommand.Execute(null);
+
+        Assert.Equal(1, editorSession.CommitCount);
+        Assert.True(viewModel.AssetGraph.IsActualGraph);
+        Assert.True(viewModel.AssetGraph.HasCommitSucceeded);
+        Assert.False(viewModel.AssetGraph.HasCommitFailed);
+        Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
+    }
+
+    [Fact]
+    public void AssetGraphPaneCompileCommandCompilesThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 4,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.CompileGraphCommand.Execute(null);
+
+        Assert.Equal(1, editorSession.CompileCount);
+        Assert.True(viewModel.AssetGraph.HasCompileSucceeded);
+        Assert.False(viewModel.AssetGraph.HasCompileFailed);
+        Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
+    }
+
+    [Fact]
+    public void AssetGraphPaneCommitAndCompileCommandsShowEngineFailures()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            CommitResponse = new EngineMutationResponse
+            {
+                Ok = false,
+                Error = "commit failed",
+            },
+            CompileResponse = new EngineMutationResponse
+            {
+                Ok = false,
+                Error = "compile failed",
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 4,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.CommitGraphCommand.Execute(null);
+
+        Assert.True(viewModel.AssetGraph.HasCommitFailed);
+        Assert.False(viewModel.AssetGraph.HasCommitSucceeded);
+        Assert.Equal("commit failed", viewModel.AssetGraph.LastEditError);
+
+        viewModel.AssetGraph.CompileGraphCommand.Execute(null);
+
+        Assert.True(viewModel.AssetGraph.HasCompileFailed);
+        Assert.False(viewModel.AssetGraph.HasCompileSucceeded);
+        Assert.Equal("compile failed", viewModel.AssetGraph.LastEditError);
     }
 
     [Fact]
@@ -1036,15 +1546,98 @@ public sealed class ProjectOpeningTests
 
     private sealed class RecordingEditorSession : IWozzitsEngineEditorSession
     {
+        public EngineAssetGraphSnapshotResponse AssetGraphSnapshot { get; set; } = new()
+        {
+            Ok = false,
+            Error = "No recorded asset graph snapshot.",
+        };
+
+        public EngineAssetGraphConnectionCheckResponse ConnectionCheck { get; set; } = new()
+        {
+            Ok = true,
+            Check = new EngineAssetGraphConnectionCheck
+            {
+                Compatible = true,
+                Status = EngineAssetGraphConnectionStatus.Compatible,
+            },
+        };
+
+        public EngineMutationResponse CommitResponse { get; set; } = new()
+        {
+            Ok = true,
+        };
+
+        public EngineMutationResponse CompileResponse { get; set; } = new()
+        {
+            Ok = true,
+        };
+
+        public int CommitCount { get; private set; }
+
+        public int CompileCount { get; private set; }
+
         public List<AssetGraphPositionEdit> AssetGraphPositions { get; } = [];
 
         public List<double> AssetGraphZooms { get; } = [];
+
+        public List<AssetGraphConnectionEdit> ConnectionChecks { get; } = [];
+
+        public List<AssetGraphConnectionEdit> Connections { get; } = [];
+
+        public List<ulong> DisconnectedEdges { get; } = [];
 
         public List<NodePropertiesEdit> NodeProperties { get; } = [];
 
         public List<TransformEdit> Transforms { get; } = [];
 
         public List<CameraEdit> Cameras { get; } = [];
+
+        public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
+        {
+            return AssetGraphSnapshot;
+        }
+
+        public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
+            ulong fromNodeId,
+            ulong toNodeId,
+            uint toInputPort)
+        {
+            ConnectionChecks.Add(new AssetGraphConnectionEdit(
+                fromNodeId,
+                toNodeId,
+                toInputPort));
+            return ConnectionCheck;
+        }
+
+        public EngineAssetGraphConnectionCheckResponse ConnectAssetGraphNodes(
+            ulong fromNodeId,
+            ulong toNodeId,
+            uint toInputPort)
+        {
+            Connections.Add(new AssetGraphConnectionEdit(
+                fromNodeId,
+                toNodeId,
+                toInputPort));
+            return ConnectionCheck;
+        }
+
+        public EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId)
+        {
+            DisconnectedEdges.Add(edgeId);
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse CommitAssetGraph()
+        {
+            ++CommitCount;
+            return CommitResponse;
+        }
+
+        public EngineMutationResponse CompileAssetGraph()
+        {
+            ++CompileCount;
+            return CompileResponse;
+        }
 
         public EngineMutationResponse SetAssetGraphNodePosition(
             ulong nodeId,
@@ -1091,6 +1684,11 @@ public sealed class ProjectOpeningTests
         ulong NodeId,
         double X,
         double Y);
+
+    private sealed record AssetGraphConnectionEdit(
+        ulong FromNodeId,
+        ulong ToNodeId,
+        uint ToInputPort);
 
     private sealed record NodePropertiesEdit(
         string NodeId,

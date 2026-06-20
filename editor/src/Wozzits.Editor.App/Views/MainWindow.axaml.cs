@@ -12,6 +12,13 @@ public partial class MainWindow : Window
         Closed += OnClosed;
     }
 
+    public MainWindow(MainWindowViewModel viewModel)
+    {
+        DataContext = viewModel;
+        InitializeComponent();
+        Closed += OnClosed;
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         if (DataContext is MainWindowViewModel viewModel)

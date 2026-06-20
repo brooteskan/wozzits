@@ -12,6 +12,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
     private readonly WozzitsEditorHostSession? _editorHostSession;
+    private readonly IDisposable? _editorSessionLifetime;
     private readonly Action<Action>? _dispatch;
     private bool _shutdown;
 
@@ -27,6 +28,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         Action<Action>? dispatch = null)
     {
         _dispatch = dispatch;
+        _editorSessionLifetime = editorSession as IDisposable;
         SaveAllCommand = new RelayCommand(SaveAll);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
@@ -36,7 +38,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         WindowTitle = string.IsNullOrWhiteSpace(ProjectName)
             ? "Wozzits"
             : ProjectName;
-        AssetGraph.LoadSnapshot(projectSnapshot?.AssetGraph);
+        var projectAssetGraph = projectSnapshot?.AssetGraph;
+        var sessionAssetGraph = editorSession?.LoadAssetGraphSnapshot();
+        AssetGraph.LoadSnapshot(ChooseAssetGraphSnapshot(
+            projectAssetGraph,
+            sessionAssetGraph));
         SceneTree.LoadSnapshot(projectSnapshot?.Scene);
 
         _editorHostSession = editorHostSession;
@@ -68,6 +74,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _shutdown = true;
         _editorHostSession?.Dispose();
+        _editorSessionLifetime?.Dispose();
     }
 
     private void AppendEngineLog(string line)
@@ -100,6 +107,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private static void SaveAll()
     {
+    }
+
+    private static EngineAssetGraphSnapshotResponse? ChooseAssetGraphSnapshot(
+        EngineAssetGraphSnapshotResponse? projectAssetGraph,
+        EngineAssetGraphSnapshotResponse? sessionAssetGraph)
+    {
+        if (sessionAssetGraph?.Ok == true)
+        {
+            var projectNodeCount =
+                projectAssetGraph?.Snapshot.Nodes.Count ?? 0;
+            if (sessionAssetGraph.Snapshot.Nodes.Count > 0 || projectNodeCount == 0)
+            {
+                return sessionAssetGraph;
+            }
+        }
+
+        return projectAssetGraph ?? sessionAssetGraph;
     }
 
     private void InitializeDockLayout()

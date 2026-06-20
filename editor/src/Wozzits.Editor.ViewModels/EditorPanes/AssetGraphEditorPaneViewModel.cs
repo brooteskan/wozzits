@@ -25,6 +25,13 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private double _graphWidth = 640.0;
     private double _graphHeight = 420.0;
     private double _zoom = 1.0;
+    private double _connectionPreviewStartX;
+    private double _connectionPreviewStartY;
+    private double _connectionPreviewEndX;
+    private double _connectionPreviewEndY;
+    private bool _isConnectionPreviewVisible;
+    private bool _isConnectionPreviewRejected;
+    private AssetGraphPortViewModel? _connectionTargetPort;
     private AssetGraphNodeCardViewModel? _selectedNode;
     public event Action<AssetGraphNodeCardViewModel?>? SelectedNodeChanged;
 
@@ -138,6 +145,42 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
     }
 
+    public double ConnectionPreviewStartX
+    {
+        get => _connectionPreviewStartX;
+        private set => SetProperty(ref _connectionPreviewStartX, value);
+    }
+
+    public double ConnectionPreviewStartY
+    {
+        get => _connectionPreviewStartY;
+        private set => SetProperty(ref _connectionPreviewStartY, value);
+    }
+
+    public double ConnectionPreviewEndX
+    {
+        get => _connectionPreviewEndX;
+        private set => SetProperty(ref _connectionPreviewEndX, value);
+    }
+
+    public double ConnectionPreviewEndY
+    {
+        get => _connectionPreviewEndY;
+        private set => SetProperty(ref _connectionPreviewEndY, value);
+    }
+
+    public bool IsConnectionPreviewVisible
+    {
+        get => _isConnectionPreviewVisible;
+        private set => SetProperty(ref _isConnectionPreviewVisible, value);
+    }
+
+    public bool IsConnectionPreviewRejected
+    {
+        get => _isConnectionPreviewRejected;
+        private set => SetProperty(ref _isConnectionPreviewRejected, value);
+    }
+
     public AssetGraphNodeCardViewModel? SelectedNode
     {
         get => _selectedNode;
@@ -218,6 +261,141 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         NotifyGraphStateChanged();
     }
 
+    public void BeginConnectionPreview(
+        AssetGraphNodeCardViewModel fromNode,
+        AssetGraphPortViewModel outputPort)
+    {
+        ClearConnectionTarget();
+        var anchor = OutputPortAnchor(fromNode, outputPort);
+        ConnectionPreviewStartX = anchor.X;
+        ConnectionPreviewStartY = anchor.Y;
+        ConnectionPreviewEndX = anchor.X;
+        ConnectionPreviewEndY = anchor.Y;
+        IsConnectionPreviewRejected = false;
+        IsConnectionPreviewVisible = true;
+    }
+
+    public void UpdateConnectionPreviewEnd(double x, double y)
+    {
+        if (!IsConnectionPreviewVisible)
+        {
+            return;
+        }
+
+        ConnectionPreviewEndX = x;
+        ConnectionPreviewEndY = y;
+    }
+
+    public void PreviewConnectionTarget(
+        AssetGraphNodeCardViewModel fromNode,
+        AssetGraphPortViewModel? inputPort)
+    {
+        if (ReferenceEquals(_connectionTargetPort, inputPort))
+        {
+            return;
+        }
+
+        ClearConnectionTarget();
+        if (inputPort is null)
+        {
+            IsConnectionPreviewRejected = false;
+            return;
+        }
+
+        inputPort.IsConnectionTarget = true;
+        _connectionTargetPort = inputPort;
+
+        if (_editorSession is null)
+        {
+            inputPort.IsConnectionRejected = true;
+            IsConnectionPreviewRejected = true;
+            return;
+        }
+
+        var check = _editorSession.CanConnectAssetGraphNodes(
+            fromNode.Id,
+            inputPort.Owner.Id,
+            inputPort.Index);
+        var rejected = !check.Ok || !check.Check.Compatible;
+        inputPort.IsConnectionRejected = rejected;
+        IsConnectionPreviewRejected = rejected;
+    }
+
+    public bool ConnectToInputPort(
+        AssetGraphNodeCardViewModel fromNode,
+        AssetGraphPortViewModel inputPort)
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            CancelConnectionPreview();
+            return false;
+        }
+
+        var check = _editorSession.ConnectAssetGraphNodes(
+            fromNode.Id,
+            inputPort.Owner.Id,
+            inputPort.Index);
+        if (!check.Ok || !check.Check.Compatible)
+        {
+            LastEditError = ConnectionError(check);
+            CancelConnectionPreview();
+            return false;
+        }
+
+        LastEditError = string.Empty;
+        CancelConnectionPreview();
+        ReloadGraphFromSessionPreservingLayout();
+        MarkGraphDraft();
+        return true;
+    }
+
+    public bool DisconnectEdge(AssetGraphEdgeViewModel edge)
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+
+        var response = _editorSession.DisconnectAssetGraphEdge(edge.Id);
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return false;
+        }
+
+        LastEditError = string.Empty;
+        ReloadGraphFromSessionPreservingLayout();
+        MarkGraphDraft();
+        return true;
+    }
+
+    public void CancelConnectionPreview()
+    {
+        ClearConnectionTarget();
+        IsConnectionPreviewVisible = false;
+        IsConnectionPreviewRejected = false;
+    }
+
+    public (double X, double Y) OutputPortAnchor(
+        AssetGraphNodeCardViewModel node,
+        AssetGraphPortViewModel port)
+    {
+        return (
+            node.X + CardWidth,
+            node.Y + PortRowBaseY + port.Index * PortRowSpacing);
+    }
+
+    public (double X, double Y) InputPortAnchor(
+        AssetGraphNodeCardViewModel node,
+        AssetGraphPortViewModel port)
+    {
+        return (
+            node.X,
+            node.Y + PortRowBaseY + port.Index * PortRowSpacing);
+    }
+
     public void SelectNode(AssetGraphNodeCardViewModel? node)
     {
         ClearSelection();
@@ -290,14 +468,25 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         double deltaX,
         double deltaY)
     {
+        MoveSelectedNodesByGraphDelta(
+            anchorNode,
+            deltaX / Zoom,
+            deltaY / Zoom);
+    }
+
+    public void MoveSelectedNodesByGraphDelta(
+        AssetGraphNodeCardViewModel anchorNode,
+        double deltaX,
+        double deltaY)
+    {
         var nodes = NodesToMove(anchorNode);
         if (nodes.Count == 0)
         {
             return;
         }
 
-        var graphDeltaX = deltaX / Zoom;
-        var graphDeltaY = deltaY / Zoom;
+        var graphDeltaX = deltaX;
+        var graphDeltaY = deltaY;
         graphDeltaX = Math.Max(
             CanvasPadding - nodes.Min(node => node.X),
             graphDeltaX);
@@ -312,6 +501,50 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         EnsureGraphBounds();
+    }
+
+    public AssetGraphPortViewModel? FindInputPortAt(double x, double y)
+    {
+        foreach (var node in Nodes)
+        {
+            if (x < node.X - 24.0 || x > node.X + CardWidth * 0.55)
+            {
+                continue;
+            }
+
+            foreach (var port in node.InputPorts)
+            {
+                var (_, portY) = InputPortAnchor(node, port);
+                if (Math.Abs(y - portY) <= PortRowSpacing * 0.55)
+                {
+                    return port;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public AssetGraphPortViewModel? FindOutputPortAt(double x, double y)
+    {
+        foreach (var node in Nodes)
+        {
+            if (x < node.X + CardWidth * 0.45 || x > node.X + CardWidth + 24.0)
+            {
+                continue;
+            }
+
+            foreach (var port in node.OutputPorts)
+            {
+                var (_, portY) = OutputPortAnchor(node, port);
+                if (Math.Abs(y - portY) <= PortRowSpacing * 0.55)
+                {
+                    return port;
+                }
+            }
+        }
+
+        return null;
     }
 
     public void ZoomByWheelDelta(double wheelDeltaY)
@@ -433,10 +666,106 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
     private void CommitGraph()
     {
+        if (_editorSession is null)
+        {
+            MarkCommitResult(false, "Engine editor session is not available.");
+            return;
+        }
+
+        var response = _editorSession.CommitAssetGraph();
+        MarkCommitResult(response.Ok, response.Error);
     }
 
     private void CompileGraph()
     {
+        if (_editorSession is null)
+        {
+            MarkCompileResult(false, "Engine editor session is not available.");
+            return;
+        }
+
+        var response = _editorSession.CompileAssetGraph();
+        MarkCompileResult(response.Ok, response.Error);
+    }
+
+    private void ReloadGraphFromSessionPreservingLayout()
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return;
+        }
+
+        var positions = Nodes.ToDictionary(
+            node => node.Id,
+            node => (node.X, node.Y));
+        var selectedIds = SelectedNodes
+            .Select(node => node.Id)
+            .ToHashSet();
+        var selectedNodeId = SelectedNode?.Id;
+        var zoom = Zoom;
+
+        var response = _editorSession.LoadAssetGraphSnapshot();
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return;
+        }
+
+        LoadSnapshot(response);
+
+        foreach (var node in Nodes)
+        {
+            if (positions.TryGetValue(node.Id, out var position))
+            {
+                node.X = position.X;
+                node.Y = position.Y;
+            }
+        }
+
+        Zoom = zoom;
+        EnsureGraphBounds();
+
+        foreach (var node in Nodes)
+        {
+            if (selectedIds.Contains(node.Id))
+            {
+                AddNodeToSelection(node);
+            }
+        }
+
+        if (selectedNodeId is not null)
+        {
+            SelectedNode = Nodes.FirstOrDefault(node => node.Id == selectedNodeId);
+        }
+    }
+
+    private void ClearConnectionTarget()
+    {
+        if (_connectionTargetPort is null)
+        {
+            return;
+        }
+
+        _connectionTargetPort.IsConnectionTarget = false;
+        _connectionTargetPort.IsConnectionRejected = false;
+        _connectionTargetPort = null;
+    }
+
+    private static string ConnectionError(
+        EngineAssetGraphConnectionCheckResponse response)
+    {
+        if (!string.IsNullOrWhiteSpace(response.Error))
+        {
+            return response.Error;
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.Check.Message))
+        {
+            return response.Check.Message;
+        }
+
+        return $"Asset graph connection rejected: {response.Check.Status}.";
     }
 
     private void SetCommitState(AssetGraphOperationState state)
@@ -568,9 +897,9 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
         SchemaDisplay = node.Schema;
         CompileStatus = node.CompileStatus;
         InputPorts = new ObservableCollection<AssetGraphPortViewModel>(
-            node.InputPorts.Select(port => new AssetGraphPortViewModel(port.Index, port.Label)));
+            node.InputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: true)));
         OutputPorts = new ObservableCollection<AssetGraphPortViewModel>(
-            node.OutputPorts.Select(port => new AssetGraphPortViewModel(port.Index, port.Label)));
+            node.OutputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: false)));
     }
 
     public ulong Id { get; }
@@ -625,6 +954,7 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
         double portRowBaseY,
         double portRowSpacing)
     {
+        Id = edge.Id;
         FromNodeId = edge.From;
         ToNodeId = edge.To;
         ToInputPort = edge.ToInputPort;
@@ -637,6 +967,8 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
         _from.PropertyChanged += NodePositionChanged;
         _to.PropertyChanged += NodePositionChanged;
     }
+
+    public ulong Id { get; }
 
     public ulong FromNodeId { get; }
 
@@ -679,7 +1011,58 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
     }
 }
 
-public sealed record AssetGraphPortViewModel(uint Index, string Label);
+public sealed class AssetGraphPortViewModel : ViewModelBase
+{
+    private bool _isConnectionTarget;
+    private bool _isConnectionRejected;
+
+    public AssetGraphPortViewModel(
+        AssetGraphNodeCardViewModel owner,
+        EngineAssetGraphPort port,
+        bool isInput)
+    {
+        Owner = owner;
+        Index = port.Index;
+        Type = port.Type;
+        Flags = port.Flags;
+        Name = port.Name;
+        Label = port.Label;
+        TypeName = port.TypeName;
+        IsInput = isInput;
+    }
+
+    public AssetGraphNodeCardViewModel Owner { get; }
+
+    public uint Index { get; }
+
+    public uint Type { get; }
+
+    public EngineAssetGraphPortFlags Flags { get; }
+
+    public string Name { get; }
+
+    public string Label { get; }
+
+    public string TypeName { get; }
+
+    public bool IsInput { get; }
+
+    public bool IsOutput => !IsInput;
+
+    public bool HasTypeName => !string.IsNullOrWhiteSpace(TypeName);
+
+    public bool IsConnectionTarget
+    {
+        get => _isConnectionTarget;
+        set => SetProperty(ref _isConnectionTarget, value);
+    }
+
+    public bool IsConnectionRejected
+    {
+        get => _isConnectionRejected;
+        set => SetProperty(ref _isConnectionRejected, value);
+    }
+}
 
 public enum AssetGraphOperationState
 {

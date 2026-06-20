@@ -29,6 +29,60 @@ public sealed record EngineMutationResponse
     public string Error { get; init; } = string.Empty;
 }
 
+[Flags]
+public enum EngineAssetGraphPortFlags : uint
+{
+    None = 0,
+    Required = 1u << 0,
+    Many = 1u << 1,
+}
+
+public enum EngineAssetGraphConnectionStatus : uint
+{
+    Compatible = 0,
+    MissingNode = 1,
+    MissingCompiler = 2,
+    InvalidInputPort = 3,
+    TypeMismatch = 4,
+    SelfDependency = 5,
+    Cycle = 6,
+    DuplicateInputPort = 7,
+}
+
+public sealed record EngineAssetGraphConnectionCheckResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public EngineAssetGraphConnectionCheck Check { get; init; } = new();
+}
+
+public sealed record EngineAssetGraphConnectionCheck
+{
+    public bool Compatible { get; init; }
+
+    public EngineAssetGraphConnectionStatus Status { get; init; }
+
+    public bool ReplacesExisting { get; init; }
+
+    public ulong From { get; init; }
+
+    public ulong To { get; init; }
+
+    public uint ToInputPort { get; init; }
+
+    public uint FromType { get; init; }
+
+    public uint ToType { get; init; }
+
+    public string Message { get; init; } = string.Empty;
+
+    public string FromTypeName { get; init; } = string.Empty;
+
+    public string ToTypeName { get; init; } = string.Empty;
+}
+
 public sealed record EngineSceneTransformEdit
 {
     public string TranslationX { get; init; } = string.Empty;
@@ -108,11 +162,21 @@ public sealed record EngineAssetGraphPort
 {
     public uint Index { get; init; }
 
+    public uint Type { get; init; }
+
+    public EngineAssetGraphPortFlags Flags { get; init; }
+
+    public string Name { get; init; } = string.Empty;
+
     public string Label { get; init; } = string.Empty;
+
+    public string TypeName { get; init; } = string.Empty;
 }
 
 public sealed record EngineAssetGraphEdge
 {
+    public ulong Id { get; init; }
+
     public ulong From { get; init; }
 
     public ulong To { get; init; }

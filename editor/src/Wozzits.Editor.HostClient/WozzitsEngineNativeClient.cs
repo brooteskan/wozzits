@@ -8,6 +8,24 @@ namespace Wozzits.Editor.HostClient;
 
 public interface IWozzitsEngineEditorSession
 {
+    EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot();
+
+    EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort);
+
+    EngineAssetGraphConnectionCheckResponse ConnectAssetGraphNodes(
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort);
+
+    EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId);
+
+    EngineMutationResponse CommitAssetGraph();
+
+    EngineMutationResponse CompileAssetGraph();
+
     EngineMutationResponse SetAssetGraphNodePosition(
         ulong nodeId,
         double x,
@@ -29,17 +47,88 @@ public interface IWozzitsEngineEditorSession
         EngineSceneCameraEdit edit);
 }
 
-public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSession
+public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSession, IDisposable
 {
     private readonly WozzitsEngineNativeClient _client;
     private readonly string _projectDirectory;
+    private readonly string _openError;
+    private IntPtr _session;
 
     internal WozzitsEngineNativeEditorSession(
         WozzitsEngineNativeClient client,
-        string projectDirectory)
+        string projectDirectory,
+        IntPtr session,
+        string openError = "")
     {
         _client = client;
         _projectDirectory = projectDirectory;
+        _session = session;
+        _openError = openError;
+    }
+
+    ~WozzitsEngineNativeEditorSession()
+    {
+        Dispose();
+    }
+
+    public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
+    {
+        return HasNativeSession(out var error)
+            ? _client.LoadAssetGraphSnapshot(_session)
+            : new EngineAssetGraphSnapshotResponse
+            {
+                Ok = false,
+                Error = error,
+            };
+    }
+
+    public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort)
+    {
+        return HasNativeSession(out var error)
+            ? _client.CanConnectAssetGraphNodes(
+                _session,
+                fromNodeId,
+                toNodeId,
+                toInputPort)
+            : WozzitsEngineNativeClient.InvalidConnectionCheck(error);
+    }
+
+    public EngineAssetGraphConnectionCheckResponse ConnectAssetGraphNodes(
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort)
+    {
+        return HasNativeSession(out var error)
+            ? _client.ConnectAssetGraphNodes(
+                _session,
+                fromNodeId,
+                toNodeId,
+                toInputPort)
+            : WozzitsEngineNativeClient.InvalidConnectionCheck(error);
+    }
+
+    public EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId)
+    {
+        return HasNativeSession(out var error)
+            ? _client.DisconnectAssetGraphEdge(_session, edgeId)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
+    }
+
+    public EngineMutationResponse CommitAssetGraph()
+    {
+        return HasNativeSession(out var error)
+            ? _client.CommitAssetGraph(_session)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
+    }
+
+    public EngineMutationResponse CompileAssetGraph()
+    {
+        return HasNativeSession(out var error)
+            ? _client.CompileAssetGraph(_session)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 
     public EngineMutationResponse SetSceneNodeProperties(
@@ -92,6 +181,34 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             nodeId,
             edit);
     }
+
+    public void Dispose()
+    {
+        var session = _session;
+        if (session == IntPtr.Zero)
+        {
+            GC.SuppressFinalize(this);
+            return;
+        }
+
+        _session = IntPtr.Zero;
+        WozzitsEngineAbi.WzEditorCloseSession(session);
+        GC.SuppressFinalize(this);
+    }
+
+    private bool HasNativeSession(out string error)
+    {
+        if (_session != IntPtr.Zero)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        error = string.IsNullOrWhiteSpace(_openError)
+            ? "Engine editor session is closed."
+            : _openError;
+        return false;
+    }
 }
 
 public sealed class WozzitsEngineNativeClient
@@ -100,7 +217,62 @@ public sealed class WozzitsEngineNativeClient
 
     public IWozzitsEngineEditorSession OpenEditorSession(string projectDirectory)
     {
-        return new WozzitsEngineNativeEditorSession(this, projectDirectory);
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return new WozzitsEngineNativeEditorSession(
+                this,
+                projectDirectory,
+                IntPtr.Zero,
+                "Project directory is empty.");
+        }
+
+        try
+        {
+            WozzitsEngineAbi.EnsureResolverRegistered();
+            var result = WozzitsEngineAbi.WzEditorOpenProjectSession(
+                projectDirectory,
+                resourceRootUtf8: null,
+                out var session);
+            return result.Code == WzResultCode.Ok && session != IntPtr.Zero
+                ? new WozzitsEngineNativeEditorSession(this, projectDirectory, session)
+                : new WozzitsEngineNativeEditorSession(
+                    this,
+                    projectDirectory,
+                    IntPtr.Zero,
+                    result.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new WozzitsEngineNativeEditorSession(
+                this,
+                projectDirectory,
+                IntPtr.Zero,
+                ex.Message);
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new WozzitsEngineNativeEditorSession(
+                this,
+                projectDirectory,
+                IntPtr.Zero,
+                ex.Message);
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new WozzitsEngineNativeEditorSession(
+                this,
+                projectDirectory,
+                IntPtr.Zero,
+                ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new WozzitsEngineNativeEditorSession(
+                this,
+                projectDirectory,
+                IntPtr.Zero,
+                ex.Message);
+        }
     }
 
     public EngineProjectSnapshotResponse LoadProjectSnapshot(string projectDirectory)
@@ -265,6 +437,144 @@ public sealed class WozzitsEngineNativeClient
             zoom));
     }
 
+    internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return new EngineAssetGraphSnapshotResponse
+            {
+                Ok = false,
+                Error = "Engine editor session is closed.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorSessionAssetGraphSnapshot(
+                session,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            return ReadAssetGraphSnapshot(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAssetGraphSnapshotResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAssetGraphSnapshotResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAssetGraphSnapshotResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAssetGraphSnapshotResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
+    internal EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
+        IntPtr session,
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidConnectionCheck("Engine editor session is closed.");
+        }
+
+        return InvokeConnectionCheck(() =>
+        {
+            var result = WozzitsEngineAbi.WzEditorAssetGraphCanConnect(
+                session,
+                fromNodeId,
+                toNodeId,
+                toInputPort,
+                out var buffer);
+            return (result, buffer);
+        });
+    }
+
+    internal EngineAssetGraphConnectionCheckResponse ConnectAssetGraphNodes(
+        IntPtr session,
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidConnectionCheck("Engine editor session is closed.");
+        }
+
+        return InvokeConnectionCheck(() =>
+        {
+            var result = WozzitsEngineAbi.WzEditorAssetGraphConnect(
+                session,
+                fromNodeId,
+                toNodeId,
+                toInputPort,
+                out var buffer);
+            return (result, buffer);
+        });
+    }
+
+    internal EngineMutationResponse DisconnectAssetGraphEdge(IntPtr session, ulong edgeId)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        if (edgeId == 0)
+        {
+            return InvalidMutation("Asset graph edge id is invalid.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphDisconnectEdge(
+            session,
+            edgeId));
+    }
+
+    internal EngineMutationResponse CommitAssetGraph(IntPtr session)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphCommit(session));
+    }
+
+    internal EngineMutationResponse CompileAssetGraph(IntPtr session)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphCompile(session));
+    }
+
     internal EngineMutationResponse SetSceneNodeTransform(
         string projectDirectory,
         string nodeId,
@@ -375,6 +685,48 @@ public sealed class WozzitsEngineNativeClient
         }
     }
 
+    private static EngineAssetGraphConnectionCheckResponse InvokeConnectionCheck(
+        Func<(WzResult Result, WzBuffer Buffer)> invoke)
+    {
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var call = invoke();
+            buffer = call.Buffer;
+            if (call.Result.Code != WzResultCode.Ok)
+            {
+                return InvalidConnectionCheck(call.Result.Message);
+            }
+
+            return ReadConnectionCheck(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return InvalidConnectionCheck(ex.Message);
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return InvalidConnectionCheck(ex.Message);
+        }
+        catch (BadImageFormatException ex)
+        {
+            return InvalidConnectionCheck(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return InvalidConnectionCheck(ex.Message);
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     private static EngineProjectSnapshotResponse InvalidProjectSnapshot(string error)
     {
         return new EngineProjectSnapshotResponse
@@ -395,12 +747,27 @@ public sealed class WozzitsEngineNativeClient
         };
     }
 
-    private static EngineMutationResponse InvalidMutation(string error)
+    internal static EngineMutationResponse InvalidMutation(string error)
     {
         return new EngineMutationResponse
         {
             Ok = false,
             Error = error,
+        };
+    }
+
+    internal static EngineAssetGraphConnectionCheckResponse InvalidConnectionCheck(
+        string error)
+    {
+        return new EngineAssetGraphConnectionCheckResponse
+        {
+            Ok = false,
+            Error = error,
+            Check = new EngineAssetGraphConnectionCheck
+            {
+                Status = EngineAssetGraphConnectionStatus.TypeMismatch,
+                Message = error,
+            },
         };
     }
 
@@ -436,6 +803,40 @@ public sealed class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineAssetGraphSnapshotResponse ReadAssetGraphSnapshot(WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset graph snapshot buffer.");
+        var snapshot = ReadStruct<WzEditorAssetGraphSnapshotAbi>(bytes, offset: 0);
+        return ReadAssetGraphSnapshot(bytes, snapshot);
+    }
+
+    private static EngineAssetGraphConnectionCheckResponse ReadConnectionCheck(
+        WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset graph connection check buffer.");
+        var check = ReadStruct<WzEditorAssetGraphConnectionCheckAbi>(bytes, offset: 0);
+        ValidateAbiVersion(check.AbiVersion);
+
+        return new EngineAssetGraphConnectionCheckResponse
+        {
+            Ok = true,
+            Check = new EngineAssetGraphConnectionCheck
+            {
+                Compatible = check.Compatible != 0,
+                Status = ToConnectionStatus(check.Status),
+                ReplacesExisting = check.ReplacesExisting != 0,
+                From = check.From,
+                To = check.To,
+                ToInputPort = check.ToInputPort,
+                FromType = check.FromType,
+                ToType = check.ToType,
+                Message = ReadString(bytes, check.Message),
+                FromTypeName = ReadString(bytes, check.FromTypeName),
+                ToTypeName = ReadString(bytes, check.ToTypeName),
+            },
+        };
+    }
+
     private static EngineAssetGraphSnapshotResponse ReadAssetGraphSnapshot(
         byte[] bytes,
         WzEditorAssetGraphSnapshotAbi snapshot)
@@ -457,6 +858,7 @@ public sealed class WozzitsEngineNativeClient
                     snapshot.Edges,
                     (_, edge) => new EngineAssetGraphEdge
                     {
+                        Id = edge.Id,
                         From = edge.From,
                         To = edge.To,
                         ToInputPort = edge.ToInputPort,
@@ -497,7 +899,11 @@ public sealed class WozzitsEngineNativeClient
         return new EngineAssetGraphPort
         {
             Index = port.Index,
+            Type = port.Type,
+            Flags = (EngineAssetGraphPortFlags)port.Flags,
+            Name = ReadString(bytes, port.Name),
             Label = ReadString(bytes, port.Label),
+            TypeName = ReadString(bytes, port.TypeName),
         };
     }
 
@@ -765,6 +1171,22 @@ public sealed class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineAssetGraphConnectionStatus ToConnectionStatus(uint status)
+    {
+        return status switch
+        {
+            0 => EngineAssetGraphConnectionStatus.Compatible,
+            1 => EngineAssetGraphConnectionStatus.MissingNode,
+            2 => EngineAssetGraphConnectionStatus.MissingCompiler,
+            3 => EngineAssetGraphConnectionStatus.InvalidInputPort,
+            4 => EngineAssetGraphConnectionStatus.TypeMismatch,
+            5 => EngineAssetGraphConnectionStatus.SelfDependency,
+            6 => EngineAssetGraphConnectionStatus.Cycle,
+            7 => EngineAssetGraphConnectionStatus.DuplicateInputPort,
+            _ => EngineAssetGraphConnectionStatus.TypeMismatch,
+        };
+    }
+
     private static bool HasFlag(uint flags, uint flag)
     {
         return (flags & flag) != 0;
@@ -774,7 +1196,7 @@ public sealed class WozzitsEngineNativeClient
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 8;
+    internal const uint AbiVersion = 10;
 
     private static int _resolverRegistered;
 
@@ -887,6 +1309,62 @@ internal static partial class WozzitsEngineAbi
         string? resourceRootUtf8,
         double zoom);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_open_project_session",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorOpenProjectSession(
+        string projectRootUtf8,
+        string? resourceRootUtf8,
+        out IntPtr outSession);
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_editor_close_session")]
+    internal static partial void WzEditorCloseSession(IntPtr session);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_session_asset_graph_snapshot")]
+    internal static partial WzResult WzEditorSessionAssetGraphSnapshot(
+        IntPtr session,
+        out WzBuffer outSnapshot);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_can_connect")]
+    internal static partial WzResult WzEditorAssetGraphCanConnect(
+        IntPtr session,
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort,
+        out WzBuffer outCheck);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_connect")]
+    internal static partial WzResult WzEditorAssetGraphConnect(
+        IntPtr session,
+        ulong fromNodeId,
+        ulong toNodeId,
+        uint toInputPort,
+        out WzBuffer outCheck);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_disconnect_edge")]
+    internal static partial WzResult WzEditorAssetGraphDisconnectEdge(
+        IntPtr session,
+        ulong edgeId);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_commit")]
+    internal static partial WzResult WzEditorAssetGraphCommit(IntPtr session);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_compile")]
+    internal static partial WzResult WzEditorAssetGraphCompile(IntPtr session);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }
@@ -938,13 +1416,25 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorTableSpanAbi.Count),
             8);
 
-        AssertSize<WzEditorAssetGraphPortAbi>(24);
+        AssertSize<WzEditorAssetGraphPortAbi>(64);
         AssertOffset<WzEditorAssetGraphPortAbi>(
             nameof(WzEditorAssetGraphPortAbi.Index),
             0);
         AssertOffset<WzEditorAssetGraphPortAbi>(
-            nameof(WzEditorAssetGraphPortAbi.Label),
+            nameof(WzEditorAssetGraphPortAbi.Type),
+            4);
+        AssertOffset<WzEditorAssetGraphPortAbi>(
+            nameof(WzEditorAssetGraphPortAbi.Flags),
             8);
+        AssertOffset<WzEditorAssetGraphPortAbi>(
+            nameof(WzEditorAssetGraphPortAbi.Name),
+            16);
+        AssertOffset<WzEditorAssetGraphPortAbi>(
+            nameof(WzEditorAssetGraphPortAbi.Label),
+            32);
+        AssertOffset<WzEditorAssetGraphPortAbi>(
+            nameof(WzEditorAssetGraphPortAbi.TypeName),
+            48);
 
         AssertSize<WzEditorAssetGraphNodeAbi>(128);
         AssertOffset<WzEditorAssetGraphNodeAbi>(
@@ -966,16 +1456,42 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorAssetGraphNodeAbi.OutputPorts),
             112);
 
-        AssertSize<WzEditorAssetGraphEdgeAbi>(24);
+        AssertSize<WzEditorAssetGraphEdgeAbi>(32);
         AssertOffset<WzEditorAssetGraphEdgeAbi>(
-            nameof(WzEditorAssetGraphEdgeAbi.From),
+            nameof(WzEditorAssetGraphEdgeAbi.Id),
             0);
         AssertOffset<WzEditorAssetGraphEdgeAbi>(
-            nameof(WzEditorAssetGraphEdgeAbi.To),
+            nameof(WzEditorAssetGraphEdgeAbi.From),
             8);
         AssertOffset<WzEditorAssetGraphEdgeAbi>(
-            nameof(WzEditorAssetGraphEdgeAbi.ToInputPort),
+            nameof(WzEditorAssetGraphEdgeAbi.To),
             16);
+        AssertOffset<WzEditorAssetGraphEdgeAbi>(
+            nameof(WzEditorAssetGraphEdgeAbi.ToInputPort),
+            24);
+
+        AssertSize<WzEditorAssetGraphConnectionCheckAbi>(96);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.AbiVersion),
+            0);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.From),
+            16);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.ToInputPort),
+            32);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.FromType),
+            40);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.Message),
+            48);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.FromTypeName),
+            64);
+        AssertOffset<WzEditorAssetGraphConnectionCheckAbi>(
+            nameof(WzEditorAssetGraphConnectionCheckAbi.ToTypeName),
+            80);
 
         AssertSize<WzEditorAssetGraphSnapshotAbi>(80);
         AssertOffset<WzEditorAssetGraphSnapshotAbi>(
@@ -1233,17 +1749,40 @@ internal readonly struct WzEditorAssetGraphNodeAbi
 internal readonly struct WzEditorAssetGraphPortAbi
 {
     public readonly uint Index;
+    public readonly uint Type;
+    public readonly uint Flags;
     public readonly uint Reserved;
+    public readonly WzEditorStringSpanAbi Name;
     public readonly WzEditorStringSpanAbi Label;
+    public readonly WzEditorStringSpanAbi TypeName;
 }
 
 [StructLayout(LayoutKind.Sequential)]
 internal readonly struct WzEditorAssetGraphEdgeAbi
 {
+    public readonly ulong Id;
     public readonly ulong From;
     public readonly ulong To;
     public readonly uint ToInputPort;
     public readonly uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetGraphConnectionCheckAbi
+{
+    public readonly uint AbiVersion;
+    public readonly uint Compatible;
+    public readonly uint Status;
+    public readonly uint ReplacesExisting;
+    public readonly ulong From;
+    public readonly ulong To;
+    public readonly uint ToInputPort;
+    public readonly uint Reserved;
+    public readonly uint FromType;
+    public readonly uint ToType;
+    public readonly WzEditorStringSpanAbi Message;
+    public readonly WzEditorStringSpanAbi FromTypeName;
+    public readonly WzEditorStringSpanAbi ToTypeName;
 }
 
 [StructLayout(LayoutKind.Sequential)]

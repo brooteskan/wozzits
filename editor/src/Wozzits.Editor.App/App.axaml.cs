@@ -87,16 +87,14 @@ public partial class App : Application
 
         if (projectSnapshot.IsValid)
         {
-            return new MainWindow
-            {
-                DataContext = new MainWindowViewModel(
+            return new MainWindow(
+                new MainWindowViewModel(
                     projectSnapshot,
                     new WozzitsEditorHostSession(
                         editorHost.HostExecutablePath,
                         projectDirectory.FullPath),
                     engine.OpenEditorSession(projectDirectory.FullPath),
-                    dispatch: action => Dispatcher.UIThread.Post(action)),
-            };
+                    dispatch: action => Dispatcher.UIThread.Post(action)));
         }
 
         var project = new EngineProjectResponse

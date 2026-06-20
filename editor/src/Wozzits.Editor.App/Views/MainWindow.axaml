@@ -31,8 +31,6 @@
                           Layout="{Binding EditorLayout}"
                           Factory="{Binding DockFactory}"
                           DefaultContext="{Binding}"
-                          InitializeFactory="True"
-                          InitializeLayout="True"
                           IsDockingEnabled="True"
                           EnableManagedWindowLayer="True"
                           AutoCreateDataTemplates="True"

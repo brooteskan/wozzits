@@ -22,6 +22,8 @@ public partial class AssetGraphEditorPaneView : UserControl
     private Avalonia.Point _boxSelectStartGraphPosition;
     private Avalonia.Point _boxSelectCurrentGraphPosition;
     private bool _hasPendingZoomPersist;
+    private AssetGraphNodeCardViewModel? _connectionFromNode;
+    private AssetGraphPortViewModel? _connectionFromPort;
 
     public AssetGraphEditorPaneView()
     {
@@ -85,7 +87,7 @@ public partial class AssetGraphEditorPaneView : UserControl
 
         _dragNode = node;
         _dragControl = control;
-        _lastPointerPosition = point.Position;
+        _lastPointerPosition = ToGraphPosition(e);
         e.Pointer.Capture(control);
         e.Handled = true;
     }
@@ -106,8 +108,8 @@ public partial class AssetGraphEditorPaneView : UserControl
             return;
         }
 
-        var current = point.Position;
-        graph.MoveSelectedNodesByScreenDelta(
+        var current = ToGraphPosition(e);
+        graph.MoveSelectedNodesByGraphDelta(
             _dragNode,
             current.X - _lastPointerPosition.X,
             current.Y - _lastPointerPosition.Y);
@@ -129,11 +131,52 @@ public partial class AssetGraphEditorPaneView : UserControl
         e.Handled = true;
     }
 
+    private void OutputPortPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        BeginConnectionDragFromEvent(e);
+    }
+
+    private void InputPortPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_connectionFromNode is null
+            || _connectionFromPort is null
+            || sender is not Control { DataContext: AssetGraphPortViewModel port }
+            || !port.IsInput
+            || DataContext is not AssetGraphEditorPaneViewModel graph)
+        {
+            return;
+        }
+
+        graph.ConnectToInputPort(_connectionFromNode, port);
+        _connectionFromNode = null;
+        _connectionFromPort = null;
+        e.Handled = true;
+    }
+
     private void GraphPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         var point = e.GetCurrentPoint(this);
+        if (point.Properties.IsLeftButtonPressed
+            && BeginConnectionDragFromEvent(e))
+        {
+            return;
+        }
+
         if (point.Properties.IsRightButtonPressed)
         {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)
+                && DataContext is AssetGraphEditorPaneViewModel graphView)
+            {
+                var tolerance = Math.Max(6.0, 8.0 / graphView.Zoom);
+                var edge = WireLayer.HitTestEdge(ToGraphPosition(e), tolerance);
+                if (edge is not null)
+                {
+                    graphView.DisconnectEdge(edge);
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             _isPanning = true;
             _panStartPointerPosition = point.Position;
             _panStartOffset = AssetGraphScrollViewer.Offset;
@@ -159,6 +202,18 @@ public partial class AssetGraphEditorPaneView : UserControl
 
     private void GraphPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_connectionFromNode is not null
+            && DataContext is AssetGraphEditorPaneViewModel graph)
+        {
+            var graphPosition = ToGraphPosition(e);
+            graph.UpdateConnectionPreviewEnd(graphPosition.X, graphPosition.Y);
+            graph.PreviewConnectionTarget(
+                _connectionFromNode,
+                graph.FindInputPortAt(graphPosition.X, graphPosition.Y));
+            e.Handled = true;
+            return;
+        }
+
         if (!_isPanning || e.Pointer.Captured != this)
         {
             UpdateBoxSelectionDrag(e);
@@ -190,6 +245,25 @@ public partial class AssetGraphEditorPaneView : UserControl
 
     private void GraphPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_connectionFromNode is not null)
+        {
+            var graphPosition = ToGraphPosition(e);
+            if (DataContext is AssetGraphEditorPaneViewModel graph
+                && graph.FindInputPortAt(graphPosition.X, graphPosition.Y) is { } inputPort)
+            {
+                graph.ConnectToInputPort(_connectionFromNode, inputPort);
+                _connectionFromNode = null;
+                _connectionFromPort = null;
+                e.Handled = true;
+                return;
+            }
+
+            CancelConnectionDrag();
+            e.Handled = true;
+
+            return;
+        }
+
         if (_isPanning)
         {
             FinishPanning(e.Pointer);
@@ -249,6 +323,35 @@ public partial class AssetGraphEditorPaneView : UserControl
         _isBoxSelecting = false;
         SelectionRectangle.IsVisible = false;
         e.Pointer.Capture(null);
+    }
+
+    private bool BeginConnectionDragFromEvent(PointerEventArgs e)
+    {
+        var graphPosition = ToGraphPosition(e);
+        if (_connectionFromNode is not null
+            || DataContext is not AssetGraphEditorPaneViewModel graph
+            || graph.FindOutputPortAt(graphPosition.X, graphPosition.Y) is not { } port)
+        {
+            return false;
+        }
+
+        _connectionFromNode = port.Owner;
+        _connectionFromPort = port;
+        graph.BeginConnectionPreview(port.Owner, port);
+        graph.UpdateConnectionPreviewEnd(graphPosition.X, graphPosition.Y);
+        e.Handled = true;
+        return true;
+    }
+
+    private void CancelConnectionDrag()
+    {
+        if (DataContext is AssetGraphEditorPaneViewModel graph)
+        {
+            graph.CancelConnectionPreview();
+        }
+
+        _connectionFromNode = null;
+        _connectionFromPort = null;
     }
 
     private void UpdateSelectionRectangle()
