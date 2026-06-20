@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.SceneTreeEditorPaneView"
+             x:DataType="panes:SceneTreeEditorPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                <TextBlock Text="{Binding EmptyState}"
+                           Classes="PaneEmptyState"
+                           IsVisible="{Binding HasNoScene}"/>
+
+                <TreeView Grid.Row="1"
+                          ItemsSource="{Binding Nodes}"
+                          IsVisible="{Binding HasScene}"
+                          SelectionChanged="SceneTreeSelectionChanged"
+                          Classes="SceneTreeView">
+                    <TreeView.DataTemplates>
+                        <TreeDataTemplate DataType="panes:SceneTreeNodeViewModel"
+                                          ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding KindLabel}"
+                                           Classes="SceneTreeNodeKind"/>
+                                <TextBlock Text="{Binding DisplayName}"
+                                           Classes="SceneTreeNodeName"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.DataTemplates>
+                </TreeView>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

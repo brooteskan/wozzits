@@ -5,21 +5,25 @@ namespace Wozzits.Editor.HostClient;
 public sealed class WozzitsEditorHostSession : IDisposable
 {
     private readonly string _hostExecutablePath;
+    private readonly string? _projectDirectory;
     private Process? _process;
     private bool _disposed;
 
-    public WozzitsEditorHostSession(string? hostExecutablePath = null)
+    public WozzitsEditorHostSession(
+        string? hostExecutablePath = null,
+        string? projectDirectory = null)
     {
         _hostExecutablePath = string.IsNullOrWhiteSpace(hostExecutablePath)
             ? WozzitsEditorHostClient.ResolveDefaultHostExecutablePath()
             : hostExecutablePath;
+        _projectDirectory = projectDirectory;
     }
 
     public event Action<string>? LogReceived;
 
     public bool IsRunning => _process is { HasExited: false };
 
-    public void Start(string projectDirectory)
+    public void Start()
     {
         if (_disposed)
         {
@@ -28,6 +32,12 @@ public sealed class WozzitsEditorHostSession : IDisposable
 
         if (IsRunning)
         {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            LogReceived?.Invoke("[error] Project directory was not supplied to editor host session.");
             return;
         }
 
@@ -48,7 +58,7 @@ public sealed class WozzitsEditorHostSession : IDisposable
             CreateNoWindow = true,
         };
         startInfo.ArgumentList.Add("serve");
-        startInfo.ArgumentList.Add(projectDirectory);
+        startInfo.ArgumentList.Add(_projectDirectory);
 
         try
         {

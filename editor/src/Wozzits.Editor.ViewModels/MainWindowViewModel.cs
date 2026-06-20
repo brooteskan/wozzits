@@ -1,73 +1,63 @@
-using System.IO;
 using System.Threading;
-using Wozzits.Editor.Core.Projects;
+using CommunityToolkit.Mvvm.Input;
+using Dock.Model.Controls;
+using Dock.Model.Core;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
+using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.ViewModels;
 
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
-    private const int MaxEngineLogLines = 500;
-
-    private readonly List<string> _engineLogLines = [];
     private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
     private readonly WozzitsEditorHostSession? _editorHostSession;
+    private readonly Action<Action>? _dispatch;
     private bool _shutdown;
 
     public MainWindowViewModel()
-        : this(ProjectLaunchOptions.FromCommandLine([]))
+        : this(projectSnapshot: null)
     {
-    }
-
-    public MainWindowViewModel(ProjectLaunchOptions launchOptions)
-    {
-        ArgumentNullException.ThrowIfNull(launchOptions);
-
-        if (launchOptions.ProjectDirectory is null)
-        {
-            ProjectStatus = "No project directory supplied.";
-            ProjectDirectory = "Run Wozzits Editor with a project directory path.";
-            return;
-        }
-
-        var projectDirectory = new ProjectDirectory(launchOptions.ProjectDirectory);
-        ProjectDirectory = projectDirectory.FullPath;
-        ProjectStatus = Directory.Exists(projectDirectory.FullPath)
-            ? "Project directory opened."
-            : "Project directory does not exist.";
     }
 
     public MainWindowViewModel(
-        ProjectDirectory projectDirectory,
-        EngineProjectManifest? project = null,
-        WozzitsEditorHostSession? editorHostSession = null)
+        EngineProjectSnapshotResponse? projectSnapshot = null,
+        WozzitsEditorHostSession? editorHostSession = null,
+        IWozzitsEngineEditorSession? editorSession = null,
+        Action<Action>? dispatch = null)
     {
-        ArgumentNullException.ThrowIfNull(projectDirectory);
+        _dispatch = dispatch;
+        SaveAllCommand = new RelayCommand(SaveAll);
+        AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
+        Inspector = new InspectorPaneViewModel(editorSession);
+        InitializeDockLayout();
 
-        ProjectDirectory = projectDirectory.FullPath;
-        ProjectStatus = "Project opened.";
-        Project = project;
+        ProjectName = projectSnapshot?.ProjectName ?? string.Empty;
+        WindowTitle = string.IsNullOrWhiteSpace(ProjectName)
+            ? "Wozzits"
+            : ProjectName;
+        AssetGraph.LoadSnapshot(projectSnapshot?.AssetGraph);
+        SceneTree.LoadSnapshot(projectSnapshot?.Scene);
 
         _editorHostSession = editorHostSession;
         if (_editorHostSession is not null)
         {
             _editorHostSession.LogReceived += AppendEngineLog;
-            _editorHostSession.Start(projectDirectory.FullPath);
+            _editorHostSession.Start();
         }
     }
 
-    public string Title { get; } = "Wozzits Editor";
+    public string WindowTitle { get; } = "Wozzits";
+    public string ProjectName { get; } = string.Empty;
+    public AssetGraphEditorPaneViewModel AssetGraph { get; }
+    public SceneTreeEditorPaneViewModel SceneTree { get; } = new();
+    public InspectorPaneViewModel Inspector { get; }
+    public ConsolePaneViewModel Console { get; private set; } = null!;
+    public IFactory DockFactory { get; private set; } = null!;
+    public IRootDock EditorLayout { get; private set; } = null!;
+    public IRelayCommand SaveAllCommand { get; }
 
-    public string ProjectStatus { get; }
-
-    public string ProjectDirectory { get; }
-    public EngineProjectManifest? Project { get; }
-
-    public string EngineLogText =>
-        _engineLogLines.Count == 0
-            ? "Editor host has not started."
-            : string.Join(Environment.NewLine, _engineLogLines);
+    public string EngineLogText => Console.LogText;
 
     public void Shutdown()
     {
@@ -87,6 +77,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_dispatch is not null)
+        {
+            _dispatch(() => AddEngineLogLine(line));
+            return;
+        }
+
         if (_syncContext is null || SynchronizationContext.Current == _syncContext)
         {
             AddEngineLogLine(line);
@@ -98,12 +94,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private void AddEngineLogLine(string line)
     {
-        _engineLogLines.Add(line);
-        while (_engineLogLines.Count > MaxEngineLogLines)
-        {
-            _engineLogLines.RemoveAt(0);
-        }
-
+        Console.AppendLogLine(line);
         OnPropertyChanged(nameof(EngineLogText));
     }
+
+    private static void SaveAll()
+    {
+    }
+
+    private void InitializeDockLayout()
+    {
+        Console = new ConsolePaneViewModel();
+        SceneTree.SelectedNodeChanged += Inspector.Inspect;
+        AssetGraph.SelectedNodeChanged += Inspector.Inspect;
+
+        var layoutFactory = new EditorDockLayoutFactory(this);
+        DockFactory = layoutFactory.Factory;
+        EditorLayout = layoutFactory.CreateLayout();
+    }
+
 }

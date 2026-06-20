@@ -3,9 +3,11 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Wozzits.Editor.Core.Projects;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.App.Views;
+using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
 
 namespace Wozzits.Editor.App;
@@ -30,6 +32,7 @@ public partial class App : Application
     private static Window CreateStartupWindow(IClassicDesktopStyleApplicationLifetime desktop)
     {
         var editorHost = new WozzitsEditorHostClient();
+        var engine = new WozzitsEngineNativeClient();
         var launchOptions = ProjectLaunchOptions.FromCommandLine(desktop.Args ?? []);
 
         if (launchOptions.ProjectDirectory is null)
@@ -38,7 +41,7 @@ public partial class App : Application
         }
 
         var projectDirectory = new ProjectDirectory(launchOptions.ProjectDirectory);
-        return CreateProjectWindow(desktop, projectDirectory, editorHost);
+        return CreateProjectWindow(desktop, projectDirectory, editorHost, engine);
     }
 
     private static Window CreateProjectDirectoryPickerWindow(IClassicDesktopStyleApplicationLifetime desktop)
@@ -63,7 +66,8 @@ public partial class App : Application
 
             var projectDirectory = new ProjectDirectory(selectedPath);
             var editorHost = new WozzitsEditorHostClient();
-            var projectWindow = CreateProjectWindow(desktop, projectDirectory, editorHost);
+            var engine = new WozzitsEngineNativeClient();
+            var projectWindow = CreateProjectWindow(desktop, projectDirectory, editorHost, engine);
 
             desktop.MainWindow = projectWindow;
             projectWindow.Show();
@@ -76,33 +80,43 @@ public partial class App : Application
     private static Window CreateProjectWindow(
         IClassicDesktopStyleApplicationLifetime desktop,
         ProjectDirectory projectDirectory,
-        WozzitsEditorHostClient editorHost)
+        WozzitsEditorHostClient editorHost,
+        WozzitsEngineNativeClient engine)
     {
-        var project = editorHost.ProbeProject(projectDirectory.FullPath);
+        var projectSnapshot = engine.LoadProjectSnapshot(projectDirectory.FullPath);
 
-        if (project.IsValid)
+        if (projectSnapshot.IsValid)
         {
             return new MainWindow
             {
                 DataContext = new MainWindowViewModel(
-                    projectDirectory,
-                    project.Project,
+                    projectSnapshot,
                     new WozzitsEditorHostSession(
-                        editorHost.HostExecutablePath)),
+                        editorHost.HostExecutablePath,
+                        projectDirectory.FullPath),
+                    engine.OpenEditorSession(projectDirectory.FullPath),
+                    dispatch: action => Dispatcher.UIThread.Post(action)),
             };
         }
 
+        var project = new EngineProjectResponse
+        {
+            Ok = projectSnapshot.Ok,
+            Status = projectSnapshot.Status,
+            Error = projectSnapshot.Error,
+        };
         var bootstrapWindow = new ProjectBootstrapWindow();
         bootstrapWindow.DataContext = new ProjectBootstrapViewModel(
             projectDirectory,
-            editorHost,
+            engine,
             project,
             openProject: openedDirectory =>
             {
                 var projectWindow = CreateProjectWindow(
                     desktop,
                     openedDirectory,
-                    editorHost);
+                    editorHost,
+                    engine);
 
                 desktop.MainWindow = projectWindow;
                 projectWindow.Show();

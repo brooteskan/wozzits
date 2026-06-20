@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.ConsolePaneView"
+             x:DataType="panes:ConsolePaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="ConsoleSurface">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+                <SelectableTextBlock Text="{Binding LogText, Mode=OneWay}"
+                                     Classes="ConsoleLogText"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     TextWrapping="NoWrap"/>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

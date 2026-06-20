@@ -2,14 +2,68 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Wozzits.Editor.App.App"
              xmlns:local="using:Wozzits.Editor.App"
-             RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             xmlns:dockFluent="using:Dock.Avalonia.Themes.Fluent"
+             xmlns:dockMvvm="using:Dock.Model.Mvvm.Controls"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             xmlns:paneViews="using:Wozzits.Editor.App.Views.EditorPanes"
+             RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
+        <DataTemplate DataType="dockMvvm:Document">
+            <ContentControl Content="{Binding Context}"/>
+        </DataTemplate>
+        <DataTemplate DataType="dockMvvm:Tool">
+            <ContentControl Content="{Binding Context}"/>
+        </DataTemplate>
+        <DataTemplate DataType="panes:AssetGraphEditorPaneViewModel">
+            <paneViews:AssetGraphEditorPaneView/>
+        </DataTemplate>
+        <DataTemplate DataType="panes:SceneTreeEditorPaneViewModel">
+            <paneViews:SceneTreeEditorPaneView/>
+        </DataTemplate>
+        <DataTemplate DataType="panes:InspectorPaneViewModel">
+            <paneViews:InspectorPaneView/>
+        </DataTemplate>
+        <DataTemplate DataType="panes:ConsolePaneViewModel">
+            <paneViews:ConsolePaneView/>
+        </DataTemplate>
         <local:ViewLocator/>
     </Application.DataTemplates>
   
     <Application.Styles>
-        <FluentTheme />
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark"
+                                       Accent="#2AA198"
+                                       AltHigh="#FDF6E3"
+                                       AltLow="#FDF6E3"
+                                       AltMedium="#EEE8D5"
+                                       AltMediumHigh="#EEE8D5"
+                                       AltMediumLow="#93A1A1"
+                                       BaseHigh="#EEE8D5"
+                                       BaseLow="#073642"
+                                       BaseMedium="#839496"
+                                       BaseMediumHigh="#93A1A1"
+                                       BaseMediumLow="#586E75"
+                                       ChromeAltLow="#073642"
+                                       ChromeBlackHigh="#002B36"
+                                       ChromeBlackLow="#002B36"
+                                       ChromeBlackMedium="#002B36"
+                                       ChromeBlackMediumLow="#002B36"
+                                       ChromeDisabledHigh="#586E75"
+                                       ChromeDisabledLow="#073642"
+                                       ChromeGray="#586E75"
+                                       ChromeHigh="#073642"
+                                       ChromeLow="#002B36"
+                                       ChromeMedium="#073642"
+                                       ChromeMediumLow="#002B36"
+                                       ChromeWhite="#FDF6E3"
+                                       ListLow="#073642"
+                                       ListMedium="#0B4655"
+                                       RegionColor="#002B36"/>
+            </FluentTheme.Palettes>
+        </FluentTheme>
+        <dockFluent:DockFluentTheme />
+        <StyleInclude Source="avares://Wozzits.Editor.App/Styles/ZoneIv.axaml"/>
     </Application.Styles>
 </Application>

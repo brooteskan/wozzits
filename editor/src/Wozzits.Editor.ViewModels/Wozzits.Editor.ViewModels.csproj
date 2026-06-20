@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
   </ItemGroup>
 
   <PropertyGroup>

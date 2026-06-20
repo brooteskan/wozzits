@@ -1,0 +1,184 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wozzits.Editor.App.Controls"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.AssetGraphEditorPaneView"
+             x:DataType="panes:AssetGraphEditorPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid>
+                <TextBlock Text="{Binding EmptyState}"
+                           Classes="PaneEmptyState"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding HasNoGraph}"/>
+
+                <Grid IsVisible="{Binding HasGraph}"
+                      RowDefinitions="Auto,Auto,*"
+                      RowSpacing="8">
+                    <Border Classes="AssetGraphStatusBar">
+                        <Grid ColumnDefinitions="Auto,*,Auto"
+                              ColumnSpacing="8">
+                            <Ellipse Classes="AssetGraphModeDot"
+                                     Classes.actual="{Binding IsActualGraph}"
+                                     Classes.draft="{Binding IsDraftGraph}"
+                                     ToolTip.Tip="{Binding GraphModeStatus}"/>
+
+                            <StackPanel Grid.Column="2"
+                                        Orientation="Horizontal"
+                                        Spacing="4">
+                                <Button Command="{Binding CommitGraphCommand}"
+                                        Classes="AssetGraphToolbarButton"
+                                        Classes.success="{Binding HasCommitSucceeded}"
+                                        Classes.failed="{Binding HasCommitFailed}"
+                                        ToolTip.Tip="Commit graph draft">
+                                    <PathIcon Width="13"
+                                              Height="13"
+                                              Data="M2,7 L5.5,10.5 L11,3"/>
+                                </Button>
+                                <Button Command="{Binding CompileGraphCommand}"
+                                        Classes="AssetGraphToolbarButton"
+                                        Classes.success="{Binding HasCompileSucceeded}"
+                                        Classes.failed="{Binding HasCompileFailed}"
+                                        ToolTip.Tip="Compile graph">
+                                    <PathIcon Width="13"
+                                              Height="13"
+                                              Data="M3,2 L11,7 L3,12 Z"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Grid.Row="1"
+                               Text="{Binding LastEditError}"
+                               Classes="InspectorError"
+                               IsVisible="{Binding HasLastEditError}"/>
+
+                    <ScrollViewer x:Name="AssetGraphScrollViewer"
+                                  Grid.Row="2"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto">
+                        <Grid Width="{Binding ScaledGraphWidth}"
+                              Height="{Binding ScaledGraphHeight}">
+                            <Grid x:Name="AssetGraphCanvas"
+                                  Width="{Binding GraphWidth}"
+                                  Height="{Binding GraphHeight}"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top"
+                                  RenderTransformOrigin="0,0">
+                                <Grid.RenderTransform>
+                                    <ScaleTransform ScaleX="{Binding Zoom}"
+                                                    ScaleY="{Binding Zoom}"/>
+                                </Grid.RenderTransform>
+
+                                <controls:AssetGraphWireLayer Edges="{Binding Edges}"
+                                                              Stroke="{DynamicResource WozzitsGraphWireBrush}"
+                                                              StrokeThickness="2"
+                                                              IsHitTestVisible="False"/>
+
+                                <ItemsControl ItemsSource="{Binding Nodes}"
+                                              x:CompileBindings="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.Styles>
+                                        <Style Selector="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                            <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                        </Style>
+                                    </ItemsControl.Styles>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:AssetGraphNodeCardViewModel">
+                                            <Border Classes="AssetGraphCard"
+                                                    Classes.selected="{Binding IsSelected}"
+                                                    PointerPressed="NodeCardPointerPressed"
+                                                    PointerMoved="NodeCardPointerMoved"
+                                                    PointerReleased="NodeCardPointerReleased">
+                                                <Grid RowDefinitions="Auto,Auto,Auto,*"
+                                                      RowSpacing="6">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto"
+                                                          ColumnSpacing="7">
+                                                        <Ellipse Classes="AssetGraphCompileDot"/>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding DisplayName}"
+                                                                   Classes="AssetGraphCardName"/>
+                                                        <TextBlock Grid.Column="2"
+                                                                   Text="{Binding Id}"
+                                                                   Classes="AssetGraphCardId"/>
+                                                    </Grid>
+
+                                                    <Grid Grid.Row="1"
+                                                          ColumnDefinitions="*,Auto"
+                                                          ColumnSpacing="8">
+                                                        <TextBlock Text="{Binding TypeName}"
+                                                                   Classes="AssetGraphCardType"/>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding CompileStatus}"
+                                                                   Classes="AssetGraphCompileStatus"/>
+                                                    </Grid>
+
+                                                    <TextBlock Grid.Row="2"
+                                                               Text="{Binding SchemaDisplay}"
+                                                               Classes="AssetGraphCardSchema"/>
+
+                                                    <Grid Grid.Row="3"
+                                                          ColumnDefinitions="*,*"
+                                                          ColumnSpacing="10">
+                                                        <StackPanel Spacing="3">
+                                                            <ItemsControl ItemsSource="{Binding InputPorts}"
+                                                                          IsVisible="{Binding HasInputPorts}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate DataType="panes:AssetGraphPortViewModel">
+                                                                        <StackPanel Orientation="Horizontal"
+                                                                                    Spacing="5"
+                                                                                    Classes="AssetGraphPortRow">
+                                                                            <Ellipse Classes="AssetGraphInputPortDot"/>
+                                                                            <TextBlock Text="{Binding Label}"
+                                                                                       Classes="AssetGraphPortLabel"/>
+                                                                        </StackPanel>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+
+                                                        <StackPanel Grid.Column="1"
+                                                                    Spacing="3"
+                                                                    HorizontalAlignment="Stretch">
+                                                            <ItemsControl ItemsSource="{Binding OutputPorts}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate DataType="panes:AssetGraphPortViewModel">
+                                                                        <StackPanel Orientation="Horizontal"
+                                                                                    Spacing="5"
+                                                                                    HorizontalAlignment="Right"
+                                                                                    Classes="AssetGraphPortRow">
+                                                                            <TextBlock Text="{Binding Label}"
+                                                                                       Classes="AssetGraphPortLabel"/>
+                                                                            <Ellipse Classes="AssetGraphOutputPortDot"/>
+                                                                        </StackPanel>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Border x:Name="SelectionRectangle"
+                                        Classes="AssetGraphSelectionRectangle"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Top"
+                                        IsVisible="False"
+                                        IsHitTestVisible="False"/>
+                            </Grid>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
