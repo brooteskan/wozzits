@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace wz::engine::editor
 {
@@ -122,6 +123,15 @@ namespace wz::engine::editor
             double y);
 
         [[nodiscard]] bool set_zoom(double zoom);
+
+        // Set one node param from display text, converting to the param's
+        // declared ParamType (bool/int/float/float3/color/string/filepath/enum;
+        // enum accepts an option name or an index). Returns false if the node is
+        // missing. Invalidates the node key and marks the draft dirty.
+        [[nodiscard]] bool set_node_param(
+            wz::asset::AssetGraphDraftNodeId node_id,
+            std::string_view name,
+            std::string_view value);
 
         // The in-memory graph document root (carries the "layout" object).
         [[nodiscard]] const wz::json::JSONValue* document_root() const noexcept

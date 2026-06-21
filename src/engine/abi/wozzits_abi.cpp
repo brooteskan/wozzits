@@ -769,13 +769,12 @@ extern "C"
         }
 
         try {
-            wz::asset::ParamBlock params;
-            params.values[std::string(name_utf8)] =
-                std::string(value_utf8 ? value_utf8 : "");
-            return wz::asset::set_asset_graph_draft_node_params(
-                       session->editor->draft(),
+            // The editor passes the value as display text; the session converts
+            // it to the param's declared ParamType (int/float/bool/enum/...).
+            return session->editor->set_node_param(
                        static_cast<wz::asset::AssetGraphDraftNodeId>(node_id),
-                       std::move(params))
+                       name_utf8,
+                       value_utf8 ? value_utf8 : "")
                 ? result(WZ_RESULT_OK, "")
                 : result(
                     WZ_RESULT_INVALID_ARGUMENT,

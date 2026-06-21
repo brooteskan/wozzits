@@ -10,8 +10,12 @@
 #include <external/json/json_parser.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -380,6 +384,111 @@ namespace wz::engine::editor
 
         apply_asset_graph_layout_node(*document_.root, node_id, x, y);
         return true;
+    }
+
+    namespace
+    {
+        std::array<float, 3> parse_float3(std::string_view text)
+        {
+            std::array<float, 3> out{ 0.0f, 0.0f, 0.0f };
+            size_t index = 0;
+            size_t pos = 0;
+            while (index < 3u && pos < text.size()) {
+                while (pos < text.size()
+                    && (text[pos] == ',' || text[pos] == ' '
+                        || text[pos] == '\t')) {
+                    ++pos;
+                }
+                if (pos >= text.size()) {
+                    break;
+                }
+                size_t end = pos;
+                while (end < text.size() && text[end] != ','
+                    && text[end] != ' ' && text[end] != '\t') {
+                    ++end;
+                }
+                out[index] = static_cast<float>(
+                    std::strtod(std::string(text.substr(pos, end - pos)).c_str(),
+                        nullptr));
+                ++index;
+                pos = end;
+            }
+            return out;
+        }
+
+        wz::asset::ParamValue convert_param_value(
+            wz::asset::ParamType type,
+            std::string_view value,
+            const wz::asset::ParamDecl* decl)
+        {
+            const std::string text(value);
+            switch (type) {
+            case wz::asset::ParamType::Bool:
+                return text == "true" || text == "1" || text == "True";
+            case wz::asset::ParamType::Int:
+                return static_cast<int64_t>(std::strtoll(
+                    text.c_str(), nullptr, 10));
+            case wz::asset::ParamType::Float:
+                return std::strtod(text.c_str(), nullptr);
+            case wz::asset::ParamType::Float3:
+            case wz::asset::ParamType::Color:
+                return parse_float3(value);
+            case wz::asset::ParamType::String:
+            case wz::asset::ParamType::FilePath:
+                return text;
+            case wz::asset::ParamType::Enum:
+                if (decl != nullptr) {
+                    for (size_t i = 0; i < decl->options.size(); ++i) {
+                        if (decl->options[i] == value) {
+                            return static_cast<int64_t>(i);
+                        }
+                    }
+                }
+                return static_cast<int64_t>(std::strtoll(
+                    text.c_str(), nullptr, 10));
+            }
+            return text;
+        }
+    }
+
+    bool AssetGraphEditorSession::set_node_param(
+        wz::asset::AssetGraphDraftNodeId node_id,
+        std::string_view name,
+        std::string_view value)
+    {
+        if (name.empty()) {
+            return false;
+        }
+        const wz::asset::AssetGraphDraftNode* node =
+            wz::asset::find_asset_graph_draft_node(draft_, node_id);
+        if (!node
+            || node->state == wz::asset::AssetGraphDraftNodeState::Deleted) {
+            return false;
+        }
+
+        wz::asset::ParamType type = wz::asset::ParamType::String;
+        const wz::asset::ParamDecl* decl = nullptr;
+        if (registry_ != nullptr) {
+            if (const wz::asset::AssetCompiler* compiler =
+                    registry_->find(node->node.schema, node->node.type)) {
+                for (const wz::asset::ParamDecl& candidate :
+                     compiler->parameters) {
+                    if (candidate.name == name) {
+                        decl = &candidate;
+                        type = candidate.type;
+                        break;
+                    }
+                }
+            }
+        }
+
+        wz::asset::ParamBlock params;
+        params.values[std::string(name)] =
+            convert_param_value(type, value, decl);
+        return wz::asset::set_asset_graph_draft_node_params(
+            draft_,
+            node_id,
+            std::move(params));
     }
 
     bool AssetGraphEditorSession::set_zoom(double zoom)
