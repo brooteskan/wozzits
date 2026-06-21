@@ -44,6 +44,8 @@ namespace wz::engine::editor
             wz::asset::AssetGraphDraftValidationSeverity::Info;
         wz::asset::AssetGraphDraftValidationCode code =
             wz::asset::AssetGraphDraftValidationCode::None;
+        std::string severity_name;
+        std::string code_name;
         wz::asset::AssetGraphDraftNodeId node =
             wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
         wz::asset::AssetGraphDraftEdgeId edge =

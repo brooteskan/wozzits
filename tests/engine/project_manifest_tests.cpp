@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <asset/draft.h>
 #include <engine/abi/wozzits_abi.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_snapshot.h>
@@ -14,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -642,6 +644,70 @@ TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
         wz::engine::editor::load_project_asset_graph_snapshot(desc);
     ASSERT_TRUE(zoom_reloaded.ok) << zoom_reloaded.error;
     EXPECT_DOUBLE_EQ(zoom_reloaded.snapshot.zoom, 1.75);
+}
+
+TEST(AssetGraphSnapshot, PacksDiagnosticDisplayNamesForEditorAbi)
+{
+    wz::engine::editor::AssetGraphSnapshot snapshot{};
+    snapshot.schema = "test";
+
+    wz::engine::editor::AssetGraphSnapshotDiagnostic diagnostic{};
+    diagnostic.severity = wz::asset::AssetGraphDraftValidationSeverity::Error;
+    diagnostic.code = wz::asset::AssetGraphDraftValidationCode::TypeMismatch;
+    diagnostic.severity_name =
+        std::string(wz::asset::asset_graph_draft_validation_severity_name(
+            diagnostic.severity));
+    diagnostic.code_name =
+        std::string(wz::asset::asset_graph_draft_validation_code_name(
+            diagnostic.code));
+    diagnostic.node = 1u;
+    diagnostic.input_port = 0u;
+    diagnostic.message = "shader input expects Shader source";
+
+    wz::engine::editor::AssetGraphSnapshotNode node{};
+    node.id = 1u;
+    node.diagnostics.push_back(std::move(diagnostic));
+    snapshot.nodes.push_back(std::move(node));
+
+    const auto blob = wz::engine::editor::asset_graph_snapshot_abi_blob(snapshot);
+    ASSERT_GE(blob.size(), sizeof(WzEditorAssetGraphSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorAssetGraphSnapshot*>(
+        blob.data());
+    ASSERT_EQ(abi.ok, 1u);
+    ASSERT_EQ(abi.nodes.count, 1u);
+
+    bool found_abi_diagnostic = false;
+    const WzEditorAssetGraphNode* nodes =
+        abi_table<WzEditorAssetGraphNode>(blob, abi.nodes);
+    for (uint64_t node_index = 0; node_index < abi.nodes.count; ++node_index) {
+        const WzEditorAssetGraphNode& node = nodes[node_index];
+        const WzEditorAssetGraphDiagnostic* diagnostics =
+            abi_table<WzEditorAssetGraphDiagnostic>(blob, node.diagnostics);
+        for (uint64_t diagnostic_index = 0;
+             diagnostic_index < node.diagnostics.count;
+             ++diagnostic_index)
+        {
+            const WzEditorAssetGraphDiagnostic& diagnostic =
+                diagnostics[diagnostic_index];
+            if (abi_string(blob, diagnostic.code_name) != "TypeMismatch") {
+                continue;
+            }
+
+            found_abi_diagnostic = true;
+            EXPECT_EQ(
+                diagnostic.severity,
+                static_cast<uint32_t>(
+                    wz::asset::AssetGraphDraftValidationSeverity::Error));
+            EXPECT_EQ(
+                diagnostic.code,
+                static_cast<uint32_t>(
+                    wz::asset::AssetGraphDraftValidationCode::TypeMismatch));
+            EXPECT_EQ(abi_string(blob, diagnostic.severity_name), "error");
+            EXPECT_FALSE(abi_string(blob, diagnostic.message).empty());
+        }
+    }
+    EXPECT_TRUE(found_abi_diagnostic);
 }
 
 TEST(ProjectSnapshot, PacksMissingProjectForBootstrap)

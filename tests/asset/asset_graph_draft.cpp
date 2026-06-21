@@ -218,6 +218,75 @@ namespace
     }
 }
 
+TEST(AssetGraphDraft, ValidationDisplayNamesMatchEditorSnapshotVocabulary)
+{
+    EXPECT_EQ(
+        asset_graph_draft_validation_severity_name(
+            AssetGraphDraftValidationSeverity::Info),
+        "info");
+    EXPECT_EQ(
+        asset_graph_draft_validation_severity_name(
+            AssetGraphDraftValidationSeverity::Warning),
+        "warning");
+    EXPECT_EQ(
+        asset_graph_draft_validation_severity_name(
+            AssetGraphDraftValidationSeverity::Error),
+        "error");
+
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::None),
+        "None");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::UnknownCompiler),
+        "UnknownCompiler");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::MissingRequiredInput),
+        "MissingRequiredInput");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::InvalidInputPort),
+        "InvalidInputPort");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::DuplicateInputPort),
+        "DuplicateInputPort");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::TypeMismatch),
+        "TypeMismatch");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::MissingNode),
+        "MissingNode");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::MissingAssetKey),
+        "MissingAssetKey");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::SelfDependency),
+        "SelfDependency");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::Cycle),
+        "Cycle");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::DuplicateAssetKey),
+        "DuplicateAssetKey");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::TypedMetaConflict),
+        "TypedMetaConflict");
+    EXPECT_EQ(
+        asset_graph_draft_validation_code_name(
+            AssetGraphDraftValidationCode::AmbiguousManyPortBoundary),
+        "AmbiguousManyPortBoundary");
+}
+
 TEST(AssetGraphDraft, InputPortMetadataDefaultsToRequiredSingle)
 {
     const InputPort required{ "src", AssetType::Mesh };

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 18u
+#define WZ_ABI_VERSION 19u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -93,6 +93,8 @@ typedef struct WzEditorAssetGraphDiagnostic
     uint32_t input_port;
     uint32_t reserved;
     WzEditorStringSpan message;
+    WzEditorStringSpan severity_name;
+    WzEditorStringSpan code_name;
 } WzEditorAssetGraphDiagnostic;
 
 typedef struct WzEditorAssetGraphParam
@@ -344,11 +346,14 @@ static_assert(offsetof(WzEditorAssetGraphPort, name) == 16);
 static_assert(offsetof(WzEditorAssetGraphPort, label) == 32);
 static_assert(offsetof(WzEditorAssetGraphPort, type_name) == 48);
 
-static_assert(sizeof(WzEditorAssetGraphDiagnostic) == 48);
+static_assert(sizeof(WzEditorAssetGraphDiagnostic) == 80);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, severity) == 0);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, code) == 4);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, node) == 8);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, input_port) == 24);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, message) == 32);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, severity_name) == 48);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, code_name) == 64);
 
 static_assert(sizeof(WzEditorAssetGraphParam) == 64);
 static_assert(offsetof(WzEditorAssetGraphParam, name) == 0);

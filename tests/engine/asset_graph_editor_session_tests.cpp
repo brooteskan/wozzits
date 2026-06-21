@@ -352,6 +352,21 @@ TEST(AssetGraphEditorSession, SnapshotMarksDiagnosticNodesError)
     ASSERT_NE(material, nullptr);
     EXPECT_EQ(material->compile_status, "error");
     ASSERT_FALSE(material->diagnostics.empty());
+
+    const auto diagnostic = std::ranges::find_if(
+        material->diagnostics,
+        [](const wz::engine::editor::AssetGraphSnapshotDiagnostic& item)
+        {
+            return item.code
+                == wz::asset::AssetGraphDraftValidationCode::TypeMismatch;
+        });
+    ASSERT_NE(diagnostic, material->diagnostics.end());
+    EXPECT_EQ(
+        diagnostic->severity,
+        wz::asset::AssetGraphDraftValidationSeverity::Error);
+    EXPECT_EQ(diagnostic->severity_name, "error");
+    EXPECT_EQ(diagnostic->code_name, "TypeMismatch");
+    EXPECT_FALSE(diagnostic->message.empty());
 }
 
 TEST(AssetGraphEditorSession, ConnectionCheckRejectsTypeMismatchWithoutMutation)

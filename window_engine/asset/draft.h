@@ -67,6 +67,54 @@ namespace wz::asset {
         AmbiguousManyPortBoundary,
     };
 
+    [[nodiscard]] constexpr std::string_view asset_graph_draft_validation_severity_name(
+        AssetGraphDraftValidationSeverity severity) noexcept
+    {
+        switch (severity) {
+        case AssetGraphDraftValidationSeverity::Info:
+            return "info";
+        case AssetGraphDraftValidationSeverity::Warning:
+            return "warning";
+        case AssetGraphDraftValidationSeverity::Error:
+            return "error";
+        }
+        return "unknown";
+    }
+
+    [[nodiscard]] constexpr std::string_view asset_graph_draft_validation_code_name(
+        AssetGraphDraftValidationCode code) noexcept
+    {
+        switch (code) {
+        case AssetGraphDraftValidationCode::None:
+            return "None";
+        case AssetGraphDraftValidationCode::UnknownCompiler:
+            return "UnknownCompiler";
+        case AssetGraphDraftValidationCode::MissingRequiredInput:
+            return "MissingRequiredInput";
+        case AssetGraphDraftValidationCode::InvalidInputPort:
+            return "InvalidInputPort";
+        case AssetGraphDraftValidationCode::DuplicateInputPort:
+            return "DuplicateInputPort";
+        case AssetGraphDraftValidationCode::TypeMismatch:
+            return "TypeMismatch";
+        case AssetGraphDraftValidationCode::MissingNode:
+            return "MissingNode";
+        case AssetGraphDraftValidationCode::MissingAssetKey:
+            return "MissingAssetKey";
+        case AssetGraphDraftValidationCode::SelfDependency:
+            return "SelfDependency";
+        case AssetGraphDraftValidationCode::Cycle:
+            return "Cycle";
+        case AssetGraphDraftValidationCode::DuplicateAssetKey:
+            return "DuplicateAssetKey";
+        case AssetGraphDraftValidationCode::TypedMetaConflict:
+            return "TypedMetaConflict";
+        case AssetGraphDraftValidationCode::AmbiguousManyPortBoundary:
+            return "AmbiguousManyPortBoundary";
+        }
+        return "Unknown";
+    }
+
     struct AssetGraphDraftNode {
         AssetGraphDraftNodeId id = INVALID_ASSET_GRAPH_DRAFT_NODE;
 

@@ -494,6 +494,12 @@ namespace wz::engine::editor
                 result.push_back(AssetGraphSnapshotDiagnostic{
                     .severity = message.severity,
                     .code = message.code,
+                    .severity_name = std::string(
+                        wz::asset::asset_graph_draft_validation_severity_name(
+                            message.severity)),
+                    .code_name = std::string(
+                        wz::asset::asset_graph_draft_validation_code_name(
+                            message.code)),
                     .node = message.node,
                     .edge = message.edge,
                     .input_port = message.input_port,

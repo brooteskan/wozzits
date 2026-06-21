@@ -331,6 +331,10 @@ namespace wz::engine::editor
                         .input_port = diagnostic.input_port,
                         .message = builder.append_string(
                             diagnostic.message),
+                        .severity_name = builder.append_string(
+                            diagnostic.severity_name),
+                        .code_name = builder.append_string(
+                            diagnostic.code_name),
                     });
                 }
 
