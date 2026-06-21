@@ -113,6 +113,22 @@ namespace wz::engine::editor
         [[nodiscard]] bool remove_node(
             wz::asset::AssetGraphDraftNodeId node_id);
 
+        // Update node position / zoom in the session's in-memory layout (read by
+        // snapshot(), persisted by save()). Works for not-yet-saved nodes since
+        // it validates against the live draft, not the on-disk graph.
+        [[nodiscard]] bool set_node_position(
+            wz::asset::AssetGraphDraftNodeId node_id,
+            double x,
+            double y);
+
+        [[nodiscard]] bool set_zoom(double zoom);
+
+        // The in-memory graph document root (carries the "layout" object).
+        [[nodiscard]] const wz::json::JSONValue* document_root() const noexcept
+        {
+            return document_.root.get();
+        }
+
     private:
         wz::engine::project::ProjectManifestLoadDesc desc_;
         wz::json::JSONDocument document_;

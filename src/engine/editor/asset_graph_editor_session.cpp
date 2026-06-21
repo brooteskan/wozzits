@@ -3,6 +3,9 @@
 #include <engine/assets/authoring/asset_graph_authoring.h>
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/editor/asset_graph_layout.h>
+
+#include <cmath>
 
 #include <external/json/json_parser.h>
 
@@ -355,6 +358,42 @@ namespace wz::engine::editor
         wz::asset::AssetGraphDraftNodeId node_id)
     {
         return wz::asset::remove_asset_graph_draft_node(draft_, node_id);
+    }
+
+    bool AssetGraphEditorSession::set_node_position(
+        wz::asset::AssetGraphDraftNodeId node_id,
+        double x,
+        double y)
+    {
+        constexpr double kMaxAbsGraphCoordinate = 100000.0;
+        if (node_id == wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE
+            || !document_.root
+            || !std::isfinite(x) || !std::isfinite(y)
+            || std::fabs(x) > kMaxAbsGraphCoordinate
+            || std::fabs(y) > kMaxAbsGraphCoordinate)
+        {
+            return false;
+        }
+        if (!wz::asset::find_asset_graph_draft_node(draft_, node_id)) {
+            return false;
+        }
+
+        apply_asset_graph_layout_node(*document_.root, node_id, x, y);
+        return true;
+    }
+
+    bool AssetGraphEditorSession::set_zoom(double zoom)
+    {
+        constexpr double kMinGraphZoom = 0.25;
+        constexpr double kMaxGraphZoom = 4.0;
+        if (!document_.root || !std::isfinite(zoom)
+            || zoom < kMinGraphZoom || zoom > kMaxGraphZoom)
+        {
+            return false;
+        }
+
+        apply_asset_graph_layout_zoom(*document_.root, zoom);
+        return true;
     }
 
     bool AssetGraphEditorSession::disconnect_input(

@@ -188,6 +188,37 @@ namespace wz::engine::editor
         }
     }
 
+    void apply_asset_graph_layout_node(
+        wz::json::JSONValue& graph_root,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        double x,
+        double y)
+    {
+        wz::json::JSONValue& layout =
+            ensure_object_member(graph_root, "layout");
+        set_number_member(layout, "version", 2.0);
+        wz::json::JSONValue& nodes =
+            ensure_array_member(layout, "nodes");
+        wz::json::JSONValue* existing_layout_node =
+            find_layout_node(nodes, node_id);
+        wz::json::JSONValue& layout_node = existing_layout_node
+            ? *existing_layout_node
+            : append_layout_node(nodes, node_id);
+
+        set_number_member(layout_node, "x", x);
+        set_number_member(layout_node, "y", y);
+    }
+
+    void apply_asset_graph_layout_zoom(
+        wz::json::JSONValue& graph_root,
+        double zoom)
+    {
+        wz::json::JSONValue& layout =
+            ensure_object_member(graph_root, "layout");
+        set_number_member(layout, "version", 2.0);
+        set_number_member(layout, "zoom", zoom);
+    }
+
     AssetGraphLayoutUpdateResult update_project_asset_graph_node_layout(
         const wz::engine::project::ProjectManifestLoadDesc& desc,
         wz::asset::AssetGraphDraftNodeId node_id,
@@ -243,20 +274,7 @@ namespace wz::engine::editor
             return failure("asset graph node does not exist");
         }
 
-        wz::json::JSONValue& root = *parsed.document.root;
-        wz::json::JSONValue& layout =
-            ensure_object_member(root, "layout");
-        set_number_member(layout, "version", 2.0);
-        wz::json::JSONValue& nodes =
-            ensure_array_member(layout, "nodes");
-        wz::json::JSONValue* existing_layout_node =
-            find_layout_node(nodes, node_id);
-        wz::json::JSONValue& layout_node = existing_layout_node
-            ? *existing_layout_node
-            : append_layout_node(nodes, node_id);
-
-        set_number_member(layout_node, "x", x);
-        set_number_member(layout_node, "y", y);
+        apply_asset_graph_layout_node(*parsed.document.root, node_id, x, y);
 
         if (!write_text_file(
                 graph_path,
@@ -271,7 +289,8 @@ namespace wz::engine::editor
 
     AssetGraphLayoutUpdateResult save_project_asset_graph(
         const wz::engine::project::ProjectManifestLoadDesc& desc,
-        const wz::asset::AssetGraphDraft& draft)
+        const wz::asset::AssetGraphDraft& draft,
+        const wz::json::JSONValue* layout_source)
     {
         const auto loaded = wz::engine::project::load_project_manifest(desc);
         if (!loaded.ok) {
@@ -294,26 +313,52 @@ namespace wz::engine::editor
             return failure("failed to serialize asset graph draft");
         }
 
-        // Preserve the existing file's "layout" object (node positions + zoom),
-        // which the draft does not carry, so saving does not drop it.
-        const std::string existing_text = read_text_file(graph_path);
-        if (!existing_text.empty()) {
-            wz::json::JSONParseResult existing =
-                wz::json::parse_json_string(existing_text);
-            if (existing.ok && existing.document.root
-                && existing.document.root->kind
-                    == wz::json::JSONValueKind::Object)
-            {
-                for (auto& member : existing.document.root->object_members) {
-                    if (member.key == "layout" && member.value) {
-                        written.document.root->object_members.push_back(
-                            wz::json::JSONMember{
-                                .key = "layout",
-                                .value = std::move(member.value),
-                            });
-                        break;
+        // Carry the "layout" object (node positions + zoom), which the draft does
+        // not hold. Prefer the in-memory session layout (layout_source) so unsaved
+        // node positions survive; otherwise preserve the existing on-disk layout.
+        // The source is deep-copied via a serialize/parse round-trip.
+        std::string layout_text;
+        if (layout_source != nullptr
+            && layout_source->kind == wz::json::JSONValueKind::Object)
+        {
+            for (const auto& member : layout_source->object_members) {
+                if (member.key == "layout" && member.value) {
+                    layout_text = wz::json::serialize_json(*member.value);
+                    break;
+                }
+            }
+        }
+        else {
+            const std::string existing_text = read_text_file(graph_path);
+            if (!existing_text.empty()) {
+                wz::json::JSONParseResult existing =
+                    wz::json::parse_json_string(existing_text);
+                if (existing.ok && existing.document.root
+                    && existing.document.root->kind
+                        == wz::json::JSONValueKind::Object)
+                {
+                    for (const auto& member :
+                         existing.document.root->object_members)
+                    {
+                        if (member.key == "layout" && member.value) {
+                            layout_text =
+                                wz::json::serialize_json(*member.value);
+                            break;
+                        }
                     }
                 }
+            }
+        }
+
+        if (!layout_text.empty()) {
+            wz::json::JSONParseResult layout_doc =
+                wz::json::parse_json_string(layout_text);
+            if (layout_doc.ok && layout_doc.document.root) {
+                written.document.root->object_members.push_back(
+                    wz::json::JSONMember{
+                        .key = "layout",
+                        .value = std::move(layout_doc.document.root),
+                    });
             }
         }
 

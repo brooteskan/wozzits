@@ -637,6 +637,65 @@ extern "C"
         }
     }
 
+    WzResult wz_editor_session_set_node_position(
+        WzEditorSession* session,
+        uint64_t node_id,
+        double x,
+        double y)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return session->editor->set_node_position(
+                       static_cast<wz::asset::AssetGraphDraftNodeId>(node_id),
+                       x,
+                       y)
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "asset graph node position update failed");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph node position update failed");
+        }
+    }
+
+    WzResult wz_editor_session_set_zoom(
+        WzEditorSession* session,
+        double zoom)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return session->editor->set_zoom(zoom)
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "asset graph zoom update failed");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph zoom update failed");
+        }
+    }
+
     WzResult wz_editor_asset_graph_remove_node(
         WzEditorSession* session,
         uint64_t node_id)
@@ -743,7 +802,8 @@ extern "C"
         try {
             const auto saved = wz::engine::editor::save_project_asset_graph(
                 session->editor->desc(),
-                session->editor->draft());
+                session->editor->draft(),
+                session->editor->document_root());
             return saved.ok
                 ? result(WZ_RESULT_OK, "")
                 : dynamic_error(WZ_RESULT_INTERNAL_ERROR, saved.error);
@@ -868,11 +928,35 @@ extern "C"
             if (report.ok) {
                 return result(WZ_RESULT_OK, "");
             }
-            return dynamic_error(
-                WZ_RESULT_INTERNAL_ERROR,
-                "asset graph compile failed: "
+            std::string detail = "asset graph compile failed";
+            bool first = true;
+            for (const wz::asset::AssetGraphDraftValidationMessage& diag :
+                 report.diagnostics)
+            {
+                if (diag.severity
+                    != wz::asset::AssetGraphDraftValidationSeverity::Error)
+                {
+                    continue;
+                }
+                detail += first ? ": " : "; ";
+                first = false;
+                if (diag.node
+                    != wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE)
+                {
+                    detail += "node "
+                        + std::to_string(static_cast<uint64_t>(diag.node))
+                        + ": ";
+                }
+                detail += diag.message.empty()
+                    ? "unspecified error"
+                    : diag.message;
+            }
+            if (first) {
+                detail += ": "
                     + std::to_string(report.diagnostics.size())
-                    + " diagnostic(s)");
+                    + " diagnostic(s)";
+            }
+            return dynamic_error(WZ_RESULT_INTERNAL_ERROR, detail);
         }
         catch (const std::bad_alloc&) {
             return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");

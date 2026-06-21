@@ -566,6 +566,19 @@ WZ_ABI_API WzResult wz_editor_asset_graph_remove_node(
     WzEditorSession* session,
     uint64_t node_id);
 
+// Set a node's layout position / the graph zoom in the session's in-memory
+// layout (persisted on save). Session-based so freshly added, not-yet-saved
+// nodes can be positioned.
+WZ_ABI_API WzResult wz_editor_session_set_node_position(
+    WzEditorSession* session,
+    uint64_t node_id,
+    double x,
+    double y);
+
+WZ_ABI_API WzResult wz_editor_session_set_zoom(
+    WzEditorSession* session,
+    double zoom);
+
 // Set a string-valued node param (e.g. a shader "source_path") on the draft.
 // Merges into the node's ParamBlock, invalidates its key, and marks it changed,
 // so the next compile rebuilds it. CPU-only.
