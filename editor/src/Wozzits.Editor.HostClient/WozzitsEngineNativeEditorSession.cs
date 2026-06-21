@@ -157,18 +157,16 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         double x,
         double y)
     {
-        return _client.SetAssetGraphNodePosition(
-            _projectDirectory,
-            nodeId,
-            x,
-            y);
+        return HasNativeSession(out var error)
+            ? _client.SetSessionNodePosition(_session, nodeId, x, y)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 
     public EngineMutationResponse SetAssetGraphZoom(double zoom)
     {
-        return _client.SetAssetGraphZoom(
-            _projectDirectory,
-            zoom);
+        return HasNativeSession(out var error)
+            ? _client.SetSessionZoom(_session, zoom)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 
     public EngineMutationResponse SetSceneNodeTransform(

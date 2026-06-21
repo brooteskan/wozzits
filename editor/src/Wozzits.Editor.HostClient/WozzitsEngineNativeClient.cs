@@ -459,6 +459,36 @@ public sealed partial class WozzitsEngineNativeClient
             nodeId));
     }
 
+    internal EngineMutationResponse SetSessionNodePosition(
+        IntPtr session,
+        ulong nodeId,
+        double x,
+        double y)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorSessionSetNodePosition(
+            session,
+            nodeId,
+            x,
+            y));
+    }
+
+    internal EngineMutationResponse SetSessionZoom(IntPtr session, double zoom)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorSessionSetZoom(
+            session,
+            zoom));
+    }
+
     internal EngineMutationResponse SetAssetGraphNodeParamString(
         IntPtr session,
         ulong nodeId,

@@ -318,7 +318,7 @@
                                             <Grid ColumnDefinitions="*,Auto"
                                                   ColumnSpacing="6"
                                                   IsVisible="{Binding IsTextEditable}">
-                                                <TextBox Text="{Binding Value, Mode=TwoWay}"
+                                                <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                          Classes="InspectorInput"/>
                                                 <Button Grid.Column="1"
                                                         Content="Apply"

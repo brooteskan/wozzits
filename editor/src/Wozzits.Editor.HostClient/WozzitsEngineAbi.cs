@@ -189,6 +189,22 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_editor_session_set_node_position")]
+    internal static partial WzResult WzEditorSessionSetNodePosition(
+        IntPtr session,
+        ulong nodeId,
+        double x,
+        double y);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_session_set_zoom")]
+    internal static partial WzResult WzEditorSessionSetZoom(
+        IntPtr session,
+        double zoom);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_editor_asset_graph_set_node_param_string",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorAssetGraphSetNodeParamString(
