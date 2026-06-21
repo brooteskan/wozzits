@@ -1,6 +1,5 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes;
 
-using System.ComponentModel;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
@@ -345,7 +344,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
         LastEditError = string.Empty;
         CancelConnectionPreview();
-        ReloadGraphFromSessionPreservingLayout();
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            return false;
+        }
         MarkGraphDraft();
         return true;
     }
@@ -366,7 +368,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         LastEditError = string.Empty;
-        ReloadGraphFromSessionPreservingLayout();
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            return false;
+        }
         MarkGraphDraft();
         return true;
     }
@@ -673,7 +678,19 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         var response = _editorSession.CommitAssetGraph();
-        MarkCommitResult(response.Ok, response.Error);
+        if (!response.Ok)
+        {
+            MarkCommitResult(false, response.Error);
+            return;
+        }
+
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            MarkCommitResult(false, LastEditError);
+            return;
+        }
+
+        MarkCommitResult(true);
     }
 
     private void CompileGraph()
@@ -685,17 +702,30 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         var response = _editorSession.CompileAssetGraph();
-        MarkCompileResult(response.Ok, response.Error);
+        if (!response.Ok)
+        {
+            MarkCompileResult(false, response.Error);
+            return;
+        }
+
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            MarkCompileResult(false, LastEditError);
+            return;
+        }
+
+        MarkCompileResult(true);
     }
 
-    private void ReloadGraphFromSessionPreservingLayout()
+    private bool ReloadGraphFromSessionPreservingLayout()
     {
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
-            return;
+            return false;
         }
 
+        var wasDraftGraph = IsDraftGraph;
         var positions = Nodes.ToDictionary(
             node => node.Id,
             node => (node.X, node.Y));
@@ -709,7 +739,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (!response.Ok)
         {
             LastEditError = response.Error;
-            return;
+            return false;
         }
 
         LoadSnapshot(response);
@@ -738,6 +768,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         {
             SelectedNode = Nodes.FirstOrDefault(node => node.Id == selectedNodeId);
         }
+
+        IsDraftGraph = wasDraftGraph;
+        return true;
     }
 
     private void ClearConnectionTarget()
@@ -879,194 +912,4 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         CommitGraphCommand.NotifyCanExecuteChanged();
         CompileGraphCommand.NotifyCanExecuteChanged();
     }
-}
-
-public sealed class AssetGraphNodeCardViewModel : ViewModelBase
-{
-    private double _x;
-    private double _y;
-    private bool _isSelected;
-
-    public AssetGraphNodeCardViewModel(EngineAssetGraphNode node, double canvasPadding)
-    {
-        Id = node.Id;
-        X = node.X + canvasPadding;
-        Y = node.Y + canvasPadding;
-        DisplayName = node.DisplayName;
-        TypeName = node.TypeName;
-        SchemaDisplay = node.Schema;
-        CompileStatus = node.CompileStatus;
-        InputPorts = new ObservableCollection<AssetGraphPortViewModel>(
-            node.InputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: true)));
-        OutputPorts = new ObservableCollection<AssetGraphPortViewModel>(
-            node.OutputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: false)));
-    }
-
-    public ulong Id { get; }
-
-    public double X
-    {
-        get => _x;
-        set => SetProperty(ref _x, value);
-    }
-
-    public double Y
-    {
-        get => _y;
-        set => SetProperty(ref _y, value);
-    }
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set => SetProperty(ref _isSelected, value);
-    }
-
-    public string DisplayName { get; }
-
-    public string TypeName { get; }
-
-    public string SchemaDisplay { get; }
-
-    public string CompileStatus { get; }
-
-    public bool HasInputPorts => InputPorts.Count > 0;
-
-    public ObservableCollection<AssetGraphPortViewModel> InputPorts { get; }
-
-    public ObservableCollection<AssetGraphPortViewModel> OutputPorts { get; }
-}
-
-public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
-{
-    private readonly AssetGraphNodeCardViewModel _from;
-    private readonly AssetGraphNodeCardViewModel _to;
-    private readonly double _cardWidth;
-    private readonly double _portRowBaseY;
-    private readonly double _portRowSpacing;
-    private bool _disposed;
-
-    public AssetGraphEdgeViewModel(
-        EngineAssetGraphEdge edge,
-        AssetGraphNodeCardViewModel from,
-        AssetGraphNodeCardViewModel to,
-        double cardWidth,
-        double portRowBaseY,
-        double portRowSpacing)
-    {
-        Id = edge.Id;
-        FromNodeId = edge.From;
-        ToNodeId = edge.To;
-        ToInputPort = edge.ToInputPort;
-        _from = from;
-        _to = to;
-        _cardWidth = cardWidth;
-        _portRowBaseY = portRowBaseY;
-        _portRowSpacing = portRowSpacing;
-
-        _from.PropertyChanged += NodePositionChanged;
-        _to.PropertyChanged += NodePositionChanged;
-    }
-
-    public ulong Id { get; }
-
-    public ulong FromNodeId { get; }
-
-    public ulong ToNodeId { get; }
-
-    public uint ToInputPort { get; }
-
-    public double StartX => _from.X + _cardWidth;
-
-    public double StartY => _from.Y + _portRowBaseY;
-
-    public double EndX => _to.X;
-
-    public double EndY => _to.Y + _portRowBaseY + ToInputPort * _portRowSpacing;
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _from.PropertyChanged -= NodePositionChanged;
-        _to.PropertyChanged -= NodePositionChanged;
-        _disposed = true;
-    }
-
-    private void NodePositionChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is not nameof(AssetGraphNodeCardViewModel.X)
-            and not nameof(AssetGraphNodeCardViewModel.Y))
-        {
-            return;
-        }
-
-        OnPropertyChanged(nameof(StartX));
-        OnPropertyChanged(nameof(StartY));
-        OnPropertyChanged(nameof(EndX));
-        OnPropertyChanged(nameof(EndY));
-    }
-}
-
-public sealed class AssetGraphPortViewModel : ViewModelBase
-{
-    private bool _isConnectionTarget;
-    private bool _isConnectionRejected;
-
-    public AssetGraphPortViewModel(
-        AssetGraphNodeCardViewModel owner,
-        EngineAssetGraphPort port,
-        bool isInput)
-    {
-        Owner = owner;
-        Index = port.Index;
-        Type = port.Type;
-        Flags = port.Flags;
-        Name = port.Name;
-        Label = port.Label;
-        TypeName = port.TypeName;
-        IsInput = isInput;
-    }
-
-    public AssetGraphNodeCardViewModel Owner { get; }
-
-    public uint Index { get; }
-
-    public uint Type { get; }
-
-    public EngineAssetGraphPortFlags Flags { get; }
-
-    public string Name { get; }
-
-    public string Label { get; }
-
-    public string TypeName { get; }
-
-    public bool IsInput { get; }
-
-    public bool IsOutput => !IsInput;
-
-    public bool HasTypeName => !string.IsNullOrWhiteSpace(TypeName);
-
-    public bool IsConnectionTarget
-    {
-        get => _isConnectionTarget;
-        set => SetProperty(ref _isConnectionTarget, value);
-    }
-
-    public bool IsConnectionRejected
-    {
-        get => _isConnectionRejected;
-        set => SetProperty(ref _isConnectionRejected, value);
-    }
-}
-
-public enum AssetGraphOperationState
-{
-    Neutral,
-    Succeeded,
-    Failed,
 }

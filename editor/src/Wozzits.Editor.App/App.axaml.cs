@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.Core.Projects;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.App.Views;
@@ -80,17 +81,23 @@ public partial class App : Application
         ProjectDirectory projectDirectory,
         WozzitsEngineNativeClient engine)
     {
+        var editorLog = new EditorLogBuffer();
+        editorLog.AppendLine($"[editor] Opening project: {projectDirectory.FullPath}");
+
         var projectSnapshot = engine.LoadProjectSnapshot(projectDirectory.FullPath);
 
         if (projectSnapshot.IsValid)
         {
+            editorLog.AppendLine($"[editor] Project loaded: {projectSnapshot.ProjectName}");
             var editorHost = new WozzitsEditorHostClient();
             return new MainWindow(
                 new MainWindowViewModel(
                     projectSnapshot,
                     engine.OpenEditorSession(
                         projectDirectory.FullPath,
-                        startRuntime: true),
+                        startRuntime: true,
+                        logReceived: editorLog.AppendLine),
+                    editorLog,
                     createHostSession: () => new WozzitsEditorHostSession(
                         editorHost.HostExecutablePath,
                         projectDirectory.FullPath),

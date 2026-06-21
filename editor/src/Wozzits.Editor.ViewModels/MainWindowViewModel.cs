@@ -2,6 +2,7 @@ using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels.EditorPanes;
@@ -12,6 +13,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
     private readonly IDisposable? _editorSessionLifetime;
+    private readonly IDisposable? _editorLogSubscription;
     private readonly IWozzitsEngineEditorSession? _editorSession;
     private readonly Func<WozzitsEditorHostSession>? _createHostSession;
     private readonly Action<Action>? _dispatch;
@@ -26,6 +28,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(
         EngineProjectSnapshotResponse? projectSnapshot = null,
         IWozzitsEngineEditorSession? editorSession = null,
+        EditorLogBuffer? editorLog = null,
         Func<WozzitsEditorHostSession>? createHostSession = null,
         Action<Action>? dispatch = null)
     {
@@ -38,6 +41,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
         InitializeDockLayout();
+        _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
 
         ProjectName = projectSnapshot?.ProjectName ?? string.Empty;
         WindowTitle = string.IsNullOrWhiteSpace(ProjectName)
@@ -74,6 +78,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shutdown = true;
         _hostSession?.Dispose();
         _editorSessionLifetime?.Dispose();
+        _editorLogSubscription?.Dispose();
     }
 
     private void SaveAll()
@@ -82,8 +87,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Launch the project in the standalone runtime as a separate process (an
-    // isolated test run), relaying its logs to the console. Authoring + the
-    // in-process viewport are unaffected.
+    // isolated test run). Its stdout/stderr routing is intentionally not the
+    // editor console's job; we will choose that destination separately.
     private void LaunchApp()
     {
         if (_createHostSession is null)
@@ -93,12 +98,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _hostSession?.Dispose();
         var session = _createHostSession();
-        session.LogReceived += AppendEngineLog;
         _hostSession = session;
+        AppendEditorLog("[editor] Launch App requested; standalone engine logs are not routed to this console yet.");
         session.Start();
     }
 
-    private void AppendEngineLog(string line)
+    private void AppendEditorLog(string line)
     {
         if (string.IsNullOrWhiteSpace(line))
         {
