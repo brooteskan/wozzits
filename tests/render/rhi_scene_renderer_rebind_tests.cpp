@@ -167,10 +167,11 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     EXPECT_EQ(app.resolved_renderable_node_count(), 1u)
         << "scene renderable was not re-bridged to the new graph";
 
-    // The outgoing graph's resources were released + collected: nothing resident
-    // until the next render re-realizes.
-    EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
-        << "outgoing graph GPU resources were not released on rebind";
+    // Renderer-owned upload buffers were released + collected. The rebound
+    // graph has already resolved its gpu_sparse_mesh asset, so the two
+    // asset-published pull buffers remain resident before render consumes them.
+    EXPECT_EQ(app.resident_gpu_resource_count(), 2u)
+        << "rebind should retain only the resolved gpu_sparse_mesh buffers";
 
     // Render the rebound graph: it re-realizes against the new keys.
     render_one_frame(app);

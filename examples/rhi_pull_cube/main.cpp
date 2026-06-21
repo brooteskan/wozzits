@@ -5,6 +5,7 @@
 #include <engine/rendering/rhi_context.h>
 #include <engine/rendering/rhi_dx12_command_recorder.h>
 #include <engine/rendering/rhi_dx12_pipeline.h>
+#include <engine/rendering/engine_gpu_context.h>
 #include <engine/rendering/rhi_gpu_backend.h>
 #include <engine/rendering/rhi_mesh_bridge.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
@@ -209,8 +210,8 @@ int main(int argc, char** argv)
 
     bool ok = true;
     {
-        wz::engine::rendering::EngineGpuBackend backend(device);
-        wz::engine::rendering::RhiContext ctx(backend);
+        wz::engine::rendering::EngineGpuContext gpu(device);
+        wz::engine::rendering::RhiContext ctx;
 
         const ea::CustomRenderProgramDesc authored_program =
             make_pull_cube_program();
@@ -276,7 +277,7 @@ int main(int argc, char** argv)
             ctx.resource_variants.acquire("mesh.pull_indices");
         const wz::rhi::GpuResourceHandle positions_h =
             wz::engine::rendering::acquire_pull_buffer(
-                ctx,
+                gpu.resources,
                 0xC0BE,
                 position_variant,
                 positions.data(),
@@ -284,7 +285,7 @@ int main(int argc, char** argv)
                 3u * sizeof(float));
         const wz::rhi::GpuResourceHandle indices_h =
             wz::engine::rendering::acquire_pull_buffer(
-                ctx,
+                gpu.resources,
                 0xC0BE,
                 index_variant,
                 indices.data(),
@@ -385,8 +386,8 @@ int main(int argc, char** argv)
         wz::engine::rendering::RhiDx12CommandRecorder recorder(
             device,
             pipeline_cache,
-            ctx.resources,
-            backend);
+            gpu.resources,
+            gpu.backend);
         if (ok && !pipeline_cache.realize(program)) {
             std::cerr << "Failed to realize pull cube pipeline.\n";
             ok = false;
@@ -435,7 +436,7 @@ int main(int argc, char** argv)
                 break;
             }
             wz::gpu::clear(device, 0.10f, 0.10f, 0.12f, 1.0f);
-            frame_graph.execute(compiled, ctx.resources, recorder);
+            frame_graph.execute(compiled, gpu.resources, recorder);
             if (!recorder.ready()) {
                 std::cerr << "DX12 RHI recorder rejected the draw.\n";
                 break;

@@ -134,7 +134,8 @@ namespace
 TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
 {
     wz::engine::rendering::test::FakeGpuBackend backend;
-    wz::engine::rendering::RhiContext ctx(backend);
+    wz::rhi::GpuResourceRegistry resources(backend);
+    wz::engine::rendering::RhiContext ctx;
 
     const ea::CustomRenderProgramDesc authored_program =
         make_pull_wireframe_program();
@@ -174,7 +175,7 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
 
     const wz::rhi::GpuResourceHandle pos_h =
         wz::engine::rendering::acquire_pull_buffer(
-            ctx,
+            resources,
             0xCAFE,
             position_variant,
             positions.data(),
@@ -182,7 +183,7 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
             3 * sizeof(float));
     const wz::rhi::GpuResourceHandle idx_h =
         wz::engine::rendering::acquire_pull_buffer(
-            ctx,
+            resources,
             0xCAFE,
             index_variant,
             indices.data(),
@@ -198,7 +199,7 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
 
     const wz::rhi::GpuResourceHandle pos_h_again =
         wz::engine::rendering::acquire_pull_buffer(
-            ctx,
+            resources,
             0xCAFE,
             position_variant,
             positions.data(),
@@ -298,7 +299,7 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
         wz::rhi::ResourceState::ShaderRead);
 
     RecordingCommandRecorder recorder;
-    frame_graph.execute(compiled, ctx.resources, recorder);
+    frame_graph.execute(compiled, resources, recorder);
     ASSERT_EQ(recorder.barriers.size(), 2u);
     EXPECT_TRUE(has_barrier(
         recorder.barriers,

@@ -53,6 +53,16 @@
 
 #include <gpu/shader.h>
 
+#include <wozzits/rhi/gpu_resource.h>
+
+#include <functional>
+#include <vector>
+
+namespace wz::rhi
+{
+    class GpuResourceRegistry;
+}
+
 namespace wz::engine::assets::internal {
 
     struct FileSourceDesc
@@ -60,6 +70,9 @@ namespace wz::engine::assets::internal {
         wz::fs::Path full_path;
         std::string  canonical_path;
     };
+
+    // RhiResourceTracker (asset-type agnostic residency-record hook) is defined
+    // in gpu_sparse_mesh_compilers.h, included above.
 
     struct EngineAssetContext
     {
@@ -101,6 +114,11 @@ namespace wz::engine::assets::internal {
         HDRIEnvironmentTable&               hdri_environment_table;
         SceneAssetTable&                    scene_table;
         EngineAssetCacheSettings            cache_settings;
+        wz::rhi::GpuResourceRegistry*       gpu_resources = nullptr;
+        // Generic, asset-type agnostic residency tracker hook. Compilers that
+        // acquire shared-registry buffers record (key → identities) through this
+        // so the library can release them on de-registration. May be empty.
+        RhiResourceTracker                  rhi_resource_tracker;
     };
 
     wz::asset::AssetNode compile_failed_node(

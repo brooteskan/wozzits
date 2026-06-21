@@ -1,13 +1,13 @@
 #pragma once
 
-#include <engine/rendering/rhi_context.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
 
 #include <cstdint>
 
 namespace wz::engine::rendering
 {
     [[nodiscard]] inline wz::rhi::GpuResourceHandle acquire_pull_buffer(
-        RhiContext& ctx,
+        wz::rhi::GpuResourceRegistry& resources,
         uint64_t asset_id,
         wz::rhi::Tag variant,
         const void* data,
@@ -22,9 +22,9 @@ namespace wz::engine::rendering
         desc.identity = wz::rhi::ResourceIdentity{ asset_id, variant };
 
         const wz::rhi::GpuResourceHandle handle =
-            ctx.resources.acquire(desc);
+            resources.acquire(desc);
         if (handle.valid()) {
-            ctx.resources.update(handle, data, size);
+            resources.update(handle, data, size);
         }
         return handle;
     }

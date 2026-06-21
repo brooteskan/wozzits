@@ -7,8 +7,11 @@
 #include <engine/assets/key_factories/mesh_sparse_operator.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/mesh_derived_field/mesh_field_compute.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+
+#include <wozzits/rhi/gpu_resource_registry.h>
 
 #include <algorithm>
 #include <any>
@@ -86,9 +89,11 @@ namespace wz::engine::assets::internal
             const MeshData& mesh,
             MeshFieldComputeBackend& compute,
             GpuResidentSparseMeshTable& resident_table,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
             wz::Logger& logger)
         {
-            if (!compute.available() || !data.valid()) {
+            if (!data.valid()) {
                 return false;
             }
 
@@ -102,12 +107,90 @@ namespace wz::engine::assets::internal
                 positions.push_back(out);
             }
 
+            const auto started = std::chrono::steady_clock::now();
+            if (gpu_resources) {
+                wz::rhi::GpuResourceDesc positions_desc =
+                    wz::rhi::GpuResourceDesc::buffer(
+                        static_cast<uint64_t>(
+                            positions.size() * sizeof(GpuPosition3)),
+                        sizeof(GpuPosition3),
+                        wz::rhi::ResourceUsage_Sampled,
+                        wz::rhi::ResourceCpuAccess::WriteOnce);
+                positions_desc.identity = wz::rhi::ResourceIdentity{
+                    rhi_asset_identity(sparse_mesh_key, "pull_positions"),
+                    {},
+                };
+
+                wz::rhi::GpuResourceDesc indices_desc =
+                    wz::rhi::GpuResourceDesc::buffer(
+                        static_cast<uint64_t>(
+                            mesh.indices.size() * sizeof(uint32_t)),
+                        sizeof(uint32_t),
+                        wz::rhi::ResourceUsage_Sampled,
+                        wz::rhi::ResourceCpuAccess::WriteOnce);
+                indices_desc.identity = wz::rhi::ResourceIdentity{
+                    rhi_asset_identity(sparse_mesh_key, "pull_indices"),
+                    {},
+                };
+
+                const wz::rhi::GpuResourceHandle positions_handle =
+                    gpu_resources->acquire(positions_desc);
+                const wz::rhi::GpuResourceHandle indices_handle =
+                    gpu_resources->acquire(indices_desc);
+                const bool positions_uploaded =
+                    positions_handle.valid()
+                    && gpu_resources->update(
+                        positions_handle,
+                        positions.data(),
+                        positions_desc.size_bytes);
+                const bool indices_uploaded =
+                    indices_handle.valid()
+                    && gpu_resources->update(
+                        indices_handle,
+                        mesh.indices.data(),
+                        indices_desc.size_bytes);
+                if (!positions_uploaded || !indices_uploaded) {
+                    if (positions_handle.valid()) {
+                        gpu_resources->release(positions_handle);
+                    }
+                    if (indices_handle.valid()) {
+                        gpu_resources->release(indices_handle);
+                    }
+                    logger.warn(
+                        "GPU sparse mesh RHI resident upload failed");
+                    return false;
+                }
+                if (rhi_resource_tracker) {
+                    rhi_resource_tracker(
+                        sparse_mesh_key,
+                        {
+                            positions_desc.identity,
+                            indices_desc.identity,
+                        });
+                }
+
+                const auto elapsed_ms =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - started).count();
+                logger.info(
+                    "asset compile: GPU sparse mesh RHI resident upload vertices="
+                    + std::to_string(data.vertex_count)
+                    + " triangles="
+                    + std::to_string(data.source_triangle_count)
+                    + " upload_ms="
+                    + std::to_string(elapsed_ms));
+                return true;
+            }
+
+            if (!compute.available()) {
+                return false;
+            }
+
             std::vector<uint32_t> source_vertices(mesh.vertex_count());
             for (uint32_t i = 0; i < mesh.vertex_count(); ++i) {
                 source_vertices[i] = i;
             }
 
-            const auto started = std::chrono::steady_clock::now();
             const wz::asset::ResourceHandle positions_buffer =
                 compute.create_structured_buffer({
                     .element_count = mesh.vertex_count(),
@@ -203,7 +286,9 @@ namespace wz::engine::assets::internal
             MeshFieldComputeBackend& compute,
             MeshTable& mesh_table,
             GpuSparseMeshTable& gpu_sparse_mesh_table,
-            GpuResidentSparseMeshTable& resident_sparse_mesh_table)
+            GpuResidentSparseMeshTable& resident_sparse_mesh_table,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker)
         {
             GpuSparseMeshDesc param_desc{};
             const auto* desc = std::any_cast<GpuSparseMeshDesc>(&input.meta);
@@ -271,6 +356,8 @@ namespace wz::engine::assets::internal
                 *source_mesh,
                 compute,
                 resident_sparse_mesh_table,
+                gpu_resources,
+                rhi_resource_tracker,
                 logger);
 
             const wz::asset::ResourceHandle handle =
@@ -292,7 +379,9 @@ namespace wz::engine::assets::internal
         MeshFieldComputeBackend& compute,
         MeshTable& mesh_table,
         GpuSparseMeshTable& gpu_sparse_mesh_table,
-        GpuResidentSparseMeshTable& resident_sparse_mesh_table)
+        GpuResidentSparseMeshTable& resident_sparse_mesh_table,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        RhiResourceTracker rhi_resource_tracker)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kGpuSparseMeshFromMeshSchema,
@@ -329,7 +418,9 @@ namespace wz::engine::assets::internal
                 &compute,
                 &mesh_table,
                 &gpu_sparse_mesh_table,
-                &resident_sparse_mesh_table](
+                &resident_sparse_mesh_table,
+                gpu_resources,
+                rhi_resource_tracker = std::move(rhi_resource_tracker)](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -343,7 +434,9 @@ namespace wz::engine::assets::internal
                     compute,
                     mesh_table,
                     gpu_sparse_mesh_table,
-                    resident_sparse_mesh_table);
+                    resident_sparse_mesh_table,
+                    gpu_resources,
+                    rhi_resource_tracker);
             }
         });
     }

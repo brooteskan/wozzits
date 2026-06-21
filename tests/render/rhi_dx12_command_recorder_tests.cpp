@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/rendering/rhi_dx12_command_recorder.h>
+#include <engine/rendering/engine_gpu_context.h>
 
 #include <wozzits/rhi/shader_resource_group.h>
 
@@ -9,8 +10,7 @@ namespace
     struct RecorderHarness
     {
         wz::gpu::Device device;
-        wz::engine::rendering::EngineGpuBackend backend{ device };
-        wz::rhi::GpuResourceRegistry resources{ backend };
+        wz::engine::rendering::EngineGpuContext gpu{ device };
         wz::rhi::RenderProgramRegistry programs;
         wz::rhi::ComputeProgramRegistry compute_programs;
         wz::rhi::ShaderModuleRegistry shaders;
@@ -22,8 +22,8 @@ namespace
         wz::engine::rendering::RhiDx12CommandRecorder recorder{
             device,
             pipelines,
-            resources,
-            backend };
+            gpu.resources,
+            gpu.backend };
     };
 }
 

@@ -76,9 +76,21 @@
 
 #include <engine/assets/authoring/asset_graph_authoring.h>
 
+#include <wozzits/rhi/gpu_resource.h>
+
 #include <source_location>
 #include <string>
 #include <vector>
+
+namespace wz::rhi
+{
+    class GpuResourceRegistry;
+}
+
+namespace wz::engine::rendering
+{
+    struct EngineGpuContext;
+}
 
 namespace wz::engine::assets
 {
@@ -108,6 +120,19 @@ namespace wz::engine::assets
     class EngineAssetLibrary
     {
     public:
+        EngineAssetLibrary(
+            wz::engine::rendering::EngineGpuContext& gpu,
+            wz::Logger& logger,
+            wz::fs::Path      resource_root
+        );
+
+        EngineAssetLibrary(
+            wz::engine::rendering::EngineGpuContext& gpu,
+            wz::Logger& logger,
+            wz::fs::Path      resource_root,
+            EngineAssetCacheSettings cache_settings
+        );
+
         EngineAssetLibrary(
             wz::gpu::Device& device,
             wz::Logger& logger,
@@ -316,6 +341,23 @@ namespace wz::engine::assets
 
         bool gpu_device_valid() const { return device_.valid(); }
 
+        // Release shared-registry RHI residency for any tracked asset that is no
+        // longer in the registered set. Asset-type agnostic: it walks the generic
+        // (key → identities) tracker that compilers populate when they acquire
+        // resident buffers, and release()s identities whose key dropped out of the
+        // current graph. Uses release() only (deferred, timeline-safe) — the
+        // single collect() lives in RhiSceneRenderer::on_graph_changed(), which
+        // must run AFTER this so the same shared registry reclaims both
+        // renderer-side and asset-side released buffers.
+        void release_unregistered_rhi_resources();
+
+        // Record (key → identities) the asset acquired in the shared registry, so
+        // release_unregistered_rhi_resources() can reclaim them on de-registration.
+        // Idempotent per key. Called by compilers; no asset-type coupling here.
+        void track_rhi_resources(
+            const wz::asset::AssetKey& key,
+            std::vector<wz::rhi::ResourceIdentity> identities);
+
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.
         //
@@ -328,6 +370,14 @@ namespace wz::engine::assets
         //   hold a reference to files_.
 
         wz::gpu::Device& device_;
+        wz::rhi::GpuResourceRegistry* gpu_resources_ = nullptr;
+        // Generic (asset-type agnostic) tracker of shared-registry residency:
+        // the rhi ResourceIdentitys each asset acquired, keyed by AssetKey.
+        // Populated via track_rhi_resources() by compilers; drained on
+        // de-registration by release_unregistered_rhi_resources().
+        std::vector<std::pair<
+            wz::asset::AssetKey,
+            std::vector<wz::rhi::ResourceIdentity>>> rhi_resource_tracker_;
         wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
         EngineAssetCacheSettings cache_settings_;
@@ -410,6 +460,13 @@ namespace wz::engine::assets
         std::vector<wz::asset::AssetKey> active_demand_roots(
             std::span<const wz::asset::DemandRoot> roots) const;
         std::vector<wz::asset::AssetKey> all_active_demand_roots() const;
+
+        EngineAssetLibrary(
+            wz::gpu::Device& device,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            wz::Logger& logger,
+            wz::fs::Path resource_root,
+            EngineAssetCacheSettings cache_settings);
     };
 
 } // namespace wz::engine::assets

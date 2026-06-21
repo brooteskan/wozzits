@@ -10,6 +10,7 @@
 #include <window/window2.h>
 #include <gpu/gpu.h>
 #include <engine/assets/engine_asset_library.h>
+#include <engine/rendering/engine_gpu_context.h>
 
 namespace wz::engine
 {
@@ -17,6 +18,7 @@ namespace wz::engine
     {
         wz::window::WindowHandle                                 window{};
         wz::gpu::Device                                          device{};
+        std::unique_ptr<wz::engine::rendering::EngineGpuContext> gpu{};
         wz::Logger                                               logger{};
         std::unique_ptr<wz::engine::assets::EngineAssetLibrary> assets{};
 

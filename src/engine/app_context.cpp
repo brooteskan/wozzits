@@ -45,8 +45,12 @@ namespace wz::engine
             ctx.logger.info(msg.str());
         }
 
+        ctx.gpu =
+            std::make_unique<wz::engine::rendering::EngineGpuContext>(
+                ctx.device);
+
         ctx.assets = std::make_unique<wz::engine::assets::EngineAssetLibrary>(
-            ctx.device,
+            *ctx.gpu,
             ctx.logger,
             desc.resource_root,
             desc.asset_cache
@@ -81,6 +85,7 @@ namespace wz::engine
         }
 
         ctx.assets.reset();
+        ctx.gpu.reset();
 
         if (ctx.device.valid())
             wz::gpu::destroy_device(ctx.device);

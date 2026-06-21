@@ -4,10 +4,15 @@
 #include <engine/assets/engine_asset_key_factory.h>
 #include <engine/assets/engine_disk_cache_provider.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/rendering/engine_gpu_context.h>
+
+#include <wozzits/rhi/gpu_resource_registry.h>
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 #include <utility>
@@ -144,11 +149,38 @@ namespace wz::engine::assets
     // ─── EngineAssetLibrary ───────────────────────────────────────────────────────
 
     EngineAssetLibrary::EngineAssetLibrary(
+        wz::engine::rendering::EngineGpuContext& gpu,
+        wz::Logger& logger,
+        wz::fs::Path resource_root)
+        : EngineAssetLibrary(
+            gpu,
+            logger,
+            std::move(resource_root),
+            EngineAssetCacheSettings{})
+    {
+    }
+
+    EngineAssetLibrary::EngineAssetLibrary(
+        wz::engine::rendering::EngineGpuContext& gpu,
+        wz::Logger& logger,
+        wz::fs::Path resource_root,
+        EngineAssetCacheSettings cache_settings)
+        : EngineAssetLibrary(
+            gpu.device,
+            &gpu.resources,
+            logger,
+            std::move(resource_root),
+            std::move(cache_settings))
+    {
+    }
+
+    EngineAssetLibrary::EngineAssetLibrary(
         wz::gpu::Device& device,
         wz::Logger& logger,
         wz::fs::Path     resource_root)
         : EngineAssetLibrary(
             device,
+            nullptr,
             logger,
             std::move(resource_root),
             EngineAssetCacheSettings{})
@@ -160,7 +192,23 @@ namespace wz::engine::assets
         wz::Logger& logger,
         wz::fs::Path     resource_root,
         EngineAssetCacheSettings cache_settings)
+        : EngineAssetLibrary(
+            device,
+            nullptr,
+            logger,
+            std::move(resource_root),
+            std::move(cache_settings))
+    {
+    }
+
+    EngineAssetLibrary::EngineAssetLibrary(
+        wz::gpu::Device& device,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        wz::Logger& logger,
+        wz::fs::Path     resource_root,
+        EngineAssetCacheSettings cache_settings)
         : device_(device)
+        , gpu_resources_(gpu_resources)
         , logger_(logger)
         , resource_root_(std::move(resource_root))
         , cache_settings_(std::move(cache_settings))
@@ -240,6 +288,14 @@ namespace wz::engine::assets
                 .hdri_environment_table = hdri_environment_table_,
                 .scene_table         = scene_table_,
                 .cache_settings      = cache_settings_,
+                .gpu_resources       = gpu_resources_,
+                .rhi_resource_tracker =
+                    [this](
+                        const wz::asset::AssetKey& key,
+                        std::vector<wz::rhi::ResourceIdentity> identities)
+                    {
+                        track_rhi_resources(key, std::move(identities));
+                    },
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -345,6 +401,69 @@ namespace wz::engine::assets
         gpu_resident_sparse_mesh_table_.destroy(*mesh_field_compute_);
         gpu_resident_mesh_cluster_hierarchy_table_.destroy(
             *mesh_field_compute_);
+    }
+
+    void EngineAssetLibrary::track_rhi_resources(
+        const wz::asset::AssetKey& key,
+        std::vector<wz::rhi::ResourceIdentity> identities)
+    {
+        if (identities.empty()) {
+            return;
+        }
+        for (auto& [tracked_key, tracked_identities] : rhi_resource_tracker_) {
+            if (tracked_key == key) {
+                tracked_identities = std::move(identities);
+                return;
+            }
+        }
+        rhi_resource_tracker_.emplace_back(key, std::move(identities));
+    }
+
+    void EngineAssetLibrary::release_unregistered_rhi_resources()
+    {
+        if (!gpu_resources_) {
+            rhi_resource_tracker_.clear();
+            return;
+        }
+
+        auto is_registered = [this](const wz::asset::AssetKey& key)
+        {
+            for (const wz::asset::AssetSystem::RegistrationEntry& entry :
+                 system_.registered_assets())
+            {
+                if (entry.node.key == key) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // release() only — deferred and timeline-safe. The single
+        // collect(UINT64_MAX) lives in RhiSceneRenderer::on_graph_changed(),
+        // which the bind path runs after this; it reclaims both renderer-side
+        // and asset-side released buffers from this same shared registry.
+        size_t write = 0;
+        for (size_t read = 0; read < rhi_resource_tracker_.size(); ++read) {
+            auto& tracked = rhi_resource_tracker_[read];
+            if (is_registered(tracked.first)) {
+                // Survivor: keep tracking it. It is re-acquired by resolve via
+                // identity dedup, so its buffers must not be released here.
+                if (write != read) {
+                    rhi_resource_tracker_[write] = std::move(tracked);
+                }
+                ++write;
+                continue;
+            }
+
+            for (const wz::rhi::ResourceIdentity& identity : tracked.second) {
+                const wz::rhi::GpuResourceHandle handle =
+                    gpu_resources_->find(identity);
+                if (handle.valid()) {
+                    gpu_resources_->release(handle);
+                }
+            }
+        }
+        rhi_resource_tracker_.resize(write);
     }
 
     wz::asset::AssetKeyFactoryFn EngineAssetLibrary::draft_key_factory() const

@@ -820,6 +820,13 @@ namespace wz::engine::assets::internal
                         "GPU sparse mesh renderable requires sparse mesh and program dependencies");
                     return compile_failed_node(input);
                 }
+                if (dep_nodes.empty()
+                    || dep_nodes[0].key != desc->sparse_mesh_asset)
+                {
+                    logger->error(
+                        "GPU sparse mesh renderable source asset key does not match sparse mesh dependency");
+                    return compile_failed_node(input);
+                }
 
                 const GpuSparseMeshData* sparse_mesh =
                     gpu_sparse_mesh_table->get(dep_handles[0]);

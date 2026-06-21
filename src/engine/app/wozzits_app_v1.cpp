@@ -57,7 +57,7 @@ namespace wz::app
 
     WozzitsApp_v1::WozzitsApp_v1(wz::engine::AppContext& ctx)
         : ctx_(ctx)
-        , renderer_(ctx.device, ctx.logger)
+        , renderer_(*ctx.gpu, ctx.logger)
     {
     }
 
@@ -185,6 +185,14 @@ namespace wz::app
         }
 
         graph_epoch_ = sys.registration_epoch();
+
+        // Deferred-release shared-registry residency for assets that dropped out
+        // of the freshly committed graph. Asset-type agnostic — the library owns
+        // the tracking; the app no longer knows about any specific asset's GPU
+        // buffers. This must run BEFORE on_graph_changed()'s collect: it uses
+        // release() only, and on_graph_changed()'s wait_idle-guarded
+        // collect(UINT64_MAX) reclaims both these and the renderer-side buffers.
+        ctx_.assets->release_unregistered_rhi_resources();
 
         // Rebind the renderer to the new graph: invalidate the realized caches
         // (keyed by the OUTGOING graph's AssetKeys) and deferred-release the

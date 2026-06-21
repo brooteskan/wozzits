@@ -3,9 +3,19 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/key_factories/gpu_sparse_mesh.h>
 #include <engine/assets/key_factories/mesh_sparse_operator.h>
+#include <engine/assets/rhi_asset_identity.h>
+#include <engine/rendering/engine_gpu_context.h>
+#include <gpu/compute.h>
 #include <gpu/gpu.h>
+#include <window/window2.h>
 
+#include <wozzits/rhi/gpu_resource_registry.h>
+
+#include <array>
+#include <cstring>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -27,6 +37,37 @@ namespace
             device,
             logger,
             root);
+    }
+
+    wz::engine::assets::EngineAssetLibrary make_assets(
+        wz::engine::rendering::EngineGpuContext& gpu,
+        wz::Logger& logger,
+        const char* suffix)
+    {
+        const wz::fs::Path root =
+            wz::fs::join(
+                wz::fs::temp_directory_path(),
+                std::string("wozzits_gpu_sparse_mesh_tests_") + suffix);
+
+        EXPECT_EQ(
+            wz::fs::create_directories(root),
+            wz::fs::FileError::None);
+
+        return wz::engine::assets::EngineAssetLibrary(
+            gpu,
+            logger,
+            root);
+    }
+
+    template <typename T, size_t N>
+    void expect_readback_bytes_eq(
+        const std::vector<std::byte>& bytes,
+        const std::array<T, N>& expected)
+    {
+        ASSERT_EQ(bytes.size(), sizeof(T) * N);
+        EXPECT_EQ(
+            std::memcmp(bytes.data(), expected.data(), sizeof(T) * N),
+            0);
     }
 }
 
@@ -114,4 +155,112 @@ TEST(GpuSparseMeshAssetModule, KeyIncludesOperatorRecipe)
     EXPECT_NE(
         wz::engine::assets::make_gpu_sparse_mesh_key(mesh_key, base),
         wz::engine::assets::make_gpu_sparse_mesh_key(mesh_key, changed));
+}
+
+TEST(GpuSparseMeshAssetModule, ResolvePublishesPullBuffersIntoRhiRegistry)
+{
+    wz::window::WindowDesc window_desc{};
+    window_desc.title = "gpu_sparse_mesh_registry_publish_test";
+    window_desc.width = 64;
+    window_desc.height = 64;
+    window_desc.resizable = false;
+
+    wz::window::WindowHandle window =
+        wz::window::create_window(window_desc);
+    if (!window.valid()) {
+        GTEST_SKIP() << "no window available for on-device registry test";
+    }
+
+    wz::gpu::Device device = wz::gpu::create_device(window);
+    if (!device.valid()) {
+        wz::window::destroy_window(window);
+        GTEST_SKIP() << "no GPU device available for on-device registry test";
+    }
+
+    {
+        wz::engine::rendering::EngineGpuContext gpu(device);
+        wz::Logger logger;
+        auto assets = make_assets(gpu, logger, "rhi_registry_publish");
+
+        const auto mesh = assets.meshes().create_procedural_mesh({
+            .kind = wz::engine::assets::ProceduralMeshKind::Quad,
+        });
+        ASSERT_TRUE(mesh.valid());
+
+        const wz::engine::assets::GpuSparseMeshDesc desc{
+            .name = "quad sparse mesh registry publish",
+            .source_mesh = mesh,
+        };
+        const auto sparse_mesh =
+            assets.gpu_sparse_meshes().create_gpu_sparse_mesh(desc);
+        ASSERT_TRUE(sparse_mesh.valid());
+
+        ASSERT_TRUE(assets.commit());
+        ASSERT_TRUE(assets.resolve_all().ok());
+
+        const wz::rhi::ResourceIdentity positions_identity{
+            wz::engine::assets::rhi_asset_identity(
+                sparse_mesh.output,
+                "pull_positions"),
+            {},
+        };
+        const wz::rhi::ResourceIdentity indices_identity{
+            wz::engine::assets::rhi_asset_identity(
+                sparse_mesh.output,
+                "pull_indices"),
+            {},
+        };
+
+        const wz::rhi::GpuResourceHandle positions =
+            gpu.resources.find(positions_identity);
+        const wz::rhi::GpuResourceHandle indices =
+            gpu.resources.find(indices_identity);
+        ASSERT_TRUE(positions.valid());
+        ASSERT_TRUE(indices.valid());
+
+        const wz::rhi::GpuResource* positions_resource =
+            gpu.resources.get(positions);
+        const wz::rhi::GpuResource* indices_resource =
+            gpu.resources.get(indices);
+        ASSERT_NE(positions_resource, nullptr);
+        ASSERT_NE(indices_resource, nullptr);
+        EXPECT_EQ(positions_resource->desc.identity, positions_identity);
+        EXPECT_EQ(indices_resource->desc.identity, indices_identity);
+        EXPECT_EQ(positions_resource->desc.usage,
+            wz::rhi::ResourceUsage_Sampled);
+        EXPECT_EQ(indices_resource->desc.usage,
+            wz::rhi::ResourceUsage_Sampled);
+        EXPECT_EQ(positions_resource->desc.cpu_access,
+            wz::rhi::ResourceCpuAccess::WriteOnce);
+        EXPECT_EQ(indices_resource->desc.cpu_access,
+            wz::rhi::ResourceCpuAccess::WriteOnce);
+        EXPECT_EQ(positions_resource->desc.stride_bytes, 3u * sizeof(float));
+        EXPECT_EQ(indices_resource->desc.stride_bytes, sizeof(uint32_t));
+
+        const wz::gpu::GPUHandle positions_gpu =
+            gpu.backend.gpu_handle_for(positions_resource->backend);
+        const wz::gpu::GPUHandle indices_gpu =
+            gpu.backend.gpu_handle_for(indices_resource->backend);
+        ASSERT_TRUE(positions_gpu.valid());
+        ASSERT_TRUE(indices_gpu.valid());
+
+        expect_readback_bytes_eq(
+            wz::gpu::readback_buffer(device, positions_gpu),
+            std::array<float, 12>{
+                -1.0f,  1.0f, 0.0f,
+                -1.0f, -1.0f, 0.0f,
+                 1.0f, -1.0f, 0.0f,
+                 1.0f,  1.0f, 0.0f,
+            });
+        expect_readback_bytes_eq(
+            wz::gpu::readback_buffer(device, indices_gpu),
+            std::array<uint32_t, 6>{ 0u, 1u, 2u, 0u, 2u, 3u });
+
+        gpu.resources.release(positions);
+        gpu.resources.release(indices);
+        gpu.resources.collect(UINT64_MAX);
+    }
+
+    wz::gpu::destroy_device(device);
+    wz::window::destroy_window(window);
 }

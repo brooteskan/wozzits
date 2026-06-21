@@ -15,6 +15,7 @@
 #include <engine/rendering/rhi_context.h>
 #include <engine/rendering/rhi_dx12_command_recorder.h>
 #include <engine/rendering/rhi_dx12_pipeline.h>
+#include <engine/rendering/engine_gpu_context.h>
 #include <engine/rendering/rhi_gpu_backend.h>
 
 #include <gpu/gpu.h>
@@ -45,7 +46,7 @@ namespace wz::engine::rendering
     class RhiSceneRenderer
     {
     public:
-        RhiSceneRenderer(wz::gpu::Device& device, wz::Logger& logger);
+        RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger);
 
         RhiSceneRenderer(const RhiSceneRenderer&)            = delete;
         RhiSceneRenderer& operator=(const RhiSceneRenderer&) = delete;
@@ -68,8 +69,8 @@ namespace wz::engine::rendering
         // The caches (realized programs/renderables/registered shaders) are
         // keyed by the OUTGOING graph's AssetKeys, so on a swap they go stale —
         // the renderer would keep drawing the previous graph's GPU resources.
-        // This deferred-releases the outgoing graph's pull buffers (the only
-        // GpuResourceRegistry resources the renderer owns) and clears the caches
+        // This deferred-releases the outgoing graph's pull buffers and clears
+        // the caches
         // so the next render re-realizes against the new keys. A graph swap is a
         // rare, heavy editor action (replace-the-draft), so the flush this does
         // to make the release safe is acceptable here; it is NOT a per-frame path.
@@ -80,7 +81,7 @@ namespace wz::engine::rendering
         // released): diagnostics + the rebind regression test read this.
         [[nodiscard]] std::size_t resident_gpu_resource_count() const
         {
-            return ctx_.resources.resident_count();
+            return gpu_.resources.resident_count();
         }
 
         // Render programs / shader modules currently registered in the rhi
@@ -134,9 +135,8 @@ namespace wz::engine::rendering
             wz::rhi::ShaderStage stage,
             const char* target);
 
-        wz::gpu::Device&            device_;
+        EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;
-        EngineGpuBackend            backend_;
         RhiContext                  ctx_;
         RhiDx12PipelineCache        cache_;
         RhiDx12CommandRecorder      recorder_;

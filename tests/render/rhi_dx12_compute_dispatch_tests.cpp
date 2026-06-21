@@ -3,6 +3,7 @@
 #include <engine/rendering/rhi_context.h>
 #include <engine/rendering/rhi_dx12_command_recorder.h>
 #include <engine/rendering/rhi_dx12_pipeline.h>
+#include <engine/rendering/engine_gpu_context.h>
 #include <engine/rendering/rhi_gpu_backend.h>
 
 #include <gpu/compute.h>
@@ -107,8 +108,8 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     const std::vector<uint8_t> bytecode = compile_write_indices_cs();
     ASSERT_FALSE(bytecode.empty());
 
-    wz::engine::rendering::EngineGpuBackend backend(device);
-    wz::engine::rendering::RhiContext ctx(backend);
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    wz::engine::rendering::RhiContext ctx;
     wz::engine::rendering::RhiDx12PipelineCache pipeline_cache(
         device,
         ctx.programs,
@@ -117,8 +118,8 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     wz::engine::rendering::RhiDx12CommandRecorder recorder(
         device,
         pipeline_cache,
-        ctx.resources,
-        backend);
+        gpu.resources,
+        gpu.backend);
 
     const std::string shader_name = "test/write_indices_cs";
     const wz::rhi::Tag shader_tag = ctx.shaders.register_program(
@@ -154,7 +155,7 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     ASSERT_NE(pipeline_cache.realize(program), nullptr);
 
     const wz::rhi::GpuResourceHandle output =
-        ctx.resources.acquire(wz::rhi::GpuResourceDesc::buffer(
+        gpu.resources.acquire(wz::rhi::GpuResourceDesc::buffer(
             kElementCount * sizeof(uint32_t),
             sizeof(uint32_t),
             wz::rhi::ResourceUsage_Storage | wz::rhi::ResourceUsage_CopySrc));
@@ -178,10 +179,10 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     ASSERT_TRUE(wz::gpu::end_frame(device));
     wz::gpu::wait_idle(device);
 
-    const wz::rhi::GpuResource* output_resource = ctx.resources.get(output);
+    const wz::rhi::GpuResource* output_resource = gpu.resources.get(output);
     ASSERT_NE(output_resource, nullptr);
     const wz::gpu::GPUHandle gpu_output =
-        backend.gpu_handle_for(output_resource->backend);
+        gpu.backend.gpu_handle_for(output_resource->backend);
     ASSERT_TRUE(gpu_output.valid());
     const std::vector<std::byte> bytes =
         wz::gpu::readback_buffer(device, gpu_output);
@@ -191,6 +192,6 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
         read_u32x8(bytes),
         (std::array<uint32_t, 8>{ 0, 1, 2, 3, 4, 5, 6, 7 }));
 
-    ctx.resources.release(output);
-    ctx.resources.collect(UINT64_MAX);
+    gpu.resources.release(output);
+    gpu.resources.collect(UINT64_MAX);
 }

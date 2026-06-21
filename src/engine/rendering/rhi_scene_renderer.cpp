@@ -8,6 +8,7 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/scene/scene_asset_data.h>
@@ -43,26 +44,6 @@ namespace wz::engine::rendering
 {
     namespace
     {
-        uint64_t rhi_mix64(uint64_t seed, uint64_t value)
-        {
-            return seed
-                ^ (value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2));
-        }
-
-        uint64_t rhi_asset_identity(const wz::asset::AssetKey& key)
-        {
-            uint64_t h = 0xA55E7C001D00D5ull;
-            h = rhi_mix64(h, key.content_hash.lo);
-            h = rhi_mix64(h, key.content_hash.hi);
-            h = rhi_mix64(h, key.schema_hash.lo);
-            h = rhi_mix64(h, key.schema_hash.hi);
-            h = rhi_mix64(h, key.compiler_hash.lo);
-            h = rhi_mix64(h, key.compiler_hash.hi);
-            h = rhi_mix64(h, key.deps_hash.lo);
-            h = rhi_mix64(h, key.deps_hash.hi);
-            return h;
-        }
-
         std::vector<float> tight_mesh_positions(const ea::MeshData& mesh)
         {
             std::vector<float> out;
@@ -76,15 +57,15 @@ namespace wz::engine::rendering
         }
 
         void release_unrealized_pull_buffers(
-            RhiContext& ctx,
+            wz::rhi::GpuResourceRegistry& resources,
             wz::rhi::GpuResourceHandle positions,
             wz::rhi::GpuResourceHandle indices)
         {
             if (positions.valid()) {
-                ctx.resources.release(positions);
+                resources.release(positions);
             }
             if (indices.valid()) {
-                ctx.resources.release(indices);
+                resources.release(indices);
             }
             // No collect() here. This runs mid-frame, with no wait_idle, while
             // other renderables may still reference resources the GPU has not
@@ -220,7 +201,7 @@ namespace wz::engine::rendering
                 return PullMeshSource{
                     .mesh_key = recipe->mesh_key,
                     .program_key = recipe->program_key,
-                    .buffer_identity = rhi_asset_identity(recipe->mesh_key),
+                    .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
                 };
             }
 
@@ -255,7 +236,7 @@ namespace wz::engine::rendering
                 .mesh_key = sparse->source_mesh_key,
                 .program_key = entry->dep_keys[1],
                 .buffer_identity =
-                    rhi_asset_identity(renderable->source_asset),
+                    ea::rhi_asset_identity(renderable->source_asset),
             };
         }
 
@@ -298,13 +279,12 @@ namespace wz::engine::rendering
         }
     }
 
-    RhiSceneRenderer::RhiSceneRenderer(wz::gpu::Device& device, wz::Logger& logger)
-        : device_(device)
+    RhiSceneRenderer::RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger)
+        : gpu_(gpu)
         , logger_(logger)
-        , backend_(device)
-        , ctx_(backend_)
-        , cache_(device, ctx_.programs, ctx_.compute_programs, ctx_.shaders)
-        , recorder_(device, cache_, ctx_.resources, backend_)
+        , ctx_()
+        , cache_(gpu.device, ctx_.programs, ctx_.compute_programs, ctx_.shaders)
+        , recorder_(gpu.device, cache_, gpu.resources, gpu.backend)
     {
         forward_ = ctx_.passes.acquire("forward");
     }
@@ -323,7 +303,8 @@ namespace wz::engine::rendering
         // First bind (nothing realized yet): nothing to release or invalidate,
         // and no need to flush the GPU. Keeps load_scene's initial bind cheap.
         if (realized_renderables_.empty() && realized_programs_.empty()
-            && registered_shaders_.empty())
+            && registered_shaders_.empty()
+            && gpu_.resources.resident_count() == 0u)
         {
             return;
         }
@@ -333,22 +314,22 @@ namespace wz::engine::rendering
         // a GPU timeline value, but that timeline is not yet wired (nothing
         // calls touch()), so flush here to guarantee the GPU is done before we
         // collect — then release + collect is unambiguously safe.
-        wz::gpu::wait_idle(device_);
+        wz::gpu::wait_idle(gpu_.device);
 
         for (auto& [key, renderable] : realized_renderables_) {
             (void)key;
             if (renderable.positions.valid()) {
-                ctx_.resources.release(renderable.positions);
+                gpu_.resources.release(renderable.positions);
             }
             if (renderable.indices.valid()) {
-                ctx_.resources.release(renderable.indices);
+                gpu_.resources.release(renderable.indices);
             }
         }
 
         // The GPU is idle after wait_idle, so every pending resource is past its
         // last-use timeline: reclaim them all now (UINT64_MAX = "all timelines
         // completed"). Without this the released buffers would linger resident.
-        ctx_.resources.collect(UINT64_MAX);
+        gpu_.resources.collect(UINT64_MAX);
 
         // Release the realized PSOs + root signatures. These are keyed by rhi
         // program Tag; leaving them resident leaks device objects across swaps,
@@ -515,18 +496,18 @@ namespace wz::engine::rendering
         const std::vector<float> positions = tight_mesh_positions(*mesh);
         const wz::rhi::GpuResourceHandle positions_handle =
             acquire_pull_buffer(
-                ctx_, source->buffer_identity, position_variant,
+                gpu_.resources, source->buffer_identity, position_variant,
                 positions.data(), positions.size() * sizeof(float),
                 3u * sizeof(float));
         const wz::rhi::GpuResourceHandle indices_handle =
             acquire_pull_buffer(
-                ctx_, source->buffer_identity, index_variant,
+                gpu_.resources, source->buffer_identity, index_variant,
                 mesh->indices.data(), mesh->indices.size() * sizeof(uint32_t),
                 sizeof(uint32_t));
         if (!positions_handle.valid() || !indices_handle.valid()) {
             logger_.error("RhiSceneRenderer: pull buffer upload failed");
             release_unrealized_pull_buffers(
-                ctx_, positions_handle, indices_handle);
+                gpu_.resources, positions_handle, indices_handle);
             failed_renderables_.insert(renderable_key);
             return nullptr;
         }
@@ -548,7 +529,7 @@ namespace wz::engine::rendering
             || !realized.object_srg.satisfies(*slot2_layout))
         {
             release_unrealized_pull_buffers(
-                ctx_, realized.positions, realized.indices);
+                gpu_.resources, realized.positions, realized.indices);
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
             failed_renderables_.insert(renderable_key);
@@ -576,7 +557,7 @@ namespace wz::engine::rendering
                 wz::rhi::DrawListMask::from(forward_) }))
         {
             release_unrealized_pull_buffers(
-                ctx_, realized.positions, realized.indices);
+                gpu_.resources, realized.positions, realized.indices);
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
             failed_renderables_.insert(renderable_key);
@@ -594,21 +575,21 @@ namespace wz::engine::rendering
         const wz::math::Mat4& view_projection)
     {
         ID3D12GraphicsCommandList* cmd =
-            wz::gpu::dx12::internal::get_command_list(device_);
+            wz::gpu::dx12::internal::get_command_list(gpu_.device);
         if (!cmd) {
             return false;
         }
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtv =
-            wz::gpu::dx12::internal::get_current_rtv(device_);
+            wz::gpu::dx12::internal::get_current_rtv(gpu_.device);
         D3D12_CPU_DESCRIPTOR_HANDLE dsv =
-            wz::gpu::dx12::internal::get_dsv(device_);
+            wz::gpu::dx12::internal::get_dsv(gpu_.device);
         cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
 
         const float w =
-            static_cast<float>(wz::gpu::dx12::internal::get_width(device_));
+            static_cast<float>(wz::gpu::dx12::internal::get_width(gpu_.device));
         const float h =
-            static_cast<float>(wz::gpu::dx12::internal::get_height(device_));
+            static_cast<float>(wz::gpu::dx12::internal::get_height(gpu_.device));
         D3D12_VIEWPORT viewport{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
         cmd->RSSetViewports(1, &viewport);
         D3D12_RECT scissor{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };

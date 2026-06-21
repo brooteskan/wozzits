@@ -274,8 +274,7 @@ TEST(RhiShaderBridge, RegisteredProgramShadersResolveThroughConvertedProgram)
     src.vertex_shader = shader_key(0xAA01, 0xBB01);
     src.pixel_shader = shader_key(0xAA02, 0xBB02);
 
-    wz::engine::rendering::test::FakeGpuBackend backend;
-    wz::engine::rendering::RhiContext ctx(backend);
+    wz::engine::rendering::RhiContext ctx;
 
     const std::array<uint8_t, 4> vertex_bytecode = { 1, 2, 3, 4 };
     const std::array<uint8_t, 3> pixel_bytecode = { 5, 6, 7 };
