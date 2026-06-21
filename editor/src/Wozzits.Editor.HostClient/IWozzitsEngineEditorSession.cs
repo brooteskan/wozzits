@@ -18,6 +18,11 @@ public interface IWozzitsEngineEditorSession
 
     EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId);
 
+    EngineMutationResponse SetAssetGraphNodeParamString(
+        ulong nodeId,
+        string name,
+        string value);
+
     EngineMutationResponse SaveAssetGraph();
 
     EngineMutationResponse CommitAssetGraph();

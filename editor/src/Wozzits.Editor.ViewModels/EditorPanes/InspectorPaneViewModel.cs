@@ -36,6 +36,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _cameraNear = string.Empty;
     private string _cameraFar = string.Empty;
     private string _cameraAspect = string.Empty;
+    private ulong _assetGraphNodeIdValue;
     private string _assetGraphNodeId = string.Empty;
     private string _assetGraphNodeName = string.Empty;
     private string _assetGraphNodeType = string.Empty;
@@ -67,6 +68,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphPortViewModel> AssetGraphOutputPorts { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphDiagnosticViewModel> AssetGraphDiagnostics { get; } = [];
+
+    public ObservableCollection<InspectorAssetGraphParamViewModel> AssetGraphParams { get; } = [];
 
     public IRelayCommand ApplyNodePropertiesCommand { get; }
 
@@ -308,6 +311,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public bool HasNoAssetGraphDiagnostics => !HasAssetGraphDiagnostics;
 
+    public bool HasAssetGraphParams => AssetGraphParams.Count > 0;
+
+    public bool HasNoAssetGraphParams => !HasAssetGraphParams;
+
     public string LastEditError
     {
         get => _lastEditError;
@@ -328,6 +335,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
+        AssetGraphParams.Clear();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -371,6 +379,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
+        AssetGraphParams.Clear();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -390,6 +399,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         SetSelectionKind(InspectorSelectionKind.AssetGraphNode);
         ClearNodeFields();
 
+        _assetGraphNodeIdValue = node.Id;
         AssetGraphNodeId = node.Id.ToString(CultureInfo.InvariantCulture);
         AssetGraphNodeName = node.DisplayName;
         AssetGraphNodeType = node.TypeName;
@@ -415,8 +425,34 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 new InspectorAssetGraphDiagnosticViewModel(diagnostic));
         }
 
+        foreach (var param in node.Params)
+        {
+            AssetGraphParams.Add(new InspectorAssetGraphParamViewModel(
+                param,
+                ApplyAssetGraphNodeParam));
+        }
+
         NotifyComponentStateChanged();
         NotifyAssetGraphPortStateChanged();
+    }
+
+    private void ApplyAssetGraphNodeParam(string name, string value)
+    {
+        if (!HasAssetGraphNodeSelection)
+        {
+            LastEditError = "No asset graph node is selected.";
+            return;
+        }
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return;
+        }
+
+        SetEditResponse(_editorSession.SetAssetGraphNodeParamString(
+            _assetGraphNodeIdValue,
+            name,
+            value));
     }
 
     private void ApplyNodeProperties()
@@ -514,6 +550,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     private void ClearAssetGraphFields()
     {
+        _assetGraphNodeIdValue = 0;
         AssetGraphNodeId = string.Empty;
         AssetGraphNodeName = string.Empty;
         AssetGraphNodeType = string.Empty;
@@ -605,10 +642,82 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoAssetGraphOutputPorts));
         OnPropertyChanged(nameof(HasAssetGraphDiagnostics));
         OnPropertyChanged(nameof(HasNoAssetGraphDiagnostics));
+        OnPropertyChanged(nameof(HasAssetGraphParams));
+        OnPropertyChanged(nameof(HasNoAssetGraphParams));
     }
 }
 
 public sealed record InspectorComponentViewModel(string Name, string Kind);
+
+public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
+{
+    private readonly Action<string, string> _apply;
+    private readonly string _originalValue;
+    private string _value;
+
+    public InspectorAssetGraphParamViewModel(
+        EngineAssetGraphParam param,
+        Action<string, string> apply)
+    {
+        Name = param.Name;
+        Kind = param.Kind;
+        Options = param.Options;
+        _originalValue = param.Value;
+        _value = param.Value;
+        _apply = apply;
+        // Text params are editable now (string + shader file paths). Enums are
+        // surfaced with their declared options but editing them needs an
+        // index-valued mutation, so they stay read-only for the moment.
+        IsTextEditable =
+            string.Equals(Kind, "string", StringComparison.Ordinal)
+            || string.Equals(Kind, "filepath", StringComparison.Ordinal);
+        IsEnum = string.Equals(Kind, "enum", StringComparison.Ordinal);
+        ApplyCommand = new RelayCommand(Apply, () => IsTextEditable);
+    }
+
+    public string Name { get; }
+
+    public string Kind { get; }
+
+    public IReadOnlyList<string> Options { get; }
+
+    public bool IsTextEditable { get; }
+
+    public bool IsEnum { get; }
+
+    // Plain, non-editable display (bool / int / float / float3 / color).
+    public bool IsReadOnlyText => !IsTextEditable && !IsEnum;
+
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (SetProperty(ref _value, value))
+            {
+                OnPropertyChanged(nameof(IsModified));
+            }
+        }
+    }
+
+    public bool IsModified =>
+        IsTextEditable
+        && !string.Equals(_value, _originalValue, StringComparison.Ordinal);
+
+    public IRelayCommand ApplyCommand { get; }
+
+    public string Detail => Kind;
+
+    private void Apply()
+    {
+        if (!IsTextEditable)
+        {
+            return;
+        }
+
+        _apply(Name, _value);
+    }
+}
 
 public sealed class InspectorAssetGraphPortViewModel
 {

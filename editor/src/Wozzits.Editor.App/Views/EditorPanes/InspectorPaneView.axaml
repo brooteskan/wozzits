@@ -297,6 +297,50 @@
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection">
+                            <TextBlock Text="Parameters"
+                                       Classes="InspectorSectionTitle"/>
+                            <TextBlock Text="No parameters."
+                                       Classes="PaneEmptyState"
+                                       IsVisible="{Binding HasNoAssetGraphParams}"/>
+                            <ItemsControl ItemsSource="{Binding AssetGraphParams}"
+                                          IsVisible="{Binding HasAssetGraphParams}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="panes:InspectorAssetGraphParamViewModel">
+                                        <StackPanel Classes="InspectorPropertyRow">
+                                            <Grid ColumnDefinitions="Auto,*"
+                                                  ColumnSpacing="10">
+                                                <TextBlock Text="{Binding Name}"
+                                                           Classes="InspectorPropertyName"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Detail}"
+                                                           Classes="InspectorPortDetail"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto"
+                                                  ColumnSpacing="6"
+                                                  IsVisible="{Binding IsTextEditable}">
+                                                <TextBox Text="{Binding Value, Mode=TwoWay}"
+                                                         Classes="InspectorInput"/>
+                                                <Button Grid.Column="1"
+                                                        Content="Apply"
+                                                        Command="{Binding ApplyCommand}"
+                                                        Classes="InspectorApplyButton"/>
+                                            </Grid>
+                                            <ComboBox ItemsSource="{Binding Options}"
+                                                      SelectedItem="{Binding Value}"
+                                                      IsEnabled="False"
+                                                      HorizontalAlignment="Stretch"
+                                                      Classes="InspectorInput"
+                                                      IsVisible="{Binding IsEnum}"/>
+                                            <TextBlock Text="{Binding Value}"
+                                                       Classes="InspectorPropertyValue"
+                                                       IsVisible="{Binding IsReadOnlyText}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <StackPanel Classes="InspectorSection">
                             <TextBlock Text="Diagnostics"
                                        Classes="InspectorSectionTitle"/>
                             <TextBlock Text="No diagnostics."

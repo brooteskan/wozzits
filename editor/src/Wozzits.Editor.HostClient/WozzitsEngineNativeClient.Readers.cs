@@ -128,6 +128,26 @@ public sealed partial class WozzitsEngineNativeClient
                 bytes,
                 node.Diagnostics,
                 ReadAssetGraphDiagnostic),
+            Params = ReadTable<WzEditorAssetGraphParamAbi, EngineAssetGraphParam>(
+                bytes,
+                node.Params,
+                ReadAssetGraphParam),
+        };
+    }
+
+    private static EngineAssetGraphParam ReadAssetGraphParam(
+        byte[] bytes,
+        WzEditorAssetGraphParamAbi param)
+    {
+        return new EngineAssetGraphParam
+        {
+            Name = ReadString(bytes, param.Name),
+            Kind = ReadString(bytes, param.Kind),
+            Value = ReadString(bytes, param.Value),
+            Options = ReadTable<WzEditorStringSpanAbi, string>(
+                bytes,
+                param.Options,
+                static (b, span) => ReadString(b, span)),
         };
     }
 

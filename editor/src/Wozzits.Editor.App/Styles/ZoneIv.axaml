@@ -251,6 +251,17 @@
         <Setter Property="FontSize" Value="12"/>
     </Style>
 
+    <Style Selector="ComboBox.InspectorInput">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="5,2"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="MinHeight" Value="24"/>
+    </Style>
+
     <Style Selector="Button.InspectorApplyButton">
         <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>

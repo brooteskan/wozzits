@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 15;
+    internal const uint AbiVersion = 17;
 
     private static int _resolverRegistered;
 
@@ -168,6 +168,16 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_editor_asset_graph_set_node_param_string",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorAssetGraphSetNodeParamString(
+        IntPtr session,
+        ulong nodeId,
+        string nameUtf8,
+        string valueUtf8);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_editor_session_save")]
     internal static partial WzResult WzEditorSessionSave(IntPtr session);
 
@@ -283,7 +293,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorAssetGraphDiagnosticAbi.Message),
             32);
 
-        AssertSize<WzEditorAssetGraphNodeAbi>(144);
+        AssertSize<WzEditorAssetGraphNodeAbi>(160);
         AssertOffset<WzEditorAssetGraphNodeAbi>(
             nameof(WzEditorAssetGraphNodeAbi.Id),
             0);
@@ -305,6 +315,23 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorAssetGraphNodeAbi>(
             nameof(WzEditorAssetGraphNodeAbi.Diagnostics),
             128);
+        AssertOffset<WzEditorAssetGraphNodeAbi>(
+            nameof(WzEditorAssetGraphNodeAbi.Params),
+            144);
+
+        AssertSize<WzEditorAssetGraphParamAbi>(64);
+        AssertOffset<WzEditorAssetGraphParamAbi>(
+            nameof(WzEditorAssetGraphParamAbi.Name),
+            0);
+        AssertOffset<WzEditorAssetGraphParamAbi>(
+            nameof(WzEditorAssetGraphParamAbi.Kind),
+            16);
+        AssertOffset<WzEditorAssetGraphParamAbi>(
+            nameof(WzEditorAssetGraphParamAbi.Value),
+            32);
+        AssertOffset<WzEditorAssetGraphParamAbi>(
+            nameof(WzEditorAssetGraphParamAbi.Options),
+            48);
 
         AssertSize<WzEditorAssetGraphEdgeAbi>(32);
         AssertOffset<WzEditorAssetGraphEdgeAbi>(
@@ -594,6 +621,16 @@ internal readonly struct WzEditorAssetGraphNodeAbi
     public readonly WzEditorTableSpanAbi InputPorts;
     public readonly WzEditorTableSpanAbi OutputPorts;
     public readonly WzEditorTableSpanAbi Diagnostics;
+    public readonly WzEditorTableSpanAbi Params;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetGraphParamAbi
+{
+    public readonly WzEditorStringSpanAbi Name;
+    public readonly WzEditorStringSpanAbi Kind;
+    public readonly WzEditorStringSpanAbi Value;
+    public readonly WzEditorTableSpanAbi Options;
 }
 
 [StructLayout(LayoutKind.Sequential)]

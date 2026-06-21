@@ -158,6 +158,23 @@ public sealed record EngineAssetGraphNode
     public List<EngineAssetGraphPort> OutputPorts { get; init; } = [];
 
     public List<EngineAssetGraphDiagnostic> Diagnostics { get; init; } = [];
+
+    public List<EngineAssetGraphParam> Params { get; init; } = [];
+}
+
+public sealed record EngineAssetGraphParam
+{
+    public string Name { get; init; } = string.Empty;
+
+    // Declared widget type: "bool" | "int" | "float" | "float3" | "color" |
+    // "string" | "filepath" | "enum".
+    public string Kind { get; init; } = string.Empty;
+
+    // Display text; for "enum", the selected option name.
+    public string Value { get; init; } = string.Empty;
+
+    // Enum choices ("enum" kind only).
+    public List<string> Options { get; init; } = [];
 }
 
 public sealed record EngineAssetGraphPort

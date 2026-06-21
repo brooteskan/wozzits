@@ -75,6 +75,16 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 
+    public EngineMutationResponse SetAssetGraphNodeParamString(
+        ulong nodeId,
+        string name,
+        string value)
+    {
+        return HasNativeSession(out var error)
+            ? _client.SetAssetGraphNodeParamString(_session, nodeId, name, value)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
+    }
+
     public EngineMutationResponse SaveAssetGraph()
     {
         return HasNativeSession(out var error)

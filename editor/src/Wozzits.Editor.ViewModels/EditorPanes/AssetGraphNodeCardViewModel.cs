@@ -22,6 +22,7 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
         SchemaDisplay = node.Schema;
         CompileStatus = node.CompileStatus;
         Diagnostics = node.Diagnostics;
+        Params = node.Params;
         InputPorts = new ObservableCollection<AssetGraphPortViewModel>(
             node.InputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: true)));
         OutputPorts = new ObservableCollection<AssetGraphPortViewModel>(
@@ -63,6 +64,8 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     public string CompileStatus { get; }
 
     public IReadOnlyList<EngineAssetGraphDiagnostic> Diagnostics { get; }
+
+    public IReadOnlyList<EngineAssetGraphParam> Params { get; }
 
     public bool HasInputPorts => InputPorts.Count > 0;
 

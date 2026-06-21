@@ -355,6 +355,30 @@ public sealed partial class WozzitsEngineNativeClient
             edgeId));
     }
 
+    internal EngineMutationResponse SetAssetGraphNodeParamString(
+        IntPtr session,
+        ulong nodeId,
+        string name,
+        string value)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        if (string.IsNullOrEmpty(name))
+        {
+            return InvalidMutation("Asset graph param name is empty.");
+        }
+
+        return InvokeMutation(() =>
+            WozzitsEngineAbi.WzEditorAssetGraphSetNodeParamString(
+                session,
+                nodeId,
+                name,
+                value ?? string.Empty));
+    }
+
     internal EngineMutationResponse SaveAssetGraph(IntPtr session)
     {
         if (session == IntPtr.Zero)

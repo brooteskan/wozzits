@@ -791,6 +791,8 @@ public sealed partial class ProjectOpeningTests
 
         public List<ulong> DisconnectedEdges { get; } = [];
 
+        public List<NodeParamEdit> NodeParams { get; } = [];
+
         public List<NodePropertiesEdit> NodeProperties { get; } = [];
 
         public List<TransformEdit> Transforms { get; } = [];
@@ -829,6 +831,15 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId)
         {
             DisconnectedEdges.Add(edgeId);
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetAssetGraphNodeParamString(
+            ulong nodeId,
+            string name,
+            string value)
+        {
+            NodeParams.Add(new NodeParamEdit(nodeId, name, value));
             return new EngineMutationResponse { Ok = true };
         }
 
@@ -912,6 +923,11 @@ public sealed partial class ProjectOpeningTests
         string NodeId,
         string Name,
         bool Visible);
+
+    private sealed record NodeParamEdit(
+        ulong NodeId,
+        string Name,
+        string Value);
 
     private sealed record TransformEdit(
         string NodeId,
