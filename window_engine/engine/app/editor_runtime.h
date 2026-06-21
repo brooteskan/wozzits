@@ -2,7 +2,7 @@
 
 // engine/app/editor_runtime.h
 //
-// run_project_runtime — the WozzitsApp_v1 runtime loop (init device+window,
+// run_project_runtime - the WozzitsApp_v1 runtime loop (init device+window,
 // load the scene+graph, render until the window closes or stop is requested).
 // It is the single implementation shared by the standalone runtime executable
 // (src/app/wozzits_app_v1) and the editor's in-process engine ABI (Option Y,
@@ -17,12 +17,14 @@
 
 #include <asset/draft.h>
 #include <file/filesystem.h>
+#include <logging/logging.h>
 
 #include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <string>
+#include <string_view>
 
 namespace wz::app
 {
@@ -35,7 +37,7 @@ namespace wz::app
         // Owner thread: submit a draft to bind; blocks until the engine thread
         // binds it (or the engine stops). The draft is moved to the engine and
         // the bound draft (with resolved keys + validation) is moved back into
-        // `draft` in place — AssetGraphDraft is move-only. Returns the result.
+        // `draft` in place - AssetGraphDraft is move-only. Returns the result.
         AssetGraphCompileResult bind(wz::asset::AssetGraphDraft& draft);
 
         // Engine thread: if a bind is pending, run `binder` on the draft and
@@ -61,6 +63,16 @@ namespace wz::app
         AssetGraphCompileResult result_;
     };
 
+    struct EditorRuntimeLogSink
+    {
+        void (*write)(
+            wz::LogLevel level,
+            std::string_view timestamp,
+            std::string_view text,
+            void* user) = nullptr;
+        void* user = nullptr;
+    };
+
     // Runs a blocking render loop on the calling thread. `control` may be null
     // (standalone runtime: only closing the window stops it, no binds). Returns
     // a process-style exit code (0 = ok, non-zero = init/runtime failure).
@@ -69,5 +81,6 @@ namespace wz::app
         const wz::fs::Path& asset_graph,
         const wz::fs::Path& scene,
         const wz::fs::Path& resource_root,
-        EditorRuntimeControl* control);
+        EditorRuntimeControl* control,
+        EditorRuntimeLogSink log_sink = {});
 }

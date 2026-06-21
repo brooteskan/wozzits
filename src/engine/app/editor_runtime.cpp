@@ -5,8 +5,10 @@
 #include <engine/app_context.h>
 
 #include <gpu/gpu.h>
+#include <logging/logger.h>
 #include <window/window2.h>
 
+#include <string_view>
 #include <utility>
 
 namespace wz::app
@@ -23,6 +25,28 @@ namespace wz::app
             diagnostic.message = message;
             result.diagnostics.push_back(std::move(diagnostic));
             return result;
+        }
+
+        void forward_editor_runtime_log(
+            const wz::logging::LogRecordView& record,
+            void* user)
+        {
+            auto* sink = static_cast<EditorRuntimeLogSink*>(user);
+            if (!sink || !sink->write) {
+                return;
+            }
+
+            sink->write(
+                record.level,
+                std::string_view{
+                    record.timestamp ? record.timestamp : "",
+                    record.timestamp_size,
+                },
+                std::string_view{
+                    record.text ? record.text : "",
+                    record.text_size,
+                },
+                sink->user);
         }
     }
 
@@ -82,7 +106,7 @@ namespace wz::app
             has_request_ = false;
         }
 
-        // Bind outside the lock — it can take seconds (GPU resolve). binder
+        // Bind outside the lock - it can take seconds (GPU resolve). binder
         // mutates `draft` in place (resolved keys + validation messages).
         AssetGraphCompileResult bound = binder(draft);
 
@@ -109,7 +133,8 @@ namespace wz::app
         const wz::fs::Path& asset_graph,
         const wz::fs::Path& scene,
         const wz::fs::Path& resource_root,
-        EditorRuntimeControl* control)
+        EditorRuntimeControl* control,
+        EditorRuntimeLogSink log_sink)
     {
         wz::engine::AppContext ctx;
 
@@ -119,6 +144,13 @@ namespace wz::app
 
         if (!wz::engine::init(ctx, desc)) {
             return 1;  // init logged the failure
+        }
+        if (log_sink.write) {
+            wz::logging::set_log_sink(
+                ctx.logger,
+                forward_editor_runtime_log,
+                &log_sink);
+            ctx.logger.info("editor resident engine log sink attached");
         }
 
         {

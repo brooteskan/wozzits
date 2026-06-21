@@ -14,6 +14,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -27,6 +28,8 @@ struct WzEditorRuntime
 {
     wz::app::EditorRuntimeControl control;
     std::thread thread;
+    WzEditorLogCallback log_callback = nullptr;
+    void* log_user = nullptr;
 };
 
 namespace
@@ -119,6 +122,26 @@ namespace
         out->data = nullptr;
         out->size = 0u;
         return result(WZ_RESULT_OK, "");
+    }
+
+    void emit_editor_runtime_log(
+        wz::LogLevel level,
+        std::string_view timestamp,
+        std::string_view text,
+        void* user)
+    {
+        auto* runtime = static_cast<WzEditorRuntime*>(user);
+        if (!runtime || !runtime->log_callback) {
+            return;
+        }
+
+        runtime->log_callback(
+            static_cast<uint32_t>(level),
+            timestamp.data(),
+            static_cast<uint64_t>(timestamp.size()),
+            text.data(),
+            static_cast<uint64_t>(text.size()),
+            runtime->log_user);
     }
 }
 
@@ -603,7 +626,9 @@ extern "C"
 
     WzEditorRuntime* wz_editor_runtime_start(
         const char* project_root_utf8,
-        const char* resource_root_utf8)
+        const char* resource_root_utf8,
+        WzEditorLogCallback log_callback,
+        void* log_user)
     {
         if (!project_root_utf8 || project_root_utf8[0] == '\0') {
             return nullptr;
@@ -614,6 +639,8 @@ extern "C"
             const std::string project_root = project_root_utf8;
             const std::string resource_root =
                 resource_root_utf8 ? resource_root_utf8 : "";
+            runtime->log_callback = log_callback;
+            runtime->log_user = log_user;
 
             WzEditorRuntime* raw = runtime.get();
             raw->thread = std::thread([raw, project_root, resource_root]() {
@@ -624,16 +651,43 @@ extern "C"
                                 .project_root = project_root,
                                 .resource_root = resource_root,
                             });
-                    if (loaded.ok) {
-                        wz::app::run_project_runtime(
+                    if (!loaded.ok) {
+                        const std::string message =
+                            "resident engine launch failed: " + loaded.error;
+                        emit_editor_runtime_log(
+                            wz::LogLevel::Error,
+                            {},
+                            message,
+                            raw);
+                    }
+                    else {
+                        const int exit_code = wz::app::run_project_runtime(
                             "Wozzits Viewport",
                             loaded.launch.asset_graph_path,
                             loaded.launch.scene_path,
                             loaded.launch.resource_root,
-                            &raw->control);
+                            &raw->control,
+                            wz::app::EditorRuntimeLogSink{
+                                .write = emit_editor_runtime_log,
+                                .user = raw,
+                            });
+                        emit_editor_runtime_log(
+                            exit_code == 0
+                                ? wz::LogLevel::Info
+                                : wz::LogLevel::Error,
+                            {},
+                            exit_code == 0
+                                ? "resident engine runtime exited."
+                                : "resident engine runtime exited with an error.",
+                            raw);
                     }
                 }
                 catch (...) {
+                    emit_editor_runtime_log(
+                        wz::LogLevel::Error,
+                        {},
+                        "resident engine runtime failed with an exception.",
+                        raw);
                     // The runtime thread must not throw across the ABI; a
                     // failure simply ends the viewport.
                 }
