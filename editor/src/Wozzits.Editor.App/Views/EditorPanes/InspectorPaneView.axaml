@@ -3,6 +3,33 @@
              xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.InspectorPaneView"
              x:DataType="panes:InspectorPaneViewModel">
+    <UserControl.Resources>
+        <!-- Keep enum-param dropdowns flat: the Fluent ComboBox otherwise turns
+             solid cream/white on hover/press. Hold every state at the panel
+             inset so the field does not change when hovered. -->
+        <SolidColorBrush x:Key="ComboBoxBackground"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPressed"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundDisabled"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxForeground"
+                         Color="{DynamicResource WozzitsTextColor}"/>
+        <SolidColorBrush x:Key="ComboBoxForegroundDisabled"
+                         Color="{DynamicResource WozzitsMutedTextColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrush"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+    </UserControl.Resources>
     <Grid Classes="EditorPaneRoot">
         <Border Classes="PaneSurface">
             <Grid RowDefinitions="Auto,*" RowSpacing="10">
