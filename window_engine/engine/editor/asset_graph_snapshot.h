@@ -26,6 +26,18 @@ namespace wz::engine::editor
         bool many = false;
     };
 
+    struct AssetGraphSnapshotParam
+    {
+        std::string name;
+        // Declared widget type from the compiler's ParamDecl (authoritative):
+        // "bool" | "int" | "float" | "float3" | "color" | "string" |
+        // "filepath" | "enum". Falls back to the stored-variant kind when no
+        // compiler/decl is available.
+        std::string kind;
+        std::string value;  // display text; for "enum", the selected option name
+        std::vector<std::string> options;  // enum choices ("enum" only)
+    };
+
     struct AssetGraphSnapshotDiagnostic
     {
         wz::asset::AssetGraphDraftValidationSeverity severity =
@@ -55,6 +67,7 @@ namespace wz::engine::editor
         std::vector<AssetGraphSnapshotPort> input_ports;
         std::vector<AssetGraphSnapshotPort> output_ports;
         std::vector<AssetGraphSnapshotDiagnostic> diagnostics;
+        std::vector<AssetGraphSnapshotParam> params;
     };
 
     struct AssetGraphSnapshotEdge

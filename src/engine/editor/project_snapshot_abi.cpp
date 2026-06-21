@@ -333,6 +333,23 @@ namespace wz::engine::editor
                     });
                 }
 
+                std::vector<WzEditorAssetGraphParam> params;
+                params.reserve(node.params.size());
+                for (const AssetGraphSnapshotParam& param : node.params) {
+                    std::vector<WzEditorStringSpan> options;
+                    options.reserve(param.options.size());
+                    for (const std::string& option : param.options) {
+                        options.push_back(builder.append_string(option));
+                    }
+
+                    params.push_back(WzEditorAssetGraphParam{
+                        .name = builder.append_string(param.name),
+                        .kind = builder.append_string(param.kind),
+                        .value = builder.append_string(param.value),
+                        .options = builder.append_table(options),
+                    });
+                }
+
                 nodes.push_back(WzEditorAssetGraphNode{
                     .id = node.id,
                     .type = static_cast<uint32_t>(
@@ -347,6 +364,7 @@ namespace wz::engine::editor
                     .input_ports = builder.append_table(input_ports),
                     .output_ports = builder.append_table(output_ports),
                     .diagnostics = builder.append_table(diagnostics),
+                    .params = builder.append_table(params),
                 });
             }
 

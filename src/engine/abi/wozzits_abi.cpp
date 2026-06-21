@@ -600,6 +600,45 @@ extern "C"
         }
     }
 
+    WzResult wz_editor_asset_graph_set_node_param_string(
+        WzEditorSession* session,
+        uint64_t node_id,
+        const char* name_utf8,
+        const char* value_utf8)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (!name_utf8 || name_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "param name must not be empty");
+        }
+
+        try {
+            wz::asset::ParamBlock params;
+            params.values[std::string(name_utf8)] =
+                std::string(value_utf8 ? value_utf8 : "");
+            return wz::asset::set_asset_graph_draft_node_params(
+                       session->editor->draft(),
+                       static_cast<wz::asset::AssetGraphDraftNodeId>(node_id),
+                       std::move(params))
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "asset graph node not found");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph set node param failed");
+        }
+    }
+
     WzResult wz_editor_session_save(WzEditorSession* session)
     {
         if (const WzResult target = validate_session(session);

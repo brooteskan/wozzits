@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 15u
+#define WZ_ABI_VERSION 17u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -95,6 +95,16 @@ typedef struct WzEditorAssetGraphDiagnostic
     WzEditorStringSpan message;
 } WzEditorAssetGraphDiagnostic;
 
+typedef struct WzEditorAssetGraphParam
+{
+    WzEditorStringSpan name;
+    // Declared widget type: "bool" | "int" | "float" | "float3" | "color" |
+    // "string" | "filepath" | "enum".
+    WzEditorStringSpan kind;
+    WzEditorStringSpan value;  // display text; for "enum", the selected option
+    WzEditorTableSpan options; // enum choices (WzEditorStringSpan[]; "enum" only)
+} WzEditorAssetGraphParam;
+
 typedef uint32_t WzEditorAssetGraphPortFlags;
 enum
 {
@@ -116,6 +126,7 @@ typedef struct WzEditorAssetGraphNode
     WzEditorTableSpan input_ports;
     WzEditorTableSpan output_ports;
     WzEditorTableSpan diagnostics;
+    WzEditorTableSpan params;
 } WzEditorAssetGraphNode;
 
 typedef struct WzEditorAssetGraphEdge
@@ -312,7 +323,13 @@ static_assert(offsetof(WzEditorAssetGraphDiagnostic, node) == 8);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, input_port) == 24);
 static_assert(offsetof(WzEditorAssetGraphDiagnostic, message) == 32);
 
-static_assert(sizeof(WzEditorAssetGraphNode) == 144);
+static_assert(sizeof(WzEditorAssetGraphParam) == 64);
+static_assert(offsetof(WzEditorAssetGraphParam, name) == 0);
+static_assert(offsetof(WzEditorAssetGraphParam, kind) == 16);
+static_assert(offsetof(WzEditorAssetGraphParam, value) == 32);
+static_assert(offsetof(WzEditorAssetGraphParam, options) == 48);
+
+static_assert(sizeof(WzEditorAssetGraphNode) == 160);
 static_assert(offsetof(WzEditorAssetGraphNode, id) == 0);
 static_assert(offsetof(WzEditorAssetGraphNode, type) == 8);
 static_assert(offsetof(WzEditorAssetGraphNode, type_name) == 16);
@@ -320,6 +337,7 @@ static_assert(offsetof(WzEditorAssetGraphNode, x) == 80);
 static_assert(offsetof(WzEditorAssetGraphNode, input_ports) == 96);
 static_assert(offsetof(WzEditorAssetGraphNode, output_ports) == 112);
 static_assert(offsetof(WzEditorAssetGraphNode, diagnostics) == 128);
+static_assert(offsetof(WzEditorAssetGraphNode, params) == 144);
 
 static_assert(sizeof(WzEditorAssetGraphEdge) == 32);
 static_assert(offsetof(WzEditorAssetGraphEdge, id) == 0);
@@ -486,6 +504,15 @@ WZ_ABI_API WzResult wz_editor_asset_graph_connect(
 WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
     WzEditorSession* session,
     uint64_t edge_id);
+
+// Set a string-valued node param (e.g. a shader "source_path") on the draft.
+// Merges into the node's ParamBlock, invalidates its key, and marks it changed,
+// so the next compile rebuilds it. CPU-only.
+WZ_ABI_API WzResult wz_editor_asset_graph_set_node_param_string(
+    WzEditorSession* session,
+    uint64_t node_id,
+    const char* name_utf8,
+    const char* value_utf8);
 
 // Persist the session's current draft to the project's asset-graph JSON on disk
 // (preserving the existing "layout"). CPU-only; no engine runtime required.

@@ -6,8 +6,11 @@
 #include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
 
+#include <algorithm>
 #include <any>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -15,6 +18,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -114,6 +118,209 @@ namespace wz::engine::editor
             }
 
             return type_name(node.type);
+        }
+
+        std::string param_type_name(wz::asset::ParamType type)
+        {
+            switch (type) {
+                case wz::asset::ParamType::Bool:     return "bool";
+                case wz::asset::ParamType::Int:      return "int";
+                case wz::asset::ParamType::Float:    return "float";
+                case wz::asset::ParamType::Float3:   return "float3";
+                case wz::asset::ParamType::Color:    return "color";
+                case wz::asset::ParamType::String:   return "string";
+                case wz::asset::ParamType::FilePath: return "filepath";
+                case wz::asset::ParamType::Enum:     return "enum";
+            }
+            return "string";
+        }
+
+        // Storage-variant display text (used directly for non-enum params and
+        // as the fallback when there is no compiler decl).
+        std::string param_value_text(const wz::asset::ParamValue& value)
+        {
+            return std::visit(
+                [](const auto& typed) -> std::string
+                {
+                    using T = std::decay_t<decltype(typed)>;
+                    if constexpr (std::is_same_v<T, bool>) {
+                        return typed ? "true" : "false";
+                    }
+                    else if constexpr (std::is_same_v<T, int64_t>) {
+                        return std::to_string(typed);
+                    }
+                    else if constexpr (std::is_same_v<T, double>) {
+                        return std::to_string(typed);
+                    }
+                    else if constexpr (
+                        std::is_same_v<T, std::array<float, 3>>)
+                    {
+                        return std::to_string(typed[0]) + ", "
+                            + std::to_string(typed[1]) + ", "
+                            + std::to_string(typed[2]);
+                    }
+                    else if constexpr (std::is_same_v<T, std::string>) {
+                        return typed;
+                    }
+                    else {
+                        return std::string{};
+                    }
+                },
+                value);
+        }
+
+        // Variant-derived kind for the no-compiler fallback path.
+        std::string storage_kind(const wz::asset::ParamValue& value)
+        {
+            return std::visit(
+                [](const auto& typed) -> std::string
+                {
+                    using T = std::decay_t<decltype(typed)>;
+                    if constexpr (std::is_same_v<T, bool>) {
+                        return "bool";
+                    }
+                    else if constexpr (std::is_same_v<T, int64_t>) {
+                        return "int";
+                    }
+                    else if constexpr (std::is_same_v<T, double>) {
+                        return "float";
+                    }
+                    else if constexpr (
+                        std::is_same_v<T, std::array<float, 3>>)
+                    {
+                        return "float3";
+                    }
+                    else {
+                        return "string";
+                    }
+                },
+                value);
+        }
+
+        int64_t enum_index(
+            const wz::asset::ParamValue& value,
+            double fallback)
+        {
+            if (const auto* index = std::get_if<int64_t>(&value)) {
+                return *index;
+            }
+            if (const auto* number = std::get_if<double>(&value)) {
+                return static_cast<int64_t>(*number);
+            }
+            return static_cast<int64_t>(fallback);
+        }
+
+        // Drive params off the compiler's declared parameters so the widget
+        // type (Enum, FilePath, Color, ...) and enum option names survive,
+        // rather than collapsing to the stored variant. Enums in particular
+        // are stored as int64 and would otherwise read as plain "int".
+        std::vector<AssetGraphSnapshotParam> params_for_node(
+            const wz::asset::CompilerRegistry* registry,
+            const wz::asset::AssetNode& node)
+        {
+            std::vector<AssetGraphSnapshotParam> out;
+            const auto* params =
+                std::any_cast<wz::asset::ParamBlock>(&node.meta);
+            const wz::asset::AssetCompiler* compiler =
+                registry ? registry->find(node.schema, node.type) : nullptr;
+
+            if (compiler && !compiler->parameters.empty()) {
+                out.reserve(compiler->parameters.size());
+                for (const wz::asset::ParamDecl& decl : compiler->parameters) {
+                    AssetGraphSnapshotParam param;
+                    param.name = std::string(decl.name);
+                    param.kind = param_type_name(decl.type);
+                    for (const std::string_view option : decl.options) {
+                        param.options.emplace_back(option);
+                    }
+
+                    const wz::asset::ParamValue* stored = nullptr;
+                    if (params) {
+                        const auto it = params->values.find(param.name);
+                        if (it != params->values.end()) {
+                            stored = &it->second;
+                        }
+                    }
+
+                    if (decl.type == wz::asset::ParamType::Enum) {
+                        if (stored != nullptr) {
+                            if (const auto* text =
+                                    std::get_if<std::string>(stored))
+                            {
+                                param.value = *text;
+                            }
+                            else {
+                                const int64_t index =
+                                    enum_index(*stored, decl.default_num);
+                                param.value =
+                                    (index >= 0
+                                     && index < static_cast<int64_t>(
+                                            param.options.size()))
+                                        ? param.options[
+                                              static_cast<size_t>(index)]
+                                        : std::to_string(index);
+                            }
+                        }
+                        else {
+                            const int64_t index =
+                                static_cast<int64_t>(decl.default_num);
+                            param.value =
+                                (index >= 0
+                                 && index < static_cast<int64_t>(
+                                        param.options.size()))
+                                    ? param.options[static_cast<size_t>(index)]
+                                    : std::to_string(index);
+                        }
+                    }
+                    else if (stored != nullptr) {
+                        param.value = param_value_text(*stored);
+                    }
+                    else if (!decl.default_str.empty()) {
+                        param.value = std::string(decl.default_str);
+                    }
+                    else if (decl.type == wz::asset::ParamType::Bool) {
+                        param.value =
+                            (decl.default_num != 0.0) ? "true" : "false";
+                    }
+                    else if (decl.type == wz::asset::ParamType::Int) {
+                        param.value = std::to_string(
+                            static_cast<int64_t>(decl.default_num));
+                    }
+                    else if (decl.type == wz::asset::ParamType::Float) {
+                        param.value = std::to_string(decl.default_num);
+                    }
+
+                    out.push_back(std::move(param));
+                }
+
+                // Preserve the declared parameter order (meaningful, stable).
+                return out;
+            }
+
+            if (!params) {
+                return out;
+            }
+
+            // No compiler/decl: fall back to stored-variant inference.
+            out.reserve(params->values.size());
+            for (const auto& [name, value] : params->values) {
+                AssetGraphSnapshotParam param;
+                param.name = name;
+                param.kind = storage_kind(value);
+                param.value = param_value_text(value);
+                out.push_back(std::move(param));
+            }
+
+            // Stable order so snapshots/diffs are deterministic.
+            std::sort(
+                out.begin(),
+                out.end(),
+                [](const AssetGraphSnapshotParam& a,
+                   const AssetGraphSnapshotParam& b)
+                {
+                    return a.name < b.name;
+                });
+            return out;
         }
 
         std::unordered_map<wz::asset::AssetGraphDraftNodeId, LayoutPosition>
@@ -435,6 +642,7 @@ namespace wz::engine::editor
                     .many = true,
                 } },
                 .diagnostics = std::move(diagnostics),
+                .params = params_for_node(registry, node),
             });
         }
 
