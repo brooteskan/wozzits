@@ -422,9 +422,10 @@ namespace wz::engine::assets
             out.handle = compiled->handle;
         }
 
-        if (!out.valid())
-            logger_.error("renderable handle not found");
-
+        // No log here: this is a per-frame query from the renderer. A missing
+        // renderable (e.g. an unresolved/broken graph node) is surfaced once via
+        // the node's compile diagnostics, not spammed every frame (which floods
+        // the editor log sink and can freeze the UI).
         return out;
     }
 

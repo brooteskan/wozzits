@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <span>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace wz::engine::assets
 {
@@ -149,5 +150,11 @@ namespace wz::engine::rendering
         std::unordered_map<
             wz::asset::AssetKey, RealizedRenderable, wz::asset::AssetKeyHash>
             realized_renderables_;
+        // Renderables that failed to realize (unresolved/broken graph). Logged
+        // once and then skipped each frame so the render loop never re-attempts
+        // or re-logs per frame (which floods the editor log sink). Cleared on a
+        // graph swap (on_graph_changed) so a fixed graph re-realizes.
+        std::unordered_set<wz::asset::AssetKey, wz::asset::AssetKeyHash>
+            failed_renderables_;
     };
 }

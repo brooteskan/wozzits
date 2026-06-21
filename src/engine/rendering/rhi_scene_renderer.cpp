@@ -292,6 +292,11 @@ namespace wz::engine::rendering
 
     void RhiSceneRenderer::on_graph_changed()
     {
+        // The new graph may fix previously-broken renderables; always allow
+        // re-realize (must happen before the early-return below, since a fully
+        // broken outgoing graph realizes nothing yet still populated this set).
+        failed_renderables_.clear();
+
         // First bind (nothing realized yet): nothing to release or invalidate,
         // and no need to flush the GPU. Keeps load_scene's initial bind cheap.
         if (realized_renderables_.empty() && realized_programs_.empty()
@@ -440,13 +445,20 @@ namespace wz::engine::rendering
         {
             return &it->second;
         }
+        // Already known-unrealizable for this graph: skip silently (no per-frame
+        // retry/log). Cleared on the next graph swap.
+        if (failed_renderables_.count(renderable_key) != 0u) {
+            return nullptr;
+        }
 
         const auto source = pull_mesh_source_for_renderable(assets, renderable_key);
         if (!source) {
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
         const RealizedProgram* program = realize_program(assets, source->program_key);
         if (!program) {
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
 
@@ -455,6 +467,7 @@ namespace wz::engine::rendering
         const ea::MeshData* mesh = assets.meshes().get_mesh_data(mesh_handle);
         if (!mesh || !mesh->valid()) {
             logger_.error("RhiSceneRenderer: renderable mesh unavailable");
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
 
@@ -467,6 +480,7 @@ namespace wz::engine::rendering
                 : nullptr;
         if (!slot2_layout) {
             logger_.error("RhiSceneRenderer: program missing object SRG slot 2");
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
 
@@ -487,6 +501,7 @@ namespace wz::engine::rendering
                 sizeof(uint32_t));
         if (!positions_handle.valid() || !indices_handle.valid()) {
             logger_.error("RhiSceneRenderer: pull buffer upload failed");
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
 
@@ -508,6 +523,7 @@ namespace wz::engine::rendering
         {
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
 
@@ -533,6 +549,7 @@ namespace wz::engine::rendering
         {
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
+            failed_renderables_.insert(renderable_key);
             return nullptr;
         }
         realized.packet = builder.end();
