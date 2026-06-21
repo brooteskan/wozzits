@@ -234,6 +234,10 @@ public sealed record EngineAssetGraphDiagnostic
 
     public uint Code { get; init; }
 
+    public string SeverityName { get; init; } = string.Empty;
+
+    public string CodeName { get; init; } = string.Empty;
+
     public ulong Node { get; init; }
 
     public ulong Edge { get; init; }

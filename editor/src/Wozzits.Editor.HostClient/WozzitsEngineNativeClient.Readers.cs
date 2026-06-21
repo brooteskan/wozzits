@@ -210,6 +210,8 @@ public sealed partial class WozzitsEngineNativeClient
         {
             Severity = diagnostic.Severity,
             Code = diagnostic.Code,
+            SeverityName = ReadString(bytes, diagnostic.SeverityName),
+            CodeName = ReadString(bytes, diagnostic.CodeName),
             Node = diagnostic.Node,
             Edge = diagnostic.Edge,
             InputPort = diagnostic.InputPort,

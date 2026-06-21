@@ -496,6 +496,8 @@ public sealed partial class ProjectOpeningTests
                                     {
                                         Severity = 2,
                                         Code = 5,
+                                        SeverityName = "error",
+                                        CodeName = "TypeMismatch",
                                         Node = 7,
                                         Edge = ulong.MaxValue,
                                         InputPort = 0,

@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 18;
+    internal const uint AbiVersion = 19;
 
     private static int _resolverRegistered;
 
@@ -316,10 +316,13 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorAssetGraphPortAbi.TypeName),
             48);
 
-        AssertSize<WzEditorAssetGraphDiagnosticAbi>(48);
+        AssertSize<WzEditorAssetGraphDiagnosticAbi>(80);
         AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
             nameof(WzEditorAssetGraphDiagnosticAbi.Severity),
             0);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.Code),
+            4);
         AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
             nameof(WzEditorAssetGraphDiagnosticAbi.Node),
             8);
@@ -329,6 +332,12 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
             nameof(WzEditorAssetGraphDiagnosticAbi.Message),
             32);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.SeverityName),
+            48);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.CodeName),
+            64);
 
         AssertSize<WzEditorAssetGraphNodeAbi>(160);
         AssertOffset<WzEditorAssetGraphNodeAbi>(
@@ -747,6 +756,8 @@ internal readonly struct WzEditorAssetGraphDiagnosticAbi
     public readonly uint InputPort;
     public readonly uint Reserved;
     public readonly WzEditorStringSpanAbi Message;
+    public readonly WzEditorStringSpanAbi SeverityName;
+    public readonly WzEditorStringSpanAbi CodeName;
 }
 
 [StructLayout(LayoutKind.Sequential)]

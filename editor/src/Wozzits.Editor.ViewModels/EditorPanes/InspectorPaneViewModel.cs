@@ -795,8 +795,8 @@ public sealed class InspectorAssetGraphDiagnosticViewModel
     public InspectorAssetGraphDiagnosticViewModel(
         EngineAssetGraphDiagnostic diagnostic)
     {
-        Severity = SeverityName(diagnostic.Severity);
-        Code = CodeName(diagnostic.Code);
+        Severity = diagnostic.SeverityName;
+        Code = diagnostic.CodeName;
         Node = diagnostic.Node == InvalidId
             ? string.Empty
             : diagnostic.Node.ToString(CultureInfo.InvariantCulture);
@@ -843,38 +843,6 @@ public sealed class InspectorAssetGraphDiagnosticViewModel
             }
             return string.Join(" | ", parts);
         }
-    }
-
-    private static string SeverityName(uint severity)
-    {
-        return severity switch
-        {
-            0 => "info",
-            1 => "warning",
-            2 => "error",
-            _ => $"severity {severity}",
-        };
-    }
-
-    private static string CodeName(uint code)
-    {
-        return code switch
-        {
-            0 => "None",
-            1 => "UnknownCompiler",
-            2 => "MissingRequiredInput",
-            3 => "InvalidInputPort",
-            4 => "DuplicateInputPort",
-            5 => "TypeMismatch",
-            6 => "MissingNode",
-            7 => "MissingAssetKey",
-            8 => "SelfDependency",
-            9 => "Cycle",
-            10 => "DuplicateAssetKey",
-            11 => "TypedMetaConflict",
-            12 => "AmbiguousManyPortBoundary",
-            _ => $"Code {code}",
-        };
     }
 }
 
