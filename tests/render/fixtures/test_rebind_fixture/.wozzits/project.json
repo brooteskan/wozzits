@@ -1,0 +1,10 @@
+{
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "test_mesh_001",
+  "rhi_render_path": true,
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json",
+  "behavior_project_folder": "behavior",
+  "behavior_module_folder": "behavior/build/clang-debug"
+}

@@ -295,6 +295,29 @@ add_custom_command(
 )
 add_custom_target(wz_stage_resources DEPENDS "${WZ_RESOURCE_STAMP}")
 
+# Self-contained, lightweight asset-graph fixture for the on-device rebind tests.
+# It lives in the test tree (not the editable sample projects) so editor
+# scratch work never breaks the tests, and it uses a procedural cube mesh
+# instead of any external/heavy .glb. The graph is configured so the bundled
+# shader paths are absolute (machine-correct) rather than CWD-relative.
+set(WZ_REBIND_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/test_rebind_fixture")
+set(WZ_REBIND_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/test_rebind_fixture")
+set(WZ_FIXTURE_SHADER_DIR "${WZ_REBIND_FIXTURE_SRC}/shaders")
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/assets.graph.json.in"
+    "${WZ_REBIND_FIXTURE_DST}/assets.graph.json"
+    @ONLY)
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/.wozzits/project.json"
+    "${WZ_REBIND_FIXTURE_DST}/.wozzits/project.json"
+    COPYONLY)
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/scene.json"
+    COPYONLY)
+
 # ----------------------------
 # Test helpers
 # ----------------------------

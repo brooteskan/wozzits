@@ -1,0 +1,110 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "scene_editor_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          2,
+          -8
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "empty_1",
+      "parent": "root",
+      "name": "mesh",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          500,
+          1000,
+          500
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset_graph_node_id": 8
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  },
+  "scene_editor_metadata": {
+    "schema": "wozzits.scene_editor_metadata.v1",
+    "version": 1,
+    "note": "Editor-only metadata; not part of the authored game scene.",
+    "camera": {
+      "position": [
+        -392.50045776367188,
+        258.18655395507812,
+        91.717140197753906
+      ],
+      "orientation": [
+        -0.15275567770004272,
+        -0.82532024383544922,
+        0.28689712285995483,
+        -0.46173828840255737
+      ],
+      "move_speed": 8,
+      "look_speed": 0.00050000002374872565,
+      "boost_multiplier": 4,
+      "roll_speed": 1.5
+    }
+  }
+}

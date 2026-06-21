@@ -7,8 +7,11 @@
 // them or drawing the previous graph.
 //
 // This is an on-device test: it creates a real window + DX12 device and renders
-// the test_mesh_001 project (the same project the standalone wozzits_app_v1
-// exe renders). It is skipped if no device can be created.
+// a dedicated, self-contained fixture project (test_rebind_fixture) staged from
+// tests/render/fixtures — a procedural cube mesh + the two bundled pull shaders,
+// with NO external/heavy .glb. The fixture is separate from the editable sample
+// projects so editor scratch work can never break these tests. Skipped if no
+// device can be created.
 
 #include <gtest/gtest.h>
 
@@ -28,7 +31,7 @@
 
 namespace
 {
-    constexpr const char* kProjectRoot = "projects/test_mesh_001";
+    constexpr const char* kProjectRoot = "projects/test_rebind_fixture";
 
     std::string read_text_file(const wz::fs::Path& path)
     {
@@ -50,7 +53,10 @@ namespace
         {
             wz::engine::AppDesc desc;
             desc.window = { "wozzits_app_v1_rebind_test", 256, 256, false, false };
-            // resource_root defaults to "resources" (copied next to the test exe).
+            // The fixture is staged under "resources/projects/test_rebind_fixture"
+            // next to the test exe; the manifest path is resolved against this
+            // resource root (load_project_manifest only prefixes it when set).
+            desc.resource_root = "resources";
             initialized = wz::engine::init(ctx, desc);
             if (!initialized) {
                 GTEST_SKIP() << "no GPU device — skipping on-device rebind test";
