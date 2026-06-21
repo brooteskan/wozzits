@@ -75,6 +75,29 @@ namespace wz::engine::rendering
             return out;
         }
 
+        void release_unrealized_pull_buffers(
+            RhiContext& ctx,
+            wz::rhi::GpuResourceHandle positions,
+            wz::rhi::GpuResourceHandle indices)
+        {
+            if (positions.valid()) {
+                ctx.resources.release(positions);
+            }
+            if (indices.valid()) {
+                ctx.resources.release(indices);
+            }
+            // No collect() here. This runs mid-frame, with no wait_idle, while
+            // other renderables may still reference resources the GPU has not
+            // finished. collect(UINT64_MAX) ignores the last-use timeline and
+            // would destroy them immediately (the registry's timeline is not
+            // wired — nothing calls touch() — so even collect(current) would be
+            // unsafe). Worse, pull buffers are deduped by identity without
+            // refcounting, so the handle released here may be shared with a
+            // live renderable. release() alone is timeline-safe: it drops these
+            // from identity lookup so a fresh realize rebuilds, and the buffers
+            // are reclaimed by on_graph_changed's wait_idle-guarded collect.
+        }
+
         const wz::asset::AssetSystem::RegistrationEntry* registration_entry_for(
             const ea::EngineAssetLibrary& assets, const wz::asset::AssetKey& key)
         {
@@ -501,6 +524,8 @@ namespace wz::engine::rendering
                 sizeof(uint32_t));
         if (!positions_handle.valid() || !indices_handle.valid()) {
             logger_.error("RhiSceneRenderer: pull buffer upload failed");
+            release_unrealized_pull_buffers(
+                ctx_, positions_handle, indices_handle);
             failed_renderables_.insert(renderable_key);
             return nullptr;
         }
@@ -521,6 +546,8 @@ namespace wz::engine::rendering
             || !realized.object_srg.set(pulled_indices, realized.indices)
             || !realized.object_srg.satisfies(*slot2_layout))
         {
+            release_unrealized_pull_buffers(
+                ctx_, realized.positions, realized.indices);
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
             failed_renderables_.insert(renderable_key);
@@ -547,6 +574,8 @@ namespace wz::engine::rendering
                 wz::rhi::StreamBufferIndices{}, 0,
                 wz::rhi::DrawListMask::from(forward_) }))
         {
+            release_unrealized_pull_buffers(
+                ctx_, realized.positions, realized.indices);
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
             failed_renderables_.insert(renderable_key);

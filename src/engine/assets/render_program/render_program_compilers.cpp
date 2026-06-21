@@ -14,7 +14,8 @@ namespace wz::engine::assets::internal
 {
     namespace
     {
-        constexpr std::array<std::string_view, 15> kBuiltinProgramOptions = {
+        constexpr std::array<std::string_view, kBuiltinRenderProgramCount>
+            kBuiltinProgramOptions = {
             "Mesh wireframe debug",
             "Mesh wireframe depth debug",
             "Mesh depth prepass debug",
@@ -24,6 +25,7 @@ namespace wz::engine::assets::internal
             "Mesh field heatmap",
             "Mesh mask style",
             "Terrain mesh surface",
+            "Gaussian splat debug",
             "Terrain surfel surface",
             "Scalar field debug",
             "Gaussian splat pull debug",
@@ -31,6 +33,8 @@ namespace wz::engine::assets::internal
             "Gaussian splat terrain coverage debug",
             "Sky surface",
         };
+        static_assert(
+            kBuiltinProgramOptions.size() == kBuiltinRenderProgramCount);
 
         constexpr std::array<std::string_view, 7> kBindingModelOptions = {
             "Mesh IA",
