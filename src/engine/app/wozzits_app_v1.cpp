@@ -14,6 +14,7 @@
 #include <math/mat4.h>
 
 #include <cmath>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -89,7 +90,12 @@ namespace wz::app
     AssetGraphCompileResult WozzitsApp_v1::bind_asset_graph(
         wz::asset::AssetGraphDraft& draft)
     {
+        const auto started = std::chrono::steady_clock::now();
         AssetGraphCompileResult result;
+        ctx_.logger.info(
+            "bind_asset_graph: compile requested nodes="
+            + std::to_string(draft.nodes.size())
+            + " edges=" + std::to_string(draft.edges.size()));
 
         if (!ctx_.assets) {
             ctx_.logger.error("bind_asset_graph: no asset library");
@@ -105,6 +111,9 @@ namespace wz::app
         {
             result.ok = false;
             result.diagnostics = draft.validation_messages;
+            ctx_.logger.error(
+                "bind_asset_graph: materialization failed diagnostics="
+                + std::to_string(result.diagnostics.size()));
             return result;
         }
 
@@ -129,6 +138,7 @@ namespace wz::app
                 .severity = wz::asset::AssetGraphDraftValidationSeverity::Error,
                 .message = "asset graph registration rejected",
             });
+            ctx_.logger.error("bind_asset_graph: registration replace failed");
             return result;
         }
 
@@ -141,6 +151,7 @@ namespace wz::app
                 .severity = wz::asset::AssetGraphDraftValidationSeverity::Error,
                 .message = "asset graph commit (DAG rebuild) rejected",
             });
+            ctx_.logger.error("bind_asset_graph: DAG rebuild failed");
             return result;
         }
 
@@ -148,20 +159,28 @@ namespace wz::app
         // ResourceHandles. Failures (missing files, compiler errors) surface here.
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
             resolve_errors;
-        sys.resolve_all(&resolve_errors);
+        const uint32_t resolved_count = sys.resolve_all(&resolve_errors);
         if (!resolve_errors.empty()) {
             result.ok = false;
-            result.diagnostics = draft.validation_messages;
             for (const auto& [key, error] : resolve_errors) {
-                (void)key;
-                result.diagnostics.push_back(
+                const auto node = draft.node_by_key.find(key);
+                draft.validation_messages.push_back(
                     wz::asset::AssetGraphDraftValidationMessage{
                         .severity =
                             wz::asset::AssetGraphDraftValidationSeverity::Error,
+                        .node =
+                            node == draft.node_by_key.end()
+                                ? wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE
+                                : node->second,
                         .message = "asset resolve failed (ResolveError "
                             + std::to_string(static_cast<int>(error)) + ")",
                     });
             }
+            result.diagnostics = draft.validation_messages;
+            ctx_.logger.error(
+                "bind_asset_graph: resolve failed resolved="
+                + std::to_string(resolved_count)
+                + " failures=" + std::to_string(resolve_errors.size()));
             return result;
         }
 
@@ -176,10 +195,21 @@ namespace wz::app
         // The swap minted new AssetKeys; re-point the scene's renderables at
         // them. (On the first bind during load_scene the scene is not loaded
         // yet, so this is a no-op there and load_scene re-runs it after.)
-        bridge_scene_renderables(draft);
+        const uint32_t bridged = bridge_scene_renderables(draft);
 
         result.ok = true;
         result.diagnostics = draft.validation_messages;
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        ctx_.logger.info(
+            "bind_asset_graph: compile succeeded registered="
+            + std::to_string(sys.registered_assets().size())
+            + " resolved=" + std::to_string(resolved_count)
+            + " renderables_bridged=" + std::to_string(bridged)
+            + " diagnostics=" + std::to_string(result.diagnostics.size())
+            + " ms=" + std::to_string(elapsed_ms));
         return result;
     }
 

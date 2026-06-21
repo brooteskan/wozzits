@@ -316,6 +316,23 @@ namespace wz::engine::editor
                     });
                 }
 
+                std::vector<WzEditorAssetGraphDiagnostic> diagnostics;
+                diagnostics.reserve(node.diagnostics.size());
+                for (const AssetGraphSnapshotDiagnostic& diagnostic :
+                     node.diagnostics)
+                {
+                    diagnostics.push_back(WzEditorAssetGraphDiagnostic{
+                        .severity = static_cast<uint32_t>(
+                            diagnostic.severity),
+                        .code = static_cast<uint32_t>(diagnostic.code),
+                        .node = diagnostic.node,
+                        .edge = diagnostic.edge,
+                        .input_port = diagnostic.input_port,
+                        .message = builder.append_string(
+                            diagnostic.message),
+                    });
+                }
+
                 nodes.push_back(WzEditorAssetGraphNode{
                     .id = node.id,
                     .type = static_cast<uint32_t>(
@@ -329,6 +346,7 @@ namespace wz::engine::editor
                     .y = node.y,
                     .input_ports = builder.append_table(input_ports),
                     .output_ports = builder.append_table(output_ports),
+                    .diagnostics = builder.append_table(diagnostics),
                 });
             }
 

@@ -12,6 +12,7 @@
 #include <external/json/json_read_helpers.h>
 #include <external/json/json_writer.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -521,8 +522,16 @@ namespace wz::engine::assets
             const wz::asset::ParamBlock& block)
         {
             auto params = json_array();
-            for (const auto& [name, value] : block.values) {
-                params->array_values.push_back(param_value_json(name, value));
+            std::vector<std::string> names;
+            names.reserve(block.values.size());
+            for (const auto& entry : block.values) {
+                names.push_back(entry.first);
+            }
+            std::sort(names.begin(), names.end());
+
+            for (const auto& name : names) {
+                params->array_values.push_back(
+                    param_value_json(name, block.values.at(name)));
             }
             return params;
         }

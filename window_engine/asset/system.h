@@ -28,10 +28,12 @@
 #include "cache.h"
 #include "external_cache_provider.h"
 #include <cassert>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -47,6 +49,20 @@ namespace wz::asset {
         ExternalCacheMiss, // required external cache entry was absent
         ExternalCacheLoadFailed, // external cache entry was invalid or failed to load
     };
+
+    // Structured event emitted once per node visited by resolve() (compiled /
+    // cache hit / failed), so a host (e.g. the engine library) can log every
+    // compiler run. Optional — only fires when a sink is installed.
+    struct ResolveLogEvent {
+        enum class Phase : uint8_t { Compiled, CacheHit, Failed };
+        Phase        phase = Phase::Compiled;
+        SchemaID     schema{};
+        AssetType    type = AssetType::Unknown;
+        AssetKey     key{};
+        uint64_t     duration_us = 0;
+        ResolveError error = ResolveError::NodeNotFound;
+    };
+    using ResolveLogFn = std::function<void(const ResolveLogEvent&)>;
 
     enum class ResolvePolicy : uint8_t {
         CacheRequired,  // disk-cache miss is an error; do not wake prerequisites
@@ -321,7 +337,17 @@ namespace wz::asset {
         const AssetCache& cache()    const { return cache_; }
         const CompilerRegistry& registry() const { return registry_; }
 
+        // Install an optional sink called once per node visited by resolve()
+        // (compiled / cache hit / failed). Lets a host log every compiler run.
+        void set_resolve_logger(ResolveLogFn fn) { resolve_log_ = std::move(fn); }
+
     private:
+        void emit_resolve_log(
+            ResolveLogEvent::Phase phase,
+            const AssetNode& node,
+            uint64_t duration_us = 0,
+            ResolveError error = ResolveError::NodeNotFound) const;
+
         // ── Registered source graph state ─────────────────────────────────────────
 
         std::vector<RegistrationEntry>                        registered_;
@@ -345,6 +371,8 @@ namespace wz::asset {
         std::unordered_map<AssetKey, AssetNode, AssetKeyHash> compiled_nodes_;
         std::unordered_map<AssetKey, NodeResolveState, AssetKeyHash>
             node_resolve_states_;
+
+        ResolveLogFn resolve_log_;
 
         void set_node_resolve_pending(const AssetKey& key);
         void set_node_resolve_done(

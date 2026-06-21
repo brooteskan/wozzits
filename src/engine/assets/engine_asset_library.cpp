@@ -4,6 +4,7 @@
 #include <engine/assets/engine_asset_key_factory.h>
 #include <engine/assets/engine_disk_cache_provider.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/type_extensions.h>
 
 #include <array>
 #include <chrono>
@@ -308,6 +309,32 @@ namespace wz::engine::assets
                     + cache_settings_.root);
             }
         }
+
+        // Verbose compiler logging: one line per node visited by resolve()
+        // (every compiler run, cache hit, or failure), with the asset type name.
+        system_.set_resolve_logger(
+            [this](const wz::asset::ResolveLogEvent& event)
+            {
+                const std::string name = std::string(
+                    asset_type_display_name_view(event.type));
+                const std::string key = internal::short_asset_key_hex(event.key);
+                switch (event.phase) {
+                case wz::asset::ResolveLogEvent::Phase::Compiled:
+                    logger_.info(
+                        "compile " + name + " key=" + key + " ("
+                        + std::to_string(event.duration_us / 1000u) + "ms)");
+                    break;
+                case wz::asset::ResolveLogEvent::Phase::CacheHit:
+                    logger_.info(
+                        "compile " + name + " key=" + key + " (cached)");
+                    break;
+                case wz::asset::ResolveLogEvent::Phase::Failed:
+                    logger_.error(
+                        "compile " + name + " key=" + key + " FAILED: "
+                        + internal::resolve_error_name(event.error));
+                    break;
+                }
+            });
     }
 
     EngineAssetLibrary::~EngineAssetLibrary()

@@ -71,6 +71,17 @@ namespace
 
         const std::string written =
             wz::engine::assets::save_asset_graph_draft_to_v2_json(first);
+        const std::size_t count_pos = written.find("\"count\"");
+        const std::size_t flag_pos = written.find("\"flag\"");
+        const std::size_t label_pos = written.find("\"label\"");
+        const std::size_t tau_pos = written.find("\"tau\"");
+        ASSERT_NE(count_pos, std::string::npos);
+        ASSERT_NE(flag_pos, std::string::npos);
+        ASSERT_NE(label_pos, std::string::npos);
+        ASSERT_NE(tau_pos, std::string::npos);
+        EXPECT_LT(count_pos, flag_pos);
+        EXPECT_LT(flag_pos, label_pos);
+        EXPECT_LT(label_pos, tau_pos);
 
         bool ok_second = false;
         const wz::asset::AssetGraphDraft second = load_draft(written, ok_second);

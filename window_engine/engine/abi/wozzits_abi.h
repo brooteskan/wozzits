@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 14u
+#define WZ_ABI_VERSION 15u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -84,6 +84,17 @@ typedef struct WzEditorAssetGraphPort
     WzEditorStringSpan type_name;
 } WzEditorAssetGraphPort;
 
+typedef struct WzEditorAssetGraphDiagnostic
+{
+    uint32_t severity;
+    uint32_t code;
+    uint64_t node;
+    uint64_t edge;
+    uint32_t input_port;
+    uint32_t reserved;
+    WzEditorStringSpan message;
+} WzEditorAssetGraphDiagnostic;
+
 typedef uint32_t WzEditorAssetGraphPortFlags;
 enum
 {
@@ -104,6 +115,7 @@ typedef struct WzEditorAssetGraphNode
     double y;
     WzEditorTableSpan input_ports;
     WzEditorTableSpan output_ports;
+    WzEditorTableSpan diagnostics;
 } WzEditorAssetGraphNode;
 
 typedef struct WzEditorAssetGraphEdge
@@ -294,13 +306,20 @@ static_assert(offsetof(WzEditorAssetGraphPort, name) == 16);
 static_assert(offsetof(WzEditorAssetGraphPort, label) == 32);
 static_assert(offsetof(WzEditorAssetGraphPort, type_name) == 48);
 
-static_assert(sizeof(WzEditorAssetGraphNode) == 128);
+static_assert(sizeof(WzEditorAssetGraphDiagnostic) == 48);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, severity) == 0);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, node) == 8);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, input_port) == 24);
+static_assert(offsetof(WzEditorAssetGraphDiagnostic, message) == 32);
+
+static_assert(sizeof(WzEditorAssetGraphNode) == 144);
 static_assert(offsetof(WzEditorAssetGraphNode, id) == 0);
 static_assert(offsetof(WzEditorAssetGraphNode, type) == 8);
 static_assert(offsetof(WzEditorAssetGraphNode, type_name) == 16);
 static_assert(offsetof(WzEditorAssetGraphNode, x) == 80);
 static_assert(offsetof(WzEditorAssetGraphNode, input_ports) == 96);
 static_assert(offsetof(WzEditorAssetGraphNode, output_ports) == 112);
+static_assert(offsetof(WzEditorAssetGraphNode, diagnostics) == 128);
 
 static_assert(sizeof(WzEditorAssetGraphEdge) == 32);
 static_assert(offsetof(WzEditorAssetGraphEdge, id) == 0);

@@ -306,6 +306,24 @@ namespace wz::asset
     }
 
 
+    void AssetSystem::emit_resolve_log(
+        ResolveLogEvent::Phase phase,
+        const AssetNode& node,
+        uint64_t duration_us,
+        ResolveError error) const
+    {
+        if (resolve_log_) {
+            resolve_log_(ResolveLogEvent{
+                .phase = phase,
+                .schema = node.schema,
+                .type = node.type,
+                .key = node.key,
+                .duration_us = duration_us,
+                .error = error,
+            });
+        }
+    }
+
     Result<ResourceHandle> AssetSystem::resolve(const AssetKey& key) {
         auto fail = [&](ResolveError error) -> Result<ResourceHandle> {
             set_node_resolve_failed(key, error);
@@ -333,6 +351,7 @@ namespace wz::asset
                     std::get_if<ResourceHandle>(&it->second.payload))
                 {
                     if (*compiled_handle == *h) {
+                        emit_resolve_log(ResolveLogEvent::Phase::CacheHit, node);
                         set_node_resolve_done(key);
                         return *h;
                     }
@@ -341,6 +360,7 @@ namespace wz::asset
                     it->second.payload))
                 {
                     if (!h->valid()) {
+                        emit_resolve_log(ResolveLogEvent::Phase::CacheHit, node);
                         set_node_resolve_done(key);
                         return *h;
                     }
@@ -353,7 +373,12 @@ namespace wz::asset
 
         // Find the compiler for this (schema, type) pair.
         const AssetCompiler* compiler = registry_.find(node.schema, node.type);
-        if (!compiler) return fail(ResolveError::CompilerNotFound);
+        if (!compiler) {
+            emit_resolve_log(
+                ResolveLogEvent::Phase::Failed, node, 0,
+                ResolveError::CompilerNotFound);
+            return fail(ResolveError::CompilerNotFound);
+        }
 
         // This resolve attempt is rebuilding the node. If it fails, stale query
         // results from a previous successful compile must not remain visible.
@@ -374,8 +399,12 @@ namespace wz::asset
             const AssetKey& dep_key = wz::core::graph::node_data(g, ph).key;
 
             auto dep_result = resolve(dep_key);
-            if (std::holds_alternative<ResolveError>(dep_result))
+            if (std::holds_alternative<ResolveError>(dep_result)) {
+                emit_resolve_log(
+                    ResolveLogEvent::Phase::Failed, node, 0,
+                    ResolveError::DependencyFailed);
                 return fail(ResolveError::DependencyFailed);
+            }
 
             // Use the post-compile node from compiled_nodes_ so compilers
             // see the live payload (e.g. bytes preserved by a carrier compiler),
@@ -396,6 +425,8 @@ namespace wz::asset
         auto fail_after_compile =
             [&](ResolveError error) -> Result<ResourceHandle>
         {
+            emit_resolve_log(
+                ResolveLogEvent::Phase::Failed, node, compile_duration_us, error);
             set_node_resolve_failed(key, error, compile_duration_us);
             return error;
         };
@@ -426,6 +457,8 @@ namespace wz::asset
         compiled_nodes_.insert_or_assign(key, std::move(compiled));
 
         cache_.store(key, handle);
+        emit_resolve_log(
+            ResolveLogEvent::Phase::Compiled, node, compile_duration_us);
         set_node_resolve_done(key, compile_duration_us);
         return handle;
     }

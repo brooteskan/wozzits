@@ -128,6 +128,19 @@ namespace wz::engine::editor
 
             return nullptr;
         }
+
+        void invalidate_node_inputs(
+            wz::asset::AssetGraphDraft& draft,
+            wz::asset::AssetGraphDraftNodeId node_id)
+        {
+            if (wz::asset::AssetGraphDraftNode* node =
+                    wz::asset::find_asset_graph_draft_node(draft, node_id))
+            {
+                wz::asset::invalidate_asset_graph_draft_node_key(*node);
+                wz::asset::mark_asset_graph_draft_node_modified(*node);
+                wz::asset::rebuild_asset_graph_draft_indexes(draft);
+            }
+        }
     }
 
     AssetGraphEditorSession::AssetGraphEditorSession(
@@ -297,6 +310,7 @@ namespace wz::engine::editor
         }
 
         draft_.dirty = true;
+        invalidate_node_inputs(draft_, to);
         check.compatible = true;
         return check;
     }
@@ -304,17 +318,33 @@ namespace wz::engine::editor
     bool AssetGraphEditorSession::disconnect_edge(
         wz::asset::AssetGraphDraftEdgeId edge_id)
     {
-        return wz::asset::disconnect_asset_graph_draft_edge(draft_, edge_id);
+        const wz::asset::AssetGraphDraftEdge* edge =
+            wz::asset::find_asset_graph_draft_edge(draft_, edge_id);
+        const wz::asset::AssetGraphDraftNodeId to =
+            edge ? edge->to : wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
+
+        if (!wz::asset::disconnect_asset_graph_draft_edge(draft_, edge_id)) {
+            return false;
+        }
+
+        invalidate_node_inputs(draft_, to);
+        return true;
     }
 
     bool AssetGraphEditorSession::disconnect_input(
         wz::asset::AssetGraphDraftNodeId node,
         uint32_t input_port)
     {
-        return wz::asset::disconnect_asset_graph_draft_input(
-            draft_,
-            node,
-            input_port);
+        if (!wz::asset::disconnect_asset_graph_draft_input(
+                draft_,
+                node,
+                input_port))
+        {
+            return false;
+        }
+
+        invalidate_node_inputs(draft_, node);
+        return true;
     }
 
     AssetGraphEditorSessionOpenResult open_asset_graph_editor_session(

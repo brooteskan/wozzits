@@ -26,6 +26,20 @@ namespace wz::engine::editor
         bool many = false;
     };
 
+    struct AssetGraphSnapshotDiagnostic
+    {
+        wz::asset::AssetGraphDraftValidationSeverity severity =
+            wz::asset::AssetGraphDraftValidationSeverity::Info;
+        wz::asset::AssetGraphDraftValidationCode code =
+            wz::asset::AssetGraphDraftValidationCode::None;
+        wz::asset::AssetGraphDraftNodeId node =
+            wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
+        wz::asset::AssetGraphDraftEdgeId edge =
+            wz::asset::INVALID_ASSET_GRAPH_DRAFT_EDGE;
+        uint32_t input_port = 0;
+        std::string message;
+    };
+
     struct AssetGraphSnapshotNode
     {
         wz::asset::AssetGraphDraftNodeId id =
@@ -40,6 +54,7 @@ namespace wz::engine::editor
         double y = 0.0;
         std::vector<AssetGraphSnapshotPort> input_ports;
         std::vector<AssetGraphSnapshotPort> output_ports;
+        std::vector<AssetGraphSnapshotDiagnostic> diagnostics;
     };
 
     struct AssetGraphSnapshotEdge

@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 
@@ -251,6 +252,105 @@ namespace wz::engine::editor
             }
             return result;
         }
+
+        bool diagnostic_belongs_to_node(
+            const wz::asset::AssetGraphDraft& draft,
+            const wz::asset::AssetGraphDraftValidationMessage& message,
+            wz::asset::AssetGraphDraftNodeId node_id)
+        {
+            if (message.node == node_id) {
+                return true;
+            }
+            if (message.edge
+                == wz::asset::INVALID_ASSET_GRAPH_DRAFT_EDGE)
+            {
+                return false;
+            }
+            const wz::asset::AssetGraphDraftEdge* edge =
+                wz::asset::find_asset_graph_draft_edge(
+                    draft,
+                    message.edge);
+            return edge && (edge->from == node_id || edge->to == node_id);
+        }
+
+        std::vector<AssetGraphSnapshotDiagnostic> diagnostics_for_node(
+            const wz::asset::AssetGraphDraft& draft,
+            wz::asset::AssetGraphDraftNodeId node_id)
+        {
+            std::vector<AssetGraphSnapshotDiagnostic> result;
+            for (const wz::asset::AssetGraphDraftValidationMessage& message :
+                 draft.validation_messages)
+            {
+                if (!diagnostic_belongs_to_node(draft, message, node_id)) {
+                    continue;
+                }
+                result.push_back(AssetGraphSnapshotDiagnostic{
+                    .severity = message.severity,
+                    .code = message.code,
+                    .node = message.node,
+                    .edge = message.edge,
+                    .input_port = message.input_port,
+                    .message = message.message,
+                });
+            }
+            return result;
+        }
+
+        bool has_error_diagnostic(
+            const std::vector<AssetGraphSnapshotDiagnostic>& diagnostics)
+        {
+            return std::any_of(
+                diagnostics.begin(),
+                diagnostics.end(),
+                [](const AssetGraphSnapshotDiagnostic& diagnostic)
+                {
+                    return diagnostic.severity
+                        == wz::asset::AssetGraphDraftValidationSeverity::Error;
+                });
+        }
+
+        std::unordered_set<wz::asset::AssetGraphDraftNodeId>
+        changed_nodes_for_status(const wz::asset::AssetGraphDraft& draft)
+        {
+            std::unordered_set<wz::asset::AssetGraphDraftNodeId> changed;
+            for (const wz::asset::AssetGraphDraftNode& node : draft.nodes) {
+                if (node.state == wz::asset::AssetGraphDraftNodeState::Deleted) {
+                    continue;
+                }
+                if (!wz::asset::asset_graph_draft_key_valid(node.node.key)) {
+                    changed.insert(node.id);
+                }
+            }
+
+            bool added = true;
+            while (added) {
+                added = false;
+                for (const wz::asset::AssetGraphDraftEdge& edge : draft.edges) {
+                    if (changed.count(edge.from) == 0u
+                        || changed.count(edge.to) != 0u)
+                    {
+                        continue;
+                    }
+                    changed.insert(edge.to);
+                    added = true;
+                }
+            }
+            return changed;
+        }
+
+        std::string compile_status_for_node(
+            const std::vector<AssetGraphSnapshotDiagnostic>& diagnostics,
+            const std::unordered_set<wz::asset::AssetGraphDraftNodeId>& changed,
+            wz::asset::AssetGraphDraftNodeId node_id)
+        {
+            if (has_error_diagnostic(diagnostics)) {
+                return "error";
+            }
+            if (changed.count(node_id) != 0u) {
+                return "changed";
+            }
+            return "ready";
+        }
     }
 
     AssetGraphSnapshot build_asset_graph_snapshot(
@@ -269,6 +369,7 @@ namespace wz::engine::editor
             wz::asset::AssetGraphDraftNodeId,
             wz::asset::AssetType>
             node_types;
+        const auto changed_nodes = changed_nodes_for_status(draft);
         node_types.reserve(draft.nodes.size());
         for (const wz::asset::AssetGraphDraftNode& draft_node :
              draft.nodes)
@@ -308,6 +409,8 @@ namespace wz::engine::editor
                         node_types);
 
             const std::string output_type = type_name(node.type);
+            std::vector<AssetGraphSnapshotDiagnostic> diagnostics =
+                diagnostics_for_node(draft, draft_node.id);
             snapshot.nodes.push_back(AssetGraphSnapshotNode{
                 .id = draft_node.id,
                 .type = node.type,
@@ -315,7 +418,10 @@ namespace wz::engine::editor
                 .schema = node.schema,
                 .schema_label = schema_tail(node.schema),
                 .display_name = display_name(node),
-                .compile_status = "not resolved",
+                .compile_status = compile_status_for_node(
+                    diagnostics,
+                    changed_nodes,
+                    draft_node.id),
                 .x = position.x,
                 .y = position.y,
                 .input_ports = std::move(input_ports),
@@ -328,6 +434,7 @@ namespace wz::engine::editor
                     .required = true,
                     .many = true,
                 } },
+                .diagnostics = std::move(diagnostics),
             });
         }
 
