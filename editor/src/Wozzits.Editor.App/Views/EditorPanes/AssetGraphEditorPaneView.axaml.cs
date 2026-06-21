@@ -155,6 +155,11 @@ public partial class AssetGraphEditorPaneView : UserControl
 
     private void GraphPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsPointerInsideGraphViewport(e))
+        {
+            return;
+        }
+
         var point = e.GetCurrentPoint(this);
         if (point.Properties.IsLeftButtonPressed
             && BeginConnectionDragFromEvent(e))
@@ -377,7 +382,8 @@ public partial class AssetGraphEditorPaneView : UserControl
 
     private void GraphPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (DataContext is not AssetGraphEditorPaneViewModel graph)
+        if (DataContext is not AssetGraphEditorPaneViewModel graph
+            || !IsPointerInsideGraphViewport(e))
         {
             return;
         }
@@ -408,6 +414,15 @@ public partial class AssetGraphEditorPaneView : UserControl
     private Point ToGraphPosition(PointerEventArgs e)
     {
         return e.GetPosition(AssetGraphCanvas);
+    }
+
+    private bool IsPointerInsideGraphViewport(PointerEventArgs e)
+    {
+        var point = e.GetPosition(AssetGraphScrollViewer);
+        return point.X >= 0.0
+            && point.Y >= 0.0
+            && point.X <= AssetGraphScrollViewer.Bounds.Width
+            && point.Y <= AssetGraphScrollViewer.Bounds.Height;
     }
 
     private static bool IsPointerInsideNodeCard(object? source)

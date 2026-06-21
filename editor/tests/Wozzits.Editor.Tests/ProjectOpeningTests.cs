@@ -1,3 +1,4 @@
+using System.Threading;
 using Wozzits.Editor.Core.Projects;
 using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
@@ -457,12 +458,50 @@ public sealed partial class ProjectOpeningTests
                             new EngineAssetGraphNode
                             {
                                 Id = 7,
+                                Type = 41,
                                 TypeName = "Renderable",
                                 Schema = "e7000707",
                                 DisplayName = "renderable",
-                                CompileStatus = "not resolved",
-                                InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
-                                OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Renderable" }],
+                                CompileStatus = "ready",
+                                X = 12.5,
+                                Y = 34.25,
+                                InputPorts =
+                                [
+                                    new EngineAssetGraphPort
+                                    {
+                                        Index = 0,
+                                        Type = 7,
+                                        Flags = EngineAssetGraphPortFlags.Required,
+                                        Name = "source_file",
+                                        Label = "Shader source",
+                                        TypeName = "Shader source",
+                                    },
+                                ],
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort
+                                    {
+                                        Index = 0,
+                                        Type = 9,
+                                        Flags = EngineAssetGraphPortFlags.Required
+                                            | EngineAssetGraphPortFlags.Many,
+                                        Name = "output",
+                                        Label = "Renderable",
+                                        TypeName = "Renderable",
+                                    },
+                                ],
+                                Diagnostics =
+                                [
+                                    new EngineAssetGraphDiagnostic
+                                    {
+                                        Severity = 2,
+                                        Code = 5,
+                                        Node = 7,
+                                        Edge = ulong.MaxValue,
+                                        InputPort = 0,
+                                        Message = "edge provider type does not match the input port type",
+                                    },
+                                ],
                             },
                         ],
                     },
@@ -484,14 +523,40 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("7", viewModel.Inspector.AssetGraphNodeId);
         Assert.Equal("renderable", viewModel.Inspector.AssetGraphNodeName);
         Assert.Equal("Renderable", viewModel.Inspector.AssetGraphNodeType);
+        Assert.Equal("41", viewModel.Inspector.AssetGraphNodeTypeId);
         Assert.Equal("e7000707", viewModel.Inspector.AssetGraphNodeSchema);
-        Assert.Equal("not resolved", viewModel.Inspector.AssetGraphNodeCompileStatus);
+        Assert.Equal("ready", viewModel.Inspector.AssetGraphNodeCompileStatus);
+        Assert.Equal("12.5, 34.25", viewModel.Inspector.AssetGraphNodePosition);
         Assert.Collection(
             viewModel.Inspector.AssetGraphInputPorts,
-            port => Assert.Equal("Shader source", port.Label));
+            port =>
+            {
+                Assert.Equal("source_file", port.Name);
+                Assert.Equal("Shader source", port.Label);
+                Assert.Equal("7", port.Type);
+                Assert.Equal("required", port.Requirement);
+                Assert.Equal("single", port.Arity);
+            });
         Assert.Collection(
             viewModel.Inspector.AssetGraphOutputPorts,
-            port => Assert.Equal("Renderable", port.Label));
+            port =>
+            {
+                Assert.Equal("output", port.Name);
+                Assert.Equal("Renderable", port.Label);
+                Assert.Equal("9", port.Type);
+                Assert.Equal("required", port.Requirement);
+                Assert.Equal("many", port.Arity);
+            });
+        Assert.Collection(
+            viewModel.Inspector.AssetGraphDiagnostics,
+            diagnostic =>
+            {
+                Assert.Equal("error", diagnostic.Severity);
+                Assert.Equal("TypeMismatch", diagnostic.Code);
+                Assert.Equal("7", diagnostic.Node);
+                Assert.Equal("0", diagnostic.InputPort);
+                Assert.Contains("provider type", diagnostic.Message);
+            });
 
         var root = Assert.Single(viewModel.SceneTree.Nodes);
         var mesh = Assert.Single(root.Children);
@@ -712,6 +777,10 @@ public sealed partial class ProjectOpeningTests
 
         public int SaveCount { get; private set; }
 
+        public ManualResetEventSlim? CompileStartedSignal { get; set; }
+
+        public ManualResetEventSlim? ContinueCompileSignal { get; set; }
+
         public List<AssetGraphPositionEdit> AssetGraphPositions { get; } = [];
 
         public List<double> AssetGraphZooms { get; } = [];
@@ -778,6 +847,13 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse CompileAssetGraph()
         {
             ++CompileCount;
+            CompileStartedSignal?.Set();
+            if (ContinueCompileSignal is not null
+                && !ContinueCompileSignal.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("Timed out waiting to continue compile.");
+            }
+
             return CompileResponse;
         }
 

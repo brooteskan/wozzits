@@ -124,6 +124,10 @@ public sealed partial class WozzitsEngineNativeClient
                 bytes,
                 node.OutputPorts,
                 ReadAssetGraphPort),
+            Diagnostics = ReadTable<WzEditorAssetGraphDiagnosticAbi, EngineAssetGraphDiagnostic>(
+                bytes,
+                node.Diagnostics,
+                ReadAssetGraphDiagnostic),
         };
     }
 
@@ -139,6 +143,21 @@ public sealed partial class WozzitsEngineNativeClient
             Name = ReadString(bytes, port.Name),
             Label = ReadString(bytes, port.Label),
             TypeName = ReadString(bytes, port.TypeName),
+        };
+    }
+
+    private static EngineAssetGraphDiagnostic ReadAssetGraphDiagnostic(
+        byte[] bytes,
+        WzEditorAssetGraphDiagnosticAbi diagnostic)
+    {
+        return new EngineAssetGraphDiagnostic
+        {
+            Severity = diagnostic.Severity,
+            Code = diagnostic.Code,
+            Node = diagnostic.Node,
+            Edge = diagnostic.Edge,
+            InputPort = diagnostic.InputPort,
+            Message = ReadString(bytes, diagnostic.Message),
         };
     }
 

@@ -12,12 +12,16 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     public AssetGraphNodeCardViewModel(EngineAssetGraphNode node, double canvasPadding)
     {
         Id = node.Id;
+        Type = node.Type;
+        GraphX = node.X;
+        GraphY = node.Y;
         X = node.X + canvasPadding;
         Y = node.Y + canvasPadding;
         DisplayName = node.DisplayName;
         TypeName = node.TypeName;
         SchemaDisplay = node.Schema;
         CompileStatus = node.CompileStatus;
+        Diagnostics = node.Diagnostics;
         InputPorts = new ObservableCollection<AssetGraphPortViewModel>(
             node.InputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: true)));
         OutputPorts = new ObservableCollection<AssetGraphPortViewModel>(
@@ -25,6 +29,12 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     }
 
     public ulong Id { get; }
+
+    public int Type { get; }
+
+    public double GraphX { get; }
+
+    public double GraphY { get; }
 
     public double X
     {
@@ -51,6 +61,8 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     public string SchemaDisplay { get; }
 
     public string CompileStatus { get; }
+
+    public IReadOnlyList<EngineAssetGraphDiagnostic> Diagnostics { get; }
 
     public bool HasInputPorts => InputPorts.Count > 0;
 

@@ -258,6 +258,16 @@
                             <Grid ColumnDefinitions="Auto,*"
                                   ColumnSpacing="10"
                                   Classes="InspectorPropertyRow">
+                                <TextBlock Text="Type ID"
+                                           Classes="InspectorPropertyName"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding AssetGraphNodeTypeId}"
+                                           Classes="InspectorPropertyValue"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="Auto,*"
+                                  ColumnSpacing="10"
+                                  Classes="InspectorPropertyRow">
                                 <TextBlock Text="Schema"
                                            Classes="InspectorPropertyName"/>
                                 <TextBlock Grid.Column="1"
@@ -274,6 +284,37 @@
                                            Text="{Binding AssetGraphNodeCompileStatus}"
                                            Classes="InspectorPropertyValue"/>
                             </Grid>
+
+                            <Grid ColumnDefinitions="Auto,*"
+                                  ColumnSpacing="10"
+                                  Classes="InspectorPropertyRow">
+                                <TextBlock Text="Position"
+                                           Classes="InspectorPropertyName"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding AssetGraphNodePosition}"
+                                           Classes="InspectorPropertyValue"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Classes="InspectorSection">
+                            <TextBlock Text="Diagnostics"
+                                       Classes="InspectorSectionTitle"/>
+                            <TextBlock Text="No diagnostics."
+                                       Classes="PaneEmptyState"
+                                       IsVisible="{Binding HasNoAssetGraphDiagnostics}"/>
+                            <ItemsControl ItemsSource="{Binding AssetGraphDiagnostics}"
+                                          IsVisible="{Binding HasAssetGraphDiagnostics}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="panes:InspectorAssetGraphDiagnosticViewModel">
+                                        <StackPanel Classes="InspectorDiagnosticItem">
+                                            <TextBlock Text="{Binding Message}"
+                                                       Classes="InspectorDiagnosticMessage"/>
+                                            <TextBlock Text="{Binding Detail}"
+                                                       Classes="InspectorDiagnosticMeta"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection">
@@ -286,8 +327,12 @@
                                           IsVisible="{Binding HasAssetGraphInputPorts}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="panes:InspectorAssetGraphPortViewModel">
-                                        <TextBlock Text="{Binding Label}"
-                                                   Classes="InspectorComponentName"/>
+                                        <StackPanel Classes="InspectorPortItem">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Classes="InspectorComponentName"/>
+                                            <TextBlock Text="{Binding Detail}"
+                                                       Classes="InspectorPortDetail"/>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -303,8 +348,12 @@
                                           IsVisible="{Binding HasAssetGraphOutputPorts}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="panes:InspectorAssetGraphPortViewModel">
-                                        <TextBlock Text="{Binding Label}"
-                                                   Classes="InspectorComponentName"/>
+                                        <StackPanel Classes="InspectorPortItem">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Classes="InspectorComponentName"/>
+                                            <TextBlock Text="{Binding Detail}"
+                                                       Classes="InspectorPortDetail"/>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

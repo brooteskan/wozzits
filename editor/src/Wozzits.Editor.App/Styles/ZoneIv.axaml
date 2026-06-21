@@ -273,6 +273,36 @@
         <Setter Property="Margin" Value="0,2"/>
     </Style>
 
+    <Style Selector="StackPanel.InspectorPortItem">
+        <Setter Property="Spacing" Value="1"/>
+        <Setter Property="Margin" Value="0,3"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorPortDetail">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="StackPanel.InspectorDiagnosticItem">
+        <Setter Property="Spacing" Value="2"/>
+        <Setter Property="Margin" Value="0,4"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorDiagnosticMessage">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorDiagnosticMeta">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
     <Style Selector="Border.AssetGraphCard">
         <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
@@ -318,6 +348,11 @@
         <Setter Property="Fill" Value="{DynamicResource WozzitsWarningBrush}"/>
     </Style>
 
+    <Style Selector="TextBlock.AssetGraphStatusText">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
     <Style Selector="Button.AssetGraphToolbarButton">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
@@ -339,6 +374,11 @@
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsErrorBrush}"/>
     </Style>
 
+    <Style Selector="Button.AssetGraphToolbarButton.running">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsWarningBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsWarningBrush}"/>
+    </Style>
+
     <Style Selector="Button.AssetGraphToolbarButton:pointerover">
         <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
@@ -352,6 +392,11 @@
     <Style Selector="Button.AssetGraphToolbarButton.failed:pointerover">
         <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsErrorBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.running:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsWarningBrush}"/>
     </Style>
 
     <Style Selector="Ellipse.AssetGraphCompileDot">

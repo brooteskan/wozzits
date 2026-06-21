@@ -156,6 +156,8 @@ public sealed record EngineAssetGraphNode
     public List<EngineAssetGraphPort> InputPorts { get; init; } = [];
 
     public List<EngineAssetGraphPort> OutputPorts { get; init; } = [];
+
+    public List<EngineAssetGraphDiagnostic> Diagnostics { get; init; } = [];
 }
 
 public sealed record EngineAssetGraphPort
@@ -171,6 +173,21 @@ public sealed record EngineAssetGraphPort
     public string Label { get; init; } = string.Empty;
 
     public string TypeName { get; init; } = string.Empty;
+}
+
+public sealed record EngineAssetGraphDiagnostic
+{
+    public uint Severity { get; init; }
+
+    public uint Code { get; init; }
+
+    public ulong Node { get; init; }
+
+    public ulong Edge { get; init; }
+
+    public uint InputPort { get; init; }
+
+    public string Message { get; init; } = string.Empty;
 }
 
 public sealed record EngineAssetGraphEdge

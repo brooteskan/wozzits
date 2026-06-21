@@ -24,6 +24,12 @@
                                      Classes.draft="{Binding IsDraftGraph}"
                                      ToolTip.Tip="{Binding GraphModeStatus}"/>
 
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding GraphOperationStatus}"
+                                       Classes="AssetGraphStatusText"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
+
                             <StackPanel Grid.Column="2"
                                         Orientation="Horizontal"
                                         Spacing="4">
@@ -31,7 +37,8 @@
                                         Classes="AssetGraphToolbarButton"
                                         Classes.success="{Binding HasCommitSucceeded}"
                                         Classes.failed="{Binding HasCommitFailed}"
-                                        ToolTip.Tip="Commit graph draft">
+                                        Classes.running="{Binding IsCommitInProgress}"
+                                        ToolTip.Tip="Commit graph draft (save, compile, finalize)">
                                     <PathIcon Width="13"
                                               Height="13"
                                               Data="M2,7 L5.5,10.5 L11,3"/>
@@ -40,7 +47,8 @@
                                         Classes="AssetGraphToolbarButton"
                                         Classes.success="{Binding HasCompileSucceeded}"
                                         Classes.failed="{Binding HasCompileFailed}"
-                                        ToolTip.Tip="Compile graph">
+                                        Classes.running="{Binding IsCompileInProgress}"
+                                        ToolTip.Tip="Compile graph preview">
                                     <PathIcon Width="13"
                                               Height="13"
                                               Data="M3,2 L11,7 L3,12 Z"/>

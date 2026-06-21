@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 14;
+    internal const uint AbiVersion = 15;
 
     private static int _resolverRegistered;
 
@@ -269,7 +269,21 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorAssetGraphPortAbi.TypeName),
             48);
 
-        AssertSize<WzEditorAssetGraphNodeAbi>(128);
+        AssertSize<WzEditorAssetGraphDiagnosticAbi>(48);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.Severity),
+            0);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.Node),
+            8);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.InputPort),
+            24);
+        AssertOffset<WzEditorAssetGraphDiagnosticAbi>(
+            nameof(WzEditorAssetGraphDiagnosticAbi.Message),
+            32);
+
+        AssertSize<WzEditorAssetGraphNodeAbi>(144);
         AssertOffset<WzEditorAssetGraphNodeAbi>(
             nameof(WzEditorAssetGraphNodeAbi.Id),
             0);
@@ -288,6 +302,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorAssetGraphNodeAbi>(
             nameof(WzEditorAssetGraphNodeAbi.OutputPorts),
             112);
+        AssertOffset<WzEditorAssetGraphNodeAbi>(
+            nameof(WzEditorAssetGraphNodeAbi.Diagnostics),
+            128);
 
         AssertSize<WzEditorAssetGraphEdgeAbi>(32);
         AssertOffset<WzEditorAssetGraphEdgeAbi>(
@@ -576,6 +593,7 @@ internal readonly struct WzEditorAssetGraphNodeAbi
     public readonly double Y;
     public readonly WzEditorTableSpanAbi InputPorts;
     public readonly WzEditorTableSpanAbi OutputPorts;
+    public readonly WzEditorTableSpanAbi Diagnostics;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -588,6 +606,18 @@ internal readonly struct WzEditorAssetGraphPortAbi
     public readonly WzEditorStringSpanAbi Name;
     public readonly WzEditorStringSpanAbi Label;
     public readonly WzEditorStringSpanAbi TypeName;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetGraphDiagnosticAbi
+{
+    public readonly uint Severity;
+    public readonly uint Code;
+    public readonly ulong Node;
+    public readonly ulong Edge;
+    public readonly uint InputPort;
+    public readonly uint Reserved;
+    public readonly WzEditorStringSpanAbi Message;
 }
 
 [StructLayout(LayoutKind.Sequential)]

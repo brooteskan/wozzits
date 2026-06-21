@@ -38,8 +38,12 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         IWozzitsEngineEditorSession? editorSession = null)
     {
         _editorSession = editorSession;
-        CommitGraphCommand = new RelayCommand(CommitGraph, () => HasGraph);
-        CompileGraphCommand = new RelayCommand(CompileGraph, () => HasGraph);
+        CommitGraphCommand = new AsyncRelayCommand(
+            CommitGraphAsync,
+            CanRunGraphOperation);
+        CompileGraphCommand = new AsyncRelayCommand(
+            CompileGraphAsync,
+            CanRunGraphOperation);
     }
 
     public ObservableCollection<AssetGraphNodeCardViewModel> Nodes { get; } = [];
@@ -48,9 +52,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
     public ObservableCollection<AssetGraphNodeCardViewModel> SelectedNodes { get; } = [];
 
-    public IRelayCommand CommitGraphCommand { get; }
+    public IAsyncRelayCommand CommitGraphCommand { get; }
 
-    public IRelayCommand CompileGraphCommand { get; }
+    public IAsyncRelayCommand CompileGraphCommand { get; }
 
     public string EmptyState
     {
@@ -70,6 +74,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             if (SetProperty(ref _isDraftGraph, value))
             {
                 OnPropertyChanged(nameof(GraphModeStatus));
+                OnPropertyChanged(nameof(GraphOperationStatus));
                 OnPropertyChanged(nameof(IsActualGraph));
             }
         }
@@ -81,13 +86,52 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         ? "Draft graph"
         : "Actual graph";
 
+    public string GraphOperationStatus
+    {
+        get
+        {
+            if (IsCommitInProgress)
+            {
+                return "Committing graph...";
+            }
+            if (IsCompileInProgress)
+            {
+                return "Compiling graph...";
+            }
+            if (HasCommitSucceeded)
+            {
+                return "Graph committed";
+            }
+            if (HasCommitFailed)
+            {
+                return "Commit failed";
+            }
+            if (HasCompileSucceeded)
+            {
+                return "Graph compiled";
+            }
+            if (HasCompileFailed)
+            {
+                return "Compile failed";
+            }
+
+            return GraphModeStatus;
+        }
+    }
+
     public bool HasCommitSucceeded => _commitState == AssetGraphOperationState.Succeeded;
 
     public bool HasCommitFailed => _commitState == AssetGraphOperationState.Failed;
 
+    public bool IsCommitInProgress => _commitState == AssetGraphOperationState.InProgress;
+
     public bool HasCompileSucceeded => _compileState == AssetGraphOperationState.Succeeded;
 
     public bool HasCompileFailed => _compileState == AssetGraphOperationState.Failed;
+
+    public bool IsCompileInProgress => _compileState == AssetGraphOperationState.InProgress;
+
+    public bool IsGraphOperationRunning => IsCommitInProgress || IsCompileInProgress;
 
     public string LastEditError
     {
@@ -310,6 +354,12 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             IsConnectionPreviewRejected = true;
             return;
         }
+        if (IsGraphOperationRunning)
+        {
+            inputPort.IsConnectionRejected = true;
+            IsConnectionPreviewRejected = true;
+            return;
+        }
 
         var check = _editorSession.CanConnectAssetGraphNodes(
             fromNode.Id,
@@ -327,6 +377,11 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
+            CancelConnectionPreview();
+            return false;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
             CancelConnectionPreview();
             return false;
         }
@@ -357,6 +412,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
             return false;
         }
 
@@ -572,6 +631,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             LastEditError = "Engine editor session is not available.";
             return;
         }
+        if (RejectIfGraphOperationRunning())
+        {
+            return;
+        }
 
         var response = _editorSession.SetAssetGraphZoom(Zoom);
         LastEditError = response.Ok ? string.Empty : response.Error;
@@ -582,6 +645,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
+            return;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
             return;
         }
 
@@ -603,6 +670,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
+            return;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
             return;
         }
 
@@ -669,15 +740,38 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         return Math.Clamp(zoom, MinZoom, MaxZoom);
     }
 
-    private void CommitGraph()
+    private bool CanRunGraphOperation()
+    {
+        return HasGraph && !IsGraphOperationRunning;
+    }
+
+    private async Task CommitGraphAsync()
     {
         if (_editorSession is null)
         {
             MarkCommitResult(false, "Engine editor session is not available.");
             return;
         }
+        if (IsGraphOperationRunning)
+        {
+            return;
+        }
 
-        var response = _editorSession.CommitAssetGraph();
+        LastEditError = string.Empty;
+        SetCompileState(AssetGraphOperationState.Neutral);
+        SetCommitState(AssetGraphOperationState.InProgress);
+
+        var editorSession = _editorSession;
+        EngineMutationResponse response;
+        try
+        {
+            response = await Task.Run(editorSession.CommitAssetGraph);
+        }
+        catch (Exception ex)
+        {
+            MarkCommitResult(false, ex.Message);
+            return;
+        }
         if (!response.Ok)
         {
             MarkCommitResult(false, response.Error);
@@ -693,15 +787,33 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         MarkCommitResult(true);
     }
 
-    private void CompileGraph()
+    private async Task CompileGraphAsync()
     {
         if (_editorSession is null)
         {
             MarkCompileResult(false, "Engine editor session is not available.");
             return;
         }
+        if (IsGraphOperationRunning)
+        {
+            return;
+        }
 
-        var response = _editorSession.CompileAssetGraph();
+        LastEditError = string.Empty;
+        SetCommitState(AssetGraphOperationState.Neutral);
+        SetCompileState(AssetGraphOperationState.InProgress);
+
+        var editorSession = _editorSession;
+        EngineMutationResponse response;
+        try
+        {
+            response = await Task.Run(editorSession.CompileAssetGraph);
+        }
+        catch (Exception ex)
+        {
+            MarkCompileResult(false, ex.Message);
+            return;
+        }
         if (!response.Ok)
         {
             MarkCompileResult(false, response.Error);
@@ -801,6 +913,17 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         return $"Asset graph connection rejected: {response.Check.Status}.";
     }
 
+    private bool RejectIfGraphOperationRunning()
+    {
+        if (!IsGraphOperationRunning)
+        {
+            return false;
+        }
+
+        LastEditError = "Asset graph operation is already running.";
+        return true;
+    }
+
     private void SetCommitState(AssetGraphOperationState state)
     {
         if (_commitState == state)
@@ -811,6 +934,11 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         _commitState = state;
         OnPropertyChanged(nameof(HasCommitSucceeded));
         OnPropertyChanged(nameof(HasCommitFailed));
+        OnPropertyChanged(nameof(IsCommitInProgress));
+        OnPropertyChanged(nameof(IsGraphOperationRunning));
+        OnPropertyChanged(nameof(GraphOperationStatus));
+        CommitGraphCommand.NotifyCanExecuteChanged();
+        CompileGraphCommand.NotifyCanExecuteChanged();
     }
 
     private void SetCompileState(AssetGraphOperationState state)
@@ -823,6 +951,11 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         _compileState = state;
         OnPropertyChanged(nameof(HasCompileSucceeded));
         OnPropertyChanged(nameof(HasCompileFailed));
+        OnPropertyChanged(nameof(IsCompileInProgress));
+        OnPropertyChanged(nameof(IsGraphOperationRunning));
+        OnPropertyChanged(nameof(GraphOperationStatus));
+        CommitGraphCommand.NotifyCanExecuteChanged();
+        CompileGraphCommand.NotifyCanExecuteChanged();
     }
 
     private void AddNodeToSelection(AssetGraphNodeCardViewModel node)

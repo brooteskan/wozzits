@@ -1,3 +1,4 @@
+using System.Threading;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
 using Wozzits.Editor.ViewModels.EditorPanes;
@@ -39,7 +40,7 @@ public sealed partial class ProjectOpeningTests
                                 TypeName = "Renderable",
                                 Schema = "e7000707",
                                 DisplayName = "Renderable",
-                                CompileStatus = "not resolved",
+                                CompileStatus = "ready",
                                 X = 280,
                                 Y = 20,
                                 InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "Shader source" }],
@@ -653,29 +654,36 @@ public sealed partial class ProjectOpeningTests
 
         Assert.True(viewModel.AssetGraph.IsActualGraph);
         Assert.False(viewModel.AssetGraph.IsDraftGraph);
+        Assert.Equal("Actual graph", viewModel.AssetGraph.GraphOperationStatus);
         Assert.False(viewModel.AssetGraph.HasCommitSucceeded);
         Assert.False(viewModel.AssetGraph.HasCommitFailed);
+        Assert.False(viewModel.AssetGraph.IsCommitInProgress);
         Assert.False(viewModel.AssetGraph.HasCompileSucceeded);
         Assert.False(viewModel.AssetGraph.HasCompileFailed);
+        Assert.False(viewModel.AssetGraph.IsCompileInProgress);
+        Assert.False(viewModel.AssetGraph.IsGraphOperationRunning);
 
         viewModel.AssetGraph.MarkGraphDraft();
 
         Assert.False(viewModel.AssetGraph.IsActualGraph);
         Assert.True(viewModel.AssetGraph.IsDraftGraph);
+        Assert.Equal("Draft graph", viewModel.AssetGraph.GraphOperationStatus);
         Assert.False(viewModel.AssetGraph.HasCommitSucceeded);
         Assert.False(viewModel.AssetGraph.HasCompileSucceeded);
+
+        viewModel.AssetGraph.MarkCompileResult(succeeded: true);
+        Assert.False(viewModel.AssetGraph.IsCompileInProgress);
+        Assert.Equal("Graph compiled", viewModel.AssetGraph.GraphOperationStatus);
+        Assert.True(viewModel.AssetGraph.HasCompileSucceeded);
+        Assert.False(viewModel.AssetGraph.HasCompileFailed);
+        Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
 
         viewModel.AssetGraph.MarkCommitResult(succeeded: false, "commit failed");
 
         Assert.True(viewModel.AssetGraph.HasCommitFailed);
         Assert.False(viewModel.AssetGraph.HasCommitSucceeded);
+        Assert.Equal("Commit failed", viewModel.AssetGraph.GraphOperationStatus);
         Assert.Equal("commit failed", viewModel.AssetGraph.LastEditError);
-
-        viewModel.AssetGraph.MarkCompileResult(succeeded: true);
-
-        Assert.True(viewModel.AssetGraph.HasCompileSucceeded);
-        Assert.False(viewModel.AssetGraph.HasCompileFailed);
-        Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
 
         viewModel.AssetGraph.MarkCommitResult(succeeded: true);
 
@@ -683,11 +691,12 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.AssetGraph.IsDraftGraph);
         Assert.True(viewModel.AssetGraph.HasCommitSucceeded);
         Assert.False(viewModel.AssetGraph.HasCommitFailed);
+        Assert.Equal("Graph committed", viewModel.AssetGraph.GraphOperationStatus);
         Assert.Equal(string.Empty, viewModel.AssetGraph.LastEditError);
     }
 
     [Fact]
-    public void AssetGraphPaneCommitCommandCommitsThroughEngineSession()
+    public async Task AssetGraphPaneCommitCommandCommitsThroughEngineSession()
     {
         var editorSession = new RecordingEditorSession();
         var viewModel = new MainWindowViewModel(
@@ -728,7 +737,7 @@ public sealed partial class ProjectOpeningTests
                 ],
             },
         };
-        viewModel.AssetGraph.CommitGraphCommand.Execute(null);
+        await viewModel.AssetGraph.CommitGraphCommand.ExecuteAsync(null);
 
         Assert.Equal(1, editorSession.CommitCount);
         Assert.True(viewModel.AssetGraph.IsActualGraph);
@@ -740,7 +749,7 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
-    public void AssetGraphPaneCompileCommandCompilesThroughEngineSession()
+    public async Task AssetGraphPaneCompileCommandCompilesThroughEngineSession()
     {
         var editorSession = new RecordingEditorSession();
         var viewModel = new MainWindowViewModel(
@@ -781,7 +790,7 @@ public sealed partial class ProjectOpeningTests
                 ],
             },
         };
-        viewModel.AssetGraph.CompileGraphCommand.Execute(null);
+        await viewModel.AssetGraph.CompileGraphCommand.ExecuteAsync(null);
 
         Assert.Equal(1, editorSession.CompileCount);
         Assert.True(viewModel.AssetGraph.IsDraftGraph);
@@ -793,7 +802,75 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
-    public void AssetGraphPaneCommitAndCompileCommandsShowEngineFailures()
+    public async Task AssetGraphPaneCompileCommandRunsAsync()
+    {
+        var compileStarted = new ManualResetEventSlim();
+        var continueCompile = new ManualResetEventSlim();
+        var editorSession = new RecordingEditorSession
+        {
+            CompileStartedSignal = compileStarted,
+            ContinueCompileSignal = continueCompile,
+            AssetGraphSnapshot = new EngineAssetGraphSnapshotResponse
+            {
+                Ok = true,
+                Snapshot = new EngineAssetGraphSnapshot
+                {
+                    Nodes =
+                    [
+                        new EngineAssetGraphNode
+                        {
+                            Id = 4,
+                            TypeName = "Shader",
+                            DisplayName = "shader",
+                            CompileStatus = "compiled",
+                        },
+                    ],
+                },
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 4,
+                                TypeName = "Shader",
+                                DisplayName = "shader",
+                            },
+                        ],
+                    },
+                }),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.CompileGraphCommand.Execute(null);
+        var compileTask = viewModel.AssetGraph.CompileGraphCommand.ExecutionTask;
+
+        Assert.NotNull(compileTask);
+        Assert.True(compileStarted.Wait(TimeSpan.FromSeconds(1)));
+        Assert.False(compileTask!.IsCompleted);
+        Assert.True(viewModel.AssetGraph.IsCompileInProgress);
+        Assert.True(viewModel.AssetGraph.IsGraphOperationRunning);
+        Assert.Equal("Compiling graph...", viewModel.AssetGraph.GraphOperationStatus);
+        Assert.False(viewModel.AssetGraph.CompileGraphCommand.CanExecute(null));
+        Assert.False(viewModel.AssetGraph.CommitGraphCommand.CanExecute(null));
+
+        continueCompile.Set();
+        await compileTask;
+
+        Assert.Equal(1, editorSession.CompileCount);
+        Assert.False(viewModel.AssetGraph.IsCompileInProgress);
+        Assert.False(viewModel.AssetGraph.IsGraphOperationRunning);
+        Assert.True(viewModel.AssetGraph.HasCompileSucceeded);
+    }
+
+    [Fact]
+    public async Task AssetGraphPaneCommitAndCompileCommandsShowEngineFailures()
     {
         var editorSession = new RecordingEditorSession
         {
@@ -828,13 +905,13 @@ public sealed partial class ProjectOpeningTests
                 }),
             editorSession: editorSession);
 
-        viewModel.AssetGraph.CommitGraphCommand.Execute(null);
+        await viewModel.AssetGraph.CommitGraphCommand.ExecuteAsync(null);
 
         Assert.True(viewModel.AssetGraph.HasCommitFailed);
         Assert.False(viewModel.AssetGraph.HasCommitSucceeded);
         Assert.Equal("commit failed", viewModel.AssetGraph.LastEditError);
 
-        viewModel.AssetGraph.CompileGraphCommand.Execute(null);
+        await viewModel.AssetGraph.CompileGraphCommand.ExecuteAsync(null);
 
         Assert.True(viewModel.AssetGraph.HasCompileFailed);
         Assert.False(viewModel.AssetGraph.HasCompileSucceeded);

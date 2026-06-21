@@ -39,8 +39,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodeId = string.Empty;
     private string _assetGraphNodeName = string.Empty;
     private string _assetGraphNodeType = string.Empty;
+    private string _assetGraphNodeTypeId = string.Empty;
     private string _assetGraphNodeSchema = string.Empty;
     private string _assetGraphNodeCompileStatus = string.Empty;
+    private string _assetGraphNodePosition = string.Empty;
     private string _lastEditError = string.Empty;
 
     public InspectorPaneViewModel(
@@ -63,6 +65,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphPortViewModel> AssetGraphInputPorts { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphPortViewModel> AssetGraphOutputPorts { get; } = [];
+
+    public ObservableCollection<InspectorAssetGraphDiagnosticViewModel> AssetGraphDiagnostics { get; } = [];
 
     public IRelayCommand ApplyNodePropertiesCommand { get; }
 
@@ -268,6 +272,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         private set => SetProperty(ref _assetGraphNodeType, value);
     }
 
+    public string AssetGraphNodeTypeId
+    {
+        get => _assetGraphNodeTypeId;
+        private set => SetProperty(ref _assetGraphNodeTypeId, value);
+    }
+
     public string AssetGraphNodeSchema
     {
         get => _assetGraphNodeSchema;
@@ -280,6 +290,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         private set => SetProperty(ref _assetGraphNodeCompileStatus, value);
     }
 
+    public string AssetGraphNodePosition
+    {
+        get => _assetGraphNodePosition;
+        private set => SetProperty(ref _assetGraphNodePosition, value);
+    }
+
     public bool HasAssetGraphInputPorts => AssetGraphInputPorts.Count > 0;
 
     public bool HasNoAssetGraphInputPorts => !HasAssetGraphInputPorts;
@@ -287,6 +303,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public bool HasAssetGraphOutputPorts => AssetGraphOutputPorts.Count > 0;
 
     public bool HasNoAssetGraphOutputPorts => !HasAssetGraphOutputPorts;
+
+    public bool HasAssetGraphDiagnostics => AssetGraphDiagnostics.Count > 0;
+
+    public bool HasNoAssetGraphDiagnostics => !HasAssetGraphDiagnostics;
 
     public string LastEditError
     {
@@ -307,6 +327,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         Components.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
+        AssetGraphDiagnostics.Clear();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -349,6 +370,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         Components.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
+        AssetGraphDiagnostics.Clear();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -371,17 +393,26 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphNodeId = node.Id.ToString(CultureInfo.InvariantCulture);
         AssetGraphNodeName = node.DisplayName;
         AssetGraphNodeType = node.TypeName;
+        AssetGraphNodeTypeId = node.Type.ToString(CultureInfo.InvariantCulture);
         AssetGraphNodeSchema = node.SchemaDisplay;
         AssetGraphNodeCompileStatus = node.CompileStatus;
+        AssetGraphNodePosition =
+            $"{FormatDouble(node.GraphX)}, {FormatDouble(node.GraphY)}";
 
         foreach (var port in node.InputPorts)
         {
-            AssetGraphInputPorts.Add(new InspectorAssetGraphPortViewModel(port.Label));
+            AssetGraphInputPorts.Add(new InspectorAssetGraphPortViewModel(port));
         }
 
         foreach (var port in node.OutputPorts)
         {
-            AssetGraphOutputPorts.Add(new InspectorAssetGraphPortViewModel(port.Label));
+            AssetGraphOutputPorts.Add(new InspectorAssetGraphPortViewModel(port));
+        }
+
+        foreach (var diagnostic in node.Diagnostics)
+        {
+            AssetGraphDiagnostics.Add(
+                new InspectorAssetGraphDiagnosticViewModel(diagnostic));
         }
 
         NotifyComponentStateChanged();
@@ -486,8 +517,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphNodeId = string.Empty;
         AssetGraphNodeName = string.Empty;
         AssetGraphNodeType = string.Empty;
+        AssetGraphNodeTypeId = string.Empty;
         AssetGraphNodeSchema = string.Empty;
         AssetGraphNodeCompileStatus = string.Empty;
+        AssetGraphNodePosition = string.Empty;
     }
 
     private void SetSelectionKind(InspectorSelectionKind kind)
@@ -570,12 +603,142 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoAssetGraphInputPorts));
         OnPropertyChanged(nameof(HasAssetGraphOutputPorts));
         OnPropertyChanged(nameof(HasNoAssetGraphOutputPorts));
+        OnPropertyChanged(nameof(HasAssetGraphDiagnostics));
+        OnPropertyChanged(nameof(HasNoAssetGraphDiagnostics));
     }
 }
 
 public sealed record InspectorComponentViewModel(string Name, string Kind);
 
-public sealed record InspectorAssetGraphPortViewModel(string Label);
+public sealed class InspectorAssetGraphPortViewModel
+{
+    public InspectorAssetGraphPortViewModel(AssetGraphPortViewModel port)
+    {
+        Index = port.Index.ToString(CultureInfo.InvariantCulture);
+        Name = port.Name;
+        Label = port.Label;
+        Type = port.Type.ToString(CultureInfo.InvariantCulture);
+        TypeName = port.TypeName;
+        Requirement = port.Flags.HasFlag(EngineAssetGraphPortFlags.Required)
+            ? "required"
+            : "optional";
+        Arity = port.Flags.HasFlag(EngineAssetGraphPortFlags.Many)
+            ? "many"
+            : "single";
+    }
+
+    public string Index { get; }
+
+    public string Name { get; }
+
+    public string Label { get; }
+
+    public string Type { get; }
+
+    public string TypeName { get; }
+
+    public string Requirement { get; }
+
+    public string Arity { get; }
+
+    public string DisplayName =>
+        string.IsNullOrWhiteSpace(Name) ? Label : Name;
+
+    public string Detail =>
+        $"#{Index} | type {Type}"
+        + (string.IsNullOrWhiteSpace(TypeName) ? string.Empty : $" | {TypeName}")
+        + $" | {Requirement} | {Arity}";
+}
+
+public sealed class InspectorAssetGraphDiagnosticViewModel
+{
+    private const ulong InvalidId = ulong.MaxValue;
+
+    public InspectorAssetGraphDiagnosticViewModel(
+        EngineAssetGraphDiagnostic diagnostic)
+    {
+        Severity = SeverityName(diagnostic.Severity);
+        Code = CodeName(diagnostic.Code);
+        Node = diagnostic.Node == InvalidId
+            ? string.Empty
+            : diagnostic.Node.ToString(CultureInfo.InvariantCulture);
+        Edge = diagnostic.Edge == InvalidId
+            ? string.Empty
+            : diagnostic.Edge.ToString(CultureInfo.InvariantCulture);
+        InputPort = diagnostic.InputPort.ToString(CultureInfo.InvariantCulture);
+        Message = diagnostic.Message;
+    }
+
+    public string Severity { get; }
+
+    public string Code { get; }
+
+    public string Node { get; }
+
+    public string Edge { get; }
+
+    public string InputPort { get; }
+
+    public string Message { get; }
+
+    public bool HasNode => !string.IsNullOrWhiteSpace(Node);
+
+    public bool HasEdge => !string.IsNullOrWhiteSpace(Edge);
+
+    public string Detail
+    {
+        get
+        {
+            var parts = new List<string>
+            {
+                Severity,
+                Code,
+                $"input {InputPort}",
+            };
+            if (HasNode)
+            {
+                parts.Add($"node {Node}");
+            }
+            if (HasEdge)
+            {
+                parts.Add($"edge {Edge}");
+            }
+            return string.Join(" | ", parts);
+        }
+    }
+
+    private static string SeverityName(uint severity)
+    {
+        return severity switch
+        {
+            0 => "info",
+            1 => "warning",
+            2 => "error",
+            _ => $"severity {severity}",
+        };
+    }
+
+    private static string CodeName(uint code)
+    {
+        return code switch
+        {
+            0 => "None",
+            1 => "UnknownCompiler",
+            2 => "MissingRequiredInput",
+            3 => "InvalidInputPort",
+            4 => "DuplicateInputPort",
+            5 => "TypeMismatch",
+            6 => "MissingNode",
+            7 => "MissingAssetKey",
+            8 => "SelfDependency",
+            9 => "Cycle",
+            10 => "DuplicateAssetKey",
+            11 => "TypedMetaConflict",
+            12 => "AmbiguousManyPortBoundary",
+            _ => $"Code {code}",
+        };
+    }
+}
 
 public enum InspectorSelectionKind
 {
