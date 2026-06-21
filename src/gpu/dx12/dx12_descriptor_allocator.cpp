@@ -88,6 +88,33 @@ namespace wz::gpu::dx12
         device_->CreateShaderResourceView(resource, &srv_desc, table.cpu_at(offset));
     }
 
+    void DX12DescriptorAllocator::create_structured_buffer_uav(
+        const DX12DescriptorTable& table,
+        uint32_t                   offset,
+        ID3D12Resource*            resource,
+        uint32_t                   element_count,
+        uint32_t                   stride_bytes)
+    {
+        assert(device_);
+        assert(resource);
+        assert(offset < table.count);
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc{};
+        uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uav_desc.Format = DXGI_FORMAT_UNKNOWN;
+        uav_desc.Buffer.FirstElement = 0;
+        uav_desc.Buffer.NumElements = element_count;
+        uav_desc.Buffer.StructureByteStride = stride_bytes;
+        uav_desc.Buffer.CounterOffsetInBytes = 0;
+        uav_desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+        device_->CreateUnorderedAccessView(
+            resource,
+            nullptr,
+            &uav_desc,
+            table.cpu_at(offset));
+    }
+
     DX12DescriptorTable DX12DescriptorAllocator::allocate(uint32_t count)
     {
         assert(count > 0);

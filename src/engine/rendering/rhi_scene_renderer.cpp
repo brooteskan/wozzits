@@ -303,7 +303,7 @@ namespace wz::engine::rendering
         , logger_(logger)
         , backend_(device)
         , ctx_(backend_)
-        , cache_(device, ctx_.programs, ctx_.shaders)
+        , cache_(device, ctx_.programs, ctx_.compute_programs, ctx_.shaders)
         , recorder_(device, cache_, ctx_.resources, backend_)
     {
         forward_ = ctx_.passes.acquire("forward");
@@ -367,6 +367,7 @@ namespace wz::engine::rendering
         // (256 each) would grow across editor graph swaps and eventually fill.
         // The semantic/variant/pass registries are graph-independent and stay.
         ctx_.programs.clear();
+        ctx_.compute_programs.clear();
         ctx_.shaders.clear();
 
         realized_renderables_.clear();

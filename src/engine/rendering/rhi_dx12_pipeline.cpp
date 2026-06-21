@@ -161,7 +161,9 @@ namespace
 
     ID3D12RootSignature* create_root_signature(
         ID3D12Device* device,
-        const wz::rhi::RenderProgramDesc& program,
+        std::span<const wz::rhi::ShaderResourceGroupLayout>
+            shader_resource_groups,
+        bool allow_input_assembler,
         const wz::engine::rendering::RhiDx12PipelineLayout& layout)
     {
         if (!device) {
@@ -183,7 +185,7 @@ namespace
             const auto& table = layout.descriptor_tables[table_index];
             const wz::rhi::ShaderResourceGroupLayout* srg =
                 wz::rhi::find_shader_resource_group_layout(
-                    program.shader_resource_groups,
+                    shader_resource_groups,
                     table.binding_slot);
             if (!srg) {
                 return nullptr;
@@ -230,7 +232,9 @@ namespace
         desc.pParameters = params.data();
         desc.NumStaticSamplers = 0;
         desc.pStaticSamplers = nullptr;
-        desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        desc.Flags = allow_input_assembler
+            ? D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+            : D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
         ID3DBlob* blob = nullptr;
         ID3DBlob* error = nullptr;
@@ -257,6 +261,27 @@ namespace
             error->Release();
         }
         return SUCCEEDED(hr) ? root_signature : nullptr;
+    }
+
+    ID3D12PipelineState* create_compute_pipeline_state(
+        wz::gpu::Device& device,
+        ID3D12RootSignature* root_signature,
+        std::span<const uint8_t> compute_bytecode)
+    {
+        if (!root_signature || compute_bytecode.empty()) {
+            return nullptr;
+        }
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
+        desc.pRootSignature = root_signature;
+        desc.CS = D3D12_SHADER_BYTECODE{
+            compute_bytecode.data(),
+            compute_bytecode.size() };
+
+        ID3D12PipelineState* pso = nullptr;
+        HRESULT hr = wz::gpu::dx12::internal::get_device(device)
+            ->CreateComputePipelineState(&desc, IID_PPV_ARGS(&pso));
+        return SUCCEEDED(hr) ? pso : nullptr;
     }
 
     ID3D12PipelineState* create_pipeline_state(
@@ -389,7 +414,16 @@ namespace wz::engine::rendering
                 layout.descriptor_tables.push_back({
                     srg->binding_slot,
                     next_root_param++,
-                    descriptor_count });
+                    descriptor_count,
+                    {} });
+                layout.descriptor_tables.back().descriptor_kinds.reserve(
+                    srg->descriptors.size());
+                for (const wz::rhi::DescriptorBinding& descriptor
+                     : srg->descriptors)
+                {
+                    layout.descriptor_tables.back().descriptor_kinds.push_back(
+                        descriptor.kind);
+                }
             }
         }
 
@@ -415,9 +449,11 @@ namespace wz::engine::rendering
     RhiDx12PipelineCache::RhiDx12PipelineCache(
         wz::gpu::Device& device,
         const wz::rhi::RenderProgramRegistry& programs,
+        const wz::rhi::ComputeProgramRegistry& compute_programs,
         const wz::rhi::ShaderModuleRegistry& shaders)
         : device_(&device)
         , programs_(&programs)
+        , compute_programs_(&compute_programs)
         , shaders_(&shaders)
     {
     }
@@ -451,35 +487,84 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        const wz::rhi::RenderProgramDesc* desc = programs_->get(program);
-        if (!desc) {
+        if (const wz::rhi::RenderProgramDesc* desc = programs_->get(program)) {
+            const std::optional<wz::rhi::ProgramBytecode> bytecode =
+                wz::rhi::resolve_program_bytecode(*desc, *shaders_);
+            if (!bytecode) {
+                return nullptr;
+            }
+
+            const std::optional<RhiDx12PipelineLayout> layout =
+                plan_dx12_pipeline_layout(*desc);
+            if (!layout) {
+                return nullptr;
+            }
+
+            ID3D12Device* d3d = wz::gpu::dx12::internal::get_device(*device_);
+            ID3D12RootSignature* root_signature =
+                create_root_signature(
+                    d3d,
+                    desc->shader_resource_groups,
+                    /*allow_input_assembler*/ true,
+                    *layout);
+            if (!root_signature) {
+                return nullptr;
+            }
+
+            ID3D12PipelineState* pso = create_pipeline_state(
+                *device_,
+                root_signature,
+                *desc,
+                *bytecode);
+            if (!pso) {
+                root_signature->Release();
+                return nullptr;
+            }
+
+            entries_.push_back(Entry{
+                program,
+                RhiDx12RealizedPipeline{
+                    root_signature,
+                    pso,
+                    *layout,
+                    static_cast<uint32_t>(primitive_topology(desc->topology)),
+                    false } });
+            return &entries_.back().realized;
+        }
+
+        const wz::rhi::ComputeProgramDesc* compute_desc =
+            compute_programs_ ? compute_programs_->get(program) : nullptr;
+        if (!compute_desc) {
             return nullptr;
         }
 
-        const std::optional<wz::rhi::ProgramBytecode> bytecode =
-            wz::rhi::resolve_program_bytecode(*desc, *shaders_);
-        if (!bytecode) {
+        const std::optional<std::vector<uint8_t>> compute_bytecode =
+            wz::rhi::resolve_compute_bytecode(*compute_desc, *shaders_);
+        if (!compute_bytecode) {
             return nullptr;
         }
 
         const std::optional<RhiDx12PipelineLayout> layout =
-            plan_dx12_pipeline_layout(*desc);
+            plan_dx12_pipeline_layout(*compute_desc);
         if (!layout) {
             return nullptr;
         }
 
         ID3D12Device* d3d = wz::gpu::dx12::internal::get_device(*device_);
         ID3D12RootSignature* root_signature =
-            create_root_signature(d3d, *desc, *layout);
+            create_root_signature(
+                d3d,
+                compute_desc->shader_resource_groups,
+                /*allow_input_assembler*/ false,
+                *layout);
         if (!root_signature) {
             return nullptr;
         }
 
-        ID3D12PipelineState* pso = create_pipeline_state(
+        ID3D12PipelineState* pso = create_compute_pipeline_state(
             *device_,
             root_signature,
-            *desc,
-            *bytecode);
+            *compute_bytecode);
         if (!pso) {
             root_signature->Release();
             return nullptr;
@@ -491,7 +576,8 @@ namespace wz::engine::rendering
                 root_signature,
                 pso,
                 *layout,
-                static_cast<uint32_t>(primitive_topology(desc->topology)) } });
+                /*primitive_topology*/ 0,
+                true } });
         return &entries_.back().realized;
     }
 

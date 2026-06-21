@@ -633,9 +633,26 @@ namespace wz::gpu::dx12::internal {
         ID3D12GraphicsCommandList* cmd,
         GPUHandle buffer);
 
+    bool transition_compute_buffer(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer,
+        D3D12_RESOURCE_STATES after);
+
+    bool uav_barrier_compute_buffer(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer);
+
     bool create_compute_buffer_srv_table(
         Device& device,
         std::span<const GPUHandle> buffers,
+        wz::gpu::dx12::DX12DescriptorTable& out_table);
+
+    bool create_compute_buffer_descriptor_table(
+        Device& device,
+        std::span<const GPUHandle> buffers,
+        std::span<const uint8_t> unordered_access,
         wz::gpu::dx12::DX12DescriptorTable& out_table);
 
     void release_compute_buffer_srv_table(

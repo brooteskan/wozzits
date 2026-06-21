@@ -380,6 +380,7 @@ int main(int argc, char** argv)
         wz::engine::rendering::RhiDx12PipelineCache pipeline_cache(
             device,
             ctx.programs,
+            ctx.compute_programs,
             ctx.shaders);
         wz::engine::rendering::RhiDx12CommandRecorder recorder(
             device,

@@ -47,6 +47,7 @@ namespace wz::engine::rendering
         void set_geometry(const wz::rhi::GeometryView& geometry,
                           const wz::rhi::StreamBufferIndices& streams) override;
         void draw(const wz::rhi::DrawArgs& args) override;
+        void dispatch(const wz::rhi::DispatchArgs& args) override;
 
         [[nodiscard]] bool ready() const noexcept { return ready_; }
 
@@ -78,7 +79,8 @@ namespace wz::engine::rendering
             wz::rhi::GpuResourceHandle handle) const;
         [[nodiscard]] const wz::gpu::dx12::DX12DescriptorTable*
         descriptor_table_for(uint32_t slot,
-                             std::vector<wz::gpu::GPUHandle> buffers);
+                             std::vector<wz::gpu::GPUHandle> buffers,
+                             std::vector<uint8_t> unordered_access);
 
         wz::gpu::Device* device_ = nullptr;
         RhiDx12PipelineCache* pipelines_ = nullptr;

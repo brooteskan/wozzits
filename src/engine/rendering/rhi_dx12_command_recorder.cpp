@@ -5,18 +5,47 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
 
 namespace wz::engine::rendering
 {
+    namespace
+    {
+        D3D12_RESOURCE_STATES resource_state(wz::rhi::ResourceState state)
+        {
+            switch (state) {
+            case wz::rhi::ResourceState::Undefined:
+                return D3D12_RESOURCE_STATE_COMMON;
+            case wz::rhi::ResourceState::RenderTarget:
+                return D3D12_RESOURCE_STATE_RENDER_TARGET;
+            case wz::rhi::ResourceState::DepthWrite:
+                return D3D12_RESOURCE_STATE_DEPTH_WRITE;
+            case wz::rhi::ResourceState::ShaderRead:
+                return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+                    | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            case wz::rhi::ResourceState::UnorderedAccess:
+                return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            case wz::rhi::ResourceState::CopySrc:
+                return D3D12_RESOURCE_STATE_COPY_SOURCE;
+            case wz::rhi::ResourceState::CopyDst:
+                return D3D12_RESOURCE_STATE_COPY_DEST;
+            case wz::rhi::ResourceState::Present:
+                return D3D12_RESOURCE_STATE_PRESENT;
+            }
+            return D3D12_RESOURCE_STATE_COMMON;
+        }
+    }
+
     struct RhiDx12CommandRecorder::DescriptorTableCache
     {
         struct Entry
         {
             uint32_t binding_slot = 0;
             std::vector<wz::gpu::GPUHandle> buffers;
+            std::vector<uint8_t> unordered_access;
             wz::gpu::dx12::DX12DescriptorTable table{};
         };
 
@@ -62,12 +91,47 @@ namespace wz::engine::rendering
     }
 
     void RhiDx12CommandRecorder::barrier(
-        wz::rhi::GpuResourceHandle,
-        wz::rhi::ResourceState,
-        wz::rhi::ResourceState)
+        wz::rhi::GpuResourceHandle resource,
+        wz::rhi::ResourceState from,
+        wz::rhi::ResourceState to)
     {
-        // Pull-cube Stage 2 keeps static buffers in graphics-SRV state after
-        // upload. Generic resource-state translation lands with the scene path.
+        if (!device_ || !resource.valid()) {
+            return;
+        }
+
+        const wz::gpu::GPUHandle gpu = gpu_handle_for(resource);
+        if (!gpu.valid()) {
+            return;
+        }
+
+        ID3D12GraphicsCommandList* cmd =
+            wz::gpu::dx12::internal::get_command_list(*device_);
+        if (!cmd) {
+            ready_ = false;
+            return;
+        }
+
+        if (from == wz::rhi::ResourceState::UnorderedAccess
+            && to == wz::rhi::ResourceState::UnorderedAccess)
+        {
+            if (!wz::gpu::dx12::internal::uav_barrier_compute_buffer(
+                    *device_,
+                    cmd,
+                    gpu))
+            {
+                ready_ = false;
+            }
+            return;
+        }
+
+        if (!wz::gpu::dx12::internal::transition_compute_buffer(
+                *device_,
+                cmd,
+                gpu,
+                resource_state(to)))
+        {
+            ready_ = false;
+        }
     }
 
     void RhiDx12CommandRecorder::set_pipeline(wz::rhi::Tag program)
@@ -84,7 +148,12 @@ namespace wz::engine::rendering
             return;
         }
 
-        cmd->SetGraphicsRootSignature(current_->root_signature);
+        if (current_->is_compute) {
+            cmd->SetComputeRootSignature(current_->root_signature);
+        }
+        else {
+            cmd->SetGraphicsRootSignature(current_->root_signature);
+        }
         cmd->SetPipelineState(current_->pipeline_state);
 
         ID3D12DescriptorHeap* heap =
@@ -92,9 +161,11 @@ namespace wz::engine::rendering
         if (heap) {
             cmd->SetDescriptorHeaps(1, &heap);
         }
-        cmd->IASetPrimitiveTopology(
-            static_cast<D3D12_PRIMITIVE_TOPOLOGY>(
-                current_->primitive_topology));
+        if (!current_->is_compute) {
+            cmd->IASetPrimitiveTopology(
+                static_cast<D3D12_PRIMITIVE_TOPOLOGY>(
+                    current_->primitive_topology));
+        }
         ready_ = true;
     }
 
@@ -123,11 +194,20 @@ namespace wz::engine::rendering
             return;
         }
 
-        cmd->SetGraphicsRoot32BitConstants(
-            current_->layout.root_constants.root_parameter_index,
-            dwords,
-            bytes.data(),
-            0);
+        if (current_->is_compute) {
+            cmd->SetComputeRoot32BitConstants(
+                current_->layout.root_constants.root_parameter_index,
+                dwords,
+                bytes.data(),
+                0);
+        }
+        else {
+            cmd->SetGraphicsRoot32BitConstants(
+                current_->layout.root_constants.root_parameter_index,
+                dwords,
+                bytes.data(),
+                0);
+        }
     }
 
     void RhiDx12CommandRecorder::bind_resource_group(
@@ -145,6 +225,18 @@ namespace wz::engine::rendering
             return;
         }
 
+        const auto table_layout = std::ranges::find_if(
+            current_->layout.descriptor_tables,
+            [slot](const RhiDx12DescriptorTableParam& candidate) {
+                return candidate.binding_slot == slot;
+            });
+        if (table_layout == current_->layout.descriptor_tables.end()
+            || table_layout->descriptor_kinds.size() != group.resource_count())
+        {
+            ready_ = false;
+            return;
+        }
+
         std::vector<wz::gpu::GPUHandle> buffers;
         buffers.reserve(group.resource_count());
         for (wz::rhi::GpuResourceHandle handle : group.resources()) {
@@ -156,8 +248,20 @@ namespace wz::engine::rendering
             buffers.push_back(gpu);
         }
 
+        std::vector<uint8_t> unordered_access;
+        unordered_access.reserve(table_layout->descriptor_kinds.size());
+        for (const wz::rhi::DescriptorKind kind
+             : table_layout->descriptor_kinds)
+        {
+            unordered_access.push_back(
+                kind == wz::rhi::DescriptorKind::UAV ? 1u : 0u);
+        }
+
         const wz::gpu::dx12::DX12DescriptorTable* table =
-            descriptor_table_for(slot, std::move(buffers));
+            descriptor_table_for(
+                slot,
+                std::move(buffers),
+                std::move(unordered_access));
         if (!table || !table->valid()) {
             ready_ = false;
             return;
@@ -169,7 +273,12 @@ namespace wz::engine::rendering
             ready_ = false;
             return;
         }
-        cmd->SetGraphicsRootDescriptorTable(*root_param, table->gpu_start);
+        if (current_->is_compute) {
+            cmd->SetComputeRootDescriptorTable(*root_param, table->gpu_start);
+        }
+        else {
+            cmd->SetGraphicsRootDescriptorTable(*root_param, table->gpu_start);
+        }
     }
 
     void RhiDx12CommandRecorder::set_geometry(
@@ -181,7 +290,7 @@ namespace wz::engine::rendering
 
     void RhiDx12CommandRecorder::draw(const wz::rhi::DrawArgs& args)
     {
-        if (!ready_ || !device_) {
+        if (!ready_ || !device_ || !current_ || current_->is_compute) {
             return;
         }
         ID3D12GraphicsCommandList* cmd =
@@ -204,6 +313,25 @@ namespace wz::engine::rendering
             0);
     }
 
+    void RhiDx12CommandRecorder::dispatch(
+        const wz::rhi::DispatchArgs& args)
+    {
+        if (!ready_ || !device_ || !current_ || !current_->is_compute) {
+            return;
+        }
+        ID3D12GraphicsCommandList* cmd =
+            wz::gpu::dx12::internal::get_command_list(*device_);
+        if (!cmd) {
+            ready_ = false;
+            return;
+        }
+
+        cmd->Dispatch(
+            args.group_count[0],
+            args.group_count[1],
+            args.group_count[2]);
+    }
+
     wz::gpu::GPUHandle RhiDx12CommandRecorder::gpu_handle_for(
         wz::rhi::GpuResourceHandle handle) const
     {
@@ -218,7 +346,8 @@ namespace wz::engine::rendering
     const wz::gpu::dx12::DX12DescriptorTable*
     RhiDx12CommandRecorder::descriptor_table_for(
         uint32_t slot,
-        std::vector<wz::gpu::GPUHandle> buffers)
+        std::vector<wz::gpu::GPUHandle> buffers,
+        std::vector<uint8_t> unordered_access)
     {
         if (!descriptor_tables_) {
             return nullptr;
@@ -226,8 +355,11 @@ namespace wz::engine::rendering
 
         const auto existing = std::ranges::find_if(
             descriptor_tables_->entries,
-            [slot, &buffers](const DescriptorTableCache::Entry& entry) {
-                return entry.binding_slot == slot && entry.buffers == buffers;
+            [slot, &buffers, &unordered_access](
+                const DescriptorTableCache::Entry& entry) {
+                return entry.binding_slot == slot
+                    && entry.buffers == buffers
+                    && entry.unordered_access == unordered_access;
             });
         if (existing != descriptor_tables_->entries.end()) {
             return &existing->table;
@@ -235,9 +367,10 @@ namespace wz::engine::rendering
 
         wz::gpu::dx12::DX12DescriptorTable table{};
         if (!device_
-            || !wz::gpu::dx12::internal::create_compute_buffer_srv_table(
+            || !wz::gpu::dx12::internal::create_compute_buffer_descriptor_table(
                 *device_,
                 buffers,
+                unordered_access,
                 table))
         {
             return nullptr;
@@ -246,6 +379,7 @@ namespace wz::engine::rendering
         descriptor_tables_->entries.push_back(DescriptorTableCache::Entry{
             slot,
             std::move(buffers),
+            std::move(unordered_access),
             table });
         return &descriptor_tables_->entries.back().table;
     }

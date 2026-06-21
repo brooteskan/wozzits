@@ -12,10 +12,12 @@ namespace
         wz::engine::rendering::EngineGpuBackend backend{ device };
         wz::rhi::GpuResourceRegistry resources{ backend };
         wz::rhi::RenderProgramRegistry programs;
+        wz::rhi::ComputeProgramRegistry compute_programs;
         wz::rhi::ShaderModuleRegistry shaders;
         wz::engine::rendering::RhiDx12PipelineCache pipelines{
             device,
             programs,
+            compute_programs,
             shaders };
         wz::engine::rendering::RhiDx12CommandRecorder recorder{
             device,
@@ -49,7 +51,8 @@ TEST(RhiDx12CommandRecorder, BindResourceGroupRejectsMissingBackendResource)
     pipeline.layout.descriptor_tables.push_back({
         /*binding_slot*/ 2,
         /*root_parameter_index*/ 0,
-        /*descriptor_count*/ 1 });
+        /*descriptor_count*/ 1,
+        { wz::rhi::DescriptorKind::StructuredBufferSRV } });
     harness.recorder.set_current_for_testing(&pipeline);
 
     wz::rhi::TagRegistry<8> tags;

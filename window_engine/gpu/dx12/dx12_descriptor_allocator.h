@@ -61,6 +61,15 @@ namespace wz::gpu::dx12
             uint32_t                   element_count,
             uint32_t                   stride_bytes);
 
+        // Write a StructuredBuffer UAV for `resource` into slot `offset` of
+        // `table`. No counter resource is used.
+        void create_structured_buffer_uav(
+            const DX12DescriptorTable& table,
+            uint32_t                   offset,
+            ID3D12Resource*            resource,
+            uint32_t                   element_count,
+            uint32_t                   stride_bytes);
+
         // Reset the allocator — all previously returned tables become invalid.
         void reset() noexcept
         {

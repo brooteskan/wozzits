@@ -27,6 +27,7 @@ namespace wz::engine::rendering
         uint32_t binding_slot = 0;
         uint32_t root_parameter_index = 0;
         uint32_t descriptor_count = 0;
+        std::vector<wz::rhi::DescriptorKind> descriptor_kinds;
     };
 
     struct RhiDx12RootConstantsParam
@@ -54,6 +55,7 @@ namespace wz::engine::rendering
         ID3D12PipelineState* pipeline_state = nullptr;
         RhiDx12PipelineLayout layout;
         uint32_t primitive_topology = 0;
+        bool is_compute = false;
 
         [[nodiscard]] bool valid() const noexcept
         {
@@ -89,6 +91,7 @@ namespace wz::engine::rendering
     public:
         RhiDx12PipelineCache(wz::gpu::Device& device,
                              const wz::rhi::RenderProgramRegistry& programs,
+                             const wz::rhi::ComputeProgramRegistry& compute_programs,
                              const wz::rhi::ShaderModuleRegistry& shaders);
         ~RhiDx12PipelineCache();
 
@@ -111,6 +114,7 @@ namespace wz::engine::rendering
 
         wz::gpu::Device* device_ = nullptr;
         const wz::rhi::RenderProgramRegistry* programs_ = nullptr;
+        const wz::rhi::ComputeProgramRegistry* compute_programs_ = nullptr;
         const wz::rhi::ShaderModuleRegistry* shaders_ = nullptr;
         std::vector<Entry> entries_;
     };

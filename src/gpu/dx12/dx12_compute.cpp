@@ -943,14 +943,72 @@ namespace wz::gpu::dx12::internal
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
+    bool transition_compute_buffer(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer,
+        D3D12_RESOURCE_STATES after)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !cmd) {
+            return false;
+        }
+
+        DX12ComputeBuffer* resource = impl->compute_buffers.get(buffer);
+        if (!resource || !resource->valid()) {
+            return false;
+        }
+
+        return transition_buffer(cmd, *resource, after);
+    }
+
+    bool uav_barrier_compute_buffer(
+        Device& device,
+        ID3D12GraphicsCommandList* cmd,
+        GPUHandle buffer)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !cmd) {
+            return false;
+        }
+
+        DX12ComputeBuffer* resource = impl->compute_buffers.get(buffer);
+        if (!resource || !resource->valid()) {
+            return false;
+        }
+
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barrier.UAV.pResource = resource->resource;
+        cmd->ResourceBarrier(1, &barrier);
+        return true;
+    }
+
     bool create_compute_buffer_srv_table(
         Device& device,
         std::span<const GPUHandle> buffers,
         wz::gpu::dx12::DX12DescriptorTable& out_table)
     {
+        std::vector<uint8_t> unordered_access(buffers.size(), 0u);
+        return create_compute_buffer_descriptor_table(
+            device,
+            buffers,
+            unordered_access,
+            out_table);
+    }
+
+    bool create_compute_buffer_descriptor_table(
+        Device& device,
+        std::span<const GPUHandle> buffers,
+        std::span<const uint8_t> unordered_access,
+        wz::gpu::dx12::DX12DescriptorTable& out_table)
+    {
         out_table = {};
         auto* impl = static_cast<DX12Device*>(device.impl);
-        if (!impl || buffers.empty()) {
+        if (!impl
+            || buffers.empty()
+            || unordered_access.size() != buffers.size())
+        {
             return false;
         }
 
@@ -972,12 +1030,22 @@ namespace wz::gpu::dx12::internal
         for (uint32_t i = 0; i < static_cast<uint32_t>(buffers.size()); ++i) {
             const DX12ComputeBuffer* resource =
                 impl->compute_buffers.get(buffers[i]);
-            impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
-                table,
-                i,
-                resource->resource,
-                resource->element_count,
-                resource->stride_bytes);
+            if (unordered_access[i] != 0u) {
+                impl->srv_cbv_uav_allocator.create_structured_buffer_uav(
+                    table,
+                    i,
+                    resource->resource,
+                    resource->element_count,
+                    resource->stride_bytes);
+            }
+            else {
+                impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                    table,
+                    i,
+                    resource->resource,
+                    resource->element_count,
+                    resource->stride_bytes);
+            }
         }
 
         out_table = table;

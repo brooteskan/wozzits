@@ -59,6 +59,9 @@ namespace
             EXPECT_EQ(
                 lhs.descriptor_tables[i].descriptor_count,
                 rhs.descriptor_tables[i].descriptor_count);
+            EXPECT_EQ(
+                lhs.descriptor_tables[i].descriptor_kinds,
+                rhs.descriptor_tables[i].descriptor_kinds);
         }
 
         EXPECT_EQ(lhs.root_constants.valid, rhs.root_constants.valid);
@@ -99,6 +102,13 @@ TEST(RhiDx12Pipeline, PullCubeRootPlanMatchesShaderContract)
     EXPECT_EQ(plan->descriptor_tables[0].binding_slot, 2u);
     EXPECT_EQ(plan->descriptor_tables[0].root_parameter_index, 0u);
     EXPECT_EQ(plan->descriptor_tables[0].descriptor_count, 2u);
+    ASSERT_EQ(plan->descriptor_tables[0].descriptor_kinds.size(), 2u);
+    EXPECT_EQ(
+        plan->descriptor_tables[0].descriptor_kinds[0],
+        wz::rhi::DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(
+        plan->descriptor_tables[0].descriptor_kinds[1],
+        wz::rhi::DescriptorKind::StructuredBufferSRV);
     ASSERT_TRUE(plan->root_param_for_slot(2).has_value());
     EXPECT_EQ(*plan->root_param_for_slot(2), 0u);
 
