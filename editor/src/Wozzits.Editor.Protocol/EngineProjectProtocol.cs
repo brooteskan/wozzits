@@ -162,6 +162,42 @@ public sealed record EngineAssetGraphNode
     public List<EngineAssetGraphParam> Params { get; init; } = [];
 }
 
+public sealed record EngineAddNodeResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public ulong NodeId { get; init; }
+}
+
+public sealed record EngineAssetCatalogResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public List<EngineAssetCatalogEntry> Entries { get; init; } = [];
+}
+
+public sealed record EngineAssetCatalogEntry
+{
+    public int Type { get; init; }
+
+    public string TypeName { get; init; } = string.Empty;
+
+    public string Category { get; init; } = string.Empty;
+
+    public List<EngineAssetCatalogSchema> Schemas { get; init; } = [];
+}
+
+public sealed record EngineAssetCatalogSchema
+{
+    public ulong Schema { get; init; }
+
+    public string Label { get; init; } = string.Empty;
+}
+
 public sealed record EngineAssetGraphParam
 {
     public string Name { get; init; } = string.Empty;

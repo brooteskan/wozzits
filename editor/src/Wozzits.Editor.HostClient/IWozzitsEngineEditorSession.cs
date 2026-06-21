@@ -6,6 +6,10 @@ public interface IWozzitsEngineEditorSession
 {
     EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot();
 
+    // Device-free authoring catalog of asset-graph node types (project- and
+    // session-independent), excluding types not yet migrated to wozzits-rhi.
+    EngineAssetCatalogResponse LoadAssetCatalog();
+
     EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
         ulong fromNodeId,
         ulong toNodeId,
@@ -17,6 +21,12 @@ public interface IWozzitsEngineEditorSession
         uint toInputPort);
 
     EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId);
+
+    // Add a new authored node for (schema, type) to the draft; returns its id.
+    EngineAddNodeResponse AddAssetGraphNode(ulong schema, uint type);
+
+    // Remove a node (and edges touching it) from the draft.
+    EngineMutationResponse RemoveAssetGraphNode(ulong nodeId);
 
     EngineMutationResponse SetAssetGraphNodeParamString(
         ulong nodeId,

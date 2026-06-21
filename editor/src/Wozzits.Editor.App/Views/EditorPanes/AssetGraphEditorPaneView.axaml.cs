@@ -53,6 +53,55 @@ public partial class AssetGraphEditorPaneView : UserControl
             GraphPointerWheelChanged,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
+        AddHandler(DragDrop.DragOverEvent, GraphDragOver);
+        AddHandler(DragDrop.DropEvent, GraphDrop);
+        AddHandler(
+            InputElement.KeyDownEvent,
+            GraphKeyDown,
+            RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
+            handledEventsToo: true);
+        Focusable = true;
+    }
+
+    private void GraphKeyDown(object? sender, KeyEventArgs e)
+    {
+        if ((e.Key == Key.Delete || e.Key == Key.Back)
+            && DataContext is AssetGraphEditorPaneViewModel graph
+            && graph.SelectedNodes.Count > 0)
+        {
+            graph.RemoveSelectedNodes();
+            e.Handled = true;
+        }
+    }
+
+    private void GraphDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.DataTransfer.Contains(AssetBrowserDrag.SchemaFormat)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void GraphDrop(object? sender, DragEventArgs e)
+    {
+        if (DataContext is not AssetGraphEditorPaneViewModel graph
+            || e.DataTransfer.TryGetValue(AssetBrowserDrag.SchemaFormat)
+                is not { } schema)
+        {
+            return;
+        }
+
+        // Drop point in graph content space (the canvas carries the zoom
+        // transform, so GetPosition returns pre-zoom graph coordinates).
+        var position = e.GetPosition(AssetGraphCanvas);
+        const double cardWidthHalf = 110.0;
+        const double cardHeightHalf = 58.0;
+        graph.AddNodeAt(
+            schema.Schema,
+            (uint)schema.Type,
+            position.X - cardWidthHalf,
+            position.Y - cardHeightHalf);
+        e.Handled = true;
     }
 
     private void NodeCardPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -89,6 +138,7 @@ public partial class AssetGraphEditorPaneView : UserControl
         _dragControl = control;
         _lastPointerPosition = ToGraphPosition(e);
         e.Pointer.Capture(control);
+        Focus();
         e.Handled = true;
     }
 
@@ -197,6 +247,7 @@ public partial class AssetGraphEditorPaneView : UserControl
             return;
         }
 
+        Focus();
         _isBoxSelecting = true;
         _boxSelectStartGraphPosition = ToGraphPosition(e);
         _boxSelectCurrentGraphPosition = _boxSelectStartGraphPosition;

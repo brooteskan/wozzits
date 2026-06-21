@@ -435,6 +435,89 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         return true;
     }
 
+    // Create a node for (schema, type) at a graph-space position (card top-left,
+    // in canvas content coordinates including padding) — used by asset-browser
+    // drag/drop. Reloads from the session so the new card + ports appear, then
+    // pins it to the drop point and persists that position.
+    public bool AddNodeAt(ulong schema, uint type, double graphX, double graphY)
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
+            return false;
+        }
+
+        var response = _editorSession.AddAssetGraphNode(schema, type);
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return false;
+        }
+
+        LastEditError = string.Empty;
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            return false;
+        }
+
+        var added = Nodes.FirstOrDefault(node => node.Id == response.NodeId);
+        if (added is not null)
+        {
+            added.X = Math.Max(CanvasPadding, graphX);
+            added.Y = Math.Max(CanvasPadding, graphY);
+            EnsureGraphBounds();
+            CommitNodePosition(added);
+            SelectNode(added);
+        }
+
+        MarkGraphDraft();
+        return true;
+    }
+
+    // Remove all currently selected nodes (and their edges) from the draft.
+    public bool RemoveSelectedNodes()
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
+            return false;
+        }
+
+        var ids = SelectedNodes.Select(node => node.Id).ToList();
+        if (ids.Count == 0)
+        {
+            return false;
+        }
+
+        LastEditError = string.Empty;
+        foreach (var id in ids)
+        {
+            var response = _editorSession.RemoveAssetGraphNode(id);
+            if (!response.Ok)
+            {
+                LastEditError = response.Error;
+                return false;
+            }
+        }
+
+        ClearSelection();
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            return false;
+        }
+
+        MarkGraphDraft();
+        return true;
+    }
+
     public void CancelConnectionPreview()
     {
         ClearConnectionTarget();

@@ -237,6 +237,50 @@ public sealed partial class WozzitsEngineNativeClient
             zoom));
     }
 
+    public EngineAssetCatalogResponse LoadAssetCatalog()
+    {
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorAssetCatalog(out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAssetCatalogResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            return ReadAssetCatalog(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAssetCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAssetCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAssetCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAssetCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
     {
         if (session == IntPtr.Zero)
@@ -353,6 +397,66 @@ public sealed partial class WozzitsEngineNativeClient
         return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphDisconnectEdge(
             session,
             edgeId));
+    }
+
+    internal EngineAddNodeResponse AddAssetGraphNode(
+        IntPtr session,
+        ulong schema,
+        uint type)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return new EngineAddNodeResponse
+            {
+                Ok = false,
+                Error = "Engine editor session is closed.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorAssetGraphAddNode(
+                session,
+                schema,
+                type,
+                out var nodeId);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAddNodeResponse { Ok = false, Error = result.Message };
+            }
+
+            return new EngineAddNodeResponse { Ok = true, NodeId = nodeId };
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+    }
+
+    internal EngineMutationResponse RemoveAssetGraphNode(IntPtr session, ulong nodeId)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine editor session is closed.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorAssetGraphRemoveNode(
+            session,
+            nodeId));
     }
 
     internal EngineMutationResponse SetAssetGraphNodeParamString(

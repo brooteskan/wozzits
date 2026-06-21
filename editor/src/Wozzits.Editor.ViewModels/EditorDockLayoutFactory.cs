@@ -35,12 +35,28 @@ public sealed class EditorDockLayoutFactory
             Proportion = 0.24,
         };
 
+        var assetBrowser = new Tool
+        {
+            Id = "AssetBrowser",
+            Title = "Asset Browser",
+            Context = _owner.AssetBrowser,
+            CanClose = false,
+            CanPin = false,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = false,
+            DockCapabilityOverrides = DockOverrides(),
+            DockGroup = "tools",
+            Proportion = 0.24,
+        };
+
         var sceneTreeDock = new ToolDock
         {
             Id = "SceneTreeDock",
             Title = "Scene Tree",
             ActiveDockable = sceneTree,
-            VisibleDockables = _factory.CreateList<IDockable>(sceneTree),
+            VisibleDockables = _factory.CreateList<IDockable>(sceneTree, assetBrowser),
             CanClose = false,
             CanPin = false,
             CanFloat = false,

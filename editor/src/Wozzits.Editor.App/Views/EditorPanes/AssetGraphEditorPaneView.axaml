@@ -4,7 +4,8 @@
              xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.AssetGraphEditorPaneView"
              x:DataType="panes:AssetGraphEditorPaneViewModel">
-    <Grid Classes="EditorPaneRoot">
+    <Grid Classes="EditorPaneRoot"
+          DragDrop.AllowDrop="True">
         <Border Classes="PaneSurface">
             <Grid>
                 <TextBlock Text="{Binding EmptyState}"

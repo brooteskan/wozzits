@@ -39,6 +39,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SaveAllCommand = new RelayCommand(SaveAll);
         LaunchAppCommand = new RelayCommand(LaunchApp, () => _createHostSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
+        AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
@@ -58,6 +59,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public string WindowTitle { get; } = "Wozzits";
     public string ProjectName { get; } = string.Empty;
     public AssetGraphEditorPaneViewModel AssetGraph { get; }
+    public AssetBrowserPaneViewModel AssetBrowser { get; }
     public SceneTreeEditorPaneViewModel SceneTree { get; } = new();
     public InspectorPaneViewModel Inspector { get; }
     public ConsolePaneViewModel Console { get; private set; } = null!;

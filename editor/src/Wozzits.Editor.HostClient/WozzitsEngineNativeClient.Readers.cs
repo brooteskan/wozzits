@@ -38,6 +38,42 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineAssetCatalogResponse ReadAssetCatalog(WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset catalog buffer.");
+        var catalog = ReadStruct<WzEditorAssetCatalogAbi>(bytes, offset: 0);
+        ValidateAbiVersion(catalog.AbiVersion);
+
+        return new EngineAssetCatalogResponse
+        {
+            Ok = catalog.Ok != 0,
+            Entries = ReadTable<WzEditorAssetCatalogEntryAbi, EngineAssetCatalogEntry>(
+                bytes,
+                catalog.Entries,
+                ReadAssetCatalogEntry),
+        };
+    }
+
+    private static EngineAssetCatalogEntry ReadAssetCatalogEntry(
+        byte[] bytes,
+        WzEditorAssetCatalogEntryAbi entry)
+    {
+        return new EngineAssetCatalogEntry
+        {
+            Type = checked((int)entry.Type),
+            TypeName = ReadString(bytes, entry.TypeName),
+            Category = ReadString(bytes, entry.Category),
+            Schemas = ReadTable<WzEditorAssetCatalogSchemaAbi, EngineAssetCatalogSchema>(
+                bytes,
+                entry.Schemas,
+                (b, schema) => new EngineAssetCatalogSchema
+                {
+                    Schema = schema.Schema,
+                    Label = ReadString(b, schema.Label),
+                }),
+        };
+    }
+
     private static EngineAssetGraphSnapshotResponse ReadAssetGraphSnapshot(WzBuffer buffer)
     {
         var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset graph snapshot buffer.");

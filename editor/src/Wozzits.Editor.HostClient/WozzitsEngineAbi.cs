@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 17;
+    internal const uint AbiVersion = 18;
 
     private static int _resolverRegistered;
 
@@ -47,6 +47,11 @@ internal static partial class WozzitsEngineAbi
         string projectRootUtf8,
         string? resourceRootUtf8,
         out WzBuffer outJson);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_catalog")]
+    internal static partial WzResult WzEditorAssetCatalog(out WzBuffer outCatalog);
 
     [LibraryImport(
         LibraryName,
@@ -165,6 +170,22 @@ internal static partial class WozzitsEngineAbi
     internal static partial WzResult WzEditorAssetGraphDisconnectEdge(
         IntPtr session,
         ulong edgeId);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_add_node")]
+    internal static partial WzResult WzEditorAssetGraphAddNode(
+        IntPtr session,
+        ulong schema,
+        uint type,
+        out ulong outNodeId);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_asset_graph_remove_node")]
+    internal static partial WzResult WzEditorAssetGraphRemoveNode(
+        IntPtr session,
+        ulong nodeId);
 
     [LibraryImport(
         LibraryName,
@@ -533,6 +554,36 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorProjectCreateAbi>(
             nameof(WzEditorProjectCreateAbi.Error),
             16);
+
+        AssertSize<WzEditorAssetCatalogSchemaAbi>(24);
+        AssertOffset<WzEditorAssetCatalogSchemaAbi>(
+            nameof(WzEditorAssetCatalogSchemaAbi.Schema),
+            0);
+        AssertOffset<WzEditorAssetCatalogSchemaAbi>(
+            nameof(WzEditorAssetCatalogSchemaAbi.Label),
+            8);
+
+        AssertSize<WzEditorAssetCatalogEntryAbi>(56);
+        AssertOffset<WzEditorAssetCatalogEntryAbi>(
+            nameof(WzEditorAssetCatalogEntryAbi.Type),
+            0);
+        AssertOffset<WzEditorAssetCatalogEntryAbi>(
+            nameof(WzEditorAssetCatalogEntryAbi.TypeName),
+            8);
+        AssertOffset<WzEditorAssetCatalogEntryAbi>(
+            nameof(WzEditorAssetCatalogEntryAbi.Category),
+            24);
+        AssertOffset<WzEditorAssetCatalogEntryAbi>(
+            nameof(WzEditorAssetCatalogEntryAbi.Schemas),
+            40);
+
+        AssertSize<WzEditorAssetCatalogAbi>(24);
+        AssertOffset<WzEditorAssetCatalogAbi>(
+            nameof(WzEditorAssetCatalogAbi.AbiVersion),
+            0);
+        AssertOffset<WzEditorAssetCatalogAbi>(
+            nameof(WzEditorAssetCatalogAbi.Entries),
+            8);
     }
 
     private static void AssertSize<T>(int expected)
@@ -592,6 +643,31 @@ internal readonly struct WzEditorProjectCreateAbi
     public readonly uint Status;
     public readonly uint Created;
     public readonly WzEditorStringSpanAbi Error;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetCatalogAbi
+{
+    public readonly uint AbiVersion;
+    public readonly uint Ok;
+    public readonly WzEditorTableSpanAbi Entries;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetCatalogEntryAbi
+{
+    public readonly uint Type;
+    public readonly uint Reserved;
+    public readonly WzEditorStringSpanAbi TypeName;
+    public readonly WzEditorStringSpanAbi Category;
+    public readonly WzEditorTableSpanAbi Schemas;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorAssetCatalogSchemaAbi
+{
+    public readonly ulong Schema;
+    public readonly WzEditorStringSpanAbi Label;
 }
 
 [StructLayout(LayoutKind.Sequential)]

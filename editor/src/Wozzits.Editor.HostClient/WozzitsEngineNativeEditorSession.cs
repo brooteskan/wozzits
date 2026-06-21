@@ -40,6 +40,13 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             };
     }
 
+    public EngineAssetCatalogResponse LoadAssetCatalog()
+    {
+        // Catalog is device-free and project-independent, so it does not need a
+        // live native session.
+        return _client.LoadAssetCatalog();
+    }
+
     public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
         ulong fromNodeId,
         ulong toNodeId,
@@ -72,6 +79,20 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
     {
         return HasNativeSession(out var error)
             ? _client.DisconnectAssetGraphEdge(_session, edgeId)
+            : WozzitsEngineNativeClient.InvalidMutation(error);
+    }
+
+    public EngineAddNodeResponse AddAssetGraphNode(ulong schema, uint type)
+    {
+        return HasNativeSession(out var error)
+            ? _client.AddAssetGraphNode(_session, schema, type)
+            : new EngineAddNodeResponse { Ok = false, Error = error };
+    }
+
+    public EngineMutationResponse RemoveAssetGraphNode(ulong nodeId)
+    {
+        return HasNativeSession(out var error)
+            ? _client.RemoveAssetGraphNode(_session, nodeId)
             : WozzitsEngineNativeClient.InvalidMutation(error);
     }
 

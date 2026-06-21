@@ -804,6 +804,16 @@ public sealed partial class ProjectOpeningTests
             return AssetGraphSnapshot;
         }
 
+        public EngineAssetCatalogResponse AssetCatalog { get; set; } = new()
+        {
+            Ok = true,
+        };
+
+        public EngineAssetCatalogResponse LoadAssetCatalog()
+        {
+            return AssetCatalog;
+        }
+
         public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
             ulong fromNodeId,
             ulong toNodeId,
@@ -831,6 +841,25 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse DisconnectAssetGraphEdge(ulong edgeId)
         {
             DisconnectedEdges.Add(edgeId);
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<AddNodeEdit> AddedNodes { get; } = [];
+
+        public ulong NextAddedNodeId { get; set; } = 1000u;
+
+        public EngineAddNodeResponse AddAssetGraphNode(ulong schema, uint type)
+        {
+            var id = NextAddedNodeId++;
+            AddedNodes.Add(new AddNodeEdit(schema, type, id));
+            return new EngineAddNodeResponse { Ok = true, NodeId = id };
+        }
+
+        public List<ulong> RemovedNodes { get; } = [];
+
+        public EngineMutationResponse RemoveAssetGraphNode(ulong nodeId)
+        {
+            RemovedNodes.Add(nodeId);
             return new EngineMutationResponse { Ok = true };
         }
 
@@ -928,6 +957,11 @@ public sealed partial class ProjectOpeningTests
         ulong NodeId,
         string Name,
         string Value);
+
+    private sealed record AddNodeEdit(
+        ulong Schema,
+        uint Type,
+        ulong NodeId);
 
     private sealed record TransformEdit(
         string NodeId,
