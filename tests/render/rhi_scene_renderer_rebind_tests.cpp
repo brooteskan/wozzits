@@ -76,7 +76,7 @@ namespace
         {
             ASSERT_TRUE(wz::gpu::begin_frame(ctx.device));
             wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
-            app.simulation_tick();
+            app.simulation_tick(wz::input::InputState{}, 0.0f);
             EXPECT_TRUE(app.render_scene());
             ASSERT_TRUE(wz::gpu::end_frame(ctx.device));
             wz::gpu::present(ctx.device, /*sync_interval*/ 0);

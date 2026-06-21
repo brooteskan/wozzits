@@ -8,6 +8,7 @@
 #include <engine/assets/mesh_cluster_hierarchy_asset_module.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+#include <asset/draft.h>
 #include <asset/key_utils.h>
 #include <file/filesystem.h>
 
@@ -5170,6 +5171,29 @@ namespace wz::engine::assets
 
         scene.defaults.active_camera_node = "camera_01";
         return scene;
+    }
+
+    uint32_t bridge_scene_renderable_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        uint32_t bridged = 0;
+        for (SceneNodeAsset& node : nodes) {
+            if (!node.renderable_asset_node_id) {
+                continue;
+            }
+            // Clear first: if the new graph removed/renamed this authored
+            // renderable, the node must stop drawing the previous graph's key
+            // (old compiled payloads can still resolve), not keep it stale.
+            node.renderable_asset.reset();
+            const auto it =
+                draft.node_index.find(*node.renderable_asset_node_id);
+            if (it != draft.node_index.end()) {
+                node.renderable_asset = draft.nodes[it->second].node.key;
+                ++bridged;
+            }
+        }
+        return bridged;
     }
 
 } // namespace wz::engine::assets

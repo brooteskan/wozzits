@@ -4,12 +4,16 @@
 
 #include <engine/app_context.h>
 
+#include <event/event.h>
 #include <gpu/gpu.h>
+#include <input/input.h>
 #include <logging/logger.h>
+#include <time/w_time.h>
 #include <window/window2.h>
 
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace wz::app
 {
@@ -179,6 +183,14 @@ namespace wz::app
                 ctx.logger.error("load scene failed");
             }
 
+            // Free-fly camera input: raw keyboard/mouse feed the global input
+            // event queue, drained per frame into an InputState that drives the
+            // app's camera (and any future sim) via simulation_tick.
+            wz::input::init_raw_input();
+            wz::input::InputState input{};
+            wz::input::InputState prev_input{};
+            wz::time::Tick last_ticks = wz::time::TimeSource::now_ticks();
+
             while (!wz::window::window_should_close(ctx.window)
                 && !(control && control->stop_requested()))
             {
@@ -208,7 +220,30 @@ namespace wz::app
                     control->service_pending_bind(binder);
                 }
 
-                app.simulation_tick();
+                // Build this frame's input snapshot from the global input event
+                // queue + elapsed dt, then drive the app (camera, sim).
+                std::vector<wz::event::Event> frame_events;
+                wz::event::Event input_event;
+                while (wz::event::event_queue.try_pop(input_event)) {
+                    frame_events.push_back(std::move(input_event));
+                }
+                prev_input = input;
+                wz::input::build_input(
+                    input,
+                    prev_input,
+                    frame_events.data(),
+                    frame_events.size(),
+                    wz::time::Frame{});
+
+                const wz::time::Tick now_ticks =
+                    wz::time::TimeSource::now_ticks();
+                const float dt = static_cast<float>(
+                    static_cast<double>(now_ticks - last_ticks)
+                    / static_cast<double>(
+                        wz::time::TimeSource::ticks_per_second()));
+                last_ticks = now_ticks;
+
+                app.simulation_tick(input, dt);
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");
@@ -227,6 +262,8 @@ namespace wz::app
                     break;
                 }
             }
+
+            wz::input::shutdown_raw_input();
         }
 
         wz::engine::shutdown(ctx);

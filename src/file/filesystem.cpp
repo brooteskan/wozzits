@@ -320,6 +320,22 @@ namespace wz::fs
         return write_file(path, buffer, overwrite);
     }
 
+    wz::fs::FileResult<std::string>
+    wz::fs::read_file_text(const Path &path)
+    {
+        const FileResult<Buffer> raw = read_file(path);
+
+        FileResult<std::string> result;
+        result.error = raw.error;
+        if (raw)
+        {
+            result.value.assign(
+                reinterpret_cast<const char *>(raw.value.data()),
+                raw.value.size());
+        }
+        return result;
+    }
+
     wz::fs::FileError
     wz::fs::remove_file(const Path &path)
     {

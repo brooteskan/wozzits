@@ -30,10 +30,14 @@
 
 #include <asset/dag.h>
 #include <asset/draft.h>
+#include <bench/flying_camera.h>
 #include <file/filesystem.h>
+#include <input/input.h>
+#include <math/mat4.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace wz::app
@@ -82,9 +86,19 @@ namespace wz::app
         bool load_scene(const WozzitsAppSceneLoadDesc& desc);
 
         // Per-frame operations. The caller owns the loop and the device-frame
-        // boundaries (begin_frame/clear/end_frame/present).
-        void simulation_tick();   // CPU update: resolve/realize scene renderables
+        // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
+        // the frame's input + dt so the app drives its own free-fly camera (the
+        // game-app-parity runtime camera); pass a default-constructed InputState
+        // to tick with no input.
+        void simulation_tick(const wz::input::InputState& input, float dt);
         bool render_scene();      // record scene draws (between begin/end frame)
+
+        // Editor override: while set, render_scene uses this view-projection
+        // instead of the app's free-fly camera, letting an editor drive the view
+        // without the app owning editor input. Clearing it returns control to the
+        // app camera.
+        void set_camera_override(const wz::math::Mat4& view_projection);
+        void clear_camera_override();
 
         // Number of GPU resources currently resident in the renderer's resource
         // registry. Stays flat across a graph swap (the outgoing graph's
@@ -108,16 +122,24 @@ namespace wz::app
         [[nodiscard]] std::size_t cached_descriptor_table_count() const;
 
     private:
-        // Point each scene node's renderable_asset at the resolved AssetKey of
-        // its authored renderable graph-node (draft.node_index lookup), like the
-        // editor's resolve_renderable_asset_node. Run after every (re)bind so
-        // scene_nodes_ reference the freshly committed keys. Returns the count
-        // bridged.
-        uint32_t bridge_scene_renderables(const wz::asset::AssetGraphDraft& draft);
+        // The view-projection render_scene draws with: the override if set,
+        // otherwise built from the free-fly camera + projection params + aspect.
+        wz::math::Mat4 compute_view_projection() const;
 
         wz::engine::AppContext&                  ctx_;
         wz::engine::rendering::RhiSceneRenderer  renderer_;
         uint32_t                                 graph_epoch_ = 0;  // last bound
+
+        // The app's own free-fly camera (game-app parity): updated from input in
+        // simulation_tick and used to build the view-projection unless an editor
+        // override is set. Projection params mirror the scene camera defaults;
+        // aspect tracks the window reported by the latest input.
+        wz::bench::FlyingCamera        camera_{};
+        float                          camera_fov_y_ = 1.0472f;       // ~60 deg
+        float                          camera_near_  = 0.1f;
+        float                          camera_far_   = 100000.0f;
+        float                          aspect_       = 1280.0f / 720.0f;
+        std::optional<wz::math::Mat4>  camera_override_{};
 
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).

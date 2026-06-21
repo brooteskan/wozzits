@@ -24,6 +24,9 @@ namespace wz::fs
     FileResult<Buffer> read_file(const Path &path);
 
     //
+    FileResult<std::string> read_file_text(const Path &path);
+
+    //
     FileError write_file(const Path &path,
                      const Buffer &data,
                      bool overwrite = true);

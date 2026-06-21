@@ -4,87 +4,31 @@
 
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/assets/scene/scene_authoring_materialize.h>
 #include <engine/assets/scene_asset_module.h>
 
 #include <asset/system.h>
 
+#include <bench/flying_camera.h>
 #include <external/json/json_parser.h>
 #include <file/filesystem.h>
+#include <input/input.h>
+#include <math/camera.h>
 #include <math/math_types.h>
 #include <math/mat4.h>
+#include <math/projection.h>
 
-#include <cmath>
 #include <chrono>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <utility>
 
 namespace wz::app
 {
-    namespace
-    {
-        std::string read_text_file(const wz::fs::Path& path)
-        {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return {};
-            }
-            return std::string(
-                (std::istreambuf_iterator<char>(file)),
-                std::istreambuf_iterator<char>());
-        }
-
-        // A provisional fixed camera until scene cameras are wired: a left-handed
-        // perspective with the eye backed well off the origin, far plane large
-        // enough for the (heavily scaled) test mesh.
-        wz::math::Mat4 default_view_projection()
-        {
-            constexpr float aspect = 1280.0f / 720.0f;
-            const float ys = 1.0f / std::tan((60.0f * 3.1415926535f / 180.0f) * 0.5f);
-            wz::math::Mat4 proj{};
-            proj.m[0] = ys / aspect;
-            proj.m[5] = ys;
-            proj.m[10] = 100000.0f / (100000.0f - 1.0f);
-            proj.m[11] = 1.0f;
-            proj.m[14] = (-1.0f * 100000.0f) / (100000.0f - 1.0f);
-
-            wz::math::Mat4 view = wz::math::Mat4::identity();
-            view.m[14] = 5000.0f;  // eye backed off along -Z (LH, looking +Z)
-            return wz::math::mul(proj, view);
-        }
-    }
 
     WozzitsApp_v1::WozzitsApp_v1(wz::engine::AppContext& ctx)
         : ctx_(ctx)
         , renderer_(*ctx.gpu, ctx.logger)
     {
-    }
-
-    uint32_t WozzitsApp_v1::bridge_scene_renderables(
-        const wz::asset::AssetGraphDraft& draft)
-    {
-        // Bridge each scene node's authored renderable graph-node id to its
-        // resolved AssetKey (the draft node's key), like the editor's
-        // resolve_renderable_asset_node, so the renderer can find it. Re-run on
-        // every (re)bind: a graph swap mints new keys, and scene_nodes_ must
-        // point at the new ones or the renderer draws nothing (or stale keys).
-        uint32_t bridged = 0;
-        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
-            if (!node.renderable_asset_node_id) {
-                continue;
-            }
-            // Clear first: if the new graph removed/renamed this authored
-            // renderable, the node must stop drawing the previous graph's key
-            // (old compiled payloads can still resolve), not keep it stale.
-            node.renderable_asset.reset();
-            const auto it = draft.node_index.find(*node.renderable_asset_node_id);
-            if (it != draft.node_index.end()) {
-                node.renderable_asset = draft.nodes[it->second].node.key;
-                ++bridged;
-            }
-        }
-        return bridged;
     }
 
     AssetGraphCompileResult WozzitsApp_v1::bind_asset_graph(
@@ -103,48 +47,39 @@ namespace wz::app
         }
         wz::asset::AssetSystem& sys = ctx_.assets->system();
 
-        // Compiling resolves keys + writes validation messages INTO the draft
-        // (AssetGraphDraft is move-only; the caller keeps it and reads status).
-
-        if (!wz::asset::materialize_asset_graph_draft_keys(
-                draft, sys.registry(), ctx_.assets->draft_key_factory()))
-        {
+        // Register the draft as the asset set: materialize keys -> registrations
+        // -> wholesale replace, then normalize the committed draft (compact, mark
+        // nodes Existing, rebuild indexes). This is the single-sourced engine
+        // pipeline; the app no longer hand-rolls it. NOTE: "commit" here means
+        // "commit the draft as the registered set" — distinct from sys.commit()
+        // (the DAG rebuild) below. Writes validation messages into the draft.
+        const auto commit = ctx_.assets->commit_asset_graph_draft(draft);
+        using CommitStatus = wz::engine::assets::EngineAssetLibrary::
+            AssetGraphDraftCommitReport::Status;
+        if (commit.status != CommitStatus::Success) {
             result.ok = false;
             result.diagnostics = draft.validation_messages;
+            if (commit.status == CommitStatus::ReplaceFailed) {
+                result.diagnostics.push_back(
+                    wz::asset::AssetGraphDraftValidationMessage{
+                        .severity =
+                            wz::asset::AssetGraphDraftValidationSeverity::Error,
+                        .message = "asset graph registration rejected",
+                    });
+            }
             ctx_.logger.error(
-                "bind_asset_graph: materialization failed diagnostics="
-                + std::to_string(result.diagnostics.size()));
-            return result;
-        }
-
-        const std::vector<wz::asset::AssetGraphDraftRegistration> registrations =
-            wz::asset::asset_graph_draft_to_registrations(
-                draft, &sys.registry(), ctx_.assets->draft_key_factory());
-
-        std::vector<wz::asset::AssetSystem::RegistrationEntry> entries;
-        entries.reserve(registrations.size());
-        for (const auto& registration : registrations) {
-            entries.push_back(wz::asset::AssetSystem::RegistrationEntry{
-                .node = registration.node,
-                .dep_keys = registration.dep_keys,
-            });
-        }
-
-        // The wholesale swap: replace the registered set with the new graph.
-        if (!sys.replace_registered_assets(std::move(entries))) {
-            result.ok = false;
-            result.diagnostics = draft.validation_messages;
-            result.diagnostics.push_back(wz::asset::AssetGraphDraftValidationMessage{
-                .severity = wz::asset::AssetGraphDraftValidationSeverity::Error,
-                .message = "asset graph registration rejected",
-            });
-            ctx_.logger.error("bind_asset_graph: registration replace failed");
+                std::string("bind_asset_graph: draft commit rejected (")
+                + (commit.status == CommitStatus::MaterializeFailed
+                       ? "materialize"
+                       : "replace")
+                + ") diagnostics=" + std::to_string(result.diagnostics.size()));
             return result;
         }
 
         // Rebuild the DAG with the newly registered set (commit() only
-        // rebuilds the graph; it does NOT run compilers).
-        if (!sys.commit()) {
+        // rebuilds the graph; it does NOT run compilers). Through the library so
+        // the app drives the engine API, not the raw AssetSystem.
+        if (!ctx_.assets->commit()) {
             result.ok = false;
             result.diagnostics = draft.validation_messages;
             result.diagnostics.push_back(wz::asset::AssetGraphDraftValidationMessage{
@@ -157,13 +92,15 @@ namespace wz::app
 
         // Resolve: the actual compile pass — run every node's compiler, filling
         // ResourceHandles. Failures (missing files, compiler errors) surface here.
-        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
-            resolve_errors;
-        const uint32_t resolved_count = sys.resolve_all(&resolve_errors);
-        if (!resolve_errors.empty()) {
+        // Through the library so we get its resolve logging + a structured report.
+        const wz::engine::assets::ResolveReport resolve_report =
+            ctx_.assets->resolve_all();
+        if (!resolve_report.ok()) {
             result.ok = false;
-            for (const auto& [key, error] : resolve_errors) {
-                const auto node = draft.node_by_key.find(key);
+            for (const wz::engine::assets::ResolveFailure& failure :
+                 resolve_report.failures)
+            {
+                const auto node = draft.node_by_key.find(failure.key);
                 draft.validation_messages.push_back(
                     wz::asset::AssetGraphDraftValidationMessage{
                         .severity =
@@ -173,14 +110,16 @@ namespace wz::app
                                 ? wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE
                                 : node->second,
                         .message = "asset resolve failed (ResolveError "
-                            + std::to_string(static_cast<int>(error)) + ")",
+                            + std::to_string(
+                                static_cast<int>(failure.error)) + ")",
                     });
             }
             result.diagnostics = draft.validation_messages;
             ctx_.logger.error(
                 "bind_asset_graph: resolve failed resolved="
-                + std::to_string(resolved_count)
-                + " failures=" + std::to_string(resolve_errors.size()));
+                + std::to_string(resolve_report.resolved_count)
+                + " failures="
+                + std::to_string(resolve_report.failures.size()));
             return result;
         }
 
@@ -203,7 +142,8 @@ namespace wz::app
         // The swap minted new AssetKeys; re-point the scene's renderables at
         // them. (On the first bind during load_scene the scene is not loaded
         // yet, so this is a no-op there and load_scene re-runs it after.)
-        const uint32_t bridged = bridge_scene_renderables(draft);
+        const uint32_t bridged =
+            wz::engine::assets::bridge_scene_renderable_keys(scene_nodes_, draft);
 
         result.ok = true;
         result.diagnostics = draft.validation_messages;
@@ -214,7 +154,7 @@ namespace wz::app
         ctx_.logger.info(
             "bind_asset_graph: compile succeeded registered="
             + std::to_string(sys.registered_assets().size())
-            + " resolved=" + std::to_string(resolved_count)
+            + " resolved=" + std::to_string(resolve_report.resolved_count)
             + " renderables_bridged=" + std::to_string(bridged)
             + " diagnostics=" + std::to_string(result.diagnostics.size())
             + " ms=" + std::to_string(elapsed_ms));
@@ -243,19 +183,19 @@ namespace wz::app
             ctx_.logger.error("load_scene: scene path is empty");
             return false;
         }
-        wz::asset::AssetSystem& sys = ctx_.assets->system();
 
         // Compile the asset graph (the unproven path): read the v2 graph JSON
         // -> draft (shared engine loader) -> bind (swap + resolve).
-        const std::string graph_text =
-            read_text_file(ctx_.assets->files().resolve_path(desc.asset_graph));
-        if (graph_text.empty()) {
+        const wz::fs::FileResult<std::string> graph_text =
+            wz::fs::read_file_text(
+                ctx_.assets->files().resolve_path(desc.asset_graph));
+        if (!graph_text) {
             ctx_.logger.error(
                 "load_scene: cannot read asset graph: " + desc.asset_graph);
             return false;
         }
         const wz::json::JSONParseResult gj =
-            wz::json::parse_json_string(graph_text);
+            wz::json::parse_json_string(graph_text.value);
         if (!gj.ok || !gj.document.root) {
             ctx_.logger.error("load_scene: invalid asset graph json");
             return false;
@@ -302,10 +242,10 @@ namespace wz::app
 
         // create_scene_from_json only REGISTERS the scene + its deps (staged
         // after the graph commit); commit + resolve to actually compile it.
-        sys.commit();
-        std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
-            scene_errors;
-        sys.resolve_all(&scene_errors);
+        // Through the library, matching bind_asset_graph.
+        ctx_.assets->commit();
+        const wz::engine::assets::ResolveReport scene_resolve =
+            ctx_.assets->resolve_all();
 
         const wz::engine::assets::SceneHandle scene_handle =
             ctx_.assets->scenes().get_scene(scene);
@@ -321,11 +261,13 @@ namespace wz::app
         // graph keys. Populate scene_nodes_ even with graph/scene compile errors
         // so a later good rebind can render.
         scene_nodes_ = scene_data->nodes;
-        const uint32_t bridged = bridge_scene_renderables(graph_draft_);
-        if (!scene_errors.empty()) {
+        const uint32_t bridged =
+            wz::engine::assets::bridge_scene_renderable_keys(
+                scene_nodes_, graph_draft_);
+        if (!scene_resolve.ok()) {
             ctx_.logger.warn(
                 "load_scene: scene resolved with errors="
-                + std::to_string(scene_errors.size())
+                + std::to_string(scene_resolve.failures.size())
                 + " (loaded anyway for editor recovery)");
         }
         ctx_.logger.info(
@@ -333,11 +275,17 @@ namespace wz::app
             + std::to_string(scene_data->nodes.size())
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
-        return graph_ok && scene_errors.empty();
+        return graph_ok && scene_resolve.ok();
     }
 
-    void WozzitsApp_v1::simulation_tick()
+    void WozzitsApp_v1::simulation_tick(
+        const wz::input::InputState& input, float dt)
     {
+        wz::bench::update_flying_camera(camera_, input, dt);
+        if (input.window.width > 0 && input.window.height > 0) {
+            aspect_ = static_cast<float>(input.window.width)
+                / static_cast<float>(input.window.height);
+        }
         renderer_.simulation_tick();
     }
 
@@ -347,7 +295,40 @@ namespace wz::app
             return true;
         }
         return renderer_.render_scene(
-            scene_nodes_, *ctx_.assets, default_view_projection());
+            scene_nodes_, *ctx_.assets, compute_view_projection());
+    }
+
+    void WozzitsApp_v1::set_camera_override(
+        const wz::math::Mat4& view_projection)
+    {
+        camera_override_ = view_projection;
+    }
+
+    void WozzitsApp_v1::clear_camera_override()
+    {
+        camera_override_.reset();
+    }
+
+    wz::math::Mat4 WozzitsApp_v1::compute_view_projection() const
+    {
+        if (camera_override_) {
+            return *camera_override_;
+        }
+
+        // Free-fly camera -> left-handed DX view-projection (matching the
+        // renderer's convention). Eye/orientation come from the flying camera;
+        // aspect tracks the window from the latest input.
+        const wz::bench::CameraBasis basis = wz::bench::camera_basis(camera_);
+        const wz::math::Vec3 eye{ camera_.x, camera_.y, camera_.z };
+        const wz::math::Vec3 target{
+            eye.x + basis.forward.x,
+            eye.y + basis.forward.y,
+            eye.z + basis.forward.z };
+        const wz::math::Mat4 view =
+            wz::math::look_at_dx(eye, target, basis.up);
+        const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
+            camera_fov_y_, aspect_, camera_near_, camera_far_);
+        return wz::math::mul(proj, view);
     }
 
     std::size_t WozzitsApp_v1::resident_gpu_resource_count() const
