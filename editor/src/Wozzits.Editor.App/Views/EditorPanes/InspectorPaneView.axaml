@@ -325,9 +325,12 @@
                                                         Command="{Binding ApplyCommand}"
                                                         Classes="InspectorApplyButton"/>
                                             </Grid>
+                                            <CheckBox Content="enabled"
+                                                      IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                                      Classes="InspectorCheck"
+                                                      IsVisible="{Binding IsBool}"/>
                                             <ComboBox ItemsSource="{Binding Options}"
-                                                      SelectedItem="{Binding Value}"
-                                                      IsEnabled="False"
+                                                      SelectedItem="{Binding Value, Mode=TwoWay}"
                                                       HorizontalAlignment="Stretch"
                                                       Classes="InspectorInput"
                                                       IsVisible="{Binding IsEnum}"/>

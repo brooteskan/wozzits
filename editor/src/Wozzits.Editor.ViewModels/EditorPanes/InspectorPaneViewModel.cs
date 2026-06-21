@@ -653,7 +653,9 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
 {
     private readonly Action<string, string> _apply;
     private readonly string _originalValue;
+    private readonly bool _initialized;
     private string _value;
+    private bool _boolValue;
 
     public InspectorAssetGraphParamViewModel(
         EngineAssetGraphParam param,
@@ -665,14 +667,15 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
         _originalValue = param.Value;
         _value = param.Value;
         _apply = apply;
-        // Text params are editable now (string + shader file paths). Enums are
-        // surfaced with their declared options but editing them needs an
-        // index-valued mutation, so they stay read-only for the moment.
-        IsTextEditable =
-            string.Equals(Kind, "string", StringComparison.Ordinal)
-            || string.Equals(Kind, "filepath", StringComparison.Ordinal);
+        // Text-edited via a box + Apply: string, file paths, and numeric kinds
+        // (the engine converts the text to the declared ParamType).
+        IsTextEditable = Kind is "string" or "filepath" or "int" or "float"
+            or "float3" or "color";
+        IsBool = string.Equals(Kind, "bool", StringComparison.Ordinal);
         IsEnum = string.Equals(Kind, "enum", StringComparison.Ordinal);
-        ApplyCommand = new RelayCommand(Apply, () => IsTextEditable);
+        _boolValue = string.Equals(_value, "true", StringComparison.OrdinalIgnoreCase);
+        ApplyCommand = new RelayCommand(ApplyText, () => IsTextEditable);
+        _initialized = true;
     }
 
     public string Name { get; }
@@ -683,19 +686,47 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
 
     public bool IsTextEditable { get; }
 
+    public bool IsBool { get; }
+
     public bool IsEnum { get; }
 
-    // Plain, non-editable display (bool / int / float / float3 / color).
-    public bool IsReadOnlyText => !IsTextEditable && !IsEnum;
+    // Plain, non-editable display (unrecognized kinds only).
+    public bool IsReadOnlyText => !IsTextEditable && !IsBool && !IsEnum;
 
     public string Value
     {
         get => _value;
         set
         {
-            if (SetProperty(ref _value, value))
+            if (!SetProperty(ref _value, value))
             {
-                OnPropertyChanged(nameof(IsModified));
+                return;
+            }
+
+            OnPropertyChanged(nameof(IsModified));
+            // Enums apply immediately on a dropdown selection.
+            if (_initialized && IsEnum && !string.IsNullOrEmpty(value))
+            {
+                _apply(Name, value);
+            }
+        }
+    }
+
+    // Bound by the checkbox for bool params; applies immediately on toggle.
+    public bool BoolValue
+    {
+        get => _boolValue;
+        set
+        {
+            if (!SetProperty(ref _boolValue, value))
+            {
+                return;
+            }
+
+            if (_initialized && IsBool)
+            {
+                _value = value ? "true" : "false";
+                _apply(Name, _value);
             }
         }
     }
@@ -708,14 +739,12 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
 
     public string Detail => Kind;
 
-    private void Apply()
+    private void ApplyText()
     {
-        if (!IsTextEditable)
+        if (IsTextEditable)
         {
-            return;
+            _apply(Name, _value);
         }
-
-        _apply(Name, _value);
     }
 }
 
