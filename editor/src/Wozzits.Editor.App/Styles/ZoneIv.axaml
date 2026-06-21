@@ -36,6 +36,12 @@
                          Color="{StaticResource WozzitsGraphWireColor}"/>
         <SolidColorBrush x:Key="WozzitsErrorBrush"
                          Color="{StaticResource WozzitsErrorColor}"/>
+
+        <!-- Compile-status dots: deliberately bright/saturated (a departure from
+             the muted theme) so ready/changed/error read apart at a glance. -->
+        <SolidColorBrush x:Key="WozzitsDotReadyBrush" Color="#22DD3C"/>
+        <SolidColorBrush x:Key="WozzitsDotChangedBrush" Color="#FFD60A"/>
+        <SolidColorBrush x:Key="WozzitsDotErrorBrush" Color="#FF3B30"/>
     </Styles.Resources>
 
     <Style Selector="Window">
@@ -432,15 +438,15 @@
     </Style>
 
     <Style Selector="Ellipse.AssetGraphCompileDot.ready">
-        <Setter Property="Fill" Value="{DynamicResource WozzitsSuccessBrush}"/>
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotReadyBrush}"/>
     </Style>
 
     <Style Selector="Ellipse.AssetGraphCompileDot.changed">
-        <Setter Property="Fill" Value="{DynamicResource WozzitsWarningBrush}"/>
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotChangedBrush}"/>
     </Style>
 
     <Style Selector="Ellipse.AssetGraphCompileDot.error">
-        <Setter Property="Fill" Value="{DynamicResource WozzitsErrorBrush}"/>
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotErrorBrush}"/>
     </Style>
 
     <Style Selector="Ellipse.AssetGraphInputPortDot">
