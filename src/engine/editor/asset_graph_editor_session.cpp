@@ -1,5 +1,6 @@
 #include <engine/editor/asset_graph_editor_session.h>
 
+#include <engine/assets/authoring/asset_graph_authoring.h>
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/type_extensions.h>
 
@@ -329,6 +330,31 @@ namespace wz::engine::editor
 
         invalidate_node_inputs(draft_, to);
         return true;
+    }
+
+    wz::asset::AssetGraphDraftNodeId AssetGraphEditorSession::add_node(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type)
+    {
+        if (type == wz::asset::AssetType::Unknown || !registry_) {
+            return wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
+        }
+
+        const wz::engine::assets::authoring::GraphAuthoringContext ctx{
+            .registry = *registry_,
+            .resolve_file = nullptr,
+        };
+        return wz::engine::assets::authoring::add_source_asset_node(
+            draft_,
+            ctx,
+            schema,
+            type);
+    }
+
+    bool AssetGraphEditorSession::remove_node(
+        wz::asset::AssetGraphDraftNodeId node_id)
+    {
+        return wz::asset::remove_asset_graph_draft_node(draft_, node_id);
     }
 
     bool AssetGraphEditorSession::disconnect_input(

@@ -152,6 +152,30 @@ extern "C"
         return WZ_ABI_VERSION;
     }
 
+    WzResult wz_editor_asset_catalog(WzBuffer* out_catalog)
+    {
+        if (const WzResult target =
+                prepare_output_buffer(out_catalog, "out_catalog");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return copy_bytes_to_buffer(
+                wz::engine::editor::asset_catalog_abi_blob(),
+                out_catalog);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset catalog build failed");
+        }
+    }
+
     WzResult wz_editor_load_project_snapshot(
         const char* project_root_utf8,
         const char* resource_root_utf8,
@@ -569,6 +593,75 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "asset graph connect failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_add_node(
+        WzEditorSession* session,
+        uint64_t schema,
+        uint32_t type,
+        uint64_t* out_node_id)
+    {
+        if (out_node_id) {
+            *out_node_id = 0u;
+        }
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const wz::asset::AssetGraphDraftNodeId id =
+                session->editor->add_node(
+                    wz::asset::SchemaID{ schema },
+                    static_cast<wz::asset::AssetType>(
+                        static_cast<uint16_t>(type)));
+            if (id == wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE) {
+                return result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "could not add asset graph node");
+            }
+            if (out_node_id) {
+                *out_node_id = static_cast<uint64_t>(id);
+            }
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph add node failed");
+        }
+    }
+
+    WzResult wz_editor_asset_graph_remove_node(
+        WzEditorSession* session,
+        uint64_t node_id)
+    {
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            return session->editor->remove_node(
+                       static_cast<wz::asset::AssetGraphDraftNodeId>(node_id))
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "asset graph node not found");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "asset graph remove node failed");
         }
     }
 

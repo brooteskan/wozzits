@@ -100,6 +100,19 @@ namespace wz::engine::editor
             wz::asset::AssetGraphDraftNodeId node,
             uint32_t input_port);
 
+        // Add a new authored source node for (schema, type) with compiler
+        // default params. Returns the new draft node id, or
+        // INVALID_ASSET_GRAPH_DRAFT_NODE on failure. Layout position is the
+        // editor's concern (set via set_node_position after the snapshot).
+        [[nodiscard]] wz::asset::AssetGraphDraftNodeId add_node(
+            wz::asset::SchemaID schema,
+            wz::asset::AssetType type);
+
+        // Remove a node (and any edges touching it) from the draft. Returns
+        // false if the node does not exist or was already deleted.
+        [[nodiscard]] bool remove_node(
+            wz::asset::AssetGraphDraftNodeId node_id);
+
     private:
         wz::engine::project::ProjectManifestLoadDesc desc_;
         wz::json::JSONDocument document_;

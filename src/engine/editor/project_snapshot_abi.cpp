@@ -1,6 +1,7 @@
 #include <engine/editor/project_snapshot_abi.h>
 
 #include <engine/abi/wozzits_abi.h>
+#include <engine/editor/asset_catalog.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/project_snapshot.h>
 
@@ -530,6 +531,45 @@ namespace wz::engine::editor
             : WZ_EDITOR_PROJECT_STATUS_INVALID;
         root.created = result.created ? 1u : 0u;
         root.error = builder.append_string(result.error);
+
+        builder.patch_struct(root_offset, root);
+        return builder.take();
+    }
+
+    std::vector<uint8_t> asset_catalog_abi_blob()
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorAssetCatalog{});
+
+        const std::vector<AssetCatalogEntry> catalog = build_asset_catalog();
+
+        std::vector<WzEditorAssetCatalogEntry> entries;
+        entries.reserve(catalog.size());
+        for (const AssetCatalogEntry& entry : catalog) {
+            std::vector<WzEditorAssetCatalogSchema> schemas;
+            schemas.reserve(entry.schemas.size());
+            for (const AssetCatalogSchema& schema : entry.schemas) {
+                schemas.push_back(WzEditorAssetCatalogSchema{
+                    .schema = schema.schema.value,
+                    .label = builder.append_string(schema.label),
+                });
+            }
+
+            entries.push_back(WzEditorAssetCatalogEntry{
+                .type = static_cast<uint32_t>(
+                    static_cast<uint16_t>(entry.type)),
+                .reserved = 0u,
+                .type_name = builder.append_string(entry.type_name),
+                .category = builder.append_string(entry.category),
+                .schemas = builder.append_table(schemas),
+            });
+        }
+
+        WzEditorAssetCatalog root{};
+        root.abi_version = WZ_ABI_VERSION;
+        root.ok = 1u;
+        root.entries = builder.append_table(entries);
 
         builder.patch_struct(root_offset, root);
         return builder.take();

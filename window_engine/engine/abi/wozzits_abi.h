@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 17u
+#define WZ_ABI_VERSION 18u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -300,6 +300,33 @@ typedef struct WzEditorProjectCreate
     WzEditorStringSpan error;
 } WzEditorProjectCreate;
 
+// ─── Asset catalog (authoring palette) ──────────────────────────────────────
+// Device-free list of asset-graph node types the editor can author, grouped by
+// output type with the schemas that produce each. Excludes types whose GPU
+// residency has not yet moved to wozzits-rhi (see #186).
+
+typedef struct WzEditorAssetCatalogSchema
+{
+    uint64_t schema;          // SchemaID.value
+    WzEditorStringSpan label; // display label
+} WzEditorAssetCatalogSchema;
+
+typedef struct WzEditorAssetCatalogEntry
+{
+    uint32_t type;                  // AssetType value
+    uint32_t reserved;
+    WzEditorStringSpan type_name;
+    WzEditorStringSpan category;
+    WzEditorTableSpan schemas;      // WzEditorAssetCatalogSchema[]
+} WzEditorAssetCatalogEntry;
+
+typedef struct WzEditorAssetCatalog
+{
+    uint32_t abi_version;
+    uint32_t ok;
+    WzEditorTableSpan entries;      // WzEditorAssetCatalogEntry[]
+} WzEditorAssetCatalog;
+
 #ifdef __cplusplus
 static_assert(sizeof(WzEditorStringSpan) == 16);
 static_assert(offsetof(WzEditorStringSpan, offset) == 0);
@@ -419,9 +446,29 @@ static_assert(sizeof(WzEditorProjectCreate) == 32);
 static_assert(offsetof(WzEditorProjectCreate, abi_version) == 0);
 static_assert(offsetof(WzEditorProjectCreate, status) == 8);
 static_assert(offsetof(WzEditorProjectCreate, error) == 16);
+
+static_assert(sizeof(WzEditorAssetCatalogSchema) == 24);
+static_assert(offsetof(WzEditorAssetCatalogSchema, schema) == 0);
+static_assert(offsetof(WzEditorAssetCatalogSchema, label) == 8);
+
+static_assert(sizeof(WzEditorAssetCatalogEntry) == 56);
+static_assert(offsetof(WzEditorAssetCatalogEntry, type) == 0);
+static_assert(offsetof(WzEditorAssetCatalogEntry, type_name) == 8);
+static_assert(offsetof(WzEditorAssetCatalogEntry, category) == 24);
+static_assert(offsetof(WzEditorAssetCatalogEntry, schemas) == 40);
+
+static_assert(sizeof(WzEditorAssetCatalog) == 24);
+static_assert(offsetof(WzEditorAssetCatalog, abi_version) == 0);
+static_assert(offsetof(WzEditorAssetCatalog, entries) == 8);
 #endif
 
 WZ_ABI_API uint32_t wz_abi_version(void);
+
+// Device-free authoring catalog: the asset-graph node types the editor can add,
+// grouped by output type with their schemas. Excludes types whose GPU residency
+// has not yet migrated to wozzits-rhi (#186). No project or session required.
+// The blob's byte 0 is a WzEditorAssetCatalog. Caller frees with wz_free_buffer.
+WZ_ABI_API WzResult wz_editor_asset_catalog(WzBuffer* out_catalog);
 
 WZ_ABI_API WzResult wz_editor_load_project_snapshot(
     const char* project_root_utf8,
@@ -504,6 +551,20 @@ WZ_ABI_API WzResult wz_editor_asset_graph_connect(
 WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
     WzEditorSession* session,
     uint64_t edge_id);
+
+// Add a new authored node for (schema, type) to the draft, with compiler
+// default params, and return its new node id. Layout position is set separately
+// (wz_editor_asset_graph_set_node_position) by the editor after the snapshot.
+WZ_ABI_API WzResult wz_editor_asset_graph_add_node(
+    WzEditorSession* session,
+    uint64_t schema,
+    uint32_t type,
+    uint64_t* out_node_id);
+
+// Remove a node (and any edges touching it) from the draft.
+WZ_ABI_API WzResult wz_editor_asset_graph_remove_node(
+    WzEditorSession* session,
+    uint64_t node_id);
 
 // Set a string-valued node param (e.g. a shader "source_path") on the draft.
 // Merges into the node's ParamBlock, invalidates its key, and marks it changed,

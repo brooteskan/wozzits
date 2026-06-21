@@ -10,6 +10,7 @@ target_sources(window_engine PRIVATE
     editor/asset_graph_layout.cpp
     editor/asset_graph_editor_session.cpp
     editor/asset_graph_schema_registry.cpp
+    editor/asset_catalog.cpp
     editor/asset_graph_snapshot.cpp
     editor/scene_snapshot.cpp
     behavior/behavior_registry.cpp
