@@ -25,6 +25,15 @@ namespace
         desc.residency = ResourceResidency::Transient;
         return desc;
     }
+
+    GpuResourceDesc transient_storage()
+    {
+        GpuResourceDesc desc;
+        desc.size_bytes = 4096;
+        desc.usage = ResourceUsage_Storage;
+        desc.residency = ResourceResidency::Transient;
+        return desc;
+    }
 }
 
 // A producer/consumer chain orders correctly and derives the transitions the
@@ -158,6 +167,41 @@ static void no_barrier_without_state_change()
     WZ_CHECK_EQ(shared_barriers, 2);
 }
 
+// Same-state UAV read/write hazards still need ordering. The graph expresses
+// that as an UnorderedAccess->UnorderedAccess barrier for the backend recorder
+// to lower to a native UAV barrier.
+static void unordered_access_write_then_read_gets_uav_barrier()
+{
+    FrameGraph fg;
+    const FrameGraphResource scratch =
+        fg.create_transient("scratch", transient_storage());
+    const FrameGraphResource out =
+        fg.create_transient("out", transient_storage());
+    fg.mark_output(out);
+
+    const uint32_t writer = fg.add_pass("writer");
+    fg.write(writer, scratch, ResourceState::UnorderedAccess);
+
+    const uint32_t reader = fg.add_pass("reader");
+    fg.read(reader, scratch, ResourceState::UnorderedAccess);
+    fg.write(reader, out, ResourceState::UnorderedAccess);
+
+    const CompiledFrameGraph g = fg.compile();
+    const int rp = position_of(g, reader);
+    WZ_CHECK(rp >= 0);
+
+    bool saw_uav_barrier = false;
+    for (const Barrier& barrier : g.order[static_cast<size_t>(rp)].barriers) {
+        if (barrier.resource == scratch
+            && barrier.from == ResourceState::UnorderedAccess
+            && barrier.to == ResourceState::UnorderedAccess)
+        {
+            saw_uav_barrier = true;
+        }
+    }
+    WZ_CHECK(saw_uav_barrier);
+}
+
 // Transients with disjoint lifetimes share an alias group; overlapping ones do
 // not.
 static void disjoint_transients_alias()
@@ -202,6 +246,7 @@ int main()
     WZ_RUN(dead_pass_is_culled);
     WZ_RUN(culling_is_transitive);
     WZ_RUN(no_barrier_without_state_change);
+    WZ_RUN(unordered_access_write_then_read_gets_uav_barrier);
     WZ_RUN(disjoint_transients_alias);
     WZ_TEST_RETURN();
 }

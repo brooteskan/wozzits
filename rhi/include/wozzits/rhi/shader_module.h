@@ -6,6 +6,7 @@
 // from compiled shader bytes; rhi stores opaque bytes and never compiles source.
 
 #include <wozzits/rhi/program_registry.h>
+#include <wozzits/rhi/compute_program.h>
 #include <wozzits/rhi/render_program.h>
 
 #include <cstddef>
@@ -54,5 +55,25 @@ namespace wz::rhi
         }
 
         return ProgramBytecode{ vertex->bytecode, pixel->bytecode };
+    }
+
+    [[nodiscard]] inline std::optional<std::vector<uint8_t>>
+    resolve_compute_bytecode(const ComputeProgramDesc& program,
+                             const ShaderModuleRegistry& modules)
+    {
+        const Tag compute_tag = modules.find(program.compute_shader);
+        if (!compute_tag.valid()) {
+            return std::nullopt;
+        }
+
+        const ShaderModuleDesc* compute = modules.get(compute_tag);
+        if (!compute
+            || compute->stage != ShaderStage::Compute
+            || compute->bytecode.empty())
+        {
+            return std::nullopt;
+        }
+
+        return compute->bytecode;
     }
 }

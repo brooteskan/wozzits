@@ -15,14 +15,24 @@ namespace
         d.name = "landscape_field";
         d.compute_shader = "shaders/compute/landscape_field_cs.hlsl";
         d.thread_group_size[0] = 64;
-        d.root_constants.push_back(
-            RootConstantBinding{
-                ShaderStage::Compute,
-                constants.acquire("dispatch_constants"),
-                0,
-                0,
-                1 });
+        ShaderResourceGroupLayout object_srg;
+        object_srg.binding_slot = 2;
+        object_srg.constants_binding = RootConstantsBinding{
+            ShaderStage::Compute,
+            0,
+            0 };
+        WZ_CHECK(object_srg.constants.append(
+            constants.acquire("dispatch_constants"),
+            sizeof(uint32_t)));
+        d.shader_resource_groups.push_back(object_srg);
         return d;
+    }
+
+    const ShaderResourceGroupLayout* object_srg(const ComputeProgramDesc& desc)
+    {
+        return find_shader_resource_group_layout(
+            desc.shader_resource_groups,
+            2);
     }
 }
 
@@ -38,6 +48,13 @@ static void register_then_get_round_trips()
     if (desc) {
         WZ_CHECK_EQ(desc->name, std::string{ "landscape_field" });
         WZ_CHECK_EQ(desc->thread_group_size[0], 64u);
+        const ShaderResourceGroupLayout* srg = object_srg(*desc);
+        WZ_CHECK(srg != nullptr);
+        if (srg) {
+            WZ_CHECK_EQ(srg->constants.dword_count(), 1u);
+            WZ_CHECK(srg->constants_binding.visibility
+                == ShaderStage::Compute);
+        }
     }
 }
 
@@ -60,20 +77,36 @@ static void uav_binding_semantic_is_a_tag()
     DescriptorSemanticRegistry semantics;
     ConstantSemanticRegistry constants;
     ComputeProgramDesc d = make_landscape_field(constants);
-    d.descriptor_bindings.push_back(DescriptorBinding{
-        DescriptorKind::UAV, ShaderStage::Compute,
-        semantics.acquire("mesh_field_output"), 0, 0, 1 });
+    ShaderResourceGroupLayout* srg = d.shader_resource_groups.empty()
+        ? nullptr
+        : &d.shader_resource_groups[0];
+    WZ_CHECK(srg != nullptr);
+    if (srg) {
+        srg->descriptors.push_back(DescriptorBinding{
+            DescriptorKind::UAV,
+            ShaderStage::Compute,
+            semantics.acquire("mesh_field_output"),
+            0,
+            0,
+            1 });
+    }
 
     ComputeProgramRegistry registry;
     const Tag tag = registry.register_program(d);
     const ComputeProgramDesc* out = registry.get(tag);
     WZ_CHECK(out != nullptr);
     if (out) {
-        WZ_CHECK_EQ(out->descriptor_bindings.size(), static_cast<size_t>(1));
-        WZ_CHECK(out->descriptor_bindings[0].kind == DescriptorKind::UAV);
-        WZ_CHECK(out->descriptor_bindings[0].semantic.valid());
-        WZ_CHECK_EQ(semantics.name_of(out->descriptor_bindings[0].semantic),
-            std::string_view{ "mesh_field_output" });
+        const ShaderResourceGroupLayout* out_srg = object_srg(*out);
+        WZ_CHECK(out_srg != nullptr);
+        if (out_srg) {
+            WZ_CHECK_EQ(
+                out_srg->descriptors.size(),
+                static_cast<size_t>(1));
+            WZ_CHECK(out_srg->descriptors[0].kind == DescriptorKind::UAV);
+            WZ_CHECK(out_srg->descriptors[0].semantic.valid());
+            WZ_CHECK_EQ(semantics.name_of(out_srg->descriptors[0].semantic),
+                std::string_view{ "mesh_field_output" });
+        }
     }
 }
 

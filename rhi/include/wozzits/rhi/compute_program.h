@@ -34,8 +34,11 @@ namespace wz::rhi
         // Dispatch granularity declared by the shader ([numthreads(x, y, z)]).
         uint32_t thread_group_size[3] = { 1, 1, 1 };
 
-        std::vector<RootConstantBinding> root_constants;
-        std::vector<DescriptorBinding>   descriptor_bindings;
+        // Same slotted SRG model as RenderProgramDesc: bindings live inside
+        // ShaderResourceGroupLayouts, not on a flat program-wide binding list.
+        // Compute binds DescriptorKind::UAV freely; visibility is
+        // ShaderStage::Compute or ShaderStage::All.
+        std::vector<ShaderResourceGroupLayout> shader_resource_groups;
     };
 
     inline constexpr size_t kMaxComputePrograms = 256;

@@ -34,6 +34,11 @@
 
 namespace wz::rhi
 {
+    struct DispatchArgs
+    {
+        uint32_t group_count[3] = { 1, 1, 1 };
+    };
+
     // The state a resource must be in for a given access. Closed set -> enum
     // (gets exhaustiveness checks; a new state should break switches at compile
     // time, not silently fall through).
@@ -114,6 +119,7 @@ namespace wz::rhi
         virtual void set_geometry(const GeometryView&,
                                   const StreamBufferIndices&) {}
         virtual void draw(const DrawArgs&) {}
+        virtual void dispatch(const DispatchArgs&) {}
     };
 
     // Handed to each pass's execute callback. Resolves graph resources to their
@@ -297,6 +303,7 @@ namespace wz::rhi
 
             // ── barrier derivation from declared usage ────────────────────────
             std::vector<ResourceState> current(res_count, ResourceState::Undefined);
+            std::vector<bool> unordered_access_write_pending(res_count, false);
             for (uint32_t r = 0; r < res_count; ++r) {
                 if (resources_[r].kind == ResourceKind::Imported) {
                     current[r] = resources_[r].initial_state;
@@ -314,6 +321,13 @@ namespace wz::rhi
                         exec.barriers.push_back(Barrier{ a.resource, current[r], a.state });
                         current[r] = a.state;
                     }
+                    else if (a.state == ResourceState::UnorderedAccess
+                        && unordered_access_write_pending[r])
+                    {
+                        exec.barriers.push_back(Barrier{ a.resource, a.state, a.state });
+                    }
+                    unordered_access_write_pending[r] =
+                        a.is_write && a.state == ResourceState::UnorderedAccess;
                 }
                 compiled.order.push_back(std::move(exec));
             }
