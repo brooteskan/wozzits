@@ -543,6 +543,17 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             node.Y + PortRowBaseY + port.Index * PortRowSpacing);
     }
 
+    // Select the first node with a compile error so its diagnostics show in the
+    // inspector (the red dot always has a matching message visible).
+    private void SelectFirstErrorNode()
+    {
+        var errored = Nodes.FirstOrDefault(node => node.IsCompileError);
+        if (errored is not null)
+        {
+            SelectNode(errored);
+        }
+    }
+
     public void SelectNode(AssetGraphNodeCardViewModel? node)
     {
         ClearSelection();
@@ -858,8 +869,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (!response.Ok)
         {
             // Reload so per-node compile diagnostics (error dots + inspector
-            // messages) from the failed bind surface on the cards.
+            // messages) from the failed bind surface on the cards, then jump to
+            // the offending node so its message is visible in the inspector.
             ReloadGraphFromSessionPreservingLayout();
+            SelectFirstErrorNode();
             MarkCommitResult(false, response.Error);
             return;
         }
@@ -903,8 +916,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         if (!response.Ok)
         {
             // Reload so per-node compile diagnostics (error dots + inspector
-            // messages) from the failed bind surface on the cards.
+            // messages) from the failed bind surface on the cards, then jump to
+            // the offending node so its message is visible in the inspector.
             ReloadGraphFromSessionPreservingLayout();
+            SelectFirstErrorNode();
             MarkCompileResult(false, response.Error);
             return;
         }

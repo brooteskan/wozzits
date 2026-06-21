@@ -58,10 +58,9 @@
                         </Grid>
                     </Border>
 
-                    <TextBlock Grid.Row="1"
-                               Text="{Binding LastEditError}"
-                               Classes="InspectorError"
-                               IsVisible="{Binding HasLastEditError}"/>
+                    <!-- Compile/edit errors are surfaced in the log and on the
+                         offending node (red dot + node inspector), not as a
+                         banner over the graph. -->
 
                     <ScrollViewer x:Name="AssetGraphScrollViewer"
                                   Grid.Row="2"
