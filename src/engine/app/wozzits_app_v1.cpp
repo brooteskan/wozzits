@@ -279,9 +279,10 @@ namespace wz::app
                 ctx_.logger.error("load_scene:   " + d.message);
             }
         }
-        if (!bound.ok) {
-            return false;
-        }
+        // Note: do NOT bail when the graph bind reported errors. Load the scene
+        // anyway so scene_nodes_ is populated; the user can then fix the graph in
+        // the editor and a later successful rebind will render. Bailing here left
+        // scene_nodes_ empty, so even a subsequent good compile drew nothing.
 
         const wz::engine::assets::SceneAsset scene =
             ctx_.assets->scenes().create_scene_from_json(
@@ -302,23 +303,29 @@ namespace wz::app
             ctx_.assets->scenes().get_scene(scene);
         const wz::engine::assets::SceneAssetData* scene_data =
             ctx_.assets->scenes().get_scene_data(scene_handle);
-        if (!scene_data || !scene_errors.empty()) {
-            ctx_.logger.error(
-                "load_scene: scene resolve FAILED (errors="
-                + std::to_string(scene_errors.size()) + ")");
+        if (!scene_data) {
+            ctx_.logger.error("load_scene: scene resolve FAILED (no scene data)");
             return false;
         }
+
         // bind_asset_graph already ran above, but scene_nodes_ was empty then;
         // now the scene is loaded, so bridge its renderables to the committed
-        // graph keys.
+        // graph keys. Populate scene_nodes_ even with graph/scene compile errors
+        // so a later good rebind can render.
         scene_nodes_ = scene_data->nodes;
         const uint32_t bridged = bridge_scene_renderables(graph_draft_);
+        if (!scene_errors.empty()) {
+            ctx_.logger.warn(
+                "load_scene: scene resolved with errors="
+                + std::to_string(scene_errors.size())
+                + " (loaded anyway for editor recovery)");
+        }
         ctx_.logger.info(
             "load_scene: scene resolved (nodes="
             + std::to_string(scene_data->nodes.size())
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
-        return graph_ok;
+        return graph_ok && scene_errors.empty();
     }
 
     void WozzitsApp_v1::simulation_tick()
