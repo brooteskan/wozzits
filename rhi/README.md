@@ -30,8 +30,11 @@ plain C++ with no framework dependency.
   `wozzits-window-engine` stay as the authority for identity and content.
 - This renderer is intended to **consume that asset library read-only** across
   the repo boundary; the cut line sits at the render-IR / resolver level.
-- The live renderer in `wozzits-window-engine` remains in production and is
-  unaffected by this repo.
+- Integration is live: **topology A — `wozzits-window-engine` depends on this
+  repo** (added as a header-only `INTERFACE` library, linked `PUBLIC`). The
+  engine renders through it via `engine/rendering/rhi_scene_renderer`, with the
+  concrete DX12 backend and bridges living engine-side (see "Integration
+  status (window-engine)" below).
 
 ## Layout
 
@@ -106,9 +109,9 @@ device-agnostic and is unit-tested against a fake backend.
 `render_program.h` is the read-only contract for consuming the existing
 engine's render programs. `wozzits-rhi` deliberately does **not** include any
 `wozzits-window-engine` header — it stays standalone-buildable. The
-engine -> rhi adapter lives at the seam (engine-side / an integration target),
-not in this repo, and maps `wz::engine::assets::RenderProgramData` into a
-`RenderProgramDesc`:
+engine -> rhi adapter lives at the seam, **engine-side** (topology A is
+decided: the engine depends on this repo), not in this repo, and maps
+`wz::engine::assets::RenderProgramData` into a `RenderProgramDesc`:
 
 - the `BuiltinRenderProgram` enum is dropped — program identity becomes a
   registered name;
@@ -136,16 +139,34 @@ cmake --build --preset clang-debug
 ctest --preset clang-debug
 ```
 
+## Integration status (window-engine)
+
+The build-topology decision is **made: topology A — `wozzits-window-engine`
+depends on this repo** (header-only `INTERFACE` library, linked `PUBLIC`). The
+concrete backend and bridges therefore live **engine-side** — rhi stays the
+pure interface, since an rhi -> engine dependency would be a cycle. Already
+landed in `wozzits-window-engine/engine/rendering/`:
+
+- `EngineGpuBackend` (`rhi_gpu_backend.*`) — implements `wz::rhi::GpuBackend`
+  over the engine's existing DX12 device / upload / release plumbing. Buffer
+  resources are done; **texture / render-target creation and CPU writes are
+  incremental** (TODOs in the `.cpp`).
+- `rhi_dx12_command_recorder.*` — the DX12 `CommandRecorder` for the pixel-path
+  slice; `rhi_dx12_pipeline.*` realizes rhi pipelines.
+- `rhi_render_program_bridge.*` / `rhi_shader_bridge.*` — the engine -> rhi
+  adapters that map `RenderProgramData` (and the `DescriptorSemantic` enum ->
+  registered Tag) into the `render_program.h` contract.
+- `rhi_scene_renderer.*` — drives a `FrameGraph` over the backend; this is the
+  path `wozzits_app_v1` renders through today.
+
 ## Roadmap (next)
 
-- A concrete `GpuBackend` + `CommandRecorder` over DX12 — the first real
-  backend behind the device-agnostic interfaces (registry create/destroy/write,
-  recorder barriers, transient memory aliasing via placed resources).
+- Finish the backend's resource coverage (textures, render targets, the
+  CPU-write path) and the recorder's barrier / transient handling.
 - Bindless descriptor-index allocation — a free-list over a global descriptor
   heap, keyed off resource identity (deferred from the registry v0).
 - Transient pooling across frames — reuse backings between frames instead of
   acquire/release each frame.
-- Asset-library bridge, engine-side half — the actual `from_engine()` adapter
-  that reads realized `RenderProgramData`. Needs a build-topology decision
-  (engine depends on rhi, or a separate integration target depends on both);
-  the rhi-side contract it targets already exists (`render_program.h`).
+- Migrate asset **resolve** onto `GpuResourceRegistry` — engine asset
+  materialization still writes into the legacy GPU-resident tables; the registry
+  is positioned to replace them.
