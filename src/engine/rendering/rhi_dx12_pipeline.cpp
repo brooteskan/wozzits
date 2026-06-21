@@ -8,6 +8,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <optional>
+#include <span>
 #include <utility>
 
 namespace
@@ -354,18 +355,19 @@ namespace wz::engine::rendering
     }
 
     std::optional<RhiDx12PipelineLayout> plan_dx12_pipeline_layout(
-        const wz::rhi::RenderProgramDesc& program)
+        std::span<const wz::rhi::ShaderResourceGroupLayout>
+            shader_resource_groups)
     {
         if (!wz::rhi::shader_resource_group_slots_are_unique(
-                program.shader_resource_groups))
+                shader_resource_groups))
         {
             return std::nullopt;
         }
 
         std::vector<const wz::rhi::ShaderResourceGroupLayout*> srgs;
-        srgs.reserve(program.shader_resource_groups.size());
+        srgs.reserve(shader_resource_groups.size());
         for (const wz::rhi::ShaderResourceGroupLayout& srg
-             : program.shader_resource_groups)
+             : shader_resource_groups)
         {
             srgs.push_back(&srg);
         }

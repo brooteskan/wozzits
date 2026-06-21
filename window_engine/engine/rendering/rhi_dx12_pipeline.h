@@ -8,11 +8,13 @@
 
 #include <gpu/gpu.h>
 
+#include <wozzits/rhi/compute_program.h>
 #include <wozzits/rhi/render_program_registry.h>
 #include <wozzits/rhi/shader_module.h>
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 struct ID3D12PipelineState;
@@ -60,7 +62,27 @@ namespace wz::engine::rendering
     };
 
     [[nodiscard]] std::optional<RhiDx12PipelineLayout>
-    plan_dx12_pipeline_layout(const wz::rhi::RenderProgramDesc& program);
+    plan_dx12_pipeline_layout(
+        std::span<const wz::rhi::ShaderResourceGroupLayout>
+            shader_resource_groups);
+
+    [[nodiscard]] inline std::optional<RhiDx12PipelineLayout>
+    plan_dx12_pipeline_layout(const wz::rhi::RenderProgramDesc& program)
+    {
+        return plan_dx12_pipeline_layout(
+            std::span<const wz::rhi::ShaderResourceGroupLayout>{
+                program.shader_resource_groups.data(),
+                program.shader_resource_groups.size() });
+    }
+
+    [[nodiscard]] inline std::optional<RhiDx12PipelineLayout>
+    plan_dx12_pipeline_layout(const wz::rhi::ComputeProgramDesc& program)
+    {
+        return plan_dx12_pipeline_layout(
+            std::span<const wz::rhi::ShaderResourceGroupLayout>{
+                program.shader_resource_groups.data(),
+                program.shader_resource_groups.size() });
+    }
 
     class RhiDx12PipelineCache
     {
