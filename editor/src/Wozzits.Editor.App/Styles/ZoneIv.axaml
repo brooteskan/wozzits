@@ -9,10 +9,10 @@
         <Color x:Key="WozzitsTextColor">#EEE8D5</Color>
         <Color x:Key="WozzitsMutedTextColor">#93A1A1</Color>
         <Color x:Key="WozzitsAccentColor">#2AA198</Color>
-        <Color x:Key="WozzitsSuccessColor">#859900</Color>
-        <Color x:Key="WozzitsWarningColor">#B58900</Color>
+        <Color x:Key="WozzitsSuccessColor">#009900</Color>
+        <Color x:Key="WozzitsWarningColor">#EE8900</Color>
         <Color x:Key="WozzitsGraphWireColor">#268BD2</Color>
-        <Color x:Key="WozzitsErrorColor">#DC322F</Color>
+        <Color x:Key="WozzitsErrorColor">#EE322F</Color>
 
         <SolidColorBrush x:Key="WozzitsShellBackgroundBrush"
                          Color="{StaticResource WozzitsShellBackgroundColor}"/>
