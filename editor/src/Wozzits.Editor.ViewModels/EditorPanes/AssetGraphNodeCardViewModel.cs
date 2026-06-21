@@ -63,6 +63,15 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
 
     public string CompileStatus { get; }
 
+    public bool IsCompileError =>
+        string.Equals(CompileStatus, "error", System.StringComparison.Ordinal);
+
+    public bool IsCompileChanged =>
+        string.Equals(CompileStatus, "changed", System.StringComparison.Ordinal);
+
+    public bool IsCompileReady =>
+        string.Equals(CompileStatus, "ready", System.StringComparison.Ordinal);
+
     public IReadOnlyList<EngineAssetGraphDiagnostic> Diagnostics { get; }
 
     public IReadOnlyList<EngineAssetGraphParam> Params { get; }

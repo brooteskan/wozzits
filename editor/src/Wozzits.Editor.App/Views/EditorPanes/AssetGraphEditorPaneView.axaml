@@ -118,7 +118,11 @@
                                                       RowSpacing="6">
                                                     <Grid ColumnDefinitions="Auto,*,Auto"
                                                           ColumnSpacing="7">
-                                                        <Ellipse Classes="AssetGraphCompileDot"/>
+                                                        <Ellipse Classes="AssetGraphCompileDot"
+                                                                 Classes.ready="{Binding IsCompileReady}"
+                                                                 Classes.changed="{Binding IsCompileChanged}"
+                                                                 Classes.error="{Binding IsCompileError}"
+                                                                 ToolTip.Tip="{Binding CompileStatus}"/>
                                                         <TextBlock Grid.Column="1"
                                                                    Text="{Binding DisplayName}"
                                                                    Classes="AssetGraphCardName"/>

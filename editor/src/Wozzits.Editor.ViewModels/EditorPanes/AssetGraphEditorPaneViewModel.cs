@@ -857,6 +857,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
         if (!response.Ok)
         {
+            // Reload so per-node compile diagnostics (error dots + inspector
+            // messages) from the failed bind surface on the cards.
+            ReloadGraphFromSessionPreservingLayout();
             MarkCommitResult(false, response.Error);
             return;
         }
@@ -899,6 +902,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
         if (!response.Ok)
         {
+            // Reload so per-node compile diagnostics (error dots + inspector
+            // messages) from the failed bind surface on the cards.
+            ReloadGraphFromSessionPreservingLayout();
             MarkCompileResult(false, response.Error);
             return;
         }

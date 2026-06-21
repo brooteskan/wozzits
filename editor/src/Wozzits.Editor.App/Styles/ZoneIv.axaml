@@ -431,6 +431,18 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
+    <Style Selector="Ellipse.AssetGraphCompileDot.ready">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsSuccessBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot.changed">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsWarningBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot.error">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsErrorBrush}"/>
+    </Style>
+
     <Style Selector="Ellipse.AssetGraphInputPortDot">
         <Setter Property="Fill" Value="{DynamicResource WozzitsGraphWireBrush}"/>
         <Setter Property="Width" Value="7"/>
