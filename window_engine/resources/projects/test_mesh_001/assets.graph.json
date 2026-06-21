@@ -306,70 +306,6 @@
           }
         ]
       }
-    },
-    {
-      "node_id": 13,
-      "type": 1049,
-      "schema": "0xf11eca55e7000103",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "binding_layout",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "binding_model",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "blend_mode",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "default_domain",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "default_policy_flags",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "depth_mode",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "input_layout",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "name",
-            "type": "string",
-            "value": ""
-          },
-          {
-            "name": "raster_mode",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "topology",
-            "type": "int",
-            "value": 0
-          }
-        ]
-      }
     }
   ],
   "layout": {
@@ -441,6 +377,6 @@
         "y": 611.06226728859292
       }
     ],
-    "zoom": 0.94937458395810359
+    "zoom": 0.48717927500000019
   }
 }
