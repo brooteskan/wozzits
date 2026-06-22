@@ -68,6 +68,10 @@ public interface IWozzitsEngineEditorSession
         string name,
         bool visible);
 
+    // Reparent a node under newParentId (empty => top level) in the running
+    // scene; no-op when no viewport is running. The engine re-validates.
+    EngineMutationResponse ReparentNode(string nodeId, string newParentId);
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);

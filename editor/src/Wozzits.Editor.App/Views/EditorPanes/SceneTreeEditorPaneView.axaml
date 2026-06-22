@@ -14,11 +14,13 @@
                           ItemsSource="{Binding Nodes}"
                           IsVisible="{Binding HasScene}"
                           SelectionChanged="SceneTreeSelectionChanged"
+                          DragDrop.AllowDrop="True"
                           Classes="SceneTreeView">
                     <TreeView.DataTemplates>
                         <TreeDataTemplate DataType="panes:SceneTreeNodeViewModel"
                                           ItemsSource="{Binding Children}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8"
+                                        PointerPressed="NodePointerPressed">
                                 <StackPanel.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Add Child"

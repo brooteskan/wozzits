@@ -135,12 +135,72 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoScene));
         SelectNode(added);
     }
+
+    // Reparent `node` under `newParent` (null => top level) via the engine, then
+    // move it in the tree. Rejects dropping a node onto itself or its own
+    // descendant; the engine re-validates.
+    public void Reparent(
+        SceneTreeNodeViewModel node,
+        SceneTreeNodeViewModel? newParent)
+    {
+        if (_editorSession is null || node is null)
+        {
+            return;
+        }
+        if (newParent is not null && node.IsSelfOrDescendant(newParent))
+        {
+            return;
+        }
+
+        var response = _editorSession.ReparentNode(
+            node.Id,
+            newParent?.Id ?? string.Empty);
+        if (!response.Ok)
+        {
+            EmptyState = response.Error;
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
+        RemoveFromTree(node);
+        if (newParent is null)
+        {
+            Nodes.Add(node);
+        }
+        else
+        {
+            newParent.Children.Add(node);
+        }
+        node.ParentId = newParent?.Id;
+        SelectNode(node);
+    }
+
+    private bool RemoveFromTree(SceneTreeNodeViewModel node)
+    {
+        return Nodes.Remove(node) || RemoveFromChildren(Nodes, node);
+    }
+
+    private static bool RemoveFromChildren(
+        ObservableCollection<SceneTreeNodeViewModel> siblings,
+        SceneTreeNodeViewModel node)
+    {
+        foreach (var sibling in siblings)
+        {
+            if (sibling.Children.Remove(node)
+                || RemoveFromChildren(sibling.Children, node))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 public sealed class SceneTreeNodeViewModel : ViewModelBase
 {
     private bool _isSelected;
     private string _displayName = string.Empty;
+    private string? _parentId;
 
     public SceneTreeNodeViewModel(EngineSceneNode node)
     {
@@ -181,7 +241,11 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
             ? Id
             : $"{Id}:{DisplayName}";
 
-    public string? ParentId { get; }
+    public string? ParentId
+    {
+        get => _parentId;
+        internal set => SetProperty(ref _parentId, value);
+    }
 
     public string Kind { get; }
 
@@ -202,6 +266,24 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public ObservableCollection<SceneTreeNodeViewModel> Children { get; }
 
     public bool HasChildren => Children.Count > 0;
+
+    // True if `candidate` is this node or anywhere in its subtree — used to
+    // reject reparenting a node onto itself or one of its own descendants.
+    public bool IsSelfOrDescendant(SceneTreeNodeViewModel candidate)
+    {
+        if (ReferenceEquals(candidate, this))
+        {
+            return true;
+        }
+        foreach (var child in Children)
+        {
+            if (child.IsSelfOrDescendant(candidate))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public bool IsSelected
     {

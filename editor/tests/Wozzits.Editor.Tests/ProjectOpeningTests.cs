@@ -705,6 +705,54 @@ public sealed partial class ProjectOpeningTests
         Assert.Same(child, sceneTree.SelectedNode);
     }
 
+    [Fact]
+    public void SceneTreeReparentMovesNodeAndRejectsCycle()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "a",
+                        Kind = "node",
+                        Children =
+                        [
+                            new EngineSceneNode
+                            {
+                                Id = "b",
+                                ParentId = "a",
+                                Kind = "node",
+                            },
+                        ],
+                    },
+                    new EngineSceneNode { Id = "c", Kind = "node" },
+                ],
+            },
+        });
+
+        var a = Assert.Single(sceneTree.Nodes, n => n.Id == "a");
+        var b = Assert.Single(a.Children, n => n.Id == "b");
+        var c = Assert.Single(sceneTree.Nodes, n => n.Id == "c");
+
+        // Move c under b.
+        sceneTree.Reparent(c, b);
+        Assert.Equal(("c", "b"), Assert.Single(session.Reparents));
+        Assert.Single(sceneTree.Nodes);          // only a remains at the top level
+        Assert.Same(c, Assert.Single(b.Children));
+        Assert.Equal("b", c.ParentId);
+
+        // Reparenting a under c (now a's descendant) is a cycle -> rejected.
+        sceneTree.Reparent(a, c);
+        Assert.Single(session.Reparents);         // no second engine call
+        Assert.Contains(a, sceneTree.Nodes);      // a still at the top level
+    }
+
     private static EngineProjectSnapshotResponse ProjectSnapshot(
         string projectName = "test",
         EngineAssetGraphSnapshotResponse? assetGraph = null,
@@ -851,6 +899,8 @@ public sealed partial class ProjectOpeningTests
         public List<string> AddChildParents { get; } = [];
 
         public string NextAddedChildId { get; set; } = "1";
+
+        public List<(string NodeId, string NewParentId)> Reparents { get; } = [];
 
         public List<CameraEdit> Cameras { get; } = [];
 
@@ -1016,6 +1066,12 @@ public sealed partial class ProjectOpeningTests
                 Ok = true,
                 NodeId = NextAddedChildId,
             };
+        }
+
+        public EngineMutationResponse ReparentNode(string nodeId, string newParentId)
+        {
+            Reparents.Add((nodeId, newParentId));
+            return new EngineMutationResponse { Ok = true };
         }
 
         public EngineMutationResponse SetSceneNodeCamera(

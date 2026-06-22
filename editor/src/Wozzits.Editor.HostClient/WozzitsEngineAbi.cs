@@ -268,6 +268,15 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_editor_runtime_reparent_node",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeReparentNode(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string newParentIdUtf8);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_editor_runtime_add_child_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddChildNode(

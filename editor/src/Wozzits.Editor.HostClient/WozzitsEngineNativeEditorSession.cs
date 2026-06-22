@@ -212,6 +212,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, name, visible);
     }
 
+    public EngineMutationResponse ReparentNode(string nodeId, string newParentId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.ReparentNode(runtime.Handle, nodeId, newParentId);
+    }
+
     public EngineAddSceneNodeResponse AddChildNode(string parentId)
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)
