@@ -327,6 +327,14 @@ namespace wz::app
             scene_nodes_, id, std::move(name), visible);
     }
 
+    bool WozzitsApp_v1::reparent_node(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& new_parent_id)
+    {
+        return wz::engine::assets::reparent_scene_node(
+            scene_nodes_, id, new_parent_id);
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {

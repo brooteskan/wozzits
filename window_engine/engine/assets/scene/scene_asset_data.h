@@ -1721,6 +1721,42 @@ namespace wz::engine::assets
         return true;
     }
 
+    // Reparent a node in a flat node list: set its parent to new_parent_id
+    // (empty => detach to top level). Rejects a missing node, a missing/self new
+    // parent, or a new parent that is a descendant of the node (cycle). Returns
+    // false on rejection. The in-memory apply behind drag-to-reparent.
+    inline bool reparent_scene_node(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& new_parent_id)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, id);
+        if (!node) {
+            return false;
+        }
+        if (new_parent_id.empty()) {
+            node->parent_id.reset();
+            return true;
+        }
+        if (new_parent_id == id || !find_scene_node(nodes, new_parent_id)) {
+            return false;
+        }
+        // Reject if new_parent is a descendant of the node (would form a cycle):
+        // walk up new_parent's ancestry; if the node's id appears, reject.
+        wz::scene::AuthoredEntityId cursor = new_parent_id;
+        while (const SceneNodeAsset* ancestor = find_scene_node(nodes, cursor)) {
+            if (!ancestor->parent_id) {
+                break;
+            }
+            if (*ancestor->parent_id == id) {
+                return false;
+            }
+            cursor = *ancestor->parent_id;
+        }
+        node->parent_id = new_parent_id;
+        return true;
+    }
+
     inline bool is_direct_child_scene_node(
         const SceneNodeAsset& parent,
         const SceneNodeAsset& child) noexcept

@@ -186,6 +186,36 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_reparent(
+        SceneNodeReparentEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (SceneNodeReparentEdit& pending : pending_reparents_) {
+            if (pending.id == edit.id) {
+                pending.new_parent_id = std::move(edit.new_parent_id);
+                return;
+            }
+        }
+        pending_reparents_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_reparents(
+        const std::function<void(const SceneNodeReparentEdit&)>& applier)
+    {
+        std::vector<SceneNodeReparentEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_reparents_.empty()) {
+                return;
+            }
+            edits.swap(pending_reparents_);
+        }
+
+        for (const SceneNodeReparentEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -357,6 +387,10 @@ namespace wz::app
                         [&app](const SceneNodePropertiesEdit& edit) {
                             app.set_node_properties(
                                 edit.id, edit.name, edit.visible);
+                        });
+                    control->service_pending_scene_node_reparents(
+                        [&app](const SceneNodeReparentEdit& edit) {
+                            app.reparent_node(edit.id, edit.new_parent_id);
                         });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {

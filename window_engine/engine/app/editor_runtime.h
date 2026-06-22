@@ -50,6 +50,14 @@ namespace wz::app
         bool visible = true;
     };
 
+    // A live reparent (fire-and-forget, coalesced by id). Empty new_parent_id
+    // detaches to the top level.
+    struct SceneNodeReparentEdit
+    {
+        wz::scene::AuthoredEntityId id;
+        wz::scene::AuthoredEntityId new_parent_id;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -86,6 +94,12 @@ namespace wz::app
 
         void service_pending_scene_node_properties(
             const std::function<void(const SceneNodePropertiesEdit&)>& applier);
+
+        // Owner thread: queue a reparent (non-blocking, coalesced by id).
+        void post_scene_node_reparent(SceneNodeReparentEdit edit);
+
+        void service_pending_scene_node_reparents(
+            const std::function<void(const SceneNodeReparentEdit&)>& applier);
 
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
@@ -126,6 +140,7 @@ namespace wz::app
         // independent of the bind handshake above). Coalesced by node id.
         std::vector<SceneNodeTransformEdit> pending_transforms_;
         std::vector<SceneNodePropertiesEdit> pending_properties_;
+        std::vector<SceneNodeReparentEdit> pending_reparents_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

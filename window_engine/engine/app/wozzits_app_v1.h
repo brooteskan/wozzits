@@ -111,6 +111,12 @@ namespace wz::app
             std::string name,
             bool visible);
 
+        // Live reparent: set the node's parent (empty => top level) in the
+        // in-memory scene; false on rejection (missing node, self, or cycle).
+        bool reparent_node(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::scene::AuthoredEntityId& new_parent_id);
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the

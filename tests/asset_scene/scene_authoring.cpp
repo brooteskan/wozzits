@@ -243,6 +243,30 @@ TEST(SceneNodeList, SetPropertiesUpdatesNameAndVisibility)
     EXPECT_FALSE(set_scene_node_properties(nodes, "missing", "x", true));
 }
 
+TEST(SceneNodeList, ReparentMovesNodeAndRejectsCycles)
+{
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+    nodes[1].parent_id = "a";
+    nodes[2].id = "c";
+    nodes[2].parent_id = "b";
+
+    // c (under b under a) -> under a directly
+    EXPECT_TRUE(reparent_scene_node(nodes, "c", "a"));
+    EXPECT_EQ(*find_scene_node(nodes, "c")->parent_id, "a");
+
+    // detach to the top level
+    EXPECT_TRUE(reparent_scene_node(nodes, "c", ""));
+    EXPECT_FALSE(find_scene_node(nodes, "c")->parent_id.has_value());
+
+    EXPECT_FALSE(reparent_scene_node(nodes, "a", "a"));        // self
+    EXPECT_FALSE(reparent_scene_node(nodes, "a", "missing"));  // bad parent
+    EXPECT_FALSE(reparent_scene_node(nodes, "missing", "a"));  // bad node
+    EXPECT_FALSE(reparent_scene_node(nodes, "a", "b"));        // b under a -> cycle
+    EXPECT_EQ(*find_scene_node(nodes, "b")->parent_id, "a");   // unchanged
+}
+
 TEST(SceneAuthoring, AssignAndClearRenderable)
 {
     SceneAssetData scene;

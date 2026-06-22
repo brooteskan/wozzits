@@ -654,6 +654,16 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_properties(
     const char* name_utf8,
     uint32_t visible);
 
+// Live reparent posted to the running engine (non-blocking, applied next frame,
+// no disk write). new_parent_id_utf8 NULL/empty => detach to top level. The
+// engine ignores an invalid reparent (missing node, self, or cycle); the editor
+// pre-validates for drag UX. WZ_RESULT_INVALID_ARGUMENT for a null runtime or an
+// empty node id.
+WZ_ABI_API WzResult wz_editor_runtime_reparent_node(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* new_parent_id_utf8);
+
 // Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
 // running scene, blocking until the engine thread applies it, and return the
 // minted counter id in out_new_id (UTF-8; free with wz_free_buffer).
