@@ -151,8 +151,12 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     render_one_frame(app);
     const std::size_t resident_after_first = app.resident_gpu_resource_count();
     const std::size_t programs_after_first = app.registered_program_count();
-    EXPECT_GT(resident_after_first, 0u)
-        << "first graph realized no GPU resources — nothing to test";
+    // Step 2: the renderer binds the asset-published resident pull buffers
+    // (positions + indices) by identity — it does NOT re-upload CPU mesh data.
+    // So exactly the 2 resident buffers exist; a silent CPU-upload fallback
+    // would acquire 2 more (different identity), giving 4.
+    EXPECT_EQ(resident_after_first, 2u)
+        << "renderer should bind the 2 resident pull buffers, not re-upload";
     EXPECT_GT(programs_after_first, 0u);
 
     // Editor-style wholesale rebind: feed a freshly parsed draft to

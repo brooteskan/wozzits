@@ -121,6 +121,11 @@ namespace wz::engine::rendering
             wz::rhi::GpuResourceHandle  indices{};
             wz::rhi::ShaderResourceGroup object_srg{};
             wz::rhi::DrawPacket         packet{};
+            // True only for the CPU-upload fallback path, where the renderer
+            // acquired these pull buffers and must release them. Resident
+            // (asset-published) buffers are owned by the asset library; the
+            // renderer binds but never releases them.
+            bool                        owns_buffers = false;
         };
 
         const RealizedProgram* realize_program(

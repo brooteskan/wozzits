@@ -188,6 +188,15 @@ namespace wz::engine::rendering
             wz::asset::AssetKey mesh_key{};
             wz::asset::AssetKey program_key{};
             uint64_t buffer_identity = 0;
+
+            // Set when the asset compiler has published GPU-resident pull buffers
+            // for this source (gpu_sparse_mesh). The renderer binds those by the
+            // identity the compiler used — rhi_asset_identity(resident_key,
+            // "pull_positions"/"pull_indices") — instead of re-uploading CPU mesh
+            // data, with counts from the resident asset (no CPU MeshData needed).
+            std::optional<wz::asset::AssetKey> resident_key{};
+            uint32_t                           vertex_count = 0;
+            uint32_t                           index_count = 0;
         };
 
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
@@ -237,6 +246,9 @@ namespace wz::engine::rendering
                 .program_key = entry->dep_keys[1],
                 .buffer_identity =
                     ea::rhi_asset_identity(renderable->source_asset),
+                .resident_key = renderable->source_asset,
+                .vertex_count = sparse->vertex_count,
+                .index_count = sparse->index_count,
             };
         }
 
@@ -318,6 +330,13 @@ namespace wz::engine::rendering
 
         for (auto& [key, renderable] : realized_renderables_) {
             (void)key;
+            // Only release renderer-owned (CPU-upload) buffers. Resident
+            // asset-published buffers are owned by the asset library and
+            // released by its release_unregistered_rhi_resources on the same
+            // swap (deferred, before this collect) — never by the renderer.
+            if (!renderable.owns_buffers) {
+                continue;
+            }
             if (renderable.positions.valid()) {
                 gpu_.resources.release(renderable.positions);
             }
@@ -467,15 +486,6 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        const ea::MeshHandle mesh_handle =
-            assets.meshes().get_mesh(ea::MeshAsset{ .output = source->mesh_key });
-        const ea::MeshData* mesh = assets.meshes().get_mesh_data(mesh_handle);
-        if (!mesh || !mesh->valid()) {
-            logger_.error("RhiSceneRenderer: renderable mesh unavailable");
-            failed_renderables_.insert(renderable_key);
-            return nullptr;
-        }
-
         const wz::rhi::RenderProgramDesc* registered =
             ctx_.programs.get(program->program);
         const wz::rhi::ShaderResourceGroupLayout* slot2_layout =
@@ -489,27 +499,66 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        const wz::rhi::Tag position_variant =
-            ctx_.resource_variants.acquire("mesh.pull_positions");
-        const wz::rhi::Tag index_variant =
-            ctx_.resource_variants.acquire("mesh.pull_indices");
-        const std::vector<float> positions = tight_mesh_positions(*mesh);
-        const wz::rhi::GpuResourceHandle positions_handle =
-            acquire_pull_buffer(
+        // Prefer the asset-published GPU-resident pull buffers (gpu_sparse_mesh),
+        // found by the identity the compiler used. Those are asset-owned, so the
+        // renderer binds but never releases them. Fall back to a per-realize CPU
+        // upload for sources without resident buffers (e.g. the rhi pull-mesh
+        // recipe) — those the renderer owns and releases.
+        wz::rhi::GpuResourceHandle positions_handle{};
+        wz::rhi::GpuResourceHandle indices_handle{};
+        bool owns_buffers = false;
+        uint32_t index_count = 0;
+        uint32_t vertex_count = 0;
+
+        if (source->resident_key) {
+            positions_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
+                ea::rhi_asset_identity(*source->resident_key, "pull_positions"),
+                {} });
+            indices_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
+                ea::rhi_asset_identity(*source->resident_key, "pull_indices"),
+                {} });
+        }
+
+        if (positions_handle.valid() && indices_handle.valid()) {
+            // Resident path: bind asset-owned buffers; counts from the asset.
+            index_count = source->index_count;
+            vertex_count = source->vertex_count;
+        }
+        else {
+            // CPU-upload fallback: renderer-owned buffers.
+            const ea::MeshHandle mesh_handle = assets.meshes().get_mesh(
+                ea::MeshAsset{ .output = source->mesh_key });
+            const ea::MeshData* mesh =
+                assets.meshes().get_mesh_data(mesh_handle);
+            if (!mesh || !mesh->valid()) {
+                logger_.error("RhiSceneRenderer: renderable mesh unavailable");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            const wz::rhi::Tag position_variant =
+                ctx_.resource_variants.acquire("mesh.pull_positions");
+            const wz::rhi::Tag index_variant =
+                ctx_.resource_variants.acquire("mesh.pull_indices");
+            const std::vector<float> positions = tight_mesh_positions(*mesh);
+            positions_handle = acquire_pull_buffer(
                 gpu_.resources, source->buffer_identity, position_variant,
                 positions.data(), positions.size() * sizeof(float),
                 3u * sizeof(float));
-        const wz::rhi::GpuResourceHandle indices_handle =
-            acquire_pull_buffer(
+            indices_handle = acquire_pull_buffer(
                 gpu_.resources, source->buffer_identity, index_variant,
-                mesh->indices.data(), mesh->indices.size() * sizeof(uint32_t),
+                mesh->indices.data(),
+                mesh->indices.size() * sizeof(uint32_t),
                 sizeof(uint32_t));
-        if (!positions_handle.valid() || !indices_handle.valid()) {
-            logger_.error("RhiSceneRenderer: pull buffer upload failed");
-            release_unrealized_pull_buffers(
-                gpu_.resources, positions_handle, indices_handle);
-            failed_renderables_.insert(renderable_key);
-            return nullptr;
+            if (!positions_handle.valid() || !indices_handle.valid()) {
+                logger_.error("RhiSceneRenderer: pull buffer upload failed");
+                release_unrealized_pull_buffers(
+                    gpu_.resources, positions_handle, indices_handle);
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            owns_buffers = true;
+            index_count = mesh->index_count();
+            vertex_count = mesh->vertex_count();
         }
 
         auto [it, inserted] = realized_renderables_.try_emplace(renderable_key);
@@ -518,6 +567,7 @@ namespace wz::engine::rendering
         realized.program = program->program;
         realized.positions = positions_handle;
         realized.indices = indices_handle;
+        realized.owns_buffers = owns_buffers;
         realized.object_srg.reset(*slot2_layout);
 
         const wz::rhi::Tag pulled_positions =
@@ -528,8 +578,10 @@ namespace wz::engine::rendering
             || !realized.object_srg.set(pulled_indices, realized.indices)
             || !realized.object_srg.satisfies(*slot2_layout))
         {
-            release_unrealized_pull_buffers(
-                gpu_.resources, realized.positions, realized.indices);
+            if (realized.owns_buffers) {
+                release_unrealized_pull_buffers(
+                    gpu_.resources, realized.positions, realized.indices);
+            }
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
             failed_renderables_.insert(renderable_key);
@@ -538,8 +590,8 @@ namespace wz::engine::rendering
 
         wz::rhi::GeometryView geometry;
         geometry.index_buffer = realized.indices;
-        geometry.index_count = mesh->index_count();
-        geometry.vertex_count = mesh->vertex_count();
+        geometry.index_count = index_count;
+        geometry.vertex_count = vertex_count;
 
         const wz::math::Mat4 initial_mvp = wz::math::Mat4::identity();
         wz::rhi::DrawPacketAllocator allocator;
@@ -556,8 +608,10 @@ namespace wz::engine::rendering
                 wz::rhi::StreamBufferIndices{}, 0,
                 wz::rhi::DrawListMask::from(forward_) }))
         {
-            release_unrealized_pull_buffers(
-                gpu_.resources, realized.positions, realized.indices);
+            if (realized.owns_buffers) {
+                release_unrealized_pull_buffers(
+                    gpu_.resources, realized.positions, realized.indices);
+            }
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
             failed_renderables_.insert(renderable_key);
