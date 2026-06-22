@@ -33,7 +33,12 @@ namespace wz::platform::win32
         wc.hInstance = hInstance;
         wc.lpszClassName = L"WozzitsRawInput";
 
-        if (!RegisterClassW(&wc))
+        // The class lives for the process lifetime (ri_shutdown destroys the
+        // window, not the class). A viewport restart re-enters ri_init, so a
+        // re-register fails with ERROR_CLASS_ALREADY_EXISTS - that's fine, reuse
+        // it. Bailing here is why a restarted viewport received no raw input.
+        if (!RegisterClassW(&wc)
+            && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
             return false;
 
         g_input_hwnd = CreateWindowExW(
@@ -77,6 +82,19 @@ namespace wz::platform::win32
     {
         if (g_input_hwnd)
         {
+            // Unregister the raw-input devices before tearing down the window so
+            // a later ri_init (viewport restart) re-registers cleanly. For
+            // RIDEV_REMOVE, hwndTarget must be NULL (left zero here). The window
+            // class is intentionally kept registered and reused across restarts.
+            RAWINPUTDEVICE rid[2]{};
+            rid[0].usUsagePage = 0x01;
+            rid[0].usUsage = 0x02;
+            rid[0].dwFlags = RIDEV_REMOVE;
+            rid[1].usUsagePage = 0x01;
+            rid[1].usUsage = 0x06;
+            rid[1].dwFlags = RIDEV_REMOVE;
+            RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+
             DestroyWindow(g_input_hwnd);
             g_input_hwnd = nullptr;
         }

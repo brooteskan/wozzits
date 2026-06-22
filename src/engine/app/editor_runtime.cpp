@@ -132,6 +132,12 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    bool EditorRuntimeControl::finished() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return finished_;
+    }
+
     int run_project_runtime(
         const std::string& window_title,
         const wz::fs::Path& asset_graph,
@@ -191,6 +197,12 @@ namespace wz::app
             wz::input::InputState prev_input{};
             wz::time::Tick last_ticks = wz::time::TimeSource::now_ticks();
 
+            // Fly-cam enable state, toggled by ESC (see the in-loop toggle below).
+            // Starts disabled: the runtime window receives GLOBAL raw input
+            // (RIDEV_INPUTSINK), so without an explicit arm the camera would react
+            // to keystrokes meant for the editor window.
+            bool camera_enabled = false;
+
             while (!wz::window::window_should_close(ctx.window)
                 && !(control && control->stop_requested()))
             {
@@ -243,7 +255,35 @@ namespace wz::app
                         wz::time::TimeSource::ticks_per_second()));
                 last_ticks = now_ticks;
 
-                app.simulation_tick(input, dt);
+                // Fly-cam enable toggle (ESC), driven entirely by the frame input
+                // snapshot (no direct platform calls): ESC enables the camera only
+                // while this window is focused (you can't arm it from the editor),
+                // and ESC disables it from anywhere. The camera then consumes input
+                // only while enabled AND focused, so clicking back to the editor
+                // pauses it (never steals editor keystrokes) and re-focusing the
+                // viewport resumes it.
+                constexpr int kKeyEscape = 0x1B;  // VK_ESCAPE
+                if (input.keyboard.pressed[kKeyEscape]) {
+                    if (camera_enabled) {
+                        camera_enabled = false;
+                    }
+                    else if (input.window.focused) {
+                        camera_enabled = true;
+                    }
+                }
+
+                // Feed the camera real input only when active; otherwise a neutral
+                // snapshot carrying just the window dimensions, so the aspect ratio
+                // still tracks resizes while the camera holds its pose.
+                wz::input::InputState camera_input{};
+                if (camera_enabled && input.window.focused) {
+                    camera_input = input;
+                }
+                else {
+                    camera_input.window = input.window;
+                }
+
+                app.simulation_tick(camera_input, dt);
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");

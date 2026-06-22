@@ -51,6 +51,12 @@ namespace wz::app
         // failure path where the loop never ran).
         void mark_finished();
 
+        // Any thread: true once the runtime loop has exited (window closed or
+        // stop serviced) and mark_finished() ran. The ABI surfaces this as
+        // wz_editor_runtime_is_running so the editor can detect a closed viewport
+        // and offer to restart instead of holding a dead handle.
+        [[nodiscard]] bool finished() const;
+
     private:
         mutable std::mutex mutex_;
         std::condition_variable cv_;

@@ -905,6 +905,18 @@ extern "C"
         delete runtime;
     }
 
+    int wz_editor_runtime_is_running(WzEditorRuntime* runtime)
+    {
+        if (!runtime) {
+            return 0;
+        }
+        // finished() flips true after the render loop exits (window closed or
+        // stop serviced) and the thread called mark_finished(). Until then the
+        // viewport is live. The runtime object itself outlives the thread; only
+        // wz_editor_runtime_stop frees it.
+        return runtime->control.finished() ? 0 : 1;
+    }
+
     WzResult wz_editor_runtime_bind_draft(
         WzEditorRuntime* runtime,
         WzEditorSession* session)

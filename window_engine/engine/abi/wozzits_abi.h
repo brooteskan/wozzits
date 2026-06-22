@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 19u
+#define WZ_ABI_VERSION 20u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -609,6 +609,12 @@ WZ_ABI_API WzEditorRuntime* wz_editor_runtime_start(
 
 // Signal the runtime to stop, join its thread, and free it. Safe on NULL.
 WZ_ABI_API void wz_editor_runtime_stop(WzEditorRuntime* runtime);
+
+// Non-zero while the runtime's render thread is alive; zero once the viewport
+// window has closed (or stop was serviced) and the thread exited, and zero for
+// a NULL runtime. Lets the editor detect a closed viewport and offer a restart
+// rather than binding into a dead handle.
+WZ_ABI_API int wz_editor_runtime_is_running(WzEditorRuntime* runtime);
 
 // Compile the session's current asset-graph draft on the running engine: copies
 // the draft, binds it on the engine thread (materialize -> swap -> resolve ->
