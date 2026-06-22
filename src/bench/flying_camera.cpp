@@ -41,6 +41,23 @@ namespace wz::bench
         };
     }
 
+    wz::math::Mat4 view_matrix(const FlyingCamera& cam)
+    {
+        // 3x3 rows are the basis; translation is -(basis . position). Matches
+        // the column-major / column-vector convention (clip = VP * world_pos).
+        const CameraBasis b = camera_basis(cam);
+
+        wz::math::Mat4 v{};
+        v.m[0] = b.right.x;  v.m[1] = b.up.x;  v.m[2]  = b.forward.x;  v.m[3]  = 0.0f;
+        v.m[4] = b.right.y;  v.m[5] = b.up.y;  v.m[6]  = b.forward.y;  v.m[7]  = 0.0f;
+        v.m[8] = b.right.z;  v.m[9] = b.up.z;  v.m[10] = b.forward.z;  v.m[11] = 0.0f;
+        v.m[12] = -(b.right.x   * cam.x + b.right.y   * cam.y + b.right.z   * cam.z);
+        v.m[13] = -(b.up.x      * cam.x + b.up.y      * cam.y + b.up.z      * cam.z);
+        v.m[14] = -(b.forward.x * cam.x + b.forward.y * cam.y + b.forward.z * cam.z);
+        v.m[15] = 1.0f;
+        return v;
+    }
+
     void update_flying_camera(
         FlyingCamera&                cam,
         const wz::input::InputState& input,

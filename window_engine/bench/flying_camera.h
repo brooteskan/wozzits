@@ -33,6 +33,11 @@ namespace wz::bench
 
     CameraBasis camera_basis(const FlyingCamera& cam);
 
+    // Left-handed (DX) view matrix for the camera's current pose: the 3x3 rows
+    // are the camera basis (right/up/forward), translation is -(basis . pos),
+    // so mul_point(V, p) = (dot(p-pos, right), dot(p-pos, up), dot(p-pos, fwd)).
+    wz::math::Mat4 view_matrix(const FlyingCamera& cam);
+
     void update_flying_camera(
         FlyingCamera&                cam,
         const wz::input::InputState& input,

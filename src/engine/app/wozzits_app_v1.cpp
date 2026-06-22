@@ -13,7 +13,6 @@
 #include <external/json/json_parser.h>
 #include <file/filesystem.h>
 #include <input/input.h>
-#include <math/camera.h>
 #include <math/math_types.h>
 #include <math/mat4.h>
 #include <math/projection.h>
@@ -315,17 +314,9 @@ namespace wz::app
             return *camera_override_;
         }
 
-        // Free-fly camera -> left-handed DX view-projection (matching the
-        // renderer's convention). Eye/orientation come from the flying camera;
-        // aspect tracks the window from the latest input.
-        const wz::bench::CameraBasis basis = wz::bench::camera_basis(camera_);
-        const wz::math::Vec3 eye{ camera_.x, camera_.y, camera_.z };
-        const wz::math::Vec3 target{
-            eye.x + basis.forward.x,
-            eye.y + basis.forward.y,
-            eye.z + basis.forward.z };
-        const wz::math::Mat4 view =
-            wz::math::look_at_dx(eye, target, basis.up);
+        // Free-fly camera -> left-handed DX view-projection (the renderer's
+        // convention). aspect tracks the window from the latest input.
+        const wz::math::Mat4 view = wz::bench::view_matrix(camera_);
         const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
             camera_fov_y_, aspect_, camera_near_, camera_far_);
         return wz::math::mul(proj, view);
