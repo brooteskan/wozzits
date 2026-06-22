@@ -148,6 +148,40 @@ static void clear_drops_all_programs()
     WZ_CHECK(registry.get(c) != nullptr);
 }
 
+// release() retires a SINGLE program (the survivor-preserving reconcile an
+// asset-graph swap needs), as opposed to clear() which retires all. The
+// survivor's Tag stays valid; the released Tag misses; the freed slot is
+// reusable; and releasing an already-released / null Tag is a safe no-op.
+static void release_retires_one_program_and_keeps_survivors()
+{
+    wz::rhi::ConstantSemanticRegistry constants;
+    RenderProgramRegistry registry;
+    const Tag a = registry.register_program(make_desc(constants, "mesh_surface"));
+    const Tag b = registry.register_program(make_desc(constants, "mesh_wireframe"));
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(2));
+
+    registry.release(a);
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(1));
+    WZ_CHECK(registry.get(a) == nullptr);
+    WZ_CHECK_FALSE(registry.find("mesh_surface").valid());
+    WZ_CHECK(registry.get(b) != nullptr);
+    WZ_CHECK(registry.find("mesh_wireframe") == b);
+
+    // Over-release of a retired Tag and release of a null Tag are no-ops: they
+    // must not corrupt the survivor or the slot count.
+    registry.release(a);
+    registry.release(Tag{});
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(1));
+    WZ_CHECK(registry.get(b) != nullptr);
+
+    // The freed slot is reusable by a fresh registration.
+    const Tag c =
+        registry.register_program(make_desc(constants, "mesh_mask_style"));
+    WZ_CHECK(c.valid());
+    WZ_CHECK_EQ(registry.size(), static_cast<size_t>(2));
+    WZ_CHECK(registry.get(c) != nullptr);
+}
+
 int main()
 {
     WZ_RUN(register_then_get_round_trips);
@@ -156,5 +190,6 @@ int main()
     WZ_RUN(reregister_updates_in_place);
     WZ_RUN(visit_enumerates_every_registered_program);
     WZ_RUN(clear_drops_all_programs);
+    WZ_RUN(release_retires_one_program_and_keeps_survivors);
     WZ_TEST_RETURN();
 }

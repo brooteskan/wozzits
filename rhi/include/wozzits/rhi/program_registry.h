@@ -90,6 +90,25 @@ namespace wz::rhi
             }
         }
 
+        // Retire a single registered program by Tag: free its name slot and
+        // reset its descriptor (releasing any heap the Desc owns, e.g. shader
+        // bytecode). After this size() drops by one and get()/find()/name_of
+        // miss for this Tag. This is the incremental counterpart to clear(),
+        // for an asset-graph reconcile that retires only the entries whose key
+        // left the live set while keeping survivors (each register_program()
+        // holds exactly one reference, so one release() frees the slot).
+        //
+        // INVARIANT: discard the Tag after release() — its slot may be recycled
+        // by a later register_program().
+        void release(Tag tag)
+        {
+            if (is_unregistered(tag)) {
+                return;
+            }
+            descs_[tag.index] = Desc{};
+            tags_.release(tag);
+        }
+
     private:
         [[nodiscard]] bool is_unregistered(Tag tag) const
         {
