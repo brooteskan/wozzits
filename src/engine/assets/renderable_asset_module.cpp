@@ -405,6 +405,18 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    namespace
+    {
+        // Renderable schemas whose compiled product is an RhiRenderableRecipe in
+        // the RhiRenderableTable (not a legacy RenderableAssetData). Keeps
+        // get_renderable() and get_rhi_renderable_recipe() in agreement.
+        bool is_rhi_renderable_schema(wz::asset::SchemaID schema)
+        {
+            return schema == kRhiPullMeshRenderableSchema
+                || schema == kGpuSparseMeshRenderableSchema;
+        }
+    }
+
     RenderableHandle RenderableAssetModule::get_renderable(
         const RenderableAsset& asset) const
     {
@@ -415,7 +427,7 @@ namespace wz::engine::assets
 
         if (const auto* compiled = system_.find_compiled(asset.output)) {
             if (compiled->node
-                && compiled->node->schema == kRhiPullMeshRenderableSchema)
+                && is_rhi_renderable_schema(compiled->node->schema))
             {
                 return {};
             }
@@ -449,7 +461,7 @@ namespace wz::engine::assets
         const auto* compiled = system_.find_compiled(asset.output);
         if (!compiled
             || !compiled->node
-            || compiled->node->schema != kRhiPullMeshRenderableSchema)
+            || !is_rhi_renderable_schema(compiled->node->schema))
         {
             return nullptr;
         }

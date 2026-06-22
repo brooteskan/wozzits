@@ -138,12 +138,19 @@ namespace wz::engine::assets
 
     struct RhiRenderableRecipe
     {
+        // Exactly one geometry source is set:
+        //   mesh_key            — CPU pull-mesh upload source (rhi pull-mesh)
+        //   gpu_sparse_mesh_key — GPU-resident pull source (#190 gpu_sparse_mesh)
         wz::asset::AssetKey mesh_key{};
+        wz::asset::AssetKey gpu_sparse_mesh_key{};
         wz::asset::AssetKey program_key{};
 
         bool valid() const noexcept
         {
-            return !(mesh_key == wz::asset::AssetKey{})
+            const bool has_geometry =
+                !(mesh_key == wz::asset::AssetKey{})
+                || !(gpu_sparse_mesh_key == wz::asset::AssetKey{});
+            return has_geometry
                 && !(program_key == wz::asset::AssetKey{});
         }
     };

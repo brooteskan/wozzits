@@ -110,52 +110,44 @@ namespace wz::engine::rendering
             const ea::EngineAssetLibrary& assets,
             const wz::asset::AssetKey& renderable_key)
         {
-            if (const ea::RhiRenderableRecipe* recipe =
-                    assets.renderables().get_rhi_renderable_recipe(
-                        ea::RenderableAsset{ .output = renderable_key }))
-            {
+            const ea::RhiRenderableRecipe* recipe =
+                assets.renderables().get_rhi_renderable_recipe(
+                    ea::RenderableAsset{ .output = renderable_key });
+            if (!recipe) {
+                return std::nullopt;
+            }
+
+            // GPU-resident geometry (gpu_sparse_mesh, #190): bind the asset-
+            // published pull buffers by the identity the compiler used. Counts
+            // and the CPU-upload fallback mesh come from the resident asset; the
+            // buffers stay asset-owned (the renderer binds, never releases them).
+            if (!(recipe->gpu_sparse_mesh_key == wz::asset::AssetKey{})) {
+                const ea::GpuSparseMeshHandle sparse_handle =
+                    assets.gpu_sparse_meshes().get_gpu_sparse_mesh(
+                        ea::GpuSparseMeshAsset{
+                            .output = recipe->gpu_sparse_mesh_key });
+                const ea::GpuSparseMeshData* sparse =
+                    assets.gpu_sparse_meshes().get_gpu_sparse_mesh_data(
+                        sparse_handle);
+                if (!sparse || !sparse->valid()) {
+                    return std::nullopt;
+                }
                 return PullMeshSource{
-                    .mesh_key = recipe->mesh_key,
+                    .mesh_key = sparse->source_mesh_key,
                     .program_key = recipe->program_key,
-                    .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
+                    .buffer_identity =
+                        ea::rhi_asset_identity(recipe->gpu_sparse_mesh_key),
+                    .resident_key = recipe->gpu_sparse_mesh_key,
+                    .vertex_count = sparse->vertex_count,
+                    .index_count = sparse->index_count,
                 };
             }
 
-            const ea::RenderableHandle renderable_handle =
-                assets.renderables().get_renderable(
-                    ea::RenderableAsset{ .output = renderable_key });
-            const ea::RenderableAssetData* renderable =
-                assets.renderables().get_renderable_data(renderable_handle);
-            if (!renderable
-                || renderable->kind != ea::RenderableKind::Mesh
-                || !renderable->render_program.valid())
-            {
-                return std::nullopt;
-            }
-
-            const wz::asset::AssetSystem::RegistrationEntry* entry =
-                registration_entry_for(assets, renderable_key);
-            if (!entry || entry->dep_keys.size() < 2u) {
-                return std::nullopt;
-            }
-
-            const ea::GpuSparseMeshHandle sparse_handle =
-                assets.gpu_sparse_meshes().get_gpu_sparse_mesh(
-                    ea::GpuSparseMeshAsset{ .output = renderable->source_asset });
-            const ea::GpuSparseMeshData* sparse =
-                assets.gpu_sparse_meshes().get_gpu_sparse_mesh_data(sparse_handle);
-            if (!sparse || !sparse->valid()) {
-                return std::nullopt;
-            }
-
+            // CPU pull-mesh geometry: the renderer uploads and owns the buffers.
             return PullMeshSource{
-                .mesh_key = sparse->source_mesh_key,
-                .program_key = entry->dep_keys[1],
-                .buffer_identity =
-                    ea::rhi_asset_identity(renderable->source_asset),
-                .resident_key = renderable->source_asset,
-                .vertex_count = sparse->vertex_count,
-                .index_count = sparse->index_count,
+                .mesh_key = recipe->mesh_key,
+                .program_key = recipe->program_key,
+                .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
             };
         }
 

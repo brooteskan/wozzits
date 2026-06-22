@@ -478,16 +478,15 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     ASSERT_NE(compiled, nullptr);
     ASSERT_TRUE(compiled->handle.valid());
     EXPECT_EQ(compiled->node->type, kAssetTypeRenderable);
-    EXPECT_EQ(compiled->handle.type, kAssetTypeRenderable);
+    EXPECT_EQ(compiled->handle.type, kAssetTypeRhiRenderableRecipe);
+    EXPECT_EQ(renderable_table.get(compiled->handle), nullptr);
 
-    const RenderableAssetData* sparse_renderable =
-        renderable_table.get(compiled->handle);
-    ASSERT_NE(sparse_renderable, nullptr);
-    EXPECT_EQ(sparse_renderable->kind, RenderableKind::Mesh);
-    EXPECT_EQ(sparse_renderable->source_asset, sparse_mesh_key);
-    EXPECT_EQ(sparse_renderable->render_program.type, kAssetTypeRenderProgram);
-    EXPECT_FLOAT_EQ(sparse_renderable->bounds_min[0], -1.0f);
-    EXPECT_FLOAT_EQ(sparse_renderable->bounds_max[2], 3.0f);
+    const RhiRenderableRecipe* sparse_recipe =
+        rhi_renderable_table.get(compiled->handle);
+    ASSERT_NE(sparse_recipe, nullptr);
+    EXPECT_EQ(sparse_recipe->gpu_sparse_mesh_key, sparse_mesh_key);
+    EXPECT_EQ(sparse_recipe->program_key, program_key);
+    EXPECT_EQ(sparse_recipe->mesh_key, AssetKey{});
 }
 
 TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)

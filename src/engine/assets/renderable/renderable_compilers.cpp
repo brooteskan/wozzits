@@ -792,7 +792,7 @@ namespace wz::engine::assets::internal
                 { "program", kAssetTypeRenderProgram },
             },
             .compile = [logger, gpu_sparse_mesh_table, render_program_table,
-                        renderable_table](
+                        rhi_renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -849,25 +849,19 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                RenderableAssetData data{};
-                data.kind = RenderableKind::Mesh;
-                data.source_asset = desc->sparse_mesh_asset;
-                data.companion_asset = sparse_mesh->source_mesh_key;
-                data.program = BuiltinRenderProgram::MeshWireframeDepthDebug;
-                data.domain = program->default_domain;
-                data.policy_flags = program->default_policy_flags;
-                data.render_program = dep_handles[1];
-                copy_bounds(
-                    data.bounds_min,
-                    data.bounds_max,
-                    sparse_mesh->bounds_min,
-                    sparse_mesh->bounds_max);
-
-                wz::asset::ResourceHandle handle =
-                    renderable_table->add(std::move(data));
+                // The geometry (gpu_sparse_mesh, #190) and program (#192/#193)
+                // are already rhi-resident; emit an rhi renderable recipe so the
+                // renderer binds them by identity instead of reconstructing the
+                // draw from a legacy RenderableAssetData. The resident pull
+                // buffers stay owned by the gpu_sparse_mesh asset.
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .gpu_sparse_mesh_key = desc->sparse_mesh_asset,
+                        .program_key = desc->render_program_asset,
+                    });
                 if (!handle.valid()) {
                     logger->error(
-                        "failed to store GPU sparse mesh renderable");
+                        "failed to store GPU sparse mesh renderable recipe");
                     return compile_failed_node(input);
                 }
 
