@@ -82,6 +82,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void SaveAll()
     {
         _editorSession?.SaveAssetGraph();
+        _editorSession?.SaveScene();
     }
 
     // Reopen the in-process engine viewport. Stops the current runtime if one is

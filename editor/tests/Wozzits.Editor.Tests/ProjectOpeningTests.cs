@@ -753,6 +753,47 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains(a, sceneTree.Nodes);      // a still at the top level
     }
 
+    [Fact]
+    public void SceneTreeRemoveDropsNodeAndClearsSelection()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "a",
+                        Kind = "node",
+                        Children =
+                        [
+                            new EngineSceneNode
+                            {
+                                Id = "b",
+                                ParentId = "a",
+                                Kind = "node",
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        var a = Assert.Single(sceneTree.Nodes);
+        var b = Assert.Single(a.Children);
+        sceneTree.SelectNode(b);
+
+        sceneTree.Remove(a);  // removes a and its child b
+
+        Assert.Equal("a", Assert.Single(session.Removed));
+        Assert.Empty(sceneTree.Nodes);
+        Assert.Null(sceneTree.SelectedNode);  // selection was in the removed subtree
+    }
+
     private static EngineProjectSnapshotResponse ProjectSnapshot(
         string projectName = "test",
         EngineAssetGraphSnapshotResponse? assetGraph = null,
@@ -1071,6 +1112,22 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse ReparentNode(string nodeId, string newParentId)
         {
             Reparents.Add((nodeId, newParentId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<string> Removed { get; } = [];
+
+        public EngineMutationResponse RemoveNode(string nodeId)
+        {
+            Removed.Add(nodeId);
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public int SaveSceneCount { get; private set; }
+
+        public EngineMutationResponse SaveScene()
+        {
+            SaveSceneCount++;
             return new EngineMutationResponse { Ok = true };
         }
 

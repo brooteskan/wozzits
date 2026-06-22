@@ -277,6 +277,17 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_editor_runtime_remove_node",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeRemoveNode(
+        IntPtr runtime,
+        string nodeIdUtf8);
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_save_scene")]
+    internal static partial WzResult WzEditorRuntimeSaveScene(IntPtr runtime);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_editor_runtime_add_child_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddChildNode(

@@ -54,6 +54,26 @@ public partial class SceneTreeEditorPaneView : UserControl
         }
     }
 
+    private void DeleteClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: SceneTreeNodeViewModel node } &&
+            DataContext is SceneTreeEditorPaneViewModel sceneTree)
+        {
+            sceneTree.Remove(node);
+        }
+    }
+
+    private void TreeKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Delete
+            && DataContext is SceneTreeEditorPaneViewModel sceneTree
+            && sceneTree.SelectedNode is { } node)
+        {
+            sceneTree.Remove(node);
+            e.Handled = true;
+        }
+    }
+
     // A left-press on a tree row arms a drag candidate; a plain click (no move
     // past a small threshold) still selects, so dragging and selecting don't
     // conflict.

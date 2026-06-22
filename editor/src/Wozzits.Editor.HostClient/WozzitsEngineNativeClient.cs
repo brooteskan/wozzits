@@ -641,6 +641,32 @@ public sealed partial class WozzitsEngineNativeClient
             newParentId ?? string.Empty));
     }
 
+    internal EngineMutationResponse RemoveNode(IntPtr runtime, string nodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };  // no live viewport
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeRemoveNode(runtime, nodeId));
+    }
+
+    internal EngineMutationResponse SaveScene(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };  // no live viewport
+        }
+
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeSaveScene(runtime));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeTransform(
         IntPtr runtime,
         string nodeId,

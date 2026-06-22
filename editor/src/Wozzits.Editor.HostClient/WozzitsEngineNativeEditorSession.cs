@@ -221,6 +221,24 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.ReparentNode(runtime.Handle, nodeId, newParentId);
     }
 
+    public EngineMutationResponse RemoveNode(string nodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.RemoveNode(runtime.Handle, nodeId);
+    }
+
+    public EngineMutationResponse SaveScene()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SaveScene(runtime.Handle);
+    }
+
     public EngineAddSceneNodeResponse AddChildNode(string parentId)
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

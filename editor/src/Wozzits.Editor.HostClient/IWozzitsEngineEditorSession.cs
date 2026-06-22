@@ -72,6 +72,14 @@ public interface IWozzitsEngineEditorSession
     // scene; no-op when no viewport is running. The engine re-validates.
     EngineMutationResponse ReparentNode(string nodeId, string newParentId);
 
+    // Remove a node and its subtree from the running scene; no-op when no
+    // viewport is running.
+    EngineMutationResponse RemoveNode(string nodeId);
+
+    // Persist the running scene to its source file (no-op when no viewport is
+    // running). Also happens automatically when the runtime exits.
+    EngineMutationResponse SaveScene();
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);

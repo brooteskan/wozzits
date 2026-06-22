@@ -175,6 +175,34 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         SelectNode(node);
     }
 
+    // Delete `node` (and its subtree) via the engine, then drop it from the tree.
+    public void Remove(SceneTreeNodeViewModel node)
+    {
+        if (_editorSession is null || node is null)
+        {
+            return;
+        }
+
+        var response = _editorSession.RemoveNode(node.Id);
+        if (!response.Ok)
+        {
+            EmptyState = response.Error;
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
+        // Clear the selection if it was inside the removed subtree.
+        var selectionRemoved = SelectedNode is not null
+            && node.IsSelfOrDescendant(SelectedNode);
+        RemoveFromTree(node);
+        if (selectionRemoved)
+        {
+            SetSelectedNode(null);
+        }
+        OnPropertyChanged(nameof(HasScene));
+        OnPropertyChanged(nameof(HasNoScene));
+    }
+
     private bool RemoveFromTree(SceneTreeNodeViewModel node)
     {
         return Nodes.Remove(node) || RemoveFromChildren(Nodes, node);
