@@ -15,9 +15,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly IDisposable? _editorSessionLifetime;
     private readonly IDisposable? _editorLogSubscription;
     private readonly IWozzitsEngineEditorSession? _editorSession;
-    private readonly Func<WozzitsEditorHostSession>? _createHostSession;
     private readonly Action<Action>? _dispatch;
-    private WozzitsEditorHostSession? _hostSession;
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -29,15 +27,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EngineProjectSnapshotResponse? projectSnapshot = null,
         IWozzitsEngineEditorSession? editorSession = null,
         EditorLogBuffer? editorLog = null,
-        Func<WozzitsEditorHostSession>? createHostSession = null,
         Action<Action>? dispatch = null)
     {
         _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
-        _createHostSession = createHostSession;
         _dispatch = dispatch;
         SaveAllCommand = new RelayCommand(SaveAll);
-        LaunchAppCommand = new RelayCommand(LaunchApp, () => _createHostSession is not null);
+        RestartViewportCommand = new RelayCommand(RestartViewport, () => _editorSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
@@ -66,7 +62,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IFactory DockFactory { get; private set; } = null!;
     public IRootDock EditorLayout { get; private set; } = null!;
     public IRelayCommand SaveAllCommand { get; }
-    public IRelayCommand LaunchAppCommand { get; }
+    public IRelayCommand RestartViewportCommand { get; }
 
     public string EngineLogText => Console.LogText;
 
@@ -78,7 +74,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         _shutdown = true;
-        _hostSession?.Dispose();
         _editorSessionLifetime?.Dispose();
         _editorLogSubscription?.Dispose();
     }
@@ -88,21 +83,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _editorSession?.SaveAssetGraph();
     }
 
-    // Launch the project in the standalone runtime as a separate process (an
-    // isolated test run). Its stdout/stderr routing is intentionally not the
-    // editor console's job; we will choose that destination separately.
-    private void LaunchApp()
+    // Reopen the in-process engine viewport. Stops the current runtime if one is
+    // still alive (or frees a closed/zombie one) and starts a fresh viewport for
+    // the project - the way back after the viewport window has been closed.
+    private void RestartViewport()
     {
-        if (_createHostSession is null)
-        {
-            return;
-        }
-
-        _hostSession?.Dispose();
-        var session = _createHostSession();
-        _hostSession = session;
-        AppendEditorLog("[editor] Launch App requested; standalone engine logs are not routed to this console yet.");
-        session.Start();
+        _editorSession?.RestartRuntime();
     }
 
     private void AppendEditorLog(string line)

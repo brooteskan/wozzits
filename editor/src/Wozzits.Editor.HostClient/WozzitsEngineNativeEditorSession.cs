@@ -140,6 +140,13 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.BindDraft(_runtime.Handle, _session);
     }
 
+    public void RestartRuntime()
+    {
+        // Frees a closed/zombie runtime and starts a fresh viewport for the
+        // project. No-op if this session has no runtime (started without one).
+        _runtime?.Restart();
+    }
+
     public EngineMutationResponse SetSceneNodeProperties(
         string nodeId,
         string name,

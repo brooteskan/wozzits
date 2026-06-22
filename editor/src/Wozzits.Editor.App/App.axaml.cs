@@ -89,7 +89,6 @@ public partial class App : Application
         if (projectSnapshot.IsValid)
         {
             editorLog.AppendLine($"[editor] Project loaded: {projectSnapshot.ProjectName}");
-            var editorHost = new WozzitsEditorHostClient();
             return new MainWindow(
                 new MainWindowViewModel(
                     projectSnapshot,
@@ -98,9 +97,6 @@ public partial class App : Application
                         startRuntime: true,
                         logReceived: editorLog.AppendLine),
                     editorLog,
-                    createHostSession: () => new WozzitsEditorHostSession(
-                        editorHost.HostExecutablePath,
-                        projectDirectory.FullPath),
                     dispatch: action => Dispatcher.UIThread.Post(action)));
         }
 

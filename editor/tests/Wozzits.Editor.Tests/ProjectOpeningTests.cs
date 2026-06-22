@@ -886,6 +886,13 @@ public sealed partial class ProjectOpeningTests
             return CommitResponse;
         }
 
+        public int RestartRuntimeCount { get; private set; }
+
+        public void RestartRuntime()
+        {
+            ++RestartRuntimeCount;
+        }
+
         public EngineMutationResponse CompileAssetGraph()
         {
             ++CompileCount;

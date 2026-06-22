@@ -25,8 +25,8 @@
                           Command="{Binding SaveAllCommand}"/>
             </MenuItem>
             <MenuItem Header="_Run">
-                <MenuItem Header="_Launch App"
-                          Command="{Binding LaunchAppCommand}"/>
+                <MenuItem Header="Restart _Viewport"
+                          Command="{Binding RestartViewportCommand}"/>
             </MenuItem>
             <MenuItem Header="_Window"/>
         </Menu>

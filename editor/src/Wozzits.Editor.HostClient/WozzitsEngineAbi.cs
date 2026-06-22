@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 19;
+    internal const uint AbiVersion = 20;
 
     private static int _resolverRegistered;
 
@@ -230,6 +230,9 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_stop")]
     internal static partial void WzEditorRuntimeStop(IntPtr runtime);
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_is_running")]
+    internal static partial int WzEditorRuntimeIsRunning(IntPtr runtime);
 
     [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_bind_draft")]
     internal static partial WzResult WzEditorRuntimeBindDraft(

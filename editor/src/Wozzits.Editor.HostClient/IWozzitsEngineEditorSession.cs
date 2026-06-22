@@ -58,4 +58,8 @@ public interface IWozzitsEngineEditorSession
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit);
+
+    // Stop the engine's viewport runtime (if any) and start a fresh one for the
+    // current project - used to reopen the viewport after its window was closed.
+    void RestartRuntime();
 }
