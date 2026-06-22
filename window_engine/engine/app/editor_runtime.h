@@ -64,6 +64,12 @@ namespace wz::app
         void request_stop();
         [[nodiscard]] bool stop_requested() const;
 
+        // Owner thread: request the engine to persist the scene to disk; the
+        // engine thread saves on its next frame. Non-blocking.
+        void request_save();
+        // Engine thread: consume a pending save request (true once per request).
+        [[nodiscard]] bool take_save_request();
+
         // Owner thread: submit a draft to bind; blocks until the engine thread
         // binds it (or the engine stops). The draft is moved to the engine and
         // the bound draft (with resolved keys + validation) is moved back into
@@ -101,6 +107,13 @@ namespace wz::app
         void service_pending_scene_node_reparents(
             const std::function<void(const SceneNodeReparentEdit&)>& applier);
 
+        // Owner thread: queue a node removal (non-blocking; deduped by id).
+        void post_scene_node_remove(wz::scene::AuthoredEntityId id);
+
+        void service_pending_scene_node_removes(
+            const std::function<
+                void(const wz::scene::AuthoredEntityId&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -129,6 +142,7 @@ namespace wz::app
         mutable std::mutex mutex_;
         std::condition_variable cv_;
         std::atomic_bool stop_{ false };
+        std::atomic_bool save_requested_{ false };
         bool has_request_ = false;
         bool has_result_ = false;
         bool finished_ = false;
@@ -141,6 +155,7 @@ namespace wz::app
         std::vector<SceneNodeTransformEdit> pending_transforms_;
         std::vector<SceneNodePropertiesEdit> pending_properties_;
         std::vector<SceneNodeReparentEdit> pending_reparents_;
+        std::vector<wz::scene::AuthoredEntityId> pending_removes_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

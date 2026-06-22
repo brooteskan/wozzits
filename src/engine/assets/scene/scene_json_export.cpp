@@ -2121,4 +2121,44 @@ namespace wz::engine::assets
         return document;
     }
 
+    void set_scene_document_nodes(
+        wz::json::JSONDocument& document,
+        const std::vector<SceneNodeAsset>& nodes)
+    {
+        if (!document.root
+            || document.root->kind != wz::json::JSONValueKind::Object)
+        {
+            return;
+        }
+
+        // Re-emit the nodes (authored form) and move just that array into the
+        // target document, leaving every other member (schema, name, lights,
+        // defaults, ...) untouched.
+        SceneAssetData snapshot;
+        snapshot.nodes = nodes;
+        wz::json::JSONDocument exported = export_scene_to_json_document(snapshot);
+
+        wz::json::JSONValuePtr nodes_value;
+        for (auto& member : exported.root->object_members) {
+            if (member.key == "nodes") {
+                nodes_value = std::move(member.value);
+                break;
+            }
+        }
+        if (!nodes_value) {
+            return;
+        }
+
+        for (auto& member : document.root->object_members) {
+            if (member.key == "nodes") {
+                member.value = std::move(nodes_value);
+                return;
+            }
+        }
+        document.root->object_members.push_back(wz::json::JSONMember{
+            .key = "nodes",
+            .value = std::move(nodes_value),
+        });
+    }
+
 } // namespace wz::engine::assets

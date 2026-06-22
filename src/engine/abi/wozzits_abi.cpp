@@ -1105,6 +1105,42 @@ extern "C"
         }
     }
 
+    WzResult wz_editor_runtime_remove_node(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_remove(node_id_utf8);
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene node remove post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_save_scene(WzEditorRuntime* runtime)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        runtime->control.request_save();
+        return result(WZ_RESULT_OK, "");
+    }
+
     WzResult wz_editor_runtime_add_child_node(
         WzEditorRuntime* runtime,
         const char* parent_id_utf8,

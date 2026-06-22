@@ -66,6 +66,16 @@ namespace wz::app
         return stop_.load(std::memory_order_acquire);
     }
 
+    void EditorRuntimeControl::request_save()
+    {
+        save_requested_.store(true, std::memory_order_release);
+    }
+
+    bool EditorRuntimeControl::take_save_request()
+    {
+        return save_requested_.exchange(false, std::memory_order_acq_rel);
+    }
+
     AssetGraphCompileResult EditorRuntimeControl::bind(
         wz::asset::AssetGraphDraft& draft)
     {
@@ -213,6 +223,35 @@ namespace wz::app
 
         for (const SceneNodeReparentEdit& edit : edits) {
             applier(edit);
+        }
+    }
+
+    void EditorRuntimeControl::post_scene_node_remove(
+        wz::scene::AuthoredEntityId id)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const wz::scene::AuthoredEntityId& pending : pending_removes_) {
+            if (pending == id) {
+                return;  // dedup
+            }
+        }
+        pending_removes_.push_back(std::move(id));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_removes(
+        const std::function<void(const wz::scene::AuthoredEntityId&)>& applier)
+    {
+        std::vector<wz::scene::AuthoredEntityId> removes;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_removes_.empty()) {
+                return;
+            }
+            removes.swap(pending_removes_);
+        }
+
+        for (const wz::scene::AuthoredEntityId& id : removes) {
+            applier(id);
         }
     }
 
@@ -392,10 +431,17 @@ namespace wz::app
                         [&app](const SceneNodeReparentEdit& edit) {
                             app.reparent_node(edit.id, edit.new_parent_id);
                         });
+                    control->service_pending_scene_node_removes(
+                        [&app](const wz::scene::AuthoredEntityId& id) {
+                            app.remove_node(id);
+                        });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {
                             return app.add_child_node(parent_id);
                         });
+                    if (control->take_save_request()) {
+                        app.save_scene();
+                    }
                 }
 
                 // Build this frame's input snapshot from the global input event
@@ -468,6 +514,10 @@ namespace wz::app
                     break;
                 }
             }
+
+            // Persist any unsaved edits before the runtime tears down (covers
+            // the viewport window closing and the editor stopping the runtime).
+            app.save_scene();
 
             wz::input::shutdown_raw_input();
         }

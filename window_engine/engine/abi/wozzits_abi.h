@@ -664,6 +664,19 @@ WZ_ABI_API WzResult wz_editor_runtime_reparent_node(
     const char* node_id_utf8,
     const char* new_parent_id_utf8);
 
+// Live delete posted to the running engine (non-blocking, applied next frame).
+// Removes the node and its subtree. WZ_RESULT_INVALID_ARGUMENT for a null
+// runtime or an empty node id.
+WZ_ABI_API WzResult wz_editor_runtime_remove_node(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8);
+
+// Persist the running scene to its source file (non-blocking; the engine saves
+// on its next frame). No-op if nothing changed since load/last save. Also done
+// automatically when the runtime exits. WZ_RESULT_INVALID_ARGUMENT for a null
+// runtime.
+WZ_ABI_API WzResult wz_editor_runtime_save_scene(WzEditorRuntime* runtime);
+
 // Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
 // running scene, blocking until the engine thread applies it, and return the
 // minted counter id in out_new_id (UTF-8; free with wz_free_buffer).

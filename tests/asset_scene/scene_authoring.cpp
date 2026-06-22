@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/authoring/scene_authoring.h>
+#include <engine/assets/scene/scene_json_export.h>
+
+#include <external/json/json_parser.h>
+#include <external/json/json_writer.h>
 
 #include <array>
 #include <optional>
@@ -265,6 +269,47 @@ TEST(SceneNodeList, ReparentMovesNodeAndRejectsCycles)
     EXPECT_FALSE(reparent_scene_node(nodes, "missing", "a"));  // bad node
     EXPECT_FALSE(reparent_scene_node(nodes, "a", "b"));        // b under a -> cycle
     EXPECT_EQ(*find_scene_node(nodes, "b")->parent_id, "a");   // unchanged
+}
+
+TEST(SceneNodeList, RemoveNodeDropsSubtree)
+{
+    std::vector<SceneNodeAsset> nodes(4);
+    nodes[0].id = "root";
+    nodes[1].id = "a";
+    nodes[1].parent_id = "root";
+    nodes[2].id = "b";
+    nodes[2].parent_id = "a";    // a's child
+    nodes[3].id = "c";
+    nodes[3].parent_id = "root"; // a's sibling
+
+    const auto removed = remove_scene_node(nodes, "a");  // a + b
+    EXPECT_EQ(removed.size(), 2u);
+    EXPECT_EQ(find_scene_node(nodes, "a"), nullptr);
+    EXPECT_EQ(find_scene_node(nodes, "b"), nullptr);
+    EXPECT_NE(find_scene_node(nodes, "root"), nullptr);  // kept
+    EXPECT_NE(find_scene_node(nodes, "c"), nullptr);     // sibling kept
+
+    EXPECT_TRUE(remove_scene_node(nodes, "missing").empty());
+}
+
+TEST(SceneJsonExport, SetDocumentNodesReplacesNodesPreservingOthers)
+{
+    // Persistence patch: replace only the "nodes" array, keep everything else.
+    auto parsed = wz::json::parse_json_string(
+        "{ \"schema\": \"wozzits.scene.v0\", \"name\": \"t\","
+        " \"nodes\": [ { \"id\": \"old\" } ],"
+        " \"lights\": [ { \"node_id\": \"sun\" } ] }");
+    ASSERT_TRUE(parsed.ok);
+
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "fresh";
+
+    set_scene_document_nodes(parsed.document, nodes);
+    const std::string out = wz::json::serialize_json(parsed.document);
+
+    EXPECT_NE(out.find("\"fresh\""), std::string::npos);  // new node written
+    EXPECT_NE(out.find("\"sun\""), std::string::npos);    // non-node data kept
+    EXPECT_EQ(out.find("\"old\""), std::string::npos);    // old node replaced
 }
 
 TEST(SceneAuthoring, AssignAndClearRenderable)

@@ -1757,6 +1757,56 @@ namespace wz::engine::assets
         return true;
     }
 
+    // Remove the node `id` and its entire subtree from a flat node list. Returns
+    // the removed ids (empty if `id` was not present). The in-memory apply behind
+    // delete; SceneAssetData-level reference cleanup (active camera, terrain
+    // refs) is not done here.
+    inline std::vector<wz::scene::AuthoredEntityId> remove_scene_node(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id)
+    {
+        std::vector<wz::scene::AuthoredEntityId> removed;
+        if (!find_scene_node(nodes, id)) {
+            return removed;
+        }
+
+        const auto in_removed =
+            [&removed](const wz::scene::AuthoredEntityId& candidate) {
+                for (const auto& r : removed) {
+                    if (r == candidate) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+        removed.push_back(id);
+        // Transitively collect descendants (whose parent is already removed).
+        bool grew = true;
+        while (grew) {
+            grew = false;
+            for (const SceneNodeAsset& node : nodes) {
+                if (node.parent_id
+                    && in_removed(*node.parent_id)
+                    && !in_removed(node.id))
+                {
+                    removed.push_back(node.id);
+                    grew = true;
+                }
+            }
+        }
+
+        std::vector<SceneNodeAsset> kept;
+        kept.reserve(nodes.size());
+        for (SceneNodeAsset& node : nodes) {
+            if (!in_removed(node.id)) {
+                kept.push_back(std::move(node));
+            }
+        }
+        nodes = std::move(kept);
+        return removed;
+    }
+
     inline bool is_direct_child_scene_node(
         const SceneNodeAsset& parent,
         const SceneNodeAsset& child) noexcept

@@ -117,6 +117,15 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id,
             const wz::scene::AuthoredEntityId& new_parent_id);
 
+        // Live delete: remove the node and its subtree from the in-memory scene.
+        // Returns false if no node had that id.
+        bool remove_node(const wz::scene::AuthoredEntityId& id);
+
+        // Persist the current scene back to its source file: the nodes are
+        // re-emitted, all other scene data preserved. No-op (returns true) when
+        // no live edit happened since load/last save; false on write failure.
+        bool save_scene();
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the
@@ -191,5 +200,9 @@ namespace wz::app
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).
         wz::asset::AssetGraphDraft                       graph_draft_{};
         std::vector<wz::engine::assets::SceneNodeAsset>  scene_nodes_{};
+
+        // Source scene file + a dirty flag, for save_scene (persist live edits).
+        wz::fs::Path  scene_source_path_{};
+        bool          scene_dirty_ = false;
     };
 }

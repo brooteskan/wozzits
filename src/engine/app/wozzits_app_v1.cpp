@@ -5,12 +5,14 @@
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_authoring_materialize.h>
+#include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene_asset_module.h>
 
 #include <asset/system.h>
 
 #include <bench/flying_camera.h>
 #include <external/json/json_parser.h>
+#include <external/json/json_writer.h>
 #include <file/filesystem.h>
 #include <input/input.h>
 #include <math/math_types.h>
@@ -18,6 +20,8 @@
 #include <math/projection.h>
 
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -271,6 +275,8 @@ namespace wz::app
         // graph keys. Populate scene_nodes_ even with graph/scene compile errors
         // so a later good rebind can render.
         scene_nodes_ = scene_data->nodes;
+        scene_source_path_ = desc.scene;
+        scene_dirty_ = false;
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(
                 scene_nodes_, graph_draft_);
@@ -309,13 +315,17 @@ namespace wz::app
             return false;
         }
         wz::engine::assets::set_transform(*node, transform);
+        scene_dirty_ = true;
         return true;
     }
 
     wz::engine::assets::SceneAddChildResult WozzitsApp_v1::add_child_node(
         const wz::scene::AuthoredEntityId& parent_id)
     {
-        return wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
+        wz::engine::assets::SceneAddChildResult result =
+            wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
+        scene_dirty_ = scene_dirty_ || result.ok;
+        return result;
     }
 
     bool WozzitsApp_v1::set_node_properties(
@@ -323,16 +333,85 @@ namespace wz::app
         std::string name,
         bool visible)
     {
-        return wz::engine::assets::set_scene_node_properties(
+        const bool ok = wz::engine::assets::set_scene_node_properties(
             scene_nodes_, id, std::move(name), visible);
+        scene_dirty_ = scene_dirty_ || ok;
+        return ok;
     }
 
     bool WozzitsApp_v1::reparent_node(
         const wz::scene::AuthoredEntityId& id,
         const wz::scene::AuthoredEntityId& new_parent_id)
     {
-        return wz::engine::assets::reparent_scene_node(
+        const bool ok = wz::engine::assets::reparent_scene_node(
             scene_nodes_, id, new_parent_id);
+        scene_dirty_ = scene_dirty_ || ok;
+        return ok;
+    }
+
+    bool WozzitsApp_v1::remove_node(const wz::scene::AuthoredEntityId& id)
+    {
+        const bool removed =
+            !wz::engine::assets::remove_scene_node(scene_nodes_, id).empty();
+        scene_dirty_ = scene_dirty_ || removed;
+        return removed;
+    }
+
+    bool WozzitsApp_v1::save_scene()
+    {
+        if (!scene_dirty_) {
+            return true;  // nothing changed since load / last save
+        }
+        if (scene_source_path_.empty()) {
+            return false;
+        }
+
+        const wz::fs::Path resource_root =
+            ctx_.assets ? ctx_.assets->resource_root() : wz::fs::Path{};
+        const wz::fs::Path path =
+            wz::fs::is_absolute(scene_source_path_) || resource_root.empty()
+                ? scene_source_path_
+                : wz::fs::join(resource_root, scene_source_path_);
+
+        // Read the existing scene so its non-node data (lights, defaults, sky)
+        // is preserved; only the nodes array is replaced from the live edits.
+        wz::json::JSONDocument document;
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (file) {
+                const std::string text(
+                    (std::istreambuf_iterator<char>(file)),
+                    std::istreambuf_iterator<char>());
+                wz::json::JSONParseResult parsed =
+                    wz::json::parse_json_string(text);
+                if (parsed.ok && parsed.document.root) {
+                    document = std::move(parsed.document);
+                }
+            }
+        }
+        if (document.root) {
+            wz::engine::assets::set_scene_document_nodes(document, scene_nodes_);
+        }
+        else {
+            // No readable source — emit a fresh scene document from the nodes.
+            wz::engine::assets::SceneAssetData snapshot;
+            snapshot.nodes = scene_nodes_;
+            document =
+                wz::engine::assets::export_scene_to_json_document(snapshot);
+        }
+
+        std::ofstream out(path, std::ios::binary);
+        if (!out) {
+            return false;
+        }
+        out << wz::json::serialize_json(document);
+        if (!out.good()) {
+            return false;
+        }
+
+        scene_dirty_ = false;
+        ctx_.logger.info("save_scene: scene persisted");
+        return true;
     }
 
     bool WozzitsApp_v1::render_scene()
