@@ -229,17 +229,26 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                // Dual-output: also D3DCompile the primary source to bytecode
-                // and register an rhi ShaderModule under shader_ref(key) so the
-                // render-program compiler references it instead of re-compiling
-                // (#193). Best-effort; the legacy GPUHandle above is what the
-                // legacy renderer still consumes until it retires (#179).
+                // Dual-output: also D3DCompile to bytecode and register an rhi
+                // ShaderModule under shader_ref(key) so the render-program
+                // compiler references it instead of re-compiling (#193). Best-
+                // effort; the legacy GPUHandle above is what the legacy renderer
+                // still consumes until it retires (#179).
                 if (shaders) {
-                    const std::span<const uint8_t> primary =
-                        sources[desc->primary_source_index];
+                    // Compile the SAME combined source the legacy GPUHandle above
+                    // used (compile_hlsl concatenates every dep in order) so the
+                    // rhi ShaderModule and the legacy handle stay byte-identical
+                    // for multi-source shaders, not only single-source ones.
+                    // primary_source_index is a bounds-checked guard, not a
+                    // selector — both paths compile every dep.
+                    const std::string combined =
+                        wz::gpu::combine_hlsl_sources(sources);
                     const std::optional<std::vector<uint8_t>> bytecode =
                         wz::engine::rendering::compile_hlsl_bytecode(
-                            primary, desc->entry, desc->target.c_str(), logger);
+                            std::span<const uint8_t>{
+                                reinterpret_cast<const uint8_t*>(combined.data()),
+                                combined.size() },
+                            desc->entry, desc->target.c_str(), logger);
                     if (bytecode) {
                         shaders->register_program(wz::rhi::ShaderModuleDesc{
                             wz::engine::rendering::shader_ref(input.key),

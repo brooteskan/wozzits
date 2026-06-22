@@ -38,25 +38,14 @@ namespace wz::gpu
         if (desc.primary_source_index >= sources.size())
             return INVALID_GPU_HANDLE;
 
-        // Simple first pass: concatenate in declared dependency order.
+        // Concatenate the source deps in declared order. Shared with the rhi
+        // ShaderModule compile (the shader asset compiler) via
+        // combine_hlsl_sources so both paths produce byte-identical source.
         //
         // Later, if you want #include semantics, use D3DCompile include handlers
-        // or DXC with a custom include provider. For now, this matches your asset
+        // or DXC with a custom include provider. For now, this matches the asset
         // DAG model where source order is meaningful.
-        std::string combined;
-
-        for (std::span<const uint8_t> src : sources)
-        {
-            if (src.empty())
-                continue;
-
-            combined.append(
-                reinterpret_cast<const char*>(src.data()),
-                src.size()
-            );
-
-            combined.push_back('\n');
-        }
+        const std::string combined = combine_hlsl_sources(sources);
 
         ID3DBlob* shader_blob = nullptr;
         ID3DBlob* error_blob = nullptr;

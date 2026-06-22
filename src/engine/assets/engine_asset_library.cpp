@@ -498,12 +498,17 @@ namespace wz::engine::assets
         // is released here. Mirrors release_unregistered_rhi_resources for GPU
         // buffers; bounded across editor swaps.
         std::unordered_set<std::string> live_programs;
+        std::unordered_set<std::string> live_compute;
         std::unordered_set<std::string> live_shaders;
         for (const wz::asset::AssetSystem::RegistrationEntry& entry :
              system_.registered_assets())
         {
             if (entry.node.type == kAssetTypeRenderProgram) {
                 live_programs.insert(
+                    wz::engine::rendering::program_ref(entry.node.key));
+            }
+            else if (entry.node.type == kAssetTypeComputePipeline) {
+                live_compute.insert(
                     wz::engine::rendering::program_ref(entry.node.key));
             }
             else if (entry.node.type == wz::asset::AssetType::Shader) {
@@ -521,6 +526,23 @@ namespace wz::engine::assets
             });
         for (const wz::rhi::Tag tag : stale) {
             gpu_context_->programs.release(tag);
+        }
+
+        // Compute programs reconcile the same way — keyed off the authored
+        // kAssetTypeComputePipeline asset, named with program_ref like render
+        // programs. No asset-graph producer registers compute programs into the
+        // shared registry yet, so this is a no-op today; it keeps the lifecycle
+        // symmetric and bounded the moment the compute path migrates onto rhi,
+        // and pins the program_ref naming convention that producer must use.
+        stale.clear();
+        gpu_context_->compute_programs.visit(
+            [&](wz::rhi::Tag tag, const wz::rhi::ComputeProgramDesc& desc) {
+                if (live_compute.find(desc.name) == live_compute.end()) {
+                    stale.push_back(tag);
+                }
+            });
+        for (const wz::rhi::Tag tag : stale) {
+            gpu_context_->compute_programs.release(tag);
         }
 
         stale.clear();

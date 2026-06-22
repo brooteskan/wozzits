@@ -273,8 +273,9 @@ namespace wz::engine::rendering
         // asset compiler registers into them during resolve — which runs BEFORE
         // on_graph_changed in the bind path — so clearing here would wipe the
         // program the compiler just produced. The asset side owns their lifecycle
-        // now and clears them before resolve re-registers
-        // (EngineAssetLibrary::reset_rhi_render_program_registries). The semantic
+        // now: EngineAssetLibrary::reconcile_rhi_render_program_registries() runs
+        // AFTER resolve and releases only the entries whose AssetKey left the live
+        // set — survivors stay, so a same-content rebind keeps them. The semantic
         // registries are graph-independent and kept across swaps.
 
         realized_renderables_.clear();
