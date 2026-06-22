@@ -5,6 +5,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -128,6 +129,51 @@ TEST(SceneAuthoring, TransformVisibilityMotion)
     EXPECT_EQ(n->motion_type, wz::scene::TransformNode::MotionType::Animated);
 
     EXPECT_FALSE(authoring::set_node_visible(scene, "missing", true));
+}
+
+// WozzitsApp_v1 keeps its live scene as a flat std::vector<SceneNodeAsset> (not
+// a SceneAssetData), and set_node_transform finds the node by id in that list
+// and overwrites its local transform. These cover that exact path device-free.
+TEST(SceneNodeList, FindSceneNodeInVector)
+{
+    std::vector<SceneNodeAsset> nodes(2);
+    nodes[0].id = "alpha";
+    nodes[1].id = "beta";
+
+    EXPECT_EQ(find_scene_node(nodes, "alpha"), &nodes[0]);
+    EXPECT_EQ(find_scene_node(nodes, "beta"), &nodes[1]);
+    EXPECT_EQ(find_scene_node(nodes, "missing"), nullptr);
+
+    const std::vector<SceneNodeAsset>& const_nodes = nodes;
+    EXPECT_EQ(find_scene_node(const_nodes, "beta"), &const_nodes[1]);
+    EXPECT_EQ(find_scene_node(const_nodes, "missing"), nullptr);
+}
+
+TEST(SceneNodeList, SetTransformOverwritesOnlyTargetLocal)
+{
+    std::vector<SceneNodeAsset> nodes(2);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+
+    const AuthoredTransform xform{
+        { 1.f, 2.f, 3.f },        // translation
+        { 0.f, 0.f, 0.f, 1.f },   // rotation_quat
+        { 4.f, 5.f, 6.f },        // scale
+    };
+
+    SceneNodeAsset* target = find_scene_node(nodes, "b");
+    ASSERT_NE(target, nullptr);
+    set_transform(*target, xform);
+
+    EXPECT_FLOAT_EQ(nodes[1].local.translation[0], 1.f);
+    EXPECT_FLOAT_EQ(nodes[1].local.translation[2], 3.f);
+    EXPECT_FLOAT_EQ(nodes[1].local.rotation_quat[3], 1.f);
+    EXPECT_FLOAT_EQ(nodes[1].local.scale[1], 5.f);
+
+    // The sibling keeps its defaults (identity translate, unit scale): a
+    // by-id edit must touch only the target node.
+    EXPECT_FLOAT_EQ(nodes[0].local.translation[0], 0.f);
+    EXPECT_FLOAT_EQ(nodes[0].local.scale[0], 1.f);
 }
 
 TEST(SceneAuthoring, AssignAndClearRenderable)

@@ -1,0 +1,87 @@
+// tests/engine/editor_runtime_control_tests.cpp
+//
+// EditorRuntimeControl is the cross-thread seam between the editor (owner
+// thread) and the in-process engine runtime. These cover the live scene-edit
+// channel device-free: posting node transforms, coalescing per node id, and
+// draining them through an applier on the engine-thread side. The blocking
+// bind handshake and the on-device apply (WozzitsApp_v1) are covered elsewhere.
+
+#include <gtest/gtest.h>
+
+#include <engine/app/editor_runtime.h>
+
+#include <string>
+#include <vector>
+
+namespace
+{
+    using wz::app::EditorRuntimeControl;
+    using wz::app::SceneNodeTransformEdit;
+
+    SceneNodeTransformEdit make_edit(std::string id, float tx)
+    {
+        SceneNodeTransformEdit edit;
+        edit.id = std::move(id);
+        edit.transform.translation[0] = tx;
+        return edit;
+    }
+
+    // Drain the queue on the engine-thread side, recording what the applier saw.
+    std::vector<SceneNodeTransformEdit> drain(EditorRuntimeControl& control)
+    {
+        std::vector<SceneNodeTransformEdit> applied;
+        control.service_pending_scene_node_transforms(
+            [&applied](const SceneNodeTransformEdit& edit) {
+                applied.push_back(edit);
+            });
+        return applied;
+    }
+}
+
+TEST(EditorRuntimeControl, ServiceAppliesPostedTransform)
+{
+    EditorRuntimeControl control;
+    control.post_scene_node_transform(make_edit("node", 5.f));
+
+    const auto applied = drain(control);
+    ASSERT_EQ(applied.size(), 1u);
+    EXPECT_EQ(applied[0].id, "node");
+    EXPECT_FLOAT_EQ(applied[0].transform.translation[0], 5.f);
+}
+
+TEST(EditorRuntimeControl, DrainsExactlyOnce)
+{
+    EditorRuntimeControl control;
+    control.post_scene_node_transform(make_edit("node", 5.f));
+
+    EXPECT_EQ(drain(control).size(), 1u);
+    // A second service finds an empty queue and applies nothing.
+    EXPECT_TRUE(drain(control).empty());
+}
+
+TEST(EditorRuntimeControl, CoalescesByNodeIdLatestWins)
+{
+    EditorRuntimeControl control;
+    control.post_scene_node_transform(make_edit("node", 1.f));
+    control.post_scene_node_transform(make_edit("node", 2.f));
+    control.post_scene_node_transform(make_edit("node", 3.f));
+
+    const auto applied = drain(control);
+    ASSERT_EQ(applied.size(), 1u);  // one node -> one apply
+    EXPECT_FLOAT_EQ(applied[0].transform.translation[0], 3.f);  // latest wins
+}
+
+TEST(EditorRuntimeControl, DistinctNodesEachApplied)
+{
+    EditorRuntimeControl control;
+    control.post_scene_node_transform(make_edit("a", 1.f));
+    control.post_scene_node_transform(make_edit("b", 2.f));
+
+    EXPECT_EQ(drain(control).size(), 2u);
+}
+
+TEST(EditorRuntimeControl, ServiceWithEmptyQueueDoesNothing)
+{
+    EditorRuntimeControl control;
+    EXPECT_TRUE(drain(control).empty());
+}

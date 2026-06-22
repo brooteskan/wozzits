@@ -123,6 +123,38 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    void EditorRuntimeControl::post_scene_node_transform(
+        SceneNodeTransformEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (SceneNodeTransformEdit& pending : pending_transforms_) {
+            if (pending.id == edit.id) {
+                pending.transform = edit.transform;  // coalesce: latest wins
+                return;
+            }
+        }
+        pending_transforms_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_transforms(
+        const std::function<void(const SceneNodeTransformEdit&)>& applier)
+    {
+        std::vector<SceneNodeTransformEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_transforms_.empty()) {
+                return;
+            }
+            edits.swap(pending_transforms_);
+        }
+
+        // Apply outside the lock: applier mutates the app/renderer and a post
+        // from the owner thread must never block on it.
+        for (const SceneNodeTransformEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::mark_finished()
     {
         {
@@ -226,10 +258,14 @@ namespace wz::app
                     break;
                 }
 
-                // Service a pending draft bind from the editor (compile/swap),
-                // before sim + render so this frame reflects it.
+                // Service editor edits (compile/swap, then live scene-node
+                // transforms) before sim + render so this frame reflects them.
                 if (control) {
                     control->service_pending_bind(binder);
+                    control->service_pending_scene_node_transforms(
+                        [&app](const SceneNodeTransformEdit& edit) {
+                            app.set_node_transform(edit.id, edit.transform);
+                        });
                 }
 
                 // Build this frame's input snapshot from the global input event

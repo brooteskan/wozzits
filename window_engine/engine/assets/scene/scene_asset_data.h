@@ -1617,6 +1617,32 @@ namespace wz::engine::assets
         return nullptr;
     }
 
+    // Same lookup over a bare node list — the form WozzitsApp_v1 keeps its live
+    // scene in (scene_nodes_), where there is no enclosing SceneAssetData.
+    inline const SceneNodeAsset* find_scene_node(
+        const std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id) noexcept
+    {
+        for (const auto& node : nodes) {
+            if (node.id == id) {
+                return &node;
+            }
+        }
+        return nullptr;
+    }
+
+    inline SceneNodeAsset* find_scene_node(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id) noexcept
+    {
+        for (auto& node : nodes) {
+            if (node.id == id) {
+                return &node;
+            }
+        }
+        return nullptr;
+    }
+
     inline bool is_direct_child_scene_node(
         const SceneNodeAsset& parent,
         const SceneNodeAsset& child) noexcept

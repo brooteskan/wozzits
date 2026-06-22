@@ -85,6 +85,16 @@ namespace wz::app
         // Load a scene + asset graph, then compile the graph once and bind.
         bool load_scene(const WozzitsAppSceneLoadDesc& desc);
 
+        // Live scene-node edit: overwrite the local transform of the node with
+        // `id` in the in-memory scene, returning false if no node has that id.
+        // This is the apply behind the editor's live transform preview — the
+        // next render_scene() draws the node at the new transform with no GPU
+        // rebuild (scene_nodes_ is consumed fresh each frame). Persisting the
+        // edit to the scene file on disk is a separate path.
+        bool set_node_transform(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::engine::assets::AuthoredTransform& transform);
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the
@@ -138,6 +148,12 @@ namespace wz::app
         wz::engine::rendering::RhiSceneRenderer  renderer_;
         uint32_t                                 graph_epoch_ = 0;  // last bound
 
+
+        // TODO: The app should not prefer its own free-fly camera. The editor should be
+        // able to use the free fly camera in place of the camera defined in the scene
+        // the app should use the camera in the scene first. if no camera is defined in
+        // the scene then it should use this free fly camera. 
+        // 
         // The app's own free-fly camera (game-app parity): updated from input in
         // simulation_tick and used to build the view-projection unless an editor
         // override is set. Projection params mirror the scene camera defaults;

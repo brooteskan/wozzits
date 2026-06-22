@@ -299,6 +299,19 @@ namespace wz::app
         renderer_.simulation_tick();
     }
 
+    bool WozzitsApp_v1::set_node_transform(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::engine::assets::AuthoredTransform& transform)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, id);
+        if (!node) {
+            return false;
+        }
+        wz::engine::assets::set_transform(*node, transform);
+        return true;
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {

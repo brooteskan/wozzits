@@ -16,8 +16,10 @@
 #include <engine/app/wozzits_app_v1.h>  // AssetGraphCompileResult
 
 #include <asset/draft.h>
+#include <engine/assets/scene/scene_asset_data.h>  // AuthoredTransform
 #include <file/filesystem.h>
 #include <logging/logging.h>
+#include <scene/scene_ecs.h>  // AuthoredEntityId
 
 #include <atomic>
 #include <condition_variable>
@@ -25,9 +27,20 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace wz::app
 {
+    // A live scene edit posted from the owner thread (editor UI) to the engine
+    // thread. Only a node transform today; this is the seam future live edits
+    // (visibility, add/delete/reparent) will extend. Unlike bind() it is
+    // fire-and-forget and coalescing — no result crosses back.
+    struct SceneNodeTransformEdit
+    {
+        wz::scene::AuthoredEntityId id;
+        wz::engine::assets::AuthoredTransform transform;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -45,6 +58,18 @@ namespace wz::app
         void service_pending_bind(
             const std::function<
                 AssetGraphCompileResult(wz::asset::AssetGraphDraft&)>& binder);
+
+        // Owner thread: queue a node transform for the engine thread to apply on
+        // its next frame. Non-blocking. Coalesces by node id — a drag streams
+        // many edits for one node and only the latest matters — so the queue
+        // stays small regardless of edit rate.
+        void post_scene_node_transform(SceneNodeTransformEdit edit);
+
+        // Engine thread: apply every queued transform via `applier`, then clear
+        // the queue. Called once per frame from run_project_runtime, alongside
+        // service_pending_bind.
+        void service_pending_scene_node_transforms(
+            const std::function<void(const SceneNodeTransformEdit&)>& applier);
 
         // Engine thread: mark the runtime done so a blocked bind fails instead
         // of hanging. Called after run_project_runtime returns (incl. the init-
@@ -67,6 +92,10 @@ namespace wz::app
         wz::asset::AssetGraphDraft pending_draft_;
         wz::asset::AssetGraphDraft result_draft_;
         AssetGraphCompileResult result_;
+
+        // Live scene edits queued for the engine thread (guarded by mutex_,
+        // independent of the bind handshake above). Coalesced by node id.
+        std::vector<SceneNodeTransformEdit> pending_transforms_;
     };
 
     struct EditorRuntimeLogSink
