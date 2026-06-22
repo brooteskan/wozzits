@@ -66,7 +66,7 @@
                                 <TextBlock Text="Name"
                                            Classes="InspectorPropertyName"/>
                                 <TextBox Grid.Column="1"
-                                         Text="{Binding NodeName}"
+                                         Text="{Binding NodeName, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                             </Grid>
 
@@ -93,10 +93,6 @@
                                            Text="{Binding RenderableSource}"
                                            Classes="InspectorPropertyValue"/>
                             </Grid>
-
-                            <Button Content="Apply Node"
-                                    Command="{Binding ApplyNodePropertiesCommand}"
-                                    Classes="InspectorApplyButton"/>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection"

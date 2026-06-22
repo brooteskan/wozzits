@@ -1,11 +1,19 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes;
 
 using System.Collections.ObjectModel;
+using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 
 public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
 {
     private SceneTreeNodeViewModel? _selectedNode;
+    private readonly IWozzitsEngineEditorSession? _editorSession;
+
+    public SceneTreeEditorPaneViewModel(
+        IWozzitsEngineEditorSession? editorSession = null)
+    {
+        _editorSession = editorSession;
+    }
 
     public event Action<SceneTreeNodeViewModel?>? SelectedNodeChanged;
 
@@ -88,11 +96,51 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             SelectedNode.IsSelected = true;
         }
     }
+
+    // Add a new child node under `parent` (null => top level) via the engine,
+    // then insert it into the tree with the engine-minted id and select it.
+    public void AddChild(SceneTreeNodeViewModel? parent)
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+
+        var response = _editorSession.AddChildNode(parent?.Id ?? string.Empty);
+        if (!response.Ok)
+        {
+            EmptyState = response.Error;
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
+        var added = new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = response.NodeId,
+            ParentId = parent?.Id,
+            Kind = "node",
+            Visible = true,
+        });
+
+        if (parent is null)
+        {
+            Nodes.Add(added);
+        }
+        else
+        {
+            parent.Children.Add(added);
+        }
+
+        OnPropertyChanged(nameof(HasScene));
+        OnPropertyChanged(nameof(HasNoScene));
+        SelectNode(added);
+    }
 }
 
 public sealed class SceneTreeNodeViewModel : ViewModelBase
 {
     private bool _isSelected;
+    private string _displayName = string.Empty;
 
     public SceneTreeNodeViewModel(EngineSceneNode node)
     {
@@ -113,7 +161,25 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
 
     public string Id { get; }
 
-    public string DisplayName { get; }
+    public string DisplayName
+    {
+        get => _displayName;
+        internal set
+        {
+            if (SetProperty(ref _displayName, value))
+            {
+                OnPropertyChanged(nameof(DisplayText));
+            }
+        }
+    }
+
+    // Tree display: "id:label" (e.g. "14:terrain mesh"). Falls back to just the
+    // id when the node has no distinct label yet (engine-side, an unnamed node's
+    // name defaults to its id).
+    public string DisplayText =>
+        string.IsNullOrEmpty(DisplayName) || DisplayName == Id
+            ? Id
+            : $"{Id}:{DisplayName}";
 
     public string? ParentId { get; }
 

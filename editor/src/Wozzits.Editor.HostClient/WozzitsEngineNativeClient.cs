@@ -539,6 +539,88 @@ public sealed partial class WozzitsEngineNativeClient
             session));
     }
 
+    internal EngineAddSceneNodeResponse AddChildNode(IntPtr runtime, string parentId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = false,
+                Error = "Engine runtime is not available.",
+            };
+        }
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorRuntimeAddChildNode(
+                runtime,
+                parentId ?? string.Empty,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAddSceneNodeResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            var newId = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            return new EngineAddSceneNodeResponse { Ok = true, NodeId = newId };
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
+    internal EngineMutationResponse SetRuntimeSceneNodeProperties(
+        IntPtr runtime,
+        string nodeId,
+        string name,
+        bool visible)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            // No live viewport running — nothing to apply; not an error.
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeProperties(
+            runtime,
+            nodeId,
+            name ?? string.Empty,
+            visible ? 1u : 0u));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeTransform(
         IntPtr runtime,
         string nodeId,

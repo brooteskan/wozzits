@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.App.Views.EditorPanes;
@@ -19,5 +20,14 @@ public partial class SceneTreeEditorPaneView : UserControl
         }
 
         sceneTree.SelectNode(node);
+    }
+
+    private void AddChildClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: SceneTreeNodeViewModel node } &&
+            DataContext is SceneTreeEditorPaneViewModel sceneTree)
+        {
+            sceneTree.AddChild(node);
+        }
     }
 }

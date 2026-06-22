@@ -45,17 +45,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodeCompileStatus = string.Empty;
     private string _assetGraphNodePosition = string.Empty;
     private string _lastEditError = string.Empty;
-    // While true, populating the transform fields from a selected node must not
-    // echo back to the engine as a live edit.
-    private bool _suppressLiveTransform;
+    // While true, populating fields from a selected node must not echo back to
+    // the engine as a live edit.
+    private bool _suppressLiveEdits;
+    private SceneTreeNodeViewModel? _inspectedSceneNode;
 
     public InspectorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null)
     {
         _editorSession = editorSession;
-        ApplyNodePropertiesCommand = new RelayCommand(
-            ApplyNodeProperties,
-            () => HasSceneNodeSelection);
         ApplyCameraCommand = new RelayCommand(
             ApplyCamera,
             () => HasSceneNodeSelection && HasCameraComponent);
@@ -70,8 +68,6 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphDiagnosticViewModel> AssetGraphDiagnostics { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphParamViewModel> AssetGraphParams { get; } = [];
-
-    public IRelayCommand ApplyNodePropertiesCommand { get; }
 
     public IRelayCommand ApplyCameraCommand { get; }
 
@@ -104,7 +100,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public string NodeName
     {
         get => _nodeName;
-        set => SetProperty(ref _nodeName, value);
+        set { if (SetProperty(ref _nodeName, value)) OnNodePropertiesEdited(); }
     }
 
     public string ParentId
@@ -116,7 +112,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public bool NodeVisible
     {
         get => _nodeVisible;
-        set => SetProperty(ref _nodeVisible, value);
+        set { if (SetProperty(ref _nodeVisible, value)) OnNodePropertiesEdited(); }
     }
 
     public string RenderableSource
@@ -347,20 +343,30 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         SetSelectionKind(InspectorSelectionKind.SceneNode);
         ClearAssetGraphFields();
 
-        NodeId = node.Id;
-        NodeName = node.DisplayName;
-        ParentId = node.ParentId ?? string.Empty;
-        NodeVisible = node.Visible ?? false;
+        _inspectedSceneNode = node;
+        _suppressLiveEdits = true;
+        try
+        {
+            NodeId = node.Id;
+            NodeName = node.DisplayName;
+            ParentId = node.ParentId ?? string.Empty;
+            NodeVisible = node.Visible ?? false;
 
-        HasRenderableReference = node.Renderable is not null;
-        RenderableSource = node.RenderableSource.DisplayName;
-        RenderableSourceKind = node.RenderableSource.Kind;
-        RenderableAssetGraphNodeId =
-            node.Renderable?.AssetGraphNodeId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+            HasRenderableReference = node.Renderable is not null;
+            RenderableSource = node.RenderableSource.DisplayName;
+            RenderableSourceKind = node.RenderableSource.Kind;
+            RenderableAssetGraphNodeId =
+                node.Renderable?.AssetGraphNodeId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
-        ComponentsHeader = $"{Header} Components";
-        SetTransformFields(node.Transform);
-        SetComponentFields(node);
+            ComponentsHeader = $"{Header} Components";
+            SetTransformFields(node.Transform);
+            SetComponentFields(node);
+        }
+        finally
+        {
+            _suppressLiveEdits = false;
+        }
+
         NotifyComponentStateChanged();
         NotifyAssetGraphPortStateChanged();
     }
@@ -447,17 +453,25 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             value));
     }
 
-    private void ApplyNodeProperties()
+    // Live properties push: as the name/visibility fields change, mirror them
+    // into the running engine and reflect the label in the tree. Suppressed
+    // while a node's values are being loaded into the fields.
+    private void OnNodePropertiesEdited()
     {
-        if (!EnsureCanApply())
+        if (_suppressLiveEdits
+            || !HasSceneNodeSelection
+            || string.IsNullOrWhiteSpace(NodeId)
+            || _editorSession is null)
         {
             return;
         }
 
-        SetEditResponse(_editorSession!.SetSceneNodeProperties(
-            NodeId,
-            NodeName,
-            NodeVisible));
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.DisplayName = NodeName;
+        }
+
+        _editorSession.SetSceneNodePropertiesLive(NodeId, NodeName, NodeVisible);
     }
 
     // Live preview push: as the transform fields change, mirror them into the
@@ -465,7 +479,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // loaded into the fields so selecting a node doesn't echo back.
     private void PushLiveTransform()
     {
-        if (_suppressLiveTransform
+        if (_suppressLiveEdits
             || !HasSceneNodeSelection
             || string.IsNullOrWhiteSpace(NodeId)
             || _editorSession is null)
@@ -532,21 +546,30 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     private void ClearNodeFields()
     {
-        NodeId = string.Empty;
-        NodeName = string.Empty;
-        ParentId = string.Empty;
-        NodeVisible = false;
-        HasRenderableReference = false;
-        RenderableSource = string.Empty;
-        RenderableSourceKind = string.Empty;
-        RenderableAssetGraphNodeId = string.Empty;
-        ComponentsHeader = "Components";
-        SetTransformFields(null);
-        HasCameraComponent = false;
-        CameraFovY = string.Empty;
-        CameraNear = string.Empty;
-        CameraFar = string.Empty;
-        CameraAspect = string.Empty;
+        _inspectedSceneNode = null;
+        _suppressLiveEdits = true;
+        try
+        {
+            NodeId = string.Empty;
+            NodeName = string.Empty;
+            ParentId = string.Empty;
+            NodeVisible = false;
+            HasRenderableReference = false;
+            RenderableSource = string.Empty;
+            RenderableSourceKind = string.Empty;
+            RenderableAssetGraphNodeId = string.Empty;
+            ComponentsHeader = "Components";
+            SetTransformFields(null);
+            HasCameraComponent = false;
+            CameraFovY = string.Empty;
+            CameraNear = string.Empty;
+            CameraFar = string.Empty;
+            CameraAspect = string.Empty;
+        }
+        finally
+        {
+            _suppressLiveEdits = false;
+        }
     }
 
     private void ClearAssetGraphFields()
@@ -571,34 +594,25 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(HasSceneNodeSelection));
         OnPropertyChanged(nameof(HasAssetGraphNodeSelection));
-        ApplyNodePropertiesCommand.NotifyCanExecuteChanged();
         ApplyCameraCommand.NotifyCanExecuteChanged();
     }
 
     private void SetTransformFields(EngineSceneTransform? transform)
     {
-        // Populating the fields fires their setters; suppress the live push so
-        // selecting a node doesn't echo its current transform back to the engine.
-        _suppressLiveTransform = true;
-        try
-        {
-            HasTransform = transform is not null;
-            TranslationX = transform?.Display.TranslationX ?? string.Empty;
-            TranslationY = transform?.Display.TranslationY ?? string.Empty;
-            TranslationZ = transform?.Display.TranslationZ ?? string.Empty;
+        // Populating fires the setters; callers (Inspect / ClearNodeFields) hold
+        // _suppressLiveEdits so this doesn't echo back to the engine.
+        HasTransform = transform is not null;
+        TranslationX = transform?.Display.TranslationX ?? string.Empty;
+        TranslationY = transform?.Display.TranslationY ?? string.Empty;
+        TranslationZ = transform?.Display.TranslationZ ?? string.Empty;
 
-            RotationX = transform?.Display.RotationX ?? string.Empty;
-            RotationY = transform?.Display.RotationY ?? string.Empty;
-            RotationZ = transform?.Display.RotationZ ?? string.Empty;
+        RotationX = transform?.Display.RotationX ?? string.Empty;
+        RotationY = transform?.Display.RotationY ?? string.Empty;
+        RotationZ = transform?.Display.RotationZ ?? string.Empty;
 
-            ScaleX = transform?.Display.ScaleX ?? string.Empty;
-            ScaleY = transform?.Display.ScaleY ?? string.Empty;
-            ScaleZ = transform?.Display.ScaleZ ?? string.Empty;
-        }
-        finally
-        {
-            _suppressLiveTransform = false;
-        }
+        ScaleX = transform?.Display.ScaleX ?? string.Empty;
+        ScaleY = transform?.Display.ScaleY ?? string.Empty;
+        ScaleZ = transform?.Display.ScaleZ ?? string.Empty;
     }
 
     private void SetComponentFields(SceneTreeNodeViewModel node)

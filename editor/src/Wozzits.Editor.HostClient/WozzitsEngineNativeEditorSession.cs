@@ -199,6 +199,32 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetRuntimeSceneNodeTransform(runtime.Handle, nodeId, edit);
     }
 
+    public EngineMutationResponse SetSceneNodePropertiesLive(
+        string nodeId,
+        string name,
+        bool visible)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetRuntimeSceneNodeProperties(
+            runtime.Handle, nodeId, name, visible);
+    }
+
+    public EngineAddSceneNodeResponse AddChildNode(string parentId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = false,
+                Error = "Engine viewport is not running.",
+            };
+        }
+        return _client.AddChildNode(runtime.Handle, parentId);
+    }
+
     public EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit)

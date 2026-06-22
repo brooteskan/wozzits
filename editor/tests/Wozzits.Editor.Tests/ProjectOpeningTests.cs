@@ -4,6 +4,7 @@ using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
+using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.Tests;
 
@@ -644,13 +645,16 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("45", live.Edit.RotationZ);
         Assert.Equal("6", live.Edit.ScaleY);
 
-        viewModel.Inspector.ApplyNodePropertiesCommand.Execute(null);
+        // Name + visibility stream live too (no Apply button), and the rename
+        // reflects in the tree node's display text.
+        Assert.NotEmpty(editorSession.LiveProperties);
+        var liveProps = editorSession.LiveProperties[^1];
+        Assert.Equal("mesh", liveProps.NodeId);
+        Assert.Equal("renamed mesh", liveProps.Name);
+        Assert.False(liveProps.Visible);
+        Assert.Equal("mesh:renamed mesh", mesh.DisplayText);
 
-        var nodeProperties = Assert.Single(editorSession.NodeProperties);
-        Assert.Equal("mesh", nodeProperties.NodeId);
-        Assert.Equal("renamed mesh", nodeProperties.Name);
-        Assert.False(nodeProperties.Visible);
-
+        Assert.Empty(editorSession.NodeProperties);  // never hits the disk path
         Assert.Empty(editorSession.Transforms);
 
         viewModel.SceneTree.SelectNode(camera);
@@ -667,6 +671,38 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("0.05", cameraEdit.Edit.NearPlane);
         Assert.Equal("500", cameraEdit.Edit.FarPlane);
         Assert.Equal("1.6", cameraEdit.Edit.Aspect);
+    }
+
+    [Fact]
+    public void SceneTreeAddChildInsertsMintedNodeUnderParent()
+    {
+        var session = new RecordingEditorSession { NextAddedChildId = "7" };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "root",
+                        DisplayName = "Root",
+                        Kind = "node",
+                    },
+                ],
+            },
+        });
+
+        var root = Assert.Single(sceneTree.Nodes);
+        sceneTree.AddChild(root);
+
+        Assert.Equal("root", Assert.Single(session.AddChildParents));
+        var child = Assert.Single(root.Children);
+        Assert.Equal("7", child.Id);
+        Assert.Equal("7", child.DisplayText);  // no label yet -> just the id
+        Assert.Same(child, sceneTree.SelectedNode);
     }
 
     private static EngineProjectSnapshotResponse ProjectSnapshot(
@@ -806,9 +842,15 @@ public sealed partial class ProjectOpeningTests
 
         public List<NodePropertiesEdit> NodeProperties { get; } = [];
 
+        public List<NodePropertiesEdit> LiveProperties { get; } = [];
+
         public List<TransformEdit> Transforms { get; } = [];
 
         public List<TransformEdit> LiveTransforms { get; } = [];
+
+        public List<string> AddChildParents { get; } = [];
+
+        public string NextAddedChildId { get; set; } = "1";
 
         public List<CameraEdit> Cameras { get; } = [];
 
@@ -941,6 +983,15 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public EngineMutationResponse SetSceneNodePropertiesLive(
+            string nodeId,
+            string name,
+            bool visible)
+        {
+            LiveProperties.Add(new NodePropertiesEdit(nodeId, name, visible));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public EngineMutationResponse SetSceneNodeTransform(
             string nodeId,
             EngineSceneTransformEdit edit)
@@ -955,6 +1006,16 @@ public sealed partial class ProjectOpeningTests
         {
             LiveTransforms.Add(new TransformEdit(nodeId, edit));
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineAddSceneNodeResponse AddChildNode(string parentId)
+        {
+            AddChildParents.Add(parentId);
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = true,
+                NodeId = NextAddedChildId,
+            };
         }
 
         public EngineMutationResponse SetSceneNodeCamera(

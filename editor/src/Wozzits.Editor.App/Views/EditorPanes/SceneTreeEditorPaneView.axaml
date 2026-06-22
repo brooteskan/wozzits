@@ -19,9 +19,15 @@
                         <TreeDataTemplate DataType="panes:SceneTreeNodeViewModel"
                                           ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add Child"
+                                                  Click="AddChildClicked"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
                                 <TextBlock Text="{Binding KindLabel}"
                                            Classes="SceneTreeNodeKind"/>
-                                <TextBlock Text="{Binding DisplayName}"
+                                <TextBlock Text="{Binding DisplayText}"
                                            Classes="SceneTreeNodeName"/>
                             </StackPanel>
                         </TreeDataTemplate>

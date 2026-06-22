@@ -171,6 +171,16 @@ public sealed record EngineAddNodeResponse
     public ulong NodeId { get; init; }
 }
 
+public sealed record EngineAddSceneNodeResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    // The id the engine minted for the new node (a counter, as a string).
+    public string NodeId { get; init; } = string.Empty;
+}
+
 public sealed record EngineAssetCatalogResponse
 {
     public bool Ok { get; init; }

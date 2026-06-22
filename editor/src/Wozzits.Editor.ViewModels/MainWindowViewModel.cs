@@ -37,6 +37,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(editorSession);
+        SceneTree = new SceneTreeEditorPaneViewModel(editorSession);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
 
@@ -56,7 +57,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public string ProjectName { get; } = string.Empty;
     public AssetGraphEditorPaneViewModel AssetGraph { get; }
     public AssetBrowserPaneViewModel AssetBrowser { get; }
-    public SceneTreeEditorPaneViewModel SceneTree { get; } = new();
+    public SceneTreeEditorPaneViewModel SceneTree { get; }
     public InspectorPaneViewModel Inspector { get; }
     public ConsolePaneViewModel Console { get; private set; } = null!;
     public IFactory DockFactory { get; private set; } = null!;

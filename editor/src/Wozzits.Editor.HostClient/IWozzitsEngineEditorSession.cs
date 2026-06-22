@@ -61,6 +61,17 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         EngineSceneTransformEdit edit);
 
+    // Live node label/visibility edit to the running scene; no-op success when
+    // no viewport is running.
+    EngineMutationResponse SetSceneNodePropertiesLive(
+        string nodeId,
+        string name,
+        bool visible);
+
+    // Add a child node under parentId (empty => top level) in the running scene
+    // and return the engine-minted id. Errors if no viewport is running.
+    EngineAddSceneNodeResponse AddChildNode(string parentId);
+
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit);
