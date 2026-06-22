@@ -282,11 +282,8 @@ namespace wz::engine::rendering
         registered_shaders_.clear();
     }
 
-    bool RhiSceneRenderer::register_shader_from_source(
-        ea::EngineAssetLibrary& assets,
-        const wz::asset::AssetKey& shader_key,
-        wz::rhi::ShaderStage stage,
-        const char* target)
+    bool RhiSceneRenderer::ensure_shader_module(
+        const wz::asset::AssetKey& shader_key)
     {
         if (auto it = registered_shaders_.find(shader_key);
             it != registered_shaders_.end())
@@ -294,30 +291,18 @@ namespace wz::engine::rendering
             return it->second;
         }
 
-        // Find-then-fallback: the asset compiler may have already produced this
-        // shader module during resolve. If so, skip the render-time D3DCompile.
-        if (gpu_.shaders.find(wz::engine::rendering::shader_ref(shader_key))
-                .valid())
-        {
-            registered_shaders_[shader_key] = true;
-            return true;
+        // The shader compiler produces every shader's rhi ShaderModule under
+        // shader_ref(key) during resolve (#193) — the renderer never compiles
+        // shaders. Verify the module is present; the program PSO realize then
+        // resolves its bytecode via resolve_program_bytecode.
+        const bool ok =
+            gpu_.shaders.find(wz::engine::rendering::shader_ref(shader_key))
+                .valid();
+        if (!ok) {
+            logger_.error(
+                "RhiSceneRenderer: shader module missing for program "
+                "(not produced by the shader compiler)");
         }
-
-        const auto source = assets.rhi_shader_source(shader_key);
-        if (!source) {
-            registered_shaders_[shader_key] = false;
-            return false;
-        }
-        const auto bytecode = wz::engine::rendering::compile_hlsl_bytecode(
-            source->bytes, source->entry, target, logger_);
-        if (!bytecode) {
-            registered_shaders_[shader_key] = false;
-            return false;
-        }
-        const wz::rhi::Tag tag = gpu_.shaders.register_program(
-            wz::rhi::ShaderModuleDesc{
-                wz::engine::rendering::shader_ref(shader_key), stage, *bytecode });
-        const bool ok = tag.valid();
         registered_shaders_[shader_key] = ok;
         return ok;
     }
@@ -370,10 +355,8 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        if (!register_shader_from_source(
-                assets, vertex_key, wz::rhi::ShaderStage::Vertex, "vs_5_1")
-            || !register_shader_from_source(
-                assets, pixel_key, wz::rhi::ShaderStage::Pixel, "ps_5_1"))
+        if (!ensure_shader_module(vertex_key)
+            || !ensure_shader_module(pixel_key))
         {
             return nullptr;
         }

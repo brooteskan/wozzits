@@ -4,12 +4,17 @@
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/shader/hlsl_compile_desc.h>
+#include <engine/rendering/rhi_render_program_bridge.h>
 #include <file/filesystem.h>
 #include <gpu/shader.h>
 
+#include <wozzits/rhi/shader_module.h>
+
 #include <array>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <cctype>
 
 namespace wz::engine::assets::internal
@@ -56,12 +61,26 @@ namespace wz::engine::assets::internal
             }
             return std::string(raw);
         }
+
+        wz::rhi::ShaderStage rhi_shader_stage(wz::gpu::ShaderStage stage)
+        {
+            switch (stage) {
+            case wz::gpu::ShaderStage::Vertex:
+                return wz::rhi::ShaderStage::Vertex;
+            case wz::gpu::ShaderStage::Pixel:
+                return wz::rhi::ShaderStage::Pixel;
+            case wz::gpu::ShaderStage::Compute:
+                return wz::rhi::ShaderStage::Compute;
+            }
+            return wz::rhi::ShaderStage::Vertex;
+        }
     }
 
     void register_shader_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        wz::gpu::Device& device)
+        wz::gpu::Device& device,
+        wz::rhi::ShaderModuleRegistry* shaders)
     {
         // ── HLSL file carrier compiler ────────────────────────────────────────
         //
@@ -153,7 +172,7 @@ namespace wz::engine::assets::internal
                     .default_num = 0.0,
                 },
             },
-            .compile = [&logger, &device](
+            .compile = [&logger, &device, shaders](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -208,6 +227,30 @@ namespace wz::engine::assets::internal
                 if (!gpu_handle.valid()) {
                     logger.error("gpu.compile_hlsl failed");
                     return compile_failed_node(input);
+                }
+
+                // Dual-output: also D3DCompile the primary source to bytecode
+                // and register an rhi ShaderModule under shader_ref(key) so the
+                // render-program compiler references it instead of re-compiling
+                // (#193). Best-effort; the legacy GPUHandle above is what the
+                // legacy renderer still consumes until it retires (#179).
+                if (shaders) {
+                    const std::span<const uint8_t> primary =
+                        sources[desc->primary_source_index];
+                    const std::optional<std::vector<uint8_t>> bytecode =
+                        wz::engine::rendering::compile_hlsl_bytecode(
+                            primary, desc->entry, desc->target.c_str(), logger);
+                    if (bytecode) {
+                        shaders->register_program(wz::rhi::ShaderModuleDesc{
+                            wz::engine::rendering::shader_ref(input.key),
+                            rhi_shader_stage(desc->stage),
+                            *bytecode });
+                    }
+                    else {
+                        logger.warn(
+                            "shader: rhi ShaderModule compile failed entry="
+                            + desc->entry);
+                    }
                 }
 
                 wz::asset::AssetNode out = input;

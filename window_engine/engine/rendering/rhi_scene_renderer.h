@@ -144,11 +144,10 @@ namespace wz::engine::rendering
         RealizedRenderable* ensure_renderable(
             wz::engine::assets::EngineAssetLibrary& assets,
             const wz::asset::AssetKey& renderable_key);
-        bool register_shader_from_source(
-            wz::engine::assets::EngineAssetLibrary& assets,
-            const wz::asset::AssetKey& shader_key,
-            wz::rhi::ShaderStage stage,
-            const char* target);
+        // Verify the shader's rhi ShaderModule (produced by the shader compiler
+        // under shader_ref(key)) is registered. The renderer never compiles
+        // shaders; this just gates the render-time program fallback (#193).
+        bool ensure_shader_module(const wz::asset::AssetKey& shader_key);
 
         EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;

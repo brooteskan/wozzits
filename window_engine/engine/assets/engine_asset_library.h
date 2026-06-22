@@ -67,7 +67,6 @@
 
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/compute_pipeline_asset_module.h>
-#include <engine/assets/rhi_shader_source.h>
 
 #include <engine/assets/light/light.h>
 #include <engine/assets/light_asset_module.h>
@@ -359,22 +358,17 @@ namespace wz::engine::assets
             const wz::asset::AssetKey& key,
             std::vector<wz::rhi::ResourceIdentity> identities);
 
-        // Read a shader asset's HLSL source bytes + entry point (the shader
-        // node's ShaderSource file-carrier dependency). Used by the renderer's
-        // render-time fallback and, via the provider handed to the render-program
-        // compiler, by the compiler to D3DCompile the rhi ShaderModule during
-        // resolve. Returns nullopt if the shader/source is not resolved.
-        [[nodiscard]] std::optional<RhiShaderSource> rhi_shader_source(
-            const wz::asset::AssetKey& shader_key) const;
-
-        // Clear the shared rhi render-program / compute-program / shader-module
-        // registries (owned by EngineGpuContext). The graph-swap path calls this
-        // BEFORE resolve re-registers, so the compiler refills clean registries
-        // and the fixed-capacity registries don't grow across editor swaps. No-op
-        // when no EngineGpuContext is present (device-only library). The renderer
-        // no longer clears these in on_graph_changed — the asset side owns their
-        // lifecycle now. Semantic registries are graph-independent and kept.
-        void reset_rhi_render_program_registries();
+        // Reconcile the shared rhi render-program / shader-module registries
+        // (owned by EngineGpuContext) against the live registered set: keep the
+        // entries whose AssetKey is still registered, release the rest. The
+        // graph-swap path calls this AFTER resolve. Survivor-preserving, so a
+        // same-content rebind (resolve is a cache hit, the compiler skipped) does
+        // not lose the already-registered program/shaders; bounded, because
+        // content-addressed names mean changed content registers a new entry and
+        // this releases the stale one. No-op for a device-only library. The
+        // renderer no longer clears these in on_graph_changed; the asset side owns
+        // their lifecycle. Semantic registries are graph-independent and kept.
+        void reconcile_rhi_render_program_registries();
 
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.

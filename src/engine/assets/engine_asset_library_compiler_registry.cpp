@@ -20,7 +20,8 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry registry;
 
         register_file_carrier_compilers(registry, ctx.logger);
-        register_shader_compilers(registry, ctx.logger, ctx.device);
+        register_shader_compilers(
+            registry, ctx.logger, ctx.device, ctx.shader_module_registry);
         register_scalar_field_compilers(
             registry,
             ctx.logger,
@@ -87,10 +88,8 @@ namespace wz::engine::assets::internal
             ctx.logger,
             ctx.render_program_table,
             ctx.render_program_registry,
-            ctx.shader_module_registry,
             ctx.descriptor_semantic_registry,
-            ctx.constant_semantic_registry,
-            ctx.rhi_shader_source_provider);
+            ctx.constant_semantic_registry);
         register_compute_pipeline_compilers(registry, ctx.logger, ctx.compute_pipeline_table);
         register_light_compilers(
             registry,

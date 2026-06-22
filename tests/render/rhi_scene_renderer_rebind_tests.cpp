@@ -190,10 +190,19 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     const std::size_t resident_after_rebind = app.resident_gpu_resource_count();
     EXPECT_EQ(resident_after_rebind, resident_after_first)
         << "rebind leaked resources (count grew) or failed to re-realize";
-    // Programs were retired on the swap and re-registered for the new graph —
-    // the registry occupancy returns flat, it does not accumulate across binds.
+    // Programs/shaders are kept across a same-content rebind by the survivor-
+    // preserving reconcile (not retired + re-registered), so registry occupancy
+    // returns flat without depending on the compiler re-running on a cache hit.
     EXPECT_EQ(app.registered_program_count(), programs_after_first)
-        << "rebind grew the render-program registry (slots leaked)";
+        << "rebind grew or emptied the render-program registry";
+    // #193: with the reconcile keeping the compiler-produced program and the
+    // shader asset producing its own rhi ShaderModule, the renderer binds the
+    // program by find even after a same-content rebind — it never bridges at
+    // render time. So render-time bridges stay 0 across BOTH the first render and
+    // the rebind (the gap #192's first-render-only assertion left unguarded).
+    EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
+        << "custom program was bridged at render time after a same-content "
+           "rebind — the reconcile / shader-module path did not survive the swap";
 }
 
 // Criterion 2, missing-node case: when the replacement graph no longer contains

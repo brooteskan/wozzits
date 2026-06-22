@@ -7,6 +7,7 @@
 #include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/rendering/engine_gpu_context.h>
+#include <engine/rendering/rhi_render_program_bridge.h>
 
 #include <wozzits/rhi/gpu_resource_registry.h>
 
@@ -18,6 +19,8 @@
 #include <optional>
 #include <span>
 #include <sstream>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -309,11 +312,6 @@ namespace wz::engine::assets
                     gpu_context ? &gpu_context->descriptor_semantics : nullptr,
                 .constant_semantic_registry =
                     gpu_context ? &gpu_context->constant_semantics : nullptr,
-                .rhi_shader_source_provider =
-                    [this](const wz::asset::AssetKey& key)
-                    {
-                        return rhi_shader_source(key);
-                    },
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)
@@ -484,62 +482,57 @@ namespace wz::engine::assets
         rhi_resource_tracker_.resize(write);
     }
 
-    std::optional<RhiShaderSource> EngineAssetLibrary::rhi_shader_source(
-        const wz::asset::AssetKey& shader_key) const
+    void EngineAssetLibrary::reconcile_rhi_render_program_registries()
     {
-        // The shader node's first dependency is its ShaderSource file carrier,
-        // whose compiled payload is the HLSL bytes; the entry comes from the
-        // shader node's params. Mirrors the renderer's render-time read, exposed
-        // so the render-program compiler can D3DCompile during resolve.
-        const wz::asset::AssetSystem::RegistrationEntry* shader_entry = nullptr;
-        for (const wz::asset::AssetSystem::RegistrationEntry& entry :
-             system_.registered_assets())
-        {
-            if (entry.node.key == shader_key) {
-                shader_entry = &entry;
-                break;
-            }
-        }
-        if (!shader_entry || shader_entry->dep_keys.empty()) {
-            return std::nullopt;
-        }
-        const wz::asset::AssetNode* source =
-            system_.find_compiled_node(shader_entry->dep_keys[0]);
-        if (!source) {
-            return std::nullopt;
-        }
-        const auto* bytes =
-            std::get_if<std::vector<uint8_t>>(&source->payload);
-        if (!bytes || bytes->empty()) {
-            return std::nullopt;
-        }
-        std::string entry = "main";
-        if (const auto* params = std::any_cast<wz::asset::ParamBlock>(
-                &shader_entry->node.meta))
-        {
-            entry = params->get<std::string>("entry", "main");
-            if (entry.empty()) {
-                entry = "main";
-            }
-        }
-        return RhiShaderSource{
-            std::span<const uint8_t>{ bytes->data(), bytes->size() },
-            std::move(entry) };
-    }
-
-    void EngineAssetLibrary::reset_rhi_render_program_registries()
-    {
-        // Wholesale clear before resolve re-registers (graph swap). The renderer
-        // no longer clears these in on_graph_changed — clearing there would wipe
-        // the program the compiler just registered during resolve (which runs
-        // BEFORE on_graph_changed in the bind path). Semantic registries are
-        // graph-independent (small, content-named) and deliberately kept.
         if (!gpu_context_) {
             return;
         }
-        gpu_context_->programs.clear();
-        gpu_context_->compute_programs.clear();
-        gpu_context_->shaders.clear();
+
+        // Survivor-preserving reconcile (not a wholesale clear), run AFTER
+        // resolve. Build the set of names that SHOULD be resident — shader_ref /
+        // program_ref of every Shader / RenderProgram still in the registered set
+        // — then release any registry entry whose name is not in it. Content-
+        // addressed names make this exact: unchanged content keeps its slot
+        // across a rebind (so a cache-hit resolve that skips the compiler does
+        // not lose it), changed content registers a new entry and the stale one
+        // is released here. Mirrors release_unregistered_rhi_resources for GPU
+        // buffers; bounded across editor swaps.
+        std::unordered_set<std::string> live_programs;
+        std::unordered_set<std::string> live_shaders;
+        for (const wz::asset::AssetSystem::RegistrationEntry& entry :
+             system_.registered_assets())
+        {
+            if (entry.node.type == kAssetTypeRenderProgram) {
+                live_programs.insert(
+                    wz::engine::rendering::program_ref(entry.node.key));
+            }
+            else if (entry.node.type == wz::asset::AssetType::Shader) {
+                live_shaders.insert(
+                    wz::engine::rendering::shader_ref(entry.node.key));
+            }
+        }
+
+        std::vector<wz::rhi::Tag> stale;
+        gpu_context_->programs.visit(
+            [&](wz::rhi::Tag tag, const wz::rhi::RenderProgramDesc& desc) {
+                if (live_programs.find(desc.name) == live_programs.end()) {
+                    stale.push_back(tag);
+                }
+            });
+        for (const wz::rhi::Tag tag : stale) {
+            gpu_context_->programs.release(tag);
+        }
+
+        stale.clear();
+        gpu_context_->shaders.visit(
+            [&](wz::rhi::Tag tag, const wz::rhi::ShaderModuleDesc& desc) {
+                if (live_shaders.find(desc.name) == live_shaders.end()) {
+                    stale.push_back(tag);
+                }
+            });
+        for (const wz::rhi::Tag tag : stale) {
+            gpu_context_->shaders.release(tag);
+        }
     }
 
     wz::asset::AssetKeyFactoryFn EngineAssetLibrary::draft_key_factory() const

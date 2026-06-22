@@ -89,15 +89,6 @@ namespace wz::app
             return result;
         }
 
-        // Clear the shared rhi program/shader registries BEFORE resolve so the
-        // render-program compiler refills clean registries: content-addressed
-        // program/shader names would otherwise accumulate across editor graph
-        // swaps and eventually fill the fixed-capacity registries. Must run after
-        // commit() (registered set replaced) and before resolve_all() (the
-        // compiler re-registers). The renderer no longer clears these in
-        // on_graph_changed — doing so there would wipe the just-produced program.
-        ctx_.assets->reset_rhi_render_program_registries();
-
         // Resolve: the actual compile pass — run every node's compiler, filling
         // ResourceHandles. Failures (missing files, compiler errors) surface here.
         // Through the library so we get its resolve logging + a structured report.
@@ -132,6 +123,17 @@ namespace wz::app
         }
 
         graph_epoch_ = sys.registration_epoch();
+
+        // Reconcile the shared rhi program/shader registries AFTER resolve: keep
+        // the entries whose AssetKey is still in the live registered set, release
+        // the rest. Survivor-preserving (not a wholesale clear), so a same-content
+        // rebind — where resolve is a cache hit and the compiler is skipped —
+        // keeps the already-registered program/shaders instead of emptying the
+        // registry (which, once the render-program compiler's render-time
+        // D3DCompile fallback is gone, would fail to realize). Content-addressed
+        // names make it exact: unchanged content keeps its slot; changed content
+        // adds a new entry and this releases the stale one (bounded across swaps).
+        ctx_.assets->reconcile_rhi_render_program_registries();
 
         // Deferred-release shared-registry residency for assets that dropped out
         // of the freshly committed graph. Asset-type agnostic — the library owns

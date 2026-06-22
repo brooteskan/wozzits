@@ -51,8 +51,6 @@
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene/scene_compilers.h>
 
-#include <engine/assets/rhi_shader_source.h>
-
 #include <gpu/shader.h>
 
 #include <wozzits/rhi/constants_layout.h>
@@ -125,17 +123,16 @@ namespace wz::engine::assets::internal {
         // acquire shared-registry buffers record (key → identities) through this
         // so the library can release them on de-registration. May be empty.
         RhiResourceTracker                  rhi_resource_tracker;
-        // Shared rhi registries (owned by EngineGpuContext) that the render-
-        // program compiler registers the produced program/shaders into. Null for
-        // a device-only library, where the compiler skips rhi production and the
+        // Shared rhi registries (owned by EngineGpuContext): the shader compiler
+        // registers ShaderModules into shader_module_registry, the render-program
+        // compiler registers the program into render_program_registry (resolving
+        // its semantics through the descriptor/constant registries). Null for a
+        // device-only library, where the compilers skip rhi production and the
         // renderer falls back to bridging the legacy program at render time.
         wz::rhi::RenderProgramRegistry*      render_program_registry = nullptr;
         wz::rhi::ShaderModuleRegistry*       shader_module_registry = nullptr;
         wz::rhi::DescriptorSemanticRegistry* descriptor_semantic_registry = nullptr;
         wz::rhi::ConstantSemanticRegistry*   constant_semantic_registry = nullptr;
-        // Reads a shader's HLSL source for the render-program compiler's
-        // D3DCompile (the compiler has no AssetSystem access of its own).
-        RhiShaderSourceProvider              rhi_shader_source_provider;
     };
 
     wz::asset::AssetNode compile_failed_node(
