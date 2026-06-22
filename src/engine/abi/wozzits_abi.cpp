@@ -8,6 +8,8 @@
 #include <engine/editor/project_snapshot.h>
 #include <engine/project/project_runtime_launch.h>
 
+#include <math/quaternion.h>
+
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -974,6 +976,65 @@ extern "C"
         }
         catch (...) {
             return result(WZ_RESULT_INTERNAL_ERROR, "asset graph bind failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_transform(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        double translation_x,
+        double translation_y,
+        double translation_z,
+        double rotation_x_degrees,
+        double rotation_y_degrees,
+        double rotation_z_degrees,
+        double scale_x,
+        double scale_y,
+        double scale_z)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+
+        try {
+            const wz::math::Quaternion q =
+                wz::math::quaternion_from_euler_degrees(
+                    static_cast<float>(rotation_x_degrees),
+                    static_cast<float>(rotation_y_degrees),
+                    static_cast<float>(rotation_z_degrees));
+
+            wz::engine::assets::AuthoredTransform transform;
+            transform.translation[0] = static_cast<float>(translation_x);
+            transform.translation[1] = static_cast<float>(translation_y);
+            transform.translation[2] = static_cast<float>(translation_z);
+            transform.rotation_quat[0] = q.x;
+            transform.rotation_quat[1] = q.y;
+            transform.rotation_quat[2] = q.z;
+            transform.rotation_quat[3] = q.w;
+            transform.scale[0] = static_cast<float>(scale_x);
+            transform.scale[1] = static_cast<float>(scale_y);
+            transform.scale[2] = static_cast<float>(scale_z);
+
+            // Fire-and-forget: queued for the engine thread, applied next frame.
+            runtime->control.post_scene_node_transform(
+                wz::app::SceneNodeTransformEdit{
+                    .id = node_id_utf8,
+                    .transform = transform,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene node transform post failed");
         }
     }
 

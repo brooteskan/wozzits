@@ -625,6 +625,25 @@ WZ_ABI_API WzResult wz_editor_runtime_bind_draft(
     WzEditorRuntime* runtime,
     WzEditorSession* session);
 
+// Live scene-node transform edit posted to the running engine (non-blocking;
+// applied on the engine thread's next frame, no disk write). Rotation is given
+// as intrinsic Tait-Bryan euler angles in DEGREES (X, Y, Z), converted to a
+// quaternion engine-side so that conversion never lives in the editor. Returns
+// WZ_RESULT_OK once queued; WZ_RESULT_INVALID_ARGUMENT for a null runtime or an
+// empty node id.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_transform(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    double translation_x,
+    double translation_y,
+    double translation_z,
+    double rotation_x_degrees,
+    double rotation_y_degrees,
+    double rotation_z_degrees,
+    double scale_x,
+    double scale_y,
+    double scale_z);
+
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
 #ifdef __cplusplus

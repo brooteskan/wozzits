@@ -12,6 +12,16 @@ namespace wz::math
     Quaternion mul(const Quaternion& a, const Quaternion& b);
 
     Quaternion from_axis_angle(const Vec3& axis, float angle);
+
+    // Build a rotation from intrinsic Tait-Bryan euler angles in DEGREES,
+    // applied X(roll) -> Y(pitch) -> Z(yaw), i.e. q = qz * qy * qx. This is the
+    // inverse of the editor snapshot's quat->euler extraction (scene_snapshot.cpp
+    // rotation_euler_degrees_from_quat), so a rotation edited as euler in the
+    // inspector round-trips through the engine unchanged.
+    Quaternion quaternion_from_euler_degrees(
+        float x_degrees,
+        float y_degrees,
+        float z_degrees);
     // Extracts a quaternion from the upper-left 3x3 rotation matrix.
     // The input is expected to be orthonormal; use decompose_trs() for full
     // TRS matrices that may include translation and scale.

@@ -53,6 +53,24 @@ namespace wz::math
         };
     }
 
+    Quaternion quaternion_from_euler_degrees(
+        float x_degrees,
+        float y_degrees,
+        float z_degrees)
+    {
+        constexpr float kDegreesToRadians =
+            3.14159265358979323846f / 180.0f;
+        const Quaternion qx = from_axis_angle(
+            { 1.0f, 0.0f, 0.0f }, x_degrees * kDegreesToRadians);
+        const Quaternion qy = from_axis_angle(
+            { 0.0f, 1.0f, 0.0f }, y_degrees * kDegreesToRadians);
+        const Quaternion qz = from_axis_angle(
+            { 0.0f, 0.0f, 1.0f }, z_degrees * kDegreesToRadians);
+        // q = qz * qy * qx — the ZYX order that inverts the snapshot's
+        // rotation_euler_degrees_from_quat extraction.
+        return mul(qz, mul(qy, qx));
+    }
+
     Quaternion from_rotation_matrix(const Mat4& m)
     {
         const float m00 = m.m[0];
