@@ -1038,6 +1038,74 @@ extern "C"
         }
     }
 
+    WzResult wz_editor_runtime_set_node_properties(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* name_utf8,
+        uint32_t visible)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_properties(
+                wz::app::SceneNodePropertiesEdit{
+                    .id = node_id_utf8,
+                    .name = name_utf8 ? name_utf8 : "",
+                    .visible = visible != 0u,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene node properties post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_add_child_node(
+        WzEditorRuntime* runtime,
+        const char* parent_id_utf8,
+        WzBuffer* out_new_id)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_new_id, "out_new_id");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const wz::engine::assets::SceneAddChildResult added =
+                runtime->control.add_child(
+                    parent_id_utf8 ? parent_id_utf8 : "");
+            if (!added.ok) {
+                return dynamic_error(WZ_RESULT_INVALID_ARGUMENT, added.error);
+            }
+            const std::vector<uint8_t> bytes(
+                added.new_id.begin(), added.new_id.end());
+            return copy_bytes_to_buffer(bytes, out_new_id);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "add child node failed");
+        }
+    }
+
     void wz_free_buffer(WzBuffer* buffer)
     {
         if (!buffer) {

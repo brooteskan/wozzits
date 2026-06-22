@@ -95,6 +95,22 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id,
             const wz::engine::assets::AuthoredTransform& transform);
 
+        // Live scene-node add: append a new child (no components, no label) under
+        // `parent_id` (empty => top level) in the in-memory scene, minting a
+        // counter id. Returns {ok, new_id, error}; rejects a missing parent. The
+        // next render_scene() includes it; persistence is a separate path.
+        wz::engine::assets::SceneAddChildResult add_child_node(
+            const wz::scene::AuthoredEntityId& parent_id);
+
+        // Live scene-node properties edit: set the node's label (name) and
+        // visibility in the in-memory scene; false if no node has that id. The
+        // renderer skips invisible nodes, so this hides/shows it live.
+        // Persistence is a separate path.
+        bool set_node_properties(
+            const wz::scene::AuthoredEntityId& id,
+            std::string name,
+            bool visible);
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the

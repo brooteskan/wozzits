@@ -16,6 +16,7 @@
 namespace
 {
     using wz::app::EditorRuntimeControl;
+    using wz::app::SceneNodePropertiesEdit;
     using wz::app::SceneNodeTransformEdit;
 
     SceneNodeTransformEdit make_edit(std::string id, float tx)
@@ -84,4 +85,26 @@ TEST(EditorRuntimeControl, ServiceWithEmptyQueueDoesNothing)
 {
     EditorRuntimeControl control;
     EXPECT_TRUE(drain(control).empty());
+}
+
+TEST(EditorRuntimeControl, PropertiesPostCoalescesByIdAndDrainsOnce)
+{
+    EditorRuntimeControl control;
+    control.post_scene_node_properties(
+        SceneNodePropertiesEdit{ .id = "n", .name = "a", .visible = true });
+    control.post_scene_node_properties(
+        SceneNodePropertiesEdit{ .id = "n", .name = "b", .visible = false });
+
+    std::vector<SceneNodePropertiesEdit> applied;
+    control.service_pending_scene_node_properties(
+        [&applied](const SceneNodePropertiesEdit& edit) { applied.push_back(edit); });
+
+    ASSERT_EQ(applied.size(), 1u);     // one node -> one apply
+    EXPECT_EQ(applied[0].name, "b");   // latest wins
+    EXPECT_FALSE(applied[0].visible);
+
+    std::vector<SceneNodePropertiesEdit> again;
+    control.service_pending_scene_node_properties(
+        [&again](const SceneNodePropertiesEdit& edit) { again.push_back(edit); });
+    EXPECT_TRUE(again.empty());
 }

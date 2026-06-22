@@ -176,6 +176,73 @@ TEST(SceneNodeList, SetTransformOverwritesOnlyTargetLocal)
     EXPECT_FLOAT_EQ(nodes[0].local.scale[0], 1.f);
 }
 
+TEST(SceneNodeList, MintIdIsACounterSkippingNamedNodes)
+{
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "root";   // named — ignored by the counter
+    nodes[1].id = "5";      // numeric slot
+    nodes[2].id = "mesh";   // named — ignored
+
+    EXPECT_EQ(mint_scene_node_id(nodes), "6");  // max numeric (5) + 1
+
+    std::vector<SceneNodeAsset> empty;
+    EXPECT_EQ(mint_scene_node_id(empty), "1");
+
+    std::vector<SceneNodeAsset> named(1);
+    named[0].id = "root";
+    EXPECT_EQ(mint_scene_node_id(named), "1");  // no numeric ids yet
+}
+
+TEST(SceneNodeList, AddChildUnderParent)
+{
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "root";
+
+    const auto result = add_child_scene_node(nodes, "root");
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.new_id, "1");
+    EXPECT_EQ(nodes.size(), 2u);
+
+    const SceneNodeAsset* added = find_scene_node(nodes, "1");
+    ASSERT_NE(added, nullptr);
+    ASSERT_TRUE(added->parent_id.has_value());
+    EXPECT_EQ(*added->parent_id, "root");
+}
+
+TEST(SceneNodeList, AddChildAtTopLevel)
+{
+    std::vector<SceneNodeAsset> nodes;
+
+    const auto result = add_child_scene_node(nodes, "");  // empty parent => root
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.new_id, "1");
+    ASSERT_NE(find_scene_node(nodes, "1"), nullptr);
+    EXPECT_FALSE(find_scene_node(nodes, "1")->parent_id.has_value());
+}
+
+TEST(SceneNodeList, AddChildRejectsMissingParent)
+{
+    std::vector<SceneNodeAsset> nodes;
+
+    const auto result = add_child_scene_node(nodes, "nope");
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.empty());
+    EXPECT_TRUE(nodes.empty());
+}
+
+TEST(SceneNodeList, SetPropertiesUpdatesNameAndVisibility)
+{
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "n";
+    nodes[0].visible = true;
+
+    EXPECT_TRUE(set_scene_node_properties(nodes, "n", "Left Arm", false));
+    EXPECT_EQ(nodes[0].name, "Left Arm");
+    EXPECT_FALSE(nodes[0].visible);
+
+    EXPECT_FALSE(set_scene_node_properties(nodes, "missing", "x", true));
+}
+
 TEST(SceneAuthoring, AssignAndClearRenderable)
 {
     SceneAssetData scene;

@@ -644,6 +644,25 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_transform(
     double scale_y,
     double scale_z);
 
+// Live node label/visibility edit posted to the running engine (non-blocking,
+// applied on the engine thread's next frame, no disk write). The renderer skips
+// invisible nodes, so this hides/shows live. WZ_RESULT_INVALID_ARGUMENT for a
+// null runtime or an empty node id.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_properties(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* name_utf8,
+    uint32_t visible);
+
+// Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
+// running scene, blocking until the engine thread applies it, and return the
+// minted counter id in out_new_id (UTF-8; free with wz_free_buffer).
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime or a missing parent.
+WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
+    WzEditorRuntime* runtime,
+    const char* parent_id_utf8,
+    WzBuffer* out_new_id);
+
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
 #ifdef __cplusplus

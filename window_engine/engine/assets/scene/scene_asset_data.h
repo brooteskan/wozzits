@@ -1643,6 +1643,84 @@ namespace wz::engine::assets
         return nullptr;
     }
 
+    // Mint the next free node id for a flat node list. New nodes use a plain
+    // integer counter (as a string); existing non-numeric ids (root, mesh, ...)
+    // are skipped, so the counter only fills numeric slots and never collides.
+    inline wz::scene::AuthoredEntityId mint_scene_node_id(
+        const std::vector<SceneNodeAsset>& nodes)
+    {
+        uint64_t next = 1u;
+        for (const SceneNodeAsset& node : nodes) {
+            if (node.id.empty()) {
+                continue;
+            }
+            uint64_t value = 0u;
+            bool numeric = true;
+            for (const char c : node.id) {
+                if (c < '0' || c > '9') {
+                    numeric = false;
+                    break;
+                }
+                value = (value * 10u) + static_cast<uint64_t>(c - '0');
+            }
+            if (numeric && value >= next) {
+                next = value + 1u;
+            }
+        }
+        return std::to_string(next);
+    }
+
+    struct SceneAddChildResult
+    {
+        bool ok = false;
+        wz::scene::AuthoredEntityId new_id;
+        std::string error;
+    };
+
+    // Append a new child node (no components, no label yet) under parent_id in a
+    // flat node list. An empty parent_id adds at the top level; otherwise the
+    // parent must exist. The id is minted via mint_scene_node_id. This is the
+    // in-memory apply behind the editor's "add child"; persistence is separate.
+    inline SceneAddChildResult add_child_scene_node(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& parent_id)
+    {
+        if (!parent_id.empty() && !find_scene_node(nodes, parent_id)) {
+            return SceneAddChildResult{
+                .ok = false,
+                .new_id = {},
+                .error = "parent node does not exist",
+            };
+        }
+
+        SceneNodeAsset node;
+        node.id = mint_scene_node_id(nodes);
+        const wz::scene::AuthoredEntityId new_id = node.id;
+        if (!parent_id.empty()) {
+            node.parent_id = parent_id;
+        }
+        nodes.push_back(std::move(node));
+        return SceneAddChildResult{ .ok = true, .new_id = new_id, .error = {} };
+    }
+
+    // Set a node's editable label (name) and visibility in a flat node list.
+    // Returns false if no node has that id. The in-memory apply behind the
+    // editor's live name/visibility edits; persistence is a separate path.
+    inline bool set_scene_node_properties(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id,
+        std::string name,
+        bool visible)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, id);
+        if (!node) {
+            return false;
+        }
+        node->name = std::move(name);
+        node->visible = visible;
+        return true;
+    }
+
     inline bool is_direct_child_scene_node(
         const SceneNodeAsset& parent,
         const SceneNodeAsset& child) noexcept

@@ -312,6 +312,21 @@ namespace wz::app
         return true;
     }
 
+    wz::engine::assets::SceneAddChildResult WozzitsApp_v1::add_child_node(
+        const wz::scene::AuthoredEntityId& parent_id)
+    {
+        return wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
+    }
+
+    bool WozzitsApp_v1::set_node_properties(
+        const wz::scene::AuthoredEntityId& id,
+        std::string name,
+        bool visible)
+    {
+        return wz::engine::assets::set_scene_node_properties(
+            scene_nodes_, id, std::move(name), visible);
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {

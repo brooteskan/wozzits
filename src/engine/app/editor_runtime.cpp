@@ -155,6 +155,93 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_properties(
+        SceneNodePropertiesEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (SceneNodePropertiesEdit& pending : pending_properties_) {
+            if (pending.id == edit.id) {
+                pending.name = std::move(edit.name);  // coalesce: latest wins
+                pending.visible = edit.visible;
+                return;
+            }
+        }
+        pending_properties_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_properties(
+        const std::function<void(const SceneNodePropertiesEdit&)>& applier)
+    {
+        std::vector<SceneNodePropertiesEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_properties_.empty()) {
+                return;
+            }
+            edits.swap(pending_properties_);
+        }
+
+        for (const SceneNodePropertiesEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
+    wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
+        const wz::scene::AuthoredEntityId& parent_id)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !has_add_request_ || finished_; });
+        if (finished_) {
+            return wz::engine::assets::SceneAddChildResult{
+                .ok = false,
+                .new_id = {},
+                .error = "engine runtime is not running",
+            };
+        }
+
+        pending_add_parent_ = parent_id;
+        has_add_request_ = true;
+        has_add_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(lock, [this] { return has_add_result_ || finished_; });
+        if (!has_add_result_) {
+            has_add_request_ = false;
+            return wz::engine::assets::SceneAddChildResult{
+                .ok = false,
+                .new_id = {},
+                .error = "engine runtime stopped before add completed",
+            };
+        }
+
+        has_add_result_ = false;
+        return std::move(add_result_);
+    }
+
+    void EditorRuntimeControl::service_pending_add_child(
+        const std::function<wz::engine::assets::SceneAddChildResult(
+            const wz::scene::AuthoredEntityId&)>& adder)
+    {
+        wz::scene::AuthoredEntityId parent;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_add_request_) {
+                return;
+            }
+            parent = std::move(pending_add_parent_);
+            has_add_request_ = false;
+        }
+
+        wz::engine::assets::SceneAddChildResult applied = adder(parent);
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            add_result_ = std::move(applied);
+            has_add_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
     void EditorRuntimeControl::mark_finished()
     {
         {
@@ -265,6 +352,15 @@ namespace wz::app
                     control->service_pending_scene_node_transforms(
                         [&app](const SceneNodeTransformEdit& edit) {
                             app.set_node_transform(edit.id, edit.transform);
+                        });
+                    control->service_pending_scene_node_properties(
+                        [&app](const SceneNodePropertiesEdit& edit) {
+                            app.set_node_properties(
+                                edit.id, edit.name, edit.visible);
+                        });
+                    control->service_pending_add_child(
+                        [&app](const wz::scene::AuthoredEntityId& parent_id) {
+                            return app.add_child_node(parent_id);
                         });
                 }
 

@@ -41,6 +41,15 @@ namespace wz::app
         wz::engine::assets::AuthoredTransform transform;
     };
 
+    // A live node label/visibility edit (fire-and-forget, coalesced by id) — the
+    // properties analogue of SceneNodeTransformEdit.
+    struct SceneNodePropertiesEdit
+    {
+        wz::scene::AuthoredEntityId id;
+        std::string name;
+        bool visible = true;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -71,6 +80,26 @@ namespace wz::app
         void service_pending_scene_node_transforms(
             const std::function<void(const SceneNodeTransformEdit&)>& applier);
 
+        // Owner thread: queue a node label/visibility edit (non-blocking,
+        // coalesced by id), mirroring post_scene_node_transform.
+        void post_scene_node_properties(SceneNodePropertiesEdit edit);
+
+        void service_pending_scene_node_properties(
+            const std::function<void(const SceneNodePropertiesEdit&)>& applier);
+
+        // Owner thread: add a child node under `parent_id` (empty => top level)
+        // in the running scene and block until the engine thread applies it,
+        // returning the minted id (or an error). Unlike the transform queue this
+        // is a blocking request/response — the caller needs the new id back.
+        wz::engine::assets::SceneAddChildResult add_child(
+            const wz::scene::AuthoredEntityId& parent_id);
+
+        // Engine thread: if an add-child is pending, run `adder` and publish the
+        // result. Called once per frame from run_project_runtime.
+        void service_pending_add_child(
+            const std::function<wz::engine::assets::SceneAddChildResult(
+                const wz::scene::AuthoredEntityId&)>& adder);
+
         // Engine thread: mark the runtime done so a blocked bind fails instead
         // of hanging. Called after run_project_runtime returns (incl. the init-
         // failure path where the loop never ran).
@@ -96,6 +125,15 @@ namespace wz::app
         // Live scene edits queued for the engine thread (guarded by mutex_,
         // independent of the bind handshake above). Coalesced by node id.
         std::vector<SceneNodeTransformEdit> pending_transforms_;
+        std::vector<SceneNodePropertiesEdit> pending_properties_;
+
+        // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
+        // the bind handshake): the owner posts a parent and blocks for the
+        // minted-id result the engine thread produces.
+        bool has_add_request_ = false;
+        bool has_add_result_ = false;
+        wz::scene::AuthoredEntityId pending_add_parent_;
+        wz::engine::assets::SceneAddChildResult add_result_;
     };
 
     struct EditorRuntimeLogSink
