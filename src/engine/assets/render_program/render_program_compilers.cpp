@@ -5,10 +5,16 @@
 // include whatever header owns compile_failed_node(...)
 #include <engine/assets/engine_asset_library_internal.h>
 
+#include <engine/rendering/rhi_render_program_bridge.h>
+
+#include <wozzits/rhi/shader_module.h>
+
 #include <array>
 #include <any>
+#include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -609,12 +615,92 @@ namespace wz::engine::assets::internal
 
             return false;
         }
+
+        // When the shared rhi registries are present, the custom-render-program
+        // compiler produces the rhi program: D3DCompile the shaders, register
+        // their ShaderModules under shader_ref(key), convert to a
+        // RenderProgramDesc and register it under program_ref(program_key) so the
+        // renderer binds it by find — no render-time D3DCompile/convert. Best-
+        // effort: on any failure the renderer's find-then-fallback bridges the
+        // program at render time, so a miss degrades rather than breaks.
+        void publish_custom_rhi_render_program(
+            const wz::asset::AssetKey& program_key,
+            const CustomRenderProgramDesc& authored,
+            const wz::asset::AssetKey& vertex_key,
+            const wz::asset::AssetKey& pixel_key,
+            wz::rhi::RenderProgramRegistry& programs,
+            wz::rhi::ShaderModuleRegistry& shaders,
+            wz::rhi::DescriptorSemanticRegistry& descriptor_semantics,
+            wz::rhi::ConstantSemanticRegistry& constant_semantics,
+            const RhiShaderSourceProvider& shader_source_provider,
+            wz::Logger& logger)
+        {
+            if (!shader_source_provider) {
+                return;
+            }
+            const std::optional<RhiShaderSource> vertex_source =
+                shader_source_provider(vertex_key);
+            const std::optional<RhiShaderSource> pixel_source =
+                shader_source_provider(pixel_key);
+            if (!vertex_source || !pixel_source) {
+                logger.warn(
+                    "rhi render-program: shader source unavailable; "
+                    "renderer will bridge at render time");
+                return;
+            }
+
+            const std::optional<std::vector<uint8_t>> vertex_bytecode =
+                wz::engine::rendering::compile_hlsl_bytecode(
+                    vertex_source->bytes, vertex_source->entry, "vs_5_1", logger);
+            const std::optional<std::vector<uint8_t>> pixel_bytecode =
+                wz::engine::rendering::compile_hlsl_bytecode(
+                    pixel_source->bytes, pixel_source->entry, "ps_5_1", logger);
+            if (!vertex_bytecode || !pixel_bytecode) {
+                return;  // compile_hlsl_bytecode already logged the failure
+            }
+
+            // Register the shader modules under the same refs the program desc
+            // references (shader_ref of the resolved dependency keys).
+            shaders.register_program(wz::rhi::ShaderModuleDesc{
+                wz::engine::rendering::shader_ref(vertex_key),
+                wz::rhi::ShaderStage::Vertex, *vertex_bytecode });
+            shaders.register_program(wz::rhi::ShaderModuleDesc{
+                wz::engine::rendering::shader_ref(pixel_key),
+                wz::rhi::ShaderStage::Pixel, *pixel_bytecode });
+
+            // Force the shader keys to the resolved deps so the desc references
+            // the modules just registered, then name the program by its AssetKey
+            // so producer (here) and consumer (renderer) agree on program_ref.
+            CustomRenderProgramDesc resolved = authored;
+            resolved.vertex_shader = vertex_key;
+            resolved.pixel_shader = pixel_key;
+            std::optional<wz::rhi::RenderProgramDesc> rhi_desc =
+                wz::engine::rendering::to_rhi_render_program_desc(
+                    resolved, descriptor_semantics, constant_semantics);
+            if (!rhi_desc) {
+                logger.warn(
+                    "rhi render-program: desc conversion failed; "
+                    "renderer will bridge at render time");
+                return;
+            }
+            rhi_desc->name = wz::engine::rendering::program_ref(program_key);
+            if (!programs.register_program(std::move(*rhi_desc)).valid()) {
+                logger.warn(
+                    "rhi render-program: program registry full; "
+                    "renderer will bridge at render time");
+            }
+        }
     }
 
     void register_render_program_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        RenderProgramTable& table)
+        RenderProgramTable& table,
+        wz::rhi::RenderProgramRegistry* programs,
+        wz::rhi::ShaderModuleRegistry* shaders,
+        wz::rhi::DescriptorSemanticRegistry* descriptor_semantics,
+        wz::rhi::ConstantSemanticRegistry* constant_semantics,
+        RhiShaderSourceProvider shader_source_provider)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kBuiltinRenderProgramSchema,
@@ -787,7 +873,10 @@ namespace wz::engine::assets::internal
                     .options = kBindingLayoutOptions,
                 },
             },
-            .compile = [&logger, &table](
+            .compile = [&logger, &table, programs, shaders,
+                        descriptor_semantics, constant_semantics,
+                        shader_source_provider =
+                            std::move(shader_source_provider)](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -825,6 +914,25 @@ namespace wz::engine::assets::internal
                         "render program missing CustomRenderProgramDesc or "
                         "ParamBlock");
                     return compile_failed_node(input);
+                }
+
+                // Produce the rhi program when the shared registries are present.
+                // The renderer's find-then-fallback covers the null/builtin path
+                // and cache-hit rebinds (where this compile lambda is skipped).
+                if (programs && shaders && descriptor_semantics
+                    && constant_semantics && dep_nodes.size() >= 2u)
+                {
+                    publish_custom_rhi_render_program(
+                        input.key,
+                        *desc,
+                        dep_nodes[0].key,
+                        dep_nodes[1].key,
+                        *programs,
+                        *shaders,
+                        *descriptor_semantics,
+                        *constant_semantics,
+                        shader_source_provider,
+                        logger);
                 }
 
                 RenderProgramData data{};

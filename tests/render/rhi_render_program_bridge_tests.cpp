@@ -2,11 +2,12 @@
 
 #include "fake_gpu_backend.h"
 
-#include <engine/rendering/rhi_context.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
 #include <engine/rendering/rhi_shader_bridge.h>
 
+#include <wozzits/rhi/constants_layout.h>
 #include <wozzits/rhi/shader_module.h>
+#include <wozzits/rhi/shader_resource_group_layout.h>
 
 #include <algorithm>
 #include <array>
@@ -274,12 +275,14 @@ TEST(RhiShaderBridge, RegisteredProgramShadersResolveThroughConvertedProgram)
     src.vertex_shader = shader_key(0xAA01, 0xBB01);
     src.pixel_shader = shader_key(0xAA02, 0xBB02);
 
-    wz::engine::rendering::RhiContext ctx;
+    wz::rhi::ShaderModuleRegistry shaders;
+    wz::rhi::DescriptorSemanticRegistry descriptor_semantics;
+    wz::rhi::ConstantSemanticRegistry constant_semantics;
 
     const std::array<uint8_t, 4> vertex_bytecode = { 1, 2, 3, 4 };
     const std::array<uint8_t, 3> pixel_bytecode = { 5, 6, 7 };
     ASSERT_TRUE(wz::engine::rendering::register_program_shaders(
-        ctx,
+        shaders,
         src,
         vertex_bytecode,
         pixel_bytecode));
@@ -287,12 +290,12 @@ TEST(RhiShaderBridge, RegisteredProgramShadersResolveThroughConvertedProgram)
     const auto converted =
         wz::engine::rendering::to_rhi_render_program_desc(
             src,
-            ctx.descriptor_semantics,
-            ctx.constant_semantics);
+            descriptor_semantics,
+            constant_semantics);
     ASSERT_TRUE(converted.has_value());
 
     const std::optional<wz::rhi::ProgramBytecode> resolved =
-        wz::rhi::resolve_program_bytecode(*converted, ctx.shaders);
+        wz::rhi::resolve_program_bytecode(*converted, shaders);
     ASSERT_TRUE(resolved.has_value());
     EXPECT_EQ(resolved->vertex.size(), vertex_bytecode.size());
     EXPECT_TRUE(std::equal(

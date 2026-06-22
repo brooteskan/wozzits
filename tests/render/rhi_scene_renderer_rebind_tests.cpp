@@ -158,6 +158,14 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     EXPECT_EQ(resident_after_first, 2u)
         << "renderer should bind the 2 resident pull buffers, not re-upload";
     EXPECT_GT(programs_after_first, 0u);
+    // #192: the fixture's custom render program (schema 0x103) must come from the
+    // asset compiler — which registers the rhi program under program_ref during
+    // resolve — not the renderer's render-time bridge. Zero render-time bridges
+    // proves the compiler-produced path is taken, the analog of
+    // resident_after_first == 2 proving the resident-buffer path in #190.
+    EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
+        << "custom render program was bridged at render time, not produced by "
+           "the asset compiler";
 
     // Editor-style wholesale rebind: feed a freshly parsed draft to
     // bind_asset_graph. This must release the outgoing graph's GPU resources

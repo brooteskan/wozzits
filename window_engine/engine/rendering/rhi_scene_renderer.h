@@ -90,11 +90,21 @@ namespace wz::engine::rendering
         // test asserts this.
         [[nodiscard]] std::size_t registered_program_count() const
         {
-            return ctx_.programs.size();
+            return gpu_.programs.size();
         }
         [[nodiscard]] std::size_t registered_shader_count() const
         {
-            return ctx_.shaders.size();
+            return gpu_.shaders.size();
+        }
+
+        // Programs the renderer bridged at render time (the find-then-fallback
+        // fallback path) instead of binding one the asset compiler produced. The
+        // rebind test asserts this is 0 after the first render of the migrated
+        // custom program — proving it came from the compiler, the way resident ==
+        // 2 proved the resident-buffer path in #190. Cumulative since construction.
+        [[nodiscard]] std::size_t render_time_program_bridge_count() const
+        {
+            return render_time_program_bridges_;
         }
 
         // SRV descriptor tables cached by the command recorder. Resets to 0 on a
@@ -161,5 +171,8 @@ namespace wz::engine::rendering
         // graph swap (on_graph_changed) so a fixed graph re-realizes.
         std::unordered_set<wz::asset::AssetKey, wz::asset::AssetKeyHash>
             failed_renderables_;
+
+        // See render_time_program_bridge_count().
+        std::size_t render_time_program_bridges_ = 0;
     };
 }

@@ -109,12 +109,11 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     ASSERT_FALSE(bytecode.empty());
 
     wz::engine::rendering::EngineGpuContext gpu(device);
-    wz::engine::rendering::RhiContext ctx;
     wz::engine::rendering::RhiDx12PipelineCache pipeline_cache(
         device,
-        ctx.programs,
-        ctx.compute_programs,
-        ctx.shaders);
+        gpu.programs,
+        gpu.compute_programs,
+        gpu.shaders);
     wz::engine::rendering::RhiDx12CommandRecorder recorder(
         device,
         pipeline_cache,
@@ -122,7 +121,7 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
         gpu.backend);
 
     const std::string shader_name = "test/write_indices_cs";
-    const wz::rhi::Tag shader_tag = ctx.shaders.register_program(
+    const wz::rhi::Tag shader_tag = gpu.shaders.register_program(
         wz::rhi::ShaderModuleDesc{
             shader_name,
             wz::rhi::ShaderStage::Compute,
@@ -130,7 +129,7 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     ASSERT_TRUE(shader_tag.valid());
 
     const wz::rhi::Tag output_semantic =
-        ctx.descriptor_semantics.acquire("output");
+        gpu.descriptor_semantics.acquire("output");
     ASSERT_TRUE(output_semantic.valid());
 
     wz::rhi::ShaderResourceGroupLayout output_layout;
@@ -150,7 +149,7 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     program_desc.shader_resource_groups.push_back(output_layout);
 
     const wz::rhi::Tag program =
-        ctx.compute_programs.register_program(program_desc);
+        gpu.compute_programs.register_program(program_desc);
     ASSERT_TRUE(program.valid());
     ASSERT_NE(pipeline_cache.realize(program), nullptr);
 

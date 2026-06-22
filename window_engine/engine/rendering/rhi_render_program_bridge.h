@@ -15,14 +15,36 @@
 
 #include <engine/assets/render_program/render_program.h>
 
+#include <logging/logger.h>
+
 #include <wozzits/rhi/render_program.h>
 
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace wz::engine::rendering
 {
     std::string shader_ref(const wz::asset::AssetKey& key);
+
+    // Deterministic rhi program name derived from the render-program AssetKey
+    // (label#hash, like shader_ref). The asset compiler registers the rhi
+    // program under this name and the renderer looks it up by it, so producer
+    // and consumer agree without sharing the authored name.
+    std::string program_ref(const wz::asset::AssetKey& key);
+
+    // D3DCompile HLSL source -> bytecode for an rhi ShaderModule. Shared by the
+    // render-program compiler (produces the rhi shader during resolve) and the
+    // renderer's render-time fallback. rhi stores opaque bytecode and never
+    // compiles source, so this engine-side step feeds it. nullopt on failure.
+    std::optional<std::vector<uint8_t>> compile_hlsl_bytecode(
+        std::span<const uint8_t> source,
+        std::string_view entry,
+        const char* target,
+        wz::Logger& logger);
 
     // Convert an authored custom render-program description to the rhi contract.
     // Descriptor semantics are resolved into Tags in the provided rhi registry

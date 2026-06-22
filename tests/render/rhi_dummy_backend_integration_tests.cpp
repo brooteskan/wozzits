@@ -6,10 +6,13 @@
 #include <engine/rendering/rhi_mesh_bridge.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
 
+#include <wozzits/rhi/constants_layout.h>
 #include <wozzits/rhi/draw_encode.h>
 #include <wozzits/rhi/draw_packet.h>
 #include <wozzits/rhi/frame_graph.h>
+#include <wozzits/rhi/render_program_registry.h>
 #include <wozzits/rhi/shader_resource_group.h>
+#include <wozzits/rhi/shader_resource_group_layout.h>
 
 #include <array>
 #include <cstdint>
@@ -135,23 +138,29 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
 {
     wz::engine::rendering::test::FakeGpuBackend backend;
     wz::rhi::GpuResourceRegistry resources(backend);
+    // passes + resource_variants stay renderer-local in RhiContext; the
+    // program/semantic registries moved to EngineGpuContext (#192) — here they
+    // stand in as locals since this fake-backend test has no real device.
     wz::engine::rendering::RhiContext ctx;
+    wz::rhi::RenderProgramRegistry      programs;
+    wz::rhi::DescriptorSemanticRegistry descriptor_semantics;
+    wz::rhi::ConstantSemanticRegistry   constant_semantics;
 
     const ea::CustomRenderProgramDesc authored_program =
         make_pull_wireframe_program();
     const auto converted =
         wz::engine::rendering::to_rhi_render_program_desc(
             authored_program,
-            ctx.descriptor_semantics,
-            ctx.constant_semantics);
+            descriptor_semantics,
+            constant_semantics);
     ASSERT_TRUE(converted.has_value());
 
     const wz::rhi::Tag prog_tag =
-        ctx.programs.register_program(*converted);
+        programs.register_program(*converted);
     ASSERT_TRUE(prog_tag.valid());
 
     const wz::rhi::RenderProgramDesc* registered =
-        ctx.programs.get(prog_tag);
+        programs.get(prog_tag);
     ASSERT_NE(registered, nullptr);
     const wz::rhi::ShaderResourceGroupLayout* layout =
         wz::rhi::find_shader_resource_group_layout(
@@ -212,11 +221,11 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
     EXPECT_FALSE(srg.satisfies(*layout));
 
     const wz::rhi::Tag pulled_positions =
-        ctx.descriptor_semantics.find("pulled_mesh_positions");
+        descriptor_semantics.find("pulled_mesh_positions");
     const wz::rhi::Tag pulled_indices =
-        ctx.descriptor_semantics.find("pulled_mesh_indices");
+        descriptor_semantics.find("pulled_mesh_indices");
     const wz::rhi::Tag world =
-        ctx.constant_semantics.find("world");
+        constant_semantics.find("world");
     ASSERT_TRUE(pulled_positions.valid());
     ASSERT_TRUE(pulled_indices.valid());
     ASSERT_TRUE(world.valid());

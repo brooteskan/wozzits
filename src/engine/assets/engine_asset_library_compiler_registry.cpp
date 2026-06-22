@@ -82,7 +82,15 @@ namespace wz::engine::assets::internal
         register_csv_export_compilers(registry, ctx.logger, ctx.data_table, ctx.csv_export_table);
         register_mesh_render_style_compilers(registry, ctx.logger, ctx.mesh_render_style_table);
         register_renderable_compilers(registry, ctx);
-        register_render_program_compilers(registry, ctx.logger, ctx.render_program_table);
+        register_render_program_compilers(
+            registry,
+            ctx.logger,
+            ctx.render_program_table,
+            ctx.render_program_registry,
+            ctx.shader_module_registry,
+            ctx.descriptor_semantic_registry,
+            ctx.constant_semantic_registry,
+            ctx.rhi_shader_source_provider);
         register_compute_pipeline_compilers(registry, ctx.logger, ctx.compute_pipeline_table);
         register_light_compilers(
             registry,

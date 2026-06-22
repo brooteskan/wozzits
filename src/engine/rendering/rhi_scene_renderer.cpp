@@ -27,7 +27,6 @@
 #include <wozzits/rhi/shader_resource_group_layout.h>
 
 #include <d3d12.h>
-#include <d3dcompiler.h>
 
 #include <algorithm>
 #include <cmath>
@@ -89,98 +88,6 @@ namespace wz::engine::rendering
                     return candidate.node.key == key;
                 });
             return entry != registered_assets.end() ? &*entry : nullptr;
-        }
-
-        std::string shader_entry_name(const wz::asset::AssetNode& node)
-        {
-            if (const auto* params =
-                    std::any_cast<wz::asset::ParamBlock>(&node.meta))
-            {
-                const std::string entry =
-                    params->get<std::string>("entry", "main");
-                return entry.empty() ? std::string("main") : entry;
-            }
-            return "main";
-        }
-
-        struct RhiShaderSource
-        {
-            std::span<const uint8_t> bytes;
-            std::string entry = "main";
-        };
-
-        std::optional<RhiShaderSource> shader_source_for_rhi(
-            const ea::EngineAssetLibrary& assets,
-            const wz::asset::AssetKey& shader_key)
-        {
-            const auto* shader_entry = registration_entry_for(assets, shader_key);
-            if (!shader_entry || shader_entry->dep_keys.empty()) {
-                return std::nullopt;
-            }
-            const wz::asset::AssetKey source_key = shader_entry->dep_keys[0];
-            const wz::asset::AssetNode* source =
-                assets.system().find_compiled_node(source_key);
-            if (!source) {
-                return std::nullopt;
-            }
-            const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&source->payload);
-            if (!bytes || bytes->empty()) {
-                return std::nullopt;
-            }
-            return RhiShaderSource{
-                std::span<const uint8_t>{ bytes->data(), bytes->size() },
-                shader_entry_name(shader_entry->node) };
-        }
-
-        std::optional<std::vector<uint8_t>> compile_hlsl_bytecode(
-            std::span<const uint8_t> source,
-            std::string_view entry,
-            const char* target,
-            wz::Logger& logger)
-        {
-            ID3DBlob* shader_blob = nullptr;
-            ID3DBlob* error_blob = nullptr;
-            const std::string entry_text =
-                entry.empty() ? std::string("main") : std::string(entry);
-
-            const HRESULT hr = D3DCompile(
-                source.data(), source.size(), nullptr, nullptr, nullptr,
-                entry_text.c_str(), target, 0, 0, &shader_blob, &error_blob);
-
-            if (FAILED(hr)) {
-                std::string detail;
-                if (error_blob) {
-                    detail.assign(
-                        static_cast<const char*>(error_blob->GetBufferPointer()),
-                        error_blob->GetBufferSize());
-                    error_blob->Release();
-                }
-                if (shader_blob) {
-                    shader_blob->Release();
-                }
-                logger.error(
-                    std::string("RhiSceneRenderer: HLSL compile failed target=")
-                    + target + " entry=" + entry_text
-                    + (detail.empty() ? std::string{} : " error=" + detail));
-                return std::nullopt;
-            }
-            if (error_blob) {
-                error_blob->Release();
-            }
-            if (!shader_blob || shader_blob->GetBufferSize() == 0u) {
-                if (shader_blob) {
-                    shader_blob->Release();
-                }
-                return std::nullopt;
-            }
-            std::vector<uint8_t> bytecode(shader_blob->GetBufferSize());
-            std::memcpy(
-                bytecode.data(),
-                shader_blob->GetBufferPointer(),
-                shader_blob->GetBufferSize());
-            shader_blob->Release();
-            return bytecode;
         }
 
         struct PullMeshSource
@@ -295,7 +202,7 @@ namespace wz::engine::rendering
         : gpu_(gpu)
         , logger_(logger)
         , ctx_()
-        , cache_(gpu.device, ctx_.programs, ctx_.compute_programs, ctx_.shaders)
+        , cache_(gpu.device, gpu.programs, gpu.compute_programs, gpu.shaders)
         , recorder_(gpu.device, cache_, gpu.resources, gpu.backend)
     {
         forward_ = ctx_.passes.acquire("forward");
@@ -361,14 +268,14 @@ namespace wz::engine::rendering
         // recycled handle. Safe now: wait_idle above flushed the GPU.
         recorder_.release_cached_descriptor_tables();
 
-        // Retire the outgoing graph's render programs + shader modules. Their
-        // names are content-addressed, so a distinct-content graph mints new
-        // names -> new slots; without this reset the fixed-capacity registries
-        // (256 each) would grow across editor graph swaps and eventually fill.
-        // The semantic/variant/pass registries are graph-independent and stay.
-        ctx_.programs.clear();
-        ctx_.compute_programs.clear();
-        ctx_.shaders.clear();
+        // NOTE: the shared rhi program / compute-program / shader registries are
+        // intentionally NOT cleared here. They live on EngineGpuContext and the
+        // asset compiler registers into them during resolve — which runs BEFORE
+        // on_graph_changed in the bind path — so clearing here would wipe the
+        // program the compiler just produced. The asset side owns their lifecycle
+        // now and clears them before resolve re-registers
+        // (EngineAssetLibrary::reset_rhi_render_program_registries). The semantic
+        // registries are graph-independent and kept across swaps.
 
         realized_renderables_.clear();
         realized_programs_.clear();
@@ -387,18 +294,27 @@ namespace wz::engine::rendering
             return it->second;
         }
 
-        const auto source = shader_source_for_rhi(assets, shader_key);
+        // Find-then-fallback: the asset compiler may have already produced this
+        // shader module during resolve. If so, skip the render-time D3DCompile.
+        if (gpu_.shaders.find(wz::engine::rendering::shader_ref(shader_key))
+                .valid())
+        {
+            registered_shaders_[shader_key] = true;
+            return true;
+        }
+
+        const auto source = assets.rhi_shader_source(shader_key);
         if (!source) {
             registered_shaders_[shader_key] = false;
             return false;
         }
-        const auto bytecode =
-            compile_hlsl_bytecode(source->bytes, source->entry, target, logger_);
+        const auto bytecode = wz::engine::rendering::compile_hlsl_bytecode(
+            source->bytes, source->entry, target, logger_);
         if (!bytecode) {
             registered_shaders_[shader_key] = false;
             return false;
         }
-        const wz::rhi::Tag tag = ctx_.shaders.register_program(
+        const wz::rhi::Tag tag = gpu_.shaders.register_program(
             wz::rhi::ShaderModuleDesc{
                 wz::engine::rendering::shader_ref(shader_key), stage, *bytecode });
         const bool ok = tag.valid();
@@ -414,6 +330,27 @@ namespace wz::engine::rendering
         {
             return it->second.program.valid() ? &it->second : nullptr;
         }
+
+        // Find-then-fallback: prefer the rhi program the asset compiler produced
+        // (registered under program_ref during resolve). Binding it skips the
+        // render-time read-legacy / D3DCompile / convert / register path.
+        const wz::rhi::Tag produced =
+            gpu_.programs.find(wz::engine::rendering::program_ref(program_key));
+        if (produced.valid()) {
+            if (!cache_.realize(produced)) {
+                logger_.error("RhiSceneRenderer: pipeline realize failed");
+                return nullptr;
+            }
+            auto [it, inserted] = realized_programs_.try_emplace(program_key);
+            it->second = RealizedProgram{ program_key, {}, {}, produced };
+            (void)inserted;
+            return &it->second;
+        }
+
+        // Fallback: bridge the legacy program at render time — builtin programs,
+        // not-yet-migrated custom programs, or a custom program whose compile was
+        // a cache hit on rebind (so the producer's lambda didn't re-register it).
+        ++render_time_program_bridges_;
 
         const auto* program_entry = registration_entry_for(assets, program_key);
         if (!program_entry || program_entry->dep_keys.size() < 2u) {
@@ -443,13 +380,13 @@ namespace wz::engine::rendering
 
         const auto converted = wz::engine::rendering::to_rhi_render_program_desc(
             *data, program_key, vertex_key, pixel_key,
-            ctx_.descriptor_semantics, ctx_.constant_semantics);
+            gpu_.descriptor_semantics, gpu_.constant_semantics);
         if (!converted) {
             logger_.error("RhiSceneRenderer: program bridge failed");
             return nullptr;
         }
 
-        const wz::rhi::Tag tag = ctx_.programs.register_program(*converted);
+        const wz::rhi::Tag tag = gpu_.programs.register_program(*converted);
         if (!tag.valid() || !cache_.realize(tag)) {
             logger_.error("RhiSceneRenderer: pipeline realize failed");
             return nullptr;
@@ -487,7 +424,7 @@ namespace wz::engine::rendering
         }
 
         const wz::rhi::RenderProgramDesc* registered =
-            ctx_.programs.get(program->program);
+            gpu_.programs.get(program->program);
         const wz::rhi::ShaderResourceGroupLayout* slot2_layout =
             registered
                 ? wz::rhi::find_shader_resource_group_layout(
@@ -571,9 +508,9 @@ namespace wz::engine::rendering
         realized.object_srg.reset(*slot2_layout);
 
         const wz::rhi::Tag pulled_positions =
-            ctx_.descriptor_semantics.find("pulled_mesh_positions");
+            gpu_.descriptor_semantics.find("pulled_mesh_positions");
         const wz::rhi::Tag pulled_indices =
-            ctx_.descriptor_semantics.find("pulled_mesh_indices");
+            gpu_.descriptor_semantics.find("pulled_mesh_indices");
         if (!realized.object_srg.set(pulled_positions, realized.positions)
             || !realized.object_srg.set(pulled_indices, realized.indices)
             || !realized.object_srg.satisfies(*slot2_layout))

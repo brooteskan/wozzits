@@ -167,6 +167,7 @@ float4 main(PSIn input) : SV_TARGET
             { kBehaviorFieldPlaceholderSchema, kAssetTypeMeshDerivedField },
             { kMeshComputeDerivedFieldSchema, kAssetTypeMeshDerivedField },
             { kMeshSparseOperatorSchema, kAssetTypeMeshSparseOperator },
+            { kGpuSparseMeshFromMeshSchema, kAssetTypeGpuSparseMesh },
             { kBuiltinMeshDerivedFieldSchema, kAssetTypeMeshDerivedField },
             { kMeshSparseApplyFieldSchema, kAssetTypeMeshDerivedField },
             { kMeshSparseDiffusionBandsSchema, kAssetTypeMeshDerivedField },

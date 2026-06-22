@@ -216,7 +216,7 @@ int main(int argc, char** argv)
         const ea::CustomRenderProgramDesc authored_program =
             make_pull_cube_program();
         if (!wz::engine::rendering::register_program_shaders(
-                ctx,
+                gpu.shaders,
                 authored_program,
                 vs,
                 ps))
@@ -228,8 +228,8 @@ int main(int argc, char** argv)
         const auto converted =
             wz::engine::rendering::to_rhi_render_program_desc(
                 authored_program,
-                ctx.descriptor_semantics,
-                ctx.constant_semantics);
+                gpu.descriptor_semantics,
+                gpu.constant_semantics);
         if (!converted) {
             std::cerr << "Failed to convert pull cube render program.\n";
             ok = false;
@@ -238,9 +238,9 @@ int main(int argc, char** argv)
         wz::rhi::Tag program{};
         const wz::rhi::ShaderResourceGroupLayout* slot2_layout = nullptr;
         if (ok) {
-            program = ctx.programs.register_program(*converted);
+            program = gpu.programs.register_program(*converted);
             const wz::rhi::RenderProgramDesc* registered =
-                ctx.programs.get(program);
+                gpu.programs.get(program);
             slot2_layout = registered
                 ? wz::rhi::find_shader_resource_group_layout(
                     registered->shader_resource_groups,
@@ -300,9 +300,9 @@ int main(int argc, char** argv)
         if (ok) {
             object_srg.reset(*slot2_layout);
             const wz::rhi::Tag pulled_positions =
-                ctx.descriptor_semantics.find("pulled_mesh_positions");
+                gpu.descriptor_semantics.find("pulled_mesh_positions");
             const wz::rhi::Tag pulled_indices =
-                ctx.descriptor_semantics.find("pulled_mesh_indices");
+                gpu.descriptor_semantics.find("pulled_mesh_indices");
             if (!object_srg.set(pulled_positions, positions_h)
                 || !object_srg.set(pulled_indices, indices_h)
                 || !object_srg.satisfies(*slot2_layout))
@@ -380,9 +380,9 @@ int main(int argc, char** argv)
 
         wz::engine::rendering::RhiDx12PipelineCache pipeline_cache(
             device,
-            ctx.programs,
-            ctx.compute_programs,
-            ctx.shaders);
+            gpu.programs,
+            gpu.compute_programs,
+            gpu.shaders);
         wz::engine::rendering::RhiDx12CommandRecorder recorder(
             device,
             pipeline_cache,

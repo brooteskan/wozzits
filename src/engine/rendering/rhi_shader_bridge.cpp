@@ -10,7 +10,7 @@
 namespace wz::engine::rendering
 {
     bool register_program_shaders(
-        RhiContext& ctx,
+        wz::rhi::ShaderModuleRegistry& shaders,
         const wz::engine::assets::CustomRenderProgramDesc& src,
         std::span<const uint8_t> vertex_bytecode,
         std::span<const uint8_t> pixel_bytecode)
@@ -21,14 +21,14 @@ namespace wz::engine::rendering
             return false;
         }
 
-        const wz::rhi::Tag vertex_tag = ctx.shaders.register_program(
+        const wz::rhi::Tag vertex_tag = shaders.register_program(
             wz::rhi::ShaderModuleDesc{
                 vertex_ref,
                 wz::rhi::ShaderStage::Vertex,
                 std::vector<uint8_t>{
                     vertex_bytecode.begin(),
                     vertex_bytecode.end() } });
-        const wz::rhi::Tag pixel_tag = ctx.shaders.register_program(
+        const wz::rhi::Tag pixel_tag = shaders.register_program(
             wz::rhi::ShaderModuleDesc{
                 pixel_ref,
                 wz::rhi::ShaderStage::Pixel,

@@ -111,15 +111,23 @@ namespace wz::app
         // are re-bridged, not left stale) — the rebind test asserts on this.
         [[nodiscard]] std::size_t resolved_renderable_node_count() const;
 
-        // rhi render-program / shader-module registry occupancy. Both reset to 0
-        // on a graph swap (the outgoing graph's programs/shaders are retired) so
-        // the fixed-capacity registries stay bounded across editor rebinds.
+        // rhi render-program / shader-module registry occupancy (on the shared
+        // EngineGpuContext). The graph-swap path clears them before resolve, where
+        // the asset compiler re-registers the produced program/shaders, so the
+        // fixed-capacity registries stay bounded across editor rebinds; an empty
+        // graph drops both to 0.
         [[nodiscard]] std::size_t registered_program_count() const;
         [[nodiscard]] std::size_t registered_shader_count() const;
 
         // SRV descriptor tables cached by the renderer's command recorder; resets
         // to 0 on a graph swap so descriptor-heap ranges don't leak across binds.
         [[nodiscard]] std::size_t cached_descriptor_table_count() const;
+
+        // Count of render programs the renderer bridged at render time (the
+        // fallback path) rather than binding one the asset compiler produced. 0
+        // after the first render of the migrated custom program proves the
+        // compiler-produced path is taken (#192). Cumulative since construction.
+        [[nodiscard]] std::size_t render_time_program_bridge_count() const;
 
     private:
         // The view-projection render_scene draws with: the override if set,

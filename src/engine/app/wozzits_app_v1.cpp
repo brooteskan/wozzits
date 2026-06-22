@@ -89,6 +89,15 @@ namespace wz::app
             return result;
         }
 
+        // Clear the shared rhi program/shader registries BEFORE resolve so the
+        // render-program compiler refills clean registries: content-addressed
+        // program/shader names would otherwise accumulate across editor graph
+        // swaps and eventually fill the fixed-capacity registries. Must run after
+        // commit() (registered set replaced) and before resolve_all() (the
+        // compiler re-registers). The renderer no longer clears these in
+        // on_graph_changed — doing so there would wipe the just-produced program.
+        ctx_.assets->reset_rhi_render_program_registries();
+
         // Resolve: the actual compile pass — run every node's compiler, filling
         // ResourceHandles. Failures (missing files, compiler errors) surface here.
         // Through the library so we get its resolve logging + a structured report.
@@ -351,5 +360,10 @@ namespace wz::app
     std::size_t WozzitsApp_v1::cached_descriptor_table_count() const
     {
         return renderer_.cached_descriptor_table_count();
+    }
+
+    std::size_t WozzitsApp_v1::render_time_program_bridge_count() const
+    {
+        return renderer_.render_time_program_bridge_count();
     }
 }

@@ -1,11 +1,16 @@
 #include <engine/rendering/rhi_render_program_bridge.h>
 
+#include <d3dcompiler.h>
+
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <optional>
 #include <span>
-#include <vector>
 #include <string>
+#include <vector>
+
+#pragma comment(lib, "d3dcompiler.lib")
 
 namespace wz::engine::rendering
 {
@@ -176,18 +181,6 @@ namespace wz::engine::rendering
             return "unknown";
         }
 
-        std::string program_ref(const wz::asset::AssetKey& key)
-        {
-            char buffer[72];
-            std::snprintf(
-                buffer,
-                sizeof(buffer),
-                "program#%016llx%016llx",
-                static_cast<unsigned long long>(key.content_hash.hi),
-                static_cast<unsigned long long>(key.content_hash.lo));
-            return std::string(buffer);
-        }
-
         struct RenderProgramBridgeSource
         {
             std::string name;
@@ -300,6 +293,65 @@ namespace wz::engine::rendering
             static_cast<unsigned long long>(key.content_hash.hi),
             static_cast<unsigned long long>(key.content_hash.lo));
         return std::string(buffer);
+    }
+
+    std::string program_ref(const wz::asset::AssetKey& key)
+    {
+        char buffer[72];
+        std::snprintf(buffer, sizeof(buffer), "program#%016llx%016llx",
+            static_cast<unsigned long long>(key.content_hash.hi),
+            static_cast<unsigned long long>(key.content_hash.lo));
+        return std::string(buffer);
+    }
+
+    std::optional<std::vector<uint8_t>> compile_hlsl_bytecode(
+        std::span<const uint8_t> source,
+        std::string_view entry,
+        const char* target,
+        wz::Logger& logger)
+    {
+        ID3DBlob* shader_blob = nullptr;
+        ID3DBlob* error_blob = nullptr;
+        const std::string entry_text =
+            entry.empty() ? std::string("main") : std::string(entry);
+
+        const HRESULT hr = D3DCompile(
+            source.data(), source.size(), nullptr, nullptr, nullptr,
+            entry_text.c_str(), target, 0, 0, &shader_blob, &error_blob);
+
+        if (FAILED(hr)) {
+            std::string detail;
+            if (error_blob) {
+                detail.assign(
+                    static_cast<const char*>(error_blob->GetBufferPointer()),
+                    error_blob->GetBufferSize());
+                error_blob->Release();
+            }
+            if (shader_blob) {
+                shader_blob->Release();
+            }
+            logger.error(
+                std::string("rhi render-program: HLSL compile failed target=")
+                + target + " entry=" + entry_text
+                + (detail.empty() ? std::string{} : " error=" + detail));
+            return std::nullopt;
+        }
+        if (error_blob) {
+            error_blob->Release();
+        }
+        if (!shader_blob || shader_blob->GetBufferSize() == 0u) {
+            if (shader_blob) {
+                shader_blob->Release();
+            }
+            return std::nullopt;
+        }
+        std::vector<uint8_t> bytecode(shader_blob->GetBufferSize());
+        std::memcpy(
+            bytecode.data(),
+            shader_blob->GetBufferPointer(),
+            shader_blob->GetBufferSize());
+        shader_blob->Release();
+        return bytecode;
     }
 
     std::optional<wz::rhi::RenderProgramDesc> to_rhi_render_program_desc(

@@ -10,12 +10,16 @@
 
 #include <wozzits/rhi/gpu_resource_registry.h>
 
+#include <any>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
+#include <optional>
+#include <span>
 #include <sstream>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace wz::engine::assets
@@ -167,7 +171,7 @@ namespace wz::engine::assets
         EngineAssetCacheSettings cache_settings)
         : EngineAssetLibrary(
             gpu.device,
-            &gpu.resources,
+            &gpu,
             logger,
             std::move(resource_root),
             std::move(cache_settings))
@@ -203,12 +207,13 @@ namespace wz::engine::assets
 
     EngineAssetLibrary::EngineAssetLibrary(
         wz::gpu::Device& device,
-        wz::rhi::GpuResourceRegistry* gpu_resources,
+        wz::engine::rendering::EngineGpuContext* gpu_context,
         wz::Logger& logger,
         wz::fs::Path     resource_root,
         EngineAssetCacheSettings cache_settings)
         : device_(device)
-        , gpu_resources_(gpu_resources)
+        , gpu_resources_(gpu_context ? &gpu_context->resources : nullptr)
+        , gpu_context_(gpu_context)
         , logger_(logger)
         , resource_root_(std::move(resource_root))
         , cache_settings_(std::move(cache_settings))
@@ -295,6 +300,19 @@ namespace wz::engine::assets
                         std::vector<wz::rhi::ResourceIdentity> identities)
                     {
                         track_rhi_resources(key, std::move(identities));
+                    },
+                .render_program_registry =
+                    gpu_context ? &gpu_context->programs : nullptr,
+                .shader_module_registry =
+                    gpu_context ? &gpu_context->shaders : nullptr,
+                .descriptor_semantic_registry =
+                    gpu_context ? &gpu_context->descriptor_semantics : nullptr,
+                .constant_semantic_registry =
+                    gpu_context ? &gpu_context->constant_semantics : nullptr,
+                .rhi_shader_source_provider =
+                    [this](const wz::asset::AssetKey& key)
+                    {
+                        return rhi_shader_source(key);
                     },
             }))
         , files_(system_, logger_, resource_root_)
@@ -464,6 +482,64 @@ namespace wz::engine::assets
             }
         }
         rhi_resource_tracker_.resize(write);
+    }
+
+    std::optional<RhiShaderSource> EngineAssetLibrary::rhi_shader_source(
+        const wz::asset::AssetKey& shader_key) const
+    {
+        // The shader node's first dependency is its ShaderSource file carrier,
+        // whose compiled payload is the HLSL bytes; the entry comes from the
+        // shader node's params. Mirrors the renderer's render-time read, exposed
+        // so the render-program compiler can D3DCompile during resolve.
+        const wz::asset::AssetSystem::RegistrationEntry* shader_entry = nullptr;
+        for (const wz::asset::AssetSystem::RegistrationEntry& entry :
+             system_.registered_assets())
+        {
+            if (entry.node.key == shader_key) {
+                shader_entry = &entry;
+                break;
+            }
+        }
+        if (!shader_entry || shader_entry->dep_keys.empty()) {
+            return std::nullopt;
+        }
+        const wz::asset::AssetNode* source =
+            system_.find_compiled_node(shader_entry->dep_keys[0]);
+        if (!source) {
+            return std::nullopt;
+        }
+        const auto* bytes =
+            std::get_if<std::vector<uint8_t>>(&source->payload);
+        if (!bytes || bytes->empty()) {
+            return std::nullopt;
+        }
+        std::string entry = "main";
+        if (const auto* params = std::any_cast<wz::asset::ParamBlock>(
+                &shader_entry->node.meta))
+        {
+            entry = params->get<std::string>("entry", "main");
+            if (entry.empty()) {
+                entry = "main";
+            }
+        }
+        return RhiShaderSource{
+            std::span<const uint8_t>{ bytes->data(), bytes->size() },
+            std::move(entry) };
+    }
+
+    void EngineAssetLibrary::reset_rhi_render_program_registries()
+    {
+        // Wholesale clear before resolve re-registers (graph swap). The renderer
+        // no longer clears these in on_graph_changed — clearing there would wipe
+        // the program the compiler just registered during resolve (which runs
+        // BEFORE on_graph_changed in the bind path). Semantic registries are
+        // graph-independent (small, content-named) and deliberately kept.
+        if (!gpu_context_) {
+            return;
+        }
+        gpu_context_->programs.clear();
+        gpu_context_->compute_programs.clear();
+        gpu_context_->shaders.clear();
     }
 
     wz::asset::AssetKeyFactoryFn EngineAssetLibrary::draft_key_factory() const

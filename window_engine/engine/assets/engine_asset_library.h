@@ -67,6 +67,7 @@
 
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/compute_pipeline_asset_module.h>
+#include <engine/assets/rhi_shader_source.h>
 
 #include <engine/assets/light/light.h>
 #include <engine/assets/light_asset_module.h>
@@ -358,6 +359,23 @@ namespace wz::engine::assets
             const wz::asset::AssetKey& key,
             std::vector<wz::rhi::ResourceIdentity> identities);
 
+        // Read a shader asset's HLSL source bytes + entry point (the shader
+        // node's ShaderSource file-carrier dependency). Used by the renderer's
+        // render-time fallback and, via the provider handed to the render-program
+        // compiler, by the compiler to D3DCompile the rhi ShaderModule during
+        // resolve. Returns nullopt if the shader/source is not resolved.
+        [[nodiscard]] std::optional<RhiShaderSource> rhi_shader_source(
+            const wz::asset::AssetKey& shader_key) const;
+
+        // Clear the shared rhi render-program / compute-program / shader-module
+        // registries (owned by EngineGpuContext). The graph-swap path calls this
+        // BEFORE resolve re-registers, so the compiler refills clean registries
+        // and the fixed-capacity registries don't grow across editor swaps. No-op
+        // when no EngineGpuContext is present (device-only library). The renderer
+        // no longer clears these in on_graph_changed — the asset side owns their
+        // lifecycle now. Semantic registries are graph-independent and kept.
+        void reset_rhi_render_program_registries();
+
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.
         //
@@ -371,6 +389,10 @@ namespace wz::engine::assets
 
         wz::gpu::Device& device_;
         wz::rhi::GpuResourceRegistry* gpu_resources_ = nullptr;
+        // The shared GPU + rhi context (programs/shaders/semantic registries the
+        // render-program compiler registers into). Null for a device-only
+        // library, where the compiler skips rhi production (renderer-bridge path).
+        wz::engine::rendering::EngineGpuContext* gpu_context_ = nullptr;
         // Generic (asset-type agnostic) tracker of shared-registry residency:
         // the rhi ResourceIdentitys each asset acquired, keyed by AssetKey.
         // Populated via track_rhi_resources() by compilers; drained on
@@ -463,7 +485,7 @@ namespace wz::engine::assets
 
         EngineAssetLibrary(
             wz::gpu::Device& device,
-            wz::rhi::GpuResourceRegistry* gpu_resources,
+            wz::engine::rendering::EngineGpuContext* gpu_context,
             wz::Logger& logger,
             wz::fs::Path resource_root,
             EngineAssetCacheSettings cache_settings);
