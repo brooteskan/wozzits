@@ -623,6 +623,10 @@ public sealed partial class ProjectOpeningTests
         viewModel.SceneTree.SelectNode(mesh);
         viewModel.Inspector.NodeName = "renamed mesh";
         viewModel.Inspector.NodeVisible = false;
+        // Selecting the node populated the transform fields; that population
+        // must not echo back to the engine as a live edit.
+        Assert.Empty(editorSession.LiveTransforms);
+
         viewModel.Inspector.TranslationX = "9";
         viewModel.Inspector.RotationZ = "45";
         viewModel.Inspector.ScaleY = "6";
@@ -630,19 +634,24 @@ public sealed partial class ProjectOpeningTests
         Assert.Empty(editorSession.NodeProperties);
         Assert.Empty(editorSession.Transforms);
 
+        // Editing the fields streams live transform previews to the running
+        // engine (per keystroke). Transform edits have no disk path now (the
+        // Apply button is gone) — the disk Transforms list stays empty.
+        Assert.NotEmpty(editorSession.LiveTransforms);
+        var live = editorSession.LiveTransforms[^1];
+        Assert.Equal("mesh", live.NodeId);
+        Assert.Equal("9", live.Edit.TranslationX);
+        Assert.Equal("45", live.Edit.RotationZ);
+        Assert.Equal("6", live.Edit.ScaleY);
+
         viewModel.Inspector.ApplyNodePropertiesCommand.Execute(null);
-        viewModel.Inspector.ApplyTransformCommand.Execute(null);
 
         var nodeProperties = Assert.Single(editorSession.NodeProperties);
         Assert.Equal("mesh", nodeProperties.NodeId);
         Assert.Equal("renamed mesh", nodeProperties.Name);
         Assert.False(nodeProperties.Visible);
 
-        var transform = Assert.Single(editorSession.Transforms);
-        Assert.Equal("mesh", transform.NodeId);
-        Assert.Equal("9", transform.Edit.TranslationX);
-        Assert.Equal("45", transform.Edit.RotationZ);
-        Assert.Equal("6", transform.Edit.ScaleY);
+        Assert.Empty(editorSession.Transforms);
 
         viewModel.SceneTree.SelectNode(camera);
         viewModel.Inspector.CameraFovY = "0.8";
@@ -799,6 +808,8 @@ public sealed partial class ProjectOpeningTests
 
         public List<TransformEdit> Transforms { get; } = [];
 
+        public List<TransformEdit> LiveTransforms { get; } = [];
+
         public List<CameraEdit> Cameras { get; } = [];
 
         public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
@@ -935,6 +946,14 @@ public sealed partial class ProjectOpeningTests
             EngineSceneTransformEdit edit)
         {
             Transforms.Add(new TransformEdit(nodeId, edit));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetSceneNodeTransformLive(
+            string nodeId,
+            EngineSceneTransformEdit edit)
+        {
+            LiveTransforms.Add(new TransformEdit(nodeId, edit));
             return new EngineMutationResponse { Ok = true };
         }
 

@@ -539,6 +539,68 @@ public sealed partial class WozzitsEngineNativeClient
             session));
     }
 
+    internal EngineMutationResponse SetRuntimeSceneNodeTransform(
+        IntPtr runtime,
+        string nodeId,
+        EngineSceneTransformEdit edit)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            // No live viewport running — nothing to preview; not an error.
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (!TryParseLiveTransform(edit, out var t))
+        {
+            // A field is mid-edit / unparseable; skip this update quietly so
+            // typing "-" or "1." doesn't spam errors. The next valid keystroke
+            // posts the full transform.
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeTransform(
+            runtime,
+            nodeId,
+            t.Tx, t.Ty, t.Tz,
+            t.Rx, t.Ry, t.Rz,
+            t.Sx, t.Sy, t.Sz));
+    }
+
+    private static bool TryParseLiveTransform(
+        EngineSceneTransformEdit edit,
+        out (double Tx, double Ty, double Tz,
+             double Rx, double Ry, double Rz,
+             double Sx, double Sy, double Sz) value)
+    {
+        value = default;
+        if (TryParseComponent(edit.TranslationX, out var tx)
+            && TryParseComponent(edit.TranslationY, out var ty)
+            && TryParseComponent(edit.TranslationZ, out var tz)
+            && TryParseComponent(edit.RotationX, out var rx)
+            && TryParseComponent(edit.RotationY, out var ry)
+            && TryParseComponent(edit.RotationZ, out var rz)
+            && TryParseComponent(edit.ScaleX, out var sx)
+            && TryParseComponent(edit.ScaleY, out var sy)
+            && TryParseComponent(edit.ScaleZ, out var sz))
+        {
+            value = (tx, ty, tz, rx, ry, rz, sx, sy, sz);
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryParseComponent(string text, out double value)
+    {
+        return double.TryParse(
+            text,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out value);
+    }
+
     internal EngineMutationResponse SetSceneNodeTransform(
         string projectDirectory,
         string nodeId,

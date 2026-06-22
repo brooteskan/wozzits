@@ -55,6 +55,12 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         EngineSceneTransformEdit edit);
 
+    // Live transform preview: push a node transform to the running viewport
+    // engine (no disk write). No-op success when no viewport is running.
+    EngineMutationResponse SetSceneNodeTransformLive(
+        string nodeId,
+        EngineSceneTransformEdit edit);
+
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit);

@@ -239,6 +239,23 @@ internal static partial class WozzitsEngineAbi
         IntPtr runtime,
         IntPtr session);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_transform",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeTransform(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        double translationX,
+        double translationY,
+        double translationZ,
+        double rotationXDegrees,
+        double rotationYDegrees,
+        double rotationZDegrees,
+        double scaleX,
+        double scaleY,
+        double scaleZ);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }

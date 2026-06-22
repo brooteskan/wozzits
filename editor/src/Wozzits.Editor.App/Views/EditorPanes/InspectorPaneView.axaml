@@ -110,13 +110,13 @@
                                 <TextBlock Text="Translation"
                                            Classes="InspectorPropertyName"/>
                                 <TextBox Grid.Column="1"
-                                         Text="{Binding TranslationX}"
+                                         Text="{Binding TranslationX, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="2"
-                                         Text="{Binding TranslationY}"
+                                         Text="{Binding TranslationY, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="3"
-                                         Text="{Binding TranslationZ}"
+                                         Text="{Binding TranslationZ, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                             </Grid>
 
@@ -126,13 +126,13 @@
                                 <TextBlock Text="Rotation XYZ"
                                            Classes="InspectorPropertyName"/>
                                 <TextBox Grid.Column="1"
-                                         Text="{Binding RotationX}"
+                                         Text="{Binding RotationX, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="2"
-                                         Text="{Binding RotationY}"
+                                         Text="{Binding RotationY, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="3"
-                                         Text="{Binding RotationZ}"
+                                         Text="{Binding RotationZ, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                             </Grid>
 
@@ -142,19 +142,15 @@
                                 <TextBlock Text="Scale"
                                            Classes="InspectorPropertyName"/>
                                 <TextBox Grid.Column="1"
-                                         Text="{Binding ScaleX}"
+                                         Text="{Binding ScaleX, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="2"
-                                         Text="{Binding ScaleY}"
+                                         Text="{Binding ScaleY, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                                 <TextBox Grid.Column="3"
-                                         Text="{Binding ScaleZ}"
+                                         Text="{Binding ScaleZ, UpdateSourceTrigger=PropertyChanged}"
                                          Classes="InspectorInput"/>
                             </Grid>
-
-                            <Button Content="Apply Transform"
-                                    Command="{Binding ApplyTransformCommand}"
-                                    Classes="InspectorApplyButton"/>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection">

@@ -186,6 +186,19 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             edit);
     }
 
+    public EngineMutationResponse SetSceneNodeTransformLive(
+        string nodeId,
+        EngineSceneTransformEdit edit)
+    {
+        // Live preview only: post to the running in-process viewport engine
+        // (no disk write). No-op success when there is no live viewport.
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetRuntimeSceneNodeTransform(runtime.Handle, nodeId, edit);
+    }
+
     public EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit)
