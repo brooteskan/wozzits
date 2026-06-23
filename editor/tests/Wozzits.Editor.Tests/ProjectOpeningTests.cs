@@ -1038,6 +1038,71 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, string Module)> AddedBehaviors { get; } = [];
+
+        public string NextAddedBehaviorId { get; set; } = "behavior.1";
+
+        public List<(string NodeId, string BindingId)> RemovedBehaviors { get; } = [];
+
+        public EngineAddSceneNodeResponse AddNodeBehavior(string nodeId, string module)
+        {
+            AddedBehaviors.Add((nodeId, module));
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = true,
+                NodeId = NextAddedBehaviorId,
+            };
+        }
+
+        public EngineMutationResponse RemoveNodeBehavior(string nodeId, string bindingId)
+        {
+            RemovedBehaviors.Add((nodeId, bindingId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetNodeBehaviorEnabled(
+            string nodeId,
+            string bindingId,
+            bool enabled)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetNodeBehaviorFields(
+            string nodeId,
+            string bindingId,
+            string label,
+            string module)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetNodeBehaviorEvents(
+            string nodeId,
+            string bindingId,
+            string events)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetNodeBehaviorConfig(
+            string nodeId,
+            string bindingId,
+            string key,
+            string kind,
+            string value)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse ClearNodeBehaviorConfig(
+            string nodeId,
+            string bindingId,
+            string key)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public List<AddNodeEdit> AddedNodes { get; } = [];
 
         public ulong NextAddedNodeId { get; set; } = 1000u;

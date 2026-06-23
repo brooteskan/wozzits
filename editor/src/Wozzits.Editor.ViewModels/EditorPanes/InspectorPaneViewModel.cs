@@ -1,5 +1,7 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
@@ -45,6 +47,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodeCompileStatus = string.Empty;
     private string _assetGraphNodePosition = string.Empty;
     private string _lastEditError = string.Empty;
+    private string _newBehaviorModule = string.Empty;
     // While true, populating fields from a selected node must not echo back to
     // the engine as a live edit.
     private bool _suppressLiveEdits;
@@ -57,9 +60,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         ApplyCameraCommand = new RelayCommand(
             ApplyCamera,
             () => HasSceneNodeSelection && HasCameraComponent);
+        AddBehaviorCommand = new RelayCommand(
+            AddBehavior,
+            () => HasSceneNodeSelection);
     }
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
+
+    public ObservableCollection<InspectorBehaviorViewModel> Behaviors { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphPortViewModel> AssetGraphInputPorts { get; } = [];
 
@@ -70,6 +78,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphParamViewModel> AssetGraphParams { get; } = [];
 
     public IRelayCommand ApplyCameraCommand { get; }
+
+    public IRelayCommand AddBehaviorCommand { get; }
+
+    public string NewBehaviorModule
+    {
+        get => _newBehaviorModule;
+        set => SetProperty(ref _newBehaviorModule, value);
+    }
 
     public string EmptyState
     {
@@ -203,6 +219,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public bool HasNoComponents => !HasComponents;
 
+    public bool HasBehaviors => Behaviors.Count > 0;
+
+    public bool HasNoBehaviors => !HasBehaviors;
+
     public string ComponentsHeader
     {
         get => _componentsHeader;
@@ -320,6 +340,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public void Inspect(SceneTreeNodeViewModel? node)
     {
         Components.Clear();
+        Behaviors.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
@@ -374,6 +395,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public void Inspect(AssetGraphNodeCardViewModel? node)
     {
         Components.Clear();
+        Behaviors.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
@@ -640,6 +662,105 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             CameraFar = string.Empty;
             CameraAspect = string.Empty;
         }
+
+        foreach (var behavior in node.Behaviors)
+        {
+            Behaviors.Add(CreateBehaviorViewModel(behavior));
+        }
+    }
+
+    private InspectorBehaviorViewModel CreateBehaviorViewModel(
+        EngineSceneBehavior behavior)
+    {
+        return new InspectorBehaviorViewModel(
+            behavior,
+            SetBehaviorEnabled,
+            ApplyBehaviorFields,
+            ApplyBehaviorEvents,
+            RemoveBehavior);
+    }
+
+    // Add a behavior binding for the typed module to the selected node, live on
+    // the running engine; on success mint a local row so reselection is stable.
+    private void AddBehavior()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var module = NewBehaviorModule.Trim();
+        if (string.IsNullOrEmpty(module))
+        {
+            LastEditError = "Enter a behavior module name to add.";
+            return;
+        }
+
+        var response = _editorSession!.AddNodeBehavior(NodeId, module);
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return;
+        }
+
+        LastEditError = string.Empty;
+        var added = new EngineSceneBehavior
+        {
+            Id = response.NodeId,
+            Module = module,
+            Enabled = true,
+        };
+        _inspectedSceneNode?.Behaviors.Add(added);
+        Behaviors.Add(CreateBehaviorViewModel(added));
+        NewBehaviorModule = string.Empty;
+        NotifyComponentStateChanged();
+    }
+
+    private void SetBehaviorEnabled(InspectorBehaviorViewModel behavior)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        SetEditResponse(_editorSession!.SetNodeBehaviorEnabled(
+            NodeId, behavior.Id, behavior.Enabled));
+    }
+
+    private void ApplyBehaviorFields(InspectorBehaviorViewModel behavior)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        SetEditResponse(_editorSession!.SetNodeBehaviorFields(
+            NodeId, behavior.Id, behavior.Label, behavior.Module));
+    }
+
+    private void ApplyBehaviorEvents(InspectorBehaviorViewModel behavior)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        SetEditResponse(_editorSession!.SetNodeBehaviorEvents(
+            NodeId, behavior.Id, behavior.Events));
+    }
+
+    private void RemoveBehavior(InspectorBehaviorViewModel behavior)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        var response = _editorSession!.RemoveNodeBehavior(NodeId, behavior.Id);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        Behaviors.Remove(behavior);
+        _inspectedSceneNode?.Behaviors.RemoveAll(b => b.Id == behavior.Id);
+        NotifyComponentStateChanged();
     }
 
     private static string FormatNullable(double? value)
@@ -656,6 +777,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HasComponents));
         OnPropertyChanged(nameof(HasNoComponents));
+        OnPropertyChanged(nameof(HasBehaviors));
+        OnPropertyChanged(nameof(HasNoBehaviors));
     }
 
     private void NotifyAssetGraphPortStateChanged()
@@ -672,6 +795,97 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 }
 
 public sealed record InspectorComponentViewModel(string Name, string Kind);
+
+public sealed class InspectorBehaviorViewModel : ViewModelBase
+{
+    private readonly Action<InspectorBehaviorViewModel> _setEnabled;
+    private readonly Action<InspectorBehaviorViewModel> _applyFields;
+    private readonly Action<InspectorBehaviorViewModel> _applyEvents;
+    private readonly bool _initialized;
+    private bool _enabled;
+    private string _label;
+    private string _module;
+    private string _events;
+
+    public InspectorBehaviorViewModel(
+        EngineSceneBehavior behavior,
+        Action<InspectorBehaviorViewModel> setEnabled,
+        Action<InspectorBehaviorViewModel> applyFields,
+        Action<InspectorBehaviorViewModel> applyEvents,
+        Action<InspectorBehaviorViewModel> remove)
+    {
+        Id = behavior.Id;
+        _enabled = behavior.Enabled;
+        _label = behavior.Label;
+        _module = behavior.Module;
+        _events = string.Join(Environment.NewLine, behavior.Events);
+        Config = behavior.Config
+            .Select(c => new InspectorBehaviorConfigViewModel(c.Name, c.Kind, c.Value))
+            .ToList();
+        _setEnabled = setEnabled;
+        _applyFields = applyFields;
+        _applyEvents = applyEvents;
+        ApplyFieldsCommand = new RelayCommand(() => _applyFields(this));
+        ApplyEventsCommand = new RelayCommand(() => _applyEvents(this));
+        RemoveCommand = new RelayCommand(() => remove(this));
+        // Constructor assigns fields directly, so loading does not fire the live
+        // enabled push; only a user toggle after construction does.
+        _initialized = true;
+    }
+
+    public string Id { get; }
+
+    public bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            if (SetProperty(ref _enabled, value) && _initialized)
+            {
+                _setEnabled(this);
+            }
+        }
+    }
+
+    public string Label
+    {
+        get => _label;
+        set => SetProperty(ref _label, value);
+    }
+
+    public string Module
+    {
+        get => _module;
+        set => SetProperty(ref _module, value);
+    }
+
+    // Newline-delimited channel tokens (e.g. "frame.update"); the engine parses.
+    public string Events
+    {
+        get => _events;
+        set => SetProperty(ref _events, value);
+    }
+
+    public IReadOnlyList<InspectorBehaviorConfigViewModel> Config { get; }
+
+    public bool HasConfig => Config.Count > 0;
+
+    public bool HasNoConfig => !HasConfig;
+
+    public IRelayCommand ApplyFieldsCommand { get; }
+
+    public IRelayCommand ApplyEventsCommand { get; }
+
+    public IRelayCommand RemoveCommand { get; }
+}
+
+public sealed record InspectorBehaviorConfigViewModel(
+    string Name,
+    string Kind,
+    string Value)
+{
+    public string Detail => string.IsNullOrEmpty(Kind) ? Value : $"{Kind}: {Value}";
+}
 
 public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
 {

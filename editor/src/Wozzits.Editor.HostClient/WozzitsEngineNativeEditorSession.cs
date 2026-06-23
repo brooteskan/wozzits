@@ -262,6 +262,96 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             edit);
     }
 
+    public EngineAddSceneNodeResponse AddNodeBehavior(string nodeId, string module)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = false,
+                Error = "Engine viewport is not running.",
+            };
+        }
+        return _client.AddNodeBehavior(runtime.Handle, nodeId, module);
+    }
+
+    public EngineMutationResponse RemoveNodeBehavior(string nodeId, string bindingId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.RemoveNodeBehavior(runtime.Handle, nodeId, bindingId);
+    }
+
+    public EngineMutationResponse SetNodeBehaviorEnabled(
+        string nodeId,
+        string bindingId,
+        bool enabled)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeBehaviorEnabled(
+            runtime.Handle, nodeId, bindingId, enabled);
+    }
+
+    public EngineMutationResponse SetNodeBehaviorFields(
+        string nodeId,
+        string bindingId,
+        string label,
+        string module)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeBehaviorFields(
+            runtime.Handle, nodeId, bindingId, label, module);
+    }
+
+    public EngineMutationResponse SetNodeBehaviorEvents(
+        string nodeId,
+        string bindingId,
+        string events)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeBehaviorEvents(
+            runtime.Handle, nodeId, bindingId, events);
+    }
+
+    public EngineMutationResponse SetNodeBehaviorConfig(
+        string nodeId,
+        string bindingId,
+        string key,
+        string kind,
+        string value)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeBehaviorConfig(
+            runtime.Handle, nodeId, bindingId, key, kind, value);
+    }
+
+    public EngineMutationResponse ClearNodeBehaviorConfig(
+        string nodeId,
+        string bindingId,
+        string key)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.ClearNodeBehaviorConfig(
+            runtime.Handle, nodeId, bindingId, key);
+    }
+
     public void Dispose()
     {
         // Stop the engine first, then close the authoring session.

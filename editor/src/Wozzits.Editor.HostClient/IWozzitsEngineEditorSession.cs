@@ -88,6 +88,41 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         EngineSceneCameraEdit edit);
 
+    // Live behavior-binding authoring on the running scene (deferred, host-gated
+    // engine-side; no-op success when no viewport is running). Add returns the
+    // engine-minted binding id.
+    EngineAddSceneNodeResponse AddNodeBehavior(string nodeId, string module);
+
+    EngineMutationResponse RemoveNodeBehavior(string nodeId, string bindingId);
+
+    EngineMutationResponse SetNodeBehaviorEnabled(
+        string nodeId,
+        string bindingId,
+        bool enabled);
+
+    EngineMutationResponse SetNodeBehaviorFields(
+        string nodeId,
+        string bindingId,
+        string label,
+        string module);
+
+    EngineMutationResponse SetNodeBehaviorEvents(
+        string nodeId,
+        string bindingId,
+        string events);
+
+    EngineMutationResponse SetNodeBehaviorConfig(
+        string nodeId,
+        string bindingId,
+        string key,
+        string kind,
+        string value);
+
+    EngineMutationResponse ClearNodeBehaviorConfig(
+        string nodeId,
+        string bindingId,
+        string key);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

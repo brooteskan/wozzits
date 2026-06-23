@@ -243,6 +243,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         Camera = node.Camera;
         Renderable = node.Renderable;
         Components = node.Components;
+        Behaviors = node.Behaviors;
         Children = new ObservableCollection<SceneTreeNodeViewModel>(
             node.Children.Select(child => new SceneTreeNodeViewModel(child)));
     }
@@ -290,6 +291,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public EngineSceneRenderable? Renderable { get; }
 
     public IReadOnlyList<EngineSceneComponent> Components { get; }
+
+    // Authored behavior bindings on this node. Mutable so the inspector's
+    // live add/remove keeps reselection consistent without a snapshot reload.
+    public List<EngineSceneBehavior> Behaviors { get; }
 
     public ObservableCollection<SceneTreeNodeViewModel> Children { get; }
 

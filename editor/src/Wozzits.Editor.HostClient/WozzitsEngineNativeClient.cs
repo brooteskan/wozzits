@@ -598,6 +598,219 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    internal EngineAddSceneNodeResponse AddNodeBehavior(
+        IntPtr runtime,
+        string nodeId,
+        string module)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineAddSceneNodeResponse
+            {
+                Ok = false,
+                Error = "Engine runtime is not available.",
+            };
+        }
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorRuntimeAddNodeBehavior(
+                runtime,
+                nodeId ?? string.Empty,
+                module ?? string.Empty,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAddSceneNodeResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            var bindingId = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            return new EngineAddSceneNodeResponse { Ok = true, NodeId = bindingId };
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAddSceneNodeResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
+    internal EngineMutationResponse RemoveNodeBehavior(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeRemoveNodeBehavior(
+            runtime,
+            nodeId,
+            bindingId));
+    }
+
+    internal EngineMutationResponse SetNodeBehaviorEnabled(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId,
+        bool enabled)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeBehaviorEnabled(
+            runtime,
+            nodeId,
+            bindingId,
+            enabled ? 1u : 0u));
+    }
+
+    internal EngineMutationResponse SetNodeBehaviorFields(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId,
+        string label,
+        string module)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeBehaviorFields(
+            runtime,
+            nodeId,
+            bindingId,
+            label ?? string.Empty,
+            module ?? string.Empty));
+    }
+
+    internal EngineMutationResponse SetNodeBehaviorEvents(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId,
+        string events)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeBehaviorEvents(
+            runtime,
+            nodeId,
+            bindingId,
+            events ?? string.Empty));
+    }
+
+    internal EngineMutationResponse SetNodeBehaviorConfig(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId,
+        string key,
+        string kind,
+        string value)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return InvalidMutation("Behavior config key is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeBehaviorConfig(
+            runtime,
+            nodeId,
+            bindingId,
+            key,
+            kind ?? string.Empty,
+            value ?? string.Empty));
+    }
+
+    internal EngineMutationResponse ClearNodeBehaviorConfig(
+        IntPtr runtime,
+        string nodeId,
+        string bindingId,
+        string key)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId)
+            || string.IsNullOrWhiteSpace(bindingId))
+        {
+            return InvalidMutation("Scene node id or behavior binding id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return InvalidMutation("Behavior config key is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeClearNodeBehaviorConfig(
+            runtime,
+            nodeId,
+            bindingId,
+            key));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeProperties(
         IntPtr runtime,
         string nodeId,
