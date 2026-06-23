@@ -76,9 +76,36 @@
           500
         ]
       },
-      "visible": true,
+      "visible": false,
       "renderable": {
         "asset_graph_node_id": 8
+      }
+    },
+    {
+      "id": "clipmap_landscape",
+      "parent": "root",
+      "name": "clipmap landscape",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          500,
+          1000,
+          500
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset_graph_node_id": 20
       }
     }
   ],

@@ -176,6 +176,30 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        // Graph/editor authoring carries the clipmap's world-space settings as a
+        // ParamBlock (the create-API path supplies them through the typed
+        // ClipmapLandscapeRenderableCompileDesc instead). Read them here so a
+        // JSON-authored clipmap landscape renders at the authored world scale
+        // rather than the 1x1 defaults.
+        ClipmapLandscapeRenderSettings
+        clipmap_landscape_render_settings_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            ClipmapLandscapeRenderSettings s{};
+            s.world_origin[0] =
+                params.get<float>("world_origin_x", s.world_origin[0]);
+            s.world_origin[1] =
+                params.get<float>("world_origin_z", s.world_origin[1]);
+            s.world_size[0] = params.get<float>("world_size_x", s.world_size[0]);
+            s.world_size[1] = params.get<float>("world_size_z", s.world_size[1]);
+            s.vertical_scale =
+                params.get<float>("vertical_scale", s.vertical_scale);
+            s.base_height = params.get<float>("base_height", s.base_height);
+            s.lattice_world_cell_size = params.get<float>(
+                "lattice_world_cell_size", s.lattice_world_cell_size);
+            return s;
+        }
+
         GaussianSplatDebugRenderableCompileDesc
         gaussian_splat_debug_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -896,6 +920,30 @@ namespace wz::engine::assets::internal
                 { "height_field", kAssetTypeScalarField },
                 { "program", kAssetTypeRenderProgram },
             },
+            .parameters = {
+                { .name = "world_size_x", .type = wz::asset::ParamType::Float,
+                  .label = "World size X", .default_num = 256.0,
+                  .min = 0.0001, .max = 1000000.0 },
+                { .name = "world_size_z", .type = wz::asset::ParamType::Float,
+                  .label = "World size Z", .default_num = 256.0,
+                  .min = 0.0001, .max = 1000000.0 },
+                { .name = "world_origin_x", .type = wz::asset::ParamType::Float,
+                  .label = "World origin X", .default_num = -128.0,
+                  .min = -1000000.0, .max = 1000000.0 },
+                { .name = "world_origin_z", .type = wz::asset::ParamType::Float,
+                  .label = "World origin Z", .default_num = -128.0,
+                  .min = -1000000.0, .max = 1000000.0 },
+                { .name = "vertical_scale", .type = wz::asset::ParamType::Float,
+                  .label = "Vertical scale", .default_num = 64.0,
+                  .min = 0.0, .max = 1000000.0 },
+                { .name = "base_height", .type = wz::asset::ParamType::Float,
+                  .label = "Base height", .default_num = 0.0,
+                  .min = -1000000.0, .max = 1000000.0 },
+                { .name = "lattice_world_cell_size",
+                  .type = wz::asset::ParamType::Float,
+                  .label = "Lattice cell size", .default_num = 1.0,
+                  .min = 0.0001, .max = 100000.0 },
+            },
             .compile = [logger, mesh_table, scalar_fields_table,
                         render_program_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
@@ -911,6 +959,15 @@ namespace wz::engine::assets::internal
                 if (!desc) {
                     editor_desc =
                         clipmap_landscape_renderable_desc_from_deps(dep_nodes);
+                    // Graph/editor authoring supplies the world settings via a
+                    // ParamBlock; the deps fallback only recovers the three keys.
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        editor_desc.settings =
+                            clipmap_landscape_render_settings_from_params(
+                                *params);
+                    }
                     desc = &editor_desc;
 
                     if (dep_handles.size() != 3) {
