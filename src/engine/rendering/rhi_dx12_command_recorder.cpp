@@ -39,13 +39,39 @@ namespace wz::engine::rendering
         }
     }
 
+    namespace
+    {
+        // Map an rhi descriptor kind onto the gpu-local view kind the dx12
+        // descriptor-table builder understands. Returns nullopt for kinds the
+        // pixel-path recorder cannot bind yet (Sampler — deferred to a follow-up
+        // sampler-heap path), so bind_resource_group can fail cleanly rather than
+        // silently mis-bind. This is the seam that preserves TextureSRV vs
+        // StructuredBufferSRV instead of collapsing to a UAV-or-not bool.
+        std::optional<wz::gpu::dx12::internal::DescriptorViewKind>
+        to_descriptor_view_kind(wz::rhi::DescriptorKind kind)
+        {
+            using View = wz::gpu::dx12::internal::DescriptorViewKind;
+            switch (kind) {
+            case wz::rhi::DescriptorKind::StructuredBufferSRV:
+                return View::StructuredBufferSRV;
+            case wz::rhi::DescriptorKind::UAV:
+                return View::StructuredBufferUAV;
+            case wz::rhi::DescriptorKind::TextureSRV:
+                return View::Texture2DSRV;
+            case wz::rhi::DescriptorKind::Sampler:
+                return std::nullopt;
+            }
+            return std::nullopt;
+        }
+    }
+
     struct RhiDx12CommandRecorder::DescriptorTableCache
     {
         struct Entry
         {
             uint32_t binding_slot = 0;
-            std::vector<wz::gpu::GPUHandle> buffers;
-            std::vector<uint8_t> unordered_access;
+            std::vector<wz::gpu::GPUHandle> resources;
+            std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds;
             wz::gpu::dx12::DX12DescriptorTable table{};
         };
 
@@ -237,31 +263,37 @@ namespace wz::engine::rendering
             return;
         }
 
-        std::vector<wz::gpu::GPUHandle> buffers;
-        buffers.reserve(group.resource_count());
+        std::vector<wz::gpu::GPUHandle> resources;
+        resources.reserve(group.resource_count());
         for (wz::rhi::GpuResourceHandle handle : group.resources()) {
             const wz::gpu::GPUHandle gpu = gpu_handle_for(handle);
             if (!gpu.valid()) {
                 ready_ = false;
                 return;
             }
-            buffers.push_back(gpu);
+            resources.push_back(gpu);
         }
 
-        std::vector<uint8_t> unordered_access;
-        unordered_access.reserve(table_layout->descriptor_kinds.size());
+        std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds;
+        kinds.reserve(table_layout->descriptor_kinds.size());
         for (const wz::rhi::DescriptorKind kind
              : table_layout->descriptor_kinds)
         {
-            unordered_access.push_back(
-                kind == wz::rhi::DescriptorKind::UAV ? 1u : 0u);
+            const std::optional view = to_descriptor_view_kind(kind);
+            if (!view) {
+                // Unsupported descriptor kind (Sampler): no heap/root-param path
+                // yet. Fail closed rather than bind the wrong view.
+                ready_ = false;
+                return;
+            }
+            kinds.push_back(*view);
         }
 
         const wz::gpu::dx12::DX12DescriptorTable* table =
             descriptor_table_for(
                 slot,
-                std::move(buffers),
-                std::move(unordered_access));
+                std::move(resources),
+                std::move(kinds));
         if (!table || !table->valid()) {
             ready_ = false;
             return;
@@ -346,8 +378,8 @@ namespace wz::engine::rendering
     const wz::gpu::dx12::DX12DescriptorTable*
     RhiDx12CommandRecorder::descriptor_table_for(
         uint32_t slot,
-        std::vector<wz::gpu::GPUHandle> buffers,
-        std::vector<uint8_t> unordered_access)
+        std::vector<wz::gpu::GPUHandle> resources,
+        std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds)
     {
         if (!descriptor_tables_) {
             return nullptr;
@@ -355,11 +387,11 @@ namespace wz::engine::rendering
 
         const auto existing = std::ranges::find_if(
             descriptor_tables_->entries,
-            [slot, &buffers, &unordered_access](
+            [slot, &resources, &kinds](
                 const DescriptorTableCache::Entry& entry) {
                 return entry.binding_slot == slot
-                    && entry.buffers == buffers
-                    && entry.unordered_access == unordered_access;
+                    && entry.resources == resources
+                    && entry.kinds == kinds;
             });
         if (existing != descriptor_tables_->entries.end()) {
             return &existing->table;
@@ -367,10 +399,10 @@ namespace wz::engine::rendering
 
         wz::gpu::dx12::DX12DescriptorTable table{};
         if (!device_
-            || !wz::gpu::dx12::internal::create_compute_buffer_descriptor_table(
+            || !wz::gpu::dx12::internal::create_resource_descriptor_table(
                 *device_,
-                buffers,
-                unordered_access,
+                resources,
+                kinds,
                 table))
         {
             return nullptr;
@@ -378,8 +410,8 @@ namespace wz::engine::rendering
 
         descriptor_tables_->entries.push_back(DescriptorTableCache::Entry{
             slot,
-            std::move(buffers),
-            std::move(unordered_access),
+            std::move(resources),
+            std::move(kinds),
             table });
         return &descriptor_tables_->entries.back().table;
     }

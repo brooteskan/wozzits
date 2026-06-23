@@ -21,6 +21,11 @@ namespace wz::gpu::dx12
     struct DX12DescriptorTable;
 }
 
+namespace wz::gpu::dx12::internal
+{
+    enum class DescriptorViewKind : uint8_t;
+}
+
 namespace wz::engine::rendering
 {
     class RhiDx12CommandRecorder final : public wz::rhi::CommandRecorder
@@ -78,9 +83,10 @@ namespace wz::engine::rendering
         [[nodiscard]] wz::gpu::GPUHandle gpu_handle_for(
             wz::rhi::GpuResourceHandle handle) const;
         [[nodiscard]] const wz::gpu::dx12::DX12DescriptorTable*
-        descriptor_table_for(uint32_t slot,
-                             std::vector<wz::gpu::GPUHandle> buffers,
-                             std::vector<uint8_t> unordered_access);
+        descriptor_table_for(
+            uint32_t slot,
+            std::vector<wz::gpu::GPUHandle> resources,
+            std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds);
 
         wz::gpu::Device* device_ = nullptr;
         RhiDx12PipelineCache* pipelines_ = nullptr;

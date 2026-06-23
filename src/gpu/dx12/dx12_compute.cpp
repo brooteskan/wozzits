@@ -1052,6 +1052,88 @@ namespace wz::gpu::dx12::internal
         return true;
     }
 
+    bool create_resource_descriptor_table(
+        Device& device,
+        std::span<const GPUHandle> handles,
+        std::span<const DescriptorViewKind> kinds,
+        wz::gpu::dx12::DX12DescriptorTable& out_table)
+    {
+        out_table = {};
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl
+            || handles.empty()
+            || kinds.size() != handles.size())
+        {
+            return false;
+        }
+
+        // Validate every handle resolves in the table its descriptor kind
+        // selects, before touching the heap, so a bad slot can't leave a
+        // half-written table behind.
+        for (uint32_t i = 0; i < static_cast<uint32_t>(handles.size()); ++i) {
+            if (kinds[i] == DescriptorViewKind::Texture2DSRV) {
+                const DX12Texture* tex = impl->textures.get(handles[i]);
+                if (!tex || !tex->valid()) {
+                    return false;
+                }
+            }
+            else {
+                const DX12ComputeBuffer* buffer =
+                    impl->compute_buffers.get(handles[i]);
+                if (!buffer || !buffer->valid()) {
+                    return false;
+                }
+            }
+        }
+
+        wz::gpu::dx12::DX12DescriptorTable table =
+            impl->srv_cbv_uav_allocator.allocate(
+                static_cast<uint32_t>(handles.size()));
+        if (!table.valid()) {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < static_cast<uint32_t>(handles.size()); ++i) {
+            switch (kinds[i]) {
+            case DescriptorViewKind::Texture2DSRV: {
+                const DX12Texture* tex = impl->textures.get(handles[i]);
+                impl->srv_cbv_uav_allocator.create_texture_srv(
+                    table,
+                    i,
+                    tex->texture,
+                    tex->format,
+                    /*is_3d*/ tex->depth > 1u);
+                break;
+            }
+            case DescriptorViewKind::StructuredBufferUAV: {
+                const DX12ComputeBuffer* buffer =
+                    impl->compute_buffers.get(handles[i]);
+                impl->srv_cbv_uav_allocator.create_structured_buffer_uav(
+                    table,
+                    i,
+                    buffer->resource,
+                    buffer->element_count,
+                    buffer->stride_bytes);
+                break;
+            }
+            case DescriptorViewKind::StructuredBufferSRV: {
+                const DX12ComputeBuffer* buffer =
+                    impl->compute_buffers.get(handles[i]);
+                impl->srv_cbv_uav_allocator.create_structured_buffer_srv(
+                    table,
+                    i,
+                    buffer->resource,
+                    buffer->element_count,
+                    buffer->stride_bytes);
+                break;
+            }
+            }
+        }
+
+        out_table = table;
+        return true;
+    }
+
     void release_compute_buffer_srv_table(
         Device& device,
         const wz::gpu::dx12::DX12DescriptorTable& table)

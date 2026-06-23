@@ -115,6 +115,34 @@ namespace wz::gpu::dx12
             table.cpu_at(offset));
     }
 
+    void DX12DescriptorAllocator::create_texture_srv(
+        const DX12DescriptorTable& table,
+        uint32_t                   offset,
+        ID3D12Resource*            resource,
+        DXGI_FORMAT                format,
+        bool                       is_3d)
+    {
+        assert(device_);
+        assert(resource);
+        assert(offset < table.count);
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+        srv_desc.Format = format;
+        srv_desc.Shader4ComponentMapping =
+            D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        if (is_3d) {
+            srv_desc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE3D;
+            srv_desc.Texture3D.MipLevels = 1;
+        }
+        else {
+            srv_desc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE2D;
+            srv_desc.Texture2D.MipLevels = 1;
+        }
+
+        device_->CreateShaderResourceView(
+            resource, &srv_desc, table.cpu_at(offset));
+    }
+
     DX12DescriptorTable DX12DescriptorAllocator::allocate(uint32_t count)
     {
         assert(count > 0);

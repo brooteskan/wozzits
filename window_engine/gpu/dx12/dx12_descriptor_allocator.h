@@ -70,6 +70,19 @@ namespace wz::gpu::dx12
             uint32_t                   element_count,
             uint32_t                   stride_bytes);
 
+        // Write a texture SRV for `resource` into slot `offset` of `table`.
+        // Generic over the texture family: `is_3d` selects TEXTURE3D, otherwise
+        // TEXTURE2D; `format` is the typed view format (e.g. DXGI_FORMAT_R32_FLOAT).
+        // Single mip (MipLevels = 1). Sibling to create_structured_buffer_srv:
+        // the buffer creator hardcodes SRV_DIMENSION_BUFFER, this one the texture
+        // dimensions, so the SRG bind path can pick per-descriptor.
+        void create_texture_srv(
+            const DX12DescriptorTable& table,
+            uint32_t                   offset,
+            ID3D12Resource*            resource,
+            DXGI_FORMAT                format,
+            bool                       is_3d);
+
         // Reset the allocator — all previously returned tables become invalid.
         void reset() noexcept
         {

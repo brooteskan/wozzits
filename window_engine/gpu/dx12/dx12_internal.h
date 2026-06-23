@@ -720,6 +720,31 @@ namespace wz::gpu::dx12::internal {
         std::span<const uint8_t> unordered_access,
         wz::gpu::dx12::DX12DescriptorTable& out_table);
 
+    // Per-descriptor view kind for the generic SRG descriptor-table builder
+    // below. gpu-local (this layer stays rhi-agnostic, like ComputeBindingKind);
+    // the rhi command recorder maps wz::rhi::DescriptorKind onto this. Each value
+    // selects which device table the handle is resolved in and which view is
+    // written: buffer kinds use the compute_buffers table + structured-buffer
+    // view, Texture2DSRV uses the textures table + a typed Texture2D/3D SRV.
+    enum class DescriptorViewKind : uint8_t
+    {
+        StructuredBufferSRV,
+        StructuredBufferUAV,
+        Texture2DSRV,
+    };
+
+    // Generic SRG descriptor-table builder: handles both buffer and texture
+    // resources in one table, picking per slot from `kinds`. This is the
+    // texture-aware generalization of create_compute_buffer_descriptor_table
+    // (which only knows structured buffers); the rhi render path uses it so a
+    // TextureSRV descriptor binds a resident Texture2D alongside pull buffers.
+    // `handles` and `kinds` must be the same length and non-empty.
+    bool create_resource_descriptor_table(
+        Device& device,
+        std::span<const GPUHandle> handles,
+        std::span<const DescriptorViewKind> kinds,
+        wz::gpu::dx12::DX12DescriptorTable& out_table);
+
     void release_compute_buffer_srv_table(
         Device& device,
         const wz::gpu::dx12::DX12DescriptorTable& table);
