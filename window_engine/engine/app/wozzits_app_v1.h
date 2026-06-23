@@ -27,6 +27,10 @@
 #include <engine/rendering/rhi_scene_renderer.h>
 
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/assets/scene/scene_instance.h>
+#include <engine/behavior/behavior_plugin_adapter.h>
+#include <engine/behavior/behavior_registry.h>
+#include <engine/frame_storage.h>
 
 #include <asset/dag.h>
 #include <asset/draft.h>
@@ -57,6 +61,12 @@ namespace wz::app
         // belongs outside this runtime render app.
         wz::fs::Path asset_graph;
         wz::fs::Path scene;
+
+        // Optional directory of compiled project behavior-module DLLs (the
+        // manifest's behavior_module_folder). When set, load_scene loads every
+        // DLL there and registers its modules so the scene's behavior bindings
+        // run. Empty => only the built-in behavior modules are available.
+        wz::fs::Path behavior_module_folder;
     };
 
     class WozzitsApp_v1
@@ -170,10 +180,43 @@ namespace wz::app
         // compiler-produced path is taken (#192). Cumulative since construction.
         [[nodiscard]] std::size_t render_time_program_bridge_count() const;
 
+        // Number of behavior bindings instantiated for the loaded scene (sum of
+        // every node's `behavior`/`behaviors`). 0 when no scene is loaded or the
+        // scene has no behaviors. Diagnostics + the behavior dispatch test read
+        // this to confirm the scene's behaviors were materialized.
+        [[nodiscard]] std::size_t active_behavior_binding_count() const;
+
+        // Current authored local translation of the live scene node with `id`,
+        // or std::nullopt if no node has that id. Reflects behavior command
+        // write-back (a behavior that moves a node shows here after a
+        // simulation_tick), so diagnostics + the behavior dispatch test can
+        // observe the effect on scene_nodes_ without a render.
+        [[nodiscard]] std::optional<wz::math::Vec3> node_local_translation(
+            const wz::scene::AuthoredEntityId& id) const;
+
     private:
         // The view-projection render_scene draws with: the override if set,
         // otherwise built from the free-fly camera + projection params + aspect.
         wz::math::Mat4 compute_view_projection() const;
+
+        // Load every behavior-module DLL in `module_folder` and register its
+        // modules into registry_. No-op for an empty/missing folder. Reusable
+        // across a scene/project swap (the plugin host reloads existing modules).
+        void load_behavior_modules(const wz::fs::Path& module_folder);
+
+        // Materialize the live authored scene (scene_nodes_) into a runtime
+        // SceneInstance and (re)initialize its behaviors against the registry.
+        // Called from load_scene and after any structural scene edit so the
+        // behavior runtime tracks the authored scene. Clears behavior_scene_
+        // when there are no behavior bindings (nothing to run).
+        void rebuild_behavior_scene();
+
+        // One behavior tick: propagate transforms, dispatch frame/input events,
+        // apply the produced command buffer + integrate motion, then write the
+        // changed node transforms back into scene_nodes_ so the next
+        // render_scene() draws them. No-op when no behavior scene is live.
+        void dispatch_scene_behaviors(
+            const wz::input::InputState& input, float dt);
 
         wz::engine::AppContext&                  ctx_;
         wz::engine::rendering::RhiSceneRenderer  renderer_;
@@ -204,5 +247,23 @@ namespace wz::app
         // Source scene file + a dirty flag, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};
         bool          scene_dirty_ = false;
+
+        // Behavior runtime. This is the same load -> register -> initialize ->
+        // per-frame dispatch -> apply-command-buffer sequence the standalone
+        // game_app runs, hosted inside this shared runtime so a scene's behavior
+        // bindings execute in both the editor viewport and a shipped app.
+        //   - registry_ / plugins_ own the registered modules (built-ins + the
+        //     project DLLs loaded from behavior_module_folder).
+        //   - behavior_scene_ is the runtime SceneInstance materialized from the
+        //     authored scene_nodes_; behaviors read its polytree and the command
+        //     apply mutates it, then changed transforms are written back to
+        //     scene_nodes_ (the renderer's source of truth).
+        //   - frame_storage_ holds the per-frame behavior command buffer; reused
+        //     each tick (matching game_app's FrameStorage).
+        wz::engine::behavior::BehaviorRegistry   registry_{};
+        wz::engine::behavior::BehaviorPluginHost plugins_{};
+        wz::engine::FrameStorage                 frame_storage_{};
+        std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
+        uint64_t                                 behavior_frame_index_ = 0;
     };
 }

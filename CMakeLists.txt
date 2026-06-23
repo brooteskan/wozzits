@@ -318,6 +318,31 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/scene.json"
     COPYONLY)
 
+# Self-contained fixture for the WozzitsApp_v1 behavior dispatch test: an empty
+# asset graph + a scene with one node bound to the project behavior module
+# "move_up_on_frame". The module DLL (behavior_module_test_plugin, defined with
+# the other tests below) is staged into this fixture's behavior_module_folder so
+# load_scene loads it. The manifest's behavior_module_folder is configured to
+# that staged absolute path.
+set(WZ_BEHAVIOR_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/behavior_test_fixture")
+set(WZ_BEHAVIOR_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/behavior_test_fixture")
+set(WZ_BEHAVIOR_FIXTURE_MODULE_DIR
+    "${WZ_BEHAVIOR_FIXTURE_DST}/behavior/build/clang-debug")
+configure_file(
+    "${WZ_BEHAVIOR_FIXTURE_SRC}/.wozzits/project.json.in"
+    "${WZ_BEHAVIOR_FIXTURE_DST}/.wozzits/project.json"
+    @ONLY)
+configure_file(
+    "${WZ_BEHAVIOR_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_BEHAVIOR_FIXTURE_DST}/assets.graph.json"
+    COPYONLY)
+configure_file(
+    "${WZ_BEHAVIOR_FIXTURE_SRC}/scene.json"
+    "${WZ_BEHAVIOR_FIXTURE_DST}/scene.json"
+    COPYONLY)
+
 # ----------------------------
 # Test helpers
 # ----------------------------
@@ -711,6 +736,27 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render rhi_scene_renderer_rebind_tests)
     rs_add_test_group(render rhi_clipmap_landscape_render_tests)
     rs_add_test_group(render clipmap_view_tests)
+    rs_add_test_group(render wozzits_app_behavior_dispatch_tests)
+
+    # Project behavior-module DLL for the WozzitsApp_v1 behavior dispatch test.
+    # Built like the behavior unit-test plugins, then staged into the behavior
+    # fixture's behavior_module_folder so load_scene loads it at runtime.
+    add_library(wozzits_app_behavior_test_plugin SHARED
+        tests/render/fixtures/behavior_module_test_plugin.cpp)
+    target_include_directories(wozzits_app_behavior_test_plugin
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/window_engine")
+    target_compile_features(wozzits_app_behavior_test_plugin PRIVATE cxx_std_20)
+    add_custom_command(TARGET wozzits_app_behavior_test_plugin POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${WZ_BEHAVIOR_FIXTURE_MODULE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:wozzits_app_behavior_test_plugin>"
+            "${WZ_BEHAVIOR_FIXTURE_MODULE_DIR}/"
+        COMMENT "Staging behavior module DLL into behavior_test_fixture")
+    add_dependencies(render_wozzits_app_behavior_dispatch_tests
+        wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)

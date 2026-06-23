@@ -332,7 +332,8 @@ namespace wz::app
         const wz::fs::Path& scene,
         const wz::fs::Path& resource_root,
         EditorRuntimeControl* control,
-        EditorRuntimeLogSink log_sink)
+        EditorRuntimeLogSink log_sink,
+        const wz::fs::Path& behavior_module_folder)
     {
         wz::engine::AppContext ctx;
 
@@ -372,6 +373,7 @@ namespace wz::app
             if (!app.load_scene(wz::app::WozzitsAppSceneLoadDesc{
                     .asset_graph = asset_graph,
                     .scene = scene,
+                    .behavior_module_folder = behavior_module_folder,
                 }))
             {
                 ctx.logger.error("load scene failed");

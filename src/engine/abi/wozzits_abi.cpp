@@ -863,7 +863,8 @@ extern "C"
                             wz::app::EditorRuntimeLogSink{
                                 .write = emit_editor_runtime_log,
                                 .user = raw,
-                            });
+                            },
+                            loaded.launch.manifest.behavior_module_folder);
                         emit_editor_runtime_log(
                             exit_code == 0
                                 ? wz::LogLevel::Info

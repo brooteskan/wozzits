@@ -179,11 +179,16 @@ namespace wz::app
     // Runs a blocking render loop on the calling thread. `control` may be null
     // (standalone runtime: only closing the window stops it, no binds). Returns
     // a process-style exit code (0 = ok, non-zero = init/runtime failure).
+    //
+    // `behavior_module_folder` (the project manifest's behavior_module_folder)
+    // is the directory of compiled behavior-module DLLs to load so the scene's
+    // behavior bindings run; pass empty for built-in-only behaviors.
     int run_project_runtime(
         const std::string& window_title,
         const wz::fs::Path& asset_graph,
         const wz::fs::Path& scene,
         const wz::fs::Path& resource_root,
         EditorRuntimeControl* control,
-        EditorRuntimeLogSink log_sink = {});
+        EditorRuntimeLogSink log_sink = {},
+        const wz::fs::Path& behavior_module_folder = {});
 }

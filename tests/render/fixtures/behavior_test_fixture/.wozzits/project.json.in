@@ -1,0 +1,10 @@
+{
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "behavior_test_fixture",
+  "rhi_render_path": true,
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json",
+  "behavior_project_folder": "behavior",
+  "behavior_module_folder": "@WZ_BEHAVIOR_FIXTURE_MODULE_DIR@"
+}

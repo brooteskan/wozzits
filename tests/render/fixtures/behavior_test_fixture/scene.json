@@ -1,0 +1,34 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "behavior_test_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "mover",
+      "parent": "root",
+      "name": "mover",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behavior": {
+        "label": "Move up each frame",
+        "module": "move_up_on_frame",
+        "enabled": true,
+        "events": ["frame.update"]
+      }
+    }
+  ],
+  "defaults": {}
+}

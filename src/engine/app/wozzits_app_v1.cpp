@@ -5,8 +5,13 @@
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_authoring_materialize.h>
+#include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene_asset_module.h>
+
+#include <engine/behavior/behavior_command_apply.h>
+#include <engine/behavior/behavior_dispatch.h>
+#include <engine/behavior/builtin_behaviors.h>
 
 #include <asset/system.h>
 
@@ -18,8 +23,11 @@
 #include <math/math_types.h>
 #include <math/mat4.h>
 #include <math/projection.h>
+#include <scene/scene_graph.h>
 
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -32,6 +40,11 @@ namespace wz::app
         : ctx_(ctx)
         , renderer_(*ctx.gpu, ctx.logger)
     {
+        // Register the engine's built-in behavior modules up front (mirrors
+        // game_app::init). Project DLLs are loaded later, in load_scene, from the
+        // manifest's behavior_module_folder.
+        wz::engine::behavior::register_builtin_behaviors(
+            registry_, plugins_, ctx_.logger);
     }
 
     AssetGraphCompileResult WozzitsApp_v1::bind_asset_graph(
@@ -291,6 +304,13 @@ namespace wz::app
             + std::to_string(scene_data->nodes.size())
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
+        // Load the project's behavior-module DLLs (if any) and register their
+        // modules, then materialize the scene's behavior runtime. Mirrors
+        // game_app's load -> register sequence; here the modules come from the
+        // project manifest's behavior_module_folder rather than only built-ins.
+        load_behavior_modules(desc.behavior_module_folder);
+        rebuild_behavior_scene();
+
         return graph_ok && scene_resolve.ok();
     }
 
@@ -302,7 +322,213 @@ namespace wz::app
             aspect_ = static_cast<float>(input.window.width)
                 / static_cast<float>(input.window.height);
         }
+
+        // Run the scene's behaviors before render prep so this frame draws the
+        // post-behavior transforms (game_app dispatches behaviors then applies
+        // their command buffer ahead of build_render_*). No-op without a live
+        // behavior scene.
+        dispatch_scene_behaviors(input, dt);
+
         renderer_.simulation_tick();
+    }
+
+    void WozzitsApp_v1::load_behavior_modules(
+        const wz::fs::Path& module_folder)
+    {
+        if (module_folder.empty()) {
+            return;
+        }
+
+        // Resolve relative to the asset resource root, matching how the rest of
+        // load_scene resolves authored paths through the file system.
+        const wz::fs::Path resolved =
+            ctx_.assets
+                ? ctx_.assets->files().resolve_path(module_folder)
+                : module_folder;
+
+        const uint32_t loaded =
+            plugins_.load_dynamic_modules_from_directory(
+                registry_,
+                std::filesystem::path{ resolved },
+                &ctx_.logger);
+        ctx_.logger.info(
+            "load_scene: loaded " + std::to_string(loaded)
+            + " behavior module DLL(s) from " + resolved);
+    }
+
+    void WozzitsApp_v1::rebuild_behavior_scene()
+    {
+        behavior_scene_.reset();
+
+        // Nothing to run unless at least one node carries a behavior binding.
+        const bool has_behaviors = std::any_of(
+            scene_nodes_.begin(),
+            scene_nodes_.end(),
+            [](const wz::engine::assets::SceneNodeAsset& node) {
+                return node.behavior.has_value() || !node.behaviors.empty();
+            });
+        if (!has_behaviors) {
+            return;
+        }
+
+        // Materialize a runtime SceneInstance from the authored scene. The
+        // renderable resolver is intentionally null: WozzitsApp_v1 renders from
+        // scene_nodes_, so the instance is used only for its polytree + behavior
+        // tables (renderables in the instance are unused).
+        wz::engine::assets::SceneAssetData scene_data;
+        scene_data.nodes = scene_nodes_;
+
+        wz::engine::assets::SceneInstantiateContext instantiate_ctx{
+            .logger = &ctx_.logger,
+            .log_owner = "WozzitsApp_v1",
+        };
+        wz::engine::assets::SceneInstantiateResult instantiated =
+            wz::engine::assets::instantiate_scene(scene_data, instantiate_ctx);
+        if (!instantiated.ok()) {
+            ctx_.logger.error(
+                "behavior scene instantiate failed: "
+                + instantiated.error_detail);
+            return;
+        }
+
+        behavior_scene_ = std::move(instantiated.instance);
+
+        // Initialize behaviors (init callbacks + per-binding/shared state) once
+        // for the materialized scene, exactly as game_app does after building
+        // its scene.
+        wz::engine::behavior::initialize_behaviors(
+            *behavior_scene_, registry_, &ctx_.logger);
+        ctx_.logger.info(
+            "behavior scene initialized (bindings="
+            + std::to_string(behavior_scene_->behaviors.size()) + ")");
+    }
+
+    void WozzitsApp_v1::dispatch_scene_behaviors(
+        const wz::input::InputState& input, float dt)
+    {
+        if (!behavior_scene_ || behavior_scene_->behaviors.empty()) {
+            return;
+        }
+
+        // World transforms must be current before dispatch: command application
+        // (set_world_translation, motion integration) reads parent world
+        // matrices, and behavior transform queries read self/other world. In
+        // game_app this is the compile_scene job; here we propagate directly.
+        wz::scene::propagate_all(behavior_scene_->storage.polytree);
+
+        // Build a minimal FrameContext carrying time + input. WozzitsApp_v1 has
+        // no collision/proximity/input-event subsystems wired (see report), so
+        // only frame.update and the held-input snapshot are populated. The empty
+        // frame_storage_ collision/input-event tables make those dispatch passes
+        // no-ops rather than fabricated events.
+        wz::engine::FrameContext frame_context{};
+        frame_context.input = input;
+        frame_context.frame.interval.start = 0;
+        frame_context.frame.interval.end = static_cast<wz::time::Tick>(
+            static_cast<double>(dt)
+            * static_cast<double>(wz::time::TimeSource::ticks_per_second()));
+        frame_context.frame.index = behavior_frame_index_++;
+
+        frame_storage_.behavior_commands.clear();
+
+        wz::engine::behavior::BehaviorFrameContext behavior_ctx{
+            .frame_context = &frame_context,
+            .frame_storage = &frame_storage_,
+            .scene = &*behavior_scene_,
+            .behavior_state = &behavior_scene_->behavior_state,
+            .commands = &frame_storage_.behavior_commands,
+            .gpu_compute = nullptr,
+            .logger = &ctx_.logger,
+        };
+        wz::engine::behavior::dispatch_behaviors(
+            *behavior_scene_, registry_, behavior_ctx);
+
+        // Apply the produced command buffer + integrate motion, exactly as
+        // game_app's apply_behavior_commands job: transform/velocity commands
+        // mutate the instance polytree, then world Y etc. settle on the next
+        // propagate.
+        std::vector<wz::scene::RuntimeEntityId> changed_entities;
+        (void)wz::engine::behavior::apply_behavior_commands(
+            *behavior_scene_,
+            frame_storage_.behavior_commands.commands,
+            &changed_entities);
+
+        std::vector<wz::scene::RuntimeEntityId> velocity_changed;
+        (void)wz::engine::behavior::integrate_motion(
+            *behavior_scene_, dt, &velocity_changed);
+        changed_entities.insert(
+            changed_entities.end(),
+            velocity_changed.begin(),
+            velocity_changed.end());
+        std::sort(changed_entities.begin(), changed_entities.end());
+        changed_entities.erase(
+            std::unique(changed_entities.begin(), changed_entities.end()),
+            changed_entities.end());
+
+        if (changed_entities.empty()) {
+            return;
+        }
+
+        // Re-propagate so world matrices (and any next-frame world-space reads)
+        // reflect the applied local changes.
+        wz::scene::propagate_all(behavior_scene_->storage.polytree);
+
+        // Write the changed local transforms back into scene_nodes_ so the next
+        // render_scene() (which draws from scene_nodes_, not the instance) shows
+        // the behavior result. Decompose each changed node's instance-local
+        // matrix to TRS and overwrite the matching authored node's transform.
+        for (const wz::scene::RuntimeEntityId entity : changed_entities) {
+            if (entity >= behavior_scene_->runtime_to_authored.size()) {
+                continue;
+            }
+            const wz::math::Mat4& local = wz::core::graph::node_data(
+                behavior_scene_->storage.polytree, entity).local;
+
+            wz::math::Transform trs{};
+            if (!wz::math::decompose_trs(local, trs)) {
+                continue;
+            }
+
+            wz::engine::assets::AuthoredTransform authored{};
+            authored.translation[0] = trs.position.x;
+            authored.translation[1] = trs.position.y;
+            authored.translation[2] = trs.position.z;
+            authored.rotation_quat[0] = trs.rotation.x;
+            authored.rotation_quat[1] = trs.rotation.y;
+            authored.rotation_quat[2] = trs.rotation.z;
+            authored.rotation_quat[3] = trs.rotation.w;
+            authored.scale[0] = trs.scale.x;
+            authored.scale[1] = trs.scale.y;
+            authored.scale[2] = trs.scale.z;
+
+            wz::engine::assets::SceneNodeAsset* node =
+                wz::engine::assets::find_scene_node(
+                    scene_nodes_,
+                    behavior_scene_->runtime_to_authored[entity]);
+            if (node) {
+                node->local = authored;
+            }
+        }
+    }
+
+    std::size_t WozzitsApp_v1::active_behavior_binding_count() const
+    {
+        return behavior_scene_ ? behavior_scene_->behaviors.size() : 0u;
+    }
+
+    std::optional<wz::math::Vec3> WozzitsApp_v1::node_local_translation(
+        const wz::scene::AuthoredEntityId& id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, id);
+        if (!node) {
+            return std::nullopt;
+        }
+        return wz::math::Vec3{
+            node->local.translation[0],
+            node->local.translation[1],
+            node->local.translation[2],
+        };
     }
 
     bool WozzitsApp_v1::set_node_transform(
@@ -325,6 +551,11 @@ namespace wz::app
         wz::engine::assets::SceneAddChildResult result =
             wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
         scene_dirty_ = scene_dirty_ || result.ok;
+        // A structural change invalidates the behavior runtime's entity ids; if
+        // behaviors are live, re-materialize so their runtime tracks the edit.
+        if (result.ok && behavior_scene_) {
+            rebuild_behavior_scene();
+        }
         return result;
     }
 
@@ -346,6 +577,9 @@ namespace wz::app
         const bool ok = wz::engine::assets::reparent_scene_node(
             scene_nodes_, id, new_parent_id);
         scene_dirty_ = scene_dirty_ || ok;
+        if (ok && behavior_scene_) {
+            rebuild_behavior_scene();
+        }
         return ok;
     }
 
@@ -354,6 +588,9 @@ namespace wz::app
         const bool removed =
             !wz::engine::assets::remove_scene_node(scene_nodes_, id).empty();
         scene_dirty_ = scene_dirty_ || removed;
+        if (removed && behavior_scene_) {
+            rebuild_behavior_scene();
+        }
         return removed;
     }
 
