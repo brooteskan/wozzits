@@ -637,6 +637,50 @@ TEST(MeshAssetModule, ResolvesMeshClusterHierarchyPreviewMesh)
     EXPECT_EQ(preview_data->index_count(), source_data->index_count());
 }
 
+TEST(MeshAssetModule, ResolvesClipmapLatticeMesh)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    const auto lattice = assets.meshes().create_clipmap_lattice_mesh({
+        .name = "clipmap_lattice",
+        .level_count = 4u,
+        .base_resolution = 8u,
+        .cell_size = 1.0f,
+        });
+    ASSERT_TRUE(lattice.valid());
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+
+    EXPECT_TRUE(report.ok());
+    EXPECT_EQ(report.resolved_count, 1u);
+
+    const auto handle = assets.meshes().get_mesh(lattice);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.meshes().get_mesh_data(handle);
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_TRUE(data->has_normals);
+    EXPECT_TRUE(data->has_uv0);
+
+    // The whole footprint must be connected (every referenced vertex reachable
+    // through shared edges) -- a missing seam stitch would leave the coarse
+    // rings disconnected from the fine center.
+    EXPECT_TRUE(mesh_referenced_vertices_are_connected(*data));
+
+    // Matches the analytic level-0 + ring triangle count.
+    const uint32_t m = 8u;
+    const uint32_t L = 4u;
+    const uint32_t expected_tris =
+        2u * m * m + (L - 1u) * ((3u * m * m) / 2u + 2u * m);
+    EXPECT_EQ(data->index_count(), expected_tris * 3u);
+}
+
 TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
 {
     wz::Logger logger;

@@ -403,6 +403,19 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000402ull
     };
 
+    // Procedural geometry-clipmap lattice mesh recipe.
+    // Generates a static, reusable nested-LOD-ring lattice in the XZ plane
+    // (y = 0), centered at the origin in grid-unit space: a full m x m quad
+    // center (level 0) surrounded by L-1 concentric square rings, each at
+    // double the cell size of the level it encloses. Coarse/fine ring
+    // boundaries are stitched crack-free (no T-junctions). Compiled directly
+    // from authored parameters (levels, base resolution, spacing); has no
+    // dependency. Produces kAssetTypeMesh output — the geometry the clipmap
+    // terrain renderer (issue #198 step 3) displaces in a vertex shader.
+    inline constexpr wz::asset::SchemaID kProceduralClipmapLatticeMeshSchema{
+        0xF11E'CA55'E7'000413ull
+    };
+
     // GLB static mesh import recipe.
     // Compiles a raw/binary GLB file dependency into CPU MeshData in MeshTable.
     // Produces kAssetTypeMesh output.

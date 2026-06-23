@@ -467,6 +467,9 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kProceduralTriangleMeshSchema, "Procedural triangle mesh");
             WZ_ADD_SCHEMA(kProceduralQuadMeshSchema, "Procedural quad mesh");
             WZ_ADD_SCHEMA(kProceduralCubeMeshSchema, "Procedural cube mesh");
+            WZ_ADD_SCHEMA(
+                kProceduralClipmapLatticeMeshSchema,
+                "Procedural clipmap lattice mesh");
             WZ_ADD_SCHEMA(kGLBMeshSchema, "GLB mesh");
             WZ_ADD_SCHEMA(kPlaceholderMeshSchema, "Placeholder mesh");
             WZ_ADD_SCHEMA(

@@ -60,6 +60,7 @@ target_sources(window_engine PRIVATE
     assets/mesh/mesh_compilers.cpp
     assets/mesh_asset_module.cpp
     assets/mesh/procedural_mesh.cpp
+    assets/mesh/clipmap_lattice_mesh.cpp
     assets/mesh_derived_field/mesh_derived_field.cpp
     assets/mesh_derived_field/mesh_derived_field_compilers.cpp
     assets/mesh_derived_field_asset_module.cpp

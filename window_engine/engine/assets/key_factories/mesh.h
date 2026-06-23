@@ -47,6 +47,25 @@ namespace wz::engine::assets
         };
     }
 
+    [[nodiscard]] inline wz::asset::AssetKey make_clipmap_lattice_mesh_key(
+        const ClipmapLatticeMeshDesc& desc) noexcept
+    {
+        // All three lattice parameters are identity inputs: distinct geometry
+        // for distinct (levels, resolution, cell size) tuples.
+        uint64_t h = kProceduralClipmapLatticeMeshSchema.value;
+        h = detail::mix64(h, static_cast<uint64_t>(desc.level_count));
+        h = detail::mix64(h, static_cast<uint64_t>(desc.base_resolution));
+        h = detail::mix64(h, mesh_key_float_bits(desc.cell_size));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash = detail::hash_u64(
+                kProceduralClipmapLatticeMeshSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshCompilerVersion),
+            .deps_hash = {},
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_placeholder_mesh_key() noexcept
     {
         return wz::asset::AssetKey{

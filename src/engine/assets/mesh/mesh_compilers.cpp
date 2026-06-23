@@ -9,6 +9,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/mesh/procedural_mesh.h>
+#include <engine/assets/mesh/clipmap_lattice_mesh.h>
 #include <engine/assets/gltf/gltf_importer.h>
 #include <engine/mesh_processing/mesh_processing.h>
 
@@ -371,6 +372,18 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        ClipmapLatticeMeshDesc clipmap_lattice_mesh_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            ClipmapLatticeMeshDesc desc{};
+            desc.level_count =
+                params.get<uint32_t>("level_count", desc.level_count);
+            desc.base_resolution =
+                params.get<uint32_t>("base_resolution", desc.base_resolution);
+            desc.cell_size = params.get<float>("cell_size", desc.cell_size);
+            return desc;
+        }
+
         wz::asset::AssetNode compile_procedural_mesh_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::AssetNode> dep_nodes,
@@ -703,6 +716,55 @@ namespace wz::engine::assets::internal
             return compiled_mesh_node(input, handle);
         }
 
+        wz::asset::AssetNode compile_clipmap_lattice_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::Logger& logger,
+            MeshTable& mesh_table)
+        {
+            if (!dep_nodes.empty()) {
+                logger.error(
+                    "clipmap lattice mesh node should not have dependencies");
+                return compile_failed_node(input);
+            }
+
+            // Parameters arrive either as a typed desc (engine-side authoring)
+            // or as a ParamBlock (editor/browser authoring).
+            ClipmapLatticeMeshDesc param_desc{};
+            const auto* desc =
+                std::any_cast<ClipmapLatticeMeshDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc = clipmap_lattice_mesh_desc_from_params(*params);
+                }
+                desc = &param_desc;
+            }
+
+            const ClipmapLatticeParams lattice_params =
+                sanitize_clipmap_lattice_params(
+                    desc->level_count,
+                    desc->base_resolution,
+                    desc->cell_size);
+
+            MeshData data = make_clipmap_lattice_mesh(lattice_params);
+            if (!data.valid()) {
+                logger.error(
+                    "clipmap lattice mesh builder produced invalid mesh data");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(data));
+            if (!handle.valid()) {
+                logger.error("failed to store clipmap lattice mesh");
+                return compile_failed_node(input);
+            }
+
+            return compiled_mesh_node(input, handle);
+        }
+
     } // anonymous namespace
 
 
@@ -767,6 +829,45 @@ namespace wz::engine::assets::internal
             {
                 return compile_procedural_mesh_node(
                     input, dep_nodes, logger, mesh_table, &make_cube_mesh);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kProceduralClipmapLatticeMeshSchema,
+            .output_type = kAssetTypeMesh,
+            .parameters = {
+                {
+                    .name = "level_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "LOD levels",
+                    .default_num = 4,
+                    .min = 1,
+                    .max = 12,
+                },
+                {
+                    .name = "base_resolution",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Base resolution",
+                    .default_num = 8,
+                    .min = 2,
+                    .max = 256,
+                },
+                {
+                    .name = "cell_size",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Cell size",
+                    .default_num = 1.0,
+                    .min = 0.0001,
+                    .max = 100000.0,
+                },
+            },
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                return compile_clipmap_lattice_mesh_node(
+                    input, dep_nodes, logger, mesh_table);
             }
             });
 

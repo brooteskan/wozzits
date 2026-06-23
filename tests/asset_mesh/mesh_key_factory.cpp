@@ -87,3 +87,69 @@ TEST(MeshKeyFactory, PlaceholderMeshKeyUsesExpectedSchema)
         wz::engine::assets::detail::hash_u64(
             wz::engine::assets::kPlaceholderMeshSchema.value));
 }
+
+TEST(MeshKeyFactory, ClipmapLatticeKeyIsDeterministic)
+{
+    const wz::engine::assets::ClipmapLatticeMeshDesc desc{
+        .level_count = 4u,
+        .base_resolution = 8u,
+        .cell_size = 1.0f,
+    };
+
+    const auto a = wz::engine::assets::make_clipmap_lattice_mesh_key(desc);
+    const auto b = wz::engine::assets::make_clipmap_lattice_mesh_key(desc);
+
+    EXPECT_EQ(a, b);
+    EXPECT_NE(a, wz::asset::AssetKey{});
+}
+
+TEST(MeshKeyFactory, ClipmapLatticeKeyUsesExpectedSchema)
+{
+    const wz::engine::assets::ClipmapLatticeMeshDesc desc{};
+    const auto key = wz::engine::assets::make_clipmap_lattice_mesh_key(desc);
+
+    EXPECT_EQ(
+        key.schema_hash,
+        wz::engine::assets::detail::hash_u64(
+            wz::engine::assets::kProceduralClipmapLatticeMeshSchema.value));
+}
+
+TEST(MeshKeyFactory, ClipmapLatticeParametersAreIdentityInputs)
+{
+    const wz::engine::assets::ClipmapLatticeMeshDesc base{
+        .level_count = 4u,
+        .base_resolution = 8u,
+        .cell_size = 1.0f,
+    };
+
+    const auto base_key =
+        wz::engine::assets::make_clipmap_lattice_mesh_key(base);
+
+    auto with_levels = base;
+    with_levels.level_count = 5u;
+    auto with_resolution = base;
+    with_resolution.base_resolution = 16u;
+    auto with_cell = base;
+    with_cell.cell_size = 2.0f;
+
+    EXPECT_NE(
+        base_key,
+        wz::engine::assets::make_clipmap_lattice_mesh_key(with_levels));
+    EXPECT_NE(
+        base_key,
+        wz::engine::assets::make_clipmap_lattice_mesh_key(with_resolution));
+    EXPECT_NE(
+        base_key,
+        wz::engine::assets::make_clipmap_lattice_mesh_key(with_cell));
+}
+
+TEST(MeshKeyFactory, ClipmapLatticeKeyDistinctFromOtherProceduralMeshes)
+{
+    const auto lattice = wz::engine::assets::make_clipmap_lattice_mesh_key(
+        wz::engine::assets::ClipmapLatticeMeshDesc{});
+    const auto cube = wz::engine::assets::make_procedural_cube_mesh_key();
+    const auto quad = wz::engine::assets::make_procedural_quad_mesh_key();
+
+    EXPECT_NE(lattice, cube);
+    EXPECT_NE(lattice, quad);
+}

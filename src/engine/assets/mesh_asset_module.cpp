@@ -153,6 +153,27 @@ namespace wz::engine::assets
         };
     }
 
+    MeshAsset MeshAssetModule::create_clipmap_lattice_mesh(
+        const ClipmapLatticeMeshDesc& desc)
+    {
+        const wz::asset::AssetKey mesh_key =
+            make_clipmap_lattice_mesh_key(desc);
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kProceduralClipmapLatticeMeshSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        if (!system_.register_asset(std::move(node), {}))
+            return MeshAsset{ .output = mesh_key };
+
+        return MeshAsset{
+            .output = mesh_key,
+        };
+    }
+
     MeshAsset MeshAssetModule::create_placeholder_mesh(
         std::string)
     {

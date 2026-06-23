@@ -160,6 +160,7 @@ float4 main(PSIn input) : SV_TARGET
             { kProceduralTriangleMeshSchema, kAssetTypeMesh },
             { kProceduralQuadMeshSchema, kAssetTypeMesh },
             { kProceduralCubeMeshSchema, kAssetTypeMesh },
+            { kProceduralClipmapLatticeMeshSchema, kAssetTypeMesh },
             { kGLBMeshSchema, kAssetTypeMesh },
             { kPlaceholderMeshSchema, kAssetTypeMesh },
             { kMeshDecimationSchema, kAssetTypeMesh },

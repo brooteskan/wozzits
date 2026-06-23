@@ -75,6 +75,28 @@ namespace wz::engine::assets
         uint32_t phase = 0;
     };
 
+    // Procedural geometry-clipmap lattice. Generates a static, reusable
+    // nested-LOD-ring footprint in the XZ plane (y = 0), centered at the
+    // origin in grid-unit space. All three fields are identity inputs folded
+    // into the AssetKey. Defaults: 4 levels, an 8 x 8 fine center, unit cells.
+    //
+    //   level_count   Number of LOD levels (>= 1). Level 0 is the full fine
+    //                 center grid; each outer level is a ring at double the
+    //                 cell size of the level it encloses.
+    //   base_resolution
+    //                 Quad cells per side of the fine center grid. Rounded up
+    //                 to a multiple of 4 at compile time (>= 4) so every ring's
+    //                 hole lands on a coarse-cell boundary and the LOD seams
+    //                 stay crack-free.
+    //   cell_size     World/grid extent of one level-0 cell.
+    struct ClipmapLatticeMeshDesc
+    {
+        std::string name;
+        uint32_t level_count = 4u;
+        uint32_t base_resolution = 8u;
+        float cell_size = 1.0f;
+    };
+
     class MeshAssetModule
     {
     public:
@@ -93,6 +115,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_debug_triangle_stride_mesh(
             const DebugTriangleStrideMeshDesc& desc);
+
+        [[nodiscard]] MeshAsset create_clipmap_lattice_mesh(
+            const ClipmapLatticeMeshDesc& desc);
 
         [[nodiscard]] MeshAsset create_placeholder_mesh(
             std::string name = {});
