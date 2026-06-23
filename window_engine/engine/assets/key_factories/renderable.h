@@ -195,6 +195,70 @@ namespace wz::engine::assets
         };
     }
 
+    [[nodiscard]] inline uint64_t clipmap_landscape_settings_float_bits(
+        float value) noexcept
+    {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<uint64_t>(bits);
+    }
+
+    [[nodiscard]] inline uint64_t mix_clipmap_landscape_settings(
+        uint64_t h,
+        const ClipmapLandscapeRenderSettings& settings) noexcept
+    {
+        for (float axis : settings.world_origin) {
+            h = detail::mix64(h, clipmap_landscape_settings_float_bits(axis));
+        }
+        for (float axis : settings.world_size) {
+            h = detail::mix64(h, clipmap_landscape_settings_float_bits(axis));
+        }
+        h = detail::mix64(
+            h, clipmap_landscape_settings_float_bits(settings.vertical_scale));
+        h = detail::mix64(
+            h, clipmap_landscape_settings_float_bits(settings.base_height));
+        h = detail::mix64(
+            h,
+            clipmap_landscape_settings_float_bits(
+                settings.lattice_world_cell_size));
+        return h;
+    }
+
+    [[nodiscard]] inline wz::asset::AssetKey
+    make_clipmap_landscape_renderable_key(
+        std::string_view name,
+        const wz::asset::AssetKey& lattice_mesh_key,
+        const wz::asset::AssetKey& height_field_key,
+        const wz::asset::AssetKey& render_program_key,
+        const ClipmapLandscapeRenderSettings& settings = {}) noexcept
+    {
+        uint64_t h = detail::fnv1a_64(name);
+        h = mix_clipmap_landscape_settings(h, settings);
+
+        const wz::asset::Hash mesh_dep =
+            detail::key_to_dep_hash(lattice_mesh_key);
+        const wz::asset::Hash height_dep =
+            detail::key_to_dep_hash(height_field_key);
+        const wz::asset::Hash program_dep =
+            detail::key_to_dep_hash(render_program_key);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash =
+                detail::hash_u64(kClipmapLandscapeRenderableSchema.value),
+            .compiler_hash =
+                detail::hash_u64(kClipmapLandscapeRenderableCompilerVersion),
+            .deps_hash = wz::asset::Hash{
+                detail::mix64(
+                    detail::mix64(mesh_dep.lo, height_dep.lo),
+                    program_dep.lo),
+                detail::mix64(
+                    detail::mix64(mesh_dep.hi, height_dep.hi),
+                    program_dep.hi),
+            },
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_terrain_debug_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& terrain_key,

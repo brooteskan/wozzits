@@ -496,6 +496,19 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000707ull
     };
 
+    // RHI-native geometry-clipmap landscape renderable recipe. Binds three
+    // already-resident assets by identity: a clipmap lattice Mesh
+    // (kProceduralClipmapLatticeMeshSchema), a height ScalarField
+    // (the #197 R32Float Texture2D), and a render program. The recipe also
+    // carries the world-space settings the clipmap vertex shader needs
+    // (heightmap world footprint, vertical scale/base, lattice cell size).
+    // Not a new asset type — height is ScalarField, the lattice is a Mesh
+    // (asset-type-vs-recipe rule). The render program and view-snapping math
+    // are slice 3b; this recipe is the data binding only.
+    inline constexpr wz::asset::SchemaID kClipmapLandscapeRenderableSchema{
+        0xF11E'CA55'E7'000708ull
+    };
+
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
         0xF11E'CA55'E7'000701ull
     };

@@ -136,6 +136,32 @@ namespace wz::engine::assets
         std::vector<uint32_t> epochs_;
     };
 
+    // World-space settings for a geometry-clipmap landscape renderable. The
+    // lattice mesh is authored in unitless grid space centered at the origin;
+    // these fields place its finest cell in world meters and describe how the
+    // height ScalarField maps onto the world XZ plane. Slice 3b packs these
+    // (together with the per-frame camera-snapped offset) into shader
+    // constants; the renderer-agnostic view transform is computed by
+    // engine/rendering/clipmap_view.h.
+    struct ClipmapLandscapeRenderSettings
+    {
+        // World XZ footprint covered by the height texture, in meters. The
+        // texture's [0,1] UV space maps linearly onto
+        // [world_origin, world_origin + world_size].
+        float world_origin[2]{ 0.0f, 0.0f };
+        float world_size[2]{ 1.0f, 1.0f };
+
+        // Heightmap value (R32, typically [0,1] or raw elevation) is scaled by
+        // vertical_scale and offset by base_height to produce world Y.
+        float vertical_scale = 1.0f;
+        float base_height = 0.0f;
+
+        // World meters spanned by one finest lattice cell. The lattice's
+        // unitless cell size is scaled by this to reach world units, and it is
+        // the natural quantum for view-snapping (see clipmap_view.h).
+        float lattice_world_cell_size = 1.0f;
+    };
+
     struct RhiRenderableRecipe
     {
         // Exactly one geometry source is set:
@@ -144,6 +170,14 @@ namespace wz::engine::assets
         wz::asset::AssetKey mesh_key{};
         wz::asset::AssetKey gpu_sparse_mesh_key{};
         wz::asset::AssetKey program_key{};
+
+        // Optional clipmap-landscape binding. Empty for mesh / gpu_sparse
+        // recipes — their valid() behavior is unchanged. When set,
+        // height_texture_key names the resident R32 height ScalarField the
+        // clipmap vertex shader samples (slice 3b), and clipmap carries the
+        // world-space placement / mapping. mesh_key holds the lattice mesh.
+        wz::asset::AssetKey height_texture_key{};
+        ClipmapLandscapeRenderSettings clipmap{};
 
         bool valid() const noexcept
         {
@@ -236,5 +270,17 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey sparse_mesh_asset{};
         wz::asset::AssetKey render_program_asset{};
+    };
+
+    struct ClipmapLandscapeRenderableCompileDesc
+    {
+        // Lattice geometry (kAssetTypeMesh, the clipmap lattice recipe).
+        wz::asset::AssetKey lattice_mesh_asset{};
+        // Height source (kAssetTypeScalarField, resident as an R32 texture).
+        wz::asset::AssetKey height_field_asset{};
+        // Render program (kAssetTypeRenderProgram).
+        wz::asset::AssetKey render_program_asset{};
+        // World-space placement / mapping for the landscape.
+        ClipmapLandscapeRenderSettings settings{};
     };
 }

@@ -160,6 +160,22 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        ClipmapLandscapeRenderableCompileDesc
+        clipmap_landscape_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            // Dependency order matches the create API + compiler input ports:
+            // lattice mesh, height scalar field, render program. The
+            // world-space settings are not recoverable from dependencies, so
+            // an editor-authored path supplies them through the typed compile
+            // desc (input.meta) instead of this fallback.
+            ClipmapLandscapeRenderableCompileDesc desc{};
+            desc.lattice_mesh_asset = dep_key(dep_nodes, 0);
+            desc.height_field_asset = dep_key(dep_nodes, 1);
+            desc.render_program_asset = dep_key(dep_nodes, 2);
+            return desc;
+        }
+
         GaussianSplatDebugRenderableCompileDesc
         gaussian_splat_debug_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -862,6 +878,100 @@ namespace wz::engine::assets::internal
                 if (!handle.valid()) {
                     logger->error(
                         "failed to store GPU sparse mesh renderable recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kClipmapLandscapeRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "lattice", kAssetTypeMesh },
+                { "height_field", kAssetTypeScalarField },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .compile = [logger, mesh_table, scalar_fields_table,
+                        render_program_table, rhi_renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                ClipmapLandscapeRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<ClipmapLandscapeRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    editor_desc =
+                        clipmap_landscape_renderable_desc_from_deps(dep_nodes);
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 3) {
+                        logger->error(
+                            "clipmap landscape renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
+                }
+
+                if (dep_handles.size() != 3) {
+                    logger->error(
+                        "clipmap landscape renderable requires lattice mesh, "
+                        "height field and program dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const MeshData* lattice = mesh_table->get(dep_handles[0]);
+                if (!lattice || !lattice->valid()) {
+                    logger->error(
+                        "clipmap landscape renderable lattice mesh is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const ScalarFieldData* height =
+                    scalar_fields_table->get(dep_handles[1]);
+                if (!height || !height->valid()) {
+                    logger->error(
+                        "clipmap landscape renderable height field is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[2]);
+                if (!program || !program->valid()) {
+                    logger->error(
+                        "clipmap landscape renderable program is invalid");
+                    return compile_failed_node(input);
+                }
+                if (program->binding_model
+                    != RenderBindingModel::MeshVertexPull)
+                {
+                    logger->error(
+                        "clipmap landscape renderable program must use "
+                        "MeshVertexPull");
+                    return compile_failed_node(input);
+                }
+
+                // The lattice mesh (#198 step 2), height ScalarField (#197
+                // R32 texture), and program are already rhi-resident; emit an
+                // rhi renderable recipe binding them by identity plus the
+                // world-space settings the clipmap shader (slice 3b) packs.
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .mesh_key = desc->lattice_mesh_asset,
+                        .program_key = desc->render_program_asset,
+                        .height_texture_key = desc->height_field_asset,
+                        .clipmap = desc->settings,
+                    });
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store clipmap landscape renderable recipe");
                     return compile_failed_node(input);
                 }
 

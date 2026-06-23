@@ -101,6 +101,18 @@ namespace wz::engine::assets
         RenderProgramAsset program{};
     };
 
+    struct ClipmapLandscapeRenderableDesc
+    {
+        std::string name;
+        // Clipmap lattice geometry (the kProceduralClipmapLatticeMeshSchema
+        // mesh, or any kAssetTypeMesh).
+        MeshAsset lattice_mesh{};
+        // Height source — a scalar field resident as an R32 Texture2D (#197).
+        ScalarFieldAsset height_field{};
+        RenderProgramAsset program{};
+        ClipmapLandscapeRenderSettings settings{};
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -153,6 +165,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_gpu_sparse_mesh_renderable(
             const GpuSparseMeshRenderableDesc& desc);
+
+        RenderableAsset create_clipmap_landscape(
+            const ClipmapLandscapeRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;

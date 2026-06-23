@@ -59,6 +59,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 4;
     inline constexpr uint64_t kRhiPullMeshRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGpuSparseMeshRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kClipmapLandscapeRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;

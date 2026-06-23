@@ -497,6 +497,9 @@ namespace wz::engine::assets
                 kGpuSparseMeshRenderableSchema,
                 "GPU sparse mesh renderable");
             WZ_ADD_SCHEMA(
+                kClipmapLandscapeRenderableSchema,
+                "Clipmap landscape renderable");
+            WZ_ADD_SCHEMA(
                 kGaussianSplatDebugRenderableSchema,
                 "Gaussian splat debug renderable");
             WZ_ADD_SCHEMA(

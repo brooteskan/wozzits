@@ -405,6 +405,70 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    RenderableAsset
+    RenderableAssetModule::create_clipmap_landscape(
+        const ClipmapLandscapeRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("clipmap landscape renderable has empty name");
+            return {};
+        }
+
+        if (!desc.lattice_mesh.valid()) {
+            logger_.error(
+                "clipmap landscape renderable has invalid lattice mesh: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.height_field.valid()) {
+            logger_.error(
+                "clipmap landscape renderable has invalid height field: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "clipmap landscape renderable has invalid render program: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_clipmap_landscape_renderable_key(
+                desc.name,
+                desc.lattice_mesh.output,
+                desc.height_field.output,
+                desc.program.key,
+                desc.settings);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kClipmapLandscapeRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = ClipmapLandscapeRenderableCompileDesc{
+            .lattice_mesh_asset = desc.lattice_mesh.output,
+            .height_field_asset = desc.height_field.output,
+            .render_program_asset = desc.program.key,
+            .settings = desc.settings,
+        };
+
+        // Dependency order must match the compiler's input ports:
+        // lattice mesh, height field, render program.
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.lattice_mesh.output,
+                desc.height_field.output,
+                desc.program.key,
+            });
+
+        return RenderableAsset{ .output = key };
+    }
+
     namespace
     {
         // Renderable schemas whose compiled product is an RhiRenderableRecipe in
@@ -413,7 +477,8 @@ namespace wz::engine::assets
         bool is_rhi_renderable_schema(wz::asset::SchemaID schema)
         {
             return schema == kRhiPullMeshRenderableSchema
-                || schema == kGpuSparseMeshRenderableSchema;
+                || schema == kGpuSparseMeshRenderableSchema
+                || schema == kClipmapLandscapeRenderableSchema;
         }
     }
 
