@@ -18,6 +18,9 @@
 #include <engine/rendering/engine_gpu_context.h>
 #include <engine/rendering/rhi_gpu_backend.h>
 
+// For ClipmapLandscapeRenderSettings carried on a realized clipmap renderable.
+#include <engine/assets/renderable/renderable.h>
+
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 #include <math/math_types.h>
@@ -60,10 +63,16 @@ namespace wz::engine::rendering
         // targets and records draw packets for every visible node that carries a
         // resolved renderable_asset key. Returns false if the recorder rejected a
         // draw. Renderables/programs are resolved from `assets` and cached.
+        //
+        // camera_world_pos is the camera's world-space position. Standard pull /
+        // gpu_sparse renderables ignore it; a clipmap-landscape renderable uses
+        // its XZ to center + snap the lattice and pack the per-draw clipmap view
+        // transform. Pass {0,0,0} when there is no meaningful camera.
         bool render_scene(
             std::span<const wz::engine::assets::SceneNodeAsset> nodes,
             wz::engine::assets::EngineAssetLibrary& assets,
-            const wz::math::Mat4& view_projection);
+            const wz::math::Mat4& view_projection,
+            const wz::math::Vec3& camera_world_pos);
 
         // Invalidate every realized cache after a wholesale asset-graph swap.
         // The caches (realized programs/renderables/registered shaders) are
@@ -136,6 +145,18 @@ namespace wz::engine::rendering
             // (asset-published) buffers are owned by the asset library; the
             // renderer binds but never releases them.
             bool                        owns_buffers = false;
+
+            // Clipmap-landscape renderables (recipe carries height_texture_key)
+            // displace the lattice in the VS by sampling a resident height
+            // texture, and pack a per-frame view transform into the draw's root
+            // constants instead of the per-node MVP. is_clipmap gates that
+            // packing in render_scene; the settings + heightmap dims feed
+            // compute_clipmap_view. The height texture is asset-owned (bound into
+            // object_srg at the scalar_field_texture semantic, never released).
+            bool is_clipmap = false;
+            wz::engine::assets::ClipmapLandscapeRenderSettings clipmap_settings{};
+            uint32_t heightmap_width = 1;
+            uint32_t heightmap_height = 1;
         };
 
         const RealizedProgram* realize_program(

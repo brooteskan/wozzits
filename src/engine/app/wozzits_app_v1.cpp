@@ -419,8 +419,16 @@ namespace wz::app
         if (!ctx_.assets) {
             return true;
         }
+        // The clipmap landscape snaps its lattice to the camera world position.
+        // Use the free-fly camera's position; it matches compute_view_projection
+        // on the app-camera path. (When an editor camera override is active the
+        // view is driven externally and a matching override position is a future
+        // editor concern — see the camera TODO in the header.)
+        const wz::math::Vec3 camera_world_pos{
+            camera_.x, camera_.y, camera_.z };
         return renderer_.render_scene(
-            scene_nodes_, *ctx_.assets, compute_view_projection());
+            scene_nodes_, *ctx_.assets, compute_view_projection(),
+            camera_world_pos);
     }
 
     void WozzitsApp_v1::set_camera_override(

@@ -89,9 +89,10 @@ namespace wz::engine::assets::internal
             "Wireframe cull none",
         };
 
-        constexpr std::array<std::string_view, 2> kBindingLayoutOptions = {
+        constexpr std::array<std::string_view, 3> kBindingLayoutOptions = {
             "Manual",
             "RHI pull mesh MVP",
+            "Clipmap landscape",
         };
 
         template<class Enum, std::size_t Count>
@@ -213,6 +214,49 @@ namespace wz::engine::assets::internal
                     .visibility = ShaderVisibility::Vertex,
                     .semantic = DescriptorSemantic::PulledMeshIndices,
                     .shader_register = 1,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+            }
+            else if (binding_layout == 2) {
+                // Clipmap landscape (#198 slice 3b). One object-SRG (space2)
+                // root-constant block holding view_projection (16 floats)
+                // followed by the packed ClipmapViewTransform fields, then the
+                // pulled lattice positions/indices and the resident R32 height
+                // texture (#197). The constant block is sized to the exact 32
+                // floats ClipmapDrawConstants packs (rhi_scene_renderer.cpp):
+                //   view_projection[16] + lattice_translation_scale[4]
+                //   + world_to_uv[4] + texel_and_vertical[4] + texel_dims[4].
+                // Visibility All: the VS displaces with all of it, the PS reads
+                // the vertical scale/base for height-band debug shading.
+                desc.root_constants.push_back(RootConstantBinding{
+                    .visibility = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .value_count = 32,
+                    .semantic = "clipmap",
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshPositions,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshIndices,
+                    .shader_register = 1,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::TextureSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::ScalarFieldTexture,
+                    .shader_register = 2,
                     .register_space = 2,
                     .descriptor_count = 1,
                 });

@@ -13,6 +13,7 @@
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/scene/scene_asset_data.h>
 
+#include <engine/rendering/clipmap_view.h>
 #include <engine/rendering/rhi_mesh_bridge.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
 #include <engine/rendering/rhi_shader_bridge.h>
@@ -90,6 +91,18 @@ namespace wz::engine::rendering
             return entry != registered_assets.end() ? &*entry : nullptr;
         }
 
+        // A clipmap-landscape recipe also binds a resident height texture and
+        // packs a per-frame view transform. Carried alongside the pull source so
+        // ensure_renderable can bind the texture into the object SRG and stash
+        // the data the per-frame constant packing needs.
+        struct ClipmapBinding
+        {
+            wz::asset::AssetKey height_texture_key{};
+            ea::ClipmapLandscapeRenderSettings settings{};
+            uint32_t heightmap_width = 1;
+            uint32_t heightmap_height = 1;
+        };
+
         struct PullMeshSource
         {
             wz::asset::AssetKey mesh_key{};
@@ -104,6 +117,11 @@ namespace wz::engine::rendering
             std::optional<wz::asset::AssetKey> resident_key{};
             uint32_t                           vertex_count = 0;
             uint32_t                           index_count = 0;
+
+            // Set for a clipmap-landscape recipe (height_texture_key present). The
+            // geometry still rides the CPU-pull mesh_key path (the lattice); this
+            // adds the resident height-texture binding + view-transform inputs.
+            std::optional<ClipmapBinding> clipmap{};
         };
 
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
@@ -143,11 +161,36 @@ namespace wz::engine::rendering
                 };
             }
 
+            // Clipmap-landscape geometry: the lattice rides the CPU-pull mesh_key
+            // path (uploaded + owned by the renderer, exactly like a plain pull
+            // mesh); the recipe additionally names a resident height ScalarField
+            // texture the VS samples. Surface that here so ensure_renderable binds
+            // the texture into the object SRG and stashes the heightmap dims +
+            // settings for the per-frame view-transform packing.
+            std::optional<ClipmapBinding> clipmap{};
+            if (!(recipe->height_texture_key == wz::asset::AssetKey{})) {
+                ClipmapBinding binding;
+                binding.height_texture_key = recipe->height_texture_key;
+                binding.settings = recipe->clipmap;
+                const ea::ScalarFieldHandle field_handle =
+                    assets.scalar_fields().get_scalar_field(
+                        ea::ScalarFieldAsset{ .output = recipe->height_texture_key });
+                if (const ea::ScalarFieldData* field =
+                        assets.scalar_fields().get_scalar_field_data(field_handle))
+                {
+                    binding.heightmap_width = field->width == 0u ? 1u : field->width;
+                    binding.heightmap_height =
+                        field->height == 0u ? 1u : field->height;
+                }
+                clipmap = binding;
+            }
+
             // CPU pull-mesh geometry: the renderer uploads and owns the buffers.
             return PullMeshSource{
                 .mesh_key = recipe->mesh_key,
                 .program_key = recipe->program_key,
                 .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
+                .clipmap = clipmap,
             };
         }
 
@@ -187,6 +230,80 @@ namespace wz::engine::rendering
             m.m[14] = t.translation[2];
             m.m[15] = 1.0f;
             return m;
+        }
+
+        // Per-draw root constants for a clipmap-landscape renderable. Packed to
+        // match the `Clipmap` cbuffer in resources/shaders/clipmap/clipmap_vs.hlsl
+        // BYTE-FOR-BYTE. Every member is a 16-byte-aligned float4 group, so this
+        // tightly-packed struct and the HLSL cbuffer (which also 16-byte-aligns
+        // each float4) agree without padding gymnastics.
+        //
+        //   offset  field
+        //   ------  ------------------------------------------------------------
+        //      0     view_projection            (float4x4, column-major)
+        //     64     lattice_translation_scale  (xyz = translation, w = scale)
+        //     80     world_to_uv                (xy = scale, zw = offset)
+        //     96     texel_and_vertical         (xy = texel world size,
+        //                                         z = vertical_scale, w = base)
+        //    112     texel_dims                 (xy = texel dims as float, zw=0)
+        //   ------
+        //    128 bytes = 32 dwords = binding_layout==2's "clipmap" value_count.
+        struct ClipmapDrawConstants
+        {
+            float view_projection[16];
+            float lattice_translation_scale[4];
+            float world_to_uv[4];
+            float texel_and_vertical[4];
+            float texel_dims[4];
+        };
+        static_assert(sizeof(ClipmapDrawConstants) == 128,
+            "clipmap root constants must be 128 bytes (32 dwords) to match the "
+            "binding_layout==2 SRG and the HLSL Clipmap cbuffer");
+
+        // Build the clipmap draw constants from the view-projection, the camera
+        // world position, and the realized renderable's authored settings + the
+        // resident heightmap dimensions. view_projection is column-major in
+        // m[0..15] (the same layout the MVP path uses).
+        ClipmapDrawConstants make_clipmap_draw_constants(
+            const wz::math::Mat4& view_projection,
+            const wz::math::Vec3& camera_world_pos,
+            const ea::ClipmapLandscapeRenderSettings& settings,
+            uint32_t heightmap_width,
+            uint32_t heightmap_height)
+        {
+            const wz::engine::rendering::ClipmapViewTransform view =
+                wz::engine::rendering::compute_clipmap_view(
+                    camera_world_pos.x,
+                    camera_world_pos.z,
+                    settings,
+                    ea::ClipmapLatticeParams{},
+                    heightmap_width,
+                    heightmap_height);
+
+            ClipmapDrawConstants out{};
+            std::memcpy(out.view_projection, view_projection.m,
+                sizeof(out.view_projection));
+
+            out.lattice_translation_scale[0] = view.lattice_translation[0];
+            out.lattice_translation_scale[1] = view.lattice_translation[1];
+            out.lattice_translation_scale[2] = view.lattice_translation[2];
+            out.lattice_translation_scale[3] = view.lattice_world_scale;
+
+            out.world_to_uv[0] = view.world_to_uv_scale[0];
+            out.world_to_uv[1] = view.world_to_uv_scale[1];
+            out.world_to_uv[2] = view.world_to_uv_offset[0];
+            out.world_to_uv[3] = view.world_to_uv_offset[1];
+
+            out.texel_and_vertical[0] = view.texel_world_size[0];
+            out.texel_and_vertical[1] = view.texel_world_size[1];
+            out.texel_and_vertical[2] = view.vertical_scale;
+            out.texel_and_vertical[3] = view.base_height;
+
+            out.texel_dims[0] = static_cast<float>(heightmap_width);
+            out.texel_dims[1] = static_cast<float>(heightmap_height);
+            out.texel_dims[2] = 0.0f;
+            out.texel_dims[3] = 0.0f;
+            return out;
         }
     }
 
@@ -474,6 +591,30 @@ namespace wz::engine::rendering
             vertex_count = mesh->vertex_count();
         }
 
+        // Clipmap-landscape: locate the resident height texture (#197) by the
+        // identity the scalar-field compiler published it under. It is asset-
+        // owned — bind it into the object SRG, never release it. Resolve this
+        // BEFORE inserting the realized entry so a missing texture fails cleanly
+        // without leaving a half-built renderable behind (and, on the CPU-upload
+        // path, releases the lattice pull buffers we just acquired).
+        wz::rhi::GpuResourceHandle height_texture_handle{};
+        if (source->clipmap) {
+            height_texture_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
+                ea::rhi_asset_identity(
+                    source->clipmap->height_texture_key, "field_texture"),
+                {} });
+            if (!height_texture_handle.valid()) {
+                if (owns_buffers) {
+                    release_unrealized_pull_buffers(
+                        gpu_.resources, positions_handle, indices_handle);
+                }
+                logger_.error(
+                    "RhiSceneRenderer: clipmap height texture not resident");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+        }
+
         auto [it, inserted] = realized_renderables_.try_emplace(renderable_key);
         RealizedRenderable& realized = it->second;
         realized.renderable_key = renderable_key;
@@ -481,16 +622,31 @@ namespace wz::engine::rendering
         realized.positions = positions_handle;
         realized.indices = indices_handle;
         realized.owns_buffers = owns_buffers;
+        if (source->clipmap) {
+            realized.is_clipmap = true;
+            realized.clipmap_settings = source->clipmap->settings;
+            realized.heightmap_width = source->clipmap->heightmap_width;
+            realized.heightmap_height = source->clipmap->heightmap_height;
+        }
         realized.object_srg.reset(*slot2_layout);
 
         const wz::rhi::Tag pulled_positions =
             gpu_.descriptor_semantics.find("pulled_mesh_positions");
         const wz::rhi::Tag pulled_indices =
             gpu_.descriptor_semantics.find("pulled_mesh_indices");
-        if (!realized.object_srg.set(pulled_positions, realized.positions)
-            || !realized.object_srg.set(pulled_indices, realized.indices)
-            || !realized.object_srg.satisfies(*slot2_layout))
-        {
+        bool srg_ok =
+            realized.object_srg.set(pulled_positions, realized.positions)
+            && realized.object_srg.set(pulled_indices, realized.indices);
+        if (srg_ok && realized.is_clipmap) {
+            // Bind the resident R32 height texture at the scalar_field_texture
+            // semantic — the third descriptor in the binding_layout==2 object
+            // SRG. After this the 3-descriptor SRG satisfies its layout.
+            const wz::rhi::Tag scalar_field_texture =
+                gpu_.descriptor_semantics.find("scalar_field_texture");
+            srg_ok = realized.object_srg.set(
+                scalar_field_texture, height_texture_handle).has_value();
+        }
+        if (!srg_ok || !realized.object_srg.satisfies(*slot2_layout)) {
             if (realized.owns_buffers) {
                 release_unrealized_pull_buffers(
                     gpu_.resources, realized.positions, realized.indices);
@@ -506,15 +662,27 @@ namespace wz::engine::rendering
         geometry.index_count = index_count;
         geometry.vertex_count = vertex_count;
 
+        // Initial root constants sized to the program's block: 64-byte identity
+        // MVP for the pull path, or a zeroed 128-byte clipmap block. render_scene
+        // overwrites these every frame before recording, but sizing them to the
+        // pipeline's root-constant dword_count up front keeps the packet
+        // internally consistent (a size mismatch would make the recorder reject).
         const wz::math::Mat4 initial_mvp = wz::math::Mat4::identity();
+        const ClipmapDrawConstants initial_clipmap{};
+        const std::span<const uint8_t> initial_constants =
+            realized.is_clipmap
+                ? std::span<const uint8_t>{
+                      reinterpret_cast<const uint8_t*>(&initial_clipmap),
+                      sizeof(initial_clipmap) }
+                : std::span<const uint8_t>{
+                      reinterpret_cast<const uint8_t*>(initial_mvp.m),
+                      sizeof(initial_mvp.m) };
         wz::rhi::DrawPacketAllocator allocator;
         wz::rhi::DrawPacketBuilder builder =
             wz::rhi::DrawPacketBuilder::begin(allocator);
         builder
             .set_geometry(geometry)
-            .set_root_constants(std::span<const uint8_t>{
-                reinterpret_cast<const uint8_t*>(initial_mvp.m),
-                sizeof(initial_mvp.m) })
+            .set_root_constants(initial_constants)
             .add_shader_resource_group(realized.object_srg);
         if (!builder.add_draw_item(wz::rhi::DrawRequest{
                 forward_, realized.program, nullptr,
@@ -539,7 +707,8 @@ namespace wz::engine::rendering
     bool RhiSceneRenderer::render_scene(
         std::span<const ea::SceneNodeAsset> nodes,
         ea::EngineAssetLibrary& assets,
-        const wz::math::Mat4& view_projection)
+        const wz::math::Mat4& view_projection,
+        const wz::math::Vec3& camera_world_pos)
     {
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(gpu_.device);
@@ -573,11 +742,32 @@ namespace wz::engine::rendering
                 continue;
             }
 
-            const wz::math::Mat4 world = world_from_transform(node.local);
-            const wz::math::Mat4 mvp = wz::math::mul(view_projection, world);
-            realized->packet.root_constants.assign(
-                reinterpret_cast<const uint8_t*>(mvp.m),
-                reinterpret_cast<const uint8_t*>(mvp.m) + sizeof(mvp.m));
+            if (realized->is_clipmap) {
+                // The clipmap lattice is one self-contained world-space mesh
+                // (all LOD rings) — one draw, no per-node world transform and no
+                // per-ring instancing. The per-draw root constants carry the
+                // camera-snapped view transform instead of an MVP; the node's own
+                // transform is intentionally ignored (the lattice follows the
+                // camera, not the scene node).
+                const ClipmapDrawConstants constants =
+                    make_clipmap_draw_constants(
+                        view_projection,
+                        camera_world_pos,
+                        realized->clipmap_settings,
+                        realized->heightmap_width,
+                        realized->heightmap_height);
+                const auto* bytes =
+                    reinterpret_cast<const uint8_t*>(&constants);
+                realized->packet.root_constants.assign(
+                    bytes, bytes + sizeof(constants));
+            }
+            else {
+                const wz::math::Mat4 world = world_from_transform(node.local);
+                const wz::math::Mat4 mvp = wz::math::mul(view_projection, world);
+                realized->packet.root_constants.assign(
+                    reinterpret_cast<const uint8_t*>(mvp.m),
+                    reinterpret_cast<const uint8_t*>(mvp.m) + sizeof(mvp.m));
+            }
 
             wz::rhi::record_packet(realized->packet, forward_, recorder_);
             ++recorded;
