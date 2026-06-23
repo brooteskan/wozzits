@@ -36,12 +36,19 @@
     </UserControl.Resources>
     <Grid Classes="EditorPaneRoot">
         <Border Classes="PaneSurface">
-            <Grid RowDefinitions="*">
-                <TextBlock Text="{Binding EmptyState}"
+            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+                <TextBox Grid.Row="0"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         PlaceholderText="Search assets…"
+                         Classes="InspectorInput"/>
+
+                <TextBlock Grid.Row="1"
+                           Text="{Binding EmptyState}"
                            Classes="PaneEmptyState"
                            IsVisible="{Binding HasNoTypes}"/>
 
-                <ScrollViewer IsVisible="{Binding HasTypes}">
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasTypes}">
                     <ItemsControl ItemsSource="{Binding Types}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="panes:AssetBrowserTypeViewModel">

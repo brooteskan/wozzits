@@ -794,6 +794,54 @@ public sealed partial class ProjectOpeningTests
         Assert.Null(sceneTree.SelectedNode);  // selection was in the removed subtree
     }
 
+    [Fact]
+    public void AssetBrowserSearchFiltersTypesByNameAndSchema()
+    {
+        var browser = new AssetBrowserPaneViewModel();
+        browser.Load(new EngineAssetCatalogResponse
+        {
+            Ok = true,
+            Entries =
+            [
+                new EngineAssetCatalogEntry
+                {
+                    Type = 1,
+                    TypeName = "Mesh",
+                    Category = "Geometry",
+                    Schemas =
+                    [
+                        new EngineAssetCatalogSchema { Schema = 10, Label = "Cube" },
+                    ],
+                },
+                new EngineAssetCatalogEntry
+                {
+                    Type = 2,
+                    TypeName = "Light",
+                    Category = "Lighting",
+                    Schemas =
+                    [
+                        new EngineAssetCatalogSchema { Schema = 20, Label = "Point" },
+                    ],
+                },
+            ],
+        });
+
+        Assert.Equal(2, browser.Types.Count);
+
+        browser.SearchText = "mesh";   // matches a type name (case-insensitive)
+        Assert.Equal("Mesh", Assert.Single(browser.Types).TypeName);
+
+        browser.SearchText = "point";  // matches a schema label, not the type name
+        Assert.Equal("Light", Assert.Single(browser.Types).TypeName);
+
+        browser.SearchText = "zzz";    // nothing matches
+        Assert.Empty(browser.Types);
+        Assert.True(browser.HasNoTypes);
+
+        browser.SearchText = "";       // cleared -> all visible again
+        Assert.Equal(2, browser.Types.Count);
+    }
+
     private static EngineProjectSnapshotResponse ProjectSnapshot(
         string projectName = "test",
         EngineAssetGraphSnapshotResponse? assetGraph = null,
