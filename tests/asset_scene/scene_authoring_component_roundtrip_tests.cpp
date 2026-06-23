@@ -1813,3 +1813,191 @@ TEST(SceneAssetModule, LightComponentsRoundTripThroughSceneJSON)
         summarize_scene_instance_components(result.instance);
     EXPECT_EQ(runtime_summary.hdri_environments, 1u);
 }
+
+// Persistence guard for the runtime-authored behavior binding (steps 1-3):
+// a node's singular `behavior` and plural `behaviors[]` must survive
+// export -> import losslessly, including every config kind (bool/number/
+// string) and the events list. WozzitsApp_v1::save_scene re-emits the nodes
+// array, so this exporter<->importer round-trip is what makes a behavior
+// edited via the runtime survive save -> reload.
+TEST(SceneAssetModule, BehaviorBindingConfigAndEventsRoundTripThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_behavior_config_events_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "behavior_config_events_roundtrip";
+
+    SceneNodeAsset node = make_scene_node("actor");
+
+    // Singular `behavior` carrying all config kinds + an events list.
+    node.behavior = SceneBehaviorAsset{
+        .id = "spin_behavior",
+        .label = "Spin behavior",
+        .module = "demo",
+        .name = "spin",
+        .enabled = false,
+        .apply_in_editor = true,
+        .events = { "tick", "collision.begin" },
+        .config = {
+            SceneBehaviorConfigValue{
+                .key = "loop",
+                .kind = SceneBehaviorConfigValueKind::Bool,
+                .bool_value = true,
+            },
+            SceneBehaviorConfigValue{
+                .key = "speed",
+                .kind = SceneBehaviorConfigValueKind::Number,
+                .number_value = 2.5,
+            },
+            SceneBehaviorConfigValue{
+                .key = "axis",
+                .kind = SceneBehaviorConfigValueKind::String,
+                .string_value = "up",
+            },
+        },
+    };
+
+    // Plural `behaviors[]` entry, also config + events, to prove both the
+    // singular and plural exporter/importer paths persist faithfully.
+    node.behaviors.push_back(SceneBehaviorAsset{
+        .id = "log_behavior",
+        .label = "Log behavior",
+        .module = "debug",
+        .name = "log_events",
+        .enabled = true,
+        .apply_in_editor = false,
+        .events = { "input.key" },
+        .config = {
+            SceneBehaviorConfigValue{
+                .key = "verbose",
+                .kind = SceneBehaviorConfigValueKind::Bool,
+                .bool_value = false,
+            },
+            SceneBehaviorConfigValue{
+                .key = "threshold",
+                .kind = SceneBehaviorConfigValueKind::Number,
+                .number_value = -1.25,
+            },
+            SceneBehaviorConfigValue{
+                .key = "prefix",
+                .kind = SceneBehaviorConfigValueKind::String,
+                .string_value = "dbg:",
+            },
+        },
+    });
+    authored.nodes.push_back(std::move(node));
+
+    // Export -> the serializer must emit behavior/behaviors + config + events.
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"behavior\""), std::string::npos);
+    EXPECT_NE(exported.find("\"behaviors\""), std::string::npos);
+    EXPECT_NE(exported.find("\"config\""), std::string::npos);
+    EXPECT_NE(exported.find("\"events\""), std::string::npos);
+    EXPECT_NE(exported.find("\"axis\""), std::string::npos);
+    EXPECT_NE(exported.find("\"collision.begin\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "behavior_config_events.scene.json",
+        exported);
+
+    // Re-import the exported JSON through the asset pipeline.
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "behavior_config_events",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+
+    const auto* parsed = find_scene_node(*data, "actor");
+    ASSERT_NE(parsed, nullptr);
+
+    // Helper: assert a parsed binding matches the authored one field by field.
+    const auto expect_config_entry =
+        [](const SceneBehaviorAsset& behavior,
+           const std::string& key,
+           SceneBehaviorConfigValueKind kind)
+        -> const SceneBehaviorConfigValue&
+    {
+        const auto it = std::find_if(
+            behavior.config.begin(),
+            behavior.config.end(),
+            [&](const SceneBehaviorConfigValue& v) { return v.key == key; });
+        EXPECT_NE(it, behavior.config.end())
+            << "missing config key: " << key;
+        EXPECT_EQ(it->kind, kind) << "config key kind mismatch: " << key;
+        return *it;
+    };
+
+    // ── Singular behavior ────────────────────────────────────────────────
+    ASSERT_TRUE(parsed->behavior.has_value());
+    const auto& singular = *parsed->behavior;
+    EXPECT_EQ(singular.id, "spin_behavior");
+    EXPECT_EQ(singular.label, "Spin behavior");
+    EXPECT_EQ(singular.module, "demo");
+    EXPECT_EQ(singular.name, "spin");
+    EXPECT_FALSE(singular.enabled);
+    EXPECT_TRUE(singular.apply_in_editor);
+    ASSERT_EQ(singular.events.size(), 2u);
+    EXPECT_EQ(singular.events[0], "tick");
+    EXPECT_EQ(singular.events[1], "collision.begin");
+    ASSERT_EQ(singular.config.size(), 3u);
+    EXPECT_TRUE(expect_config_entry(
+        singular, "loop", SceneBehaviorConfigValueKind::Bool).bool_value);
+    EXPECT_DOUBLE_EQ(
+        expect_config_entry(
+            singular, "speed", SceneBehaviorConfigValueKind::Number)
+            .number_value,
+        2.5);
+    EXPECT_EQ(
+        expect_config_entry(
+            singular, "axis", SceneBehaviorConfigValueKind::String)
+            .string_value,
+        "up");
+
+    // ── Plural behaviors[] ───────────────────────────────────────────────
+    ASSERT_EQ(parsed->behaviors.size(), 1u);
+    const auto& plural = parsed->behaviors[0];
+    EXPECT_EQ(plural.id, "log_behavior");
+    EXPECT_EQ(plural.label, "Log behavior");
+    EXPECT_EQ(plural.module, "debug");
+    EXPECT_EQ(plural.name, "log_events");
+    EXPECT_TRUE(plural.enabled);
+    EXPECT_FALSE(plural.apply_in_editor);
+    ASSERT_EQ(plural.events.size(), 1u);
+    EXPECT_EQ(plural.events[0], "input.key");
+    ASSERT_EQ(plural.config.size(), 3u);
+    EXPECT_FALSE(expect_config_entry(
+        plural, "verbose", SceneBehaviorConfigValueKind::Bool).bool_value);
+    EXPECT_DOUBLE_EQ(
+        expect_config_entry(
+            plural, "threshold", SceneBehaviorConfigValueKind::Number)
+            .number_value,
+        -1.25);
+    EXPECT_EQ(
+        expect_config_entry(
+            plural, "prefix", SceneBehaviorConfigValueKind::String)
+            .string_value,
+        "dbg:");
+
+    // Re-export the imported scene: a second round trip stays lossless.
+    const std::string reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data));
+    EXPECT_EQ(reparsed_export, exported);
+}
