@@ -1,5 +1,7 @@
 #include <engine/rendering/rhi_render_program_bridge.h>
 
+#include <engine/assets/engine_asset_key_core.h>
+
 #include <d3dcompiler.h>
 
 #include <algorithm>
@@ -286,21 +288,35 @@ namespace wz::engine::rendering
 
     }
 
+    // Project the FULL asset identity into the rhi module/program name. Folding
+    // ALL FOUR component hashes (content+schema+compiler+deps) is required, not
+    // just content_hash: an HLSL shader key puts only (entry, target, stage) in
+    // content_hash and the source-file identity in deps_hash (make_hlsl_shader_
+    // key). Truncating to content_hash made every main/vs_5_1 (and main/ps_5_1)
+    // shader alias to a single tag, so distinct shaders collided in the last-
+    // writer-wins ShaderModuleRegistry and a program silently bound whichever
+    // shader compiled last. key_to_dep_hash mixes all four hashes into one 128-
+    // bit value, so the ref is 1:1 with the asset key (same 32-hex width as
+    // before; refs are runtime-only, nothing persisted depends on the format).
     std::string shader_ref(const wz::asset::AssetKey& key)
     {
+        const wz::asset::Hash id =
+            wz::engine::assets::detail::key_to_dep_hash(key);
         char buffer[40];
         std::snprintf(buffer, sizeof(buffer), "asset:%016llx%016llx",
-            static_cast<unsigned long long>(key.content_hash.hi),
-            static_cast<unsigned long long>(key.content_hash.lo));
+            static_cast<unsigned long long>(id.hi),
+            static_cast<unsigned long long>(id.lo));
         return std::string(buffer);
     }
 
     std::string program_ref(const wz::asset::AssetKey& key)
     {
+        const wz::asset::Hash id =
+            wz::engine::assets::detail::key_to_dep_hash(key);
         char buffer[72];
         std::snprintf(buffer, sizeof(buffer), "program#%016llx%016llx",
-            static_cast<unsigned long long>(key.content_hash.hi),
-            static_cast<unsigned long long>(key.content_hash.lo));
+            static_cast<unsigned long long>(id.hi),
+            static_cast<unsigned long long>(id.lo));
         return std::string(buffer);
     }
 

@@ -13,7 +13,9 @@
 #include <array>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace ea = wz::engine::assets;
 
@@ -252,7 +254,8 @@ TEST(RhiRenderProgramBridge, ConvertsResolvedRenderProgramDataWithShaderKeys)
             constants);
 
     ASSERT_TRUE(converted.has_value());
-    EXPECT_EQ(converted->name, "program#000000000000dd00000000000000cc00");
+    EXPECT_EQ(converted->name,
+        wz::engine::rendering::program_ref(program_key));
     EXPECT_EQ(converted->vertex_shader,
         wz::engine::rendering::shader_ref(vertex_key));
     EXPECT_EQ(converted->pixel_shader,
@@ -307,4 +310,72 @@ TEST(RhiShaderBridge, RegisteredProgramShadersResolveThroughConvertedProgram)
         resolved->pixel.begin(),
         resolved->pixel.end(),
         pixel_bytecode.begin()));
+}
+
+// Regression: shader_ref / program_ref must fold the FULL asset key, not just
+// content_hash. An HLSL shader key encodes only (entry, target, stage) in
+// content_hash and the source-file identity in deps_hash (make_hlsl_shader_key),
+// so two shaders that share a profile but come from different files differ ONLY
+// in deps_hash. Truncating the ref to content_hash aliased them to one tag —
+// the root cause of the clipmap landscape "renders flat" flip-flop.
+TEST(RhiShaderBridge, ShaderRefFoldsFullKeyNotJustContentHash)
+{
+    wz::asset::AssetKey a;
+    a.content_hash.lo = 0x1111; a.content_hash.hi = 0x2222;  // entry/target/stage
+    a.schema_hash.lo  = 0x3333; a.schema_hash.hi  = 0x4444;
+    a.compiler_hash.lo = 0x5555; a.compiler_hash.hi = 0x6666;
+    a.deps_hash.lo    = 0xAAAA; a.deps_hash.hi    = 0xBBBB;  // source file A
+
+    wz::asset::AssetKey b = a;
+    b.deps_hash.lo = 0xCCCC; b.deps_hash.hi = 0xDDDD;        // source file B only
+
+    // Distinct sources must not alias to the same rhi module/program name.
+    EXPECT_NE(wz::engine::rendering::shader_ref(a),
+        wz::engine::rendering::shader_ref(b));
+    EXPECT_NE(wz::engine::rendering::program_ref(a),
+        wz::engine::rendering::program_ref(b));
+    // Deterministic: the same key always yields the same ref.
+    EXPECT_EQ(wz::engine::rendering::shader_ref(a),
+        wz::engine::rendering::shader_ref(a));
+}
+
+// Regression (end-to-end): two shaders sharing a profile but differing in source
+// must occupy DISTINCT ShaderModule tags, so registering the second does not
+// overwrite the first in the last-writer-wins registry (program_registry.h).
+// On the pre-fix code both refs collided and the second register_program()
+// clobbered the first's bytecode.
+TEST(RhiShaderBridge, DistinctSourceShadersDoNotOverwriteInRegistry)
+{
+    wz::asset::AssetKey vs_a;
+    vs_a.content_hash.lo = 0x1111; vs_a.content_hash.hi = 0x2222;  // same profile
+    vs_a.deps_hash.lo = 0xAAAA; vs_a.deps_hash.hi = 0xBBBB;        // source A
+    wz::asset::AssetKey vs_b = vs_a;
+    vs_b.deps_hash.lo = 0xCCCC; vs_b.deps_hash.hi = 0xDDDD;        // source B
+
+    wz::rhi::ShaderModuleRegistry shaders;
+    shaders.register_program(wz::rhi::ShaderModuleDesc{
+        wz::engine::rendering::shader_ref(vs_a),
+        wz::rhi::ShaderStage::Vertex,
+        std::vector<uint8_t>{ 0xA1, 0xA2 } });
+    shaders.register_program(wz::rhi::ShaderModuleDesc{
+        wz::engine::rendering::shader_ref(vs_b),
+        wz::rhi::ShaderStage::Vertex,
+        std::vector<uint8_t>{ 0xB1, 0xB2 } });
+
+    const wz::rhi::Tag tag_a =
+        shaders.find(wz::engine::rendering::shader_ref(vs_a));
+    const wz::rhi::Tag tag_b =
+        shaders.find(wz::engine::rendering::shader_ref(vs_b));
+    ASSERT_TRUE(tag_a.valid());
+    ASSERT_TRUE(tag_b.valid());
+    EXPECT_FALSE(tag_a == tag_b);
+
+    const wz::rhi::ShaderModuleDesc* mod_a = shaders.get(tag_a);
+    const wz::rhi::ShaderModuleDesc* mod_b = shaders.get(tag_b);
+    ASSERT_NE(mod_a, nullptr);
+    ASSERT_NE(mod_b, nullptr);
+    ASSERT_EQ(mod_a->bytecode.size(), 2u);
+    ASSERT_EQ(mod_b->bytecode.size(), 2u);
+    EXPECT_EQ(mod_a->bytecode[0], 0xA1);  // source A's bytecode preserved
+    EXPECT_EQ(mod_b->bytecode[0], 0xB1);  // source B's bytecode preserved
 }
