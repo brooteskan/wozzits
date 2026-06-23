@@ -715,6 +715,95 @@ WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
     const char* parent_id_utf8,
     WzBuffer* out_new_id);
 
+// ─── Live behavior-binding authoring on the running runtime ─────────────────
+// These mutate a scene node's authored behavior binding(s) (SceneBehaviorAsset)
+// on the running engine. Like the live scene edits above, the mutation is
+// DEFERRED: it is queued and applied on the engine thread's NEXT frame, never
+// synchronously mid-frame — the safety property the "one ABI" depends on. After
+// applying, the engine re-materializes the behavior runtime so the change takes
+// effect, and marks the scene dirty (persisted on save / exit).
+//
+// HOST-CAPABILITY GATE: these are mutation verbs, gated behind the host role.
+// The editor-started runtime (wz_editor_runtime_start) holds the capability, so
+// the editor may call them; a caller without the host role (e.g. a future
+// behavior-as-consumer of this same ABI) is rejected fail-closed with
+// WZ_RESULT_INVALID_ARGUMENT. The gate is enforced in the implementation
+// (require_host_behavior_authoring); see wozzits_abi.cpp.
+
+// Add a behavior binding (the given `module`) to node `node_id_utf8`, minting a
+// stable binding id (a deduped slug from the node id) and returning it in
+// out_binding_id (UTF-8; free with wz_free_buffer). Unlike the other behavior
+// verbs this BLOCKS until the engine thread applies it, because the host UI
+// needs the minted id back — which is safe because the caller is the host's UI
+// thread, not a behavior on the engine thread. WZ_RESULT_INVALID_ARGUMENT for a
+// null runtime, an empty node id/module, a missing node, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_add_node_behavior(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* module_utf8,
+    WzBuffer* out_binding_id);
+
+// Remove the behavior binding `binding_id_utf8` from node `node_id_utf8`
+// (non-blocking, applied next frame). WZ_RESULT_INVALID_ARGUMENT for a null
+// runtime, an empty node/binding id, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_remove_node_behavior(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8);
+
+// Set a behavior binding's enabled flag (non-blocking). A disabled binding does
+// not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
+// node/binding id, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_enabled(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8,
+    uint32_t enabled);
+
+// Set a behavior binding's label + module (non-blocking). NULL label/module are
+// treated as empty. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
+// node/binding id, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_fields(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8,
+    const char* label_utf8,
+    const char* module_utf8);
+
+// Replace a behavior binding's events list (non-blocking). `events_utf8` is a
+// single newline-delimited UTF-8 string (one channel token per line, e.g.
+// "frame.update\ninput.action"); it is parsed engine-side. Empty/NULL clears
+// the list (the binding then falls back to its module's default channels).
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty node/binding id, or a
+// non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_events(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8,
+    const char* events_utf8);
+
+// Set/replace one config entry (by `key_utf8`) on a behavior binding
+// (non-blocking). `kind_utf8` is "bool" | "int" | "float" | "string"; the value
+// is parsed from `value_utf8` per kind (int/float store as Number). An existing
+// entry with the same key is overwritten. WZ_RESULT_INVALID_ARGUMENT for a null
+// runtime, an empty node/binding id/key, an unknown kind, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_config(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8,
+    const char* key_utf8,
+    const char* kind_utf8,
+    const char* value_utf8);
+
+// Remove one config entry (by `key_utf8`) from a behavior binding
+// (non-blocking). WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
+// node/binding id/key, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_clear_node_behavior_config(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* binding_id_utf8,
+    const char* key_utf8);
+
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
 #ifdef __cplusplus

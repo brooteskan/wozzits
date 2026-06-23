@@ -125,3 +125,141 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
     EXPECT_FLOAT_EQ(after_two->y, 2.0f)
         << "behaviors did not dispatch on the second frame";
 }
+
+// ─── Live behavior-binding authoring (the host-ABI verbs' engine-thread apply) ─
+// These exercise WozzitsApp_v1's behavior-authoring methods — the apply layer
+// the deferred host-ABI verbs (wz_editor_runtime_*_node_behavior) call on the
+// engine thread. Starting from the fixture's "blank" node (NO behavior), adding
+// the "move_up_on_frame" module must materialize a live binding that moves the
+// node; toggling enabled / editing config / removing must take effect on the
+// next tick. This is the same direct-drive approach as the dispatch test above,
+// proving the authoring path without standing up the cross-thread render loop.
+
+TEST_F(WozzitsAppBehaviorFixture, AddBehaviorMaterializesAndRunsOnBlankNode)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts with no behavior; the scene's only binding is "mover".
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    const std::optional<wz::math::Vec3> before =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(before.has_value()) << "blank node missing from scene";
+    EXPECT_FLOAT_EQ(before->y, 0.0f);
+
+    // Add the move-up behavior to "blank": a binding is minted + materialized.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "move_up_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_FALSE(added.binding_id.empty())
+        << "add_node_behavior must mint a stable binding id";
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the added binding was not materialized into the behavior runtime";
+
+    // One tick: the freshly added binding dispatches frame.update (it has no
+    // events, so it falls back to the module's default channel) and moves blank.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_add =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_add.has_value());
+    EXPECT_FLOAT_EQ(after_add->y, 1.0f)
+        << "the added behavior did not run on the blank node";
+
+    // Disabling the binding stops it: the next tick does not advance it.
+    ASSERT_TRUE(
+        app.set_node_behavior_enabled("blank", added.binding_id, false));
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_disable =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_disable.has_value());
+    EXPECT_FLOAT_EQ(after_disable->y, 1.0f)
+        << "a disabled behavior must not dispatch";
+
+    // Re-enabling resumes it on the following tick.
+    ASSERT_TRUE(
+        app.set_node_behavior_enabled("blank", added.binding_id, true));
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_reenable =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_reenable.has_value());
+    EXPECT_FLOAT_EQ(after_reenable->y, 2.0f)
+        << "a re-enabled behavior must dispatch again";
+
+    // Removing the binding takes it out of the runtime: count drops back, and
+    // the node stops moving.
+    ASSERT_TRUE(app.remove_node_behavior("blank", added.binding_id));
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u)
+        << "removed binding still present in the behavior runtime";
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_remove =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_remove.has_value());
+    EXPECT_FLOAT_EQ(after_remove->y, 2.0f)
+        << "a removed behavior must no longer dispatch";
+}
+
+// set/clear config + set-fields/set-events apply (and survive a rebuild). The
+// move-up module ignores config, so this asserts the authoring mutations land
+// and the binding keeps running rather than a config-driven movement change.
+TEST_F(WozzitsAppBehaviorFixture, EditBehaviorFieldsConfigAndEventsApply)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "move_up_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    const std::string& id = added.binding_id;
+
+    // set-fields: relabel + keep the module (so it keeps running).
+    EXPECT_TRUE(
+        app.set_node_behavior_fields(
+            "blank", id, "Renamed", "move_up_on_frame"));
+
+    // set-events: an explicit frame.update keeps it dispatching.
+    EXPECT_TRUE(
+        app.set_node_behavior_events("blank", id, { "frame.update" }));
+
+    // set-config (string then overwrite as bool) + a second key, then clear one.
+    wz::engine::assets::SceneBehaviorConfigValue speed;
+    speed.key = "speed";
+    speed.kind = wz::engine::assets::SceneBehaviorConfigValueKind::Number;
+    speed.number_value = 2.0;
+    EXPECT_TRUE(app.set_node_behavior_config("blank", id, speed));
+
+    wz::engine::assets::SceneBehaviorConfigValue loop;
+    loop.key = "loop";
+    loop.kind = wz::engine::assets::SceneBehaviorConfigValueKind::Bool;
+    loop.bool_value = true;
+    EXPECT_TRUE(app.set_node_behavior_config("blank", id, loop));
+
+    // Overwrite "speed" in place (same key) — still one "speed" entry.
+    wz::engine::assets::SceneBehaviorConfigValue speed2;
+    speed2.key = "speed";
+    speed2.kind = wz::engine::assets::SceneBehaviorConfigValueKind::Number;
+    speed2.number_value = 5.0;
+    EXPECT_TRUE(app.set_node_behavior_config("blank", id, speed2));
+
+    // clear an existing key succeeds; clearing a missing key fails.
+    EXPECT_TRUE(app.clear_node_behavior_config("blank", id, "loop"));
+    EXPECT_FALSE(app.clear_node_behavior_config("blank", id, "missing"));
+
+    // Editing a non-existent binding id fails (no node/binding matched).
+    EXPECT_FALSE(
+        app.set_node_behavior_enabled("blank", "no.such.binding", false));
+
+    // After all the edits the binding is still live and runs.
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u);
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FLOAT_EQ(after->y, 1.0f)
+        << "the binding stopped running after field/config/event edits";
+}

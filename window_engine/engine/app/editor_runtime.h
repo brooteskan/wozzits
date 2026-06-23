@@ -58,6 +58,41 @@ namespace wz::app
         wz::scene::AuthoredEntityId new_parent_id;
     };
 
+    // A live edit to one of a node's behavior bindings, posted from the owner
+    // thread to the engine thread (fire-and-forget). Unlike the transform queue
+    // these are NOT coalesced: each op (set-enabled, set-fields, set-events,
+    // set/clear one config entry, remove the binding) is distinct and must apply
+    // in order — coalescing by id would drop a needed mutation. `add` is not
+    // here: the host needs the minted id back, so it is a blocking handshake
+    // (mirrors add_child) rather than a fire-and-forget post.
+    struct SceneNodeBehaviorEdit
+    {
+        enum class Op : uint8_t
+        {
+            Remove = 0,
+            SetEnabled,
+            SetFields,
+            SetEvents,
+            SetConfig,
+            ClearConfig,
+        };
+
+        Op op = Op::Remove;
+        wz::scene::AuthoredEntityId node_id;
+        std::string binding_id;
+
+        // SetEnabled
+        bool enabled = true;
+        // SetFields
+        std::string label;
+        std::string module;
+        // SetEvents (already parsed from the newline-delimited ABI string)
+        std::vector<std::string> events;
+        // SetConfig / ClearConfig
+        std::string config_key;
+        wz::engine::assets::SceneBehaviorConfigValue config_value;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -114,6 +149,16 @@ namespace wz::app
             const std::function<
                 void(const wz::scene::AuthoredEntityId&)>& applier);
 
+        // Owner thread: queue a behavior-binding edit (non-blocking). Appended
+        // in order — NOT coalesced (every op is a distinct mutation that must
+        // land). Applied on the engine thread's next frame, like the other
+        // live edits. The add-a-binding op is the separate blocking
+        // add_node_behavior() below (it returns a minted id).
+        void post_scene_node_behavior(SceneNodeBehaviorEdit edit);
+
+        void service_pending_scene_node_behaviors(
+            const std::function<void(const SceneNodeBehaviorEdit&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -126,6 +171,23 @@ namespace wz::app
         void service_pending_add_child(
             const std::function<wz::engine::assets::SceneAddChildResult(
                 const wz::scene::AuthoredEntityId&)>& adder);
+
+        // Owner thread: add a behavior binding (the given module) to `node_id`
+        // and block until the engine thread applies it, returning the minted
+        // binding id (or an error). Like add_child this is a blocking
+        // request/response because the host UI needs the new id back — and it is
+        // safe BECAUSE the caller is the host's UI thread (the editor), never a
+        // behavior running on the engine thread, so the engine thread is free to
+        // service it without a self-deadlock.
+        wz::engine::assets::SceneAddBehaviorResult add_node_behavior(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& module);
+
+        // Engine thread: if an add-behavior is pending, run `adder` and publish
+        // the result. Called once per frame from run_project_runtime.
+        void service_pending_add_node_behavior(
+            const std::function<wz::engine::assets::SceneAddBehaviorResult(
+                const wz::scene::AuthoredEntityId&, const std::string&)>& adder);
 
         // Engine thread: mark the runtime done so a blocked bind fails instead
         // of hanging. Called after run_project_runtime returns (incl. the init-
@@ -156,6 +218,7 @@ namespace wz::app
         std::vector<SceneNodePropertiesEdit> pending_properties_;
         std::vector<SceneNodeReparentEdit> pending_reparents_;
         std::vector<wz::scene::AuthoredEntityId> pending_removes_;
+        std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the
@@ -164,6 +227,15 @@ namespace wz::app
         bool has_add_result_ = false;
         wz::scene::AuthoredEntityId pending_add_parent_;
         wz::engine::assets::SceneAddChildResult add_result_;
+
+        // Blocking add-behavior request/response (mirrors the add-child
+        // handshake): the owner posts a node id + module and blocks for the
+        // minted binding-id result.
+        bool has_add_behavior_request_ = false;
+        bool has_add_behavior_result_ = false;
+        wz::scene::AuthoredEntityId pending_add_behavior_node_;
+        std::string pending_add_behavior_module_;
+        wz::engine::assets::SceneAddBehaviorResult add_behavior_result_;
     };
 
     struct EditorRuntimeLogSink

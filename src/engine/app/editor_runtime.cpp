@@ -255,6 +255,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_behavior(
+        SceneNodeBehaviorEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: each op is a distinct mutation.
+        pending_behavior_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_behaviors(
+        const std::function<void(const SceneNodeBehaviorEdit&)>& applier)
+    {
+        std::vector<SceneNodeBehaviorEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_behavior_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_behavior_edits_);
+        }
+
+        for (const SceneNodeBehaviorEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -307,6 +332,70 @@ namespace wz::app
             std::lock_guard<std::mutex> lock(mutex_);
             add_result_ = std::move(applied);
             has_add_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
+    wz::engine::assets::SceneAddBehaviorResult
+    EditorRuntimeControl::add_node_behavior(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& module)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(
+            lock, [this] { return !has_add_behavior_request_ || finished_; });
+        if (finished_) {
+            return wz::engine::assets::SceneAddBehaviorResult{
+                .ok = false,
+                .binding_id = {},
+                .error = "engine runtime is not running",
+            };
+        }
+
+        pending_add_behavior_node_ = node_id;
+        pending_add_behavior_module_ = module;
+        has_add_behavior_request_ = true;
+        has_add_behavior_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(
+            lock, [this] { return has_add_behavior_result_ || finished_; });
+        if (!has_add_behavior_result_) {
+            has_add_behavior_request_ = false;
+            return wz::engine::assets::SceneAddBehaviorResult{
+                .ok = false,
+                .binding_id = {},
+                .error = "engine runtime stopped before add completed",
+            };
+        }
+
+        has_add_behavior_result_ = false;
+        return std::move(add_behavior_result_);
+    }
+
+    void EditorRuntimeControl::service_pending_add_node_behavior(
+        const std::function<wz::engine::assets::SceneAddBehaviorResult(
+            const wz::scene::AuthoredEntityId&, const std::string&)>& adder)
+    {
+        wz::scene::AuthoredEntityId node;
+        std::string module;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_add_behavior_request_) {
+                return;
+            }
+            node = std::move(pending_add_behavior_node_);
+            module = std::move(pending_add_behavior_module_);
+            has_add_behavior_request_ = false;
+        }
+
+        wz::engine::assets::SceneAddBehaviorResult applied =
+            adder(node, module);
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            add_behavior_result_ = std::move(applied);
+            has_add_behavior_result_ = true;
         }
         cv_.notify_all();
     }
@@ -437,9 +526,59 @@ namespace wz::app
                         [&app](const wz::scene::AuthoredEntityId& id) {
                             app.remove_node(id);
                         });
+                    control->service_pending_scene_node_behaviors(
+                        [&app](const SceneNodeBehaviorEdit& edit) {
+                            // Translate the seam edit into a granular app call
+                            // (WozzitsApp_v1 stays ignorant of the seam struct,
+                            // mirroring set_node_properties/reparent_node above).
+                            using Op = SceneNodeBehaviorEdit::Op;
+                            switch (edit.op) {
+                                case Op::Remove:
+                                    app.remove_node_behavior(
+                                        edit.node_id, edit.binding_id);
+                                    break;
+                                case Op::SetEnabled:
+                                    app.set_node_behavior_enabled(
+                                        edit.node_id,
+                                        edit.binding_id,
+                                        edit.enabled);
+                                    break;
+                                case Op::SetFields:
+                                    app.set_node_behavior_fields(
+                                        edit.node_id,
+                                        edit.binding_id,
+                                        edit.label,
+                                        edit.module);
+                                    break;
+                                case Op::SetEvents:
+                                    app.set_node_behavior_events(
+                                        edit.node_id,
+                                        edit.binding_id,
+                                        edit.events);
+                                    break;
+                                case Op::SetConfig:
+                                    app.set_node_behavior_config(
+                                        edit.node_id,
+                                        edit.binding_id,
+                                        edit.config_value);
+                                    break;
+                                case Op::ClearConfig:
+                                    app.clear_node_behavior_config(
+                                        edit.node_id,
+                                        edit.binding_id,
+                                        edit.config_key);
+                                    break;
+                            }
+                        });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {
                             return app.add_child_node(parent_id);
+                        });
+                    control->service_pending_add_node_behavior(
+                        [&app](
+                            const wz::scene::AuthoredEntityId& node_id,
+                            const std::string& module) {
+                            return app.add_node_behavior(node_id, module);
                         });
                     if (control->take_save_request()) {
                         app.save_scene();

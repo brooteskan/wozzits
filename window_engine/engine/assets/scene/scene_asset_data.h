@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -1805,6 +1806,253 @@ namespace wz::engine::assets
         }
         nodes = std::move(kept);
         return removed;
+    }
+
+    // ─── Behavior-binding authoring (in-memory apply behind the host ABI) ──
+    // A node carries an optional singular `behavior` plus a plural `behaviors`
+    // vector; each binding has a stable id. These helpers are the flat-node-list
+    // apply behind the editor/host's live behavior authoring verbs (add/remove/
+    // edit a binding). They mutate scene_nodes_ only; materializing the change
+    // (rebuild_behavior_scene) and persistence are separate paths.
+
+    // True if `id` is already used by any binding on this node (singular or
+    // plural). Used to dedupe a freshly minted binding id.
+    inline bool node_has_behavior_binding_id(
+        const SceneNodeAsset& node,
+        std::string_view id) noexcept
+    {
+        if (node.behavior && node.behavior->id == id) {
+            return true;
+        }
+        for (const SceneBehaviorAsset& binding : node.behaviors) {
+            if (binding.id == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Find a behavior binding on a node by id, across the singular `behavior`
+    // and the plural `behaviors`. Null if no binding has that id.
+    inline SceneBehaviorAsset* find_behavior_binding(
+        SceneNodeAsset& node,
+        std::string_view binding_id) noexcept
+    {
+        if (node.behavior && node.behavior->id == binding_id) {
+            return &*node.behavior;
+        }
+        for (SceneBehaviorAsset& binding : node.behaviors) {
+            if (binding.id == binding_id) {
+                return &binding;
+            }
+        }
+        return nullptr;
+    }
+
+    inline const SceneBehaviorAsset* find_behavior_binding(
+        const SceneNodeAsset& node,
+        std::string_view binding_id) noexcept
+    {
+        if (node.behavior && node.behavior->id == binding_id) {
+            return &*node.behavior;
+        }
+        for (const SceneBehaviorAsset& binding : node.behaviors) {
+            if (binding.id == binding_id) {
+                return &binding;
+            }
+        }
+        return nullptr;
+    }
+
+    // Mint a stable behavior-binding id for a node: an auto-slug from the node
+    // id ("<node_id>.behavior.<n>"), with <n> the lowest counter that does not
+    // collide with an existing binding id on the node. Mirrors mint_scene_node_id
+    // (a deduped counter slug) but scoped to one node's bindings.
+    inline std::string mint_behavior_binding_id(const SceneNodeAsset& node)
+    {
+        const std::string prefix = node.id + ".behavior.";
+        for (uint64_t n = 1u;; ++n) {
+            std::string candidate = prefix + std::to_string(n);
+            if (!node_has_behavior_binding_id(node, candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    struct SceneAddBehaviorResult
+    {
+        bool ok = false;
+        std::string binding_id;
+        std::string error;
+    };
+
+    // Append a behavior binding (the given module, a minted stable id, default
+    // enabled, no events/config) to node `node_id` in a flat node list. The node
+    // must exist. Returns {ok, binding_id, error}. The in-memory apply behind the
+    // host's "add behavior" verb; materialization + persistence are separate.
+    inline SceneAddBehaviorResult add_node_behavior(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string module)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return SceneAddBehaviorResult{
+                .ok = false,
+                .binding_id = {},
+                .error = "node does not exist",
+            };
+        }
+
+        SceneBehaviorAsset binding;
+        binding.id = mint_behavior_binding_id(*node);
+        binding.module = std::move(module);
+        binding.enabled = true;
+        const std::string minted = binding.id;
+        node->behaviors.push_back(std::move(binding));
+        return SceneAddBehaviorResult{
+            .ok = true, .binding_id = minted, .error = {} };
+    }
+
+    // Remove the behavior binding `binding_id` from node `node_id` (matching the
+    // singular `behavior` or an entry of `behaviors`). Returns false if no node
+    // or binding matched.
+    inline bool remove_node_behavior(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (node->behavior && node->behavior->id == binding_id) {
+            node->behavior.reset();
+            return true;
+        }
+        const auto it = std::find_if(
+            node->behaviors.begin(),
+            node->behaviors.end(),
+            [binding_id](const SceneBehaviorAsset& b) {
+                return b.id == binding_id;
+            });
+        if (it == node->behaviors.end()) {
+            return false;
+        }
+        node->behaviors.erase(it);
+        return true;
+    }
+
+    // Set a behavior binding's enabled flag. False if no node/binding matched.
+    inline bool set_node_behavior_enabled(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id,
+        bool enabled)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        SceneBehaviorAsset* binding = find_behavior_binding(*node, binding_id);
+        if (!binding) {
+            return false;
+        }
+        binding->enabled = enabled;
+        return true;
+    }
+
+    // Set a behavior binding's label + module. False if no node/binding matched.
+    inline bool set_node_behavior_fields(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id,
+        std::string label,
+        std::string module)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        SceneBehaviorAsset* binding = find_behavior_binding(*node, binding_id);
+        if (!binding) {
+            return false;
+        }
+        binding->label = std::move(label);
+        binding->module = std::move(module);
+        return true;
+    }
+
+    // Replace a behavior binding's events list. False if no node/binding matched.
+    inline bool set_node_behavior_events(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id,
+        std::vector<std::string> events)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        SceneBehaviorAsset* binding = find_behavior_binding(*node, binding_id);
+        if (!binding) {
+            return false;
+        }
+        binding->events = std::move(events);
+        return true;
+    }
+
+    // Set/replace one config entry (by key) on a behavior binding. False if no
+    // node/binding matched. An existing entry with the same key is overwritten.
+    inline bool set_node_behavior_config(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id,
+        SceneBehaviorConfigValue value)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        SceneBehaviorAsset* binding = find_behavior_binding(*node, binding_id);
+        if (!binding) {
+            return false;
+        }
+        for (SceneBehaviorConfigValue& entry : binding->config) {
+            if (entry.key == value.key) {
+                entry = std::move(value);
+                return true;
+            }
+        }
+        binding->config.push_back(std::move(value));
+        return true;
+    }
+
+    // Remove one config entry (by key) from a behavior binding. False if no
+    // node/binding/key matched.
+    inline bool clear_node_behavior_config(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view binding_id,
+        std::string_view key)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        SceneBehaviorAsset* binding = find_behavior_binding(*node, binding_id);
+        if (!binding) {
+            return false;
+        }
+        const auto it = std::find_if(
+            binding->config.begin(),
+            binding->config.end(),
+            [key](const SceneBehaviorConfigValue& c) { return c.key == key; });
+        if (it == binding->config.end()) {
+            return false;
+        }
+        binding->config.erase(it);
+        return true;
     }
 
     inline bool is_direct_child_scene_node(

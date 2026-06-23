@@ -11,6 +11,7 @@
 #include <math/quaternion.h>
 
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -32,6 +33,15 @@ struct WzEditorRuntime
     std::thread thread;
     WzEditorLogCallback log_callback = nullptr;
     void* log_user = nullptr;
+
+    // Host-capability flag (the "one ABI" role gate). Set true only by
+    // wz_editor_runtime_start — the editor/host launcher — and required by the
+    // scene-mutation verbs (see require_host_behavior_authoring). A future
+    // behavior-as-consumer that obtains a runtime through some non-host path
+    // would NOT have this set and is therefore denied mutation by construction.
+    // Today every WzEditorRuntime is host-started, so this is always true; the
+    // point is that the gate exists and the verbs check it.
+    bool host_capability = false;
 };
 
 namespace
@@ -144,6 +154,101 @@ namespace
             text.data(),
             static_cast<uint64_t>(text.size()),
             runtime->log_user);
+    }
+
+    // ─── Host-capability gate for scene-mutation verbs ──────────────────────
+    // THE single documented gate point for the "one ABI" mutation role. Every
+    // behavior-authoring verb calls this first. It fails closed: a null runtime
+    // or one lacking the host capability is rejected with
+    // WZ_RESULT_INVALID_ARGUMENT, so a future non-host consumer of this same ABI
+    // (e.g. a behavior calling in) is denied by construction. Returns OK only
+    // for a host-capable runtime.
+    WzResult require_host_behavior_authoring(const WzEditorRuntime* runtime)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!runtime->host_capability) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "caller lacks the host capability for scene mutation");
+        }
+        return result(WZ_RESULT_OK, "");
+    }
+
+    // Parse the ABI config (kind, value) pair into a SceneBehaviorConfigValue.
+    // kind is "bool" | "int" | "float" | "string"; int/float both store as a
+    // Number. Returns false for an unknown kind. Malformed numeric text parses
+    // as 0 / false rather than erroring (the host validates input upstream).
+    bool parse_behavior_config_value(
+        std::string key,
+        const char* kind_utf8,
+        const char* value_utf8,
+        wz::engine::assets::SceneBehaviorConfigValue& out)
+    {
+        const std::string kind = kind_utf8 ? kind_utf8 : "";
+        const std::string value = value_utf8 ? value_utf8 : "";
+        out.key = std::move(key);
+
+        using Kind = wz::engine::assets::SceneBehaviorConfigValueKind;
+        if (kind == "bool") {
+            out.kind = Kind::Bool;
+            out.bool_value =
+                value == "true" || value == "1" || value == "True";
+            return true;
+        }
+        if (kind == "int" || kind == "float") {
+            out.kind = Kind::Number;
+            try {
+                out.number_value = value.empty() ? 0.0 : std::stod(value);
+            }
+            catch (...) {
+                out.number_value = 0.0;
+            }
+            return true;
+        }
+        if (kind == "string") {
+            out.kind = Kind::String;
+            out.string_value = value;
+            return true;
+        }
+        return false;
+    }
+
+    // Parse a newline-delimited UTF-8 string into channel tokens, trimming
+    // surrounding whitespace (incl. a trailing '\r' from CRLF) and dropping
+    // blank lines. Used by the set-events verb so the engine, not the host,
+    // owns the parse.
+    std::vector<std::string> parse_newline_delimited(const char* text_utf8)
+    {
+        std::vector<std::string> out;
+        if (!text_utf8) {
+            return out;
+        }
+        const std::string text = text_utf8;
+        std::size_t start = 0;
+        while (start <= text.size()) {
+            std::size_t nl = text.find('\n', start);
+            const std::size_t end =
+                (nl == std::string::npos) ? text.size() : nl;
+            std::size_t a = start;
+            std::size_t b = end;
+            while (a < b && std::isspace(static_cast<unsigned char>(text[a]))) {
+                ++a;
+            }
+            while (b > a
+                && std::isspace(static_cast<unsigned char>(text[b - 1]))) {
+                --b;
+            }
+            if (b > a) {
+                out.push_back(text.substr(a, b - a));
+            }
+            if (nl == std::string::npos) {
+                break;
+            }
+            start = nl + 1;
+        }
+        return out;
     }
 }
 
@@ -834,6 +939,10 @@ extern "C"
                 resource_root_utf8 ? resource_root_utf8 : "";
             runtime->log_callback = log_callback;
             runtime->log_user = log_user;
+            // This runtime is started by the editor/host; grant it the host
+            // capability so the scene-mutation verbs (behavior authoring, etc.)
+            // accept it. A non-host caller never reaches this constructor.
+            runtime->host_capability = true;
 
             WzEditorRuntime* raw = runtime.get();
             raw->thread = std::thread([raw, project_root, resource_root]() {
@@ -1173,6 +1282,311 @@ extern "C"
         }
         catch (...) {
             return result(WZ_RESULT_INTERNAL_ERROR, "add child node failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_add_node_behavior(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* module_utf8,
+        WzBuffer* out_binding_id)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!module_utf8 || module_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "module_utf8 must not be empty");
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_binding_id, "out_binding_id");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            // Blocking handshake (mirrors add_child): the host needs the minted
+            // id back. Safe because the caller is the host UI thread, not a
+            // behavior on the engine thread.
+            const wz::engine::assets::SceneAddBehaviorResult added =
+                runtime->control.add_node_behavior(node_id_utf8, module_utf8);
+            if (!added.ok) {
+                return dynamic_error(WZ_RESULT_INVALID_ARGUMENT, added.error);
+            }
+            const std::vector<uint8_t> bytes(
+                added.binding_id.begin(), added.binding_id.end());
+            return copy_bytes_to_buffer(bytes, out_binding_id);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "add node behavior failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_remove_node_behavior(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::Remove,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "remove node behavior post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_behavior_enabled(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8,
+        uint32_t enabled)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::SetEnabled,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                    .enabled = enabled != 0u,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node behavior enabled post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_behavior_fields(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8,
+        const char* label_utf8,
+        const char* module_utf8)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::SetFields,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                    .label = label_utf8 ? label_utf8 : "",
+                    .module = module_utf8 ? module_utf8 : "",
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node behavior fields post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_behavior_events(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8,
+        const char* events_utf8)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::SetEvents,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                    .events = parse_newline_delimited(events_utf8),
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node behavior events post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_behavior_config(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8,
+        const char* key_utf8,
+        const char* kind_utf8,
+        const char* value_utf8)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+        if (!key_utf8 || key_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "key_utf8 must not be empty");
+        }
+
+        try {
+            wz::engine::assets::SceneBehaviorConfigValue value;
+            if (!parse_behavior_config_value(
+                    key_utf8, kind_utf8, value_utf8, value))
+            {
+                return result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "kind_utf8 must be bool|int|float|string");
+            }
+
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::SetConfig,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                    .config_value = std::move(value),
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node behavior config post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_clear_node_behavior_config(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* binding_id_utf8,
+        const char* key_utf8)
+    {
+        if (const WzResult gate = require_host_behavior_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!binding_id_utf8 || binding_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "binding_id_utf8 must not be empty");
+        }
+        if (!key_utf8 || key_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "key_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_behavior(
+                wz::app::SceneNodeBehaviorEdit{
+                    .op = wz::app::SceneNodeBehaviorEdit::Op::ClearConfig,
+                    .node_id = node_id_utf8,
+                    .binding_id = binding_id_utf8,
+                    .config_key = key_utf8,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "clear node behavior config post failed");
         }
     }
 

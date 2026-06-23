@@ -594,6 +594,111 @@ namespace wz::app
         return removed;
     }
 
+    // ─── Live behavior-binding authoring ────────────────────────────────────
+    // Each applies the matching scene_asset_data.h helper to scene_nodes_, then
+    // (on success) marks the scene dirty and re-materializes the behavior
+    // runtime so the change takes effect. The rebuild is UNCONDITIONAL on
+    // success — unlike the structural edits above, which rebuild only when a
+    // behavior scene already exists — because adding the first binding to a node
+    // that had none must create the behavior runtime where there was none.
+
+    wz::engine::assets::SceneAddBehaviorResult WozzitsApp_v1::add_node_behavior(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& module)
+    {
+        wz::engine::assets::SceneAddBehaviorResult result =
+            wz::engine::assets::add_node_behavior(scene_nodes_, node_id, module);
+        if (result.ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return result;
+    }
+
+    bool WozzitsApp_v1::remove_node_behavior(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id)
+    {
+        const bool ok = wz::engine::assets::remove_node_behavior(
+            scene_nodes_, node_id, binding_id);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::set_node_behavior_enabled(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        bool enabled)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_enabled(
+            scene_nodes_, node_id, binding_id, enabled);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::set_node_behavior_fields(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::string& label,
+        const std::string& module)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_fields(
+            scene_nodes_, node_id, binding_id, label, module);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::set_node_behavior_events(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::vector<std::string>& events)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_events(
+            scene_nodes_, node_id, binding_id, events);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::set_node_behavior_config(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const wz::engine::assets::SceneBehaviorConfigValue& value)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_config(
+            scene_nodes_, node_id, binding_id, value);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::clear_node_behavior_config(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::string& key)
+    {
+        const bool ok = wz::engine::assets::clear_node_behavior_config(
+            scene_nodes_, node_id, binding_id, key);
+        if (ok) {
+            scene_dirty_ = true;
+            rebuild_behavior_scene();
+        }
+        return ok;
+    }
+
     bool WozzitsApp_v1::save_scene()
     {
         if (!scene_dirty_) {

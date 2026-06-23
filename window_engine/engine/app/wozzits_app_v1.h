@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace wz::app
@@ -130,6 +131,50 @@ namespace wz::app
         // Live delete: remove the node and its subtree from the in-memory scene.
         // Returns false if no node had that id.
         bool remove_node(const wz::scene::AuthoredEntityId& id);
+
+        // ─── Live behavior-binding authoring ─────────────────────────────────
+        // Apply behind the host ABI's behavior verbs. Each mutates the matching
+        // node's behavior binding(s) in scene_nodes_, marks the scene dirty, and
+        // re-materializes the behavior runtime (rebuild_behavior_scene) so the
+        // change takes effect on the next dispatch. All return false if no
+        // node/binding matched (add_node_behavior returns {ok,id,error}).
+
+        // Add a behavior binding (the given module, a minted stable binding id)
+        // to the node; returns the minted id (or an error if the node is absent).
+        wz::engine::assets::SceneAddBehaviorResult add_node_behavior(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& module);
+
+        // Remove a behavior binding from the node by id.
+        bool remove_node_behavior(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id);
+
+        bool set_node_behavior_enabled(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            bool enabled);
+
+        bool set_node_behavior_fields(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::string& label,
+            const std::string& module);
+
+        bool set_node_behavior_events(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::vector<std::string>& events);
+
+        bool set_node_behavior_config(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const wz::engine::assets::SceneBehaviorConfigValue& value);
+
+        bool clear_node_behavior_config(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::string& key);
 
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when

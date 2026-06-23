@@ -28,6 +28,17 @@
         "enabled": true,
         "events": ["frame.update"]
       }
+    },
+    {
+      "id": "blank",
+      "parent": "root",
+      "name": "blank",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
     }
   ],
   "defaults": {}
