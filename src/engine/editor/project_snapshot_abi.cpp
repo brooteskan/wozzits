@@ -248,6 +248,40 @@ namespace wz::engine::editor
             }
             out.components = builder.append_table(components);
 
+            std::vector<WzEditorSceneBehavior> behaviors;
+            behaviors.reserve(node.behaviors.size());
+            for (const SceneSnapshotBehavior& behavior : node.behaviors) {
+                std::vector<WzEditorStringSpan> events;
+                events.reserve(behavior.events.size());
+                for (const std::string& event : behavior.events) {
+                    events.push_back(builder.append_string(event));
+                }
+
+                std::vector<WzEditorAssetGraphParam> config;
+                config.reserve(behavior.config.size());
+                for (const SceneSnapshotBehaviorConfig& entry : behavior.config)
+                {
+                    config.push_back(WzEditorAssetGraphParam{
+                        .name = builder.append_string(entry.name),
+                        .kind = builder.append_string(entry.kind),
+                        .value = builder.append_string(entry.value),
+                        .options = {},
+                    });
+                }
+
+                behaviors.push_back(WzEditorSceneBehavior{
+                    .id = builder.append_string(behavior.id),
+                    .label = builder.append_string(behavior.label),
+                    .module = builder.append_string(behavior.module),
+                    .name = builder.append_string(behavior.name),
+                    .enabled = behavior.enabled ? 1u : 0u,
+                    .reserved = 0u,
+                    .events = builder.append_table(events),
+                    .config = builder.append_table(config),
+                });
+            }
+            out.behaviors = builder.append_table(behaviors);
+
             out.children = scene_nodes_abi(builder, node.children);
             return out;
         }

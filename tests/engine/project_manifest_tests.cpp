@@ -513,6 +513,152 @@ TEST(ProjectSnapshot, LoadsInitialEditorSnapshotFromProjectManifest)
     EXPECT_EQ(abi_string(blob, components[0].display_name), "Camera");
 }
 
+TEST(ProjectSceneSnapshot, SurfacesNodeBehaviorBindingInAbiBlob)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "behavior_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Behavior Snapshot",
+  "scene": "scene.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "behavior_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "visible": true
+    },
+    {
+      "id": "mover",
+      "parent": "root",
+      "name": "mover",
+      "behavior": {
+        "label": "Move up each frame",
+        "module": "move_up_on_frame",
+        "name": "rise",
+        "enabled": true,
+        "events": ["frame.update"],
+        "config": {
+          "speed": 2.5,
+          "steps": 3,
+          "loop": true,
+          "axis": "y"
+        }
+      }
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& root = loaded.snapshot.roots[0];
+    ASSERT_EQ(root.children.size(), 1u);
+    const auto& mover = root.children[0];
+
+    // Behaviors live in their own structured list, separate from components.
+    ASSERT_EQ(mover.behaviors.size(), 1u);
+    const auto& behavior = mover.behaviors[0];
+    EXPECT_EQ(behavior.module, "move_up_on_frame");
+    EXPECT_EQ(behavior.label, "Move up each frame");
+    EXPECT_EQ(behavior.name, "rise");
+    EXPECT_TRUE(behavior.enabled);
+    ASSERT_EQ(behavior.events.size(), 1u);
+    EXPECT_EQ(behavior.events[0], "frame.update");
+    ASSERT_EQ(behavior.config.size(), 4u);
+
+    // Pack and round-trip through the editor ABI blob.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    ASSERT_EQ(roots[0].children.count, 1u);
+    const WzEditorSceneNode* children =
+        abi_table<WzEditorSceneNode>(blob, roots[0].children);
+    const WzEditorSceneNode& abi_mover = children[0];
+
+    ASSERT_EQ(abi_mover.behaviors.count, 1u);
+    const WzEditorSceneBehavior* abi_behaviors =
+        abi_table<WzEditorSceneBehavior>(blob, abi_mover.behaviors);
+    const WzEditorSceneBehavior& abi_behavior = abi_behaviors[0];
+
+    EXPECT_EQ(abi_string(blob, abi_behavior.module), "move_up_on_frame");
+    EXPECT_EQ(abi_string(blob, abi_behavior.label), "Move up each frame");
+    EXPECT_EQ(abi_string(blob, abi_behavior.name), "rise");
+    EXPECT_EQ(abi_behavior.enabled, 1u);
+
+    ASSERT_EQ(abi_behavior.events.count, 1u);
+    const WzEditorStringSpan* abi_events =
+        abi_table<WzEditorStringSpan>(blob, abi_behavior.events);
+    EXPECT_EQ(abi_string(blob, abi_events[0]), "frame.update");
+
+    // Config is packed in the WzEditorAssetGraphParam shape (name/kind/value).
+    ASSERT_EQ(abi_behavior.config.count, 4u);
+    const WzEditorAssetGraphParam* abi_config =
+        abi_table<WzEditorAssetGraphParam>(blob, abi_behavior.config);
+
+    bool saw_speed = false;
+    bool saw_steps = false;
+    bool saw_loop = false;
+    bool saw_axis = false;
+    for (uint64_t i = 0; i < abi_behavior.config.count; ++i) {
+        const std::string name = abi_string(blob, abi_config[i].name);
+        const std::string kind = abi_string(blob, abi_config[i].kind);
+        const std::string value = abi_string(blob, abi_config[i].value);
+        if (name == "speed") {
+            saw_speed = true;
+            EXPECT_EQ(kind, "float");
+            EXPECT_EQ(value, "2.5");
+        }
+        else if (name == "steps") {
+            saw_steps = true;
+            EXPECT_EQ(kind, "int");
+            EXPECT_EQ(value, "3");
+        }
+        else if (name == "loop") {
+            saw_loop = true;
+            EXPECT_EQ(kind, "bool");
+            EXPECT_EQ(value, "true");
+        }
+        else if (name == "axis") {
+            saw_axis = true;
+            EXPECT_EQ(kind, "string");
+            EXPECT_EQ(value, "y");
+        }
+    }
+    EXPECT_TRUE(saw_speed);
+    EXPECT_TRUE(saw_steps);
+    EXPECT_TRUE(saw_loop);
+    EXPECT_TRUE(saw_axis);
+}
+
 TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
 {
     TempProjectRoot temp;

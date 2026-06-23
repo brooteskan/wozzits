@@ -57,6 +57,27 @@ namespace wz::engine::editor
         std::string display_name;
     };
 
+    // A single config entry of an authored behavior binding, mirroring the
+    // asset-graph param shape: a name, a kind ("bool"/"int"/"float"/"string")
+    // and a display value string, so the editor renders it uniformly.
+    struct SceneSnapshotBehaviorConfig
+    {
+        std::string name;
+        std::string kind;
+        std::string value;
+    };
+
+    struct SceneSnapshotBehavior
+    {
+        std::string id;
+        std::string label;
+        std::string module;
+        std::string name;
+        bool enabled = true;
+        std::vector<std::string> events;
+        std::vector<SceneSnapshotBehaviorConfig> config;
+    };
+
     struct SceneSnapshotNode
     {
         std::string id;
@@ -69,6 +90,7 @@ namespace wz::engine::editor
         std::optional<SceneSnapshotCamera> camera;
         std::optional<SceneSnapshotRenderable> renderable;
         std::vector<SceneSnapshotComponent> components;
+        std::vector<SceneSnapshotBehavior> behaviors;
         std::vector<SceneSnapshotNode> children;
     };
 

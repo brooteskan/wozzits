@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 20u
+#define WZ_ABI_VERSION 21u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -255,6 +255,24 @@ typedef struct WzEditorSceneComponent
     WzEditorStringSpan display_name;
 } WzEditorSceneComponent;
 
+// A scene node's authored behavior binding (SceneBehaviorAsset). Distinct from
+// the generic `components` table: behaviors carry full structured authoring data
+// so the editor can render/inspect them. `enabled` is 0/1. `events` is a table
+// of WzEditorStringSpan channel tokens (e.g. "frame.update"). `config` reuses
+// the WzEditorAssetGraphParam shape (name + kind "bool"/"int"/"float"/"string"
+// + display value) so the .NET side renders config uniformly with graph params.
+typedef struct WzEditorSceneBehavior
+{
+    WzEditorStringSpan id;
+    WzEditorStringSpan label;
+    WzEditorStringSpan module;
+    WzEditorStringSpan name;
+    uint32_t enabled;
+    uint32_t reserved;
+    WzEditorTableSpan events; // WzEditorStringSpan[]
+    WzEditorTableSpan config; // WzEditorAssetGraphParam[]
+} WzEditorSceneBehavior;
+
 typedef struct WzEditorSceneNode
 {
     WzEditorStringSpan id;
@@ -268,6 +286,7 @@ typedef struct WzEditorSceneNode
     WzEditorSceneRenderable renderable;
     WzEditorSceneRenderableSource renderable_source;
     WzEditorTableSpan components;
+    WzEditorTableSpan behaviors; // WzEditorSceneBehavior[]
     WzEditorTableSpan children;
 } WzEditorSceneNode;
 
@@ -421,7 +440,16 @@ static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
 static_assert(offsetof(WzEditorSceneComponent, display_name) == 16);
 
-static_assert(sizeof(WzEditorSceneNode) == 432);
+static_assert(sizeof(WzEditorSceneBehavior) == 104);
+static_assert(offsetof(WzEditorSceneBehavior, id) == 0);
+static_assert(offsetof(WzEditorSceneBehavior, label) == 16);
+static_assert(offsetof(WzEditorSceneBehavior, module) == 32);
+static_assert(offsetof(WzEditorSceneBehavior, name) == 48);
+static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
+static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
+static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
+
+static_assert(sizeof(WzEditorSceneNode) == 448);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -432,7 +460,8 @@ static_assert(offsetof(WzEditorSceneNode, camera) == 320);
 static_assert(offsetof(WzEditorSceneNode, renderable) == 360);
 static_assert(offsetof(WzEditorSceneNode, renderable_source) == 368);
 static_assert(offsetof(WzEditorSceneNode, components) == 400);
-static_assert(offsetof(WzEditorSceneNode, children) == 416);
+static_assert(offsetof(WzEditorSceneNode, behaviors) == 416);
+static_assert(offsetof(WzEditorSceneNode, children) == 432);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);

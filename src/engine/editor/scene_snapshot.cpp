@@ -246,6 +246,110 @@ namespace wz::engine::editor
             return "node";
         }
 
+        // Render a behavior config scalar into the asset-graph param shape: a
+        // kind token ("bool"/"int"/"float"/"string") plus a display value. The
+        // authored JSON only distinguishes bool/number/string, so an integral
+        // number is reported as "int" and a fractional one as "float".
+        SceneSnapshotBehaviorConfig behavior_config_entry(
+            const std::string& key,
+            const wz::json::JSONValue& value)
+        {
+            SceneSnapshotBehaviorConfig out;
+            out.name = key;
+            switch (value.kind) {
+            case wz::json::JSONValueKind::Bool:
+                out.kind = "bool";
+                out.value = value.bool_value ? "true" : "false";
+                break;
+            case wz::json::JSONValueKind::Number:
+                out.kind =
+                    value.number_value == std::floor(value.number_value)
+                        ? "int"
+                        : "float";
+                out.value = format_scene_number(value.number_value);
+                break;
+            case wz::json::JSONValueKind::String:
+                out.kind = "string";
+                out.value = value.string_value;
+                break;
+            default:
+                out.kind = "string";
+                break;
+            }
+            return out;
+        }
+
+        SceneSnapshotBehavior read_behavior(const wz::json::JSONValue& obj)
+        {
+            SceneSnapshotBehavior behavior;
+            behavior.id =
+                std::string(wz::json::read_string(obj, "id").value_or(""));
+            behavior.label =
+                std::string(wz::json::read_string(obj, "label").value_or(""));
+            behavior.module =
+                std::string(wz::json::read_string(obj, "module").value_or(""));
+            behavior.name =
+                std::string(wz::json::read_string(obj, "name").value_or(""));
+            behavior.enabled =
+                wz::json::read_bool(obj, "enabled").value_or(true);
+
+            if (const auto* events = wz::json::find_member(obj, "events");
+                events && events->kind == wz::json::JSONValueKind::Array)
+            {
+                behavior.events.reserve(events->array_values.size());
+                for (const auto& item : events->array_values) {
+                    if (item
+                        && item->kind == wz::json::JSONValueKind::String)
+                    {
+                        behavior.events.push_back(item->string_value);
+                    }
+                }
+            }
+
+            if (const auto* config = wz::json::find_member(obj, "config");
+                config && config->kind == wz::json::JSONValueKind::Object)
+            {
+                behavior.config.reserve(config->object_members.size());
+                for (const auto& member : config->object_members) {
+                    if (member.value) {
+                        behavior.config.push_back(
+                            behavior_config_entry(member.key, *member.value));
+                    }
+                }
+            }
+
+            return behavior;
+        }
+
+        std::vector<SceneSnapshotBehavior> read_behaviors(
+            const wz::json::JSONValue& obj)
+        {
+            std::vector<SceneSnapshotBehavior> behaviors;
+
+            if (const auto* behavior =
+                    wz::json::find_member(obj, "behavior");
+                behavior && behavior->kind == wz::json::JSONValueKind::Object)
+            {
+                behaviors.push_back(read_behavior(*behavior));
+            }
+
+            if (const auto* plural =
+                    wz::json::find_member(obj, "behaviors");
+                plural && plural->kind == wz::json::JSONValueKind::Array)
+            {
+                behaviors.reserve(behaviors.size() + plural->array_values.size());
+                for (const auto& item : plural->array_values) {
+                    if (item
+                        && item->kind == wz::json::JSONValueKind::Object)
+                    {
+                        behaviors.push_back(read_behavior(*item));
+                    }
+                }
+            }
+
+            return behaviors;
+        }
+
         std::optional<FlatSceneSnapshotNode> read_node(
             const wz::json::JSONValue& value,
             std::string& error)
@@ -287,6 +391,7 @@ namespace wz::engine::editor
                     .display_name = "Camera",
                 });
             }
+            node.behaviors = read_behaviors(value);
             return FlatSceneSnapshotNode{ .node = std::move(node) };
         }
 
