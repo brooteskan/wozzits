@@ -381,6 +381,69 @@ namespace wz::engine::assets::test {
         EXPECT_FLOAT_EQ(data->max_value, 1.00f);
     }
 
+    // ── Gaea .r32 recipe ──────────────────────────────────────────────────────────
+
+    // The Gaea recipe derives a square grid from the file's sample count and
+    // loads the values verbatim — no dimensions are authored.
+    TEST_F(ScalarFieldTest, GaeaR32DerivesSquareDimensionsFromFileLength)
+    {
+        const auto values = make_2x2_known(); // 4 floats -> 2x2
+        const auto rel = write_field_file("gaea_2x2.r32", values);
+
+        ScalarFieldGaeaR32Desc desc{
+            .name = "gaea_2x2",
+            .path = rel,
+            .domain_kind = ScalarFieldDomainKind::Spatial2D,
+        };
+
+        const ScalarFieldAsset asset =
+            library_->scalar_fields().create_scalar_field_from_gaea_r32(desc);
+        ASSERT_TRUE(asset.valid());
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const ScalarFieldHandle handle =
+            library_->scalar_fields().get_scalar_field(asset);
+        ASSERT_TRUE(handle.valid());
+
+        const ScalarFieldData* data =
+            library_->scalar_fields().get_scalar_field_data(handle);
+        ASSERT_NE(data, nullptr);
+        ASSERT_TRUE(data->valid());
+        EXPECT_EQ(data->width, 2u);
+        EXPECT_EQ(data->height, 2u);
+        EXPECT_EQ(data->depth, 1u);
+        EXPECT_EQ(data->domain_kind, ScalarFieldDomainKind::Spatial2D);
+        EXPECT_FLOAT_EQ(data->at(0, 0), 0.00f);
+        EXPECT_FLOAT_EQ(data->at(1, 0), 0.25f);
+        EXPECT_FLOAT_EQ(data->at(0, 1), 0.75f);
+        EXPECT_FLOAT_EQ(data->at(1, 1), 1.00f);
+    }
+
+    // A sample count that is not a perfect square is rejected (the user is
+    // directed to the explicit raw-F32 schema instead).
+    TEST_F(ScalarFieldTest, GaeaR32RejectsNonSquareSampleCount)
+    {
+        const std::vector<float> values(6, 1.0f); // sqrt(6) is not integral
+        const auto rel = write_field_file("gaea_6.r32", values);
+
+        ScalarFieldGaeaR32Desc desc{
+            .name = "gaea_6",
+            .path = rel,
+        };
+
+        const ScalarFieldAsset asset =
+            library_->scalar_fields().create_scalar_field_from_gaea_r32(desc);
+        ASSERT_TRUE(asset.valid()); // registration succeeds; compile fails
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const ScalarFieldHandle handle =
+            library_->scalar_fields().get_scalar_field(asset);
+        EXPECT_FALSE(handle.valid());
+    }
+
     TEST(ScalarFieldTableTests, DestroyRestoresNullSentinel)
     {
         ScalarFieldTable table;

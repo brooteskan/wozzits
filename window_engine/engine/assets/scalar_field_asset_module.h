@@ -52,6 +52,19 @@ namespace wz::engine::assets
         ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
     };
 
+    // Describes a Gaea .r32 scalar field asset to register.
+    // path is relative to the EngineAssetLibrary's resource_root. Dimensions are
+    // derived from the file's sample count (square convention) at compile time,
+    // so none are authored here.
+    struct ScalarFieldGaeaR32Desc
+    {
+        std::string name;
+
+        wz::fs::Path path;
+
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
     // Returned by create_scalar_field(). Wraps the DAG output node key.
     struct ScalarFieldAsset
     {
@@ -93,6 +106,10 @@ namespace wz::engine::assets
 
         // Register a procedural scalar field asset in the DAG.
         ScalarFieldAsset create_procedural_scalar_field(const ProceduralScalarFieldDesc& desc);
+
+        // Register a Gaea .r32 scalar field asset in the DAG. The compiler derives
+        // a square grid from the file's sample count (Gaea's convention).
+        ScalarFieldAsset create_scalar_field_from_gaea_r32(const ScalarFieldGaeaR32Desc& desc);
 
         // Retrieve the ResourceHandle for a resolved scalar field asset.
         // Returns an invalid handle if the asset has not been resolved.

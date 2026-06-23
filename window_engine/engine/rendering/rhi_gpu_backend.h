@@ -13,12 +13,14 @@
 //
 // Increment 1: the BUFFER resource path, delegating to the existing
 // create_structured_buffer / create_rw_structured_buffer / release_compute_buffer.
-// Texture / render-target creation, CPU writes, and the CommandRecorder
-// (barriers) are subsequent increments — see the TODOs in the .cpp.
+// Increment 2 (#197): the TEXTURE path (Texture2D/3D), delegating to the generic
+// engine texture creator (gpu/texture.h). The CommandRecorder (barriers) is a
+// subsequent increment.
 
 #include <gpu/compute.h>
 #include <gpu/gpu.h>
 #include <gpu/gpu_types.h>
+#include <gpu/texture.h>
 
 #include <wozzits/rhi/gpu_resource.h>
 
@@ -50,6 +52,43 @@ namespace wz::engine::rendering
         return out;
     }
 
+    // Map an rhi texture format onto the engine texture format. Returns false for
+    // a format the engine texture creator does not support yet, so create() can
+    // reject it cleanly. Pure; unit-tested without a device.
+    [[nodiscard]] inline bool to_gpu_texture_format(
+        wz::rhi::TextureFormat format, wz::gpu::TextureFormat& out)
+    {
+        switch (format) {
+        case wz::rhi::TextureFormat::R32Float:
+            out = wz::gpu::TextureFormat::R32Float;
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    // Map an rhi texture desc onto the engine's TextureDesc (dims + dimension +
+    // format). Returns false for an unsupported format. The dx12 layer stays
+    // rhi-agnostic; this is where the rhi -> gpu translation lives, mirroring
+    // to_compute_buffer_desc for the buffer family. Pure; unit-tested w/o a device.
+    [[nodiscard]] inline bool to_texture_desc(
+        const wz::rhi::GpuResourceDesc& desc, wz::gpu::TextureDesc& out)
+    {
+        wz::gpu::TextureFormat format{};
+        if (!to_gpu_texture_format(desc.format, format)) {
+            return false;
+        }
+        out.dimension =
+            desc.dimension == wz::rhi::ResourceDimension::Texture3D
+                ? wz::gpu::TextureDimension::Texture3D
+                : wz::gpu::TextureDimension::Texture2D;
+        out.width = desc.width;
+        out.height = desc.height;
+        out.depth = desc.depth;
+        out.format = format;
+        return true;
+    }
+
     class EngineGpuBackend final : public wz::rhi::GpuBackend
     {
     public:
@@ -68,12 +107,22 @@ namespace wz::engine::rendering
             wz::rhi::BackendResource resource) const;
 
     private:
+        // What backs one rhi token: the engine GPUHandle plus the physical
+        // family it came from, so destroy()/write() route to the buffer vs.
+        // texture path without re-deriving it from the (opaque) handle.
+        struct Entry
+        {
+            wz::gpu::GPUHandle        handle{};
+            wz::rhi::ResourceDimension dimension =
+                wz::rhi::ResourceDimension::Buffer;
+        };
+
         wz::gpu::Device* device_;
 
-        // Opaque rhi token -> engine GPUHandle. The token is the backend's own
+        // Opaque rhi token -> engine resource. The token is the backend's own
         // counter; the full GPUHandle (id + epoch + type) is preserved here
         // rather than lossily packed into the 64-bit token.
-        std::unordered_map<uint64_t, wz::gpu::GPUHandle> resources_;
+        std::unordered_map<uint64_t, Entry> resources_;
         uint64_t next_token_ = 1;
     };
 }

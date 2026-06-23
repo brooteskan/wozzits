@@ -125,6 +125,71 @@ namespace wz::gpu::dx12::internal {
 }
 
 
+// ── Generic texture (rhi-agnostic) ───────────────────────────────
+//
+// The generalization of the scalar-field texture path: a committed texture +
+// upload with NO dedicated SRV heap (descriptors are bound at draw time via the
+// SRG path). Backs the rhi GpuResourceRegistry's Texture2D/3D resources through
+// engine/rendering/rhi_gpu_backend.
+
+namespace wz::gpu {
+    struct TextureDesc;
+}
+
+namespace wz::gpu::dx12::internal {
+
+    struct DX12Texture
+    {
+        ID3D12Resource*       texture = nullptr;
+        uint32_t              width  = 0;
+        uint32_t              height = 0;
+        uint32_t              depth  = 1;
+        DXGI_FORMAT           format = DXGI_FORMAT_UNKNOWN;
+        D3D12_RESOURCE_STATES state  = D3D12_RESOURCE_STATE_COMMON;
+
+        bool valid() const noexcept
+        {
+            return texture != nullptr && width > 0u && height > 0u && depth > 0u;
+        }
+    };
+
+    class DX12TextureTable
+    {
+    public:
+        DX12TextureTable();
+
+        GPUHandle add(DX12Texture tex);
+        DX12Texture* get(GPUHandle handle);
+        const DX12Texture* get(GPUHandle handle) const;
+        bool release(GPUHandle handle);
+        void destroy();
+
+    private:
+        struct Slot
+        {
+            uint32_t    epoch = 0;
+            bool        occupied = false;
+            DX12Texture tex{};
+        };
+
+        std::vector<Slot> slots_;
+    };
+
+    GPUHandle create_texture_dx12(
+        Device& device,
+        const wz::gpu::TextureDesc& desc);
+
+    bool update_texture_dx12(
+        Device& device,
+        GPUHandle handle,
+        const void* data,
+        uint64_t byte_count,
+        uint64_t byte_offset = 0);
+
+    bool release_texture_dx12(Device& device, GPUHandle handle);
+}
+
+
 
 // ── Mesh buffers ──────────────────────────────────────────────────
 

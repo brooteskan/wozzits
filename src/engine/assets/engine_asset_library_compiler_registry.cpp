@@ -26,7 +26,9 @@ namespace wz::engine::assets::internal
             registry,
             ctx.logger,
             ctx.scalar_fields_table,
-            ctx.cache_settings);
+            ctx.cache_settings,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
         register_vector_field_compilers(registry, ctx.logger, ctx.vector_fields_table);
         register_csv_compilers(registry, ctx.logger, ctx.csv_table);
         register_json_compilers(registry, ctx.logger, ctx.json_table);

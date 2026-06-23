@@ -4,6 +4,7 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/key_factories/scalar_field.h>
+#include <engine/assets/key_factories/scalar_field_gaea_r32.h>
 #include <engine/assets/key_factories/scalar_field_procedural.h>
 
 #include <vector>
@@ -110,6 +111,45 @@ namespace wz::engine::assets
             return ScalarFieldAsset{ .output = key };
 
         out.output = key;
+        return out;
+    }
+
+    ScalarFieldAsset ScalarFieldAssetModule::create_scalar_field_from_gaea_r32(
+        const ScalarFieldGaeaR32Desc& desc)
+    {
+        ScalarFieldAsset out{};
+
+        const wz::asset::AssetKey file_key = files_.register_file_node(
+            desc.path, kRawFileSchema, kAssetTypeRawFile);
+
+        if (file_key == wz::asset::AssetKey{}) {
+            logger_.error(
+                "failed to register Gaea r32 scalar field source file: "
+                + desc.path);
+            return out;
+        }
+
+        const GaeaR32ScalarFieldCompileDesc compile_desc{
+            .domain_kind = desc.domain_kind,
+        };
+
+        const wz::asset::AssetKey field_key =
+            make_scalar_field_from_gaea_r32_key(
+                file_key,
+                static_cast<uint8_t>(compile_desc.domain_kind));
+
+        wz::asset::AssetNode node;
+        node.key     = field_key;
+        node.type    = kAssetTypeScalarField;
+        node.schema  = kScalarFieldFromGaeaR32Schema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = compile_desc;
+
+        if (!system_.register_asset(std::move(node), { file_key }))
+            return ScalarFieldAsset{ .output = field_key };
+
+        out.output = field_key;
         return out;
     }
 

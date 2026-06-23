@@ -95,6 +95,7 @@ namespace wz::gpu::dx12
         GaussianSplatDebugContext* gaussian_splat_debug_ctx = nullptr;
 
         wz::gpu::dx12::DX12ShaderTable shaders;
+        wz::gpu::dx12::internal::DX12TextureTable textures;
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
         wz::gpu::dx12::internal::DX12MeshTable meshes;
         wz::gpu::dx12::internal::DX12MeshFieldVisualizationTable mesh_field_visualizations;

@@ -120,6 +120,15 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000201ull
     };
 
+    // Scalar field recipe for a Gaea .r32 heightmap export. Same raw float32
+    // bytes as kScalarFieldFromRawF32Schema, but the dimensions are NOT authored:
+    // they follow Gaea's documented convention of a square grid whose side is
+    // sqrt(sample_count). A non-square file is rejected (use the generic raw-F32
+    // schema with explicit width/height for that). Produces kAssetTypeScalarField.
+    inline constexpr wz::asset::SchemaID kScalarFieldFromGaeaR32Schema{
+    0xF11E'CA55'E7'000203ull
+    };
+
     // Vector field recipe: interpret a raw float32 file dependency as
     // VectorFieldData. Values are interleaved by sample, then channel, then
     // component. Produces kAssetTypeVectorField output.

@@ -5,9 +5,13 @@
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <file/filesystem.h>
+
+#include <wozzits/rhi/gpu_resource.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
 
 #include <array>
 #include <chrono>
@@ -409,6 +413,97 @@ namespace wz::engine::assets::internal
 
             return true;
         }
+
+        // #197: publish the field's GPU residency onto the shared wozzits-rhi
+        // registry as an R32F Texture2D resource (the surrogate pattern — the
+        // registry owns the GPU texture, the asset is its surrogate). Mirrors
+        // publish_resident_gpu_sparse_mesh. Best-effort: a failure is logged and
+        // does not fail the compile (the field still resolves on the CPU table,
+        // and the legacy render path remains until #195 repoints it).
+        void publish_resident_scalar_field(
+            const wz::asset::AssetKey& key,
+            const ScalarFieldData& field,
+            wz::rhi::GpuResourceRegistry& gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            // V1: 2D R32F only (depth == 1), matching the texture residency path.
+            if (!field.valid()
+                || field.depth != 1u
+                || field.format != ScalarFieldFormat::Float32)
+            {
+                return;
+            }
+
+            const auto started = std::chrono::steady_clock::now();
+
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+                field.width,
+                field.height,
+                wz::rhi::TextureFormat::R32Float,
+                wz::rhi::ResourceUsage_Sampled);
+            desc.cpu_access = wz::rhi::ResourceCpuAccess::WriteOnce;
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "field_texture"),
+                {},
+            };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            const uint64_t byte_count =
+                static_cast<uint64_t>(field.values.size()) * sizeof(float);
+            const bool uploaded =
+                handle.valid()
+                && gpu_resources.update(handle, field.values.data(), byte_count);
+            if (!uploaded) {
+                if (handle.valid()) {
+                    gpu_resources.release(handle);
+                }
+                logger.warn("scalar field RHI resident upload failed");
+                return;
+            }
+
+            if (rhi_resource_tracker) {
+                rhi_resource_tracker(key, { desc.identity });
+            }
+
+            const auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger.info(
+                "asset compile: scalar field RHI resident upload "
+                + std::to_string(field.width) + "x"
+                + std::to_string(field.height)
+                + " upload_ms=" + std::to_string(elapsed_ms));
+        }
+
+        // Shared tail for every compile path (file-backed / procedural, cache hit
+        // / fresh): publish rhi residency when a registry is present, store the
+        // field in the CPU table, and return the compiled node.
+        wz::asset::AssetNode finalize_scalar_field(
+            const wz::asset::AssetNode& input,
+            ScalarFieldData data,
+            ScalarFieldTable& scalar_field_table,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            if (gpu_resources) {
+                publish_resident_scalar_field(
+                    input.key,
+                    data,
+                    *gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
+            }
+
+            const wz::asset::ResourceHandle handle =
+                scalar_field_table.add(std::move(data));
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
     }
 
 
@@ -416,7 +511,9 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         ScalarFieldTable& scalar_field_table,
-        const EngineAssetCacheSettings& cache_settings)
+        const EngineAssetCacheSettings& cache_settings,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        RhiResourceTracker rhi_resource_tracker)
     {
         // ── Scalar field compiler (file-backed) ───────────────────────────────
         //
@@ -465,7 +562,8 @@ namespace wz::engine::assets::internal
                     .options = kScalarFieldDomainOptions,
                 },
             },
-            .compile = [&logger, &scalar_field_table, cache_settings](
+            .compile = [&logger, &scalar_field_table, cache_settings,
+                        gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -542,12 +640,13 @@ namespace wz::engine::assets::internal
                         logger,
                         cached_data))
                 {
-                    wz::asset::ResourceHandle handle =
-                        scalar_field_table.add(std::move(cached_data));
-                    wz::asset::AssetNode out = input;
-                    out.stage = wz::asset::AssetStage::Compiled;
-                    out.payload = handle;
-                    return out;
+                    return finalize_scalar_field(
+                        input,
+                        std::move(cached_data),
+                        scalar_field_table,
+                        gpu_resources,
+                        rhi_resource_tracker,
+                        logger);
                 }
 
                 std::vector<float> values(count);
@@ -582,15 +681,15 @@ namespace wz::engine::assets::internal
                     data,
                     logger);
 
-                wz::asset::ResourceHandle handle =
-                    scalar_field_table.add(std::move(data));
+                // ── 7. Publish residency + store + return compiled node ───────
 
-                // ── 7. Return compiled node ───────────────────────────────────
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return finalize_scalar_field(
+                    input,
+                    std::move(data),
+                    scalar_field_table,
+                    gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
             }
             });
 
@@ -664,7 +763,8 @@ namespace wz::engine::assets::internal
                     .options = kScalarFieldDomainOptions,
                 },
             },
-            .compile = [&logger, &scalar_field_table, cache_settings](
+            .compile = [&logger, &scalar_field_table, cache_settings,
+                        gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -731,12 +831,13 @@ namespace wz::engine::assets::internal
                         logger,
                         cached_data))
                 {
-                    wz::asset::ResourceHandle handle =
-                        scalar_field_table.add(std::move(cached_data));
-                    wz::asset::AssetNode out = input;
-                    out.stage = wz::asset::AssetStage::Compiled;
-                    out.payload = handle;
-                    return out;
+                    return finalize_scalar_field(
+                        input,
+                        std::move(cached_data),
+                        scalar_field_table,
+                        gpu_resources,
+                        rhi_resource_tracker,
+                        logger);
                 }
 
                 std::vector<float> values(count);
@@ -843,15 +944,175 @@ namespace wz::engine::assets::internal
                     data,
                     logger);
 
-                wz::asset::ResourceHandle handle =
-                    scalar_field_table.add(std::move(data));
+                // ── 5. Publish residency + store + return compiled node ───────
 
-                // ── 5. Return compiled node ───────────────────────────────────
+                return finalize_scalar_field(
+                    input,
+                    std::move(data),
+                    scalar_field_table,
+                    gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
+            }
+            });
 
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+
+        // ── Scalar field compiler (Gaea .r32 heightmap) ───────────────────────
+        //
+        // Dispatches on kScalarFieldFromGaeaR32Schema. Same raw float32 bytes as
+        // the file-backed recipe, but the dimensions are not authored: they follow
+        // Gaea's convention of a square grid whose side is sqrt(sample_count). A
+        // file whose sample count is not a perfect square is rejected.
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kScalarFieldFromGaeaR32Schema,
+            .output_type = kAssetTypeScalarField,
+            .input_ports = {
+                { "source_file", kAssetTypeRawFile },
+            },
+            .parameters = {
+                {
+                    .name = "domain_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(
+                            ScalarFieldDomainKind::Spatial2D),
+                    .options = kScalarFieldDomainOptions,
+                },
+            },
+            .compile = [&logger, &scalar_field_table, cache_settings,
+                        gpu_resources, rhi_resource_tracker](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                // ── 1. Resolve domain_kind (typed desc or ParamBlock) ─────────
+
+                GaeaR32ScalarFieldCompileDesc param_desc{};
+                const auto* desc =
+                    std::any_cast<GaeaR32ScalarFieldCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        param_desc.domain_kind =
+                            enum_param(
+                                *params,
+                                "domain_kind",
+                                param_desc.domain_kind,
+                                kScalarFieldDomainOptions);
+                        desc = &param_desc;
+                    }
+                }
+                if (!desc) {
+                    logger.error(
+                        "Gaea r32 scalar field node missing "
+                        "GaeaR32ScalarFieldCompileDesc");
+                    return compile_failed_node(input);
+                }
+
+                // ── 2. Disk cache hit ─────────────────────────────────────────
+
+                ScalarFieldData cached_data{};
+                if (load_cached_scalar_field_impl(
+                        cache_settings, input.key, logger, cached_data))
+                {
+                    return finalize_scalar_field(
+                        input,
+                        std::move(cached_data),
+                        scalar_field_table,
+                        gpu_resources,
+                        rhi_resource_tracker,
+                        logger);
+                }
+
+                // ── 3. Validate dependency ────────────────────────────────────
+
+                if (dep_nodes.empty()) {
+                    logger.error(
+                        "Gaea r32 scalar field node has no file dependency");
+                    return compile_failed_node(input);
+                }
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                if (!bytes) {
+                    logger.error(
+                        "Gaea r32 scalar field dep node has no byte payload");
+                    return compile_failed_node(input);
+                }
+
+                // ── 4. Byte count -> sample count ─────────────────────────────
+
+                if ((bytes->size() % sizeof(float)) != 0u) {
+                    logger.error(
+                        "Gaea r32 scalar field .r32 size "
+                        + std::to_string(bytes->size())
+                        + " is not a multiple of 4");
+                    return compile_failed_node(input);
+                }
+                const uint64_t sample_count = bytes->size() / sizeof(float);
+                if (sample_count == 0u) {
+                    logger.error("Gaea r32 scalar field .r32 is empty");
+                    return compile_failed_node(input);
+                }
+
+                // ── 5. Derive square dimensions (Gaea convention) ─────────────
+
+                const double side_d =
+                    std::sqrt(static_cast<double>(sample_count));
+                const uint32_t side = static_cast<uint32_t>(side_d + 0.5);
+                if (static_cast<uint64_t>(side) * static_cast<uint64_t>(side)
+                    != sample_count)
+                {
+                    logger.error(
+                        "Gaea r32 scalar field sample count "
+                        + std::to_string(sample_count)
+                        + " is not a perfect square; use the raw-F32 scalar "
+                          "field schema with explicit width and height");
+                    return compile_failed_node(input);
+                }
+
+                // ── 6. Reinterpret bytes as float32 values ────────────────────
+
+                std::vector<float> values(static_cast<size_t>(sample_count));
+                std::memcpy(
+                    values.data(),
+                    bytes->data(),
+                    static_cast<size_t>(sample_count) * sizeof(float));
+
+                // ── 7. Validate values; compute min/max ───────────────────────
+
+                float min_val = 0.0f;
+                float max_val = 0.0f;
+                if (!compute_min_max(values, min_val, max_val,
+                                     logger, "Gaea r32 scalar field"))
+                {
+                    return compile_failed_node(input);
+                }
+
+                // ── 8. Build, cache, publish residency, return ────────────────
+
+                ScalarFieldData data;
+                data.width = side;
+                data.height = side;
+                data.depth = 1;
+                data.format = ScalarFieldFormat::Float32;
+                data.domain_kind = desc->domain_kind;
+                data.min_value = min_val;
+                data.max_value = max_val;
+                data.values = std::move(values);
+
+                store_cached_scalar_field(
+                    cache_settings, input.key, data, logger);
+
+                return finalize_scalar_field(
+                    input,
+                    std::move(data),
+                    scalar_field_table,
+                    gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
             }
             });
     }

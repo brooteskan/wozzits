@@ -128,6 +128,19 @@ namespace wz::engine::assets {
     };
 
 
+    // ─── GaeaR32ScalarFieldCompileDesc ────────────────────────────────────────────
+    //
+    // Stored in AssetNode::meta for Gaea .r32 scalar field compile nodes.
+    // Carries no dimensions: the compiler derives a square grid from the file's
+    // sample count (Gaea's documented convention). domain_kind is the only
+    // authored knob. Expects exactly one kRawFileSchema dependency (the .r32).
+
+    struct GaeaR32ScalarFieldCompileDesc
+    {
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
+
     // ─── ProceduralScalarFieldCompileDesc ─────────────────────────────────────────
     //
     // Stored in AssetNode::meta for procedural scalar field compile nodes.

@@ -308,65 +308,46 @@
       }
     },
     {
-      "node_id": 11,
-      "type": 1049,
-      "schema": "0xf11eca55e7000103",
+      "node_id": 12,
+      "key": "asset-key:bd90b34d003ec92a:e2972703fb4dc2aa:f11eca55e7000001:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
+      "type": 64,
+      "schema": "0xf11eca55e7000001",
       "stage": 0,
-      "residency": 1,
+      "residency": 2,
       "kind": 0,
       "demand_root": 0,
       "deps": [],
       "meta": {
         "params": [
           {
-            "name": "binding_layout",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "binding_model",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "blend_mode",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "default_domain",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "default_policy_flags",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "depth_mode",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "input_layout",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "name",
+            "name": "source_path",
             "type": "string",
-            "value": ""
-          },
+            "value": "\"C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Snowfield_Out.r32\""
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 13,
+      "key": "asset-key:0253d59a4232e503:3c6ef372fe94f86d:f11eca55e7000203:0000000000000000:9e3779b97f4a9cb6:0000000000000000:7b74b40d4e4722eb:0c6b73407022e36f",
+      "type": 128,
+      "schema": "0xf11eca55e7000203",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 12,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
           {
-            "name": "raster_mode",
+            "name": "domain_kind",
             "type": "int",
-            "value": 0
-          },
-          {
-            "name": "topology",
-            "type": "int",
-            "value": 0
+            "value": 4
           }
         ]
       }
@@ -417,8 +398,8 @@
       },
       {
         "node_id": 9,
-        "x": 562.27083973353103,
-        "y": 47.855660654926453
+        "x": 545.72886040800211,
+        "y": 91.961800791645203
       },
       {
         "node_id": 10,
@@ -427,20 +408,20 @@
       },
       {
         "node_id": 11,
-        "x": 810.76033057851248,
-        "y": 674.33057851239664
+        "x": 446.77139014638431,
+        "y": 824.91153766053287
       },
       {
         "node_id": 12,
-        "x": 748.07573999737815,
-        "y": 575.4689266997168
+        "x": 193.65374755859375,
+        "y": 779.81396484375
       },
       {
         "node_id": 13,
-        "x": 725.61696832215057,
-        "y": 611.06226728859292
+        "x": 507.37228393554688,
+        "y": 774.882568359375
       }
     ],
-    "zoom": 0.30249999999999999
+    "zoom": 0.86306780359827595
   }
 }

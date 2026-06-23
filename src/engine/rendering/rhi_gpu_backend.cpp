@@ -7,27 +7,33 @@ namespace wz::engine::rendering
     wz::rhi::BackendResource EngineGpuBackend::create(
         const wz::rhi::GpuResourceDesc& desc)
     {
-        // TODO(rhi-backend): texture / render-target creation needs a generic
-        // engine texture creator (not yet exposed). Buffers only for now.
-        if (desc.dimension != wz::rhi::ResourceDimension::Buffer) {
-            return {};
+        wz::gpu::GPUHandle handle{};
+
+        if (desc.dimension == wz::rhi::ResourceDimension::Buffer) {
+            const wz::gpu::ComputeBufferDesc buffer_desc =
+                to_compute_buffer_desc(desc);
+            if (!buffer_desc.valid()) {
+                return {};
+            }
+            handle = desc_wants_rw(desc)
+                ? wz::gpu::create_rw_structured_buffer(*device_, buffer_desc)
+                : wz::gpu::create_structured_buffer(*device_, buffer_desc);
+        }
+        else {
+            // Texture2D / Texture3D -> the generic engine texture creator.
+            wz::gpu::TextureDesc texture_desc{};
+            if (!to_texture_desc(desc, texture_desc)) {
+                return {};
+            }
+            handle = wz::gpu::create_texture(*device_, texture_desc);
         }
 
-        const wz::gpu::ComputeBufferDesc buffer_desc =
-            to_compute_buffer_desc(desc);
-        if (!buffer_desc.valid()) {
-            return {};
-        }
-
-        const wz::gpu::GPUHandle handle = desc_wants_rw(desc)
-            ? wz::gpu::create_rw_structured_buffer(*device_, buffer_desc)
-            : wz::gpu::create_structured_buffer(*device_, buffer_desc);
         if (!handle.valid()) {
             return {};
         }
 
         const uint64_t token = next_token_++;
-        resources_.emplace(token, handle);
+        resources_.emplace(token, Entry{ handle, desc.dimension });
         return wz::rhi::BackendResource{ token };
     }
 
@@ -37,7 +43,12 @@ namespace wz::engine::rendering
         if (it == resources_.end()) {
             return;
         }
-        wz::gpu::release_compute_buffer(*device_, it->second);
+        if (it->second.dimension == wz::rhi::ResourceDimension::Buffer) {
+            wz::gpu::release_compute_buffer(*device_, it->second.handle);
+        }
+        else {
+            wz::gpu::release_texture(*device_, it->second.handle);
+        }
         resources_.erase(it);
     }
 
@@ -47,13 +58,21 @@ namespace wz::engine::rendering
         uint64_t size,
         uint64_t offset)
     {
-        const wz::gpu::GPUHandle handle = gpu_handle_for(resource);
-        if (!handle.valid()) {
+        const auto it = resources_.find(resource.id);
+        if (it == resources_.end() || !it->second.handle.valid()) {
             return false;
         }
-        return wz::gpu::dx12::internal::update_compute_buffer_dx12(
+        if (it->second.dimension == wz::rhi::ResourceDimension::Buffer) {
+            return wz::gpu::dx12::internal::update_compute_buffer_dx12(
+                *device_,
+                it->second.handle,
+                data,
+                size,
+                offset);
+        }
+        return wz::gpu::update_texture(
             *device_,
-            handle,
+            it->second.handle,
             data,
             size,
             offset);
@@ -63,6 +82,6 @@ namespace wz::engine::rendering
         wz::rhi::BackendResource resource) const
     {
         const auto it = resources_.find(resource.id);
-        return it != resources_.end() ? it->second : wz::gpu::GPUHandle{};
+        return it != resources_.end() ? it->second.handle : wz::gpu::GPUHandle{};
     }
 }

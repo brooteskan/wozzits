@@ -154,6 +154,7 @@ float4 main(PSIn input) : SV_TARGET
 
             { kScalarFieldFromRawF32Schema, kAssetTypeScalarField },
             { kScalarFieldProceduralSchema, kAssetTypeScalarField },
+            { kScalarFieldFromGaeaR32Schema, kAssetTypeScalarField },
             { kVectorFieldFromRawF32Schema, kAssetTypeVectorField },
 
             { kProceduralTriangleMeshSchema, kAssetTypeMesh },

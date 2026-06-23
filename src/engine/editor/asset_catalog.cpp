@@ -80,8 +80,13 @@ namespace wz::engine::editor
         // meshes, cluster hierarchies, and the GPU textures the rhi backend
         // cannot create yet. Everything else either has no GPU residency or is
         // already realized through the rhi path.
-        return type == ea::kAssetTypeScalarField
-            || type == ea::kAssetTypeVectorField
+        //
+        // Scalar field is OFF this list (#197): its residency is now published
+        // onto the wozzits-rhi GpuResourceRegistry as an R32F texture at compile
+        // time, so it qualifies as migrated and is authorable in the browser.
+        // (Its rhi *render* path is still pending in #195; until then it draws
+        // through the legacy path.)
+        return type == ea::kAssetTypeVectorField
             || type == ea::kAssetTypeMeshDerivedField
             || type == ea::kAssetTypeMeshSparseOperator
             || type == ea::kAssetTypeGpuSparseMesh

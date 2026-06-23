@@ -416,6 +416,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kCustomRenderProgramSchema, "Custom render program");
             WZ_ADD_SCHEMA(kScalarFieldFromRawF32Schema, "Scalar field from raw F32");
             WZ_ADD_SCHEMA(kScalarFieldProceduralSchema, "Procedural scalar field");
+            WZ_ADD_SCHEMA(kScalarFieldFromGaeaR32Schema, "Scalar field from Gaea R32");
             WZ_ADD_SCHEMA(kVectorFieldFromRawF32Schema, "Vector field from raw F32");
             WZ_ADD_SCHEMA(kGaussianSplatFromPLYSchema, "Gaussian splat from PLY");
             WZ_ADD_SCHEMA(kGaussianSplatFromFieldSchema, "Gaussian splat from field");
