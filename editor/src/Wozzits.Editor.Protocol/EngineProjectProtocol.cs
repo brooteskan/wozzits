@@ -327,6 +327,8 @@ public sealed record EngineSceneNode
 
     public List<EngineSceneComponent> Components { get; init; } = [];
 
+    public List<EngineSceneBehavior> Behaviors { get; init; } = [];
+
     public List<EngineSceneNode> Children { get; init; } = [];
 }
 
@@ -392,4 +394,30 @@ public sealed record EngineSceneComponent
     public string Kind { get; init; } = string.Empty;
 
     public string DisplayName { get; init; } = string.Empty;
+}
+
+public sealed record EngineSceneBehavior
+{
+    public string Id { get; init; } = string.Empty;
+
+    public string Label { get; init; } = string.Empty;
+
+    public string Module { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public bool Enabled { get; init; } = true;
+
+    public List<string> Events { get; init; } = [];
+
+    public List<EngineSceneBehaviorConfig> Config { get; init; } = [];
+}
+
+public sealed record EngineSceneBehaviorConfig
+{
+    public string Name { get; init; } = string.Empty;
+
+    public string Kind { get; init; } = string.Empty;
+
+    public string Value { get; init; } = string.Empty;
 }

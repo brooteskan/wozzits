@@ -270,6 +270,10 @@ public sealed partial class WozzitsEngineNativeClient
                 bytes,
                 node.Components,
                 ReadSceneComponent),
+            Behaviors = ReadTable<WzEditorSceneBehaviorAbi, EngineSceneBehavior>(
+                bytes,
+                node.Behaviors,
+                ReadSceneBehavior),
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
@@ -285,6 +289,40 @@ public sealed partial class WozzitsEngineNativeClient
         {
             Kind = ReadString(bytes, component.Kind),
             DisplayName = ReadString(bytes, component.DisplayName),
+        };
+    }
+
+    private static EngineSceneBehavior ReadSceneBehavior(
+        byte[] bytes,
+        WzEditorSceneBehaviorAbi behavior)
+    {
+        return new EngineSceneBehavior
+        {
+            Id = ReadString(bytes, behavior.Id),
+            Label = ReadString(bytes, behavior.Label),
+            Module = ReadString(bytes, behavior.Module),
+            Name = ReadString(bytes, behavior.Name),
+            Enabled = behavior.Enabled != 0,
+            Events = ReadTable<WzEditorStringSpanAbi, string>(
+                bytes,
+                behavior.Events,
+                ReadString),
+            Config = ReadTable<WzEditorAssetGraphParamAbi, EngineSceneBehaviorConfig>(
+                bytes,
+                behavior.Config,
+                ReadBehaviorConfig),
+        };
+    }
+
+    private static EngineSceneBehaviorConfig ReadBehaviorConfig(
+        byte[] bytes,
+        WzEditorAssetGraphParamAbi param)
+    {
+        return new EngineSceneBehaviorConfig
+        {
+            Name = ReadString(bytes, param.Name),
+            Kind = ReadString(bytes, param.Kind),
+            Value = ReadString(bytes, param.Value),
         };
     }
 

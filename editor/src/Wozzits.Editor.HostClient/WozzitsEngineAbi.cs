@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 20;
+    internal const uint AbiVersion = 21;
 
     private static int _resolverRegistered;
 
@@ -295,6 +295,78 @@ internal static partial class WozzitsEngineAbi
         string parentIdUtf8,
         out WzBuffer outNewId);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_add_node_behavior",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeAddNodeBehavior(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string moduleUtf8,
+        out WzBuffer outBindingId);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_remove_node_behavior",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeRemoveNodeBehavior(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_behavior_enabled",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeBehaviorEnabled(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8,
+        uint enabled);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_behavior_fields",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeBehaviorFields(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8,
+        string labelUtf8,
+        string moduleUtf8);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_behavior_events",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeBehaviorEvents(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8,
+        string eventsUtf8);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_behavior_config",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeBehaviorConfig(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8,
+        string keyUtf8,
+        string kindUtf8,
+        string valueUtf8);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_clear_node_behavior_config",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeClearNodeBehaviorConfig(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string bindingIdUtf8,
+        string keyUtf8);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }
@@ -562,7 +634,30 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneComponentAbi.DisplayName),
             16);
 
-        AssertSize<WzEditorSceneNodeAbi>(432);
+        AssertSize<WzEditorSceneBehaviorAbi>(104);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Id),
+            0);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Label),
+            16);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Module),
+            32);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Name),
+            48);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Enabled),
+            64);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Events),
+            72);
+        AssertOffset<WzEditorSceneBehaviorAbi>(
+            nameof(WzEditorSceneBehaviorAbi.Config),
+            88);
+
+        AssertSize<WzEditorSceneNodeAbi>(448);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -594,8 +689,11 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneNodeAbi.Components),
             400);
         AssertOffset<WzEditorSceneNodeAbi>(
-            nameof(WzEditorSceneNodeAbi.Children),
+            nameof(WzEditorSceneNodeAbi.Behaviors),
             416);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.Children),
+            432);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -872,6 +970,7 @@ internal readonly struct WzEditorSceneNodeAbi
     public readonly WzEditorSceneRenderableAbi Renderable;
     public readonly WzEditorSceneRenderableSourceAbi RenderableSource;
     public readonly WzEditorTableSpanAbi Components;
+    public readonly WzEditorTableSpanAbi Behaviors;
     public readonly WzEditorTableSpanAbi Children;
 }
 
@@ -931,6 +1030,19 @@ internal readonly struct WzEditorSceneComponentAbi
 {
     public readonly WzEditorStringSpanAbi Kind;
     public readonly WzEditorStringSpanAbi DisplayName;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneBehaviorAbi
+{
+    public readonly WzEditorStringSpanAbi Id;
+    public readonly WzEditorStringSpanAbi Label;
+    public readonly WzEditorStringSpanAbi Module;
+    public readonly WzEditorStringSpanAbi Name;
+    public readonly uint Enabled;
+    public readonly uint Reserved;
+    public readonly WzEditorTableSpanAbi Events;   // WzEditorStringSpanAbi[]
+    public readonly WzEditorTableSpanAbi Config;   // WzEditorAssetGraphParamAbi[]
 }
 
 internal static class WzEditorSceneNodeFlags
