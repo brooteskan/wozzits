@@ -245,7 +245,7 @@ namespace wz::app
 
         // Any thread: true once the runtime loop has exited (window closed or
         // stop serviced) and mark_finished() ran. The ABI surfaces this as
-        // wz_editor_runtime_is_running so the editor can detect a closed viewport
+        // wz_host_runtime_is_running so the editor can detect a closed viewport
         // and offer to restart instead of holding a dead handle.
         [[nodiscard]] bool finished() const;
 

@@ -21,25 +21,25 @@
 #include <thread>
 #include <vector>
 
-struct WzEditorSession
+struct WzHostSession
 {
     wz::asset::CompilerRegistry registry;
     std::unique_ptr<wz::engine::editor::AssetGraphEditorSession> editor;
 };
 
-struct WzEditorRuntime
+struct WzHostRuntime
 {
     wz::app::EditorRuntimeControl control;
     std::thread thread;
-    WzEditorLogCallback log_callback = nullptr;
+    WzHostLogCallback log_callback = nullptr;
     void* log_user = nullptr;
 
     // Host-capability flag (the "one ABI" role gate). Set true only by
-    // wz_editor_runtime_start — the editor/host launcher — and required by the
+    // wz_host_runtime_start — the editor/host launcher — and required by the
     // scene-mutation verbs (see require_host_scene_authoring). A future
     // behavior-as-consumer that obtains a runtime through some non-host path
     // would NOT have this set and is therefore denied mutation by construction.
-    // Today every WzEditorRuntime is host-started, so this is always true; the
+    // Today every WzHostRuntime is host-started, so this is always true; the
     // point is that the gate exists and the verbs check it.
     bool host_capability = false;
 };
@@ -112,7 +112,7 @@ namespace
     }
 
     WzResult validate_session(
-        WzEditorSession* session,
+        WzHostSession* session,
         const char* parameter_name = "session")
     {
         if (!session || !session->editor) {
@@ -142,7 +142,7 @@ namespace
         std::string_view text,
         void* user)
     {
-        auto* runtime = static_cast<WzEditorRuntime*>(user);
+        auto* runtime = static_cast<WzHostRuntime*>(user);
         if (!runtime || !runtime->log_callback) {
             return;
         }
@@ -163,7 +163,7 @@ namespace
     // is rejected with WZ_RESULT_INVALID_ARGUMENT, so a future non-host consumer
     // of this same ABI (e.g. a behavior calling in) is denied by construction.
     // Returns OK only for a host-capable runtime.
-    WzResult require_host_scene_authoring(const WzEditorRuntime* runtime)
+    WzResult require_host_scene_authoring(const WzHostRuntime* runtime)
     {
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
@@ -259,7 +259,7 @@ extern "C"
         return WZ_ABI_VERSION;
     }
 
-    WzResult wz_editor_asset_catalog(WzBuffer* out_catalog)
+    WzResult wz_host_asset_catalog(WzBuffer* out_catalog)
     {
         if (const WzResult target =
                 prepare_output_buffer(out_catalog, "out_catalog");
@@ -283,7 +283,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_load_project_snapshot(
+    WzResult wz_host_load_project_snapshot(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         WzBuffer* out_snapshot)
@@ -326,7 +326,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_create_project(
+    WzResult wz_host_create_project(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         const char* name_utf8,
@@ -371,7 +371,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_scene_set_node_properties(
+    WzResult wz_host_scene_set_node_properties(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         const char* node_id_utf8,
@@ -392,7 +392,7 @@ extern "C"
         return scene_mutations_not_wired_yet();
     }
 
-    WzResult wz_editor_scene_set_node_transform(
+    WzResult wz_host_scene_set_node_transform(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         const char* node_id_utf8,
@@ -427,7 +427,7 @@ extern "C"
         return scene_mutations_not_wired_yet();
     }
 
-    WzResult wz_editor_scene_set_camera(
+    WzResult wz_host_scene_set_camera(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         const char* node_id_utf8,
@@ -452,7 +452,7 @@ extern "C"
         return scene_mutations_not_wired_yet();
     }
 
-    WzResult wz_editor_asset_graph_set_node_position(
+    WzResult wz_host_asset_graph_set_node_position(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         uint64_t node_id,
@@ -493,7 +493,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_set_zoom(
+    WzResult wz_host_asset_graph_set_zoom(
         const char* project_root_utf8,
         const char* resource_root_utf8,
         double zoom)
@@ -530,10 +530,10 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_open_project_session(
+    WzResult wz_host_open_project_session(
         const char* project_root_utf8,
         const char* resource_root_utf8,
-        WzEditorSession** out_session)
+        WzHostSession** out_session)
     {
         if (!out_session) {
             return result(
@@ -549,7 +549,7 @@ extern "C"
         }
 
         try {
-            auto session = std::make_unique<WzEditorSession>();
+            auto session = std::make_unique<WzHostSession>();
 
             // Device-free compiler schemas: lets can_connect/snapshot validate
             // against the real declared input ports (not draft-inferred ones)
@@ -586,13 +586,13 @@ extern "C"
         }
     }
 
-    void wz_editor_close_session(WzEditorSession* session)
+    void wz_host_close_session(WzHostSession* session)
     {
         delete session;
     }
 
-    WzResult wz_editor_session_asset_graph_snapshot(
-        WzEditorSession* session,
+    WzResult wz_host_session_asset_graph_snapshot(
+        WzHostSession* session,
         WzBuffer* out_snapshot)
     {
         if (const WzResult target = validate_session(session);
@@ -623,8 +623,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_can_connect(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_can_connect(
+        WzHostSession* session,
         uint64_t from_node_id,
         uint64_t to_node_id,
         uint32_t to_input_port,
@@ -663,8 +663,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_connect(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_connect(
+        WzHostSession* session,
         uint64_t from_node_id,
         uint64_t to_node_id,
         uint32_t to_input_port,
@@ -703,8 +703,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_add_node(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_add_node(
+        WzHostSession* session,
         uint64_t schema,
         uint32_t type,
         uint64_t* out_node_id)
@@ -744,8 +744,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_session_set_node_position(
-        WzEditorSession* session,
+    WzResult wz_host_session_set_node_position(
+        WzHostSession* session,
         uint64_t node_id,
         double x,
         double y)
@@ -776,8 +776,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_session_set_zoom(
-        WzEditorSession* session,
+    WzResult wz_host_session_set_zoom(
+        WzHostSession* session,
         double zoom)
     {
         if (const WzResult target = validate_session(session);
@@ -803,8 +803,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_remove_node(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_remove_node(
+        WzHostSession* session,
         uint64_t node_id)
     {
         if (const WzResult target = validate_session(session);
@@ -831,8 +831,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_disconnect_edge(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_disconnect_edge(
+        WzHostSession* session,
         uint64_t edge_id)
     {
         if (const WzResult target = validate_session(session);
@@ -859,8 +859,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_asset_graph_set_node_param_string(
-        WzEditorSession* session,
+    WzResult wz_host_asset_graph_set_node_param_string(
+        WzHostSession* session,
         uint64_t node_id,
         const char* name_utf8,
         const char* value_utf8)
@@ -897,7 +897,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_session_save(WzEditorSession* session)
+    WzResult wz_host_session_save(WzHostSession* session)
     {
         if (const WzResult target = validate_session(session);
             target.code != WZ_RESULT_OK)
@@ -922,10 +922,10 @@ extern "C"
         }
     }
 
-    WzEditorRuntime* wz_editor_runtime_start(
+    WzHostRuntime* wz_host_runtime_start(
         const char* project_root_utf8,
         const char* resource_root_utf8,
-        WzEditorLogCallback log_callback,
+        WzHostLogCallback log_callback,
         void* log_user)
     {
         if (!project_root_utf8 || project_root_utf8[0] == '\0') {
@@ -933,7 +933,7 @@ extern "C"
         }
 
         try {
-            auto runtime = std::make_unique<WzEditorRuntime>();
+            auto runtime = std::make_unique<WzHostRuntime>();
             const std::string project_root = project_root_utf8;
             const std::string resource_root =
                 resource_root_utf8 ? resource_root_utf8 : "";
@@ -944,7 +944,7 @@ extern "C"
             // accept it. A non-host caller never reaches this constructor.
             runtime->host_capability = true;
 
-            WzEditorRuntime* raw = runtime.get();
+            WzHostRuntime* raw = runtime.get();
             raw->thread = std::thread([raw, project_root, resource_root]() {
                 try {
                     const auto loaded =
@@ -1005,7 +1005,7 @@ extern "C"
         }
     }
 
-    void wz_editor_runtime_stop(WzEditorRuntime* runtime)
+    void wz_host_runtime_stop(WzHostRuntime* runtime)
     {
         if (!runtime) {
             return;
@@ -1017,7 +1017,7 @@ extern "C"
         delete runtime;
     }
 
-    int wz_editor_runtime_is_running(WzEditorRuntime* runtime)
+    int wz_host_runtime_is_running(WzHostRuntime* runtime)
     {
         if (!runtime) {
             return 0;
@@ -1025,13 +1025,13 @@ extern "C"
         // finished() flips true after the render loop exits (window closed or
         // stop serviced) and the thread called mark_finished(). Until then the
         // viewport is live. The runtime object itself outlives the thread; only
-        // wz_editor_runtime_stop frees it.
+        // wz_host_runtime_stop frees it.
         return runtime->control.finished() ? 0 : 1;
     }
 
-    WzResult wz_editor_runtime_bind_draft(
-        WzEditorRuntime* runtime,
-        WzEditorSession* session)
+    WzResult wz_host_runtime_bind_draft(
+        WzHostRuntime* runtime,
+        WzHostSession* session)
     {
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
@@ -1089,8 +1089,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_transform(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_transform(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         double translation_x,
         double translation_y,
@@ -1148,8 +1148,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_properties(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_properties(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* name_utf8,
         uint32_t visible)
@@ -1182,8 +1182,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_reparent_node(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_reparent_node(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* new_parent_id_utf8)
     {
@@ -1215,8 +1215,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_remove_node(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_remove_node(
+        WzHostRuntime* runtime,
         const char* node_id_utf8)
     {
         if (!runtime) {
@@ -1242,7 +1242,7 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_save_scene(WzEditorRuntime* runtime)
+    WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime)
     {
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
@@ -1251,8 +1251,8 @@ extern "C"
         return result(WZ_RESULT_OK, "");
     }
 
-    WzResult wz_editor_runtime_add_child_node(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_add_child_node(
+        WzHostRuntime* runtime,
         const char* parent_id_utf8,
         WzBuffer* out_new_id)
     {
@@ -1285,8 +1285,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_add_node_behavior(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_add_node_behavior(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* module_utf8,
         WzBuffer* out_binding_id)
@@ -1332,8 +1332,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_remove_node_behavior(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_remove_node_behavior(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8)
     {
@@ -1369,8 +1369,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_add_node_component(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_add_node_component(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* kind_utf8)
     {
@@ -1414,8 +1414,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_remove_node_component(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_remove_node_component(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* kind_utf8)
     {
@@ -1457,8 +1457,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_renderable_asset(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_renderable_asset(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         uint64_t asset_graph_node_id)
     {
@@ -1490,8 +1490,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_behavior_enabled(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_behavior_enabled(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         uint32_t enabled)
@@ -1530,8 +1530,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_behavior_fields(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_behavior_fields(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         const char* label_utf8,
@@ -1572,8 +1572,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_behavior_events(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_behavior_events(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         const char* events_utf8)
@@ -1612,8 +1612,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_set_node_behavior_config(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_set_node_behavior_config(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         const char* key_utf8,
@@ -1667,8 +1667,8 @@ extern "C"
         }
     }
 
-    WzResult wz_editor_runtime_clear_node_behavior_config(
-        WzEditorRuntime* runtime,
+    WzResult wz_host_runtime_clear_node_behavior_config(
+        WzHostRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         const char* key_utf8)

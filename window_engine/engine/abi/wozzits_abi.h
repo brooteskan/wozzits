@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 21u
+#define WZ_ABI_VERSION 22u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -38,14 +38,14 @@ typedef struct WzBuffer
     uint64_t size;
 } WzBuffer;
 
-typedef struct WzEditorSession WzEditorSession;
+typedef struct WzHostSession WzHostSession;
 
 // Opaque handle to a running in-process engine runtime (Option Y, #189): the
 // editor owns one engine instance that renders the project's viewport in its own
 // window on an engine-owned thread. Started/stopped by the editor; no IPC.
-typedef struct WzEditorRuntime WzEditorRuntime;
+typedef struct WzHostRuntime WzHostRuntime;
 
-typedef void (*WzEditorLogCallback)(
+typedef void (*WzHostLogCallback)(
     uint32_t level,
     const char* timestamp_utf8,
     uint64_t timestamp_size,
@@ -502,27 +502,27 @@ WZ_ABI_API uint32_t wz_abi_version(void);
 // grouped by output type with their schemas. Excludes types whose GPU residency
 // has not yet migrated to wozzits-rhi (#186). No project or session required.
 // The blob's byte 0 is a WzEditorAssetCatalog. Caller frees with wz_free_buffer.
-WZ_ABI_API WzResult wz_editor_asset_catalog(WzBuffer* out_catalog);
+WZ_ABI_API WzResult wz_host_asset_catalog(WzBuffer* out_catalog);
 
-WZ_ABI_API WzResult wz_editor_load_project_snapshot(
+WZ_ABI_API WzResult wz_host_load_project_snapshot(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     WzBuffer* out_snapshot);
 
-WZ_ABI_API WzResult wz_editor_create_project(
+WZ_ABI_API WzResult wz_host_create_project(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     const char* name_utf8,
     WzBuffer* out_project);
 
-WZ_ABI_API WzResult wz_editor_scene_set_node_properties(
+WZ_ABI_API WzResult wz_host_scene_set_node_properties(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     const char* node_id_utf8,
     const char* name_utf8,
     uint32_t visible);
 
-WZ_ABI_API WzResult wz_editor_scene_set_node_transform(
+WZ_ABI_API WzResult wz_host_scene_set_node_transform(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     const char* node_id_utf8,
@@ -536,7 +536,7 @@ WZ_ABI_API WzResult wz_editor_scene_set_node_transform(
     const char* scale_y_utf8,
     const char* scale_z_utf8);
 
-WZ_ABI_API WzResult wz_editor_scene_set_camera(
+WZ_ABI_API WzResult wz_host_scene_set_camera(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     const char* node_id_utf8,
@@ -545,114 +545,114 @@ WZ_ABI_API WzResult wz_editor_scene_set_camera(
     const char* far_plane_utf8,
     const char* aspect_utf8);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_set_node_position(
+WZ_ABI_API WzResult wz_host_asset_graph_set_node_position(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     uint64_t node_id,
     double x,
     double y);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_set_zoom(
+WZ_ABI_API WzResult wz_host_asset_graph_set_zoom(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     double zoom);
 
-WZ_ABI_API WzResult wz_editor_open_project_session(
+WZ_ABI_API WzResult wz_host_open_project_session(
     const char* project_root_utf8,
     const char* resource_root_utf8,
-    WzEditorSession** out_session);
+    WzHostSession** out_session);
 
-WZ_ABI_API void wz_editor_close_session(WzEditorSession* session);
+WZ_ABI_API void wz_host_close_session(WzHostSession* session);
 
-WZ_ABI_API WzResult wz_editor_session_asset_graph_snapshot(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_session_asset_graph_snapshot(
+    WzHostSession* session,
     WzBuffer* out_snapshot);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_can_connect(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_asset_graph_can_connect(
+    WzHostSession* session,
     uint64_t from_node_id,
     uint64_t to_node_id,
     uint32_t to_input_port,
     WzBuffer* out_check);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_connect(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_asset_graph_connect(
+    WzHostSession* session,
     uint64_t from_node_id,
     uint64_t to_node_id,
     uint32_t to_input_port,
     WzBuffer* out_check);
 
-WZ_ABI_API WzResult wz_editor_asset_graph_disconnect_edge(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_asset_graph_disconnect_edge(
+    WzHostSession* session,
     uint64_t edge_id);
 
 // Add a new authored node for (schema, type) to the draft, with compiler
 // default params, and return its new node id. Layout position is set separately
-// (wz_editor_asset_graph_set_node_position) by the editor after the snapshot.
-WZ_ABI_API WzResult wz_editor_asset_graph_add_node(
-    WzEditorSession* session,
+// (wz_host_asset_graph_set_node_position) by the editor after the snapshot.
+WZ_ABI_API WzResult wz_host_asset_graph_add_node(
+    WzHostSession* session,
     uint64_t schema,
     uint32_t type,
     uint64_t* out_node_id);
 
 // Remove a node (and any edges touching it) from the draft.
-WZ_ABI_API WzResult wz_editor_asset_graph_remove_node(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_asset_graph_remove_node(
+    WzHostSession* session,
     uint64_t node_id);
 
 // Set a node's layout position / the graph zoom in the session's in-memory
 // layout (persisted on save). Session-based so freshly added, not-yet-saved
 // nodes can be positioned.
-WZ_ABI_API WzResult wz_editor_session_set_node_position(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_session_set_node_position(
+    WzHostSession* session,
     uint64_t node_id,
     double x,
     double y);
 
-WZ_ABI_API WzResult wz_editor_session_set_zoom(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_session_set_zoom(
+    WzHostSession* session,
     double zoom);
 
 // Set a string-valued node param (e.g. a shader "source_path") on the draft.
 // Merges into the node's ParamBlock, invalidates its key, and marks it changed,
 // so the next compile rebuilds it. CPU-only.
-WZ_ABI_API WzResult wz_editor_asset_graph_set_node_param_string(
-    WzEditorSession* session,
+WZ_ABI_API WzResult wz_host_asset_graph_set_node_param_string(
+    WzHostSession* session,
     uint64_t node_id,
     const char* name_utf8,
     const char* value_utf8);
 
 // Persist the session's current draft to the project's asset-graph JSON on disk
 // (preserving the existing "layout"). CPU-only; no engine runtime required.
-WZ_ABI_API WzResult wz_editor_session_save(WzEditorSession* session);
+WZ_ABI_API WzResult wz_host_session_save(WzHostSession* session);
 
 // Start the in-process engine runtime for a project: spawns an engine-owned
 // thread that creates the device + viewport window and renders until stopped.
 // Returns NULL on invalid arguments or failure to start. GPU lives here, in the
 // editor process - there is exactly one engine instance (Option Y, #189).
-WZ_ABI_API WzEditorRuntime* wz_editor_runtime_start(
+WZ_ABI_API WzHostRuntime* wz_host_runtime_start(
     const char* project_root_utf8,
     const char* resource_root_utf8,
-    WzEditorLogCallback log_callback,
+    WzHostLogCallback log_callback,
     void* log_user);
 
 // Signal the runtime to stop, join its thread, and free it. Safe on NULL.
-WZ_ABI_API void wz_editor_runtime_stop(WzEditorRuntime* runtime);
+WZ_ABI_API void wz_host_runtime_stop(WzHostRuntime* runtime);
 
 // Non-zero while the runtime's render thread is alive; zero once the viewport
 // window has closed (or stop was serviced) and the thread exited, and zero for
 // a NULL runtime. Lets the editor detect a closed viewport and offer a restart
 // rather than binding into a dead handle.
-WZ_ABI_API int wz_editor_runtime_is_running(WzEditorRuntime* runtime);
+WZ_ABI_API int wz_host_runtime_is_running(WzHostRuntime* runtime);
 
 // Compile the session's current asset-graph draft on the running engine: copies
 // the draft, binds it on the engine thread (materialize -> swap -> resolve ->
 // rebind the renderer), and blocks until done. The draft is the only thing that
 // crosses to the engine thread (Option Y, #189). Returns WZ_RESULT_OK on a
 // clean compile; otherwise an error describing the failure.
-WZ_ABI_API WzResult wz_editor_runtime_bind_draft(
-    WzEditorRuntime* runtime,
-    WzEditorSession* session);
+WZ_ABI_API WzResult wz_host_runtime_bind_draft(
+    WzHostRuntime* runtime,
+    WzHostSession* session);
 
 // Live scene-node transform edit posted to the running engine (non-blocking;
 // applied on the engine thread's next frame, no disk write). Rotation is given
@@ -660,8 +660,8 @@ WZ_ABI_API WzResult wz_editor_runtime_bind_draft(
 // quaternion engine-side so that conversion never lives in the editor. Returns
 // WZ_RESULT_OK once queued; WZ_RESULT_INVALID_ARGUMENT for a null runtime or an
 // empty node id.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_transform(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_transform(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     double translation_x,
     double translation_y,
@@ -677,8 +677,8 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_transform(
 // applied on the engine thread's next frame, no disk write). The renderer skips
 // invisible nodes, so this hides/shows live. WZ_RESULT_INVALID_ARGUMENT for a
 // null runtime or an empty node id.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_properties(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_properties(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* name_utf8,
     uint32_t visible);
@@ -688,30 +688,30 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_properties(
 // engine ignores an invalid reparent (missing node, self, or cycle); the editor
 // pre-validates for drag UX. WZ_RESULT_INVALID_ARGUMENT for a null runtime or an
 // empty node id.
-WZ_ABI_API WzResult wz_editor_runtime_reparent_node(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_reparent_node(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* new_parent_id_utf8);
 
 // Live delete posted to the running engine (non-blocking, applied next frame).
 // Removes the node and its subtree. WZ_RESULT_INVALID_ARGUMENT for a null
 // runtime or an empty node id.
-WZ_ABI_API WzResult wz_editor_runtime_remove_node(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_remove_node(
+    WzHostRuntime* runtime,
     const char* node_id_utf8);
 
 // Persist the running scene to its source file (non-blocking; the engine saves
 // on its next frame). No-op if nothing changed since load/last save. Also done
 // automatically when the runtime exits. WZ_RESULT_INVALID_ARGUMENT for a null
 // runtime.
-WZ_ABI_API WzResult wz_editor_runtime_save_scene(WzEditorRuntime* runtime);
+WZ_ABI_API WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime);
 
 // Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
 // running scene, blocking until the engine thread applies it, and return the
 // minted counter id in out_new_id (UTF-8; free with wz_free_buffer).
 // WZ_RESULT_INVALID_ARGUMENT for a null runtime or a missing parent.
-WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_add_child_node(
+    WzHostRuntime* runtime,
     const char* parent_id_utf8,
     WzBuffer* out_new_id);
 
@@ -724,7 +724,7 @@ WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
 // effect, and marks the scene dirty (persisted on save / exit).
 //
 // HOST-CAPABILITY GATE: these are mutation verbs, gated behind the host role.
-// The editor-started runtime (wz_editor_runtime_start) holds the capability, so
+// The editor-started runtime (wz_host_runtime_start) holds the capability, so
 // the editor may call them; a caller without the host role (e.g. a future
 // behavior-as-consumer of this same ABI) is rejected fail-closed with
 // WZ_RESULT_INVALID_ARGUMENT. The gate is enforced in the implementation
@@ -737,8 +737,8 @@ WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
 // needs the minted id back — which is safe because the caller is the host's UI
 // thread, not a behavior on the engine thread. WZ_RESULT_INVALID_ARGUMENT for a
 // null runtime, an empty node id/module, a missing node, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_add_node_behavior(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_add_node_behavior(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* module_utf8,
     WzBuffer* out_binding_id);
@@ -746,8 +746,8 @@ WZ_ABI_API WzResult wz_editor_runtime_add_node_behavior(
 // Remove the behavior binding `binding_id_utf8` from node `node_id_utf8`
 // (non-blocking, applied next frame). WZ_RESULT_INVALID_ARGUMENT for a null
 // runtime, an empty node/binding id, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_remove_node_behavior(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_remove_node_behavior(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8);
 
@@ -770,14 +770,14 @@ WZ_ABI_API WzResult wz_editor_runtime_remove_node_behavior(
 // The Renderable component is NOT covered here: the legacy embedded renderable
 // slot is a compat/debug path that is not editor-authorable, and the PREFERRED
 // asset-graph-backed renderable is authored by
-// wz_editor_runtime_set_node_renderable_asset below.
-WZ_ABI_API WzResult wz_editor_runtime_add_node_component(
-    WzEditorRuntime* runtime,
+// wz_host_runtime_set_node_renderable_asset below.
+WZ_ABI_API WzResult wz_host_runtime_add_node_component(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* kind_utf8);
 
-WZ_ABI_API WzResult wz_editor_runtime_remove_node_component(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_remove_node_component(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* kind_utf8);
 
@@ -794,16 +794,16 @@ WZ_ABI_API WzResult wz_editor_runtime_remove_node_component(
 // HOST-CAPABILITY GATE: a mutation verb gated behind the host role
 // (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
 // an empty node id, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_renderable_asset(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_asset(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
 
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node/binding id, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_enabled(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_behavior_enabled(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8,
     uint32_t enabled);
@@ -811,8 +811,8 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_enabled(
 // Set a behavior binding's label + module (non-blocking). NULL label/module are
 // treated as empty. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node/binding id, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_fields(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_behavior_fields(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8,
     const char* label_utf8,
@@ -824,8 +824,8 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_fields(
 // the list (the binding then falls back to its module's default channels).
 // WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty node/binding id, or a
 // non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_events(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_behavior_events(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8,
     const char* events_utf8);
@@ -835,8 +835,8 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_events(
 // is parsed from `value_utf8` per kind (int/float store as Number). An existing
 // entry with the same key is overwritten. WZ_RESULT_INVALID_ARGUMENT for a null
 // runtime, an empty node/binding id/key, an unknown kind, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_config(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_set_node_behavior_config(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8,
     const char* key_utf8,
@@ -846,8 +846,8 @@ WZ_ABI_API WzResult wz_editor_runtime_set_node_behavior_config(
 // Remove one config entry (by `key_utf8`) from a behavior binding
 // (non-blocking). WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node/binding id/key, or a non-host caller.
-WZ_ABI_API WzResult wz_editor_runtime_clear_node_behavior_config(
-    WzEditorRuntime* runtime,
+WZ_ABI_API WzResult wz_host_runtime_clear_node_behavior_config(
+    WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8,
     const char* key_utf8);

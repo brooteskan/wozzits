@@ -128,7 +128,7 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
 
 // ─── Live behavior-binding authoring (the host-ABI verbs' engine-thread apply) ─
 // These exercise WozzitsApp_v1's behavior-authoring methods — the apply layer
-// the deferred host-ABI verbs (wz_editor_runtime_*_node_behavior) call on the
+// the deferred host-ABI verbs (wz_host_runtime_*_node_behavior) call on the
 // engine thread. Starting from the fixture's "blank" node (NO behavior), adding
 // the "move_up_on_frame" module must materialize a live binding that moves the
 // node; toggling enabled / editing config / removing must take effect on the
@@ -267,7 +267,7 @@ TEST_F(WozzitsAppBehaviorFixture, EditBehaviorFieldsConfigAndEventsApply)
 // ─── Live optional-component authoring (the host-ABI component verbs' apply) ──
 // These exercise WozzitsApp_v1::add_node_component / remove_node_component — the
 // engine-thread apply behind the deferred host-ABI verbs
-// (wz_editor_runtime_add_node_component / _remove_node_component). Starting from
+// (wz_host_runtime_add_node_component / _remove_node_component). Starting from
 // the fixture's "blank" node, adding a component must make it present (observed
 // via node_has_component, the same presence the editor's snapshot component list
 // surfaces) and removing it must make it absent. An unknown kind is a no-op.
@@ -338,7 +338,7 @@ TEST_F(WozzitsAppBehaviorFixture, AddRemoveOptionalComponentsOnBlankNode)
 
 // ─── Preferred asset-graph renderable authoring (the host-ABI renderable verb) ─
 // Exercises WozzitsApp_v1::set_node_renderable_asset — the engine-thread apply
-// behind wz_editor_runtime_set_node_renderable_asset. Binding a non-zero
+// behind wz_host_runtime_set_node_renderable_asset. Binding a non-zero
 // asset-graph node id sets the node's renderable_asset_node_id; binding 0 clears
 // it. This is the ONLY editor path to the renderable; the legacy embedded slot
 // is untouched and unreachable from the generic component verbs.
