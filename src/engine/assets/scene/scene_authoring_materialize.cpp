@@ -4435,12 +4435,15 @@ namespace wz::engine::assets
                 return true;
             };
 
+            MeshAsset processed_mesh{};
             auto ensure_processed_mesh = [&]() -> bool
             {
                 if (!node.mesh_processing) {
                     return true;
                 }
-                MeshAsset processed_mesh{};
+                if (processed_mesh.valid()) {
+                    return true;
+                }
                 if (!ensure_mesh_for_source(
                         assets,
                         *node.mesh_source,
@@ -4837,7 +4840,15 @@ namespace wz::engine::assets
                 node.renderable_asset.reset();
             }
 
-            if (source_mesh.valid()) {
+            // Terrain mesh-sources that pull their mesh from this scene node
+            // expect the node's authored result, which includes mesh
+            // processing (e.g. decimation) when it was built. Prefer the
+            // processed mesh, falling back to the raw source mesh (e.g. for
+            // hidden nodes that intentionally skip preview processing).
+            if (node.mesh_processing && processed_mesh.valid()) {
+                mesh_assets_by_node[node.id] = processed_mesh.output;
+            }
+            else if (source_mesh.valid()) {
                 mesh_assets_by_node[node.id] = source_mesh.output;
             }
         }

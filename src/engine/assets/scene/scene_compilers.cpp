@@ -1291,16 +1291,22 @@ namespace wz::engine::assets::internal
                 }
                 const auto node_id =
                     read_number(*renderable, "asset_graph_node_id");
-                if (!node_id || *node_id <= 0.0) {
-                    logger.error(
-                        "renderable on node '" + node.id
-                        + "' missing asset_graph_node_id");
+                if (node_id && *node_id > 0.0) {
+                    node.renderable_asset_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            *node_id);
+                    node.renderable_asset.reset();
+                }
+                else if (!parse_asset_reference_object(
+                             node_val,
+                             node.id,
+                             "renderable",
+                             logger,
+                             renderable_asset_references,
+                             node.renderable_asset))
+                {
                     return std::nullopt;
                 }
-                node.renderable_asset_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(
-                        *node_id);
-                node.renderable_asset.reset();
             }
 
             const auto* asset_reference =

@@ -589,6 +589,14 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr renderable_asset_value(const wz::asset::AssetKey& key)
+        {
+            auto obj = object_value();
+            add_member(*obj, "asset",
+                string_value(asset_key_string(key)));
+            return obj;
+        }
+
         JSONValuePtr asset_reference_value(
             const SceneAssetReferenceAsset& reference)
         {
@@ -1852,6 +1860,11 @@ namespace wz::engine::assets
             {
                 add_member(*obj, "renderable",
                     renderable_asset_value(*node.renderable_asset_node_id));
+            }
+            else if (!node.mesh_source && node.renderable_asset)
+            {
+                add_member(*obj, "renderable",
+                    renderable_asset_value(*node.renderable_asset));
             }
             if (node.asset_reference) {
                 add_member(*obj, "asset_reference",
