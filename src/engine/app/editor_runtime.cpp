@@ -280,6 +280,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_component(
+        SceneNodeComponentEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: each op is a distinct mutation.
+        pending_component_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_components(
+        const std::function<void(const SceneNodeComponentEdit&)>& applier)
+    {
+        std::vector<SceneNodeComponentEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_component_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_component_edits_);
+        }
+
+        for (const SceneNodeComponentEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -567,6 +592,23 @@ namespace wz::app
                                         edit.node_id,
                                         edit.binding_id,
                                         edit.config_key);
+                                    break;
+                            }
+                        });
+                    control->service_pending_scene_node_components(
+                        [&app](const SceneNodeComponentEdit& edit) {
+                            // Translate the seam edit into a granular app call
+                            // (WozzitsApp_v1 stays ignorant of the seam struct,
+                            // mirroring the behavior switch above).
+                            using Op = SceneNodeComponentEdit::Op;
+                            switch (edit.op) {
+                                case Op::Add:
+                                    app.add_node_component(
+                                        edit.node_id, edit.kind);
+                                    break;
+                                case Op::Remove:
+                                    app.remove_node_component(
+                                        edit.node_id, edit.kind);
                                     break;
                             }
                         });

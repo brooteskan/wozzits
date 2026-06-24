@@ -36,7 +36,7 @@ struct WzEditorRuntime
 
     // Host-capability flag (the "one ABI" role gate). Set true only by
     // wz_editor_runtime_start — the editor/host launcher — and required by the
-    // scene-mutation verbs (see require_host_behavior_authoring). A future
+    // scene-mutation verbs (see require_host_scene_authoring). A future
     // behavior-as-consumer that obtains a runtime through some non-host path
     // would NOT have this set and is therefore denied mutation by construction.
     // Today every WzEditorRuntime is host-started, so this is always true; the
@@ -158,12 +158,12 @@ namespace
 
     // ─── Host-capability gate for scene-mutation verbs ──────────────────────
     // THE single documented gate point for the "one ABI" mutation role. Every
-    // behavior-authoring verb calls this first. It fails closed: a null runtime
-    // or one lacking the host capability is rejected with
-    // WZ_RESULT_INVALID_ARGUMENT, so a future non-host consumer of this same ABI
-    // (e.g. a behavior calling in) is denied by construction. Returns OK only
-    // for a host-capable runtime.
-    WzResult require_host_behavior_authoring(const WzEditorRuntime* runtime)
+    // scene-authoring verb (behavior bindings AND optional components) calls this
+    // first. It fails closed: a null runtime or one lacking the host capability
+    // is rejected with WZ_RESULT_INVALID_ARGUMENT, so a future non-host consumer
+    // of this same ABI (e.g. a behavior calling in) is denied by construction.
+    // Returns OK only for a host-capable runtime.
+    WzResult require_host_scene_authoring(const WzEditorRuntime* runtime)
     {
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
@@ -1291,7 +1291,7 @@ extern "C"
         const char* module_utf8,
         WzBuffer* out_binding_id)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1337,7 +1337,7 @@ extern "C"
         const char* node_id_utf8,
         const char* binding_id_utf8)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1369,13 +1369,101 @@ extern "C"
         }
     }
 
+    WzResult wz_editor_runtime_add_node_component(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* kind_utf8)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!kind_utf8 || kind_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "kind_utf8 must not be empty");
+        }
+        // Fail closed on an unrecognized kind up front (the engine-thread apply
+        // would no-op anyway, but rejecting here gives the host a precise error).
+        if (!wz::engine::assets::is_optional_component_kind(kind_utf8)) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                std::string("unknown component kind '") + kind_utf8
+                    + "' (expected camera|renderable|proximity|collision|motion)");
+        }
+
+        try {
+            runtime->control.post_scene_node_component(
+                wz::app::SceneNodeComponentEdit{
+                    .op = wz::app::SceneNodeComponentEdit::Op::Add,
+                    .node_id = node_id_utf8,
+                    .kind = kind_utf8,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "add node component post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_remove_node_component(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        const char* kind_utf8)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!kind_utf8 || kind_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "kind_utf8 must not be empty");
+        }
+        if (!wz::engine::assets::is_optional_component_kind(kind_utf8)) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                std::string("unknown component kind '") + kind_utf8
+                    + "' (expected camera|renderable|proximity|collision|motion)");
+        }
+
+        try {
+            runtime->control.post_scene_node_component(
+                wz::app::SceneNodeComponentEdit{
+                    .op = wz::app::SceneNodeComponentEdit::Op::Remove,
+                    .node_id = node_id_utf8,
+                    .kind = kind_utf8,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "remove node component post failed");
+        }
+    }
+
     WzResult wz_editor_runtime_set_node_behavior_enabled(
         WzEditorRuntime* runtime,
         const char* node_id_utf8,
         const char* binding_id_utf8,
         uint32_t enabled)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1416,7 +1504,7 @@ extern "C"
         const char* label_utf8,
         const char* module_utf8)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1457,7 +1545,7 @@ extern "C"
         const char* binding_id_utf8,
         const char* events_utf8)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1499,7 +1587,7 @@ extern "C"
         const char* kind_utf8,
         const char* value_utf8)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;
@@ -1552,7 +1640,7 @@ extern "C"
         const char* binding_id_utf8,
         const char* key_utf8)
     {
-        if (const WzResult gate = require_host_behavior_authoring(runtime);
+        if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
             return gate;

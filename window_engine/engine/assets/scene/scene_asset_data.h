@@ -1943,6 +1943,135 @@ namespace wz::engine::assets
         return true;
     }
 
+    // ─── Optional component add/remove (the editor's "add/remove component") ──
+    // A small, closed set of optional node components the editor can add and
+    // remove generically by a kind token: "camera", "renderable", "proximity",
+    // "collision", "motion". Each maps to one std::optional<...> slot on
+    // SceneNodeAsset. "add" default-constructs the slot (the struct's in-class
+    // member initializers are the sensible defaults — same values the attach_*
+    // helpers and the scene compiler use); "remove" resets it to nullopt. These
+    // are the in-memory apply behind the host ABI's component verbs;
+    // materialization/persistence are separate paths.
+    //
+    // "renderable" here is the legacy embedded SceneRenderableBinding slot (the
+    // debug/compat path), matching how the snapshot's component list and JSON
+    // export treat node.renderable. The asset-graph-backed renderable
+    // (renderable_asset_node_id) is authored through the asset graph, not this
+    // verb.
+
+    // True if `kind` names one of the five editor-managed optional components.
+    inline bool is_optional_component_kind(std::string_view kind) noexcept
+    {
+        return kind == "camera"
+            || kind == "renderable"
+            || kind == "proximity"
+            || kind == "collision"
+            || kind == "motion";
+    }
+
+    // True if node `node_id` currently carries the optional component `kind`.
+    // False if the node is missing or the kind is unknown. Lets a caller (e.g. a
+    // test or the editor) observe component presence without parsing JSON.
+    inline bool node_has_optional_component(
+        const std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view kind) noexcept
+    {
+        const SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (kind == "camera") {
+            return node->camera.has_value();
+        }
+        if (kind == "renderable") {
+            return node->renderable.has_value();
+        }
+        if (kind == "proximity") {
+            return node->proximity.has_value();
+        }
+        if (kind == "collision") {
+            return node->collision.has_value();
+        }
+        if (kind == "motion") {
+            return node->motion.has_value();
+        }
+        return false;
+    }
+
+    // Add the optional component `kind` to node `node_id`, default-constructing
+    // its slot (sensible defaults from the struct's member initializers). Adding
+    // a component the node already has overwrites it with a fresh default, which
+    // is harmless and keeps the verb idempotent. Returns false if the node is
+    // missing or `kind` is not one of the five managed kinds (fail closed).
+    inline bool add_node_optional_component(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view kind)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (kind == "camera") {
+            node->camera = SceneCameraAsset{};
+            return true;
+        }
+        if (kind == "renderable") {
+            node->renderable = SceneRenderableBinding{};
+            return true;
+        }
+        if (kind == "proximity") {
+            node->proximity = SceneProximityAsset{};
+            return true;
+        }
+        if (kind == "collision") {
+            node->collision = SceneCollisionAsset{};
+            return true;
+        }
+        if (kind == "motion") {
+            node->motion = SceneMotionAsset{};
+            return true;
+        }
+        return false;
+    }
+
+    // Remove the optional component `kind` from node `node_id` (reset its slot to
+    // nullopt). Returns false if the node is missing or `kind` is not managed.
+    // Resetting an absent component still returns true (the post-state is the
+    // requested one — the component is gone), keeping the verb idempotent.
+    inline bool remove_node_optional_component(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        std::string_view kind)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (kind == "camera") {
+            node->camera.reset();
+            return true;
+        }
+        if (kind == "renderable") {
+            node->renderable.reset();
+            return true;
+        }
+        if (kind == "proximity") {
+            node->proximity.reset();
+            return true;
+        }
+        if (kind == "collision") {
+            node->collision.reset();
+            return true;
+        }
+        if (kind == "motion") {
+            node->motion.reset();
+            return true;
+        }
+        return false;
+    }
+
     // Set a behavior binding's enabled flag. False if no node/binding matched.
     inline bool set_node_behavior_enabled(
         std::vector<SceneNodeAsset>& nodes,

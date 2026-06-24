@@ -699,6 +699,57 @@ namespace wz::app
         return ok;
     }
 
+    // ─── Live optional-component authoring ──────────────────────────────────
+    // Add/remove one of the five editor-managed optional components on a node in
+    // scene_nodes_, then (on success) mark the scene dirty. Unlike the behavior
+    // verbs above, these do NOT rebuild_behavior_scene(): none of camera /
+    // renderable / proximity / collision / motion creates a behavior binding, so
+    // the behavior runtime is unaffected. The renderer reads scene_nodes_ fresh
+    // each frame, so the next render reflects the change. An unknown kind (or
+    // missing node) is a logged no-op (fail closed).
+
+    bool WozzitsApp_v1::add_node_component(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& kind)
+    {
+        const bool ok = wz::engine::assets::add_node_optional_component(
+            scene_nodes_, node_id, kind);
+        if (ok) {
+            scene_dirty_ = true;
+        }
+        else {
+            ctx_.logger.warn(
+                "add_node_component: no-op (node '" + node_id
+                + "' missing or unknown component kind '" + kind + "')");
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::remove_node_component(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& kind)
+    {
+        const bool ok = wz::engine::assets::remove_node_optional_component(
+            scene_nodes_, node_id, kind);
+        if (ok) {
+            scene_dirty_ = true;
+        }
+        else {
+            ctx_.logger.warn(
+                "remove_node_component: no-op (node '" + node_id
+                + "' missing or unknown component kind '" + kind + "')");
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::node_has_component(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& kind) const
+    {
+        return wz::engine::assets::node_has_optional_component(
+            scene_nodes_, node_id, kind);
+    }
+
     bool WozzitsApp_v1::save_scene()
     {
         if (!scene_dirty_) {

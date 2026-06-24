@@ -263,3 +263,67 @@ TEST_F(WozzitsAppBehaviorFixture, EditBehaviorFieldsConfigAndEventsApply)
     EXPECT_FLOAT_EQ(after->y, 1.0f)
         << "the binding stopped running after field/config/event edits";
 }
+
+// ─── Live optional-component authoring (the host-ABI component verbs' apply) ──
+// These exercise WozzitsApp_v1::add_node_component / remove_node_component — the
+// engine-thread apply behind the deferred host-ABI verbs
+// (wz_editor_runtime_add_node_component / _remove_node_component). Starting from
+// the fixture's "blank" node, adding a component must make it present (observed
+// via node_has_component, the same presence the editor's snapshot component list
+// surfaces) and removing it must make it absent. An unknown kind is a no-op.
+
+TEST_F(WozzitsAppBehaviorFixture, AddRemoveOptionalComponentsOnBlankNode)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // The blank node starts with none of the optional components.
+    ASSERT_FALSE(app.node_has_component("blank", "camera"));
+    ASSERT_FALSE(app.node_has_component("blank", "proximity"));
+    ASSERT_FALSE(app.node_has_component("blank", "motion"));
+
+    // camera: add → present, remove → gone.
+    EXPECT_TRUE(app.add_node_component("blank", "camera"));
+    EXPECT_TRUE(app.node_has_component("blank", "camera"));
+    EXPECT_TRUE(app.remove_node_component("blank", "camera"));
+    EXPECT_FALSE(app.node_has_component("blank", "camera"));
+
+    // proximity: add → present, remove → gone.
+    EXPECT_TRUE(app.add_node_component("blank", "proximity"));
+    EXPECT_TRUE(app.node_has_component("blank", "proximity"));
+    EXPECT_TRUE(app.remove_node_component("blank", "proximity"));
+    EXPECT_FALSE(app.node_has_component("blank", "proximity"));
+
+    // motion: add → present, remove → gone.
+    EXPECT_TRUE(app.add_node_component("blank", "motion"));
+    EXPECT_TRUE(app.node_has_component("blank", "motion"));
+    EXPECT_TRUE(app.remove_node_component("blank", "motion"));
+    EXPECT_FALSE(app.node_has_component("blank", "motion"));
+
+    // Components are independent: adding two leaves both present, and removing
+    // one leaves the other.
+    EXPECT_TRUE(app.add_node_component("blank", "collision"));
+    EXPECT_TRUE(app.add_node_component("blank", "renderable"));
+    EXPECT_TRUE(app.node_has_component("blank", "collision"));
+    EXPECT_TRUE(app.node_has_component("blank", "renderable"));
+    EXPECT_TRUE(app.remove_node_component("blank", "collision"));
+    EXPECT_FALSE(app.node_has_component("blank", "collision"));
+    EXPECT_TRUE(app.node_has_component("blank", "renderable"))
+        << "removing one component must not disturb another";
+    EXPECT_TRUE(app.remove_node_component("blank", "renderable"));
+
+    // Adding a behavior (a separate slot) does not register as a component, and
+    // these component edits never created a behavior binding either: the only
+    // live binding remains the scene's "mover".
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u)
+        << "optional-component edits must not touch the behavior runtime";
+
+    // Fail closed: unknown kind and missing node are no-ops returning false.
+    EXPECT_FALSE(app.add_node_component("blank", "not_a_component"));
+    EXPECT_FALSE(app.remove_node_component("blank", "not_a_component"));
+    EXPECT_FALSE(app.add_node_component("no_such_node", "camera"));
+    EXPECT_FALSE(app.node_has_component("blank", "not_a_component"));
+}

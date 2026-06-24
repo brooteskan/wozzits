@@ -93,6 +93,26 @@ namespace wz::app
         wz::engine::assets::SceneBehaviorConfigValue config_value;
     };
 
+    // A live add/remove of one of a node's optional components, posted from the
+    // owner thread (editor UI) to the engine thread (fire-and-forget). `kind` is
+    // one of the five editor-managed component tokens ("camera", "renderable",
+    // "proximity", "collision", "motion"). Both ops are non-blocking — neither
+    // returns a result — so unlike add_node_behavior (which mints an id) this is
+    // a plain post, NOT coalesced: an add then a remove of the same kind must
+    // apply in order.
+    struct SceneNodeComponentEdit
+    {
+        enum class Op : uint8_t
+        {
+            Add = 0,
+            Remove,
+        };
+
+        Op op = Op::Add;
+        wz::scene::AuthoredEntityId node_id;
+        std::string kind;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -159,6 +179,15 @@ namespace wz::app
         void service_pending_scene_node_behaviors(
             const std::function<void(const SceneNodeBehaviorEdit&)>& applier);
 
+        // Owner thread: queue an add/remove of an optional node component
+        // (non-blocking). Appended in order — NOT coalesced (an add then a
+        // remove of the same kind must both land). Applied on the engine
+        // thread's next frame, like the other live edits.
+        void post_scene_node_component(SceneNodeComponentEdit edit);
+
+        void service_pending_scene_node_components(
+            const std::function<void(const SceneNodeComponentEdit&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -219,6 +248,7 @@ namespace wz::app
         std::vector<SceneNodeReparentEdit> pending_reparents_;
         std::vector<wz::scene::AuthoredEntityId> pending_removes_;
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
+        std::vector<SceneNodeComponentEdit> pending_component_edits_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

@@ -246,6 +246,18 @@ namespace wz::engine::editor
             return "node";
         }
 
+        // Presence-only check for an optional component object on a node, used to
+        // surface the removable component kinds (proximity/collision/motion) in
+        // the snapshot's component list. We only need to know the member exists
+        // and is an object — the editor offers "remove" without reading fields.
+        bool has_component_object(
+            const wz::json::JSONValue& obj,
+            std::string_view key)
+        {
+            const auto* member = wz::json::find_member(obj, key);
+            return member && member->kind == wz::json::JSONValueKind::Object;
+        }
+
         // Render a behavior config scalar into the asset-graph param shape: a
         // kind token ("bool"/"int"/"float"/"string") plus a display value. The
         // authored JSON only distinguishes bool/number/string, so an integral
@@ -389,6 +401,29 @@ namespace wz::engine::editor
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "camera",
                     .display_name = "Camera",
+                });
+            }
+            // Surface the other optional, editor-removable components so the
+            // editor can list them and offer "remove". Renderable stays surfaced
+            // separately via renderable_source (above); camera stays the kind
+            // token. These three are presence-only here — the editor detects them
+            // through this component list (there is no per-component HasX flag).
+            if (has_component_object(value, "proximity")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "proximity",
+                    .display_name = "Proximity",
+                });
+            }
+            if (has_component_object(value, "collision")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "collision",
+                    .display_name = "Collision",
+                });
+            }
+            if (has_component_object(value, "motion")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "motion",
+                    .display_name = "Motion",
                 });
             }
             node.behaviors = read_behaviors(value);

@@ -728,7 +728,7 @@ WZ_ABI_API WzResult wz_editor_runtime_add_child_node(
 // the editor may call them; a caller without the host role (e.g. a future
 // behavior-as-consumer of this same ABI) is rejected fail-closed with
 // WZ_RESULT_INVALID_ARGUMENT. The gate is enforced in the implementation
-// (require_host_behavior_authoring); see wozzits_abi.cpp.
+// (require_host_scene_authoring); see wozzits_abi.cpp.
 
 // Add a behavior binding (the given `module`) to node `node_id_utf8`, minting a
 // stable binding id (a deduped slug from the node id) and returning it in
@@ -750,6 +750,35 @@ WZ_ABI_API WzResult wz_editor_runtime_remove_node_behavior(
     WzEditorRuntime* runtime,
     const char* node_id_utf8,
     const char* binding_id_utf8);
+
+// ─── Live optional-component authoring on the running runtime ───────────────
+// Add/remove one of the five editor-managed OPTIONAL node components by a kind
+// token. `kind_utf8` is one of: "camera", "renderable", "proximity",
+// "collision", "motion". Both verbs are DEFERRED (queued and applied on the
+// engine thread's NEXT frame, never synchronously) and NON-BLOCKING (no result
+// crosses back) — the same safety property the behavior verbs rely on. Add
+// default-constructs the component slot (sensible defaults); remove clears it.
+// The change marks the scene dirty (persisted on save/exit); the renderer reads
+// the live scene each frame so it takes effect on the next render. None of these
+// five participates in the behavior runtime, so neither rebuilds it.
+//
+// HOST-CAPABILITY GATE: like the behavior verbs these are mutation verbs gated
+// behind the host role (require_host_scene_authoring). An unknown kind is
+// rejected fail-closed. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
+// node id/kind, an unknown kind, or a non-host caller.
+//
+// "renderable" addresses the legacy embedded renderable slot (the debug/compat
+// path); the asset-graph-backed renderable is authored through the asset graph,
+// not this verb.
+WZ_ABI_API WzResult wz_editor_runtime_add_node_component(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* kind_utf8);
+
+WZ_ABI_API WzResult wz_editor_runtime_remove_node_component(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    const char* kind_utf8);
 
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty

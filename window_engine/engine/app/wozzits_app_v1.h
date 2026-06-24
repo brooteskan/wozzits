@@ -176,6 +176,34 @@ namespace wz::app
             const std::string& binding_id,
             const std::string& key);
 
+        // ─── Live optional-component authoring ───────────────────────────────
+        // Apply behind the host ABI's component verbs. Add/remove one of the
+        // five editor-managed optional node components by a kind token
+        // ("camera", "renderable", "proximity", "collision", "motion") on the
+        // in-memory scene (scene_nodes_), and mark the scene dirty on success.
+        // The renderer consumes scene_nodes_ fresh each frame, so the next
+        // render reflects the change with no GPU rebuild; persistence is a
+        // separate path. None of these five participate in the behavior runtime,
+        // so neither rebuilds the behavior scene. Both return false (no-op) if
+        // the node is missing or the kind is not one of the five (fail closed).
+
+        // Add the optional component `kind` (default-constructed) to the node.
+        bool add_node_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind);
+
+        // Remove the optional component `kind` from the node.
+        bool remove_node_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind);
+
+        // True if node `node_id` currently carries the optional component `kind`.
+        // False if the node is missing or the kind is unknown. Lets diagnostics
+        // and the component-authoring test observe presence without a snapshot.
+        [[nodiscard]] bool node_has_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind) const;
+
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when
         // no live edit happened since load/last save; false on write failure.
