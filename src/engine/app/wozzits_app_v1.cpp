@@ -541,6 +541,34 @@ namespace wz::app
                     + "': " + result.error);
             }
         }
+
+        // remove_node drain: same frame-boundary, same single converged apply
+        // path the host's remove uses (remove_node, which also rebuilds the
+        // behavior runtime on success). Authored-id targets stay valid even as a
+        // prior add/remove in this same drain renumbers runtime ids.
+        for (const wz::scene::AuthoredEntityId& target :
+             authoring.remove_node_targets)
+        {
+            if (!remove_node(target)) {
+                ctx_.logger.warn(
+                    "behavior remove_node rejected for node '" + target + "'");
+            }
+        }
+
+        // set_renderable_asset drain: same frame-boundary, same apply method the
+        // host uses (set_node_renderable_asset). This is a cheap field write +
+        // dirty flag (no behavior-runtime rebuild, no asset-DAG recompile), so it
+        // is order-independent of the structural drains above.
+        for (const wz::engine::behavior::BehaviorSetRenderableRequest& request :
+             authoring.set_renderable_requests)
+        {
+            if (!set_node_renderable_asset(
+                    request.node_id, request.asset_graph_node_id)) {
+                ctx_.logger.warn(
+                    "behavior set_renderable_asset rejected for node '"
+                    + request.node_id + "'");
+            }
+        }
     }
 
     std::size_t WozzitsApp_v1::active_behavior_binding_count() const

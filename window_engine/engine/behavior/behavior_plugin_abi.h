@@ -259,6 +259,33 @@ typedef uint8_t (*WzSpawnChildFn)(
     void* user,
     WzBehaviorEntityId parent_entity);
 
+/*
+ * Deferred runtime-authoring: request that the node bound to `entity` be
+ * removed from the running scene (it and its subtree). Same contract as
+ * spawn_child — a CHEAP live scene-ECS authoring edit, deferred to the next
+ * frame boundary, applied through the SAME runtime apply path the host's
+ * remove uses, fire-and-forget. Returns 1 if the request was accepted
+ * (queued; the entity resolved to an authored scene node), 0 otherwise.
+ */
+typedef uint8_t (*WzRemoveNodeFn)(
+    void* user,
+    WzBehaviorEntityId entity);
+
+/*
+ * Deferred runtime-authoring: set the preferred asset-graph renderable of the
+ * node bound to `entity` to the authored asset-graph node `asset_graph_node_id`
+ * (0 clears the renderable). Same contract as spawn_child — a CHEAP live
+ * scene-ECS authoring edit (a field write + dirty flag; it does NOT recompile
+ * the asset DAG), deferred to the next frame boundary, applied through the SAME
+ * runtime apply path the host's set_node_renderable_asset uses, fire-and-forget.
+ * Returns 1 if the request was accepted (queued; the entity resolved to an
+ * authored scene node), 0 otherwise.
+ */
+typedef uint8_t (*WzSetRenderableAssetFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint64_t asset_graph_node_id);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -667,9 +694,15 @@ typedef struct WzBehaviorFrameFacts
      * pointer-passed and not version-checked). spawn_child queues a child-add
      * applied at the next frame boundary via the shared WozzitsApp_v1 apply
      * path; null when the runtime exposes no deferred-authoring sink.
+     *
+     * remove_node and set_renderable_asset (appended after spawn_child; same
+     * APPEND-ONLY rule) share deferred_authoring_user and are queued + drained
+     * the same way through their matching WozzitsApp_v1 apply methods.
      */
     void* deferred_authoring_user;
     WzSpawnChildFn spawn_child;
+    WzRemoveNodeFn remove_node;
+    WzSetRenderableAssetFn set_renderable_asset;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

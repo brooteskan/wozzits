@@ -426,3 +426,89 @@ TEST_F(WozzitsAppBehaviorFixture, BehaviorSpawnChildAddsChildAtFrameBoundary)
         << "the spawn-child behavior stopped dispatching after the structural "
            "rebuild triggered by the first add_child";
 }
+
+// ─── Behavior-driven deferred remove_node (#204) ──────────────────────────────
+// A behavior issues the SAME runtime authoring op the host's remove uses —
+// removing its own node — as a deferred, fire-and-forget request the runtime
+// applies at the frame boundary through WozzitsApp_v1::remove_node (the one
+// shared apply path). A child node is added under "blank" and bound to
+// "remove_node_on_frame", which calls wz_self_remove_node on frame.update;
+// ticking once must drop child_node_count("blank") back to 0, visible on the
+// authored scene. Same direct-drive approach as the spawn test above.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorRemoveNodeRemovesSelfAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts childless; the scene's only binding is "mover".
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_EQ(app.child_node_count("blank"), 0u)
+        << "blank node must start with no children";
+
+    // Add a child under "blank" and bind the self-remove behavior to THAT child.
+    const wz::engine::assets::SceneAddChildResult child =
+        app.add_child_node("blank");
+    ASSERT_TRUE(child.ok) << child.error;
+    ASSERT_EQ(app.child_node_count("blank"), 1u);
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior(child.new_id, "remove_node_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the remove-node binding was not materialized";
+
+    // One tick: the behavior queues a deferred remove_node for its own node
+    // during dispatch; the runtime drains it at the frame boundary via
+    // remove_node (the same apply the host's remove uses). The child is gone.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.child_node_count("blank"), 0u)
+        << "the behavior's deferred remove_node did not remove the child node";
+
+    // The removed node's binding left the runtime with it (back to just
+    // "mover"), confirming the structural remove took effect.
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u)
+        << "the removed node's behavior binding is still live";
+}
+
+// ─── Behavior-driven deferred set_renderable_asset (#204) ─────────────────────
+// A behavior issues the SAME runtime authoring op the host uses — setting its
+// node's preferred asset-graph renderable — as a deferred, fire-and-forget
+// request the runtime applies at the frame boundary through
+// WozzitsApp_v1::set_node_renderable_asset (the one shared apply path).
+// "set_renderable_on_frame" calls wz_self_set_renderable_asset(42) on
+// frame.update; binding it to "blank" and ticking once must make
+// node_renderable_asset_node_id("blank") == 42. set_node_renderable_asset only
+// sets the field (no asset-DAG recompile), so an arbitrary id is fine.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorSetRenderableAssetAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts with no preferred renderable bound.
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_FALSE(app.node_renderable_asset_node_id("blank").has_value())
+        << "blank node must start with no preferred renderable";
+
+    // Bind the set-renderable behavior to "blank": a binding is materialized.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "set_renderable_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the set-renderable binding was not materialized";
+
+    // One tick: the behavior queues a deferred set_renderable_asset(42) during
+    // dispatch; the runtime drains it at the frame boundary via
+    // set_node_renderable_asset (the same apply the host uses). The node's
+    // preferred asset-graph renderable is now 42.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const auto bound = app.node_renderable_asset_node_id("blank");
+    ASSERT_TRUE(bound.has_value())
+        << "the behavior's deferred set_renderable_asset did not bind a "
+           "renderable";
+    EXPECT_EQ(*bound, 42u);
+}

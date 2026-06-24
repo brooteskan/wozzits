@@ -969,6 +969,38 @@ static inline uint8_t wz_spawn_child(
     return facts->spawn_child(facts->deferred_authoring_user, parent_entity);
 }
 
+// Deferred runtime-authoring: ask the runtime to remove the node bound to
+// `entity` (and its subtree). Applied at the next frame boundary through the
+// shared runtime apply path (it does not mutate the scene during dispatch),
+// fire-and-forget. Returns 1 if the request was queued (the entity resolved to
+// an authored scene node), 0 otherwise.
+static inline uint8_t wz_remove_node(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity)
+{
+    if (!facts || !facts->remove_node) {
+        return 0;
+    }
+    return facts->remove_node(facts->deferred_authoring_user, entity);
+}
+
+// Deferred runtime-authoring: set the preferred asset-graph renderable of the
+// node bound to `entity` (0 clears it). Applied at the next frame boundary
+// through the shared runtime apply path (it does not mutate the scene during
+// dispatch), fire-and-forget. Returns 1 if the request was queued (the entity
+// resolved to an authored scene node), 0 otherwise.
+static inline uint8_t wz_set_renderable_asset(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint64_t asset_graph_node_id)
+{
+    if (!facts || !facts->set_renderable_asset) {
+        return 0;
+    }
+    return facts->set_renderable_asset(
+        facts->deferred_authoring_user, entity, asset_graph_node_id);
+}
+
 static inline float wz_delta_seconds(const WzBehaviorFrameFacts* facts)
 {
     return facts && facts->timing ? facts->timing->delta_seconds : 0.0f;
@@ -1493,6 +1525,26 @@ static inline uint8_t wz_self_spawn_child(
     const WzBehaviorEvent* event)
 {
     return wz_spawn_child(facts, wz_self(event));
+}
+
+// Deferred runtime-authoring convenience: remove the event's own entity.
+// Fire-and-forget, applied at the next frame boundary (see wz_remove_node).
+static inline uint8_t wz_self_remove_node(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event)
+{
+    return wz_remove_node(facts, wz_self(event));
+}
+
+// Deferred runtime-authoring convenience: set the preferred asset-graph
+// renderable of the event's own entity (0 clears it). Fire-and-forget, applied
+// at the next frame boundary (see wz_set_renderable_asset).
+static inline uint8_t wz_self_set_renderable_asset(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint64_t asset_graph_node_id)
+{
+    return wz_set_renderable_asset(facts, wz_self(event), asset_graph_node_id);
 }
 
 static inline uint8_t wz_other_set_linear_velocity(

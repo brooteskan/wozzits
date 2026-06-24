@@ -173,25 +173,46 @@ namespace wz::engine::behavior
         }
     };
 
+    // A behavior-issued set-renderable request, already resolved to the target
+    // node's authored scene-node id (the apply path's currency) paired with the
+    // authored asset-graph node id to bind (0 clears the renderable).
+    struct BehaviorSetRenderableRequest
+    {
+        wz::scene::AuthoredEntityId node_id;
+        uint64_t asset_graph_node_id = 0u;
+    };
+
     // Deferred runtime-authoring requests issued by behaviors during dispatch
     // (#204). Distinct from BehaviorCommandBuffer (which carries transform/
     // velocity commands the dispatch loop applies to the running instance):
     // these are CHEAP live scene-ECS authoring edits queued mid-dispatch and
     // drained at the frame boundary AFTER the dispatch loop finishes, through
-    // the same WozzitsApp_v1 apply method the host's add_child uses. Entries are
-    // already resolved to the parent's authored scene-node id (the apply path's
-    // currency), so the buffer is independent of runtime entity ids that a
-    // structural rebuild would invalidate. v1 carries only spawn-child (a child
-    // node added under each parent); nothing heavier is exposed.
+    // the same WozzitsApp_v1 apply methods the host's add_child/remove/
+    // set_node_renderable_asset use. Entries are already resolved to authored
+    // scene-node ids (the apply path's currency), so the buffer is independent
+    // of runtime entity ids that a structural rebuild would invalidate. v1
+    // carries cheap live-ECS edits only: spawn-child (a child node added under
+    // each parent), remove-node (each target node removed), and set-renderable
+    // (each node's preferred asset-graph renderable set); nothing heavier (e.g.
+    // an asset-DAG recompile) is exposed.
     struct BehaviorAuthoringBuffer
     {
         std::vector<wz::scene::AuthoredEntityId> spawn_child_parents;
+        std::vector<wz::scene::AuthoredEntityId> remove_node_targets;
+        std::vector<BehaviorSetRenderableRequest> set_renderable_requests;
 
-        void clear() { spawn_child_parents.clear(); }
+        void clear()
+        {
+            spawn_child_parents.clear();
+            remove_node_targets.clear();
+            set_renderable_requests.clear();
+        }
 
         [[nodiscard]] bool empty() const
         {
-            return spawn_child_parents.empty();
+            return spawn_child_parents.empty()
+                && remove_node_targets.empty()
+                && set_renderable_requests.empty();
         }
     };
 }

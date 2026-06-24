@@ -1405,6 +1405,50 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t remove_node_request(
+            void* user,
+            WzBehaviorEntityId entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene) {
+                return 0;
+            }
+
+            // Resolve runtime entity -> authored scene-node id (fail-closed),
+            // exactly as spawn_child_request. The authored id stays valid even
+            // as a prior drain entry renumbers runtime entities.
+            if (entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+            context->authoring->remove_node_targets.push_back(
+                context->scene->runtime_to_authored[entity]);
+            return 1;
+        }
+
+        uint8_t set_renderable_asset_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint64_t asset_graph_node_id)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene) {
+                return 0;
+            }
+
+            // Resolve runtime entity -> authored scene-node id (fail-closed),
+            // exactly as spawn_child_request, and pair it with the asset-graph
+            // node id to bind (0 clears the renderable).
+            if (entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+            context->authoring->set_renderable_requests.push_back(
+                BehaviorSetRenderableRequest{
+                    .node_id = context->scene->runtime_to_authored[entity],
+                    .asset_graph_node_id = asset_graph_node_id,
+                });
+            return 1;
+        }
+
         uint8_t submit_gpu_compute_job(
             void* user,
             const WzGpuComputeJobDesc* job,
@@ -1506,6 +1550,8 @@ namespace wz::engine::behavior
                 .submit_gpu_compute = submit_gpu_compute_job,
                 .deferred_authoring_user = &context,
                 .spawn_child = spawn_child_request,
+                .remove_node = remove_node_request,
+                .set_renderable_asset = set_renderable_asset_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1574,6 +1620,8 @@ namespace wz::engine::behavior
                 .submit_gpu_compute = submit_gpu_compute_job,
                 .deferred_authoring_user = &context,
                 .spawn_child = spawn_child_request,
+                .remove_node = remove_node_request,
+                .set_renderable_asset = set_renderable_asset_request,
             };
         }
 
