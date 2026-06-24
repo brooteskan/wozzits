@@ -752,24 +752,25 @@ WZ_ABI_API WzResult wz_editor_runtime_remove_node_behavior(
     const char* binding_id_utf8);
 
 // ─── Live optional-component authoring on the running runtime ───────────────
-// Add/remove one of the five editor-managed OPTIONAL node components by a kind
-// token. `kind_utf8` is one of: "camera", "renderable", "proximity",
-// "collision", "motion". Both verbs are DEFERRED (queued and applied on the
-// engine thread's NEXT frame, never synchronously) and NON-BLOCKING (no result
-// crosses back) — the same safety property the behavior verbs rely on. Add
-// default-constructs the component slot (sensible defaults); remove clears it.
-// The change marks the scene dirty (persisted on save/exit); the renderer reads
-// the live scene each frame so it takes effect on the next render. None of these
-// five participates in the behavior runtime, so neither rebuilds it.
+// Add/remove one of the four editor-managed OPTIONAL node components by a kind
+// token. `kind_utf8` is one of: "camera", "proximity", "collision", "motion".
+// Both verbs are DEFERRED (queued and applied on the engine thread's NEXT frame,
+// never synchronously) and NON-BLOCKING (no result crosses back) — the same
+// safety property the behavior verbs rely on. Add default-constructs the
+// component slot (sensible defaults); remove clears it. The change marks the
+// scene dirty (persisted on save/exit); the renderer reads the live scene each
+// frame so it takes effect on the next render. None of these four participates
+// in the behavior runtime, so neither rebuilds it.
 //
 // HOST-CAPABILITY GATE: like the behavior verbs these are mutation verbs gated
 // behind the host role (require_host_scene_authoring). An unknown kind is
 // rejected fail-closed. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node id/kind, an unknown kind, or a non-host caller.
 //
-// "renderable" addresses the legacy embedded renderable slot (the debug/compat
-// path); the asset-graph-backed renderable is authored through the asset graph,
-// not this verb.
+// The Renderable component is NOT covered here: the legacy embedded renderable
+// slot is a compat/debug path that is not editor-authorable, and the PREFERRED
+// asset-graph-backed renderable is authored by
+// wz_editor_runtime_set_node_renderable_asset below.
 WZ_ABI_API WzResult wz_editor_runtime_add_node_component(
     WzEditorRuntime* runtime,
     const char* node_id_utf8,
@@ -779,6 +780,24 @@ WZ_ABI_API WzResult wz_editor_runtime_remove_node_component(
     WzEditorRuntime* runtime,
     const char* node_id_utf8,
     const char* kind_utf8);
+
+// Author the PREFERRED asset-graph-backed Renderable component on a node: bind
+// `node_id_utf8` to the authored asset-graph node `asset_graph_node_id`, or
+// CLEAR the renderable when `asset_graph_node_id == 0`. The resolved AssetKey is
+// reset so it re-resolves from the (new or absent) node id; the legacy embedded
+// renderable slot is never touched. DEFERRED (applied on the engine thread's
+// next frame) and NON-BLOCKING, like the component verbs. Marks the scene dirty;
+// the renderer reads the live scene each frame so it takes effect on the next
+// render, and the behavior runtime is not rebuilt. An unknown/missing node is a
+// logged engine-thread no-op.
+//
+// HOST-CAPABILITY GATE: a mutation verb gated behind the host role
+// (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller.
+WZ_ABI_API WzResult wz_editor_runtime_set_node_renderable_asset(
+    WzEditorRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t asset_graph_node_id);
 
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty

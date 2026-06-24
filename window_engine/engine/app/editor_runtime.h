@@ -113,6 +113,18 @@ namespace wz::app
         std::string kind;
     };
 
+    // A live edit to a node's PREFERRED asset-graph-backed Renderable component,
+    // posted from the owner thread (editor UI) to the engine thread. Carries the
+    // authored asset-graph node id to bind (0 = clear/remove). Non-blocking and
+    // NOT coalesced (appended in order), matching the component edits. This only
+    // touches renderable_asset_node_id; the legacy embedded renderable slot is
+    // never affected (that compat slot is not editor-authorable).
+    struct SceneNodeRenderableEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -188,6 +200,14 @@ namespace wz::app
         void service_pending_scene_node_components(
             const std::function<void(const SceneNodeComponentEdit&)>& applier);
 
+        // Owner thread: queue a set/clear of a node's preferred asset-graph
+        // renderable (non-blocking). Appended in order — NOT coalesced — and
+        // applied on the engine thread's next frame, like the component edits.
+        void post_scene_node_renderable(SceneNodeRenderableEdit edit);
+
+        void service_pending_scene_node_renderables(
+            const std::function<void(const SceneNodeRenderableEdit&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -249,6 +269,7 @@ namespace wz::app
         std::vector<wz::scene::AuthoredEntityId> pending_removes_;
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
+        std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

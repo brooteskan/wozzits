@@ -197,12 +197,32 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const std::string& kind);
 
+        // Apply behind the host ABI's set_node_renderable_asset verb. Author the
+        // PREFERRED asset-graph-backed Renderable component on the node: point it
+        // at the authored asset-graph node `asset_graph_node_id`, or clear the
+        // renderable when the id is 0. The resolved AssetKey is reset so it
+        // re-resolves; the legacy embedded renderable slot is left untouched.
+        // Marks the scene dirty on success; the renderer reads scene_nodes_ each
+        // frame so the next render reflects it, and the behavior runtime is not
+        // rebuilt. Returns false (logged no-op) if the node is missing.
+        bool set_node_renderable_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
         // True if node `node_id` currently carries the optional component `kind`.
         // False if the node is missing or the kind is unknown. Lets diagnostics
         // and the component-authoring test observe presence without a snapshot.
         [[nodiscard]] bool node_has_component(
             const wz::scene::AuthoredEntityId& node_id,
             const std::string& kind) const;
+
+        // The node's authored asset-graph renderable node id, or nullopt if the
+        // node is missing or has no preferred renderable bound. Lets the
+        // renderable-authoring test observe set_node_renderable_asset without a
+        // snapshot (mirrors node_has_component).
+        [[nodiscard]] std::optional<wz::asset::AssetGraphDraftNodeId>
+        node_renderable_asset_node_id(
+            const wz::scene::AuthoredEntityId& node_id) const;
 
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when

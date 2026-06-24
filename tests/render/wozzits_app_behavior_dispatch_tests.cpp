@@ -306,14 +306,14 @@ TEST_F(WozzitsAppBehaviorFixture, AddRemoveOptionalComponentsOnBlankNode)
     // Components are independent: adding two leaves both present, and removing
     // one leaves the other.
     EXPECT_TRUE(app.add_node_component("blank", "collision"));
-    EXPECT_TRUE(app.add_node_component("blank", "renderable"));
+    EXPECT_TRUE(app.add_node_component("blank", "motion"));
     EXPECT_TRUE(app.node_has_component("blank", "collision"));
-    EXPECT_TRUE(app.node_has_component("blank", "renderable"));
+    EXPECT_TRUE(app.node_has_component("blank", "motion"));
     EXPECT_TRUE(app.remove_node_component("blank", "collision"));
     EXPECT_FALSE(app.node_has_component("blank", "collision"));
-    EXPECT_TRUE(app.node_has_component("blank", "renderable"))
+    EXPECT_TRUE(app.node_has_component("blank", "motion"))
         << "removing one component must not disturb another";
-    EXPECT_TRUE(app.remove_node_component("blank", "renderable"));
+    EXPECT_TRUE(app.remove_node_component("blank", "motion"));
 
     // Adding a behavior (a separate slot) does not register as a component, and
     // these component edits never created a behavior binding either: the only
@@ -321,9 +321,60 @@ TEST_F(WozzitsAppBehaviorFixture, AddRemoveOptionalComponentsOnBlankNode)
     EXPECT_EQ(app.active_behavior_binding_count(), 1u)
         << "optional-component edits must not touch the behavior runtime";
 
+    // The generic component verbs no longer accept "renderable": the legacy
+    // embedded slot is not editor-authorable, and the preferred asset-graph
+    // renderable has its own verb (see SetNodeRenderableAssetOnBlankNode).
+    EXPECT_FALSE(app.add_node_component("blank", "renderable"))
+        << "renderable must not be reachable via the generic component verbs";
+    EXPECT_FALSE(app.remove_node_component("blank", "renderable"));
+    EXPECT_FALSE(app.node_has_component("blank", "renderable"));
+
     // Fail closed: unknown kind and missing node are no-ops returning false.
     EXPECT_FALSE(app.add_node_component("blank", "not_a_component"));
     EXPECT_FALSE(app.remove_node_component("blank", "not_a_component"));
     EXPECT_FALSE(app.add_node_component("no_such_node", "camera"));
     EXPECT_FALSE(app.node_has_component("blank", "not_a_component"));
+}
+
+// ─── Preferred asset-graph renderable authoring (the host-ABI renderable verb) ─
+// Exercises WozzitsApp_v1::set_node_renderable_asset — the engine-thread apply
+// behind wz_editor_runtime_set_node_renderable_asset. Binding a non-zero
+// asset-graph node id sets the node's renderable_asset_node_id; binding 0 clears
+// it. This is the ONLY editor path to the renderable; the legacy embedded slot
+// is untouched and unreachable from the generic component verbs.
+
+TEST_F(WozzitsAppBehaviorFixture, SetNodeRenderableAssetOnBlankNode)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // The blank node starts with no preferred renderable bound.
+    ASSERT_FALSE(app.node_renderable_asset_node_id("blank").has_value());
+
+    // Bind an authored asset-graph node id → renderable_asset_node_id present.
+    EXPECT_TRUE(app.set_node_renderable_asset("blank", 42));
+    const auto bound = app.node_renderable_asset_node_id("blank");
+    ASSERT_TRUE(bound.has_value());
+    EXPECT_EQ(*bound, 42u);
+
+    // Rebinding to a different id replaces it.
+    EXPECT_TRUE(app.set_node_renderable_asset("blank", 7));
+    const auto rebound = app.node_renderable_asset_node_id("blank");
+    ASSERT_TRUE(rebound.has_value());
+    EXPECT_EQ(*rebound, 7u);
+
+    // Binding 0 clears the renderable (back to nullopt).
+    EXPECT_TRUE(app.set_node_renderable_asset("blank", 0));
+    EXPECT_FALSE(app.node_renderable_asset_node_id("blank").has_value());
+
+    // Authoring the renderable never touched the behavior runtime.
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u)
+        << "renderable authoring must not touch the behavior runtime";
+
+    // Fail closed: a missing node is a no-op returning false, with no binding.
+    EXPECT_FALSE(app.set_node_renderable_asset("no_such_node", 42));
+    EXPECT_FALSE(app.node_renderable_asset_node_id("no_such_node").has_value());
 }

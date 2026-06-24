@@ -1393,7 +1393,7 @@ extern "C"
             return dynamic_error(
                 WZ_RESULT_INVALID_ARGUMENT,
                 std::string("unknown component kind '") + kind_utf8
-                    + "' (expected camera|renderable|proximity|collision|motion)");
+                    + "' (expected camera|proximity|collision|motion)");
         }
 
         try {
@@ -1436,7 +1436,7 @@ extern "C"
             return dynamic_error(
                 WZ_RESULT_INVALID_ARGUMENT,
                 std::string("unknown component kind '") + kind_utf8
-                    + "' (expected camera|renderable|proximity|collision|motion)");
+                    + "' (expected camera|proximity|collision|motion)");
         }
 
         try {
@@ -1454,6 +1454,39 @@ extern "C"
         catch (...) {
             return result(
                 WZ_RESULT_INTERNAL_ERROR, "remove node component post failed");
+        }
+    }
+
+    WzResult wz_editor_runtime_set_node_renderable_asset(
+        WzEditorRuntime* runtime,
+        const char* node_id_utf8,
+        uint64_t asset_graph_node_id)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_renderable(
+                wz::app::SceneNodeRenderableEdit{
+                    .node_id = node_id_utf8,
+                    .asset_graph_node_id = asset_graph_node_id,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node renderable asset post failed");
         }
     }
 

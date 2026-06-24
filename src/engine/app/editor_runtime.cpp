@@ -305,6 +305,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_renderable(
+        SceneNodeRenderableEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: a set then a clear must both land.
+        pending_renderable_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_renderables(
+        const std::function<void(const SceneNodeRenderableEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderableEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_renderable_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_renderable_edits_);
+        }
+
+        for (const SceneNodeRenderableEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -611,6 +636,13 @@ namespace wz::app
                                         edit.node_id, edit.kind);
                                     break;
                             }
+                        });
+                    control->service_pending_scene_node_renderables(
+                        [&app](const SceneNodeRenderableEdit& edit) {
+                            // Author the preferred asset-graph renderable (or
+                            // clear it when asset_graph_node_id == 0).
+                            app.set_node_renderable_asset(
+                                edit.node_id, edit.asset_graph_node_id);
                         });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {

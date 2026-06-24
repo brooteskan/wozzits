@@ -1953,17 +1953,16 @@ namespace wz::engine::assets
     // are the in-memory apply behind the host ABI's component verbs;
     // materialization/persistence are separate paths.
     //
-    // "renderable" here is the legacy embedded SceneRenderableBinding slot (the
-    // debug/compat path), matching how the snapshot's component list and JSON
-    // export treat node.renderable. The asset-graph-backed renderable
-    // (renderable_asset_node_id) is authored through the asset graph, not this
-    // verb.
+    // These verbs deliberately do NOT cover the renderable component. The legacy
+    // embedded SceneRenderableBinding slot (node.renderable) is the debug/compat
+    // path and must not gain new authoring features. The PREFERRED asset-graph-
+    // backed renderable (renderable_asset_node_id) is authored by the dedicated
+    // set_node_renderable_asset() helper below, not these generic verbs.
 
-    // True if `kind` names one of the five editor-managed optional components.
+    // True if `kind` names one of the four editor-managed optional components.
     inline bool is_optional_component_kind(std::string_view kind) noexcept
     {
         return kind == "camera"
-            || kind == "renderable"
             || kind == "proximity"
             || kind == "collision"
             || kind == "motion";
@@ -1984,9 +1983,6 @@ namespace wz::engine::assets
         if (kind == "camera") {
             return node->camera.has_value();
         }
-        if (kind == "renderable") {
-            return node->renderable.has_value();
-        }
         if (kind == "proximity") {
             return node->proximity.has_value();
         }
@@ -2003,7 +1999,7 @@ namespace wz::engine::assets
     // its slot (sensible defaults from the struct's member initializers). Adding
     // a component the node already has overwrites it with a fresh default, which
     // is harmless and keeps the verb idempotent. Returns false if the node is
-    // missing or `kind` is not one of the five managed kinds (fail closed).
+    // missing or `kind` is not one of the four managed kinds (fail closed).
     inline bool add_node_optional_component(
         std::vector<SceneNodeAsset>& nodes,
         const wz::scene::AuthoredEntityId& node_id,
@@ -2015,10 +2011,6 @@ namespace wz::engine::assets
         }
         if (kind == "camera") {
             node->camera = SceneCameraAsset{};
-            return true;
-        }
-        if (kind == "renderable") {
-            node->renderable = SceneRenderableBinding{};
             return true;
         }
         if (kind == "proximity") {
@@ -2053,10 +2045,6 @@ namespace wz::engine::assets
             node->camera.reset();
             return true;
         }
-        if (kind == "renderable") {
-            node->renderable.reset();
-            return true;
-        }
         if (kind == "proximity") {
             node->proximity.reset();
             return true;
@@ -2070,6 +2058,34 @@ namespace wz::engine::assets
             return true;
         }
         return false;
+    }
+
+    // Author the PREFERRED asset-graph-backed Renderable component on node
+    // `node_id`: point renderable_asset_node_id at the authored asset-graph node
+    // `asset_graph_node_id`, or clear it (reset to nullopt) when the id is 0.
+    // Either way the resolved renderable_asset key is reset to nullopt so it
+    // re-resolves from the (new or absent) node id. The legacy embedded
+    // node.renderable slot is intentionally left untouched. Returns false if the
+    // node is missing (fail closed); clearing an already-empty slot returns true
+    // (the requested post-state is reached), keeping the verb idempotent.
+    inline bool set_node_renderable_asset(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            node->renderable_asset_node_id = asset_graph_node_id;
+        }
+        else {
+            node->renderable_asset_node_id.reset();
+        }
+        // Drop the cached resolved key so it re-resolves from the node id.
+        node->renderable_asset.reset();
+        return true;
     }
 
     // Set a behavior binding's enabled flag. False if no node/binding matched.

@@ -742,12 +742,41 @@ namespace wz::app
         return ok;
     }
 
+    bool WozzitsApp_v1::set_node_renderable_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_renderable_asset(
+            scene_nodes_, node_id, asset_graph_node_id);
+        if (ok) {
+            scene_dirty_ = true;
+        }
+        else {
+            ctx_.logger.warn(
+                "set_node_renderable_asset: no-op (node '" + node_id
+                + "' missing)");
+        }
+        return ok;
+    }
+
     bool WozzitsApp_v1::node_has_component(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& kind) const
     {
         return wz::engine::assets::node_has_optional_component(
             scene_nodes_, node_id, kind);
+    }
+
+    std::optional<wz::asset::AssetGraphDraftNodeId>
+    WozzitsApp_v1::node_renderable_asset_node_id(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            return std::nullopt;
+        }
+        return node->renderable_asset_node_id;
     }
 
     bool WozzitsApp_v1::save_scene()
