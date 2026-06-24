@@ -149,7 +149,8 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel Classes="InspectorSection">
+                        <StackPanel Classes="InspectorSection"
+                                    IsVisible="{Binding HasRenderableReference}">
                             <TextBlock Text="Renderable Asset"
                                        Classes="InspectorSectionTitle"/>
 
@@ -159,9 +160,19 @@
                                 <TextBlock Text="Asset graph node"
                                            Classes="InspectorPropertyName"/>
                                 <TextBox Grid.Column="1"
-                                         Text="{Binding RenderableAssetGraphNodeId}"
+                                         Text="{Binding RenderableAssetGraphNodeId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                          PlaceholderText="0"
                                          Classes="InspectorInput"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="6">
+                                <Button Content="Apply Renderable"
+                                        Command="{Binding ApplyRenderableCommand}"
+                                        Classes="InspectorApplyButton"/>
+                                <Button Grid.Column="1"
+                                        Content="Remove"
+                                        Command="{Binding RemoveRenderableCommand}"
+                                        Classes="InspectorApplyButton"/>
                             </Grid>
                         </StackPanel>
 

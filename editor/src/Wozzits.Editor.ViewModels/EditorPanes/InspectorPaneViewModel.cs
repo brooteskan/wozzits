@@ -67,6 +67,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AddComponentCommand = new RelayCommand(
             AddComponent,
             () => HasSceneNodeSelection);
+        ApplyRenderableCommand = new RelayCommand(
+            ApplyRenderable,
+            () => HasSceneNodeSelection);
+        RemoveRenderableCommand = new RelayCommand(
+            RemoveRenderable,
+            () => HasSceneNodeSelection);
     }
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
@@ -86,6 +92,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand AddBehaviorCommand { get; }
 
     public IRelayCommand AddComponentCommand { get; }
+
+    public IRelayCommand ApplyRenderableCommand { get; }
+
+    public IRelayCommand RemoveRenderableCommand { get; }
 
     public IReadOnlyList<string> ComponentKinds { get; } =
         ["camera", "renderable", "proximity", "collision", "motion"];
@@ -793,6 +803,17 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
+        // Renderable is the asset-graph reference, not a default-toggle
+        // component: reveal its editor so the user sets the asset-graph node id
+        // (applied via the Renderable Asset section), not the generic verb (the
+        // engine rejects "renderable" there). The legacy slot is never touched.
+        if (string.Equals(kind, "renderable", StringComparison.Ordinal))
+        {
+            HasRenderableReference = true;
+            LastEditError = string.Empty;
+            return;
+        }
+
         var response = _editorSession!.AddNodeComponent(NodeId, kind);
         SetEditResponse(response);
         if (!response.Ok)
@@ -844,6 +865,49 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "motion" => "Motion",
             _ => kind,
         };
+    }
+
+    // Author the preferred asset-graph renderable: parse the asset-graph node id
+    // and push it live (the engine clears the field at 0; we require non-zero to
+    // "set"). Targets renderable_asset_node_id only, never the legacy slot.
+    private void ApplyRenderable()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var text = RenderableAssetGraphNodeId?.Trim() ?? string.Empty;
+        if (!ulong.TryParse(
+                text,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var id)
+            || id == 0)
+        {
+            LastEditError =
+                "Enter a non-zero asset-graph node id for the renderable.";
+            return;
+        }
+
+        SetEditResponse(_editorSession!.SetNodeRenderableAsset(NodeId, id));
+    }
+
+    private void RemoveRenderable()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeRenderableAsset(NodeId, 0);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        HasRenderableReference = false;
+        RenderableAssetGraphNodeId = string.Empty;
     }
 
     private static string FormatNullable(double? value)

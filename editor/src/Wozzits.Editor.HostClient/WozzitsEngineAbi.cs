@@ -385,6 +385,15 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         string kindUtf8);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_set_node_renderable_asset",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderableAsset(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong assetGraphNodeId);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }

@@ -859,6 +859,26 @@ public sealed partial class WozzitsEngineNativeClient
             kind));
     }
 
+    internal EngineMutationResponse SetNodeRenderableAsset(
+        IntPtr runtime,
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderableAsset(
+            runtime,
+            nodeId,
+            assetGraphNodeId));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeProperties(
         IntPtr runtime,
         string nodeId,

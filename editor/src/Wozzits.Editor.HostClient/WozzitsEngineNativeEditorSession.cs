@@ -370,6 +370,17 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.RemoveNodeComponent(runtime.Handle, nodeId, kind);
     }
 
+    public EngineMutationResponse SetNodeRenderableAsset(
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderableAsset(runtime.Handle, nodeId, assetGraphNodeId);
+    }
+
     public void Dispose()
     {
         // Stop the engine first, then close the authoring session.

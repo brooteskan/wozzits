@@ -131,6 +131,13 @@ public interface IWozzitsEngineEditorSession
 
     EngineMutationResponse RemoveNodeComponent(string nodeId, string kind);
 
+    // Set (0 clears) the node's preferred asset-graph renderable by the
+    // asset-graph node id it points at; live + host-gated, no-op success when no
+    // viewport is running. Never touches the legacy embedded renderable slot.
+    EngineMutationResponse SetNodeRenderableAsset(
+        string nodeId,
+        ulong assetGraphNodeId);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

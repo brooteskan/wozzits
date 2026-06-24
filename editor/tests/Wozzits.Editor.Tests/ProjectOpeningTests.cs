@@ -1119,6 +1119,16 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, ulong AssetGraphNodeId)> RenderableAssets { get; } = [];
+
+        public EngineMutationResponse SetNodeRenderableAsset(
+            string nodeId,
+            ulong assetGraphNodeId)
+        {
+            RenderableAssets.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public List<AddNodeEdit> AddedNodes { get; } = [];
 
         public ulong NextAddedNodeId { get; set; } = 1000u;
