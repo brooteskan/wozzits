@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 21;
+    internal const uint AbiVersion = 22;
 
     private static int _resolverRegistered;
 
@@ -41,7 +41,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_load_project_snapshot",
+        EntryPoint = "wz_host_load_project_snapshot",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorLoadProjectSnapshot(
         string projectRootUtf8,
@@ -50,12 +50,12 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_catalog")]
+        EntryPoint = "wz_host_asset_catalog")]
     internal static partial WzResult WzEditorAssetCatalog(out WzBuffer outCatalog);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_create_project",
+        EntryPoint = "wz_host_create_project",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorCreateProject(
         string projectRootUtf8,
@@ -65,7 +65,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_scene_set_node_properties",
+        EntryPoint = "wz_host_scene_set_node_properties",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorSceneSetNodeProperties(
         string projectRootUtf8,
@@ -76,7 +76,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_scene_set_node_transform",
+        EntryPoint = "wz_host_scene_set_node_transform",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorSceneSetNodeTransform(
         string projectRootUtf8,
@@ -94,7 +94,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_scene_set_camera",
+        EntryPoint = "wz_host_scene_set_camera",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorSceneSetCamera(
         string projectRootUtf8,
@@ -107,7 +107,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_set_node_position",
+        EntryPoint = "wz_host_asset_graph_set_node_position",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorAssetGraphSetNodePosition(
         string projectRootUtf8,
@@ -118,7 +118,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_set_zoom",
+        EntryPoint = "wz_host_asset_graph_set_zoom",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorAssetGraphSetZoom(
         string projectRootUtf8,
@@ -127,26 +127,26 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_open_project_session",
+        EntryPoint = "wz_host_open_project_session",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorOpenProjectSession(
         string projectRootUtf8,
         string? resourceRootUtf8,
         out IntPtr outSession);
 
-    [LibraryImport(LibraryName, EntryPoint = "wz_editor_close_session")]
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_close_session")]
     internal static partial void WzEditorCloseSession(IntPtr session);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_session_asset_graph_snapshot")]
+        EntryPoint = "wz_host_session_asset_graph_snapshot")]
     internal static partial WzResult WzEditorSessionAssetGraphSnapshot(
         IntPtr session,
         out WzBuffer outSnapshot);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_can_connect")]
+        EntryPoint = "wz_host_asset_graph_can_connect")]
     internal static partial WzResult WzEditorAssetGraphCanConnect(
         IntPtr session,
         ulong fromNodeId,
@@ -156,7 +156,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_connect")]
+        EntryPoint = "wz_host_asset_graph_connect")]
     internal static partial WzResult WzEditorAssetGraphConnect(
         IntPtr session,
         ulong fromNodeId,
@@ -166,14 +166,14 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_disconnect_edge")]
+        EntryPoint = "wz_host_asset_graph_disconnect_edge")]
     internal static partial WzResult WzEditorAssetGraphDisconnectEdge(
         IntPtr session,
         ulong edgeId);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_add_node")]
+        EntryPoint = "wz_host_asset_graph_add_node")]
     internal static partial WzResult WzEditorAssetGraphAddNode(
         IntPtr session,
         ulong schema,
@@ -182,14 +182,14 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_remove_node")]
+        EntryPoint = "wz_host_asset_graph_remove_node")]
     internal static partial WzResult WzEditorAssetGraphRemoveNode(
         IntPtr session,
         ulong nodeId);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_session_set_node_position")]
+        EntryPoint = "wz_host_session_set_node_position")]
     internal static partial WzResult WzEditorSessionSetNodePosition(
         IntPtr session,
         ulong nodeId,
@@ -198,14 +198,14 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_session_set_zoom")]
+        EntryPoint = "wz_host_session_set_zoom")]
     internal static partial WzResult WzEditorSessionSetZoom(
         IntPtr session,
         double zoom);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_asset_graph_set_node_param_string",
+        EntryPoint = "wz_host_asset_graph_set_node_param_string",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorAssetGraphSetNodeParamString(
         IntPtr session,
@@ -215,12 +215,12 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_session_save")]
+        EntryPoint = "wz_host_session_save")]
     internal static partial WzResult WzEditorSessionSave(IntPtr session);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_start",
+        EntryPoint = "wz_host_runtime_start",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial IntPtr WzEditorRuntimeStart(
         string projectRootUtf8,
@@ -228,20 +228,20 @@ internal static partial class WozzitsEngineAbi
         IntPtr logCallback,
         IntPtr logUser);
 
-    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_stop")]
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_stop")]
     internal static partial void WzEditorRuntimeStop(IntPtr runtime);
 
-    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_is_running")]
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_is_running")]
     internal static partial int WzEditorRuntimeIsRunning(IntPtr runtime);
 
-    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_bind_draft")]
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_bind_draft")]
     internal static partial WzResult WzEditorRuntimeBindDraft(
         IntPtr runtime,
         IntPtr session);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_transform",
+        EntryPoint = "wz_host_runtime_set_node_transform",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeTransform(
         IntPtr runtime,
@@ -258,7 +258,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_properties",
+        EntryPoint = "wz_host_runtime_set_node_properties",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeProperties(
         IntPtr runtime,
@@ -268,7 +268,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_reparent_node",
+        EntryPoint = "wz_host_runtime_reparent_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeReparentNode(
         IntPtr runtime,
@@ -277,18 +277,18 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_remove_node",
+        EntryPoint = "wz_host_runtime_remove_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeRemoveNode(
         IntPtr runtime,
         string nodeIdUtf8);
 
-    [LibraryImport(LibraryName, EntryPoint = "wz_editor_runtime_save_scene")]
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_save_scene")]
     internal static partial WzResult WzEditorRuntimeSaveScene(IntPtr runtime);
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_add_child_node",
+        EntryPoint = "wz_host_runtime_add_child_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddChildNode(
         IntPtr runtime,
@@ -297,7 +297,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_add_node_behavior",
+        EntryPoint = "wz_host_runtime_add_node_behavior",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddNodeBehavior(
         IntPtr runtime,
@@ -307,7 +307,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_remove_node_behavior",
+        EntryPoint = "wz_host_runtime_remove_node_behavior",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeRemoveNodeBehavior(
         IntPtr runtime,
@@ -316,7 +316,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_behavior_enabled",
+        EntryPoint = "wz_host_runtime_set_node_behavior_enabled",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeBehaviorEnabled(
         IntPtr runtime,
@@ -326,7 +326,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_behavior_fields",
+        EntryPoint = "wz_host_runtime_set_node_behavior_fields",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeBehaviorFields(
         IntPtr runtime,
@@ -337,7 +337,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_behavior_events",
+        EntryPoint = "wz_host_runtime_set_node_behavior_events",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeBehaviorEvents(
         IntPtr runtime,
@@ -347,7 +347,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_behavior_config",
+        EntryPoint = "wz_host_runtime_set_node_behavior_config",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeBehaviorConfig(
         IntPtr runtime,
@@ -359,7 +359,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_clear_node_behavior_config",
+        EntryPoint = "wz_host_runtime_clear_node_behavior_config",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeClearNodeBehaviorConfig(
         IntPtr runtime,
@@ -369,7 +369,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_add_node_component",
+        EntryPoint = "wz_host_runtime_add_node_component",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddNodeComponent(
         IntPtr runtime,
@@ -378,7 +378,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_remove_node_component",
+        EntryPoint = "wz_host_runtime_remove_node_component",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeRemoveNodeComponent(
         IntPtr runtime,
@@ -387,7 +387,7 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
-        EntryPoint = "wz_editor_runtime_set_node_renderable_asset",
+        EntryPoint = "wz_host_runtime_set_node_renderable_asset",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeRenderableAsset(
         IntPtr runtime,
