@@ -512,3 +512,130 @@ TEST_F(WozzitsAppBehaviorFixture, BehaviorSetRenderableAssetAtFrameBoundary)
            "renderable";
     EXPECT_EQ(*bound, 42u);
 }
+
+// ─── Behavior-driven deferred reparent (#204) ─────────────────────────────────
+// A behavior issues the SAME runtime authoring op the host's reparent uses —
+// reparenting its own node — as a deferred, fire-and-forget request the runtime
+// applies at the frame boundary through WozzitsApp_v1::reparent_node (the one
+// shared apply path). A child node is added under "blank" and bound to
+// "reparent_self_to_top_on_frame", which calls wz_self_detach_to_top_level
+// (reparent to WZ_INVALID_BEHAVIOR_ENTITY = top level) on frame.update; ticking
+// once must drop child_node_count("blank") to 0 (the child DETACHED but still
+// exists, unlike the remove test). Same direct-drive approach as the tests
+// above.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorReparentDetachesSelfAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts childless; the scene's only binding is "mover".
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_EQ(app.child_node_count("blank"), 0u)
+        << "blank node must start with no children";
+
+    // Add a child under "blank" and bind the self-reparent behavior to THAT
+    // child.
+    const wz::engine::assets::SceneAddChildResult child =
+        app.add_child_node("blank");
+    ASSERT_TRUE(child.ok) << child.error;
+    ASSERT_EQ(app.child_node_count("blank"), 1u);
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior(child.new_id, "reparent_self_to_top_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the reparent binding was not materialized";
+
+    // One tick: the behavior queues a deferred reparent-to-top for its own node
+    // during dispatch; the runtime drains it at the frame boundary via
+    // reparent_node (the same apply the host's reparent uses). The child is no
+    // longer under "blank".
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.child_node_count("blank"), 0u)
+        << "the behavior's deferred reparent did not detach the child node";
+
+    // Unlike remove, the node still EXISTS (it moved to the top level), so its
+    // binding is still live — the runtime still carries both bindings.
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the reparented node's behavior binding must remain live (it was "
+           "detached, not removed)";
+}
+
+// ─── Behavior-driven deferred add_component (#204) ────────────────────────────
+// A behavior issues the SAME runtime authoring op the host uses — adding an
+// optional component to its own node — as a deferred, fire-and-forget request
+// the runtime applies at the frame boundary through
+// WozzitsApp_v1::add_node_component (the one shared apply path).
+// "add_proximity_on_frame" calls wz_self_add_node_component(.., "proximity") on
+// frame.update; binding it to "blank" and ticking once must make
+// node_has_component("blank","proximity") true.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorAddComponentAddsAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts without the proximity component.
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_FALSE(app.node_has_component("blank", "proximity"))
+        << "blank node must start with no proximity component";
+
+    // Bind the add-component behavior to "blank": a binding is materialized.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "add_proximity_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the add-component binding was not materialized";
+
+    // One tick: the behavior queues a deferred add_node_component("proximity")
+    // during dispatch; the runtime drains it at the frame boundary via
+    // add_node_component (the same apply the host uses). The component is now
+    // present.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_TRUE(app.node_has_component("blank", "proximity"))
+        << "the behavior's deferred add_node_component did not add the "
+           "component";
+}
+
+// ─── Behavior-driven deferred remove_component (#204) ─────────────────────────
+// A behavior issues the SAME runtime authoring op the host uses — removing an
+// optional component from its own node — as a deferred, fire-and-forget request
+// the runtime applies at the frame boundary through
+// WozzitsApp_v1::remove_node_component (the one shared apply path). The test
+// pre-adds "proximity" to "blank", binds "remove_proximity_on_frame" (which
+// calls wz_self_remove_node_component(.., "proximity") on frame.update), and
+// asserts node_has_component("blank","proximity") becomes false after one tick.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorRemoveComponentRemovesAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // Pre-add the proximity component to "blank" (the host-side apply, directly).
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_TRUE(app.add_node_component("blank", "proximity"));
+    ASSERT_TRUE(app.node_has_component("blank", "proximity"))
+        << "pre-condition: blank must carry the proximity component";
+
+    // Bind the remove-component behavior to "blank": a binding is materialized.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "remove_proximity_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the remove-component binding was not materialized";
+
+    // One tick: the behavior queues a deferred
+    // remove_node_component("proximity") during dispatch; the runtime drains it
+    // at the frame boundary via remove_node_component (the same apply the host
+    // uses). The component is gone.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_FALSE(app.node_has_component("blank", "proximity"))
+        << "the behavior's deferred remove_node_component did not remove the "
+           "component";
+}

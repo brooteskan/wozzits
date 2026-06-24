@@ -27,6 +27,26 @@
 //     asserts the bound node's preferred asset-graph renderable becomes 42 after
 //     one tick — proving a behavior can issue the same deferred
 //     set_node_renderable_asset op the host uses (#204).
+//
+//   - "reparent_self_to_top_on_frame": calls wz_self_detach_to_top_level for its
+//     own entity on every frame.update (reparent to WZ_INVALID_BEHAVIOR_ENTITY =
+//     top level). The behavior-driven reparent test binds it to a child under
+//     "blank" and asserts child_node_count("blank") drops to 0 after one tick —
+//     proving a behavior can issue the same deferred reparent op the host uses
+//     (#204).
+//
+//   - "add_proximity_on_frame": calls wz_self_add_node_component(.., "proximity")
+//     for its own entity on every frame.update. The behavior-driven add-component
+//     test asserts node_has_component("blank","proximity") becomes true after one
+//     tick — proving a behavior can issue the same deferred add_node_component op
+//     the host uses (#204).
+//
+//   - "remove_proximity_on_frame": calls
+//     wz_self_remove_node_component(.., "proximity") for its own entity on every
+//     frame.update. The behavior-driven remove-component test pre-adds the
+//     component, then asserts node_has_component("blank","proximity") becomes
+//     false after one tick — proving a behavior can issue the same deferred
+//     remove_node_component op the host uses (#204).
 
 #include <engine/behavior/behavior_module_api.h>
 #include <engine/behavior/behavior_plugin_abi.h>
@@ -111,6 +131,60 @@ namespace
         // sets the field.
         wz_self_set_renderable_asset(facts, event, 42u);
     }
+
+    void reparent_self_to_top_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+
+        // Deferred, fire-and-forget: queued during dispatch, applied at the
+        // frame boundary via the shared WozzitsApp_v1 reparent apply path.
+        // Detach to the top level (WZ_INVALID_BEHAVIOR_ENTITY parent).
+        wz_self_detach_to_top_level(facts, event);
+    }
+
+    void add_proximity_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+
+        // Deferred, fire-and-forget: queued during dispatch, applied at the
+        // frame boundary via the shared WozzitsApp_v1 add_node_component apply
+        // path. The "proximity" token is one of the editor-managed components.
+        wz_self_add_node_component(facts, event, "proximity");
+    }
+
+    void remove_proximity_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+
+        // Deferred, fire-and-forget: queued during dispatch, applied at the
+        // frame boundary via the shared WozzitsApp_v1 remove_node_component
+        // apply path.
+        wz_self_remove_node_component(facts, event, "proximity");
+    }
 }
 
 extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
@@ -155,6 +229,30 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 1u,
         .module_user_data = nullptr,
     };
+    const WzBehaviorModuleDesc reparent_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "reparent_self_to_top_on_frame",
+        .on_event = reparent_self_to_top_on_frame,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
+    const WzBehaviorModuleDesc add_proximity_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "add_proximity_on_frame",
+        .on_event = add_proximity_on_frame,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
+    const WzBehaviorModuleDesc remove_proximity_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "remove_proximity_on_frame",
+        .on_event = remove_proximity_on_frame,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
 
     const uint8_t move_ok =
         api->register_module_desc(api->user, &move_desc);
@@ -164,7 +262,14 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &remove_desc);
     const uint8_t set_renderable_ok =
         api->register_module_desc(api->user, &set_renderable_desc);
-    return (move_ok && spawn_ok && remove_ok && set_renderable_ok)
+    const uint8_t reparent_ok =
+        api->register_module_desc(api->user, &reparent_desc);
+    const uint8_t add_proximity_ok =
+        api->register_module_desc(api->user, &add_proximity_desc);
+    const uint8_t remove_proximity_ok =
+        api->register_module_desc(api->user, &remove_proximity_desc);
+    return (move_ok && spawn_ok && remove_ok && set_renderable_ok
+            && reparent_ok && add_proximity_ok && remove_proximity_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }

@@ -6,6 +6,7 @@
 #include <scene/scene_ecs.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace wz::engine::behavior
@@ -182,6 +183,29 @@ namespace wz::engine::behavior
         uint64_t asset_graph_node_id = 0u;
     };
 
+    // A behavior-issued reparent request, already resolved to authored
+    // scene-node ids (the apply path's currency): move `node_id` under
+    // `new_parent_id`. An empty `new_parent_id` detaches the node to the TOP
+    // LEVEL (mirrors WozzitsApp_v1::reparent_node's empty-parent contract).
+    struct BehaviorReparentRequest
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::scene::AuthoredEntityId new_parent_id;
+    };
+
+    // A behavior-issued add/remove optional-component request, already resolved
+    // to the target node's authored scene-node id (the apply path's currency)
+    // paired with the component kind token to add/remove ("camera" |
+    // "proximity" | "collision" | "motion"). The kind is carried as an owned
+    // std::string: the behavior passes a const char* valid only during its
+    // call, but this request is drained at the frame boundary, so the adapter
+    // copies it here rather than storing the transient pointer.
+    struct BehaviorComponentRequest
+    {
+        wz::scene::AuthoredEntityId node_id;
+        std::string kind;
+    };
+
     // Deferred runtime-authoring requests issued by behaviors during dispatch
     // (#204). Distinct from BehaviorCommandBuffer (which carries transform/
     // velocity commands the dispatch loop applies to the running instance):
@@ -194,25 +218,36 @@ namespace wz::engine::behavior
     // carries cheap live-ECS edits only: spawn-child (a child node added under
     // each parent), remove-node (each target node removed), and set-renderable
     // (each node's preferred asset-graph renderable set); nothing heavier (e.g.
-    // an asset-DAG recompile) is exposed.
+    // an asset-DAG recompile) is exposed. reparent (each node moved under a new
+    // parent, empty parent = top level) and add/remove-component (each node's
+    // optional component added/removed) join the same cheap-edit family.
     struct BehaviorAuthoringBuffer
     {
         std::vector<wz::scene::AuthoredEntityId> spawn_child_parents;
         std::vector<wz::scene::AuthoredEntityId> remove_node_targets;
         std::vector<BehaviorSetRenderableRequest> set_renderable_requests;
+        std::vector<BehaviorReparentRequest> reparent_requests;
+        std::vector<BehaviorComponentRequest> add_component_requests;
+        std::vector<BehaviorComponentRequest> remove_component_requests;
 
         void clear()
         {
             spawn_child_parents.clear();
             remove_node_targets.clear();
             set_renderable_requests.clear();
+            reparent_requests.clear();
+            add_component_requests.clear();
+            remove_component_requests.clear();
         }
 
         [[nodiscard]] bool empty() const
         {
             return spawn_child_parents.empty()
                 && remove_node_targets.empty()
-                && set_renderable_requests.empty();
+                && set_renderable_requests.empty()
+                && reparent_requests.empty()
+                && add_component_requests.empty()
+                && remove_component_requests.empty();
         }
     };
 }

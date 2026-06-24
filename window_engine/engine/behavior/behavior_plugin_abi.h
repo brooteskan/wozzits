@@ -286,6 +286,52 @@ typedef uint8_t (*WzSetRenderableAssetFn)(
     WzBehaviorEntityId entity,
     uint64_t asset_graph_node_id);
 
+/*
+ * Deferred runtime-authoring: reparent the node bound to `entity` under the
+ * node bound to `new_parent_entity` in the running scene. Same contract as
+ * spawn_child — a CHEAP live scene-ECS authoring edit, deferred to the next
+ * frame boundary, applied through the SAME runtime apply path the host's
+ * reparent uses (reparent_node), fire-and-forget.
+ * `new_parent_entity == WZ_INVALID_BEHAVIOR_ENTITY` detaches the node to the
+ * TOP LEVEL (no parent). `entity` itself must resolve to an authored scene
+ * node. Returns 1 if the request was accepted (queued; `entity` resolved), 0
+ * otherwise.
+ */
+typedef uint8_t (*WzReparentNodeFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    WzBehaviorEntityId new_parent_entity);
+
+/*
+ * Deferred runtime-authoring: add an optional component of the given `kind`
+ * token ("camera" | "proximity" | "collision" | "motion") to the node bound to
+ * `entity`. Same contract as spawn_child — a CHEAP live scene-ECS authoring
+ * edit, deferred to the next frame boundary, applied through the SAME runtime
+ * apply path the host's add_node_component uses, fire-and-forget. The `kind`
+ * string is read during the call only (it is copied into the queued request).
+ * Returns 1 if the request was accepted (queued; the entity resolved to an
+ * authored scene node), 0 otherwise.
+ */
+typedef uint8_t (*WzAddNodeComponentFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* kind);
+
+/*
+ * Deferred runtime-authoring: remove the optional component of the given
+ * `kind` token ("camera" | "proximity" | "collision" | "motion") from the node
+ * bound to `entity`. Same contract as add_node_component above — a CHEAP live
+ * scene-ECS authoring edit, deferred to the next frame boundary, applied
+ * through the SAME runtime apply path the host's remove_node_component uses,
+ * fire-and-forget. The `kind` string is read during the call only (it is
+ * copied into the queued request). Returns 1 if the request was accepted
+ * (queued; the entity resolved to an authored scene node), 0 otherwise.
+ */
+typedef uint8_t (*WzRemoveNodeComponentFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* kind);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -698,11 +744,19 @@ typedef struct WzBehaviorFrameFacts
      * remove_node and set_renderable_asset (appended after spawn_child; same
      * APPEND-ONLY rule) share deferred_authoring_user and are queued + drained
      * the same way through their matching WozzitsApp_v1 apply methods.
+     *
+     * reparent_node, add_node_component and remove_node_component (appended
+     * after set_renderable_asset; same APPEND-ONLY rule) likewise share
+     * deferred_authoring_user and route to reparent_node / add_node_component /
+     * remove_node_component on WozzitsApp_v1.
      */
     void* deferred_authoring_user;
     WzSpawnChildFn spawn_child;
     WzRemoveNodeFn remove_node;
     WzSetRenderableAssetFn set_renderable_asset;
+    WzReparentNodeFn reparent_node;
+    WzAddNodeComponentFn add_node_component;
+    WzRemoveNodeComponentFn remove_node_component;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

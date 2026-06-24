@@ -1001,6 +1001,60 @@ static inline uint8_t wz_set_renderable_asset(
         facts->deferred_authoring_user, entity, asset_graph_node_id);
 }
 
+// Deferred runtime-authoring: reparent the node bound to `entity` under the
+// node bound to `new_parent_entity` (pass WZ_INVALID_BEHAVIOR_ENTITY to detach
+// to the top level). Applied at the next frame boundary through the shared
+// runtime apply path (it does not mutate the scene during dispatch),
+// fire-and-forget. Returns 1 if the request was queued (the entity resolved to
+// an authored scene node), 0 otherwise.
+static inline uint8_t wz_reparent_node(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzBehaviorEntityId new_parent_entity)
+{
+    if (!facts || !facts->reparent_node) {
+        return 0;
+    }
+    return facts->reparent_node(
+        facts->deferred_authoring_user, entity, new_parent_entity);
+}
+
+// Deferred runtime-authoring: add the optional component `kind`
+// ("camera" | "proximity" | "collision" | "motion") to the node bound to
+// `entity`. Applied at the next frame boundary through the shared runtime apply
+// path (it does not mutate the scene during dispatch), fire-and-forget. The
+// `kind` string need only stay valid for this call. Returns 1 if the request
+// was queued (the entity resolved to an authored scene node), 0 otherwise.
+static inline uint8_t wz_add_node_component(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* kind)
+{
+    if (!facts || !facts->add_node_component) {
+        return 0;
+    }
+    return facts->add_node_component(
+        facts->deferred_authoring_user, entity, kind);
+}
+
+// Deferred runtime-authoring: remove the optional component `kind`
+// ("camera" | "proximity" | "collision" | "motion") from the node bound to
+// `entity`. Applied at the next frame boundary through the shared runtime apply
+// path (it does not mutate the scene during dispatch), fire-and-forget. The
+// `kind` string need only stay valid for this call. Returns 1 if the request
+// was queued (the entity resolved to an authored scene node), 0 otherwise.
+static inline uint8_t wz_remove_node_component(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* kind)
+{
+    if (!facts || !facts->remove_node_component) {
+        return 0;
+    }
+    return facts->remove_node_component(
+        facts->deferred_authoring_user, entity, kind);
+}
+
 static inline float wz_delta_seconds(const WzBehaviorFrameFacts* facts)
 {
     return facts && facts->timing ? facts->timing->delta_seconds : 0.0f;
@@ -1545,6 +1599,50 @@ static inline uint8_t wz_self_set_renderable_asset(
     uint64_t asset_graph_node_id)
 {
     return wz_set_renderable_asset(facts, wz_self(event), asset_graph_node_id);
+}
+
+// Deferred runtime-authoring convenience: reparent the event's own entity under
+// `new_parent_entity` (pass WZ_INVALID_BEHAVIOR_ENTITY to detach to the top
+// level). Fire-and-forget, applied at the next frame boundary (see
+// wz_reparent_node).
+static inline uint8_t wz_self_reparent_node(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorEntityId new_parent_entity)
+{
+    return wz_reparent_node(facts, wz_self(event), new_parent_entity);
+}
+
+// Deferred runtime-authoring convenience: detach the event's own entity to the
+// top level (no parent). Fire-and-forget, applied at the next frame boundary
+// (see wz_reparent_node).
+static inline uint8_t wz_self_detach_to_top_level(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event)
+{
+    return wz_reparent_node(facts, wz_self(event), WZ_INVALID_BEHAVIOR_ENTITY);
+}
+
+// Deferred runtime-authoring convenience: add the optional component `kind` to
+// the event's own entity. Fire-and-forget, applied at the next frame boundary
+// (see wz_add_node_component).
+static inline uint8_t wz_self_add_node_component(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* kind)
+{
+    return wz_add_node_component(facts, wz_self(event), kind);
+}
+
+// Deferred runtime-authoring convenience: remove the optional component `kind`
+// from the event's own entity. Fire-and-forget, applied at the next frame
+// boundary (see wz_remove_node_component).
+static inline uint8_t wz_self_remove_node_component(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* kind)
+{
+    return wz_remove_node_component(facts, wz_self(event), kind);
 }
 
 static inline uint8_t wz_other_set_linear_velocity(

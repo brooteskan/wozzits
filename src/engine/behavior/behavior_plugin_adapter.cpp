@@ -1449,6 +1449,95 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t reparent_node_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzBehaviorEntityId new_parent_entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene) {
+                return 0;
+            }
+
+            // Resolve the node to reparent (fail-closed), exactly as
+            // spawn_child_request. The authored id stays valid even as a prior
+            // drain entry renumbers runtime entities.
+            if (entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+
+            // The top-level sentinel is NOT an out-of-range runtime id: it means
+            // "detach to top level". Map it to an empty authored parent id (what
+            // reparent_node treats as no parent) BEFORE the bounds check, so it
+            // is never rejected. Any other parent must resolve fail-closed.
+            wz::scene::AuthoredEntityId new_parent_id;
+            if (new_parent_entity != WZ_INVALID_BEHAVIOR_ENTITY) {
+                if (new_parent_entity
+                    >= context->scene->runtime_to_authored.size())
+                {
+                    return 0;
+                }
+                new_parent_id =
+                    context->scene->runtime_to_authored[new_parent_entity];
+            }
+
+            context->authoring->reparent_requests.push_back(
+                BehaviorReparentRequest{
+                    .node_id = context->scene->runtime_to_authored[entity],
+                    .new_parent_id = new_parent_id,
+                });
+            return 1;
+        }
+
+        uint8_t add_node_component_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            const char* kind)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene || !kind) {
+                return 0;
+            }
+
+            // Resolve runtime entity -> authored scene-node id (fail-closed),
+            // exactly as spawn_child_request. The kind pointer is valid only
+            // during this call (the request is deferred to the frame boundary),
+            // so COPY it into the queued request rather than storing the raw
+            // pointer.
+            if (entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+            context->authoring->add_component_requests.push_back(
+                BehaviorComponentRequest{
+                    .node_id = context->scene->runtime_to_authored[entity],
+                    .kind = kind,
+                });
+            return 1;
+        }
+
+        uint8_t remove_node_component_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            const char* kind)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene || !kind) {
+                return 0;
+            }
+
+            // Same fail-closed resolve + kind copy as add_node_component_request
+            // (the kind pointer is transient; the request is drained later).
+            if (entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+            context->authoring->remove_component_requests.push_back(
+                BehaviorComponentRequest{
+                    .node_id = context->scene->runtime_to_authored[entity],
+                    .kind = kind,
+                });
+            return 1;
+        }
+
         uint8_t submit_gpu_compute_job(
             void* user,
             const WzGpuComputeJobDesc* job,
@@ -1552,6 +1641,9 @@ namespace wz::engine::behavior
                 .spawn_child = spawn_child_request,
                 .remove_node = remove_node_request,
                 .set_renderable_asset = set_renderable_asset_request,
+                .reparent_node = reparent_node_request,
+                .add_node_component = add_node_component_request,
+                .remove_node_component = remove_node_component_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1622,6 +1714,9 @@ namespace wz::engine::behavior
                 .spawn_child = spawn_child_request,
                 .remove_node = remove_node_request,
                 .set_renderable_asset = set_renderable_asset_request,
+                .reparent_node = reparent_node_request,
+                .add_node_component = add_node_component_request,
+                .remove_node_component = remove_node_component_request,
             };
         }
 

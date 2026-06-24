@@ -569,6 +569,46 @@ namespace wz::app
                     + request.node_id + "'");
             }
         }
+
+        // reparent drain: same frame-boundary, same apply method the host's
+        // reparent uses (reparent_node, which rebuilds the behavior runtime on
+        // success like add_child/remove). Both ids were resolved to authored
+        // ids at enqueue time (an empty new_parent_id = top level), so they stay
+        // valid even as a prior structural drain entry renumbers runtime ids.
+        for (const wz::engine::behavior::BehaviorReparentRequest& request :
+             authoring.reparent_requests)
+        {
+            if (!reparent_node(request.node_id, request.new_parent_id)) {
+                ctx_.logger.warn(
+                    "behavior reparent_node rejected for node '"
+                    + request.node_id + "'");
+            }
+        }
+
+        // add/remove-component drains: same frame-boundary, same apply methods
+        // the host uses (add_node_component / remove_node_component). These are
+        // cheap field edits (no behavior-runtime rebuild, no asset-DAG
+        // recompile), so they are order-independent of the structural drains
+        // above. The kind was copied into each request at enqueue time (the
+        // behavior's transient const char* is long gone by now).
+        for (const wz::engine::behavior::BehaviorComponentRequest& request :
+             authoring.add_component_requests)
+        {
+            if (!add_node_component(request.node_id, request.kind)) {
+                ctx_.logger.warn(
+                    "behavior add_node_component rejected for node '"
+                    + request.node_id + "' kind '" + request.kind + "'");
+            }
+        }
+        for (const wz::engine::behavior::BehaviorComponentRequest& request :
+             authoring.remove_component_requests)
+        {
+            if (!remove_node_component(request.node_id, request.kind)) {
+                ctx_.logger.warn(
+                    "behavior remove_node_component rejected for node '"
+                    + request.node_id + "' kind '" + request.kind + "'");
+            }
+        }
     }
 
     std::size_t WozzitsApp_v1::active_behavior_binding_count() const
