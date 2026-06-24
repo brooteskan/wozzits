@@ -48,6 +48,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodePosition = string.Empty;
     private string _lastEditError = string.Empty;
     private string _newBehaviorModule = string.Empty;
+    private string _selectedComponentKind = "camera";
     // While true, populating fields from a selected node must not echo back to
     // the engine as a live edit.
     private bool _suppressLiveEdits;
@@ -62,6 +63,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             () => HasSceneNodeSelection && HasCameraComponent);
         AddBehaviorCommand = new RelayCommand(
             AddBehavior,
+            () => HasSceneNodeSelection);
+        AddComponentCommand = new RelayCommand(
+            AddComponent,
             () => HasSceneNodeSelection);
     }
 
@@ -80,6 +84,17 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand ApplyCameraCommand { get; }
 
     public IRelayCommand AddBehaviorCommand { get; }
+
+    public IRelayCommand AddComponentCommand { get; }
+
+    public IReadOnlyList<string> ComponentKinds { get; } =
+        ["camera", "renderable", "proximity", "collision", "motion"];
+
+    public string SelectedComponentKind
+    {
+        get => _selectedComponentKind;
+        set => SetProperty(ref _selectedComponentKind, value);
+    }
 
     public string NewBehaviorModule
     {
@@ -643,7 +658,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             Components.Add(new InspectorComponentViewModel(
                 component.DisplayName,
-                component.Kind));
+                component.Kind,
+                RemoveComponent));
         }
 
         if (node.Camera is not null)
@@ -763,6 +779,73 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         NotifyComponentStateChanged();
     }
 
+    private void AddComponent()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var kind = SelectedComponentKind;
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            LastEditError = "Select a component kind to add.";
+            return;
+        }
+
+        var response = _editorSession!.AddNodeComponent(NodeId, kind);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        // Reflect immediately (the snapshot reconciles on its next refresh).
+        // Avoid a duplicate row if the node already lists this component.
+        if (!Components.Any(c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
+        {
+            Components.Add(new InspectorComponentViewModel(
+                ComponentDisplayName(kind), kind, RemoveComponent));
+            NotifyComponentStateChanged();
+        }
+    }
+
+    private void RemoveComponent(InspectorComponentViewModel component)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var response = _editorSession!.RemoveNodeComponent(NodeId, component.Kind);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        Components.Remove(component);
+        // Removing the camera also hides its parameter section.
+        if (string.Equals(component.Kind, "camera", StringComparison.Ordinal))
+        {
+            HasCameraComponent = false;
+        }
+        NotifyComponentStateChanged();
+    }
+
+    private static string ComponentDisplayName(string kind)
+    {
+        return kind switch
+        {
+            "camera" => "Camera",
+            "renderable" => "Renderable",
+            "proximity" => "Proximity",
+            "collision" => "Collision",
+            "motion" => "Motion",
+            _ => kind,
+        };
+    }
+
     private static string FormatNullable(double? value)
     {
         return value is null ? string.Empty : FormatDouble(value.Value);
@@ -794,7 +877,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     }
 }
 
-public sealed record InspectorComponentViewModel(string Name, string Kind);
+public sealed class InspectorComponentViewModel
+{
+    public InspectorComponentViewModel(
+        string name,
+        string kind,
+        Action<InspectorComponentViewModel> remove)
+    {
+        Name = name;
+        Kind = kind;
+        RemoveCommand = new RelayCommand(() => remove(this));
+    }
+
+    public string Name { get; }
+
+    public string Kind { get; }
+
+    public IRelayCommand RemoveCommand { get; }
+}
 
 public sealed class InspectorBehaviorViewModel : ViewModelBase
 {

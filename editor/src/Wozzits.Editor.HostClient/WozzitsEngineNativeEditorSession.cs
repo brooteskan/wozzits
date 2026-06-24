@@ -352,6 +352,24 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, bindingId, key);
     }
 
+    public EngineMutationResponse AddNodeComponent(string nodeId, string kind)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.AddNodeComponent(runtime.Handle, nodeId, kind);
+    }
+
+    public EngineMutationResponse RemoveNodeComponent(string nodeId, string kind)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.RemoveNodeComponent(runtime.Handle, nodeId, kind);
+    }
+
     public void Dispose()
     {
         // Stop the engine first, then close the authoring session.

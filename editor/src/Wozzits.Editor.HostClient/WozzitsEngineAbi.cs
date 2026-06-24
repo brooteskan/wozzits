@@ -367,6 +367,24 @@ internal static partial class WozzitsEngineAbi
         string bindingIdUtf8,
         string keyUtf8);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_add_node_component",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeAddNodeComponent(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string kindUtf8);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_editor_runtime_remove_node_component",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeRemoveNodeComponent(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string kindUtf8);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }

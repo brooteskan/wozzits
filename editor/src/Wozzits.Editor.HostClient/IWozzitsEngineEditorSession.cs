@@ -123,6 +123,14 @@ public interface IWozzitsEngineEditorSession
         string bindingId,
         string key);
 
+    // Live add/remove of an optional node component by kind ("camera",
+    // "renderable", "proximity", "collision", "motion") on the running scene;
+    // deferred + host-gated engine-side, no-op success when no viewport is
+    // running.
+    EngineMutationResponse AddNodeComponent(string nodeId, string kind);
+
+    EngineMutationResponse RemoveNodeComponent(string nodeId, string kind);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

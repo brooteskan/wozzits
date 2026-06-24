@@ -1103,6 +1103,22 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, string Kind)> AddedComponents { get; } = [];
+
+        public List<(string NodeId, string Kind)> RemovedComponents { get; } = [];
+
+        public EngineMutationResponse AddNodeComponent(string nodeId, string kind)
+        {
+            AddedComponents.Add((nodeId, kind));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse RemoveNodeComponent(string nodeId, string kind)
+        {
+            RemovedComponents.Add((nodeId, kind));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public List<AddNodeEdit> AddedNodes { get; } = [];
 
         public ulong NextAddedNodeId { get; set; } = 1000u;

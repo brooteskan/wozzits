@@ -175,11 +175,29 @@
                                           IsVisible="{Binding HasComponents}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="panes:InspectorComponentViewModel">
-                                        <TextBlock Text="{Binding Name}"
-                                                   Classes="InspectorComponentName"/>
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              ColumnSpacing="6">
+                                            <TextBlock Text="{Binding Name}"
+                                                       Classes="InspectorComponentName"/>
+                                            <Button Grid.Column="1"
+                                                    Content="Remove"
+                                                    Command="{Binding RemoveCommand}"
+                                                    Classes="InspectorApplyButton"/>
+                                        </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <Grid ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="6">
+                                <ComboBox ItemsSource="{Binding ComponentKinds}"
+                                          SelectedItem="{Binding SelectedComponentKind, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          Classes="InspectorInput"/>
+                                <Button Grid.Column="1"
+                                        Content="Add Component"
+                                        Command="{Binding AddComponentCommand}"
+                                        Classes="InspectorApplyButton"/>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection"

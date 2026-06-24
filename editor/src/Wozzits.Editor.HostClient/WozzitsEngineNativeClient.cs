@@ -811,6 +811,54 @@ public sealed partial class WozzitsEngineNativeClient
             key));
     }
 
+    internal EngineMutationResponse AddNodeComponent(
+        IntPtr runtime,
+        string nodeId,
+        string kind)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return InvalidMutation("Component kind is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeAddNodeComponent(
+            runtime,
+            nodeId,
+            kind));
+    }
+
+    internal EngineMutationResponse RemoveNodeComponent(
+        IntPtr runtime,
+        string nodeId,
+        string kind)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return InvalidMutation("Component kind is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeRemoveNodeComponent(
+            runtime,
+            nodeId,
+            kind));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeProperties(
         IntPtr runtime,
         string nodeId,
