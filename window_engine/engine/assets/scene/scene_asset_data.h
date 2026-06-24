@@ -1442,7 +1442,9 @@ namespace wz::engine::assets
         if (node.parent_id) {
             out.push_back(Kind::ParentLink);
         }
-        if (node.renderable || node.renderable_asset_node_id) {
+        if (node.renderable
+            || node.renderable_asset_node_id
+            || node.renderable_asset) {
             out.push_back(Kind::Renderable);
         }
         if (node.asset_reference) {
@@ -1573,7 +1575,8 @@ namespace wz::engine::assets
         const SceneNodeAsset& node) noexcept
     {
         return node.renderable.has_value()
-            || node.renderable_asset_node_id.has_value();
+            || node.renderable_asset_node_id.has_value()
+            || node.renderable_asset.has_value();
     }
 
     inline bool has_authored_camera_component(
