@@ -141,11 +141,61 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void InitializeDockLayout()
     {
         Console = new ConsolePaneViewModel();
-        SceneTree.SelectedNodeChanged += Inspector.Inspect;
-        AssetGraph.SelectedNodeChanged += Inspector.Inspect;
+        // The scene tree and asset graph share one inspector and must show a
+        // single active selection: selecting in one pane clears the other (and
+        // its highlight) so the inspector tracks the highlighted node; an empty
+        // selection shows no inspector.
+        SceneTree.SelectedNodeChanged += OnSceneNodeSelected;
+        AssetGraph.SelectedNodeChanged += OnAssetGraphNodeSelected;
 
         var layoutFactory = new EditorDockLayoutFactory(this);
         DockFactory = layoutFactory.Factory;
         EditorLayout = layoutFactory.CreateLayout();
+    }
+
+    // Guards against re-entrancy: clearing one pane raises its
+    // SelectedNodeChanged(null), which must not recurse back through here.
+    private bool _syncingSelection;
+
+    private void OnSceneNodeSelected(SceneTreeNodeViewModel? node)
+    {
+        if (_syncingSelection)
+        {
+            return;
+        }
+        if (node is not null)
+        {
+            _syncingSelection = true;
+            try
+            {
+                AssetGraph.ClearSelection();
+            }
+            finally
+            {
+                _syncingSelection = false;
+            }
+        }
+        Inspector.Inspect(node);
+    }
+
+    private void OnAssetGraphNodeSelected(AssetGraphNodeCardViewModel? node)
+    {
+        if (_syncingSelection)
+        {
+            return;
+        }
+        if (node is not null)
+        {
+            _syncingSelection = true;
+            try
+            {
+                SceneTree.ClearSelection();
+            }
+            finally
+            {
+                _syncingSelection = false;
+            }
+        }
+        Inspector.Inspect(node);
     }
 }

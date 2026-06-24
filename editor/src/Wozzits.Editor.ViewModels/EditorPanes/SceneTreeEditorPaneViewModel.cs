@@ -77,6 +77,14 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         SetSelectedNode(node);
     }
 
+    // Clear the scene-tree selection + its highlight (e.g. when the asset graph
+    // takes the active selection). Raises SelectedNodeChanged(null) only if a
+    // node was selected.
+    public void ClearSelection()
+    {
+        SetSelectedNode(null);
+    }
+
     private void SetSelectedNode(SceneTreeNodeViewModel? node)
     {
         if (ReferenceEquals(_selectedNode, node))

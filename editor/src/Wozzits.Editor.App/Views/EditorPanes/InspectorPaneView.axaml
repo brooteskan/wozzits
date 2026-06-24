@@ -179,7 +179,7 @@
 
                         <StackPanel Classes="InspectorSection">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="{Binding ComponentsHeader}"
+                                <TextBlock Text="Components"
                                            Classes="InspectorSectionTitle"/>
                                 <Button Grid.Column="1"
                                         Content="+"

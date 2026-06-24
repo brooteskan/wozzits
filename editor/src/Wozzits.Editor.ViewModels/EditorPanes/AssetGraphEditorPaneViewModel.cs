@@ -1086,7 +1086,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         SelectedNode = SelectedNodes.LastOrDefault();
     }
 
-    private void ClearSelection()
+    public void ClearSelection()
     {
         foreach (var node in SelectedNodes)
         {
