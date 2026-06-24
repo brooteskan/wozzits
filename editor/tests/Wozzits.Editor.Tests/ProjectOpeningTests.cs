@@ -435,9 +435,12 @@ public sealed partial class ProjectOpeningTests
 
         Assert.True(viewModel.Inspector.HasCameraComponent);
         Assert.Equal("camera Components", viewModel.Inspector.ComponentsHeader);
-        Assert.Contains(
+        // Camera is surfaced via its own Camera section (HasCameraComponent +
+        // the parameter fields below), not duplicated in the generic component
+        // list.
+        Assert.DoesNotContain(
             viewModel.Inspector.Components,
-            component => component.Name == "Camera" && component.Kind == "camera");
+            component => component.Kind == "camera");
         Assert.Equal("1.047", viewModel.Inspector.CameraFovY);
         Assert.Equal("0.1", viewModel.Inspector.CameraNear);
         Assert.Equal("1000", viewModel.Inspector.CameraFar);

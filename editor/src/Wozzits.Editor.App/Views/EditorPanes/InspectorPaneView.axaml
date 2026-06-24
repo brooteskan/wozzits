@@ -170,15 +170,42 @@
                                         Command="{Binding ApplyRenderableCommand}"
                                         Classes="InspectorApplyButton"/>
                                 <Button Grid.Column="1"
-                                        Content="Remove"
+                                        Content="✕"
                                         Command="{Binding RemoveRenderableCommand}"
-                                        Classes="InspectorApplyButton"/>
+                                        Classes="InspectorApplyButton"
+                                        ToolTip.Tip="Remove renderable"/>
                             </Grid>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection">
-                            <TextBlock Text="{Binding ComponentsHeader}"
-                                       Classes="InspectorSectionTitle"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding ComponentsHeader}"
+                                           Classes="InspectorSectionTitle"/>
+                                <Button Grid.Column="1"
+                                        Content="+"
+                                        Classes="InspectorApplyButton"
+                                        ToolTip.Tip="Add component">
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="Camera"
+                                                      Command="{Binding AddComponentCommand}"
+                                                      CommandParameter="camera"/>
+                                            <MenuItem Header="Renderable"
+                                                      Command="{Binding AddComponentCommand}"
+                                                      CommandParameter="renderable"/>
+                                            <MenuItem Header="Proximity"
+                                                      Command="{Binding AddComponentCommand}"
+                                                      CommandParameter="proximity"/>
+                                            <MenuItem Header="Collision"
+                                                      Command="{Binding AddComponentCommand}"
+                                                      CommandParameter="collision"/>
+                                            <MenuItem Header="Motion"
+                                                      Command="{Binding AddComponentCommand}"
+                                                      CommandParameter="motion"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
                             <TextBlock Text="No attached optional components."
                                        Classes="PaneEmptyState"
                                        IsVisible="{Binding HasNoComponents}"/>
@@ -191,30 +218,27 @@
                                             <TextBlock Text="{Binding Name}"
                                                        Classes="InspectorComponentName"/>
                                             <Button Grid.Column="1"
-                                                    Content="Remove"
+                                                    Content="✕"
                                                     Command="{Binding RemoveCommand}"
-                                                    Classes="InspectorApplyButton"/>
+                                                    Classes="InspectorApplyButton"
+                                                    ToolTip.Tip="Remove component"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <Grid ColumnDefinitions="*,Auto"
-                                  ColumnSpacing="6">
-                                <ComboBox ItemsSource="{Binding ComponentKinds}"
-                                          SelectedItem="{Binding SelectedComponentKind, Mode=TwoWay}"
-                                          HorizontalAlignment="Stretch"
-                                          Classes="InspectorInput"/>
-                                <Button Grid.Column="1"
-                                        Content="Add Component"
-                                        Command="{Binding AddComponentCommand}"
-                                        Classes="InspectorApplyButton"/>
-                            </Grid>
                         </StackPanel>
 
                         <StackPanel Classes="InspectorSection"
                                     IsVisible="{Binding HasCameraComponent}">
-                            <TextBlock Text="Camera"
-                                       Classes="InspectorSectionTitle"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Camera"
+                                           Classes="InspectorSectionTitle"/>
+                                <Button Grid.Column="1"
+                                        Content="✕"
+                                        Command="{Binding RemoveCameraCommand}"
+                                        Classes="InspectorApplyButton"
+                                        ToolTip.Tip="Remove camera"/>
+                            </Grid>
 
                             <Grid ColumnDefinitions="Auto,*"
                                   ColumnSpacing="10"

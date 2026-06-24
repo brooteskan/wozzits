@@ -48,7 +48,6 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodePosition = string.Empty;
     private string _lastEditError = string.Empty;
     private string _newBehaviorModule = string.Empty;
-    private string _selectedComponentKind = "camera";
     // While true, populating fields from a selected node must not echo back to
     // the engine as a live edit.
     private bool _suppressLiveEdits;
@@ -64,15 +63,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AddBehaviorCommand = new RelayCommand(
             AddBehavior,
             () => HasSceneNodeSelection);
-        AddComponentCommand = new RelayCommand(
-            AddComponent,
-            () => HasSceneNodeSelection);
-        ApplyRenderableCommand = new RelayCommand(
-            ApplyRenderable,
-            () => HasSceneNodeSelection);
-        RemoveRenderableCommand = new RelayCommand(
-            RemoveRenderable,
-            () => HasSceneNodeSelection);
+        // These are only shown inside a selected scene node's inspector, so they
+        // are always enabled; each guards with EnsureCanApply internally.
+        AddComponentCommand = new RelayCommand<string>(AddComponent);
+        RemoveCameraCommand = new RelayCommand(RemoveCameraComponent);
+        ApplyRenderableCommand = new RelayCommand(ApplyRenderable);
+        RemoveRenderableCommand = new RelayCommand(RemoveRenderable);
     }
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
@@ -91,20 +87,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public IRelayCommand AddBehaviorCommand { get; }
 
-    public IRelayCommand AddComponentCommand { get; }
+    public IRelayCommand<string> AddComponentCommand { get; }
+
+    public IRelayCommand RemoveCameraCommand { get; }
 
     public IRelayCommand ApplyRenderableCommand { get; }
 
     public IRelayCommand RemoveRenderableCommand { get; }
-
-    public IReadOnlyList<string> ComponentKinds { get; } =
-        ["camera", "renderable", "proximity", "collision", "motion"];
-
-    public string SelectedComponentKind
-    {
-        get => _selectedComponentKind;
-        set => SetProperty(ref _selectedComponentKind, value);
-    }
 
     public string NewBehaviorModule
     {
@@ -666,6 +655,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         foreach (var component in node.Components)
         {
+            // Camera is shown + removed via its own parameter section below.
+            if (string.Equals(component.Kind, "camera", StringComparison.Ordinal))
+            {
+                continue;
+            }
             Components.Add(new InspectorComponentViewModel(
                 component.DisplayName,
                 component.Kind,
@@ -789,17 +783,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         NotifyComponentStateChanged();
     }
 
-    private void AddComponent()
+    private void AddComponent(string? kind)
     {
-        if (!EnsureCanApply())
+        if (!EnsureCanApply() || string.IsNullOrWhiteSpace(kind))
         {
-            return;
-        }
-
-        var kind = SelectedComponentKind;
-        if (string.IsNullOrWhiteSpace(kind))
-        {
-            LastEditError = "Select a component kind to add.";
             return;
         }
 
@@ -822,12 +809,31 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         // Reflect immediately (the snapshot reconciles on its next refresh).
-        // Avoid a duplicate row if the node already lists this component.
-        if (!Components.Any(c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
+        // Camera has its own parameter section; the rest list as removable rows.
+        if (string.Equals(kind, "camera", StringComparison.Ordinal))
+        {
+            HasCameraComponent = true;
+        }
+        else if (!Components.Any(
+            c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
         {
             Components.Add(new InspectorComponentViewModel(
                 ComponentDisplayName(kind), kind, RemoveComponent));
             NotifyComponentStateChanged();
+        }
+    }
+
+    private void RemoveCameraComponent()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        var response = _editorSession!.RemoveNodeComponent(NodeId, "camera");
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            HasCameraComponent = false;
         }
     }
 
