@@ -58,6 +58,11 @@ namespace wz::engine::behavior
         const WzGpuComputeEventPayload* active_gpu_compute_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
         BehaviorGpuComputeBuffer* gpu_compute = nullptr;
+        // Deferred runtime-authoring sink (#204): behaviors queue cheap live
+        // scene-ECS authoring edits (spawn-child) here mid-dispatch; the runtime
+        // drains it at the frame boundary. Null when the host wires no
+        // deferred-authoring path (the spawn_child fact is then inert).
+        BehaviorAuthoringBuffer* authoring = nullptr;
         wz::Logger* logger = nullptr;
         BehaviorSurfaceRayQueryStats* surface_ray_stats = nullptr;
     };

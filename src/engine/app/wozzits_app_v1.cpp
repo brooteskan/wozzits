@@ -431,6 +431,15 @@ namespace wz::app
 
         frame_storage_.behavior_commands.clear();
 
+        // Per-frame deferred-authoring sink: behaviors queue cheap live
+        // scene-ECS authoring edits (spawn-child) here mid-dispatch; they are
+        // applied below at the frame boundary, AFTER the dispatch loop finishes
+        // iterating the scene (so the apply is not reentrant). The buffer is
+        // function-local — runtime-owned, per-frame, never crossing a thread or
+        // surviving past this tick — which is exactly the standalone-app
+        // semantics #204 requires (no EditorRuntimeControl involved).
+        wz::engine::behavior::BehaviorAuthoringBuffer authoring;
+
         wz::engine::behavior::BehaviorFrameContext behavior_ctx{
             .frame_context = &frame_context,
             .frame_storage = &frame_storage_,
@@ -438,6 +447,7 @@ namespace wz::app
             .behavior_state = &behavior_scene_->behavior_state,
             .commands = &frame_storage_.behavior_commands,
             .gpu_compute = nullptr,
+            .authoring = &authoring,
             .logger = &ctx_.logger,
         };
         wz::engine::behavior::dispatch_behaviors(
@@ -465,48 +475,70 @@ namespace wz::app
             std::unique(changed_entities.begin(), changed_entities.end()),
             changed_entities.end());
 
-        if (changed_entities.empty()) {
-            return;
+        if (!changed_entities.empty()) {
+            // Re-propagate so world matrices (and any next-frame world-space
+            // reads) reflect the applied local changes.
+            wz::scene::propagate_all(behavior_scene_->storage.polytree);
+
+            // Write the changed local transforms back into scene_nodes_ so the
+            // next render_scene() (which draws from scene_nodes_, not the
+            // instance) shows the behavior result. Decompose each changed
+            // node's instance-local matrix to TRS and overwrite the matching
+            // authored node's transform.
+            for (const wz::scene::RuntimeEntityId entity : changed_entities) {
+                if (entity >= behavior_scene_->runtime_to_authored.size()) {
+                    continue;
+                }
+                const wz::math::Mat4& local = wz::core::graph::node_data(
+                    behavior_scene_->storage.polytree, entity).local;
+
+                wz::math::Transform trs{};
+                if (!wz::math::decompose_trs(local, trs)) {
+                    continue;
+                }
+
+                wz::engine::assets::AuthoredTransform authored{};
+                authored.translation[0] = trs.position.x;
+                authored.translation[1] = trs.position.y;
+                authored.translation[2] = trs.position.z;
+                authored.rotation_quat[0] = trs.rotation.x;
+                authored.rotation_quat[1] = trs.rotation.y;
+                authored.rotation_quat[2] = trs.rotation.z;
+                authored.rotation_quat[3] = trs.rotation.w;
+                authored.scale[0] = trs.scale.x;
+                authored.scale[1] = trs.scale.y;
+                authored.scale[2] = trs.scale.z;
+
+                wz::engine::assets::SceneNodeAsset* node =
+                    wz::engine::assets::find_scene_node(
+                        scene_nodes_,
+                        behavior_scene_->runtime_to_authored[entity]);
+                if (node) {
+                    node->local = authored;
+                }
+            }
         }
 
-        // Re-propagate so world matrices (and any next-frame world-space reads)
-        // reflect the applied local changes.
-        wz::scene::propagate_all(behavior_scene_->storage.polytree);
-
-        // Write the changed local transforms back into scene_nodes_ so the next
-        // render_scene() (which draws from scene_nodes_, not the instance) shows
-        // the behavior result. Decompose each changed node's instance-local
-        // matrix to TRS and overwrite the matching authored node's transform.
-        for (const wz::scene::RuntimeEntityId entity : changed_entities) {
-            if (entity >= behavior_scene_->runtime_to_authored.size()) {
-                continue;
-            }
-            const wz::math::Mat4& local = wz::core::graph::node_data(
-                behavior_scene_->storage.polytree, entity).local;
-
-            wz::math::Transform trs{};
-            if (!wz::math::decompose_trs(local, trs)) {
-                continue;
-            }
-
-            wz::engine::assets::AuthoredTransform authored{};
-            authored.translation[0] = trs.position.x;
-            authored.translation[1] = trs.position.y;
-            authored.translation[2] = trs.position.z;
-            authored.rotation_quat[0] = trs.rotation.x;
-            authored.rotation_quat[1] = trs.rotation.y;
-            authored.rotation_quat[2] = trs.rotation.z;
-            authored.rotation_quat[3] = trs.rotation.w;
-            authored.scale[0] = trs.scale.x;
-            authored.scale[1] = trs.scale.y;
-            authored.scale[2] = trs.scale.z;
-
-            wz::engine::assets::SceneNodeAsset* node =
-                wz::engine::assets::find_scene_node(
-                    scene_nodes_,
-                    behavior_scene_->runtime_to_authored[entity]);
-            if (node) {
-                node->local = authored;
+        // Frame-boundary drain of behavior-issued deferred authoring (#204).
+        // This runs AFTER the dispatch loop has finished iterating the scene, so
+        // mutating it here is not reentrant. Each request goes through the SAME
+        // apply method the host's add_child uses (add_child_node) — the single
+        // converged apply path. add_child_node re-materializes the behavior
+        // runtime (rebuild_behavior_scene) on success, which is why this is the
+        // LAST thing the tick does: every read of behavior_scene_ above has
+        // already happened, and behavior_scene_ may be rebuilt out from under us
+        // here safely. Fire-and-forget: no id flows back to the behavior. The
+        // parents were resolved to authored ids at enqueue time, so they remain
+        // valid even as a prior add in this same drain renumbers runtime ids.
+        for (const wz::scene::AuthoredEntityId& parent :
+             authoring.spawn_child_parents)
+        {
+            const wz::engine::assets::SceneAddChildResult result =
+                add_child_node(parent);
+            if (!result.ok) {
+                ctx_.logger.warn(
+                    "behavior spawn_child rejected for parent '" + parent
+                    + "': " + result.error);
             }
         }
     }
@@ -765,6 +797,18 @@ namespace wz::app
     {
         return wz::engine::assets::node_has_optional_component(
             scene_nodes_, node_id, kind);
+    }
+
+    std::size_t WozzitsApp_v1::child_node_count(
+        const wz::scene::AuthoredEntityId& parent_id) const
+    {
+        std::size_t count = 0;
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (node.parent_id && *node.parent_id == parent_id) {
+                ++count;
+            }
+        }
+        return count;
     }
 
     std::optional<wz::asset::AssetGraphDraftNodeId>

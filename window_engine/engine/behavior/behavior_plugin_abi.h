@@ -238,6 +238,27 @@ typedef uint8_t (*WzWriteBehaviorCommandFn)(
     void* user,
     const WzBehaviorCommand* command);
 
+/*
+ * Deferred runtime-authoring: request that a new child node be spawned under
+ * `parent_entity` in the running scene. Unlike write_command (which buffers a
+ * transform/velocity command applied later the same frame), this is a CHEAP
+ * live scene-ECS authoring edit issued by a behavior. It is:
+ *   - Deferred: the request is queued during behavior dispatch and applied at
+ *     the next frame boundary, through the SAME runtime apply path the host's
+ *     add_child uses. It does NOT mutate the scene mid-dispatch (the engine is
+ *     iterating the scene to run behaviors).
+ *   - Fire-and-forget: no id is returned (a behavior runs on the engine thread,
+ *     so it cannot block on the host's cross-thread add-child handshake).
+ *     Returning a reserved id is a documented follow-up.
+ * Returns 1 if the request was accepted (queued), 0 otherwise (e.g. the parent
+ * entity could not be resolved to an authored scene node). Behaviors may only
+ * issue cheap live-ECS edits like this — never an asset-graph/behavior-binding
+ * mutation that would trigger a recompile.
+ */
+typedef uint8_t (*WzSpawnChildFn)(
+    void* user,
+    WzBehaviorEntityId parent_entity);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -639,6 +660,16 @@ typedef struct WzBehaviorFrameFacts
 
     void* gpu_compute_user;
     WzSubmitGpuComputeJobFn submit_gpu_compute;
+
+    /*
+     * Deferred runtime-authoring (#204). Appended at the end so existing
+     * behavior DLLs stay binary-compatible (WzBehaviorFrameFacts is
+     * pointer-passed and not version-checked). spawn_child queues a child-add
+     * applied at the next frame boundary via the shared WozzitsApp_v1 apply
+     * path; null when the runtime exposes no deferred-authoring sink.
+     */
+    void* deferred_authoring_user;
+    WzSpawnChildFn spawn_child;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

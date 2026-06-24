@@ -172,4 +172,26 @@ namespace wz::engine::behavior
             });
         }
     };
+
+    // Deferred runtime-authoring requests issued by behaviors during dispatch
+    // (#204). Distinct from BehaviorCommandBuffer (which carries transform/
+    // velocity commands the dispatch loop applies to the running instance):
+    // these are CHEAP live scene-ECS authoring edits queued mid-dispatch and
+    // drained at the frame boundary AFTER the dispatch loop finishes, through
+    // the same WozzitsApp_v1 apply method the host's add_child uses. Entries are
+    // already resolved to the parent's authored scene-node id (the apply path's
+    // currency), so the buffer is independent of runtime entity ids that a
+    // structural rebuild would invalidate. v1 carries only spawn-child (a child
+    // node added under each parent); nothing heavier is exposed.
+    struct BehaviorAuthoringBuffer
+    {
+        std::vector<wz::scene::AuthoredEntityId> spawn_child_parents;
+
+        void clear() { spawn_child_parents.clear(); }
+
+        [[nodiscard]] bool empty() const
+        {
+            return spawn_child_parents.empty();
+        }
+    };
 }

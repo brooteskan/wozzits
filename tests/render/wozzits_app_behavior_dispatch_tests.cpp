@@ -378,3 +378,51 @@ TEST_F(WozzitsAppBehaviorFixture, SetNodeRenderableAssetOnBlankNode)
     EXPECT_FALSE(app.set_node_renderable_asset("no_such_node", 42));
     EXPECT_FALSE(app.node_renderable_asset_node_id("no_such_node").has_value());
 }
+
+// ─── Behavior-driven deferred add_child (#204 probe) ──────────────────────────
+// A behavior issues the SAME runtime authoring op the host's add_child uses —
+// spawning a child node — as a deferred, fire-and-forget request that the
+// runtime applies at the frame boundary through WozzitsApp_v1::add_child_node
+// (the one shared apply path). The "spawn_child_on_frame" module (staged in the
+// fixture DLL) calls wz_spawn_child on its own entity on frame.update; binding it
+// to "blank" and ticking once must add exactly one child UNDER "blank", visible
+// on the authored scene (what the renderer draws from). This proves the deferred
+// authoring seam end-to-end without standing up the cross-thread render loop —
+// the same direct-drive approach as the dispatch test above.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorSpawnChildAddsChildAtFrameBoundary)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // "blank" starts childless; the scene's only binding is "mover".
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+    ASSERT_EQ(app.child_node_count("blank"), 0u)
+        << "blank node must start with no children";
+
+    // Bind the spawn-child behavior to "blank": a binding is materialized.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "spawn_child_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 2u)
+        << "the spawn-child binding was not materialized";
+
+    // One tick: the behavior queues a deferred spawn_child during dispatch; the
+    // runtime drains it at the frame boundary via add_child_node (the same apply
+    // the host's add_child uses). Exactly one new child node now sits under
+    // "blank" — one dispatch issues one deferred spawn.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.child_node_count("blank"), 1u)
+        << "the behavior's deferred spawn_child did not add a child node";
+
+    // It is genuinely per-frame and the add_child's behavior-runtime rebuild did
+    // not break dispatch: a second tick adds a second child. This also confirms
+    // the spawn was deferred (it did not mutate the scene mid-dispatch, which
+    // would have been a reentrancy hazard while the engine iterated behaviors).
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.child_node_count("blank"), 2u)
+        << "the spawn-child behavior stopped dispatching after the structural "
+           "rebuild triggered by the first add_child";
+}

@@ -954,6 +954,21 @@ static inline uint8_t wz_write_set_motion_space(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+// Deferred runtime-authoring: ask the runtime to spawn a new child node under
+// `parent_entity`. The add is applied at the next frame boundary through the
+// shared runtime apply path (it does not mutate the scene during dispatch), and
+// it is fire-and-forget — no id comes back. Returns 1 if the request was queued
+// (the parent resolved to an authored scene node), 0 otherwise.
+static inline uint8_t wz_spawn_child(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId parent_entity)
+{
+    if (!facts || !facts->spawn_child) {
+        return 0;
+    }
+    return facts->spawn_child(facts->deferred_authoring_user, parent_entity);
+}
+
 static inline float wz_delta_seconds(const WzBehaviorFrameFacts* facts)
 {
     return facts && facts->timing ? facts->timing->delta_seconds : 0.0f;
@@ -1468,6 +1483,16 @@ static inline uint8_t wz_self_set_motion_space(
     WzBehaviorMotionSpace space)
 {
     return wz_write_set_motion_space(facts, wz_self(event), space);
+}
+
+// Deferred runtime-authoring convenience: spawn a child under the event's own
+// entity. Fire-and-forget, applied at the next frame boundary (see
+// wz_spawn_child).
+static inline uint8_t wz_self_spawn_child(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event)
+{
+    return wz_spawn_child(facts, wz_self(event));
 }
 
 static inline uint8_t wz_other_set_linear_velocity(

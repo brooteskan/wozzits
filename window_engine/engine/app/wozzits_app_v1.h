@@ -216,6 +216,13 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const std::string& kind) const;
 
+        // Number of live scene nodes whose direct parent is `parent_id`. Lets
+        // the behavior-driven add_child test observe a spawned child landing in
+        // scene_nodes_ without a snapshot (mirrors node_has_component). Counts
+        // direct children only.
+        [[nodiscard]] std::size_t child_node_count(
+            const wz::scene::AuthoredEntityId& parent_id) const;
+
         // The node's authored asset-graph renderable node id, or nullopt if the
         // node is missing or has no preferred renderable bound. Lets the
         // renderable-authoring test observe set_node_renderable_asset without a

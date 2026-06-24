@@ -1383,6 +1383,28 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t spawn_child_request(
+            void* user,
+            WzBehaviorEntityId parent_entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->authoring || !context->scene) {
+                return 0;
+            }
+
+            // Resolve the behavior's runtime entity id to the parent's authored
+            // scene-node id (what the add-child apply path consumes) using the
+            // same runtime->authored mapping find_entity_by_authored_id rides in
+            // reverse. Queuing the authored id keeps the request stable across a
+            // structural rebuild that would renumber runtime entities.
+            if (parent_entity >= context->scene->runtime_to_authored.size()) {
+                return 0;
+            }
+            context->authoring->spawn_child_parents.push_back(
+                context->scene->runtime_to_authored[parent_entity]);
+            return 1;
+        }
+
         uint8_t submit_gpu_compute_job(
             void* user,
             const WzGpuComputeJobDesc* job,
@@ -1482,6 +1504,8 @@ namespace wz::engine::behavior
                 .find_shared_state = find_shared_state,
                 .gpu_compute_user = &context,
                 .submit_gpu_compute = submit_gpu_compute_job,
+                .deferred_authoring_user = &context,
+                .spawn_child = spawn_child_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1548,6 +1572,8 @@ namespace wz::engine::behavior
                 .find_shared_state = find_shared_state,
                 .gpu_compute_user = &context,
                 .submit_gpu_compute = submit_gpu_compute_job,
+                .deferred_authoring_user = &context,
+                .spawn_child = spawn_child_request,
             };
         }
 
