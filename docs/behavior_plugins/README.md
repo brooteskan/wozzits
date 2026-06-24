@@ -224,6 +224,12 @@ failure/false unless that helper's section says otherwise.
 - Engine terrain movement constraints are described in
   [Motion, Rotation, And Scale Semantics](#motion-rotation-and-scale-semantics).
 
+### Authoring The Running Scene
+
+- Spawn, remove, reparent, set the renderable on, and add or remove components
+  of scene nodes from a behavior, as deferred frame-boundary requests, in
+  [Runtime Scene Authoring](#runtime-scene-authoring).
+
 ### Reading Scene State
 
 - Transform and position read signatures are in
@@ -1541,6 +1547,117 @@ angular velocity composes in the world frame. For parented nodes, the runtime
 converts through the parent's world rotation before writing the node's local
 transform. If the local or parent/world transform cannot be decomposed as safe
 TRS, angular integration for that node is skipped for the frame.
+
+## Runtime Scene Authoring
+
+[Back to Behavior API Inventory](#behavior-api-inventory)
+
+Beyond moving entities, a behavior can author the running scene's structure:
+spawn and remove nodes, reparent them, set a node's renderable, and add or
+remove optional components. These are the same operations the scene editor's
+host performs, routed through the same engine apply path.
+
+Like motion commands, scene-authoring requests are **deferred**. They are queued
+during dispatch and applied at the frame boundary, after every behavior has run,
+never mid-dispatch, so they cannot invalidate the scene while the engine is
+iterating it. A request is therefore not visible to transform or scene queries
+until the next frame.
+
+Each helper is **fire-and-forget** and returns `1` if the request was accepted
+(the target entity resolved to a scene node) and `0` otherwise. No node id is
+returned; address a node you spawned by giving it state or by finding it by
+authored id on a later frame.
+
+Self forms act on the handling node (`wz_self(event)`); generic forms take an
+explicit entity.
+
+```cpp
+uint8_t wz_spawn_child(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId parent_entity);
+uint8_t wz_remove_node(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity);
+uint8_t wz_reparent_node(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzBehaviorEntityId new_parent_entity);
+uint8_t wz_set_renderable_asset(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint64_t asset_graph_node_id);
+uint8_t wz_add_node_component(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* kind);
+uint8_t wz_remove_node_component(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* kind);
+```
+
+Self convenience forms:
+
+```cpp
+uint8_t wz_self_spawn_child(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event);
+uint8_t wz_self_remove_node(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event);
+uint8_t wz_self_reparent_node(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzBehaviorEntityId new_parent_entity);
+uint8_t wz_self_detach_to_top_level(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event);
+uint8_t wz_self_set_renderable_asset(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint64_t asset_graph_node_id);
+uint8_t wz_self_add_node_component(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* kind);
+uint8_t wz_self_remove_node_component(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* kind);
+```
+
+Notes:
+
+- `wz_spawn_child` adds a child node under `parent_entity`. `wz_remove_node`
+  removes a node and its subtree.
+- `wz_reparent_node` moves a node under `new_parent_entity`. Pass
+  `WZ_INVALID_BEHAVIOR_ENTITY` as the new parent (or use
+  `wz_self_detach_to_top_level`) to detach the node to the top level.
+- `wz_set_renderable_asset` binds the node's preferred asset-graph renderable to
+  `asset_graph_node_id`; `0` clears it. It references a node the asset graph has
+  already compiled; it never compiles anything.
+- Component `kind` is one of `"camera"`, `"proximity"`, `"collision"`, or
+  `"motion"`. The renderable is authored with `wz_set_renderable_asset`, not the
+  component helpers.
+
+Example — a pickup that despawns when a player gets close:
+
+```cpp
+void pickup_on_event(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    void*)
+{
+    if (wz_is_event(event, WZ_EVENT_PROXIMITY_ENTER)) {
+        wz_self_remove_node(facts, event);
+    }
+}
+```
+
+These requests are limited to cheap, live scene-graph edits. A behavior cannot
+author behavior bindings, edit the asset graph, or do anything that recompiles
+an asset — those operations stay with the editor host. This is by construction:
+only the cheap edits above are exposed to behaviors at all.
 
 ## Frame Timing
 
