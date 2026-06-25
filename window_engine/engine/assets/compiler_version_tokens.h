@@ -72,7 +72,9 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 1;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
-    inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 2;
+    // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index
+    //     placement so the cloud aligns with the clipmap) -- forces a re-bake.
+    inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 3;
     inline constexpr uint64_t kGaussianSplatColorLODCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatTerrainSurfaceFromHeightFieldCompilerVersion = 2;
     inline constexpr uint64_t kTerrainSplatFromGaeaR32CompilerVersion = 2;

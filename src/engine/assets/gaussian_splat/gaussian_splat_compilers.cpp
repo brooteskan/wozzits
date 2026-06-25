@@ -206,20 +206,30 @@ namespace wz::engine::assets::internal
             const uint32_t stride = desc.subsample_step == 0u
                 ? 1u
                 : desc.subsample_step;
-            const float world_step_x = desc.step_x * static_cast<float>(stride);
-            const float world_step_z = desc.step_z * static_cast<float>(stride);
 
             // Number of emitted columns/rows (ceil division of the field by the
-            // stride) and the index of the last emitted one, for centering.
+            // stride); used only for reserve.
             const uint32_t cols = (field.width  + stride - 1u) / stride;
             const uint32_t rows = (field.height + stride - 1u) / stride;
 
-            // Center the heightfield grid on the origin.
-            // field.width columns along world X; field.height rows along world Z.
-            const float half_x =
-                0.5f * static_cast<float>(cols - 1u) * world_step_x;
-            const float half_z =
-                0.5f * static_cast<float>(rows - 1u) * world_step_z;
+            // Positions are authored in a canonical UNIT footprint: XZ in [0,1]
+            // across the field, Y the raw normalized height in [0,1]. World size,
+            // placement, and vertical scale come ENTIRELY from the scene-node
+            // transform, so the field's pixel dimensions and vertical
+            // exaggeration no longer bake into the coordinates (the cloud is
+            // sized in one place, matching the clipmap it overlays).
+            //
+            // XZ normalizes by the ORIGINAL texel index over (dims - 1), NOT the
+            // subsampled output index over (cols - 1): the clipmap samples the
+            // height texture by world->UV->texel over the full (dims - 1) range,
+            // so a subsampled splat (source texel ox*stride) must land at
+            // ox*stride/(dims-1) or the two tilt apart by ~stride/dims.
+            const float inv_width =
+                field.width  > 1u ? 1.0f / static_cast<float>(field.width  - 1u)
+                                  : 0.0f;
+            const float inv_height =
+                field.height > 1u ? 1.0f / static_cast<float>(field.height - 1u)
+                                  : 0.0f;
 
             GaussianSplatCloudData cloud{};
             cloud.splats.reserve(static_cast<size_t>(cols) * rows);
@@ -228,9 +238,8 @@ namespace wz::engine::assets::internal
             float bmin[3] = { kInf,  kInf,  kInf};
             float bmax[3] = {-kInf, -kInf, -kInf};
 
-            for (uint32_t iy = 0, oy = 0; iy < field.height; iy += stride, ++oy) {
-                for (uint32_t ix = 0, ox = 0; ix < field.width;
-                     ix += stride, ++ox) {
+            for (uint32_t iy = 0; iy < field.height; iy += stride) {
+                for (uint32_t ix = 0; ix < field.width; ix += stride) {
                     const float raw = field.at(ix, iy);
 
                     const float normalized =
@@ -241,11 +250,9 @@ namespace wz::engine::assets::internal
                     if (desc.use_threshold && normalized < desc.emit_threshold)
                         continue;
 
-                    const float wx =
-                        static_cast<float>(ox) * world_step_x - half_x;
-                    const float wy = normalized * desc.height_scale;
-                    const float wz =
-                        static_cast<float>(oy) * world_step_z - half_z;
+                    const float wx = static_cast<float>(ix) * inv_width;
+                    const float wy = normalized;
+                    const float wz = static_cast<float>(iy) * inv_height;
 
                     GaussianSplat splat{};
                     splat.position[0] = wx;

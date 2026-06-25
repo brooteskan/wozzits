@@ -267,8 +267,8 @@ namespace wz::engine::assets::internal
                 // into the SAME object SRG (space2) RhiSceneRenderer binds, so it
                 // rides the existing clipmap-style realize path. One 36-float
                 // root-constant block holding world[16] + view_proj[16] +
-                // viewport_and_size[4] (SplatCloudDrawConstants, packed BYTE-FOR-
-                // BYTE in rhi_scene_renderer.cpp and mirrored by the SplatView
+                // camera_and_diameter[4] (SplatCloudDrawConstants, packed BYTE-
+                // FOR-BYTE in rhi_scene_renderer.cpp and mirrored by the SplatView
                 // cbuffer in gaussian_splat_field_cloud_vs.hlsl), then the
                 // resident decoded splat StructuredBuffer at the SplatCloud
                 // semantic (t0). No index/position pull buffers: the draw is a

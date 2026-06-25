@@ -418,18 +418,20 @@ namespace wz::engine::rendering
             return out;
         }
 
-        // Per-draw root constants for a gaussian-splat-cloud renderable (#208).
-        // Packed to match the `SplatView` cbuffer in
-        // resources/shaders/gaussian_splat/gaussian_splat_field_cloud_vs.hlsl
+        // Per-draw root constants for a scalar-field point-cloud renderable
+        // (#208, fix-2 sphere redesign). Packed to match the `SplatView` cbuffer
+        // in resources/shaders/gaussian_splat/gaussian_splat_field_cloud_vs.hlsl
         // BYTE-FOR-BYTE: two column-major float4x4 (world, view_proj) then a
-        // viewport_and_size float4 (xy = viewport px, z = splat size, w unused).
-        // Exactly 36 dwords / 144 bytes — the binding_layout==3 "splat_view"
-        // value_count.
+        // camera_and_diameter float4 (xyz = camera world pos, w = sphere world
+        // diameter). The VS billboards a uniform world-diameter sphere per sample
+        // facing the camera position, so it needs the camera world pos, not the
+        // viewport. Still exactly 36 dwords / 144 bytes — the binding_layout==3
+        // "splat_view" value_count is unchanged.
         struct SplatCloudDrawConstants
         {
             float world[16];
             float view_proj[16];
-            float viewport_and_size[4];
+            float camera_and_diameter[4];
         };
         static_assert(sizeof(SplatCloudDrawConstants) == 144,
             "splat root constants must be 144 bytes (36 dwords) to match the "
@@ -438,17 +440,16 @@ namespace wz::engine::rendering
         SplatCloudDrawConstants make_splat_cloud_draw_constants(
             const wz::math::Mat4& world,
             const wz::math::Mat4& view_projection,
-            float viewport_width,
-            float viewport_height,
-            float splat_size)
+            const wz::math::Vec3& camera_world_pos,
+            float diameter)
         {
             SplatCloudDrawConstants out{};
             std::memcpy(out.world, world.m, sizeof(out.world));
             std::memcpy(out.view_proj, view_projection.m, sizeof(out.view_proj));
-            out.viewport_and_size[0] = viewport_width;
-            out.viewport_and_size[1] = viewport_height;
-            out.viewport_and_size[2] = splat_size;
-            out.viewport_and_size[3] = 0.0f;
+            out.camera_and_diameter[0] = camera_world_pos.x;
+            out.camera_and_diameter[1] = camera_world_pos.y;
+            out.camera_and_diameter[2] = camera_world_pos.z;
+            out.camera_and_diameter[3] = diameter;
             return out;
         }
     }
@@ -785,11 +786,13 @@ namespace wz::engine::rendering
                 return nullptr;
             }
 
-            // Non-indexed instanced-quad draw: 4 verts per splat, all in one
-            // DrawInstanced(4 * splat_count, 1, 0, 0). No index buffer, no
+            // Non-indexed quad draw: 6 verts per splat (two self-contained
+            // triangles), all in one DrawInstanced(6 * splat_count, 1, 0, 0). The
+            // program is a TriangleList, so 6 (not 4) verts are required or the
+            // triangles span adjacent splats and shatter. No index buffer, no
             // streams — the VS pulls from the SplatCloud SRV by SV_VertexID.
             wz::rhi::GeometryView geometry;
-            geometry.vertex_count = splat.splat_count * 4u;
+            geometry.vertex_count = splat.splat_count * 6u;
 
             const SplatCloudDrawConstants initial_splat{};
             wz::rhi::DrawPacketAllocator allocator;
@@ -1050,17 +1053,37 @@ namespace wz::engine::rendering
             }
 
             if (realized->is_clipmap) {
-                // The clipmap lattice is one self-contained world-space mesh
-                // (all LOD rings) — one draw, no per-node world transform and no
-                // per-ring instancing. The per-draw root constants carry the
-                // camera-snapped view transform instead of an MVP; the node's own
-                // transform is intentionally ignored (the lattice follows the
-                // camera, not the scene node).
+                // The clipmap's WORLD footprint, vertical scale, and placement
+                // come from the SCENE-NODE TRANSFORM (sizing in one place -- the
+                // renderable no longer owns world size): node scale XZ -> world
+                // size, scale Y -> vertical scale, translation -> world origin /
+                // base height. The finest cell c0 scales with the node so the
+                // lattice keeps its density: c0 = node_scaleX * (authored_cell /
+                // authored_world_size) = node_scaleX / lattice_extent. The lattice
+                // still snaps to / follows the camera within that node-defined
+                // frame; node ROTATION is not applied (terrain frame is axis
+                // aligned). authored_* below is the recipe's old world_size, used
+                // only as the density ratio basis now.
+                ea::ClipmapLandscapeRenderSettings placement =
+                    realized->clipmap_settings;
+                const float authored_world_x = placement.world_size[0];
+                const float cell_ratio = authored_world_x > 0.0f
+                    ? placement.lattice_world_cell_size / authored_world_x
+                    : 0.0f;
+                placement.world_origin[0] = node.local.translation[0];
+                placement.world_origin[1] = node.local.translation[2];
+                placement.world_size[0]   = node.local.scale[0];
+                placement.world_size[1]   = node.local.scale[2];
+                placement.vertical_scale  = node.local.scale[1];
+                placement.base_height     = node.local.translation[1];
+                placement.lattice_world_cell_size =
+                    node.local.scale[0] * cell_ratio;
+
                 const ClipmapDrawConstants constants =
                     make_clipmap_draw_constants(
                         view_projection,
                         camera_world_pos,
-                        realized->clipmap_settings,
+                        placement,
                         realized->heightmap_width,
                         realized->heightmap_height,
                         realized->clipmap_base_resolution);
@@ -1070,17 +1093,17 @@ namespace wz::engine::rendering
                     bytes, bytes + sizeof(constants));
             }
             else if (realized->is_splat_cloud) {
-                // The splat VS keeps world and view_proj separate (it projects
-                // per-splat axis offsets through world then view_proj to build
-                // the screen-space covariance footprint), so pass both rather
-                // than a pre-multiplied MVP. The node's transform applies, so
-                // the cloud lands in the same world space the converter authored
-                // (and can be transformed to overlay the clipmap).
+                // The splat VS billboards a uniform world-diameter sphere per
+                // sample facing the camera, so it needs world + view_proj
+                // separate (not a pre-multiplied MVP) and the camera world
+                // position. `world` is the node's composed world transform, so
+                // the cloud is placed + sized entirely by the scene node (it
+                // overlays the clipmap when given the matching transform).
                 const wz::math::Mat4& world =
                     node_worlds[static_cast<std::size_t>(&node - nodes.data())];
                 const SplatCloudDrawConstants constants =
                     make_splat_cloud_draw_constants(
-                        world, view_projection, w, h,
+                        world, view_projection, camera_world_pos,
                         realized->splat_settings.splat_size);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);

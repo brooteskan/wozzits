@@ -232,15 +232,17 @@ namespace wz::engine::assets::test {
         ASSERT_NE(data, nullptr);
         ASSERT_TRUE(data->bounds.valid);
 
-        // GradientX values run 0..1 across width=3. With normalize_values=true
-        // and height_scale=2.0, world Y runs from 0 to 2.
-        // Grid is centered: width=3 → half_x=1.0, height=2 → half_z=0.5.
-        EXPECT_LE(data->bounds.min[0], -1.0f);   // left edge
-        EXPECT_GE(data->bounds.max[0],  1.0f);   // right edge
-        EXPECT_LE(data->bounds.min[1],  0.0f);   // Y min ≤ 0
-        EXPECT_GE(data->bounds.max[1],  2.0f);   // Y max ≥ 2 (= 1.0 * height_scale)
-        EXPECT_LE(data->bounds.min[2], -0.5f);   // Z min ≤ -0.5
-        EXPECT_GE(data->bounds.max[2],  0.5f);   // Z max ≥  0.5
+        // Positions are normalized to a UNIT footprint (fix-2): XZ in [0,1]
+        // across the field, Y the raw normalized height in [0,1]. height_scale
+        // and step_x/z no longer bake into the coordinates -- the scene-node
+        // transform owns world size/placement -- so a 3x2 field spans ~[0,1] on
+        // every axis (+/- the splat radius). The cloud bounds must contain that.
+        EXPECT_LE(data->bounds.min[0], 0.0f);   // X left edge (~0)
+        EXPECT_GE(data->bounds.max[0], 1.0f);   // X right edge (~1)
+        EXPECT_LE(data->bounds.min[1], 0.0f);   // Y min (~0)
+        EXPECT_GE(data->bounds.max[1], 1.0f);   // Y max (~1, height_scale ignored)
+        EXPECT_LE(data->bounds.min[2], 0.0f);   // Z min (~0)
+        EXPECT_GE(data->bounds.max[2], 1.0f);   // Z max (~1)
     }
 
     // Positions: GradientX 3×1 → values are 0, 0.5, 1.0 left-to-right.
@@ -274,20 +276,19 @@ namespace wz::engine::assets::test {
         ASSERT_NE(data, nullptr);
         ASSERT_EQ(data->splat_count(), uint64_t{3});
 
-        // GradientX on width=3: at(0)=0.0, at(1)=0.5, at(2)=1.0
-        // Grid is centered: half_x = (3-1)/2 * 1.0 = 1.0
-        // World X: -1.0, 0.0, +1.0
-        // World Y (height): 0.0, 0.5, 1.0
-        // World Z: 0 (single row, half_z = 0)
+        // Positions are normalized to the unit footprint (fix-2): GradientX 3x1
+        // -> X = 0, 0.5, 1.0 across width=3; Z = 0 (single row); Y = the
+        // normalized field value (0, 0.5, 1.0). height_scale / step no longer
+        // scale the coordinates -- the scene-node transform does.
         const auto& s0 = data->splats[0];
         const auto& s1 = data->splats[1];
         const auto& s2 = data->splats[2];
 
-        EXPECT_FLOAT_EQ(s0.position[0], -1.0f);
+        EXPECT_FLOAT_EQ(s0.position[0],  0.0f);
         EXPECT_FLOAT_EQ(s0.position[1],  0.0f);
         EXPECT_FLOAT_EQ(s0.position[2],  0.0f);
 
-        EXPECT_FLOAT_EQ(s1.position[0],  0.0f);
+        EXPECT_FLOAT_EQ(s1.position[0],  0.5f);
         EXPECT_NEAR    (s1.position[1],  0.5f, 1e-5f);
         EXPECT_FLOAT_EQ(s1.position[2],  0.0f);
 

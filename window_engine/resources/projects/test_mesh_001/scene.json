@@ -98,12 +98,12 @@
           1
         ],
         "scale": [
-          500,
-          1000,
-          500
+          512,
+          300,
+          512
         ]
       },
-      "visible": false,
+      "visible": true,
       "renderable": {
         "asset_graph_node_id": 20
       }
