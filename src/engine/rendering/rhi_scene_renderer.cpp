@@ -927,14 +927,21 @@ namespace wz::engine::rendering
             realized.heightmap_width = source->clipmap->heightmap_width;
             realized.heightmap_height = source->clipmap->heightmap_height;
             realized.clipmap_base_resolution = source->clipmap->base_resolution;
-            // level_count from the same mesh level tags. The lattice-mesh pointer
-            // above is out of scope here, so re-resolve it by key (a cheap cache
-            // lookup); the default of 1 stands if it is somehow unavailable.
+            // level_count from the same mesh level tags, and the mesh's world
+            // width along X — the lattice is WORLD-SIZED (its positions bake the
+            // finest cell size in), so c0 is recovered at render time as
+            // width_x / grid_extent (see compute_clipmap_placement), NOT from the
+            // node scale. The lattice-mesh pointer above is out of scope here, so
+            // re-resolve it by key (a cheap cache lookup); the defaults stand if
+            // it is somehow unavailable.
             if (const ea::MeshData* lattice_mesh =
                     assets.meshes().get_mesh_data(assets.meshes().get_mesh(
                         ea::MeshAsset{ .output = source->mesh_key }))) {
                 realized.clipmap_level_count =
                     infer_clipmap_lattice_dims(*lattice_mesh).level_count;
+                realized.clipmap_mesh_width_x =
+                    wz::engine::rendering::clipmap_lattice_mesh_width_x(
+                        *lattice_mesh);
             }
         }
         realized.object_srg.reset(*slot2_layout);
@@ -1062,33 +1069,31 @@ namespace wz::engine::rendering
             }
 
             if (realized->is_clipmap) {
-                // The clipmap's WORLD footprint, vertical scale, and placement
-                // come from the SCENE-NODE TRANSFORM (sizing in one place -- the
-                // renderable no longer owns world size): node scale XZ -> world
-                // size, scale Y -> vertical scale, translation -> world origin /
-                // base height. The finest cell c0 = node_scaleX / lattice_extent,
-                // where lattice_extent = base_resolution * 2^(level_count-1) is
-                // the lattice mesh's INTRINSIC unitless width -- so the lattice
-                // keeps its density AND the renderable's world_size is fully
-                // INERT (editing it has no effect; the node scale is the only
-                // control). The lattice still snaps to / follows the camera
-                // within that node frame; node ROTATION is not applied.
-                ea::ClipmapLandscapeRenderSettings placement =
-                    realized->clipmap_settings;
-                const uint32_t lattice_extent =
-                    realized->clipmap_base_resolution
-                    * (1u << (realized->clipmap_level_count > 0u
-                                  ? realized->clipmap_level_count - 1u
-                                  : 0u));
-                placement.world_origin[0] = node.local.translation[0];
-                placement.world_origin[1] = node.local.translation[2];
-                placement.world_size[0]   = node.local.scale[0];
-                placement.world_size[1]   = node.local.scale[2];
-                placement.vertical_scale  = node.local.scale[1];
-                placement.base_height     = node.local.translation[1];
-                placement.lattice_world_cell_size = lattice_extent > 0u
-                    ? node.local.scale[0] / static_cast<float>(lattice_extent)
-                    : node.local.scale[0];
+                // The lattice mesh is now WORLD-SIZED (its compiler bakes the
+                // finest cell metres into the vertex positions), so the renderer
+                // must NOT re-scale it. Derive the placement from the MESH + the
+                // node TRANSLATION (not node scale): the finest cell c0 =
+                // mesh_width_x / grid_extent, the terrain world footprint =
+                // c0 * heightmap_dims (so node scale X/Z no longer sizes it — the
+                // clipmap is world-absolute), and node translation places it
+                // (XZ -> world origin, Y -> base height). Vertical scale is still
+                // node.scale.y for now (a separate concern, see the flag below);
+                // view_snapped carries through from the recipe. The lattice still
+                // snaps to / follows the camera; node ROTATION is not applied.
+                const ea::ClipmapLandscapeRenderSettings placement =
+                    wz::engine::rendering::compute_clipmap_placement(
+                        realized->clipmap_mesh_width_x,
+                        ea::ClipmapLatticeParams{
+                            .level_count = realized->clipmap_level_count,
+                            .base_resolution =
+                                realized->clipmap_base_resolution,
+                            .cell_size = 1.0f,
+                        },
+                        realized->heightmap_width,
+                        realized->heightmap_height,
+                        node.local.translation,
+                        node.local.scale,
+                        realized->clipmap_settings.view_snapped);
 
                 const ClipmapDrawConstants constants =
                     make_clipmap_draw_constants(

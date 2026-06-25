@@ -25,11 +25,13 @@
 //     height texture's [0,1] UV space.
 //
 // c0 reconciliation: the lattice mesh bakes cell_size into its positions as
-// (ix-center)*cell_size, and the VS scales positions by lattice_world_scale
-// (== lattice_world_cell_size). The procedural clipmap lattice is authored with
-// cell_size == 1 (unit finest spacing), so the world size of the finest cell is
-// simply c0 = lattice_world_scale. compute_clipmap_view emits c0 = the
-// sanitized lattice_world_cell_size on that contract.
+// (ix-center)*cell_size, so it is WORLD-SIZED and the VS places g.xz directly
+// (it does NOT scale them by lattice_world_scale — that double-scaled the mesh).
+// c0 = the world size of the finest cell is still carried in lattice_world_scale
+// (compute_clipmap_view passes settings.lattice_world_cell_size through), but the
+// VS uses it ONLY as the per-level snap quantum (c_L = 2^L * c0). The renderer
+// recovers that c0 from the mesh itself (mesh_width_x / grid_extent — see
+// compute_clipmap_placement) and writes it into settings.lattice_world_cell_size.
 //
 // compute_clipmap_view() takes the camera XZ, the authored render settings, the
 // lattice params (for the grid extent / base resolution) and the heightmap
@@ -50,12 +52,13 @@ namespace wz::engine::rendering
     struct ClipmapViewTransform
     {
         // Per-level snap inputs (issue #207). The VS reconstructs each level's
-        // world placement itself: for a vertex at local grid xz with level L,
+        // world placement itself: for a vertex at WORLD-offset xz with level L,
         //   c_L      = 2^L * c0
         //   T_L      = floor(camera_world_xz / (2*c_L)) * (2*c_L)
-        //   world_xz = T_L + lattice_world_scale * local_xz
-        // (lattice_world_scale == c0 on the unit-finest-cell lattice contract).
-        // Uniform scale, because the lattice is authored isotropically in XZ.
+        //   world_xz = T_L + local_xz
+        // The lattice mesh is world-sized, so local_xz is already in metres and is
+        // NOT scaled by lattice_world_scale; c0 (== lattice_world_scale) feeds the
+        // snap quantum 2*c_L only.
         float camera_world_xz[2]{ 0.0f, 0.0f };
         float lattice_world_scale = 1.0f;  // == c0 (finest cell world size)
 
@@ -120,4 +123,45 @@ namespace wz::engine::rendering
     // stays in one place.
     [[nodiscard]] uint32_t clipmap_lattice_grid_extent(
         const assets::ClipmapLatticeParams& lattice) noexcept;
+
+    // World-space width of a clipmap lattice mesh along X: max(position.x) -
+    // min(position.x) over its vertices. The lattice generator bakes the finest
+    // cell size into the positions ((ix-center)*cell_size), so this width is the
+    // mesh's real world footprint in X (== grid_extent * cell_size); dividing it
+    // by the unitless grid extent recovers the finest cell world size c0 even
+    // though the mesh carries no cell_size of its own. position.y holds the LOD
+    // level tag and position.z the Z coordinate, so only X is inspected. Returns
+    // 0 for an empty mesh (the caller guards a zero/degenerate width).
+    [[nodiscard]] float clipmap_lattice_mesh_width_x(
+        const assets::MeshData& mesh) noexcept;
+
+    // Derive a clipmap landscape's render-time placement from the WORLD-SIZED
+    // lattice mesh and the owning scene node's local transform — the renderable
+    // no longer carries a horizontal world size of its own (it is world-absolute;
+    // node SCALE X/Z does NOT size it). Pure so it is unit-testable.
+    //
+    //   c0 (lattice_world_cell_size) = mesh_width_x / clipmap_lattice_grid_extent
+    //       — the finest cell world size, inferred from the mesh. The mesh spans
+    //       grid_extent finest cells across mesh_width_x world metres, so this is
+    //       the metres-per-finest-cell the generator baked in. A zero/degenerate
+    //       extent or width falls back to 1.0 so the snap step stays sane.
+    //   world_size = c0 * heightmap_dims  — the terrain's world footprint
+    //       (world_extent), so world_to_uv = 1/world_extent maps the lattice's
+    //       world XZ onto the height texture's [0,1] UV.
+    //   world_origin = node_translation.xz  — node translation PLACES the terrain.
+    //   vertical_scale = node_scale[1], base_height = node_translation[1]
+    //       — carried through unchanged (vertical sizing is a SEPARATE concern;
+    //       see the renderer note — node.scale.y still drives vertical for now).
+    //   view_snapped passes through from the recipe (the helper does not infer it).
+    //
+    // node_translation / node_scale are 3-float xyz arrays (the node's
+    // AuthoredTransform fields). heightmap dims of 0 are treated as 1.
+    [[nodiscard]] assets::ClipmapLandscapeRenderSettings compute_clipmap_placement(
+        float mesh_width_x,
+        const assets::ClipmapLatticeParams& lattice,
+        uint32_t heightmap_width,
+        uint32_t heightmap_height,
+        const float node_translation[3],
+        const float node_scale[3],
+        bool view_snapped) noexcept;
 }

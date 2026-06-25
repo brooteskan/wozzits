@@ -47,11 +47,12 @@ namespace wz::engine::rendering
                 lattice.cell_size);
 
         // World meters per finest lattice cell (c0). Guard against a
-        // non-positive / non-finite authored value so the snap step and scale
-        // stay sane. On the unit-finest-cell lattice contract (the procedural
-        // clipmap lattice is authored with mesh cell_size == 1), the world step
-        // between adjacent finest-grid vertices is exactly this value, so it is
-        // both the lattice world scale and c0.
+        // non-positive / non-finite value so the snap step stays sane. The
+        // renderer derives this from the WORLD-SIZED lattice mesh itself
+        // (mesh_width_x / grid_extent — see compute_clipmap_placement) and writes
+        // it into lattice_world_cell_size; it is the world step between adjacent
+        // finest-grid vertices, i.e. c0. The VS uses it only as the per-level snap
+        // quantum (the world-sized g.xz are placed directly, not scaled by it).
         const float cell =
             (std::isfinite(settings.lattice_world_cell_size)
              && settings.lattice_world_cell_size > 0.0f)
@@ -121,6 +122,67 @@ namespace wz::engine::rendering
         out.texel_world_size[1] =
             footprint_z / static_cast<float>(tex_h);
 
+        return out;
+    }
+
+    float clipmap_lattice_mesh_width_x(const assets::MeshData& mesh) noexcept
+    {
+        if (mesh.vertices.empty()) {
+            return 0.0f;
+        }
+        float min_x = mesh.vertices.front().position[0];
+        float max_x = min_x;
+        for (const assets::MeshVertex& vertex : mesh.vertices) {
+            const float x = vertex.position[0];
+            min_x = x < min_x ? x : min_x;
+            max_x = x > max_x ? x : max_x;
+        }
+        return max_x - min_x;
+    }
+
+    assets::ClipmapLandscapeRenderSettings compute_clipmap_placement(
+        float mesh_width_x,
+        const assets::ClipmapLatticeParams& lattice,
+        uint32_t heightmap_width,
+        uint32_t heightmap_height,
+        const float node_translation[3],
+        const float node_scale[3],
+        bool view_snapped) noexcept
+    {
+        assets::ClipmapLandscapeRenderSettings out{};
+
+        // Finest cell world size c0, inferred FROM THE MESH: the world-sized
+        // lattice spans grid_extent finest cells across mesh_width_x world
+        // metres, so c0 = mesh_width_x / grid_extent. The grid extent mirrors the
+        // generator's fine_extent and is independent of cell_size (passed in as 1
+        // here — only level_count/base_resolution matter). Guard a non-finite /
+        // non-positive width or a zero extent so the snap step stays sane.
+        const uint32_t grid_extent = clipmap_lattice_grid_extent(lattice);
+        const float c0 =
+            (std::isfinite(mesh_width_x) && mesh_width_x > 0.0f
+             && grid_extent > 0u)
+                ? mesh_width_x / static_cast<float>(grid_extent)
+                : 1.0f;
+        out.lattice_world_cell_size = c0;
+
+        // Terrain world footprint = c0 * heightmap_dims (world_extent). This sets
+        // world_to_uv = 1/world_extent in compute_clipmap_view. Treat 0 dims as 1.
+        const uint32_t tex_w = heightmap_width == 0u ? 1u : heightmap_width;
+        const uint32_t tex_h = heightmap_height == 0u ? 1u : heightmap_height;
+        out.world_size[0] = c0 * static_cast<float>(tex_w);
+        out.world_size[1] = c0 * static_cast<float>(tex_h);
+
+        // Node TRANSLATION places the terrain (XZ -> world origin, Y -> base
+        // height). Node SCALE X/Z no longer sizes it (deliberate: the clipmap is
+        // world-absolute, extent comes from world_extent above). Vertical sizing
+        // is intentionally still node.scale.y for now (a follow-up turns it into
+        // a param); see the renderer's clipmap branch.
+        out.world_origin[0] = node_translation[0];
+        out.world_origin[1] = node_translation[2];
+        out.vertical_scale = node_scale[1];
+        out.base_height = node_translation[1];
+
+        out.view_snapped = view_snapped;
         return out;
     }
 }

@@ -1,12 +1,15 @@
 // resources/shaders/clipmap/clipmap_vs.hlsl
 //
 // Geometry-clipmap landscape vertex shader. It pulls the static lattice mesh
-// (kProceduralClipmapLatticeMeshSchema, authored unitless in XZ centered at the
-// origin, with each vertex's LOD level in position.y) from a StructuredBuffer,
-// places each LOD level in world space and snaps it INDEPENDENTLY to a multiple
-// of that level's own cell (issue #207), samples the resident R32 height
-// texture (#197) by integer texel fetch, vertically geomorphs the LOD seams,
-// displaces world Y, and projects.
+// (kProceduralClipmapLatticeMeshSchema, WORLD-SIZED in XZ centered at the
+// origin — the compiler bakes the finest cell metres into the positions — with
+// each vertex's LOD level in position.y) from a StructuredBuffer, places each
+// LOD level in world space and snaps it INDEPENDENTLY to a multiple of that
+// level's own cell (issue #207), samples the resident R32 height texture (#197)
+// by integer texel fetch, vertically geomorphs the LOD seams, displaces world
+// Y, and projects. Because the mesh is world-sized, g.xz are world offsets and
+// are placed directly; c0 (snap_params.z) is the finest cell world size, used
+// only for the per-level snap quantum (c_L = 2^L * c0), not to scale g.
 //
 // Per-level snap (the fix for coarse-ring lurch): for a vertex at local grid xz
 // with level L, c_L = 2^L * c0 and T_L = floor(camera_xz/(2*c_L))*(2*c_L), so
@@ -136,13 +139,15 @@ VSOut main(uint vid : SV_VertexID)
         float2 T_fine = floor(camera_xz / twoCL) * twoCL;
 
         // Morph factor: 0 in the interior, ramping to 1 at this level's outer
-        // edge. Distance is the vertex's OWN grid distance from the lattice
-        // center (c0 * |g.xz|) — computed before any morph so it can't feed
-        // back — so the band stays fixed in the level's grid (no wobble as the
-        // camera moves within a snap cell). base_resolution (m) is in extent.z.
+        // edge. g.xz are now WORLD offsets from the lattice center (the lattice
+        // mesh is world-sized — its positions bake the finest cell metres in), so
+        // the vertex's OWN distance from the center is just |g.xz| (no c0 scale)
+        // — computed before any morph so it can't feed back — and the band stays
+        // fixed in the level's grid (no wobble as the camera moves within a snap
+        // cell). base_resolution (m) is in extent.z; half_world stays m/2 * cL.
         float m          = max(texel_dims_extent.z, 1.0f);
         float half_world = 0.5f * m * cL;
-        float dist       = c0 * max(abs(g.x), abs(g.z));
+        float dist       = max(abs(g.x), abs(g.z));
         float morph_start = CLIPMAP_MORPH_START * half_world;
         float morph_end   = CLIPMAP_MORPH_END * half_world;
         float a = saturate(
@@ -159,7 +164,11 @@ VSOut main(uint vid : SV_VertexID)
         float  a_trim   = saturate((dist - (half_world - twoCL)) / twoCL);
         float2 T_coarse = floor(camera_xz / fourCL) * fourCL;
         float2 T        = lerp(T_fine, T_coarse, a_trim);
-        world_xz        = T + c0 * g.xz;
+        // g.xz are world offsets from the lattice center (world-sized mesh), so
+        // place them directly — only the per-level snap T scales by the grid. c0
+        // is still used above for the snap quantum (cL = exp2(level)*c0), just no
+        // longer to scale g.
+        world_xz        = T + g.xz;
 
         // HEIGHT geomorph: blend this level's per-vertex height to the COARSE
         // mesh's surface height (bilinear on the 2*c_L grid) over the same band,

@@ -160,11 +160,18 @@ namespace wz::engine::rendering
             uint32_t heightmap_height = 1;
             // Lattice base_resolution + level_count recovered from the mesh level
             // tags. base_resolution sizes the per-level geomorph band (#207);
-            // together they give the lattice's unitless extent
-            // (base_resolution * 2^(level_count-1)), which derives c0 from the
-            // node scale so the renderable's world_size is fully inert.
+            // together they give the lattice's unitless grid extent
+            // (clipmap_lattice_grid_extent), which divides the mesh's world width
+            // to recover the finest cell world size c0 (the lattice mesh is now
+            // WORLD-SIZED — its positions bake cell_size in — so c0 comes from the
+            // mesh, not the node scale).
             uint32_t clipmap_base_resolution = 8;
             uint32_t clipmap_level_count = 1;
+            // World-space width of the lattice mesh along X (max.x - min.x),
+            // captured at realize time. c0 = clipmap_mesh_width_x /
+            // clipmap_lattice_grid_extent({level_count, base_resolution}); see
+            // compute_clipmap_placement.
+            float clipmap_mesh_width_x = 0.0f;
 
             // Gaussian-splat-cloud renderables (#208) bind the resident decoded
             // splat StructuredBuffer (at the SplatCloud semantic in object_srg,
