@@ -78,10 +78,15 @@ float sample_height_world(float2 world_xz)
     float2 uv = world_to_uv.xy * world_xz + world_to_uv.zw;
     uv = clamp(uv, 0.0f, 1.0f);
 
-    // texel_dims_extent.xy is the heightmap's texel count; the last addressable
-    // texel is dims-1. Load() takes integer texel coordinates (no filtering).
-    float2 max_texel = max(texel_dims_extent.xy - 1.0f, 0.0f);
-    int2 texel = int2(round(uv * max_texel));
+    // Texel-CELL convention: texel i covers uv [i/dims, (i+1)/dims), so floor
+    // maps uv to its texel. One lattice cell then spans exactly dims/extent
+    // texels (4096/1024 = 4 here), keeping the lattice grid, the heightmap
+    // texels, and the field splat cloud aligned with no sub-texel drift (the old
+    // round(uv*(dims-1)) "point" mapping drifted ~1 texel edge to edge because
+    // 4095/1024 != 4). Clamp to the last addressable texel; Load wants ints.
+    float2 dims  = max(texel_dims_extent.xy, 1.0f);
+    int2   texel = clamp(int2(floor(uv * dims)),
+                         int2(0, 0), int2(dims) - int2(1, 1));
     return heightTex.Load(int3(texel, 0));
 }
 

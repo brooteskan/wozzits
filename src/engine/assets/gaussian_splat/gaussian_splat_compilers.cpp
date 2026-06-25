@@ -219,17 +219,18 @@ namespace wz::engine::assets::internal
             // exaggeration no longer bake into the coordinates (the cloud is
             // sized in one place, matching the clipmap it overlays).
             //
-            // XZ normalizes by the ORIGINAL texel index over (dims - 1), NOT the
-            // subsampled output index over (cols - 1): the clipmap samples the
-            // height texture by world->UV->texel over the full (dims - 1) range,
-            // so a subsampled splat (source texel ox*stride) must land at
-            // ox*stride/(dims-1) or the two tilt apart by ~stride/dims.
+            // XZ normalizes the ORIGINAL texel index over DIMS (the texel-cell
+            // convention): a sample at texel ix lands at ix/dims, exactly the
+            // world->UV the clipmap VS uses when it floors uv*dims to a texel.
+            // Because dims is a multiple of the lattice extent (e.g. 4096 =
+            // 4*1024), one lattice cell then spans exactly N texels, so the cloud
+            // sits flush on the clipmap vertices with no sub-texel drift. (The
+            // earlier (dims-1) "point" convention left ~1 texel of drift edge to
+            // edge because 4095/1024 != 4.)
             const float inv_width =
-                field.width  > 1u ? 1.0f / static_cast<float>(field.width  - 1u)
-                                  : 0.0f;
+                field.width  > 0u ? 1.0f / static_cast<float>(field.width)  : 0.0f;
             const float inv_height =
-                field.height > 1u ? 1.0f / static_cast<float>(field.height - 1u)
-                                  : 0.0f;
+                field.height > 0u ? 1.0f / static_cast<float>(field.height) : 0.0f;
 
             GaussianSplatCloudData cloud{};
             cloud.splats.reserve(static_cast<size_t>(cols) * rows);

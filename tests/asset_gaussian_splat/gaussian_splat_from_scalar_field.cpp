@@ -232,17 +232,17 @@ namespace wz::engine::assets::test {
         ASSERT_NE(data, nullptr);
         ASSERT_TRUE(data->bounds.valid);
 
-        // Positions are normalized to a UNIT footprint (fix-2): XZ in [0,1]
-        // across the field, Y the raw normalized height in [0,1]. height_scale
-        // and step_x/z no longer bake into the coordinates -- the scene-node
-        // transform owns world size/placement -- so a 3x2 field spans ~[0,1] on
-        // every axis (+/- the splat radius). The cloud bounds must contain that.
+        // XZ normalizes by texel index / DIMS (texel-cell convention): a WxH
+        // field spans [0, (W-1)/W] x [0, (H-1)/H], NOT a full [0,1] (the last
+        // texel sits at (dims-1)/dims). Y is the raw normalized height in [0,1].
+        // So a 3x2 field reaches ~2/3 in X and ~1/2 in Z (+/- the splat radius);
+        // the cloud bounds must contain that.
         EXPECT_LE(data->bounds.min[0], 0.0f);   // X left edge (~0)
-        EXPECT_GE(data->bounds.max[0], 1.0f);   // X right edge (~1)
+        EXPECT_GE(data->bounds.max[0], 0.6f);   // X right edge (~2/3, ix/dims)
         EXPECT_LE(data->bounds.min[1], 0.0f);   // Y min (~0)
-        EXPECT_GE(data->bounds.max[1], 1.0f);   // Y max (~1, height_scale ignored)
+        EXPECT_GE(data->bounds.max[1], 0.9f);   // Y max (~1, the raw height)
         EXPECT_LE(data->bounds.min[2], 0.0f);   // Z min (~0)
-        EXPECT_GE(data->bounds.max[2], 1.0f);   // Z max (~1)
+        EXPECT_GE(data->bounds.max[2], 0.4f);   // Z max (~1/2, iz/dims)
     }
 
     // Positions: GradientX 3×1 → values are 0, 0.5, 1.0 left-to-right.
@@ -276,10 +276,10 @@ namespace wz::engine::assets::test {
         ASSERT_NE(data, nullptr);
         ASSERT_EQ(data->splat_count(), uint64_t{3});
 
-        // Positions are normalized to the unit footprint (fix-2): GradientX 3x1
-        // -> X = 0, 0.5, 1.0 across width=3; Z = 0 (single row); Y = the
-        // normalized field value (0, 0.5, 1.0). height_scale / step no longer
-        // scale the coordinates -- the scene-node transform does.
+        // Positions normalize by texel index / DIMS (texel-cell convention):
+        // GradientX 3x1 -> X = 0, 1/3, 2/3 across width=3; Z = 0 (single row);
+        // Y = the normalized field value (0, 0.5, 1.0). The node transform owns
+        // world size/placement.
         const auto& s0 = data->splats[0];
         const auto& s1 = data->splats[1];
         const auto& s2 = data->splats[2];
@@ -288,11 +288,11 @@ namespace wz::engine::assets::test {
         EXPECT_FLOAT_EQ(s0.position[1],  0.0f);
         EXPECT_FLOAT_EQ(s0.position[2],  0.0f);
 
-        EXPECT_FLOAT_EQ(s1.position[0],  0.5f);
+        EXPECT_NEAR    (s1.position[0],  1.0f / 3.0f, 1e-5f);
         EXPECT_NEAR    (s1.position[1],  0.5f, 1e-5f);
         EXPECT_FLOAT_EQ(s1.position[2],  0.0f);
 
-        EXPECT_FLOAT_EQ(s2.position[0],  1.0f);
+        EXPECT_NEAR    (s2.position[0],  2.0f / 3.0f, 1e-5f);
         EXPECT_FLOAT_EQ(s2.position[1],  1.0f);
         EXPECT_FLOAT_EQ(s2.position[2],  0.0f);
     }
