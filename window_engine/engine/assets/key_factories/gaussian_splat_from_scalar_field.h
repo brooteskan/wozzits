@@ -38,7 +38,11 @@ namespace wz::engine::assets {
             (static_cast<uint64_t>(opacity_bits) << 32) | threshold_bits,
             (desc.normalize_values ? 1ull : 0ull) | (desc.use_threshold ? 2ull : 0ull)
         );
-        const uint64_t content = detail::mix64(p0, p1);
+        // Fold subsample_step so clouds that differ only in subsampling get
+        // distinct content-addressed keys (#208).
+        const uint64_t p2 = detail::mix64(
+            p1, static_cast<uint64_t>(desc.subsample_step));
+        const uint64_t content = detail::mix64(p0, p2);
 
         return wz::asset::AssetKey{
             .content_hash  = { content, 0 },

@@ -113,6 +113,16 @@ namespace wz::engine::assets
         ClipmapLandscapeRenderSettings settings{};
     };
 
+    struct GaussianSplatCloudRhiRenderableDesc
+    {
+        std::string name;
+        // Splat cloud, resident as a decoded splat StructuredBuffer (#208).
+        GaussianSplatCloudAsset splat_cloud{};
+        // SplatPull render program.
+        RenderProgramAsset program{};
+        GaussianSplatCloudRenderSettings settings{};
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -168,6 +178,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_clipmap_landscape(
             const ClipmapLandscapeRenderableDesc& desc);
+
+        RenderableAsset create_gaussian_splat_cloud_rhi(
+            const GaussianSplatCloudRhiRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;

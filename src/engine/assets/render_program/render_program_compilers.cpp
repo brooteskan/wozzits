@@ -225,8 +225,9 @@ namespace wz::engine::assets::internal
                 // pulled lattice positions/indices and the resident R32 height
                 // texture (#197). The constant block is sized to the exact 32
                 // floats ClipmapDrawConstants packs (rhi_scene_renderer.cpp):
-                //   view_projection[16] + lattice_translation_scale[4]
-                //   + world_to_uv[4] + texel_and_vertical[4] + texel_dims[4].
+                //   view_projection[16] + snap_params[4]
+                //   + world_to_uv[4] + texel_and_vertical[4]
+                //   + texel_dims_extent[4]   (#207 per-level snap inputs).
                 // Visibility All: the VS displaces with all of it, the PS reads
                 // the vertical scale/base for height-band debug shading.
                 desc.root_constants.push_back(RootConstantBinding{
@@ -257,6 +258,34 @@ namespace wz::engine::assets::internal
                     .visibility = ShaderVisibility::Vertex,
                     .semantic = DescriptorSemantic::ScalarFieldTexture,
                     .shader_register = 2,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+            }
+            else if (binding_layout == 3) {
+                // Gaussian-splat cloud (issue #208). A SplatPull program slotted
+                // into the SAME object SRG (space2) RhiSceneRenderer binds, so it
+                // rides the existing clipmap-style realize path. One 36-float
+                // root-constant block holding world[16] + view_proj[16] +
+                // viewport_and_size[4] (SplatCloudDrawConstants, packed BYTE-FOR-
+                // BYTE in rhi_scene_renderer.cpp and mirrored by the SplatView
+                // cbuffer in gaussian_splat_field_cloud_vs.hlsl), then the
+                // resident decoded splat StructuredBuffer at the SplatCloud
+                // semantic (t0). No index/position pull buffers: the draw is a
+                // non-indexed DrawInstanced of 4 * splat_count vertices.
+                // Vertex-only: the splat PS reads no cbuffer.
+                desc.root_constants.push_back(RootConstantBinding{
+                    .visibility = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .value_count = 36,
+                    .semantic = "splat_view",
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::SplatCloud,
+                    .shader_register = 0,
                     .register_space = 2,
                     .descriptor_count = 1,
                 });

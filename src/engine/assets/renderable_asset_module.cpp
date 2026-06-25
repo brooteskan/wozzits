@@ -469,6 +469,61 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    RenderableAsset
+    RenderableAssetModule::create_gaussian_splat_cloud_rhi(
+        const GaussianSplatCloudRhiRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error(
+                "gaussian splat cloud RHI renderable has empty name");
+            return {};
+        }
+
+        if (!desc.splat_cloud.valid()) {
+            logger_.error(
+                "gaussian splat cloud RHI renderable has invalid splat cloud: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "gaussian splat cloud RHI renderable has invalid render "
+                "program: " + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_gaussian_splat_cloud_rhi_renderable_key(
+                desc.name,
+                desc.splat_cloud.output,
+                desc.program.key,
+                desc.settings);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kGaussianSplatCloudRhiRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = GaussianSplatCloudRhiRenderableCompileDesc{
+            .splat_cloud_asset = desc.splat_cloud.output,
+            .render_program_asset = desc.program.key,
+            .settings = desc.settings,
+        };
+
+        // Dependency order must match the compiler's input ports:
+        // splat cloud, render program.
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.splat_cloud.output,
+                desc.program.key,
+            });
+
+        return RenderableAsset{ .output = key };
+    }
+
     namespace
     {
         // Renderable schemas whose compiled product is an RhiRenderableRecipe in
@@ -478,7 +533,8 @@ namespace wz::engine::assets
         {
             return schema == kRhiPullMeshRenderableSchema
                 || schema == kGpuSparseMeshRenderableSchema
-                || schema == kClipmapLandscapeRenderableSchema;
+                || schema == kClipmapLandscapeRenderableSchema
+                || schema == kGaussianSplatCloudRhiRenderableSchema;
         }
     }
 

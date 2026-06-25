@@ -5,10 +5,16 @@
 #include <asset/compiler.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_terrain_recipe.h>
+#include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh_compilers.h>  // RhiResourceTracker
 #include <engine/assets/json/json.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/scalar_field/scalar_field_set.h>
 #include <logging/logger.h>
+
+namespace wz::rhi
+{
+    class GpuResourceRegistry;
+}
 
 namespace wz::engine::assets
 {
@@ -39,11 +45,20 @@ namespace wz::engine::assets
 
 namespace wz::engine::assets::internal
 {
+    // gpu_resources / rhi_resource_tracker are the shared-registry residency
+    // hook (#208): when present, the scalar-field-derived splat compiler
+    // publishes the decoded splat cloud as a resident StructuredBuffer so the
+    // RhiSceneRenderer can render it as a splat cloud. Null for a device-only
+    // library, which skips rhi residency (and the splat RHI renderable stays
+    // unrealizable). RhiResourceTracker is defined in
+    // gpu_sparse_mesh_compilers.h (included above).
     void register_gaussian_splat_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         GaussianSplatCloudTable& table,
-        ScalarFieldTable& scalar_field_table);
+        ScalarFieldTable& scalar_field_table,
+        wz::rhi::GpuResourceRegistry* gpu_resources = nullptr,
+        RhiResourceTracker rhi_resource_tracker = {});
 
     // Sibling registrar for the terrain-surface compiler.  Kept separate so
     // the implementation can live in its own TU.

@@ -3,12 +3,19 @@
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_ply_importer.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <wozzits/rhi/gpu_resource.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
+
 #include <algorithm>
 #include <any>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <span>
 #include <string>
@@ -125,6 +132,8 @@ namespace wz::engine::assets::internal
                 params.get<bool>("use_threshold", desc.use_threshold);
             desc.emit_threshold =
                 params.get<float>("emit_threshold", desc.emit_threshold);
+            desc.subsample_step =
+                params.get<uint32_t>("subsample_step", desc.subsample_step);
             return desc;
         }
 
@@ -191,20 +200,37 @@ namespace wz::engine::assets::internal
             const float value_range  = field.max_value - field.min_value;
             const bool can_normalize = (value_range > 1e-12f);
 
+            // Subsample stride (>= 1): emit one splat every Nth texel. The world
+            // spacing between emitted columns/rows is step * stride, so the cloud
+            // keeps the same footprint as the full-res cloud — just sparser.
+            const uint32_t stride = desc.subsample_step == 0u
+                ? 1u
+                : desc.subsample_step;
+            const float world_step_x = desc.step_x * static_cast<float>(stride);
+            const float world_step_z = desc.step_z * static_cast<float>(stride);
+
+            // Number of emitted columns/rows (ceil division of the field by the
+            // stride) and the index of the last emitted one, for centering.
+            const uint32_t cols = (field.width  + stride - 1u) / stride;
+            const uint32_t rows = (field.height + stride - 1u) / stride;
+
             // Center the heightfield grid on the origin.
             // field.width columns along world X; field.height rows along world Z.
-            const float half_x = 0.5f * static_cast<float>(field.width  - 1) * desc.step_x;
-            const float half_z = 0.5f * static_cast<float>(field.height - 1) * desc.step_z;
+            const float half_x =
+                0.5f * static_cast<float>(cols - 1u) * world_step_x;
+            const float half_z =
+                0.5f * static_cast<float>(rows - 1u) * world_step_z;
 
             GaussianSplatCloudData cloud{};
-            cloud.splats.reserve(field.width * field.height);
+            cloud.splats.reserve(static_cast<size_t>(cols) * rows);
 
             // Tight bounds accumulated only from emitted splats.
             float bmin[3] = { kInf,  kInf,  kInf};
             float bmax[3] = {-kInf, -kInf, -kInf};
 
-            for (uint32_t iy = 0; iy < field.height; ++iy) {
-                for (uint32_t ix = 0; ix < field.width; ++ix) {
+            for (uint32_t iy = 0, oy = 0; iy < field.height; iy += stride, ++oy) {
+                for (uint32_t ix = 0, ox = 0; ix < field.width;
+                     ix += stride, ++ox) {
                     const float raw = field.at(ix, iy);
 
                     const float normalized =
@@ -215,9 +241,11 @@ namespace wz::engine::assets::internal
                     if (desc.use_threshold && normalized < desc.emit_threshold)
                         continue;
 
-                    const float wx = static_cast<float>(ix) * desc.step_x - half_x;
+                    const float wx =
+                        static_cast<float>(ox) * world_step_x - half_x;
                     const float wy = normalized * desc.height_scale;
-                    const float wz = static_cast<float>(iy) * desc.step_z - half_z;
+                    const float wz =
+                        static_cast<float>(oy) * world_step_z - half_z;
 
                     GaussianSplat splat{};
                     splat.position[0] = wx;
@@ -272,13 +300,144 @@ namespace wz::engine::assets::internal
             return cloud;
         }
 
+        // #208: the decoded per-splat record uploaded into the resident
+        // StructuredBuffer the SplatPull render path reads. 64-byte stride,
+        // matching the legacy DX12GaussianSplatVertex layout AND the `Splat`
+        // struct in gaussian_splat_field_cloud_vs.hlsl byte-for-byte. Unlike the
+        // CPU GaussianSplat (which stores ENCODED log-scale / logit-opacity / SH
+        // DC color), this stores values already DECODED for display so the VS
+        // can consume them directly — the same decode the legacy
+        // make_gpu_splat_vertex does, replicated here so #208 stays off the
+        // legacy dx12 path (DX12 ONLY through rhi).
+        struct ResidentSplat
+        {
+            float    position[3] = {};
+            float    opacity     = 1.0f;
+            float    scale[3]    = { 1.0f, 1.0f, 1.0f };
+            float    pad0        = 0.0f;
+            float    rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+            float    color[3]    = { 1.0f, 1.0f, 1.0f };
+            uint32_t pad1        = 0u;
+        };
+        static_assert(sizeof(ResidentSplat) == 64,
+            "ResidentSplat must be 64 bytes to match the SplatPull "
+            "StructuredBuffer stride and the HLSL Splat struct");
+
+        ResidentSplat decode_resident_splat(const GaussianSplat& splat)
+        {
+            constexpr float SH_C0 = 0.28209479177387814f;
+
+            ResidentSplat out{};
+            out.position[0] = splat.position[0];
+            out.position[1] = splat.position[1];
+            out.position[2] = splat.position[2];
+
+            // Opacity stored as logit -> decode via sigmoid.
+            out.opacity = 1.0f / (1.0f + std::exp(-splat.opacity));
+
+            // Scale stored as log -> decode each axis to world-space size.
+            out.scale[0] = std::exp(splat.scale[0]);
+            out.scale[1] = std::exp(splat.scale[1]);
+            out.scale[2] = std::exp(splat.scale[2]);
+
+            // Rotation: stored rot_0=w, rot_1=x, rot_2=y, rot_3=z; emit x,y,z,w.
+            float qw = splat.rotation[0];
+            float qx = splat.rotation[1];
+            float qy = splat.rotation[2];
+            float qz = splat.rotation[3];
+            const float q_len_sq = qx * qx + qy * qy + qz * qz + qw * qw;
+            if (q_len_sq > 0.0f) {
+                const float inv = 1.0f / std::sqrt(q_len_sq);
+                qx *= inv; qy *= inv; qz *= inv; qw *= inv;
+            }
+            else {
+                qx = 0.0f; qy = 0.0f; qz = 0.0f; qw = 1.0f;
+            }
+            out.rotation[0] = qx;
+            out.rotation[1] = qy;
+            out.rotation[2] = qz;
+            out.rotation[3] = qw;
+
+            // Color: SH DC coefficient -> linear display RGB.
+            out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];
+            out.color[1] = 0.5f + SH_C0 * splat.color_dc[1];
+            out.color[2] = 0.5f + SH_C0 * splat.color_dc[2];
+            return out;
+        }
+
+        // #208: publish the splat cloud's GPU residency onto the shared
+        // wozzits-rhi registry as a decoded splat StructuredBuffer (the
+        // surrogate pattern — the registry owns the GPU buffer, the asset is its
+        // surrogate). Mirrors publish_resident_scalar_field /
+        // publish_resident_gpu_sparse_mesh. Best-effort: a failure is logged and
+        // does not fail the compile (the cloud still resolves on the CPU table;
+        // the RHI splat renderable just stays unrealizable until residency
+        // succeeds). The identity discriminator "splat_cloud" matches the one
+        // RhiSceneRenderer::ensure_renderable looks the buffer up by.
+        void publish_resident_gaussian_splat_cloud(
+            const wz::asset::AssetKey& key,
+            const GaussianSplatCloudData& cloud,
+            wz::rhi::GpuResourceRegistry& gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            if (cloud.empty()) {
+                return;
+            }
+
+            const auto started = std::chrono::steady_clock::now();
+
+            std::vector<ResidentSplat> resident;
+            resident.reserve(cloud.splats.size());
+            for (const GaussianSplat& splat : cloud.splats) {
+                resident.push_back(decode_resident_splat(splat));
+            }
+
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
+                static_cast<uint64_t>(resident.size()) * sizeof(ResidentSplat),
+                static_cast<uint32_t>(sizeof(ResidentSplat)),
+                wz::rhi::ResourceUsage_Sampled,
+                wz::rhi::ResourceCpuAccess::WriteOnce);
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "splat_cloud"),
+                {},
+            };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            const bool uploaded =
+                handle.valid()
+                && gpu_resources.update(
+                    handle, resident.data(), desc.size_bytes);
+            if (!uploaded) {
+                if (handle.valid()) {
+                    gpu_resources.release(handle);
+                }
+                logger.warn("gaussian splat cloud RHI resident upload failed");
+                return;
+            }
+
+            if (rhi_resource_tracker) {
+                rhi_resource_tracker(key, { desc.identity });
+            }
+
+            const auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger.info(
+                "asset compile: gaussian splat cloud RHI resident upload splats="
+                + std::to_string(resident.size())
+                + " upload_ms=" + std::to_string(elapsed_ms));
+        }
+
     } // anonymous namespace
 
     void register_gaussian_splat_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         GaussianSplatCloudTable& table,
-        ScalarFieldTable& scalar_field_table)
+        ScalarFieldTable& scalar_field_table,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        RhiResourceTracker rhi_resource_tracker)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralGaussianSplatCloudSchema,
@@ -457,8 +616,17 @@ namespace wz::engine::assets::internal
                     .min = 0.0,
                     .max = 1.0,
                 },
+                {
+                    .name = "subsample_step",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Subsample step",
+                    .default_num = 1.0,
+                    .min = 1.0,
+                    .max = 4096.0,
+                },
             },
-            .compile = [&logger, &table, &scalar_field_table](
+            .compile = [&logger, &table, &scalar_field_table,
+                        gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> /*dep_nodes*/,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
@@ -499,6 +667,18 @@ namespace wz::engine::assets::internal
                 if (!data.valid()) {
                     logger.error("gaussian splat from scalar field: produced empty or invalid cloud");
                     return compile_failed_node(input);
+                }
+
+                // #208: publish the decoded cloud as a resident StructuredBuffer
+                // before the move into the CPU table, so the RHI splat path can
+                // bind it. Best-effort; only when a shared registry is present.
+                if (gpu_resources) {
+                    publish_resident_gaussian_splat_cloud(
+                        input.key,
+                        data,
+                        *gpu_resources,
+                        rhi_resource_tracker,
+                        logger);
                 }
 
                 wz::asset::ResourceHandle handle = table.add(std::move(data));

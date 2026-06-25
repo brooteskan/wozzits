@@ -60,6 +60,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kRhiPullMeshRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGpuSparseMeshRenderableCompilerVersion = 1;
     inline constexpr uint64_t kClipmapLandscapeRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kGaussianSplatCloudRhiRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;
@@ -70,7 +71,8 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kBuiltinRenderProgramCompilerVersion = 4;
     inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 1;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
-    inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 1;
+    // v2: added subsample_step + RHI residency publishing (#208).
+    inline constexpr uint64_t kGaussianSplatFromScalarFieldCompilerVersion = 2;
     inline constexpr uint64_t kGaussianSplatColorLODCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatTerrainSurfaceFromHeightFieldCompilerVersion = 2;
     inline constexpr uint64_t kTerrainSplatFromGaeaR32CompilerVersion = 2;

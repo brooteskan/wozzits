@@ -14,10 +14,10 @@
 cbuffer Clipmap : register(b0, space2)
 {
     float4x4 view_projection;
-    float4   lattice_translation_scale;
+    float4   snap_params;         // xy = camera world XZ, z = c0, w = snapped?
     float4   world_to_uv;
     float4   texel_and_vertical;  // xy = texel world size, z = vscale, w = base
-    float4   texel_dims;
+    float4   texel_dims_extent;   // xy = texel dims, z = base_resolution, w = 0
 };
 
 struct PSInput

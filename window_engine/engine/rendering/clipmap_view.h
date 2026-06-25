@@ -7,19 +7,35 @@
 // render-time CPU math that slice 3b packs into shader constants.
 //
 // The clipmap lattice mesh (kProceduralClipmapLatticeMeshSchema) is authored
-// in unitless grid space, centered at the origin, lying flat in XZ. Each frame
-// the renderer must:
-//   * scale the lattice to world units and translate it to follow the camera,
-//     snapping the translation so the lattice appears stationary as the camera
-//     moves within a cell and shifts by exactly one step when it crosses one
-//     (no "swimming" of the fine center / heightmap texels), and
+// in unitless grid space (finest cell == 1 grid unit), centered at the origin,
+// lying flat in XZ, with each vertex's LOD level stored in position.y. Each
+// frame the renderer must:
+//   * give the vertex shader what it needs to place each LOD level in world
+//     space and snap it INDEPENDENTLY to a multiple of that level's own world
+//     cell (issue #207). Level L's world cell is c_L = 2^L * c0, where c0 is
+//     the world size of the finest cell, and the per-level snap is
+//       T_L = floor(camera_xz / (2*c_L)) * (2*c_L).
+//     The 2x makes the levels' grids nest (T_{L+1} is a multiple of 2*c_L), so
+//     adjacent-level boundary vertices stay spatially coincident even though
+//     each level snaps on its own interval — no horizontal crack, and the seam
+//     is closed by a purely VERTICAL geomorph in the VS. This replaces the old
+//     single whole-lattice snap, which only kept levels 0-1 aligned and made
+//     every coarser ring lurch.
 //   * map every world XZ position the displaced lattice reaches onto the
 //     height texture's [0,1] UV space.
 //
+// c0 reconciliation: the lattice mesh bakes cell_size into its positions as
+// (ix-center)*cell_size, and the VS scales positions by lattice_world_scale
+// (== lattice_world_cell_size). The procedural clipmap lattice is authored with
+// cell_size == 1 (unit finest spacing), so the world size of the finest cell is
+// simply c0 = lattice_world_scale. compute_clipmap_view emits c0 = the
+// sanitized lattice_world_cell_size on that contract.
+//
 // compute_clipmap_view() takes the camera XZ, the authored render settings, the
-// lattice params (for the grid extent) and the heightmap texel dimensions, and
-// returns a plain ClipmapViewTransform struct carrying both transforms plus the
-// vertical scale/base passthrough and per-texel world size.
+// lattice params (for the grid extent / base resolution) and the heightmap
+// texel dimensions, and returns a plain ClipmapViewTransform carrying the
+// per-level snap inputs (camera XZ + c0 + base resolution), the world->UV
+// mapping, and the vertical scale/base passthrough + per-texel world size.
 
 #include <engine/assets/mesh/clipmap_lattice_mesh.h>
 #include <engine/assets/renderable/renderable.h>
@@ -33,12 +49,19 @@ namespace wz::engine::rendering
     // per-draw constant block.
     struct ClipmapViewTransform
     {
-        // Lattice world transform: world_pos = lattice_translation
-        //                                    + lattice_world_scale * grid_pos
-        // (grid_pos is the unitless lattice vertex position). Uniform scale,
-        // because the lattice is authored isotropically in XZ.
-        float lattice_translation[3]{ 0.0f, 0.0f, 0.0f };
-        float lattice_world_scale = 1.0f;
+        // Per-level snap inputs (issue #207). The VS reconstructs each level's
+        // world placement itself: for a vertex at local grid xz with level L,
+        //   c_L      = 2^L * c0
+        //   T_L      = floor(camera_world_xz / (2*c_L)) * (2*c_L)
+        //   world_xz = T_L + lattice_world_scale * local_xz
+        // (lattice_world_scale == c0 on the unit-finest-cell lattice contract).
+        // Uniform scale, because the lattice is authored isotropically in XZ.
+        float camera_world_xz[2]{ 0.0f, 0.0f };
+        float lattice_world_scale = 1.0f;  // == c0 (finest cell world size)
+
+        // base_resolution (m) of the lattice — the VS sizes each level's morph
+        // band from its world half-extent (m/2)*c_L.
+        float base_resolution = 8.0f;
 
         // World XZ -> heightmap UV transform:
         //   uv = world_to_uv_scale * world_xz + world_to_uv_offset
@@ -49,14 +72,21 @@ namespace wz::engine::rendering
         // World size of a single heightmap texel (footprint / texel count).
         float texel_world_size[2]{ 1.0f, 1.0f };
 
-        // Passthrough from the render settings so 3b has everything it needs
+        // Passthrough from the render settings so the VS has everything it needs
         // to displace Y in one constant block.
         float vertical_scale = 1.0f;
         float base_height = 0.0f;
 
-        // The world distance the lattice translation is quantized to. Exposed
-        // so callers/tests can reason about (and assert on) snapping.
+        // The finest level's snap period (2*c0). Exposed so callers/tests can
+        // reason about (and assert on) the per-level snap. Level L snaps to a
+        // multiple of 2^L * snap_step.
         float snap_step = 1.0f;
+
+        // True when the geometry is the procedural, view-snapped lattice
+        // (position.y is a LOD level). False for an arbitrary supplied static
+        // mesh, where the VS must NOT do per-level snapping and treats Y as real
+        // geometry (#205).
+        bool view_snapped = true;
     };
 
     // Compute the per-frame clipmap view transform.
@@ -70,8 +100,11 @@ namespace wz::engine::rendering
     //   heightmap_width / heightmap_height  height texture texel dimensions
     //                                    (>= 1; 0 is treated as 1).
     //
-    // Snap rule: the lattice translation's XZ is snapped to a multiple of
-    // `snap_step = 2 * settings.lattice_world_cell_size` (see .cpp for why 2x).
+    // Snap rule (per-level, applied in the VS): level L's grid snaps to a
+    // multiple of `2^L * snap_step`, where `snap_step = 2 * c0` and
+    // `c0 = settings.lattice_world_cell_size`. The transform carries the raw
+    // inputs (camera XZ + c0); the VS computes each T_L. settings.view_snapped
+    // is passed through; when false the VS skips per-level snapping entirely.
     [[nodiscard]] ClipmapViewTransform compute_clipmap_view(
         float camera_world_x,
         float camera_world_z,

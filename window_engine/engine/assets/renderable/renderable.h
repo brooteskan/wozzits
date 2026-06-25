@@ -160,13 +160,31 @@ namespace wz::engine::assets
         // unitless cell size is scaled by this to reach world units, and it is
         // the natural quantum for view-snapping (see clipmap_view.h).
         float lattice_world_cell_size = 1.0f;
+
+        // When true (the procedural-lattice case) the geometry is camera-snapped
+        // and scaled into world space — the lattice follows the camera. When
+        // false, the supplied mesh is treated as already in world space (no
+        // camera translation, unit scale), so an arbitrary static mesh (e.g. a
+        // gpu_sparse_mesh) is displaced in place by the height field (#205).
+        bool view_snapped = true;
+    };
+
+    // Per-splat-cloud render settings for a GaussianSplatCloud RHI renderable
+    // (issue #208). The cloud is uploaded as a resident StructuredBuffer of
+    // decoded splats and rendered as camera-facing gaussian quads; splat_size
+    // scales the per-splat (already decoded) world-space axis sizes when the VS
+    // builds each quad's screen-space footprint.
+    struct GaussianSplatCloudRenderSettings
+    {
+        float splat_size = 1.0f;
     };
 
     struct RhiRenderableRecipe
     {
         // Exactly one geometry source is set:
-        //   mesh_key            — CPU pull-mesh upload source (rhi pull-mesh)
-        //   gpu_sparse_mesh_key — GPU-resident pull source (#190 gpu_sparse_mesh)
+        //   mesh_key                 — CPU pull-mesh upload source (rhi pull-mesh)
+        //   gpu_sparse_mesh_key      — GPU-resident pull source (#190 gpu_sparse_mesh)
+        //   gaussian_splat_cloud_key — resident splat StructuredBuffer (#208)
         wz::asset::AssetKey mesh_key{};
         wz::asset::AssetKey gpu_sparse_mesh_key{};
         wz::asset::AssetKey program_key{};
@@ -179,11 +197,20 @@ namespace wz::engine::assets
         wz::asset::AssetKey height_texture_key{};
         ClipmapLandscapeRenderSettings clipmap{};
 
+        // Optional gaussian-splat-cloud source (issue #208). When set, the
+        // renderable has no pull mesh: the renderer binds the resident decoded
+        // splat StructuredBuffer (rhi_asset_identity(key, "splat_cloud")) into
+        // the object SRG at the SplatCloud semantic and records a non-indexed
+        // DrawInstanced of 4 * splat_count vertices (camera-facing quads).
+        wz::asset::AssetKey gaussian_splat_cloud_key{};
+        GaussianSplatCloudRenderSettings splat{};
+
         bool valid() const noexcept
         {
             const bool has_geometry =
                 !(mesh_key == wz::asset::AssetKey{})
-                || !(gpu_sparse_mesh_key == wz::asset::AssetKey{});
+                || !(gpu_sparse_mesh_key == wz::asset::AssetKey{})
+                || !(gaussian_splat_cloud_key == wz::asset::AssetKey{});
             return has_geometry
                 && !(program_key == wz::asset::AssetKey{});
         }
@@ -282,5 +309,16 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
         // World-space placement / mapping for the landscape.
         ClipmapLandscapeRenderSettings settings{};
+    };
+
+    struct GaussianSplatCloudRhiRenderableCompileDesc
+    {
+        // Splat cloud (kAssetTypeGaussianSplatCloud), resident as a decoded
+        // splat StructuredBuffer (#208).
+        wz::asset::AssetKey splat_cloud_asset{};
+        // Render program (kAssetTypeRenderProgram, SplatPull binding model).
+        wz::asset::AssetKey render_program_asset{};
+        // Per-cloud render settings (splat size).
+        GaussianSplatCloudRenderSettings settings{};
     };
 }

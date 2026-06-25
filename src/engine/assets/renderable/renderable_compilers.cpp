@@ -160,6 +160,29 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        GaussianSplatCloudRhiRenderableCompileDesc
+        gaussian_splat_cloud_rhi_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            // Dependency order matches the create API + compiler input ports:
+            // splat cloud, render program. The splat size is not recoverable
+            // from dependencies; an editor/JSON-authored path supplies it via a
+            // ParamBlock, the create-API path via the typed compile desc.
+            GaussianSplatCloudRhiRenderableCompileDesc desc{};
+            desc.splat_cloud_asset = dep_key(dep_nodes, 0);
+            desc.render_program_asset = dep_key(dep_nodes, 1);
+            return desc;
+        }
+
+        GaussianSplatCloudRenderSettings
+        gaussian_splat_cloud_render_settings_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            GaussianSplatCloudRenderSettings s{};
+            s.splat_size = params.get<float>("splat_size", s.splat_size);
+            return s;
+        }
+
         ClipmapLandscapeRenderableCompileDesc
         clipmap_landscape_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -197,6 +220,8 @@ namespace wz::engine::assets::internal
             s.base_height = params.get<float>("base_height", s.base_height);
             s.lattice_world_cell_size = params.get<float>(
                 "lattice_world_cell_size", s.lattice_world_cell_size);
+            s.view_snapped =
+                params.get<bool>("view_snapped", s.view_snapped);
             return s;
         }
 
@@ -913,6 +938,109 @@ namespace wz::engine::assets::internal
         });
 
         registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kGaussianSplatCloudRhiRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "splat_cloud", kAssetTypeGaussianSplatCloud },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .parameters = {
+                { .name = "splat_size", .type = wz::asset::ParamType::Float,
+                  .label = "Splat size", .default_num = 1.0,
+                  .min = 0.0, .max = 100000.0 },
+            },
+            .compile = [logger, gaussian_splat_cloud_table,
+                        render_program_table, rhi_renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                GaussianSplatCloudRhiRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<GaussianSplatCloudRhiRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    editor_desc =
+                        gaussian_splat_cloud_rhi_renderable_desc_from_deps(
+                            dep_nodes);
+                    // Graph/editor authoring supplies the splat size via a
+                    // ParamBlock; the deps fallback only recovers the two keys.
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        editor_desc.settings =
+                            gaussian_splat_cloud_render_settings_from_params(
+                                *params);
+                    }
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 2) {
+                        logger->error(
+                            "gaussian splat cloud RHI renderable missing "
+                            "compile desc");
+                        return compile_failed_node(input);
+                    }
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "gaussian splat cloud RHI renderable requires splat "
+                        "cloud and program dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const GaussianSplatCloudData* cloud =
+                    gaussian_splat_cloud_table->get(dep_handles[0]);
+                if (!cloud || !cloud->valid()) {
+                    logger->error(
+                        "gaussian splat cloud RHI renderable source cloud is "
+                        "invalid");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[1]);
+                if (!program || !program->valid()) {
+                    logger->error(
+                        "gaussian splat cloud RHI renderable program is "
+                        "invalid");
+                    return compile_failed_node(input);
+                }
+                if (program->binding_model != RenderBindingModel::SplatPull) {
+                    logger->error(
+                        "gaussian splat cloud RHI renderable program must use "
+                        "SplatPull");
+                    return compile_failed_node(input);
+                }
+
+                // The splat cloud is published resident as a decoded splat
+                // StructuredBuffer (#208) and the program (#192/#193) is rhi-
+                // resident; emit an rhi renderable recipe so the renderer binds
+                // the cloud by identity and records the splat draw. The resident
+                // buffer stays owned by the splat-cloud asset.
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .program_key = desc->render_program_asset,
+                        .gaussian_splat_cloud_key = desc->splat_cloud_asset,
+                        .splat = desc->settings,
+                    });
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store gaussian splat cloud RHI renderable "
+                        "recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kClipmapLandscapeRenderableSchema,
             .output_type = kAssetTypeRenderable,
             .input_ports = {
@@ -943,6 +1071,9 @@ namespace wz::engine::assets::internal
                   .type = wz::asset::ParamType::Float,
                   .label = "Lattice cell size", .default_num = 1.0,
                   .min = 0.0001, .max = 100000.0 },
+                { .name = "view_snapped",
+                  .type = wz::asset::ParamType::Bool,
+                  .label = "View-snapped lattice", .default_num = 1.0 },
             },
             .compile = [logger, mesh_table, scalar_fields_table,
                         render_program_table, rhi_renderable_table](

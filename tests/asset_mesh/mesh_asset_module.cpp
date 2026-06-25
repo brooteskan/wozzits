@@ -668,16 +668,21 @@ TEST(MeshAssetModule, ResolvesClipmapLatticeMesh)
     EXPECT_TRUE(data->has_normals);
     EXPECT_TRUE(data->has_uv0);
 
-    // The whole footprint must be connected (every referenced vertex reachable
-    // through shared edges) -- a missing seam stitch would leave the coarse
-    // rings disconnected from the fine center.
-    EXPECT_TRUE(mesh_referenced_vertices_are_connected(*data));
+    // Each LOD level owns its own vertices (keyed by level), so the footprint is
+    // deliberately split into per-level components: adjacent levels share
+    // boundary POSITIONS but not vertices, and the seams are closed in the
+    // clipmap VS by the geomorph (#207), not by a stitched mesh. A whole-mesh
+    // connectivity check therefore no longer applies; the dedicated
+    // clipmap_lattice_mesh tests cover within-level connectivity and the
+    // deliberate per-level un-sharing.
 
-    // Matches the analytic level-0 + ring triangle count.
+    // Matches the analytic level-0 + ring triangle count: plain rings with no
+    // seam-stitch fans (the prior +2*m per ring), since the levels are stitched
+    // in-shader, not in geometry.
     const uint32_t m = 8u;
     const uint32_t L = 4u;
     const uint32_t expected_tris =
-        2u * m * m + (L - 1u) * ((3u * m * m) / 2u + 2u * m);
+        2u * m * m + (L - 1u) * ((3u * m * m) / 2u);
     EXPECT_EQ(data->index_count(), expected_tris * 3u);
 }
 

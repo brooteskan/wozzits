@@ -204,6 +204,10 @@ float4 main(PSIn input) : SV_TARGET
             { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
             { kGpuSparseMeshRenderableSchema, kAssetTypeRenderable },
             { kClipmapLandscapeRenderableSchema, kAssetTypeRenderable },
+            {
+                kGaussianSplatCloudRhiRenderableSchema,
+                kAssetTypeRenderable,
+            },
             { kSceneFromJSONSchema, kAssetTypeScene },
             { kSceneFromGLBSchema, kAssetTypeScene },
 

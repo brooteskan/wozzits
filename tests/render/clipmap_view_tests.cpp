@@ -23,7 +23,7 @@ namespace
         settings.world_size[1] = 200.0f;
         settings.vertical_scale = 30.0f;
         settings.base_height = 2.0f;
-        settings.lattice_world_cell_size = 2.0f;  // snap step = 4.0
+        settings.lattice_world_cell_size = 2.0f;  // c0 = 2 -> finest period 4
         return settings;
     }
 
@@ -35,10 +35,19 @@ namespace
             .cell_size = 1.0f,
         };
     }
+
+    // The per-level snap the VS applies, recomputed on the CPU from the
+    // transform's raw inputs: T_L = floor(camera/(2*c_L))*(2*c_L), c_L = 2^L*c0.
+    float per_level_snap(float camera, float c0, uint32_t level)
+    {
+        const float cL = std::ldexp(c0, static_cast<int>(level));  // 2^L * c0
+        const float two_cL = 2.0f * cL;
+        return std::floor(camera / two_cL) * two_cL;
+    }
 }
 
-// The lattice world scale is the authored world cell size, and vertical
-// scale/base pass through untouched.
+// The lattice world scale (== c0) is the authored world cell size, vertical
+// scale/base pass through, and snap_step is the finest level's period (2*c0).
 TEST(ClipmapView, PassesThroughScaleAndVerticalSettings)
 {
     const ClipmapLandscapeRenderSettings settings = default_settings();
@@ -50,96 +59,101 @@ TEST(ClipmapView, PassesThroughScaleAndVerticalSettings)
     EXPECT_FLOAT_EQ(view.vertical_scale, 30.0f);
     EXPECT_FLOAT_EQ(view.base_height, 2.0f);
     EXPECT_FLOAT_EQ(view.snap_step, 4.0f);  // 2 * lattice_world_cell_size
+    EXPECT_TRUE(view.view_snapped);         // procedural lattice by default
 }
 
-// Snap rule: a camera move smaller than one snap step leaves the snapped
-// lattice translation unchanged (the lattice appears stationary / no swimming).
-TEST(ClipmapView, SubStepCameraMoveLeavesTranslationUnchanged)
+// The transform carries the camera world XZ unchanged (the VS does the snap),
+// plus the sanitized base resolution the VS needs to size the morph band.
+TEST(ClipmapView, CarriesCameraAndBaseResolution)
 {
     const ClipmapLandscapeRenderSettings settings = default_settings();
-    const ClipmapLatticeParams lattice = default_lattice();
-    const float step = 2.0f * settings.lattice_world_cell_size;  // 4.0
-
-    const ClipmapViewTransform base =
+    const ClipmapViewTransform view =
         compute_clipmap_view(
-            20.0f, -8.0f, settings, lattice, 256u, 256u);
+            13.5f, -7.25f, settings, default_lattice(), 256u, 256u);
 
-    // Several sub-step nudges in both axes — all must snap to the same cell.
-    for (const float dx : { 0.0f, 0.1f, 0.9f, step * 0.49f, -step * 0.49f }) {
-        for (const float dz : { 0.0f, -0.3f, step * 0.25f, step * 0.49f }) {
-            const ClipmapViewTransform moved =
-                compute_clipmap_view(
-                    20.0f + dx, -8.0f + dz, settings, lattice, 256u, 256u);
-            EXPECT_FLOAT_EQ(
-                moved.lattice_translation[0], base.lattice_translation[0])
-                << "dx=" << dx << " dz=" << dz;
-            EXPECT_FLOAT_EQ(
-                moved.lattice_translation[2], base.lattice_translation[2])
-                << "dx=" << dx << " dz=" << dz;
-        }
+    EXPECT_FLOAT_EQ(view.camera_world_xz[0], 13.5f);
+    EXPECT_FLOAT_EQ(view.camera_world_xz[1], -7.25f);
+    // base_resolution is sanitized to a multiple of 4 (8 stays 8).
+    EXPECT_FLOAT_EQ(view.base_resolution, 8.0f);
+
+    // A base resolution of 6 sanitizes up to 8.
+    const ClipmapViewTransform view6 =
+        compute_clipmap_view(
+            0.0f, 0.0f, settings,
+            ClipmapLatticeParams{
+                .level_count = 3u, .base_resolution = 6u, .cell_size = 1.0f },
+            256u, 256u);
+    EXPECT_FLOAT_EQ(view6.base_resolution, 8.0f);
+}
+
+// view_snapped passes through (false = arbitrary supplied mesh, #205).
+TEST(ClipmapView, ViewSnappedFlagPassesThrough)
+{
+    ClipmapLandscapeRenderSettings settings = default_settings();
+    settings.view_snapped = false;
+    const ClipmapViewTransform view =
+        compute_clipmap_view(
+            0.0f, 0.0f, settings, default_lattice(), 256u, 256u);
+    EXPECT_FALSE(view.view_snapped);
+}
+
+// Per-level snap math (the #207 core property): for the inputs the transform
+// carries, each level L's snap T_L is a multiple of 2*c_L, and the levels are
+// NESTED — T_{L+1} is itself a multiple of 2*c_L, so adjacent-level boundaries
+// stay spatially coincident even though each level snaps on its own interval.
+TEST(ClipmapView, PerLevelSnapIsAMultipleOfTwiceItsCellAndNested)
+{
+    const ClipmapLandscapeRenderSettings settings = default_settings();
+    const float c0 = settings.lattice_world_cell_size;  // 2.0
+    const ClipmapViewTransform view =
+        compute_clipmap_view(
+            37.3f, -53.1f, settings, default_lattice(), 256u, 256u);
+
+    // The transform must hand the VS exactly c0 (and 2*c0 as snap_step).
+    ASSERT_FLOAT_EQ(view.lattice_world_scale, c0);
+    ASSERT_FLOAT_EQ(view.snap_step, 2.0f * c0);
+
+    const float cam_x = view.camera_world_xz[0];
+    const float cam_z = view.camera_world_xz[1];
+
+    for (uint32_t level = 0; level < 6u; ++level) {
+        const float cL = std::ldexp(c0, static_cast<int>(level));
+        const float two_cL = 2.0f * cL;
+
+        const float tx = per_level_snap(cam_x, c0, level);
+        const float tz = per_level_snap(cam_z, c0, level);
+
+        // T_L is an integer multiple of 2*c_L (no remainder => no sub-cell shift
+        // => the level does not lurch as the camera pans within its own cell).
+        EXPECT_NEAR(std::remainder(tx, two_cL), 0.0f, 1e-4f) << "level " << level;
+        EXPECT_NEAR(std::remainder(tz, two_cL), 0.0f, 1e-4f) << "level " << level;
+
+        // Nesting: T_{L+1} is a multiple of 2*c_L (its own period is 4*c_L).
+        const float tx_next = per_level_snap(cam_x, c0, level + 1u);
+        const float tz_next = per_level_snap(cam_z, c0, level + 1u);
+        EXPECT_NEAR(std::remainder(tx_next, two_cL), 0.0f, 1e-4f)
+            << "nest x at level " << level;
+        EXPECT_NEAR(std::remainder(tz_next, two_cL), 0.0f, 1e-4f)
+            << "nest z at level " << level;
     }
 }
 
-// Snap rule: a one-step camera move shifts the translation by exactly one step.
-TEST(ClipmapView, OneStepCameraMoveShiftsByExactlyOneStep)
+// Per-level snap stability: a camera move smaller than a level's own snap period
+// (2*c_L) leaves THAT level's snap unchanged — the coarse rings stay put within
+// their own cell instead of lurching every finest step.
+TEST(ClipmapView, SubLevelCellCameraMoveLeavesThatLevelSnapUnchanged)
 {
     const ClipmapLandscapeRenderSettings settings = default_settings();
-    const ClipmapLatticeParams lattice = default_lattice();
-    const float step = 2.0f * settings.lattice_world_cell_size;  // 4.0
+    const float c0 = settings.lattice_world_cell_size;  // 2.0
 
-    // Start on a snap boundary so the move lands cleanly on the next cell.
-    const ClipmapViewTransform base =
-        compute_clipmap_view(
-            0.0f, 0.0f, settings, lattice, 256u, 256u);
-    EXPECT_FLOAT_EQ(base.lattice_translation[0], 0.0f);
-    EXPECT_FLOAT_EQ(base.lattice_translation[2], 0.0f);
-
-    const ClipmapViewTransform moved_x =
-        compute_clipmap_view(
-            step, 0.0f, settings, lattice, 256u, 256u);
-    EXPECT_FLOAT_EQ(
-        moved_x.lattice_translation[0] - base.lattice_translation[0], step);
-    EXPECT_FLOAT_EQ(
-        moved_x.lattice_translation[2], base.lattice_translation[2]);
-
-    const ClipmapViewTransform moved_z =
-        compute_clipmap_view(
-            0.0f, -step, settings, lattice, 256u, 256u);
-    EXPECT_FLOAT_EQ(
-        moved_z.lattice_translation[2] - base.lattice_translation[2], -step);
-    EXPECT_FLOAT_EQ(
-        moved_z.lattice_translation[0], base.lattice_translation[0]);
-
-    // Three steps in X -> exactly three steps of translation.
-    const ClipmapViewTransform moved_3x =
-        compute_clipmap_view(
-            3.0f * step, 0.0f, settings, lattice, 256u, 256u);
-    EXPECT_FLOAT_EQ(
-        moved_3x.lattice_translation[0] - base.lattice_translation[0],
-        3.0f * step);
-}
-
-// Snap rule: the snapped lattice always stays within half a snap step of the
-// camera (round-to-nearest), hence well within one step — the fine center
-// never drifts away from the viewer.
-TEST(ClipmapView, LatticeStaysWithinOneSnapStepOfCamera)
-{
-    const ClipmapLandscapeRenderSettings settings = default_settings();
-    const ClipmapLatticeParams lattice = default_lattice();
-    const float step = 2.0f * settings.lattice_world_cell_size;  // 4.0
-
-    for (float cx = -53.3f; cx <= 53.3f; cx += 1.7f) {
-        for (float cz = -47.9f; cz <= 47.9f; cz += 2.3f) {
-            const ClipmapViewTransform view =
-                compute_clipmap_view(
-                    cx, cz, settings, lattice, 256u, 256u);
-            EXPECT_LE(
-                std::abs(view.lattice_translation[0] - cx), step * 0.5f + 1e-3f)
-                << "cx=" << cx;
-            EXPECT_LE(
-                std::abs(view.lattice_translation[2] - cz), step * 0.5f + 1e-3f)
-                << "cz=" << cz;
-        }
+    // Level 2: c_2 = 4*c0 = 8, period 2*c_2 = 16. A 3-unit nudge stays inside
+    // one of its cells, so its snap must not move (the old single-snap path
+    // shifted it by the finest period and lurched).
+    const float base_cam = 40.0f;
+    const float snap_base = per_level_snap(base_cam, c0, 2u);
+    for (const float dx : { 0.0f, 1.0f, 3.0f, 7.9f }) {
+        EXPECT_FLOAT_EQ(per_level_snap(base_cam + dx, c0, 2u), snap_base)
+            << "dx=" << dx;
     }
 }
 
@@ -201,10 +215,10 @@ TEST(ClipmapView, IsDeterministic)
     const ClipmapViewTransform b =
         compute_clipmap_view(13.37f, -42.0f, settings, lattice, 256u, 256u);
 
-    EXPECT_FLOAT_EQ(a.lattice_translation[0], b.lattice_translation[0]);
-    EXPECT_FLOAT_EQ(a.lattice_translation[1], b.lattice_translation[1]);
-    EXPECT_FLOAT_EQ(a.lattice_translation[2], b.lattice_translation[2]);
+    EXPECT_FLOAT_EQ(a.camera_world_xz[0], b.camera_world_xz[0]);
+    EXPECT_FLOAT_EQ(a.camera_world_xz[1], b.camera_world_xz[1]);
     EXPECT_FLOAT_EQ(a.lattice_world_scale, b.lattice_world_scale);
+    EXPECT_FLOAT_EQ(a.base_resolution, b.base_resolution);
     EXPECT_FLOAT_EQ(a.world_to_uv_scale[0], b.world_to_uv_scale[0]);
     EXPECT_FLOAT_EQ(a.world_to_uv_offset[0], b.world_to_uv_offset[0]);
     EXPECT_FLOAT_EQ(a.texel_world_size[0], b.texel_world_size[0]);

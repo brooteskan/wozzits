@@ -127,6 +127,7 @@ namespace wz::engine::assets
             .normalize_values = desc.normalize_values,
             .use_threshold    = desc.use_threshold,
             .emit_threshold   = desc.emit_threshold,
+            .subsample_step   = desc.subsample_step,
         };
 
         const wz::asset::AssetKey key =

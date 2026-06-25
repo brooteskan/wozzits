@@ -35,8 +35,21 @@ namespace wz::engine::rendering
     {
         ClipmapViewTransform out{};
 
-        // World meters per finest lattice cell. Guard against a non-positive /
-        // non-finite authored value so the snap step and scale stay sane.
+        // Sanitize the lattice params once (level_count >= 1, base_resolution
+        // rounded to a multiple of 4) so the emitted base_resolution matches the
+        // geometry the generator actually produced.
+        const assets::ClipmapLatticeParams lattice_params =
+            assets::sanitize_clipmap_lattice_params(
+                lattice.level_count,
+                lattice.base_resolution,
+                lattice.cell_size);
+
+        // World meters per finest lattice cell (c0). Guard against a
+        // non-positive / non-finite authored value so the snap step and scale
+        // stay sane. On the unit-finest-cell lattice contract (the procedural
+        // clipmap lattice is authored with mesh cell_size == 1), the world step
+        // between adjacent finest-grid vertices is exactly this value, so it is
+        // both the lattice world scale and c0.
         const float cell =
             (std::isfinite(settings.lattice_world_cell_size)
              && settings.lattice_world_cell_size > 0.0f)
@@ -46,36 +59,28 @@ namespace wz::engine::rendering
         out.lattice_world_scale = cell;
         out.vertical_scale = settings.vertical_scale;
         out.base_height = settings.base_height;
+        out.view_snapped = settings.view_snapped;
 
-        // ── View snapping ──────────────────────────────────────────────────
-        // The lattice is authored centered at the origin; we translate it to
-        // follow the camera. If the translation tracked the camera continuously
-        // the lattice vertices (and therefore the heightmap texels they sample)
-        // would slide under the camera every frame, making the fine center
-        // shimmer ("swimming"). Snapping the translation to a fixed world grid
-        // makes the lattice appear stationary while the camera moves within one
-        // grid step, then jump by exactly one step when the camera crosses a
-        // boundary — the texels stay put.
+        // ── Per-level view snapping (issue #207) ───────────────────────────
+        // The lattice is authored centered at the origin with each vertex's LOD
+        // level in position.y. The VS places + snaps each level INDEPENDENTLY:
+        // level L (world cell c_L = 2^L * c0) snaps its grid to a multiple of
+        // 2*c_L, i.e. T_L = floor(camera_xz/(2*c_L))*(2*c_L). The 2x makes the
+        // levels nest (T_{L+1} is always a multiple of 2*c_L), so adjacent
+        // boundaries stay spatially coincident and only need a vertical morph.
         //
-        // Snap step = 2 * cell (two finest cells), NOT one. The lattice nests
-        // power-of-two LOD rings whose cell sizes are cell, 2*cell, 4*cell, ...
-        // A single-finest-cell shift would move the coarser rings by a fraction
-        // of their own cell and misalign every ring above level 0, reintroducing
-        // swimming at the LOD seams. 2*cell is the coarsest common divisor that
-        // keeps level 0 (period cell) and level 1 (period 2*cell) — and hence
-        // every coarser power-of-two level — aligned through one shift. The
-        // finest grid also stays texel-aligned as long as the texel world size
-        // is an integer multiple of cell (the renderer sizes the lattice to the
-        // heightmap so this holds); the heightmap sample then never drifts
-        // sub-texel as the camera pans.
+        // This struct carries the raw inputs the VS needs to compute every T_L
+        // itself (one set of constants for all levels): the camera world XZ and
+        // c0. snap_step here is the FINEST level's period (2*c0); a test can
+        // assert each level L snaps to a multiple of 2^L * snap_step. The single
+        // pre-snapped translation the old uniform-snap path emitted is gone — it
+        // could not keep both the fine center and the coarse rings stable.
+        out.camera_world_xz[0] = camera_world_x;
+        out.camera_world_xz[1] = camera_world_z;
+        out.base_resolution =
+            static_cast<float>(lattice_params.base_resolution);
         const float snap_step = 2.0f * cell;
         out.snap_step = snap_step;
-
-        out.lattice_translation[0] =
-            std::round(camera_world_x / snap_step) * snap_step;
-        out.lattice_translation[1] = 0.0f;
-        out.lattice_translation[2] =
-            std::round(camera_world_z / snap_step) * snap_step;
 
         // ── World XZ -> heightmap UV ────────────────────────────────────────
         // The texture's [0,1] UV maps linearly onto the world footprint
@@ -113,11 +118,6 @@ namespace wz::engine::rendering
             footprint_x / static_cast<float>(tex_w);
         out.texel_world_size[1] =
             footprint_z / static_cast<float>(tex_h);
-
-        // Silence the unused-extent warning while keeping the lattice param in
-        // the signature: the extent is part of the geometry contract callers
-        // and tests reason about, and 3b uses it to size per-ring constants.
-        (void)clipmap_lattice_grid_extent(lattice);
 
         return out;
     }

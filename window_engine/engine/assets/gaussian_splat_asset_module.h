@@ -48,6 +48,9 @@ namespace wz::engine::assets
         bool normalize_values = true;
         bool use_threshold = false;
         float emit_threshold = 0.0f;
+        // Emit one splat every Nth texel in X and Z (>= 1). 1 = every texel;
+        // larger thins a high-resolution heightmap to a tractable cloud (#208).
+        uint32_t subsample_step = 1u;
     };
 
     // Terrain splat recipe bundling a Gaea .r32 file with a JSON sidecar.

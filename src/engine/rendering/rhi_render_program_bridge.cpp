@@ -93,14 +93,20 @@ namespace wz::engine::rendering
                 };
                 break;
             case ea::InputLayoutKind::GaussianSplatVertex:
-                // Per-instance splat attributes; refine to the exact packed
-                // layout when the splat path is wired through rhi.
+                // Per-instance splat attributes for the IA-sourced splat path
+                // (SplatVertexInstanced). This is the 64-byte
+                // DX12GaussianSplatVertex stride: position(0) opacity(12)
+                // scale(16) pad0(28) rotation(32) color(48) lod(60). The RHI
+                // SplatPull path (issue #208) does NOT use this IA layout — it
+                // reads the same 64-byte record from a StructuredBuffer at the
+                // SplatCloud semantic (binding_layout==3) with
+                // InputLayoutKind::None, so no IA vertex layout is bound there.
                 layout.attributes = {
                     VA{ 0, VF::Float32x3, 0,  0, SR::PerInstance },  // position
                     VA{ 1, VF::Float32,   12, 0, SR::PerInstance },  // opacity
                     VA{ 2, VF::Float32x3, 16, 0, SR::PerInstance },  // scale
-                    VA{ 3, VF::Float32x4, 28, 0, SR::PerInstance },  // rotation
-                    VA{ 4, VF::Float32x4, 44, 0, SR::PerInstance },  // color
+                    VA{ 3, VF::Float32x4, 32, 0, SR::PerInstance },  // rotation
+                    VA{ 4, VF::Float32x3, 48, 0, SR::PerInstance },  // color
                 };
                 break;
             }

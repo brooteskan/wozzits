@@ -53,6 +53,13 @@ namespace wz::engine::assets
         bool normalize_values = true; // normalize value into [0,1] before use
         bool use_threshold = false;   // skip splats whose normalized value < emit_threshold
         float emit_threshold = 0.0f;
+        // Emit one splat every Nth texel in X and Z (>= 1). 1 = every texel
+        // (the original behavior); larger values thin a high-resolution
+        // heightmap to a tractable inspection cloud — e.g. 16 turns a
+        // 4096x4096 field's 16.7M splats into 256x256 = 65K. The world spacing
+        // between emitted splats scales with the step so the cloud keeps the
+        // same footprint regardless of subsampling.
+        uint32_t subsample_step = 1u;
     };
 
 

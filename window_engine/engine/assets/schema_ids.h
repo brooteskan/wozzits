@@ -509,6 +509,16 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000708ull
     };
 
+    // RHI renderable recipe (issue #208): a GaussianSplatCloud (resident as a
+    // decoded splat StructuredBuffer) + a SplatPull render program, rendered as
+    // a camera-facing splat cloud through RhiSceneRenderer. Distinct from the
+    // legacy kGaussianSplatDebugRenderableSchema (0x701), which produces a
+    // RenderableAssetData on the legacy DX12 splat path; this produces an
+    // RhiRenderableRecipe carrying gaussian_splat_cloud_key.
+    inline constexpr wz::asset::SchemaID kGaussianSplatCloudRhiRenderableSchema{
+        0xF11E'CA55'E7'000709ull
+    };
+
     inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
         0xF11E'CA55'E7'000701ull
     };

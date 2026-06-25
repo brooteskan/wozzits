@@ -56,6 +56,50 @@ namespace wz::engine::rendering
             return out;
         }
 
+        // Recover the clipmap lattice's (base_resolution, level_count) from a
+        // generated lattice mesh, independent of cell_size. The generator
+        // (make_clipmap_lattice_mesh) tags every vertex with its LOD level in
+        // position.y, and the level-0 solid block is an (m+1)x(m+1) vertex grid,
+        // so:
+        //   level_count    = max(position.y) + 1
+        //   base_resolution = round(sqrt(#level-0 vertices)) - 1
+        // The VS needs base_resolution to size each level's morph band from its
+        // world half-extent (m/2)*c_L. Falls back to the sane defaults if the
+        // mesh somehow has no level-0 vertices.
+        struct ClipmapLatticeDims
+        {
+            uint32_t base_resolution = 8u;
+            uint32_t level_count = 1u;
+        };
+
+        ClipmapLatticeDims infer_clipmap_lattice_dims(const ea::MeshData& mesh)
+        {
+            ClipmapLatticeDims dims{};
+            uint32_t max_level = 0u;
+            uint64_t level0_vertices = 0u;
+            for (const ea::MeshVertex& vertex : mesh.vertices) {
+                const float level_f = vertex.position[1];
+                const uint32_t level = level_f > 0.0f
+                    ? static_cast<uint32_t>(level_f + 0.5f)
+                    : 0u;
+                max_level = level > max_level ? level : max_level;
+                if (level == 0u) {
+                    ++level0_vertices;
+                }
+            }
+            dims.level_count = max_level + 1u;
+            if (level0_vertices > 0u) {
+                const double side =
+                    std::sqrt(static_cast<double>(level0_vertices));
+                const long rounded = std::lround(side);
+                if (rounded >= 2) {
+                    dims.base_resolution =
+                        static_cast<uint32_t>(rounded) - 1u;
+                }
+            }
+            return dims;
+        }
+
         void release_unrealized_pull_buffers(
             wz::rhi::GpuResourceRegistry& resources,
             wz::rhi::GpuResourceHandle positions,
@@ -101,6 +145,23 @@ namespace wz::engine::rendering
             ea::ClipmapLandscapeRenderSettings settings{};
             uint32_t heightmap_width = 1;
             uint32_t heightmap_height = 1;
+            // Lattice geometry resolution, recovered from the lattice MeshData
+            // at realize time (the per-vertex level tags + level-0 vertex count).
+            // The VS sizes each level's morph band from base_resolution.
+            uint32_t base_resolution = 8;
+        };
+
+        // A gaussian-splat-cloud recipe (#208) has no pull mesh: the renderer
+        // binds the resident decoded splat StructuredBuffer (published by the
+        // splat compiler under rhi_asset_identity(key, "splat_cloud")) at the
+        // SplatCloud semantic and records a non-indexed DrawInstanced of
+        // 4 * splat_count vertices. Carried alongside the (empty) pull source so
+        // ensure_renderable takes the splat branch.
+        struct SplatCloudBinding
+        {
+            wz::asset::AssetKey splat_cloud_key{};
+            ea::GaussianSplatCloudRenderSettings settings{};
+            uint32_t splat_count = 0;
         };
 
         struct PullMeshSource
@@ -122,6 +183,11 @@ namespace wz::engine::rendering
             // geometry still rides the CPU-pull mesh_key path (the lattice); this
             // adds the resident height-texture binding + view-transform inputs.
             std::optional<ClipmapBinding> clipmap{};
+
+            // Set for a gaussian-splat-cloud recipe (#208). When present, this
+            // source has NO pull mesh — mesh_key is empty — and ensure_renderable
+            // takes the splat branch instead of the mesh-pull SRG/geometry.
+            std::optional<SplatCloudBinding> splat{};
         };
 
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
@@ -133,6 +199,31 @@ namespace wz::engine::rendering
                     ea::RenderableAsset{ .output = renderable_key });
             if (!recipe) {
                 return std::nullopt;
+            }
+
+            // Gaussian-splat-cloud geometry (#208): no pull mesh. The decoded
+            // splat StructuredBuffer is asset-published resident; surface the
+            // cloud key + settings + splat count here so ensure_renderable binds
+            // it at the SplatCloud semantic and records the instanced-quad draw.
+            if (!(recipe->gaussian_splat_cloud_key == wz::asset::AssetKey{})) {
+                const ea::GaussianSplatCloudHandle cloud_handle =
+                    assets.gaussian_splats().get_cloud(
+                        ea::GaussianSplatCloudAsset{
+                            .output = recipe->gaussian_splat_cloud_key });
+                const ea::GaussianSplatCloudData* cloud =
+                    assets.gaussian_splats().get_cloud_data(cloud_handle);
+                if (!cloud || !cloud->valid()) {
+                    return std::nullopt;
+                }
+                SplatCloudBinding binding;
+                binding.splat_cloud_key = recipe->gaussian_splat_cloud_key;
+                binding.settings = recipe->splat;
+                binding.splat_count =
+                    static_cast<uint32_t>(cloud->splat_count());
+                return PullMeshSource{
+                    .program_key = recipe->program_key,
+                    .splat = binding,
+                };
             }
 
             // GPU-resident geometry (gpu_sparse_mesh, #190): bind the asset-
@@ -238,45 +329,58 @@ namespace wz::engine::rendering
         // tightly-packed struct and the HLSL cbuffer (which also 16-byte-aligns
         // each float4) agree without padding gymnastics.
         //
+        // Issue #207 repacked this to carry the PER-LEVEL snap inputs the VS
+        // needs (camera world XZ + c0 + base_resolution + a view_snapped flag)
+        // instead of one pre-snapped lattice translation. Still exactly 128
+        // bytes / 32 dwords (binding_layout==2's "clipmap" value_count).
+        //
         //   offset  field
         //   ------  ------------------------------------------------------------
-        //      0     view_projection            (float4x4, column-major)
-        //     64     lattice_translation_scale  (xyz = translation, w = scale)
-        //     80     world_to_uv                (xy = scale, zw = offset)
-        //     96     texel_and_vertical         (xy = texel world size,
-        //                                         z = vertical_scale, w = base)
-        //    112     texel_dims                 (xy = texel dims as float, zw=0)
+        //      0     view_projection      (float4x4, column-major)
+        //     64     snap_params          (xy = camera world XZ, z = c0,
+        //                                   w = view_snapped flag (1 or 0))
+        //     80     world_to_uv          (xy = scale, zw = offset)
+        //     96     texel_and_vertical   (xy = texel world size,
+        //                                   z = vertical_scale, w = base height)
+        //    112     texel_dims_extent    (xy = texel dims as float,
+        //                                   z = base_resolution, w = reserved)
         //   ------
-        //    128 bytes = 32 dwords = binding_layout==2's "clipmap" value_count.
+        //    128 bytes = 32 dwords.
         struct ClipmapDrawConstants
         {
             float view_projection[16];
-            float lattice_translation_scale[4];
+            float snap_params[4];
             float world_to_uv[4];
             float texel_and_vertical[4];
-            float texel_dims[4];
+            float texel_dims_extent[4];
         };
         static_assert(sizeof(ClipmapDrawConstants) == 128,
             "clipmap root constants must be 128 bytes (32 dwords) to match the "
             "binding_layout==2 SRG and the HLSL Clipmap cbuffer");
 
         // Build the clipmap draw constants from the view-projection, the camera
-        // world position, and the realized renderable's authored settings + the
-        // resident heightmap dimensions. view_projection is column-major in
-        // m[0..15] (the same layout the MVP path uses).
+        // world position, the realized renderable's authored settings, the
+        // resident heightmap dimensions, and the lattice base_resolution
+        // recovered from the mesh. view_projection is column-major in m[0..15]
+        // (the same layout the MVP path uses).
         ClipmapDrawConstants make_clipmap_draw_constants(
             const wz::math::Mat4& view_projection,
             const wz::math::Vec3& camera_world_pos,
             const ea::ClipmapLandscapeRenderSettings& settings,
             uint32_t heightmap_width,
-            uint32_t heightmap_height)
+            uint32_t heightmap_height,
+            uint32_t base_resolution)
         {
             const wz::engine::rendering::ClipmapViewTransform view =
                 wz::engine::rendering::compute_clipmap_view(
                     camera_world_pos.x,
                     camera_world_pos.z,
                     settings,
-                    ea::ClipmapLatticeParams{},
+                    ea::ClipmapLatticeParams{
+                        .level_count = 1u,
+                        .base_resolution = base_resolution,
+                        .cell_size = 1.0f,
+                    },
                     heightmap_width,
                     heightmap_height);
 
@@ -284,10 +388,15 @@ namespace wz::engine::rendering
             std::memcpy(out.view_projection, view_projection.m,
                 sizeof(out.view_projection));
 
-            out.lattice_translation_scale[0] = view.lattice_translation[0];
-            out.lattice_translation_scale[1] = view.lattice_translation[1];
-            out.lattice_translation_scale[2] = view.lattice_translation[2];
-            out.lattice_translation_scale[3] = view.lattice_world_scale;
+            // Per-level snap inputs. The VS reconstructs each level's world
+            // placement + snap from the camera XZ and c0 (== lattice world
+            // scale). When view_snapped is off (an arbitrary supplied static
+            // mesh, #205) the VS skips per-level snapping and treats position.y
+            // as real geometry: pass the flag so it branches.
+            out.snap_params[0] = view.camera_world_xz[0];
+            out.snap_params[1] = view.camera_world_xz[1];
+            out.snap_params[2] = view.lattice_world_scale;  // c0
+            out.snap_params[3] = view.view_snapped ? 1.0f : 0.0f;
 
             out.world_to_uv[0] = view.world_to_uv_scale[0];
             out.world_to_uv[1] = view.world_to_uv_scale[1];
@@ -299,10 +408,44 @@ namespace wz::engine::rendering
             out.texel_and_vertical[2] = view.vertical_scale;
             out.texel_and_vertical[3] = view.base_height;
 
-            out.texel_dims[0] = static_cast<float>(heightmap_width);
-            out.texel_dims[1] = static_cast<float>(heightmap_height);
-            out.texel_dims[2] = 0.0f;
-            out.texel_dims[3] = 0.0f;
+            out.texel_dims_extent[0] = static_cast<float>(heightmap_width);
+            out.texel_dims_extent[1] = static_cast<float>(heightmap_height);
+            out.texel_dims_extent[2] = view.base_resolution;
+            out.texel_dims_extent[3] = 0.0f;
+            return out;
+        }
+
+        // Per-draw root constants for a gaussian-splat-cloud renderable (#208).
+        // Packed to match the `SplatView` cbuffer in
+        // resources/shaders/gaussian_splat/gaussian_splat_field_cloud_vs.hlsl
+        // BYTE-FOR-BYTE: two column-major float4x4 (world, view_proj) then a
+        // viewport_and_size float4 (xy = viewport px, z = splat size, w unused).
+        // Exactly 36 dwords / 144 bytes — the binding_layout==3 "splat_view"
+        // value_count.
+        struct SplatCloudDrawConstants
+        {
+            float world[16];
+            float view_proj[16];
+            float viewport_and_size[4];
+        };
+        static_assert(sizeof(SplatCloudDrawConstants) == 144,
+            "splat root constants must be 144 bytes (36 dwords) to match the "
+            "binding_layout==3 SRG and the HLSL SplatView cbuffer");
+
+        SplatCloudDrawConstants make_splat_cloud_draw_constants(
+            const wz::math::Mat4& world,
+            const wz::math::Mat4& view_projection,
+            float viewport_width,
+            float viewport_height,
+            float splat_size)
+        {
+            SplatCloudDrawConstants out{};
+            std::memcpy(out.world, world.m, sizeof(out.world));
+            std::memcpy(out.view_proj, view_projection.m, sizeof(out.view_proj));
+            out.viewport_and_size[0] = viewport_width;
+            out.viewport_and_size[1] = viewport_height;
+            out.viewport_and_size[2] = splat_size;
+            out.viewport_and_size[3] = 0.0f;
             return out;
         }
     }
@@ -505,7 +648,7 @@ namespace wz::engine::rendering
             return nullptr;
         }
 
-        const auto source = pull_mesh_source_for_renderable(assets, renderable_key);
+        auto source = pull_mesh_source_for_renderable(assets, renderable_key);
         if (!source) {
             failed_renderables_.insert(renderable_key);
             return nullptr;
@@ -527,6 +670,85 @@ namespace wz::engine::rendering
             logger_.error("RhiSceneRenderer: program missing object SRG slot 2");
             failed_renderables_.insert(renderable_key);
             return nullptr;
+        }
+
+        // ── Gaussian-splat-cloud branch (#208) ──────────────────────────────
+        // No pull mesh: bind the resident decoded splat StructuredBuffer (asset-
+        // owned, found by the identity the splat compiler published) at the
+        // SplatCloud semantic and record a non-indexed instanced-quad draw
+        // (vertex_count = 4 * splat_count). Self-contained: returns here without
+        // touching the mesh-pull / clipmap path below.
+        if (source->splat) {
+            const SplatCloudBinding& splat = *source->splat;
+            if (splat.splat_count == 0u) {
+                logger_.error("RhiSceneRenderer: splat cloud has zero splats");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            const wz::rhi::GpuResourceHandle splat_buffer =
+                gpu_.resources.find(wz::rhi::ResourceIdentity{
+                    ea::rhi_asset_identity(splat.splat_cloud_key, "splat_cloud"),
+                    {} });
+            if (!splat_buffer.valid()) {
+                logger_.error(
+                    "RhiSceneRenderer: splat cloud buffer not resident");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+
+            auto [sit, sinserted] =
+                realized_renderables_.try_emplace(renderable_key);
+            RealizedRenderable& srealized = sit->second;
+            srealized.renderable_key = renderable_key;
+            srealized.program = program->program;
+            srealized.owns_buffers = false;  // buffer is asset-owned
+            srealized.is_splat_cloud = true;
+            srealized.splat_settings = splat.settings;
+            srealized.object_srg.reset(*slot2_layout);
+
+            const wz::rhi::Tag splat_cloud_semantic =
+                gpu_.descriptor_semantics.find("splat_cloud");
+            const bool ssrg_ok =
+                srealized.object_srg.set(splat_cloud_semantic, splat_buffer)
+                    .has_value();
+            if (!ssrg_ok || !srealized.object_srg.satisfies(*slot2_layout)) {
+                realized_renderables_.erase(sit);
+                logger_.error(
+                    "RhiSceneRenderer: splat object SRG build failed");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+
+            // Non-indexed instanced-quad draw: 4 verts per splat, all in one
+            // DrawInstanced(4 * splat_count, 1, 0, 0). No index buffer, no
+            // streams — the VS pulls from the SplatCloud SRV by SV_VertexID.
+            wz::rhi::GeometryView geometry;
+            geometry.vertex_count = splat.splat_count * 4u;
+
+            const SplatCloudDrawConstants initial_splat{};
+            wz::rhi::DrawPacketAllocator allocator;
+            wz::rhi::DrawPacketBuilder builder =
+                wz::rhi::DrawPacketBuilder::begin(allocator);
+            builder
+                .set_geometry(geometry)
+                .set_root_constants(std::span<const uint8_t>{
+                    reinterpret_cast<const uint8_t*>(&initial_splat),
+                    sizeof(initial_splat) })
+                .add_shader_resource_group(srealized.object_srg);
+            if (!builder.add_draw_item(wz::rhi::DrawRequest{
+                    forward_, srealized.program, nullptr,
+                    wz::rhi::StreamBufferIndices{}, 0,
+                    wz::rhi::DrawListMask::from(forward_) }))
+            {
+                realized_renderables_.erase(sit);
+                logger_.error(
+                    "RhiSceneRenderer: splat draw packet build failed");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            srealized.packet = builder.end();
+            (void)sinserted;
+            return &srealized;
         }
 
         // Prefer the asset-published GPU-resident pull buffers (gpu_sparse_mesh),
@@ -589,6 +811,14 @@ namespace wz::engine::rendering
             owns_buffers = true;
             index_count = mesh->index_count();
             vertex_count = mesh->vertex_count();
+
+            // Recover the lattice resolution from the mesh's level tags so the
+            // per-frame view-transform packing can size the morph band. Only the
+            // clipmap recipe rides this CPU-pull path with a lattice mesh.
+            if (source->clipmap) {
+                source->clipmap->base_resolution =
+                    infer_clipmap_lattice_dims(*mesh).base_resolution;
+            }
         }
 
         // Clipmap-landscape: locate the resident height texture (#197) by the
@@ -627,6 +857,7 @@ namespace wz::engine::rendering
             realized.clipmap_settings = source->clipmap->settings;
             realized.heightmap_width = source->clipmap->heightmap_width;
             realized.heightmap_height = source->clipmap->heightmap_height;
+            realized.clipmap_base_resolution = source->clipmap->base_resolution;
         }
         realized.object_srg.reset(*slot2_layout);
 
@@ -755,7 +986,25 @@ namespace wz::engine::rendering
                         camera_world_pos,
                         realized->clipmap_settings,
                         realized->heightmap_width,
-                        realized->heightmap_height);
+                        realized->heightmap_height,
+                        realized->clipmap_base_resolution);
+                const auto* bytes =
+                    reinterpret_cast<const uint8_t*>(&constants);
+                realized->packet.root_constants.assign(
+                    bytes, bytes + sizeof(constants));
+            }
+            else if (realized->is_splat_cloud) {
+                // The splat VS keeps world and view_proj separate (it projects
+                // per-splat axis offsets through world then view_proj to build
+                // the screen-space covariance footprint), so pass both rather
+                // than a pre-multiplied MVP. The node's transform applies, so
+                // the cloud lands in the same world space the converter authored
+                // (and can be transformed to overlay the clipmap).
+                const wz::math::Mat4 world = world_from_transform(node.local);
+                const SplatCloudDrawConstants constants =
+                    make_splat_cloud_draw_constants(
+                        world, view_projection, w, h,
+                        realized->splat_settings.splat_size);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(
