@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <unordered_map>
 
 namespace wz::engine::assets
@@ -210,6 +211,111 @@ namespace wz::engine::assets
             ? cell_size
             : 1.0f;
         return params;
+    }
+
+    namespace
+    {
+        // Exact triangle count of a lattice with base resolution m and L levels,
+        // mirroring tests/asset_mesh/clipmap_lattice_mesh.cpp's
+        // expected_lattice_triangles (and the generator's emitted geometry):
+        //   level 0 is a solid m x m grid           -> 2*m^2 triangles,
+        //   each ring k>=1 spans h cells/side minus a q-cell/side hole, all whole
+        //     cells, with h = floor(m/2), q = floor(h/2) = floor(m/4)
+        //                                              -> 8*(h^2 - q^2) tris.
+        // Every ring is identical, so total = 2*m^2 + (L-1)*8*(h^2 - q^2).
+        // Computed in 64-bit so a large m * L (the budget-fallback corner) cannot
+        // overflow (m <= ~2^31, h^2 fits in 64-bit, L <= 24).
+        uint64_t exact_lattice_triangles(uint64_t m, uint64_t level_count) noexcept
+        {
+            const uint64_t h = m / 2u;
+            const uint64_t q = h / 2u;  // == m / 4
+            const uint64_t level0 = 2u * m * m;
+            const uint64_t per_ring = 8u * (h * h - q * q);
+            return level0 + (level_count - 1u) * per_ring;
+        }
+    } // namespace
+
+    ResolvedClipmapLattice resolve_clipmap_lattice(
+        float horizon_metres,
+        uint64_t triangle_budget,
+        float metres_per_texel) noexcept
+    {
+        // Guard the finest cell size: non-finite / non-positive falls back to 1.
+        // This is the SAME finest-cell that sanitize_clipmap_lattice_params will
+        // hold, so cell_size round-trips through the generator unchanged.
+        const float c =
+            (std::isfinite(metres_per_texel) && metres_per_texel > 0.0f)
+            ? metres_per_texel
+            : 1.0f;
+
+        // Guard the horizon: a non-finite / non-positive radius becomes the
+        // smallest positive float so 2R/(...) underflows toward 0 and m(L)
+        // clamps to 1 at every L -> the result collapses to the cheapest single
+        // fine block rather than producing a degenerate or huge lattice.
+        const double r =
+            (std::isfinite(horizon_metres) && horizon_metres > 0.0f)
+            ? static_cast<double>(horizon_metres)
+            : static_cast<double>(std::numeric_limits<float>::min());
+
+        constexpr uint32_t kLmax = 24u;
+
+        // Minimal base resolution whose FLOORED half-extent reaches the horizon.
+        // The generator's per-side reach is floor(m/2) * 2^(L-1) * c (an integer
+        // half: see make_clipmap_lattice_mesh's `h = m / 2`), so we need
+        // floor(m/2) >= ceil( R / (2^(L-1) * c) ); the minimal such m is twice
+        // that target half -- always EVEN, which also centres the lattice exactly.
+        // (Using a float m/2 here would let an odd m claim a reach the generated
+        // mesh never achieves, under-covering the requested horizon.)
+        const auto resolution_for = [&](uint32_t level_count) noexcept -> uint64_t {
+            const double coarsest = std::ldexp(1.0, static_cast<int>(level_count) - 1);
+            const double needed_half = r / (coarsest * static_cast<double>(c));
+            const double target_half = std::ceil(needed_half);
+            if (!(target_half >= 1.0)) {
+                return 2u;  // also catches NaN / non-positive: the minimal even m
+            }
+            return 2u * static_cast<uint64_t>(target_half);
+        };
+
+        const auto make_result = [&](uint32_t level_count) noexcept {
+            const uint64_t m = resolution_for(level_count);
+            ResolvedClipmapLattice out{};
+            out.params.level_count = level_count;
+            out.params.base_resolution = static_cast<uint32_t>(m);
+            out.params.cell_size = c;
+            // reach = floor(m/2) * 2^(L-1) * c -- the generator's EXACT integer
+            // half-extent, so this is the real outer reach of the produced mesh
+            // (a guarantee that is met, not an upper bound). m is even here, so
+            // floor(m/2) == m/2. 2^(L-1) via ldexp avoids overflow at large L.
+            const double coarsest = std::ldexp(1.0, static_cast<int>(level_count) - 1);
+            out.achieved_horizon_metres = static_cast<float>(
+                static_cast<double>(m / 2u) * coarsest * static_cast<double>(c));
+            out.triangle_count = exact_lattice_triangles(m, level_count);
+            return out;
+        };
+
+        // Every candidate L reaches the horizon by construction (resolution_for
+        // guarantees floor(m/2)*2^(L-1)*c >= R), so the only question is the
+        // budget. Pick the SMALLEST L whose triangle count fits -- that gives the
+        // largest m, the finest near-field detail the budget allows. Triangle
+        // count is U-shaped in L (it falls as m shrinks, then rises again once m
+        // floors at 2 and rings keep accruing), so if nothing fits we fall back to
+        // the CHEAPEST horizon-covering config (minimum triangles), not the
+        // largest L. Coverage is always honoured; the budget is a target ceiling.
+        uint32_t cheapest_level = 1u;
+        uint64_t cheapest_tris =
+            exact_lattice_triangles(resolution_for(1u), 1u);
+        for (uint32_t level_count = 1u; level_count <= kLmax; ++level_count) {
+            const uint64_t tris =
+                exact_lattice_triangles(resolution_for(level_count), level_count);
+            if (tris <= triangle_budget) {
+                return make_result(level_count);
+            }
+            if (tris < cheapest_tris) {
+                cheapest_tris = tris;
+                cheapest_level = level_count;
+            }
+        }
+        return make_result(cheapest_level);
     }
 
     MeshData make_clipmap_lattice_mesh(const ClipmapLatticeParams& raw_params)

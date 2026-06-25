@@ -629,3 +629,296 @@ TEST(ClipmapLatticeMesh, FullyTilesWithNoGapsForAnyResolution)
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// resolve_clipmap_lattice: authored/physical params -> geometric lattice.
+// ---------------------------------------------------------------------------
+namespace
+{
+    // Integer-floor reach, matching BOTH the generator (h = m / 2) and the
+    // resolver: reach(m, L, c) = floor(m/2) * 2^(L-1) * c. This is the true outer
+    // extent of the produced mesh, so a resolved (even) m reaches exactly here.
+    double reach_metres(uint32_t m, uint32_t L, double c)
+    {
+        return static_cast<double>(m / 2u)
+            * std::ldexp(1.0, static_cast<int>(L) - 1)
+            * c;
+    }
+}
+
+// The anchored worked example: R = 2000 m, T = 50000 tris, s = 1.0 m/texel
+// resolves to L = 7, m = 64, cell = 1.0. m is the minimal EVEN resolution whose
+// floored half-extent reaches R: floor(64/2)*2^6 = 32*64 = 2048 m (>= 2000), at
+// exact tris = 45056 (<= 50000). L = 6 would need m = 126 at 152072 tris (over
+// budget), so 7 is the smallest fitting L.
+TEST(ResolveClipmapLattice, AnchoredWorkedExample)
+{
+    const auto r = ea::resolve_clipmap_lattice(2000.0f, 50000u, 1.0f);
+
+    EXPECT_EQ(r.params.level_count, 7u);
+    EXPECT_EQ(r.params.base_resolution, 64u);
+    EXPECT_FLOAT_EQ(r.params.cell_size, 1.0f);
+
+    // The reported reach is the generator's real extent (floor(m/2)*2^(L-1)*c),
+    // so it meets -- never overstates -- the requested horizon.
+    EXPECT_FLOAT_EQ(r.achieved_horizon_metres, 2048.0f);
+    EXPECT_GE(r.achieved_horizon_metres, 2000.0f);
+
+    EXPECT_EQ(r.triangle_count, 45056u);
+    EXPECT_LE(r.triangle_count, 50000u);
+    EXPECT_EQ(r.triangle_count,
+        static_cast<uint64_t>(expected_lattice_triangles(64u, 7u)));
+
+    // L = 6 is rejected because it is over budget: m = 2*ceil(2000/32) = 126,
+    // tris = 152072 > 50000. Confirms 7 is the SMALLEST fitting L.
+    EXPECT_EQ(expected_lattice_triangles(126u, 6u), 152072u);
+    EXPECT_GT(expected_lattice_triangles(126u, 6u), 50000u);
+}
+
+// cell_size always equals metres_per_texel: the resolved finest cell IS one
+// height-field texel, for a spread of authored values.
+TEST(ResolveClipmapLattice, FinestCellEqualsMetresPerTexel)
+{
+    const float texel_sizes[] = { 0.25f, 0.5f, 1.0f, 2.0f, 7.5f, 100.0f };
+    for (const float s : texel_sizes) {
+        const auto r = ea::resolve_clipmap_lattice(1500.0f, 80000u, s);
+        EXPECT_FLOAT_EQ(r.params.cell_size, s)
+            << "cell_size must equal metres_per_texel s = " << s;
+    }
+}
+
+// Horizon coverage: across a sweep of (R, T, s), whenever a config fit the
+// budget the chosen lattice must reach the requested horizon (reach >= R) AND
+// stay within budget. The triangle_count is independently cross-checked against
+// the test's own exact formula.
+TEST(ResolveClipmapLattice, CoversHorizonAndRespectsBudgetWhenItFits)
+{
+    const float horizons[] = { 50.0f, 250.0f, 1000.0f, 2000.0f, 8000.0f };
+    const uint64_t budgets[] = { 20000u, 50000u, 200000u, 1000000u };
+    const float texel_sizes[] = { 0.5f, 1.0f, 4.0f };
+
+    for (const float R : horizons) {
+        for (const uint64_t T : budgets) {
+            for (const float s : texel_sizes) {
+                SCOPED_TRACE(
+                    "R=" + std::to_string(R)
+                    + " T=" + std::to_string(T)
+                    + " s=" + std::to_string(s));
+                const auto r = ea::resolve_clipmap_lattice(R, T, s);
+
+                // triangle_count agrees with the test's independent formula.
+                EXPECT_EQ(
+                    r.triangle_count,
+                    static_cast<uint64_t>(expected_lattice_triangles(
+                        r.params.base_resolution, r.params.level_count)));
+
+                // achieved_horizon_metres agrees with the reach formula.
+                const double reach = reach_metres(
+                    r.params.base_resolution, r.params.level_count,
+                    static_cast<double>(s));
+                EXPECT_NEAR(
+                    static_cast<double>(r.achieved_horizon_metres), reach,
+                    reach * 1e-5 + 1e-3);
+
+                // Coverage is guaranteed for EVERY result (fallback included):
+                // the chosen config always reaches at least the requested
+                // horizon -- the resolver never overstates its reach.
+                EXPECT_GE(
+                    static_cast<double>(r.achieved_horizon_metres),
+                    static_cast<double>(R) - 1e-3)
+                    << "the resolved lattice fell short of the horizon";
+            }
+        }
+    }
+}
+
+// A budget too small for ANY config must fall back gracefully: no crash, a
+// usable lattice that STILL covers the horizon, and -- because triangle count is
+// U-shaped in L -- the CHEAPEST (minimum-triangle) covering config rather than
+// merely the largest L. The budget is a ceiling, not a guarantee, so the count
+// exceeds it on fallback.
+TEST(ResolveClipmapLattice, TinyBudgetFallsBackGracefully)
+{
+    const float R = 5000.0f;
+    const float s = 1.0f;
+    const auto r = ea::resolve_clipmap_lattice(R, 1u, s);  // T = 1: nothing fits
+
+    EXPECT_GE(r.params.base_resolution, 2u);          // minimal even resolution
+    EXPECT_FLOAT_EQ(r.params.cell_size, s);
+    EXPECT_GE(static_cast<double>(r.achieved_horizon_metres),
+              static_cast<double>(R) - 1e-3)          // still covers the horizon
+        << "fallback dropped below the horizon";
+    EXPECT_GT(r.triangle_count, 1u);                  // exceeds the tiny budget
+    EXPECT_EQ(r.triangle_count,
+        static_cast<uint64_t>(expected_lattice_triangles(
+            r.params.base_resolution, r.params.level_count)));
+
+    // It is the MINIMUM-triangle covering config: no level count is cheaper.
+    // (Independently mirror resolution_for and scan the whole L range.)
+    for (uint32_t L = 1u; L <= 24u; ++L) {
+        const double coarsest = std::ldexp(1.0, static_cast<int>(L) - 1);
+        const double half = std::ceil(static_cast<double>(R) / (coarsest * s));
+        const uint32_t m = 2u * static_cast<uint32_t>(half >= 1.0 ? half : 1.0);
+        EXPECT_LE(r.triangle_count,
+            static_cast<uint64_t>(expected_lattice_triangles(m, L)))
+            << "a cheaper covering config exists at L = " << L;
+    }
+
+    // T = 0 is the same fallback path: still graceful and horizon-covering.
+    const auto r0 = ea::resolve_clipmap_lattice(100.0f, 0u, s);
+    EXPECT_GE(r0.params.base_resolution, 2u);
+    EXPECT_GE(static_cast<double>(r0.achieved_horizon_metres), 100.0 - 1e-3);
+}
+
+// Monotonicity in the triangle budget: with R and s fixed, a larger budget buys
+// MORE (or equal) near-field detail, i.e. base_resolution is non-decreasing in
+// the budget. (Smaller L -> larger m, and a bigger budget can only admit an L
+// that is <= the smaller budget's L.)
+TEST(ResolveClipmapLattice, LargerBudgetGivesAtLeastAsMuchDetail)
+{
+    const uint64_t budgets[] = {
+        5000u, 20000u, 50000u, 100000u, 400000u, 2000000u };
+    const float R = 3000.0f;
+    const float s = 1.0f;
+
+    uint32_t prev_m = 0u;
+    for (const uint64_t T : budgets) {
+        const auto r = ea::resolve_clipmap_lattice(R, T, s);
+        EXPECT_GE(r.params.base_resolution, prev_m)
+            << "a larger budget reduced near-field detail (T = " << T << ")";
+        prev_m = r.params.base_resolution;
+    }
+}
+
+// Monotonicity in the horizon: with T and s fixed, a larger horizon needs at
+// least as many levels (reach grows with L, so covering farther forces L up or
+// equal). level_count is non-decreasing in R.
+TEST(ResolveClipmapLattice, LargerHorizonNeedsAtLeastAsManyLevels)
+{
+    const float horizons[] = {
+        100.0f, 250.0f, 500.0f, 1000.0f, 2000.0f, 4000.0f, 16000.0f };
+    const uint64_t T = 60000u;
+    const float s = 1.0f;
+
+    uint32_t prev_L = 0u;
+    for (const float R : horizons) {
+        const auto r = ea::resolve_clipmap_lattice(R, T, s);
+        EXPECT_GE(r.params.level_count, prev_L)
+            << "a larger horizon used fewer levels (R = " << R << ")";
+        prev_L = r.params.level_count;
+    }
+}
+
+// Texel-size scaling: coarser texels (larger s) shrink the horizon measured in
+// CELLS, so the lattice needs the same or fewer levels for a fixed world
+// horizon. Doubling s repeatedly must never increase level_count.
+TEST(ResolveClipmapLattice, CoarserTexelsUseSameOrFewerLevels)
+{
+    const float R = 4000.0f;
+    const uint64_t T = 80000u;
+
+    uint32_t prev_L = 0xFFFFFFFFu;
+    for (float s = 0.25f; s <= 64.0f; s *= 2.0f) {
+        SCOPED_TRACE("s=" + std::to_string(s));
+        const auto r = ea::resolve_clipmap_lattice(R, T, s);
+        EXPECT_LE(r.params.level_count, prev_L)
+            << "coarser texels (larger s) increased the level count";
+        EXPECT_FLOAT_EQ(r.params.cell_size, s);
+        prev_L = r.params.level_count;
+    }
+}
+
+// Determinism: identical inputs yield byte-identical results.
+TEST(ResolveClipmapLattice, IsDeterministic)
+{
+    const auto a = ea::resolve_clipmap_lattice(1234.0f, 77777u, 1.5f);
+    const auto b = ea::resolve_clipmap_lattice(1234.0f, 77777u, 1.5f);
+
+    EXPECT_EQ(a.params.level_count, b.params.level_count);
+    EXPECT_EQ(a.params.base_resolution, b.params.base_resolution);
+    EXPECT_FLOAT_EQ(a.params.cell_size, b.params.cell_size);
+    EXPECT_FLOAT_EQ(a.achieved_horizon_metres, b.achieved_horizon_metres);
+    EXPECT_EQ(a.triangle_count, b.triangle_count);
+}
+
+// Degenerate inputs are handled per the documented guards: s <= 0 / non-finite
+// becomes 1.0, R <= 0 / non-finite collapses to a minimal positive horizon
+// (m clamps to the minimal even 2 -> the cheapest 2x2 fine block at L = 1).
+TEST(ResolveClipmapLattice, DegenerateInputsHandledPerGuards)
+{
+    // s <= 0 falls back to a 1.0 finest cell.
+    {
+        const auto r = ea::resolve_clipmap_lattice(1000.0f, 50000u, -2.0f);
+        EXPECT_FLOAT_EQ(r.params.cell_size, 1.0f);
+        EXPECT_GE(r.params.base_resolution, 1u);
+        EXPECT_EQ(r.triangle_count,
+            static_cast<uint64_t>(expected_lattice_triangles(
+                r.params.base_resolution, r.params.level_count)));
+    }
+    {
+        const auto r = ea::resolve_clipmap_lattice(
+            1000.0f, 50000u, 0.0f);
+        EXPECT_FLOAT_EQ(r.params.cell_size, 1.0f);
+    }
+    // Non-finite s -> 1.0 as well.
+    {
+        const auto r = ea::resolve_clipmap_lattice(
+            1000.0f, 50000u,
+            std::numeric_limits<float>::quiet_NaN());
+        EXPECT_FLOAT_EQ(r.params.cell_size, 1.0f);
+    }
+
+    // R <= 0 collapses to a minimal horizon: m clamps to the minimal even value
+    // (2) at every L, so the smallest fitting L (1) wins -> a 2x2 fine block
+    // (2*2^2 = 8 tris).
+    {
+        const auto r = ea::resolve_clipmap_lattice(-50.0f, 50000u, 1.0f);
+        EXPECT_EQ(r.params.level_count, 1u);
+        EXPECT_EQ(r.params.base_resolution, 2u);
+        EXPECT_EQ(r.triangle_count, 8u);  // 2*2^2, no rings at L = 1
+    }
+    {
+        const auto r = ea::resolve_clipmap_lattice(0.0f, 50000u, 1.0f);
+        EXPECT_EQ(r.params.base_resolution, 2u);
+    }
+    // Non-finite R behaves like the minimal-horizon guard, not a huge lattice.
+    {
+        const auto r = ea::resolve_clipmap_lattice(
+            std::numeric_limits<float>::infinity(), 50000u, 1.0f);
+        EXPECT_EQ(r.params.base_resolution, 2u);
+        EXPECT_EQ(r.params.level_count, 1u);
+    }
+}
+
+// Cross-check against the generator: a resolved ClipmapLatticeParams fed to
+// make_clipmap_lattice_mesh must yield a valid mesh whose triangle count equals
+// the resolver's reported triangle_count (so the resolver's math and the
+// generator's emitted geometry agree end-to-end).
+TEST(ResolveClipmapLattice, ResolvedParamsDriveTheGenerator)
+{
+    struct Case { float R; uint64_t T; float s; };
+    const Case cases[] = {
+        { 2000.0f, 50000u, 1.0f },   // the anchored example
+        { 500.0f, 20000u, 0.5f },
+        { 8000.0f, 1000000u, 2.0f },
+        { 120.0f, 5000u, 1.0f },
+        { 3000.0f, 1u, 1.0f },       // tiny-budget fallback
+    };
+
+    for (const Case& cs : cases) {
+        SCOPED_TRACE(
+            "R=" + std::to_string(cs.R)
+            + " T=" + std::to_string(cs.T)
+            + " s=" + std::to_string(cs.s));
+        const auto r = ea::resolve_clipmap_lattice(cs.R, cs.T, cs.s);
+
+        const auto mesh = ea::make_clipmap_lattice_mesh(r.params);
+        ASSERT_TRUE(mesh.valid());
+        ASSERT_EQ(mesh.index_count() % 3u, 0u);
+
+        // The generator's actual triangle count == the resolver's prediction.
+        EXPECT_EQ(
+            static_cast<uint64_t>(mesh.index_count() / 3u),
+            r.triangle_count);
+    }
+}
