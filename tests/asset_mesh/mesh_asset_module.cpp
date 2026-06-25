@@ -3,12 +3,21 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/engine_asset_key_core.h>
+#include <engine/assets/mesh/clipmap_lattice_mesh.h>
+#include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
+
+#include <asset/compiler.h>
 
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <vector>
@@ -637,6 +646,11 @@ TEST(MeshAssetModule, ResolvesMeshClusterHierarchyPreviewMesh)
     EXPECT_EQ(preview_data->index_count(), source_data->index_count());
 }
 
+// The TYPED (explicit/bypass) authoring path: create_clipmap_lattice_mesh
+// supplies level_count / base_resolution / cell_size directly and carries no
+// dependency, so the compiler feeds them straight into the generator with no
+// derivation. (The editor / ParamBlock path that derives from a height field is
+// covered by DerivesClipmapLatticeMeshFromHeightField below.)
 TEST(MeshAssetModule, ResolvesClipmapLatticeMesh)
 {
     wz::Logger logger;
@@ -683,6 +697,107 @@ TEST(MeshAssetModule, ResolvesClipmapLatticeMesh)
     const uint32_t L = 4u;
     const uint32_t expected_tris =
         2u * m * m + (L - 1u) * ((3u * m * m) / 2u);
+    EXPECT_EQ(data->index_count(), expected_tris * 3u);
+}
+
+// The EDITOR / asset-graph (ParamBlock) authoring path: the clipmap lattice
+// mesh compiler reads the height field's resolution N, computes the finest cell
+// size s = world_extent / N, and derives the geometric lattice via
+// resolve_clipmap_lattice(horizon, triangle_budget, s). This drives the
+// compiler directly with a ParamBlock + a height-field ScalarField dependency
+// (the typed desc is intentionally absent) and proves the derived
+// level_count / base_resolution / cell_size — hence the mesh's exact triangle
+// count — match the pure resolver fed s = world_extent / N.
+TEST(MeshAssetModule, DerivesClipmapLatticeMeshFromHeightField)
+{
+    namespace ea = wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    // A square height field of known resolution N. width is used as N.
+    constexpr uint32_t kN = 64u;
+    const auto height = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "clipmap/height",
+        .width = kN,
+        .height = kN,
+        .generator = ea::ScalarFieldGenerator::RadialGradient,
+        });
+    ASSERT_TRUE(height.valid());
+
+    // Author the clipmap lattice mesh the way the editor does: a ParamBlock of
+    // physical params plus a height-field dependency. No typed desc.
+    constexpr float kWorldExtent = 256.0f;
+    constexpr float kHorizon = 96.0f;
+    constexpr int64_t kTriangleBudget = 50000;
+
+    wz::asset::ParamBlock params;
+    params.values["world_extent"] = static_cast<double>(kWorldExtent);
+    params.values["horizon"] = static_cast<double>(kHorizon);
+    params.values["triangle_budget"] = kTriangleBudget;
+
+    // A unique key for the authored node; the field dep is folded into
+    // deps_hash so resolution wires it as dep_handles[0]. The compiler
+    // dispatches on schema, so the key contents otherwise only need to be
+    // unique. Mirrors the editor graph-draft key shape (schema + compiler +
+    // dep fold).
+    const wz::asset::AssetKey mesh_key{
+        .content_hash = ea::detail::hash_u64(
+            ea::detail::mix64(
+                ea::kProceduralClipmapLatticeMeshSchema.value, 0x6c61747469ull)),
+        .schema_hash = ea::detail::hash_u64(
+            ea::kProceduralClipmapLatticeMeshSchema.value),
+        .compiler_hash = ea::detail::hash_u64(ea::kMeshCompilerVersion),
+        .deps_hash = ea::detail::key_to_dep_hash(height.output),
+    };
+
+    wz::asset::AssetNode node{};
+    node.key = mesh_key;
+    node.type = ea::kAssetTypeMesh;
+    node.schema = ea::kProceduralClipmapLatticeMeshSchema;
+    node.stage = wz::asset::AssetStage::Source;
+    node.meta = params;
+
+    ASSERT_TRUE(assets.system().register_asset(
+        std::move(node), { height.output }));
+
+    ASSERT_TRUE(assets.commit());
+
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const ea::MeshAsset lattice{ .output = mesh_key };
+    const auto handle = assets.meshes().get_mesh(lattice);
+    ASSERT_TRUE(handle.valid());
+
+    const auto* data = assets.meshes().get_mesh_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+
+    // The expectation, computed from the SAME pure function the compiler calls,
+    // fed s = world_extent / N. This proves the compiler read N, computed s, and
+    // resolved correctly.
+    const float expected_s = kWorldExtent / static_cast<float>(kN);
+    const ea::ResolvedClipmapLattice expected =
+        ea::resolve_clipmap_lattice(
+            kHorizon,
+            static_cast<uint64_t>(kTriangleBudget),
+            expected_s);
+
+    const ea::ClipmapLatticeParams& p = expected.params;
+    // cell_size must be exactly s (the finest cell == one texel).
+    EXPECT_FLOAT_EQ(p.cell_size, expected_s);
+
+    // The generator's exact triangle count for the resolved (m, L): the same
+    // analytic formula ResolvesClipmapLatticeMesh uses, here with the DERIVED
+    // m and L instead of hand-authored ones.
+    const uint32_t mm = p.base_resolution;
+    const uint32_t ll = p.level_count;
+    const uint64_t expected_tris =
+        static_cast<uint64_t>(2u) * mm * mm
+        + static_cast<uint64_t>(ll - 1u) * ((3ull * mm * mm) / 2ull);
     EXPECT_EQ(data->index_count(), expected_tris * 3u);
 }
 

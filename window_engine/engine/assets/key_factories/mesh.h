@@ -50,8 +50,16 @@ namespace wz::engine::assets
     [[nodiscard]] inline wz::asset::AssetKey make_clipmap_lattice_mesh_key(
         const ClipmapLatticeMeshDesc& desc) noexcept
     {
-        // All three lattice parameters are identity inputs: distinct geometry
-        // for distinct (levels, resolution, cell size) tuples.
+        // This keys the TYPED (explicit/bypass) authoring path: all three
+        // geometric lattice parameters are identity inputs, so distinct
+        // (levels, resolution, cell size) tuples are distinct geometry. The
+        // typed path carries no dependency, hence deps_hash is empty.
+        //
+        // The editor / asset-graph authoring path does NOT use this factory: it
+        // authors physical params (world_extent / horizon / triangle_budget)
+        // plus a height-field dependency, and the graph-draft key machinery
+        // folds those (the ParamBlock and the dep key) into the node's key. The
+        // two identity spaces never cross.
         uint64_t h = kProceduralClipmapLatticeMeshSchema.value;
         h = detail::mix64(h, static_cast<uint64_t>(desc.level_count));
         h = detail::mix64(h, static_cast<uint64_t>(desc.base_resolution));

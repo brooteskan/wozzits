@@ -77,12 +77,16 @@ namespace wz::engine::assets
 
     // Procedural geometry-clipmap lattice. Generates a static, reusable
     // nested-LOD-ring footprint in the XZ plane (y = 0), centered at the
-    // origin in grid-unit space. All three fields are identity inputs folded
-    // into the AssetKey. Defaults: 4 levels, an 8 x 8 fine center, unit cells.
+    // origin in grid-unit space. Level 0 is the full fine center grid; each
+    // outer level is a ring at double the cell size of the level it encloses.
     //
-    //   level_count   Number of LOD levels (>= 1). Level 0 is the full fine
-    //                 center grid; each outer level is a ring at double the
-    //                 cell size of the level it encloses.
+    // This TYPED desc is the EXPLICIT/BYPASS authoring path: it supplies the
+    // geometric lattice parameters directly and is fed straight into the
+    // generator with no derivation and no dependencies. All three fields are
+    // identity inputs folded into the AssetKey. Defaults: 4 levels, an 8 x 8
+    // fine center, unit cells.
+    //
+    //   level_count   Number of LOD levels (>= 1).
     //   base_resolution
     //                 Quad cells per side of the fine center grid (>= 1; any
     //                 value is accepted). The generator tiles gap-free for any
@@ -91,6 +95,13 @@ namespace wz::engine::assets
     //                 meet with a covered overlap rather than a possible gap —
     //                 so there is no multiple-of-4 requirement.
     //   cell_size     World/grid extent of one level-0 cell.
+    //
+    // NOTE: the editor / asset-graph (ParamBlock) authoring path does NOT use
+    // this typed desc. It authors PHYSICAL parameters (world_extent, horizon,
+    // triangle_budget) plus a height-field ScalarField dependency and DERIVES
+    // these geometric parameters at compile time via resolve_clipmap_lattice
+    // (cell_size = world_extent / N, N = field texel count per side). See
+    // compile_clipmap_lattice_mesh_node in mesh_compilers.cpp.
     struct ClipmapLatticeMeshDesc
     {
         std::string name;

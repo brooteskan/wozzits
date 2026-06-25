@@ -372,16 +372,29 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
-        ClipmapLatticeMeshDesc clipmap_lattice_mesh_desc_from_params(
+        // Physical, authored clipmap parameters (editor / asset-graph path).
+        // The compiler derives the geometric lattice (level_count /
+        // base_resolution / cell_size) from these plus the height field's
+        // resolution N: cell_size = world_extent / N, then
+        // resolve_clipmap_lattice(horizon, triangle_budget, cell_size).
+        struct ClipmapLatticePhysicalParams
+        {
+            float world_extent = 256.0f;
+            float horizon = 128.0f;
+            uint32_t triangle_budget = 200000u;
+        };
+
+        ClipmapLatticePhysicalParams
+        clipmap_lattice_physical_params_from_params(
             const wz::asset::ParamBlock& params)
         {
-            ClipmapLatticeMeshDesc desc{};
-            desc.level_count =
-                params.get<uint32_t>("level_count", desc.level_count);
-            desc.base_resolution =
-                params.get<uint32_t>("base_resolution", desc.base_resolution);
-            desc.cell_size = params.get<float>("cell_size", desc.cell_size);
-            return desc;
+            ClipmapLatticePhysicalParams p{};
+            p.world_extent =
+                params.get<float>("world_extent", p.world_extent);
+            p.horizon = params.get<float>("horizon", p.horizon);
+            p.triangle_budget =
+                params.get<uint32_t>("triangle_budget", p.triangle_budget);
+            return p;
         }
 
         wz::asset::AssetNode compile_procedural_mesh_node(
@@ -718,35 +731,95 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_clipmap_lattice_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
-            MeshTable& mesh_table)
+            MeshTable& mesh_table,
+            ScalarFieldTable& scalar_field_table)
         {
-            if (!dep_nodes.empty()) {
-                logger.error(
-                    "clipmap lattice mesh node should not have dependencies");
-                return compile_failed_node(input);
-            }
+            // Two authoring paths produce the geometric lattice parameters:
+            //
+            //  (1) TYPED desc (engine-side authoring, ClipmapLatticeMeshDesc) —
+            //      supplies explicit level_count / base_resolution / cell_size
+            //      and is fed straight into the generator. It carries NO height
+            //      field dependency: this is the explicit/bypass path used by
+            //      create_clipmap_lattice_mesh and its tests.
+            //
+            //  (2) ParamBlock (editor / asset-graph authoring) — authors
+            //      PHYSICAL parameters (world_extent, horizon, triangle_budget)
+            //      and a height-field ScalarField dependency. The compiler reads
+            //      the field's resolution N, computes the finest cell size
+            //      s = world_extent / N, and derives the geometric lattice via
+            //      resolve_clipmap_lattice(horizon, triangle_budget, s).
+            ClipmapLatticeParams lattice_params{};
 
-            // Parameters arrive either as a typed desc (engine-side authoring)
-            // or as a ParamBlock (editor/browser authoring).
-            ClipmapLatticeMeshDesc param_desc{};
-            const auto* desc =
-                std::any_cast<ClipmapLatticeMeshDesc>(&input.meta);
-            if (!desc) {
-                if (const auto* params =
-                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
-                {
-                    param_desc = clipmap_lattice_mesh_desc_from_params(*params);
+            if (const auto* desc =
+                    std::any_cast<ClipmapLatticeMeshDesc>(&input.meta))
+            {
+                // Path (1): explicit geometric params, no dependency expected.
+                if (!dep_handles.empty()) {
+                    logger.error(
+                        "clipmap lattice mesh (typed desc) should not have "
+                        "dependencies");
+                    return compile_failed_node(input);
                 }
-                desc = &param_desc;
-            }
 
-            const ClipmapLatticeParams lattice_params =
-                sanitize_clipmap_lattice_params(
+                lattice_params = sanitize_clipmap_lattice_params(
                     desc->level_count,
                     desc->base_resolution,
                     desc->cell_size);
+            }
+            else {
+                // Path (2): derive from physical params + the height field's
+                // resolution. The height field is a REQUIRED input port, so
+                // exactly one compiled ScalarField dependency must be present.
+                if (dep_handles.size() != 1) {
+                    logger.error(
+                        "clipmap lattice mesh requires exactly one height "
+                        "field dependency");
+                    return compile_failed_node(input);
+                }
+
+                const ScalarFieldData* field =
+                    scalar_field_table.get(dep_handles[0]);
+                if (!field || !field->valid()) {
+                    logger.error(
+                        "clipmap lattice mesh height field is invalid");
+                    return compile_failed_node(input);
+                }
+
+                ClipmapLatticePhysicalParams physical{};
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    physical =
+                        clipmap_lattice_physical_params_from_params(*params);
+                }
+
+                // N = the field's texel count per side. The field is assumed
+                // SQUARE; width is used as N (the runtime clipmap path likewise
+                // keys off field->width). A non-square field would only affect
+                // the derived finest cell size, never gap-free tiling.
+                const uint32_t n = field->width;
+                if (n == 0u) {
+                    logger.error(
+                        "clipmap lattice mesh height field has zero width");
+                    return compile_failed_node(input);
+                }
+
+                // s = world_extent / N: the world size of one finest texel and,
+                // by construction, the finest lattice cell. resolve_clipmap_
+                // lattice guards a non-finite / non-positive s (falls back to
+                // 1.0) and clamps the result.
+                const float metres_per_texel =
+                    physical.world_extent / static_cast<float>(n);
+
+                const ResolvedClipmapLattice resolved =
+                    resolve_clipmap_lattice(
+                        physical.horizon,
+                        static_cast<uint64_t>(physical.triangle_budget),
+                        metres_per_texel);
+                lattice_params = resolved.params;
+            }
 
             MeshData data = make_clipmap_lattice_mesh(lattice_params);
             if (!data.valid()) {
@@ -772,6 +845,7 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         MeshTable& mesh_table,
+        ScalarFieldTable& scalar_field_table,
         const EngineAssetCacheSettings& cache_settings)
     {
         // ── Procedural mesh compilers ─────────────────────────────────────────
@@ -856,6 +930,9 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralClipmapLatticeMeshSchema,
             .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "height_field", kAssetTypeScalarField },
+            },
             .parameters = {
                 {
                     .name = "name",
@@ -863,37 +940,39 @@ namespace wz::engine::assets::internal
                     .label = "Name",
                 },
                 {
-                    .name = "level_count",
-                    .type = wz::asset::ParamType::Int,
-                    .label = "LOD levels",
-                    .default_num = 4,
-                    .min = 1,
-                    .max = 12,
-                },
-                {
-                    .name = "base_resolution",
-                    .type = wz::asset::ParamType::Int,
-                    .label = "Base resolution",
-                    .default_num = 8,
-                    .min = 1,
-                    .max = 256,
-                },
-                {
-                    .name = "cell_size",
+                    .name = "world_extent",
                     .type = wz::asset::ParamType::Float,
-                    .label = "Cell size",
-                    .default_num = 1.0,
+                    .label = "World extent",
+                    .default_num = 256.0,
                     .min = 0.0001,
-                    .max = 100000.0,
+                    .max = 1000000.0,
+                },
+                {
+                    .name = "horizon",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Horizon",
+                    .default_num = 128.0,
+                    .min = 0.0001,
+                    .max = 1000000.0,
+                },
+                {
+                    .name = "triangle_budget",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Triangle budget",
+                    .default_num = 200000,
+                    .min = 1,
+                    .max = 100000000,
                 },
             },
-            .compile = [&logger, &mesh_table](
+            .compile = [&logger, &mesh_table, &scalar_field_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
             {
                 return compile_clipmap_lattice_mesh_node(
-                    input, dep_nodes, logger, mesh_table);
+                    input, dep_handles, logger, mesh_table,
+                    scalar_field_table);
             }
             });
 
