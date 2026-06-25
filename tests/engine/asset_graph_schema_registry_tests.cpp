@@ -4,6 +4,10 @@
 
 #include <asset/compiler.h>
 #include <asset/types.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
+
+#include <algorithm>
 
 namespace
 {
@@ -39,5 +43,40 @@ namespace
         // edge-derived ports. A declared, named, typed input port proves the
         // registry carries the real schemas.
         EXPECT_TRUE(any_named_typed_port);
+    }
+
+    // Authorable mesh nodes are renamable in the editor: each mesh compiler
+    // declares a "name" string param, which the asset-graph snapshot's
+    // display_name honors above the schema-label fallback.
+    TEST(AssetGraphSchemaRegistry, AuthorableMeshCompilersDeclareNameParam)
+    {
+        namespace ea = wz::engine::assets;
+        const wz::asset::CompilerRegistry registry =
+            wz::engine::editor::build_asset_graph_schema_registry();
+
+        const wz::asset::SchemaID mesh_schemas[] = {
+            ea::kProceduralTriangleMeshSchema,
+            ea::kProceduralQuadMeshSchema,
+            ea::kProceduralCubeMeshSchema,
+            ea::kProceduralClipmapLatticeMeshSchema,
+            ea::kGLBMeshSchema,
+        };
+
+        for (const wz::asset::SchemaID schema : mesh_schemas) {
+            const wz::asset::AssetCompiler* compiler =
+                registry.find(schema, ea::kAssetTypeMesh);
+            ASSERT_NE(compiler, nullptr)
+                << "no mesh compiler for schema " << schema.value;
+
+            const bool has_name = std::ranges::any_of(
+                compiler->parameters,
+                [](const wz::asset::ParamDecl& p)
+                {
+                    return p.name == "name"
+                        && p.type == wz::asset::ParamType::String;
+                });
+            EXPECT_TRUE(has_name)
+                << "mesh schema " << schema.value << " missing a 'name' param";
+        }
     }
 }

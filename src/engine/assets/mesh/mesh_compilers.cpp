@@ -783,6 +783,13 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralTriangleMeshSchema,
             .output_type = kAssetTypeMesh,
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -796,6 +803,13 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralQuadMeshSchema,
             .output_type = kAssetTypeMesh,
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -809,6 +823,13 @@ namespace wz::engine::assets::internal
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kProceduralCubeMeshSchema,
             .output_type = kAssetTypeMesh,
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+            },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -836,6 +857,11 @@ namespace wz::engine::assets::internal
             .input_schema = kProceduralClipmapLatticeMeshSchema,
             .output_type = kAssetTypeMesh,
             .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
                 {
                     .name = "level_count",
                     .type = wz::asset::ParamType::Int,
@@ -878,6 +904,11 @@ namespace wz::engine::assets::internal
                 { "source_file", kAssetTypeBinaryBlob },
             },
             .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
                 {
                     .name = "mesh_index",
                     .type = wz::asset::ParamType::Int,

@@ -2,6 +2,12 @@
 
 #include <engine/editor/asset_graph_editor_session.h>
 
+#include <asset/draft.h>
+#include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
+#include <engine/editor/asset_graph_snapshot.h>
+#include <external/json/json_parser.h>
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -249,6 +255,41 @@ TEST(AssetGraphEditorSession, SnapshotContainsDeclaredPortsAndEdgeIds)
     EXPECT_EQ(edge.from, 1u);
     EXPECT_EQ(edge.to, 2u);
     EXPECT_EQ(edge.to_input_port, 0u);
+}
+
+TEST(AssetGraphEditorSession, UnnamedNodeDisplayNameUsesSchemaLabel)
+{
+    // With no authored "name" param, a node's display name -- the card title
+    // and inspector header -- is the schema's human display label (the same
+    // label the asset browser/catalog shows), not the bare output type
+    // ("mesh"). Guards both the fallback and the registered clipmap label.
+    wz::asset::AssetGraphDraft draft;
+    wz::asset::AssetGraphDraftNode node;
+    node.id = 1u;
+    node.state = wz::asset::AssetGraphDraftNodeState::Existing;
+    node.node.type = wz::engine::assets::kAssetTypeMesh;
+    node.node.schema =
+        wz::engine::assets::kProceduralClipmapLatticeMeshSchema;
+    draft.nodes.push_back(node);
+
+    const auto parsed = wz::json::parse_json_string("{}");
+    ASSERT_TRUE(parsed.ok);
+    ASSERT_NE(parsed.document.root, nullptr);
+
+    const wz::engine::editor::AssetGraphSnapshot snapshot =
+        wz::engine::editor::build_asset_graph_snapshot(
+            *parsed.document.root, draft, nullptr);
+
+    const auto* out = find_snapshot_node(snapshot, 1u);
+    ASSERT_NE(out, nullptr);
+
+    const std::string expected(
+        wz::engine::assets::schema_display_name_view(
+            wz::engine::assets::kProceduralClipmapLatticeMeshSchema));
+    ASSERT_FALSE(expected.empty());
+    EXPECT_EQ(out->display_name, expected);
+    // The schema label, not the bare output type name ("Mesh").
+    EXPECT_NE(out->display_name, out->type_name);
 }
 
 TEST(AssetGraphEditorSession, SnapshotMarksKeyedNodesReady)

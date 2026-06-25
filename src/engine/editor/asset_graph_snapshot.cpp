@@ -117,6 +117,16 @@ namespace wz::engine::editor
                 }
             }
 
+            // No authored name: prefer the schema's human display label
+            // (e.g. "Procedural clipmap mesh") -- the same label the asset
+            // catalog/browser shows -- so node cards and the inspector read
+            // descriptively instead of the bare output type ("mesh"). Falls
+            // through to the type name for schemas with no registered label.
+            const std::string_view schema_name =
+                wz::engine::assets::schema_display_name_view(node.schema);
+            if (!schema_name.empty()) {
+                return std::string(schema_name);
+            }
             return type_name(node.type);
         }
 
