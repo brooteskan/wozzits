@@ -158,9 +158,13 @@ namespace wz::engine::rendering
             wz::engine::assets::ClipmapLandscapeRenderSettings clipmap_settings{};
             uint32_t heightmap_width = 1;
             uint32_t heightmap_height = 1;
-            // Lattice base_resolution recovered from the mesh level tags; sizes
-            // the per-level geomorph band in the clipmap VS (issue #207).
+            // Lattice base_resolution + level_count recovered from the mesh level
+            // tags. base_resolution sizes the per-level geomorph band (#207);
+            // together they give the lattice's unitless extent
+            // (base_resolution * 2^(level_count-1)), which derives c0 from the
+            // node scale so the renderable's world_size is fully inert.
             uint32_t clipmap_base_resolution = 8;
+            uint32_t clipmap_level_count = 1;
 
             // Gaussian-splat-cloud renderables (#208) bind the resident decoded
             // splat StructuredBuffer (at the SplatCloud semantic in object_srg,
