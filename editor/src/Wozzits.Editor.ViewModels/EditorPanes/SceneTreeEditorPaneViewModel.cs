@@ -292,7 +292,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
 
     public EngineSceneRenderableSource RenderableSource { get; }
 
-    public EngineSceneTransform? Transform { get; }
+    // Settable so live inspector edits can refresh the cached model in step with
+    // the runtime push -- otherwise re-selecting a node repopulates the inspector
+    // from the startup snapshot and the edit appears to revert (fix 1).
+    public EngineSceneTransform? Transform { get; internal set; }
 
     public EngineSceneCamera? Camera { get; }
 

@@ -524,6 +524,40 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         _editorSession.SetSceneNodeTransformLive(NodeId, CurrentTransformEdit());
+
+        // Keep the editor's cached scene-node model in step with the live edit so
+        // re-selecting this node repopulates the inspector from the edited values
+        // instead of snapping back to the startup snapshot. Only Display is read
+        // post-snapshot (SetTransformFields); the raw numeric lists are not, and
+        // the runtime stays authoritative for the actual transform and for
+        // save_scene, so refreshing Display is sufficient.
+        if (_inspectedSceneNode?.Transform is { } current)
+        {
+            _inspectedSceneNode.Transform = current with
+            {
+                Display = new EngineSceneTransformDisplay
+                {
+                    TranslationX = TranslationX,
+                    TranslationY = TranslationY,
+                    TranslationZ = TranslationZ,
+                    RotationX = RotationX,
+                    RotationY = RotationY,
+                    RotationZ = RotationZ,
+                    ScaleX = ScaleX,
+                    ScaleY = ScaleY,
+                    ScaleZ = ScaleZ,
+                },
+            };
+        }
+    }
+
+    // Persist the live scene edits to disk. Wired to inspector-field blur (not
+    // per keystroke / not mid-drag), so transform / name / visibility edits
+    // survive a relaunch. save_scene is dirty-gated and serializes the live
+    // runtime scene, so this is a cheap no-op when nothing scene-side changed.
+    public void PersistSceneEditsOnBlur()
+    {
+        _editorSession?.SaveScene();
     }
 
     private EngineSceneTransformEdit CurrentTransformEdit()
