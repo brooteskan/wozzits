@@ -33,6 +33,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -448,6 +451,69 @@ namespace wz::engine::rendering
             out.viewport_and_size[3] = 0.0f;
             return out;
         }
+    }
+
+    std::vector<wz::math::Mat4> compute_scene_node_world_transforms(
+        std::span<const ea::SceneNodeAsset> nodes)
+    {
+        const std::size_t n = nodes.size();
+
+        // node id -> index, so a node can resolve its parent within `nodes`.
+        std::unordered_map<std::string, std::size_t> index_by_id;
+        index_by_id.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            index_by_id.emplace(nodes[i].id, i);
+        }
+
+        // Parent index per node; n == no parent / dangling id / self-parent.
+        std::vector<std::size_t> parent(n, n);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (!nodes[i].parent_id.has_value()) {
+                continue;
+            }
+            const auto it = index_by_id.find(*nodes[i].parent_id);
+            if (it != index_by_id.end() && it->second != i) {
+                parent[i] = it->second;
+            }
+        }
+
+        std::vector<wz::math::Mat4> local(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            local[i] = world_from_transform(nodes[i].local);
+        }
+
+        // Resolve world = parent_world * local, parents before children, without
+        // recursion (deep chains can't overflow). state: 0 unvisited, 1
+        // in-progress, 2 resolved. A parent cycle breaks cleanly: an in-progress
+        // ancestor is never a usable parent, so the node falls back to its local.
+        std::vector<wz::math::Mat4> world(n);
+        std::vector<std::uint8_t> state(n, 0u);
+        std::vector<std::size_t> chain;
+        chain.reserve(n);
+        for (std::size_t start = 0; start < n; ++start) {
+            if (state[start] != 0u) {
+                continue;
+            }
+            chain.clear();
+            std::size_t cur = start;
+            while (cur != n && state[cur] == 0u) {
+                state[cur] = 1u;
+                chain.push_back(cur);
+                cur = parent[cur];
+            }
+            // Unwind highest-ancestor-first so each node's parent is already
+            // resolved. The chain's terminator is a root (n), an already-resolved
+            // node (shared ancestor), or an in-progress node (cycle).
+            for (std::size_t k = chain.size(); k-- > 0;) {
+                const std::size_t i = chain[k];
+                const std::size_t p = parent[i];
+                world[i] = (p != n && state[p] == 2u)
+                    ? wz::math::mul(world[p], local[i])
+                    : local[i];
+                state[i] = 2u;
+            }
+        }
+        return world;
     }
 
     RhiSceneRenderer::RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger)
@@ -963,6 +1029,16 @@ namespace wz::engine::rendering
         cmd->RSSetScissorRects(1, &scissor);
 
         uint32_t recorded = 0;
+
+        // Hierarchical world transforms: each node's local TRS composed with its
+        // parent chain, so a renderable child follows its parent. The RHI path
+        // had drawn every node at its own local transform; this restores
+        // inheritance without resurrecting the legacy compile_scene renderer.
+        // The clipmap branch ignores this by design (its lattice follows the
+        // camera, not the node).
+        const std::vector<wz::math::Mat4> node_worlds =
+            compute_scene_node_world_transforms(nodes);
+
         for (const ea::SceneNodeAsset& node : nodes) {
             if (!node.visible || !node.renderable_asset) {
                 continue;
@@ -1000,7 +1076,8 @@ namespace wz::engine::rendering
                 // than a pre-multiplied MVP. The node's transform applies, so
                 // the cloud lands in the same world space the converter authored
                 // (and can be transformed to overlay the clipmap).
-                const wz::math::Mat4 world = world_from_transform(node.local);
+                const wz::math::Mat4& world =
+                    node_worlds[static_cast<std::size_t>(&node - nodes.data())];
                 const SplatCloudDrawConstants constants =
                     make_splat_cloud_draw_constants(
                         world, view_projection, w, h,
@@ -1011,7 +1088,8 @@ namespace wz::engine::rendering
                     bytes, bytes + sizeof(constants));
             }
             else {
-                const wz::math::Mat4 world = world_from_transform(node.local);
+                const wz::math::Mat4& world =
+                    node_worlds[static_cast<std::size_t>(&node - nodes.data())];
                 const wz::math::Mat4 mvp = wz::math::mul(view_projection, world);
                 realized->packet.root_constants.assign(
                     reinterpret_cast<const uint8_t*>(mvp.m),

@@ -37,6 +37,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -206,4 +207,15 @@ namespace wz::engine::rendering
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
     };
+
+    // Compose each scene node's world transform from its local TRS and its
+    // parent chain (world = parent_world * local), so renderable children
+    // inherit their parents' transforms. Returns one matrix per node,
+    // index-aligned with `nodes`. Self-contained: it walks parent_id within
+    // `nodes` only and does NOT consult the ECS polytree or the legacy
+    // compile_scene path. A node with no parent, a dangling parent id, or a
+    // parent cycle resolves to its own local TRS. RhiSceneRenderer::render_scene
+    // consumes this so nesting a node moves its children.
+    std::vector<wz::math::Mat4> compute_scene_node_world_transforms(
+        std::span<const wz::engine::assets::SceneNodeAsset> nodes);
 }
