@@ -875,7 +875,7 @@ namespace wz::engine::assets::internal
                     .type = wz::asset::ParamType::Int,
                     .label = "Base resolution",
                     .default_num = 8,
-                    .min = 2,
+                    .min = 1,
                     .max = 256,
                 },
                 {

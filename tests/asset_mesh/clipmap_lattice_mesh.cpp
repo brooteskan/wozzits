@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -67,25 +69,32 @@ namespace
 
 TEST(ClipmapLatticeMesh, SanitizesDegenerateParameters)
 {
-    // level_count floored to 1, resolution rounded up to a multiple of 4, and a
-    // non-positive cell size falls back to 1.
+    // level_count floored to 1 and a non-positive cell size falls back to 1. The
+    // base resolution is NO LONGER rounded to a multiple of 4: completeness is a
+    // structural invariant of the generator, so any m >= 1 passes through intact.
     const auto p = ea::sanitize_clipmap_lattice_params(0u, 7u, -3.0f);
     EXPECT_EQ(p.level_count, 1u);
-    EXPECT_EQ(p.base_resolution, 8u);
+    EXPECT_EQ(p.base_resolution, 7u);  // odd, kept as-is
     EXPECT_FLOAT_EQ(p.cell_size, 1.0f);
 
-    // Tiny/odd resolutions clamp up to the minimum valid value (4).
-    const auto p2 = ea::sanitize_clipmap_lattice_params(3u, 1u, 2.5f);
-    EXPECT_EQ(p2.level_count, 3u);
-    EXPECT_EQ(p2.base_resolution, 4u);
-    EXPECT_FLOAT_EQ(p2.cell_size, 2.5f);
+    // Only a zero resolution is floored up (to 1, a non-empty 1x1 center).
+    const auto p0 = ea::sanitize_clipmap_lattice_params(2u, 0u, 1.0f);
+    EXPECT_EQ(p0.base_resolution, 1u);
 
-    // An even resolution whose half-width is odd (m % 4 == 2) rounds up to the
-    // next multiple of 4, keeping the seams crack-free.
+    // Small odd/even resolutions pass through unchanged (no clamp to 4).
+    const auto p1 = ea::sanitize_clipmap_lattice_params(3u, 1u, 2.5f);
+    EXPECT_EQ(p1.level_count, 3u);
+    EXPECT_EQ(p1.base_resolution, 1u);
+    EXPECT_FLOAT_EQ(p1.cell_size, 2.5f);
+
+    const auto p2 = ea::sanitize_clipmap_lattice_params(2u, 2u, 1.0f);
+    EXPECT_EQ(p2.base_resolution, 2u);
+
+    // A non-multiple-of-4 even resolution is no longer bumped up.
     const auto p3 = ea::sanitize_clipmap_lattice_params(2u, 6u, 1.0f);
-    EXPECT_EQ(p3.base_resolution, 8u);
+    EXPECT_EQ(p3.base_resolution, 6u);
 
-    // Already a multiple of 4: unchanged.
+    // Already valid: unchanged.
     const auto p4 = ea::sanitize_clipmap_lattice_params(2u, 12u, 1.0f);
     EXPECT_EQ(p4.base_resolution, 12u);
 }
@@ -109,27 +118,60 @@ TEST(ClipmapLatticeMesh, SingleLevelIsAFullGrid)
     EXPECT_EQ(mesh.index_count(), 2u * m * m * 3u);
 }
 
+// Exact per-level cell/triangle count for the rewritten (gap-free, any-m)
+// generator. With h = floor(m/2) and q = floor(h/2) = floor(m/4):
+//   * level 0 is a solid m x m grid  -> 2*m^2 triangles.
+//   * level k>=1 spans h cells of its own size per side (outer = (2h)^2 cells)
+//     minus a centered hole of q cells per side (hole = (2q)^2 cells), all whole
+//     cells -> 4*(h^2 - q^2) cells -> 8*(h^2 - q^2) triangles per ring.
+// Every ring count is identical, so total = 2*m^2 + (L-1)*8*(h^2 - q^2).
+namespace
+{
+    uint32_t expected_lattice_triangles(uint32_t m, uint32_t L)
+    {
+        const uint32_t h = m / 2u;
+        const uint32_t q = h / 2u;  // == m / 4
+        const uint32_t level0 = 2u * m * m;
+        const uint32_t per_ring = 8u * (h * h - q * q);
+        return level0 + (L - 1u) * per_ring;
+    }
+}
+
 TEST(ClipmapLatticeMesh, MultiLevelTriangleCountMatchesRingFormula)
 {
-    const uint32_t m = 8u;
-    const uint32_t L = 4u;
-    const auto mesh = ea::make_clipmap_lattice_mesh({
-        .level_count = L,
-        .base_resolution = m,
-        .cell_size = 1.0f,
-    });
+    // Canonical multiple-of-4 case (unchanged from before the rewrite): for m=8
+    // the new formula reduces to the old 2*m^2 + (L-1)*3*m^2/2.
+    {
+        const uint32_t m = 8u;
+        const uint32_t L = 4u;
+        const auto mesh = ea::make_clipmap_lattice_mesh({
+            .level_count = L,
+            .base_resolution = m,
+            .cell_size = 1.0f,
+        });
+        ASSERT_TRUE(mesh.valid());
 
-    ASSERT_TRUE(mesh.valid());
+        const uint32_t old_formula =
+            2u * m * m + (L - 1u) * ((3u * m * m) / 2u);
+        EXPECT_EQ(expected_lattice_triangles(m, L), old_formula);
+        EXPECT_EQ(mesh.index_count(), expected_lattice_triangles(m, L) * 3u);
+    }
 
-    // Level 0: 2*m^2 triangles. Each outer ring is now PLAIN quads (no crack-fix
-    // split cells — #207 closes the seam with the VS vertical morph instead):
-    // (outer/step)^2 - (inner/step)^2 = m^2 - (m/2)^2 = 3*m^2/4 cells, each 2
-    // triangles -> 3*m^2/2 triangles per ring.
-    const uint32_t level0 = 2u * m * m;
-    const uint32_t per_ring = (3u * m * m) / 2u;
-    const uint32_t expected_tris = level0 + (L - 1u) * per_ring;
+    // A non-multiple-of-4 resolution (m=5, the headline regression): h=2, q=1,
+    // so level 0 = 2*25 = 50 tris and each ring = 8*(4-1) = 24 tris.
+    {
+        const uint32_t m = 5u;
+        const uint32_t L = 3u;
+        const auto mesh = ea::make_clipmap_lattice_mesh({
+            .level_count = L,
+            .base_resolution = m,
+            .cell_size = 1.0f,
+        });
+        ASSERT_TRUE(mesh.valid());
 
-    EXPECT_EQ(mesh.index_count(), expected_tris * 3u);
+        EXPECT_EQ(expected_lattice_triangles(m, L), 50u + 2u * 24u);
+        EXPECT_EQ(mesh.index_count(), expected_lattice_triangles(m, L) * 3u);
+    }
 }
 
 // Each vertex carries its LOD level in position.y (0 = finest center, k = ring
@@ -379,4 +421,211 @@ TEST(ClipmapLatticeMesh, IsDeterministic)
         EXPECT_FLOAT_EQ(a.vertices[v].position[2], b.vertices[v].position[2]);
     }
     EXPECT_EQ(a.indices, b.indices);
+}
+
+namespace
+{
+    // An axis-aligned cell reconstructed from a triangle: its XZ bounding box is
+    // exactly the parent quad (both triangles of a quad span the full quad bbox),
+    // and every quad is a square, so x1-x0 == z1-z0 == the level's step.
+    struct Cell
+    {
+        int64_t x0 = 0;
+        int64_t z0 = 0;
+        int64_t step = 0;
+        int level = 0;
+
+        bool operator<(const Cell& o) const
+        {
+            if (x0 != o.x0) return x0 < o.x0;
+            if (z0 != o.z0) return z0 < o.z0;
+            if (step != o.step) return step < o.step;
+            return level < o.level;
+        }
+    };
+
+    // Per-side cell counts of level k's full grid and its centered hole, mirrored
+    // from the generator: outer side = 2*h, hole side = 2*floor(h/2), with
+    // h = floor(m/2). Level 0 is a solid m x m grid (no hole).
+    uint32_t expected_level_cell_count(uint32_t m, uint32_t level)
+    {
+        if (level == 0u) {
+            return m * m;
+        }
+        const uint32_t h = m / 2u;
+        const uint32_t q = h / 2u;
+        const uint32_t outer_side = 2u * h;
+        const uint32_t hole_side = 2u * q;
+        return outer_side * outer_side - hole_side * hole_side;
+    }
+}
+
+// HEADLINE gap-free regression. Sweeps a range of resolutions (including the
+// non-multiple-of-4 m=5 that the old generator could not tile) and level counts
+// and PROVES the lattice is watertight:
+//   (1) no zero-area triangle anywhere;
+//   (2) within each level, no two cells overlap, and the emitted cell count
+//       equals the analytic annulus count (so count == covered area: nothing is
+//       missing or double-covered WITHIN a level);
+//   (3) every finest-grid cell inside the outer bounding box is covered by at
+//       least one quad of some level -> NO GAPS across the whole footprint
+//       (cross-level overlaps at the seams are allowed; gaps are not).
+// (3) is a topological coverage proof independent of the ring formula, so it
+// genuinely demonstrates completeness rather than merely "does not crash".
+TEST(ClipmapLatticeMesh, FullyTilesWithNoGapsForAnyResolution)
+{
+    const uint32_t resolutions[] = { 1u, 2u, 3u, 4u, 5u, 7u, 8u, 16u, 33u };
+    const uint32_t level_counts[] = { 1u, 2u, 3u, 4u, 5u };
+
+    for (const uint32_t m : resolutions) {
+        for (const uint32_t L : level_counts) {
+            SCOPED_TRACE(
+                "base_resolution=" + std::to_string(m)
+                + " level_count=" + std::to_string(L));
+
+            // cell_size == 1 so positions are exact integers (fine units): the
+            // coverage rasterization below is then exact, with no float slop.
+            const auto mesh = ea::make_clipmap_lattice_mesh({
+                .level_count = L,
+                .base_resolution = m,
+                .cell_size = 1.0f,
+            });
+            ASSERT_TRUE(mesh.valid());
+            ASSERT_EQ(mesh.index_count() % 3u, 0u);
+
+            // Reconstruct the set of cells per level from the triangles, and
+            // tally how many triangles fall on each cell (must be exactly 2).
+            std::map<Cell, int> cell_tri_count;
+            std::set<int> levels_seen;
+
+            for (uint32_t i = 0; i < mesh.index_count(); i += 3u) {
+                const uint32_t ia = mesh.indices[i + 0u];
+                const uint32_t ib = mesh.indices[i + 1u];
+                const uint32_t ic = mesh.indices[i + 2u];
+                ASSERT_LT(ia, mesh.vertex_count());
+                ASSERT_LT(ib, mesh.vertex_count());
+                ASSERT_LT(ic, mesh.vertex_count());
+
+                const Vec2 a = vertex_xz(mesh, ia);
+                const Vec2 b = vertex_xz(mesh, ib);
+                const Vec2 c = vertex_xz(mesh, ic);
+
+                // (1) no degenerate triangle.
+                EXPECT_GT(std::fabs(signed_area2(a, b, c)), 1e-4f)
+                    << "degenerate triangle at index " << i;
+
+                // All three vertices of a triangle share one level.
+                const int la =
+                    static_cast<int>(std::llround(mesh.vertices[ia].position[1]));
+                const int lb =
+                    static_cast<int>(std::llround(mesh.vertices[ib].position[1]));
+                const int lc =
+                    static_cast<int>(std::llround(mesh.vertices[ic].position[1]));
+                ASSERT_EQ(la, lb);
+                ASSERT_EQ(la, lc);
+                levels_seen.insert(la);
+
+                const int64_t x0 = quantize(std::min({ a.x, b.x, c.x }));
+                const int64_t x1 = quantize(std::max({ a.x, b.x, c.x }));
+                const int64_t z0 = quantize(std::min({ a.z, b.z, c.z }));
+                const int64_t z1 = quantize(std::max({ a.z, b.z, c.z }));
+                // Square, axis-aligned, non-degenerate cell.
+                ASSERT_GT(x1, x0);
+                ASSERT_EQ(x1 - x0, z1 - z0);
+                cell_tri_count[Cell{ x0, z0, x1 - x0, la }] += 1;
+            }
+
+            // Exactly the levels with a non-empty annulus are present. Every
+            // ring level is non-empty when h = floor(m/2) >= 1 (i.e. m >= 2);
+            // the m == 1 lattice has zero ring extent (half_extent == 0, which
+            // also keeps it consistent with clipmap_lattice_grid_extent), so it
+            // legitimately collapses to the single level-0 cell.
+            std::set<int> expected_levels;
+            for (uint32_t level = 0u; level < L; ++level) {
+                if (expected_level_cell_count(m, level) > 0u) {
+                    expected_levels.insert(static_cast<int>(level));
+                }
+            }
+            EXPECT_EQ(levels_seen, expected_levels);
+
+            // (2) Each reconstructed cell carries exactly two triangles (a clean
+            // quad), and the per-level cell totals match the analytic annulus
+            // count -> within a level nothing overlaps and nothing is missing.
+            std::map<int, uint32_t> cells_per_level;
+            for (const auto& [cell, tris] : cell_tri_count) {
+                EXPECT_EQ(tris, 2)
+                    << "level " << cell.level << " cell (" << cell.x0 << ","
+                    << cell.z0 << ") step " << cell.step
+                    << " is not a clean 2-triangle quad";
+                cells_per_level[cell.level] += 1u;
+            }
+            for (uint32_t level = 0u; level < L; ++level) {
+                EXPECT_EQ(
+                    cells_per_level[static_cast<int>(level)],
+                    expected_level_cell_count(m, level))
+                    << "level " << level << " annulus cell count mismatch";
+            }
+
+            // (3) Watertight coverage proof. Rasterize every quad onto the finest
+            // (1x1) integer grid and assert the whole outer bounding box is
+            // covered. Positions are in 1/1024 units (quantize scale) and every
+            // coordinate is an integer multiple of 1024 here (cell_size == 1), so
+            // divide back to whole fine cells.
+            constexpr int64_t kUnit = 1024;  // quantize() scale
+            int64_t min_x = 0, max_x = 0, min_z = 0, max_z = 0;
+            bool first = true;
+            for (const auto& [cell, tris] : cell_tri_count) {
+                (void)tris;
+                if (first) {
+                    min_x = cell.x0;
+                    max_x = cell.x0 + cell.step;
+                    min_z = cell.z0;
+                    max_z = cell.z0 + cell.step;
+                    first = false;
+                } else {
+                    min_x = std::min(min_x, cell.x0);
+                    max_x = std::max(max_x, cell.x0 + cell.step);
+                    min_z = std::min(min_z, cell.z0);
+                    max_z = std::max(max_z, cell.z0 + cell.step);
+                }
+            }
+            ASSERT_FALSE(first);
+
+            const int64_t span_x = (max_x - min_x) / kUnit;
+            const int64_t span_z = (max_z - min_z) / kUnit;
+            ASSERT_GT(span_x, 0);
+            ASSERT_GT(span_z, 0);
+
+            // covered[ (i - min) , (j - min) ] over fine cells [i,i+1)x[j,j+1).
+            std::vector<uint8_t> covered(
+                static_cast<size_t>(span_x) * static_cast<size_t>(span_z), 0u);
+
+            for (const auto& [cell, tris] : cell_tri_count) {
+                (void)tris;
+                const int64_t cx0 = (cell.x0 - min_x) / kUnit;
+                const int64_t cz0 = (cell.z0 - min_z) / kUnit;
+                const int64_t cells = cell.step / kUnit;  // step in fine cells
+                for (int64_t dz = 0; dz < cells; ++dz) {
+                    for (int64_t dx = 0; dx < cells; ++dx) {
+                        const int64_t fx = cx0 + dx;
+                        const int64_t fz = cz0 + dz;
+                        covered[static_cast<size_t>(fz) *
+                                    static_cast<size_t>(span_x) +
+                                static_cast<size_t>(fx)] = 1u;
+                    }
+                }
+            }
+
+            size_t uncovered = 0;
+            for (const uint8_t flag : covered) {
+                if (flag == 0u) {
+                    ++uncovered;
+                }
+            }
+            EXPECT_EQ(uncovered, 0u)
+                << uncovered << " finest-grid cell(s) of the "
+                << span_x << "x" << span_z
+                << " footprint are not covered by any quad (gap)";
+        }
+    }
 }

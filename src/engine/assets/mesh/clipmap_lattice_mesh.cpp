@@ -147,12 +147,21 @@ namespace wz::engine::assets
 
         // Build one clipmap ring at coarse cell size `step` (fine units),
         // occupying coarse cells in [center-outer, center+outer] minus the inner
-        // hole [center-inner, center+inner]. Every ring cell is a plain quad of
-        // this level's own cell size: with per-level view-snapping (#207) the
-        // adjacent finer level snaps to a nested grid so its outer boundary
-        // vertices stay spatially coincident with this ring's hole edge, and the
-        // VS's vertical geomorph lerps those finer edge vertices onto the coarse
-        // edge — so no crack-fix fan / split cell is needed.
+        // hole [center-inner, center+inner]. The caller guarantees `outer` and
+        // `inner` are both exact multiples of `step` measured from `center`, so
+        // every emitted cell is a WHOLE step-sized quad (the lattice never drops
+        // a straddling partial cell) and the hole removes whole cells only. The
+        // hole is the previous (finer) level's footprint snapped INWARD to this
+        // level's grid, so hole <= finer footprint: adjacent levels meet with at
+        // most a one-coarse-cell overlap that the finer level already covers, and
+        // there is never a gap regardless of base_resolution.
+        //
+        // Every ring cell is a plain quad of this level's own cell size: with
+        // per-level view-snapping (#207) the adjacent finer level snaps to a
+        // nested grid so its outer boundary vertices stay spatially coincident
+        // with this ring's hole edge, and the VS's vertical geomorph lerps those
+        // finer edge vertices onto the coarse edge — so no crack-fix fan / split
+        // cell is needed.
         void fill_ring(
             LatticeBuilder& b,
             int64_t step,
@@ -188,16 +197,13 @@ namespace wz::engine::assets
         ClipmapLatticeParams params{};
         params.level_count = level_count < 1u ? 1u : level_count;
 
-        // Round the base resolution up to a multiple of 4. Each outer ring is
-        // m/4 coarse cells thick (outer extent (m/2)*2^k minus inner hole
-        // (m/2)*2^(k-1), all divided by the level's own cell 2^k, gives m/4), so
-        // m must be a multiple of 4 for the ring to be a whole number of cells
-        // and for its hole boundary to fall on this level's cell lines. (This is
-        // the nesting constraint; it no longer has anything to do with the old
-        // boundary-fan split, which #207 removed.)
-        uint32_t m = base_resolution < 4u ? 4u : base_resolution;
-        m = (m + 3u) & ~3u;
-        params.base_resolution = m;
+        // Any base resolution >= 1 is valid: completeness is a structural
+        // property of the generator (each coarse level's hole is the finer
+        // level's footprint snapped INWARD to the coarse grid, so hole <= finer
+        // footprint and the seam is an overlap, never a gap), so there is no
+        // divisibility constraint to enforce here. Only floor a zero resolution
+        // up to 1 so level 0 is a non-empty 1x1 center.
+        params.base_resolution = base_resolution < 1u ? 1u : base_resolution;
 
         params.cell_size =
             (std::isfinite(cell_size) && cell_size > 0.0f)
@@ -216,10 +222,19 @@ namespace wz::engine::assets
         const int64_t m = static_cast<int64_t>(params.base_resolution);
         const int64_t levels = static_cast<int64_t>(params.level_count);
 
-        // Coarsest cell size in fine units is 2^(L-1). The whole lattice spans
-        // (m/2) coarse cells of that size out from the center in each direction.
+        // Half the base resolution in finest cells (floor for odd m). This is
+        // the per-side outer extent of every level measured in that level's OWN
+        // cells: level k's outer half-extent is h * 2^k fine units (h cells of
+        // size 2^k), so the boundary is always on level k's grid for any m.
+        const int64_t h = m / 2;
+
+        // Coarsest cell size in fine units is 2^(L-1); the whole lattice spans
+        // h coarse cells of that size out from the center in each direction. This
+        // extent is identical to the pre-rewrite formula (for m a multiple of 4
+        // the whole geometry is byte-for-byte unchanged), so the view transform's
+        // clipmap_lattice_grid_extent still mirrors it exactly.
         const int64_t coarsest_step = int64_t{1} << (levels - 1);
-        const int64_t half_extent = (m / 2) * coarsest_step;
+        const int64_t half_extent = h * coarsest_step;
 
         LatticeBuilder b{};
         b.cell_size = params.cell_size;
@@ -231,16 +246,34 @@ namespace wz::engine::assets
         b.mesh.has_normals = true;
         b.mesh.has_uv0 = true;
 
-        // Level 0: solid fine center, m x m cells of size 1 fine step.
-        fill_solid_block(b, b.center - m / 2, b.center - m / 2, m, 1, 0);
+        // Level 0: solid fine center, exactly m x m cells of size 1 fine step.
+        // The lower corner is center - floor(m/2) so the block is centered on the
+        // integer grid for even m; for odd m it is off-center by half a cell (the
+        // extra cell lands on the +X/+Z side), which is an accepted approximation
+        // and never reaches the outer bounds (those are set by the symmetric
+        // rings below, so the whole lattice's bounding box stays symmetric).
+        fill_solid_block(b, b.center - h, b.center - h, m, 1, 0);
 
         // Levels 1..L-1: concentric plain rings, each at double the previous
         // cell size and tagged with its own level (position.y = k).
+        //
+        // outer_k = h * 2^k  (a whole number of this level's cells per side), and
+        // the hole = the finer level's footprint snapped INWARD to this level's
+        // grid: inner_k = floor(h/2) * 2^k. Snapping inward guarantees
+        // inner_k <= outer_{k-1} = h * 2^(k-1) (since floor(h/2)*2 <= h), so the
+        // finer level always fully covers this level's hole — adjacent levels
+        // overlap by at most one coarse cell instead of risking a gap. For m a
+        // multiple of 4, h is even and floor(h/2)*2^k == h*2^(k-1) == the old
+        // inner hole exactly, so multiples of 4 reproduce the previous geometry.
+        int64_t prev_h = h;  // outer half-extent of level k-1, in fine units
         for (int64_t k = 1; k < levels; ++k) {
             const int64_t step = int64_t{1} << k;
-            const int64_t outer = (m / 2) * step;
-            const int64_t inner = (m / 2) * (step / 2); // == outer extent of k-1
+            const int64_t outer = h * step;
+            // floor(prev_h / step) * step == floor(h/2) * step: the finer
+            // footprint (h * 2^(k-1) fine units) snapped down to this grid.
+            const int64_t inner = (prev_h / step) * step;
             fill_ring(b, step, outer, inner, k);
+            prev_h = outer;
         }
 
         return std::move(b.mesh);

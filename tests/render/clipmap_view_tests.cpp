@@ -73,17 +73,19 @@ TEST(ClipmapView, CarriesCameraAndBaseResolution)
 
     EXPECT_FLOAT_EQ(view.camera_world_xz[0], 13.5f);
     EXPECT_FLOAT_EQ(view.camera_world_xz[1], -7.25f);
-    // base_resolution is sanitized to a multiple of 4 (8 stays 8).
+    // base_resolution passes through sanitization unchanged (8 stays 8). The
+    // generator tiles gap-free for any resolution, so there is no longer a
+    // round-to-a-multiple-of-4 step.
     EXPECT_FLOAT_EQ(view.base_resolution, 8.0f);
 
-    // A base resolution of 6 sanitizes up to 8.
+    // A non-multiple-of-4 base resolution (6) is carried verbatim, not bumped.
     const ClipmapViewTransform view6 =
         compute_clipmap_view(
             0.0f, 0.0f, settings,
             ClipmapLatticeParams{
                 .level_count = 3u, .base_resolution = 6u, .cell_size = 1.0f },
             256u, 256u);
-    EXPECT_FLOAT_EQ(view6.base_resolution, 8.0f);
+    EXPECT_FLOAT_EQ(view6.base_resolution, 6.0f);
 }
 
 // view_snapped passes through (false = arbitrary supplied mesh, #205).
@@ -242,16 +244,23 @@ TEST(ClipmapView, GridExtentMatchesLatticeGeometry)
         }),
         8u);
 
-    // base_resolution is sanitized up to a multiple of 4: m=6 -> 8.
+    // base_resolution is carried verbatim now (no round-to-4): m=6, L=2 ->
+    // half_extent = (6/2)*2^1 = 6, grid_extent = 12 (distinct from m=8's 16).
     EXPECT_EQ(
         clipmap_lattice_grid_extent(ClipmapLatticeParams{
             .level_count = 2u,
             .base_resolution = 6u,
             .cell_size = 1.0f,
         }),
+        12u);
+
+    // An odd resolution is also exact: m=5, L=3 -> half_extent = (5/2)*2^2 =
+    // 2*4 = 8, grid_extent = 16. (floor(m/2) for odd m, matching the generator.)
+    EXPECT_EQ(
         clipmap_lattice_grid_extent(ClipmapLatticeParams{
-            .level_count = 2u,
-            .base_resolution = 8u,
+            .level_count = 3u,
+            .base_resolution = 5u,
             .cell_size = 1.0f,
-        }));
+        }),
+        16u);
 }

@@ -11,8 +11,9 @@ namespace wz::engine::rendering
     {
         // Mirror the lattice generator's extent math so view placement and the
         // emitted geometry agree (see make_clipmap_lattice_mesh): sanitize the
-        // params, then the lattice spans fine_extent = 2 * half_extent finest
-        // cells, where half_extent = (m/2) * 2^(L-1).
+        // params (base_resolution passes through >= 1; no round-to-4), then the
+        // lattice spans fine_extent = 2 * half_extent finest cells, where
+        // half_extent = floor(m/2) * 2^(L-1).
         const assets::ClipmapLatticeParams params =
             assets::sanitize_clipmap_lattice_params(
                 lattice.level_count,
@@ -36,8 +37,9 @@ namespace wz::engine::rendering
         ClipmapViewTransform out{};
 
         // Sanitize the lattice params once (level_count >= 1, base_resolution
-        // rounded to a multiple of 4) so the emitted base_resolution matches the
-        // geometry the generator actually produced.
+        // >= 1 and carried verbatim — the generator tiles gap-free for any
+        // resolution) so the emitted base_resolution matches the geometry the
+        // generator actually produced.
         const assets::ClipmapLatticeParams lattice_params =
             assets::sanitize_clipmap_lattice_params(
                 lattice.level_count,

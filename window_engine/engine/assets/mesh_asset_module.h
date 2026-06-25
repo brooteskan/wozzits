@@ -84,10 +84,12 @@ namespace wz::engine::assets
     //                 center grid; each outer level is a ring at double the
     //                 cell size of the level it encloses.
     //   base_resolution
-    //                 Quad cells per side of the fine center grid. Rounded up
-    //                 to a multiple of 4 at compile time (>= 4) so every ring's
-    //                 hole lands on a coarse-cell boundary and the LOD seams
-    //                 stay crack-free.
+    //                 Quad cells per side of the fine center grid (>= 1; any
+    //                 value is accepted). The generator tiles gap-free for any
+    //                 resolution — each coarse ring's hole is the finer level's
+    //                 footprint snapped INWARD to the coarse grid, so the levels
+    //                 meet with a covered overlap rather than a possible gap —
+    //                 so there is no multiple-of-4 requirement.
     //   cell_size     World/grid extent of one level-0 cell.
     struct ClipmapLatticeMeshDesc
     {
