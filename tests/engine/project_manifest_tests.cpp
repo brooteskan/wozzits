@@ -659,6 +659,128 @@ TEST(ProjectSceneSnapshot, SurfacesNodeBehaviorBindingInAbiBlob)
     EXPECT_TRUE(saw_axis);
 }
 
+TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "scene_source_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Scene Source Snapshot",
+  "scene": "scene.json"
+})json");
+
+    // The host node carries a glb_scene_source descriptor (consume_mode
+    // "instance", scene_index 0, a base_style, and one style override); the
+    // plain node has none, so its scene_source must stay absent.
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "scene_source_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "visible": true
+    },
+    {
+      "id": "tank_host",
+      "parent": "root",
+      "name": "tank_host",
+      "glb_scene_source": {
+        "path": "gltf/tank1.glb",
+        "scene_index": 0,
+        "consume_mode": "instance",
+        "base_style": {
+          "alpha": 1.0
+        },
+        "style_overrides": [
+          {
+            "mesh_index": 1,
+            "style": { "alpha": 1.0 }
+          }
+        ]
+      }
+    },
+    {
+      "id": "plain",
+      "parent": "root",
+      "name": "plain"
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& root = loaded.snapshot.roots[0];
+    ASSERT_EQ(root.children.size(), 2u);
+
+    const auto& host = root.children[0];
+    EXPECT_EQ(host.id, "tank_host");
+    ASSERT_TRUE(host.scene_source);
+    EXPECT_EQ(host.scene_source->kind, "glb");
+    EXPECT_EQ(host.scene_source->path, "gltf/tank1.glb");
+    EXPECT_EQ(host.scene_source->consume_mode, "instance");
+    EXPECT_EQ(host.scene_source->scene_index, 0u);
+    EXPECT_EQ(host.scene_source->style_override_count, 1u);
+    EXPECT_TRUE(host.scene_source->has_base_style);
+
+    const auto& plain = root.children[1];
+    EXPECT_EQ(plain.id, "plain");
+    EXPECT_EQ(plain.scene_source, std::nullopt);
+
+    // Pack and round-trip through the editor ABI blob.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    ASSERT_EQ(roots[0].children.count, 2u);
+    const WzEditorSceneNode* children =
+        abi_table<WzEditorSceneNode>(blob, roots[0].children);
+
+    const WzEditorSceneNode& abi_host = children[0];
+    EXPECT_EQ(abi_string(blob, abi_host.id), "tank_host");
+    EXPECT_NE(
+        abi_host.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE,
+        0u);
+    EXPECT_EQ(abi_string(blob, abi_host.scene_source.kind), "glb");
+    EXPECT_EQ(abi_string(blob, abi_host.scene_source.path), "gltf/tank1.glb");
+    EXPECT_EQ(
+        abi_string(blob, abi_host.scene_source.consume_mode),
+        "instance");
+    EXPECT_EQ(abi_host.scene_source.scene_index, 0u);
+    EXPECT_EQ(abi_host.scene_source.style_override_count, 1u);
+    EXPECT_EQ(abi_host.scene_source.has_base_style, 1u);
+
+    const WzEditorSceneNode& abi_plain = children[1];
+    EXPECT_EQ(abi_string(blob, abi_plain.id), "plain");
+    EXPECT_EQ(
+        abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE,
+        0u);
+}
+
 TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
 {
     TempProjectRoot temp;

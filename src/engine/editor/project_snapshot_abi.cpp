@@ -282,6 +282,22 @@ namespace wz::engine::editor
             }
             out.behaviors = builder.append_table(behaviors);
 
+            if (node.scene_source) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE;
+                out.scene_source = WzEditorSceneSceneSource{
+                    .kind = builder.append_string(node.scene_source->kind),
+                    .path = builder.append_string(node.scene_source->path),
+                    .consume_mode = builder.append_string(
+                        node.scene_source->consume_mode),
+                    .scene_index = node.scene_source->scene_index,
+                    .style_override_count =
+                        node.scene_source->style_override_count,
+                    .has_base_style =
+                        node.scene_source->has_base_style ? 1u : 0u,
+                    .reserved = 0u,
+                };
+            }
+
             out.children = scene_nodes_abi(builder, node.children);
             return out;
         }

@@ -362,6 +362,40 @@ namespace wz::engine::editor
             return behaviors;
         }
 
+        // Summarize a node's `glb_scene_source` descriptor (issue #213). Read-
+        // only and tolerant: a missing/malformed block is treated as absent (we
+        // return nullopt) rather than an error. We only surface the summary —
+        // path, consume_mode, scene_index, whether a base_style object exists,
+        // and the count of style_overrides — never the MeshRenderStyleData.
+        std::optional<SceneSnapshotSceneSource> read_scene_source(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* source = wz::json::find_member(obj, "glb_scene_source");
+            if (!source || source->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+
+            SceneSnapshotSceneSource out;
+            out.kind = "glb";
+            out.path =
+                std::string(wz::json::read_string(*source, "path").value_or(""));
+            out.consume_mode = std::string(
+                wz::json::read_string(*source, "consume_mode")
+                    .value_or("instance"));
+            out.scene_index =
+                wz::json::read_uint(*source, "scene_index").value_or(0u);
+            out.has_base_style =
+                has_component_object(*source, "base_style");
+            if (const auto* overrides =
+                    wz::json::find_member(*source, "style_overrides");
+                overrides && overrides->kind == wz::json::JSONValueKind::Array)
+            {
+                out.style_override_count =
+                    static_cast<uint32_t>(overrides->array_values.size());
+            }
+            return out;
+        }
+
         std::optional<FlatSceneSnapshotNode> read_node(
             const wz::json::JSONValue& value,
             std::string& error)
@@ -427,6 +461,7 @@ namespace wz::engine::editor
                 });
             }
             node.behaviors = read_behaviors(value);
+            node.scene_source = read_scene_source(value);
             return FlatSceneSnapshotNode{ .node = std::move(node) };
         }
 

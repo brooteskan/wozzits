@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 22u
+#define WZ_ABI_VERSION 23u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -191,6 +191,7 @@ enum
     WZ_EDITOR_SCENE_NODE_HAS_CAMERA = 1u << 4u,
     WZ_EDITOR_SCENE_NODE_HAS_RENDERABLE = 1u << 5u,
     WZ_EDITOR_SCENE_NODE_RENDERABLE_HAS_ASSET_GRAPH_NODE_ID = 1u << 6u,
+    WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE = 1u << 7u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -249,6 +250,21 @@ typedef struct WzEditorSceneRenderableSource
     WzEditorStringSpan display_name;
 } WzEditorSceneRenderableSource;
 
+// Read-only summary of a node's GLB scene-source descriptor (issue #213),
+// present only when WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE is set on the node.
+// The full MeshRenderStyleData (base_style / per-mesh overrides) is not packed:
+// has_base_style is 0/1 and style_override_count is the override array size.
+typedef struct WzEditorSceneSceneSource
+{
+    WzEditorStringSpan kind;          // "glb"
+    WzEditorStringSpan path;
+    WzEditorStringSpan consume_mode;  // "instance" | "flatten"
+    uint32_t scene_index;
+    uint32_t style_override_count;
+    uint32_t has_base_style;          // 0/1
+    uint32_t reserved;
+} WzEditorSceneSceneSource;
+
 typedef struct WzEditorSceneComponent
 {
     WzEditorStringSpan kind;
@@ -288,6 +304,7 @@ typedef struct WzEditorSceneNode
     WzEditorTableSpan components;
     WzEditorTableSpan behaviors; // WzEditorSceneBehavior[]
     WzEditorTableSpan children;
+    WzEditorSceneSceneSource scene_source;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -436,6 +453,15 @@ static_assert(sizeof(WzEditorSceneRenderableSource) == 32);
 static_assert(offsetof(WzEditorSceneRenderableSource, kind) == 0);
 static_assert(offsetof(WzEditorSceneRenderableSource, display_name) == 16);
 
+static_assert(sizeof(WzEditorSceneSceneSource) == 64);
+static_assert(offsetof(WzEditorSceneSceneSource, kind) == 0);
+static_assert(offsetof(WzEditorSceneSceneSource, path) == 16);
+static_assert(offsetof(WzEditorSceneSceneSource, consume_mode) == 32);
+static_assert(offsetof(WzEditorSceneSceneSource, scene_index) == 48);
+static_assert(offsetof(WzEditorSceneSceneSource, style_override_count) == 52);
+static_assert(offsetof(WzEditorSceneSceneSource, has_base_style) == 56);
+static_assert(offsetof(WzEditorSceneSceneSource, reserved) == 60);
+
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
 static_assert(offsetof(WzEditorSceneComponent, display_name) == 16);
@@ -449,7 +475,7 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 448);
+static_assert(sizeof(WzEditorSceneNode) == 512);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -462,6 +488,7 @@ static_assert(offsetof(WzEditorSceneNode, renderable_source) == 368);
 static_assert(offsetof(WzEditorSceneNode, components) == 400);
 static_assert(offsetof(WzEditorSceneNode, behaviors) == 416);
 static_assert(offsetof(WzEditorSceneNode, children) == 432);
+static_assert(offsetof(WzEditorSceneNode, scene_source) == 448);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);

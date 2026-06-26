@@ -3,6 +3,7 @@
 #include <asset/draft.h>
 #include <engine/project/project_manifest.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -57,6 +58,20 @@ namespace wz::engine::editor
         std::string display_name;
     };
 
+    // Summary of a node's GLB scene-source descriptor (SceneGLBSceneSource),
+    // surfaced read-only so the editor can show that the node sources a GLB.
+    // Only the summary fields are carried here; the full MeshRenderStyleData
+    // (base_style / style_overrides) is not parsed, only counted/flagged.
+    struct SceneSnapshotSceneSource
+    {
+        std::string kind;          // "glb" (only kind for now)
+        std::string path;          // GLB file path
+        std::string consume_mode;  // "instance" | "flatten"
+        uint32_t scene_index = 0;
+        uint32_t style_override_count = 0;
+        bool has_base_style = false;
+    };
+
     // A single config entry of an authored behavior binding, mirroring the
     // asset-graph param shape: a name, a kind ("bool"/"int"/"float"/"string")
     // and a display value string, so the editor renders it uniformly.
@@ -91,6 +106,7 @@ namespace wz::engine::editor
         std::optional<SceneSnapshotRenderable> renderable;
         std::vector<SceneSnapshotComponent> components;
         std::vector<SceneSnapshotBehavior> behaviors;
+        std::optional<SceneSnapshotSceneSource> scene_source;
         std::vector<SceneSnapshotNode> children;
     };
 
