@@ -1137,6 +1137,57 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_glb_scene_source(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneGLBSceneSource& descriptor)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_glb_scene_source: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+
+        // An empty path clears the descriptor (and any node-ref scene source);
+        // otherwise attach the authored descriptor. attach_glb_scene_source also
+        // clears the asset-graph-node route so the node stays single-route.
+        if (descriptor.path.empty()) {
+            wz::engine::assets::detach_scene_source(*node);
+        }
+        else {
+            wz::engine::assets::attach_glb_scene_source(*node, descriptor);
+        }
+        scene_dirty_ = true;
+
+        // Re-materialize so the change shows on the next frame. Mirror the
+        // descriptor-route sequence load_scene runs (NOT the node-ref bridge that
+        // set_node_scene_source uses): re-resolve the descriptor into a Scene
+        // asset, compile the freshly registered assets, then re-graft + rebuild.
+        // Guarded by the asset library (resolve/graft are no-ops without it).
+        if (ctx_.assets) {
+            const std::size_t resolved = resolve_glb_scene_sources();
+            if (resolved > 0) {
+                ctx_.assets->commit();
+                const wz::engine::assets::ResolveReport glb_resolve =
+                    ctx_.assets->resolve_all();
+                if (!glb_resolve.ok()) {
+                    ctx_.logger.warn(
+                        "set_node_glb_scene_source: GLB scene-source resolved "
+                        "with errors=" + std::to_string(glb_resolve.failures.size()));
+                }
+            }
+            // Re-graft so the host's children reflect the change immediately (a
+            // cleared descriptor leaves no scene_source, so graft drops the stale
+            // children and adds nothing), then rebuild the behavior runtime since
+            // the grafted children change the addressable entity set.
+            graft_scene_sources();
+            rebuild_behavior_scene();
+        }
+        return true;
+    }
+
     bool WozzitsApp_v1::flatten_scene_source(
         const wz::scene::AuthoredEntityId& node_id)
     {

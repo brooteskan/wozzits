@@ -735,3 +735,58 @@ TEST_F(WozzitsAppBehaviorFixture, SceneSourceVerbsGuardAndStateOnApp)
     EXPECT_FLOAT_EQ(after->y, before->y + 1.0f)
         << "behavior dispatch must survive scene-source authoring";
 }
+
+// The GLB scene-source DESCRIPTOR verb (issue #213 Phase 3a): the apply behind
+// the host-ABI verb wz_host_runtime_set_node_glb_scene_source. This mirrors
+// SceneSourceVerbsGuardAndStateOnApp for the asset-graph-independent route —
+// asserting the app-level verb's guard (fail-closed on a missing node) and that
+// authoring a GLB descriptor on a real node does not disturb the running behavior
+// runtime. The full graft/clear lifecycle is covered on the GLB fixture in
+// wozzits_app_glb_scene_source_tests (SetGlbSceneSourceAuthorsAndClearsLive).
+TEST_F(WozzitsAppBehaviorFixture, GlbSceneSourceVerbGuardAndStateOnApp)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // Guard: authoring a GLB descriptor on a missing node fails closed.
+    EXPECT_FALSE(app.set_node_glb_scene_source(
+        "does_not_exist",
+        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/tank1.glb" }));
+
+    // A real node with no scene source reports none; authoring the descriptor
+    // resolves + grafts the GLB hierarchy under it (single default style — 3a).
+    EXPECT_FALSE(app.node_has_glb_scene_source("blank"));
+    EXPECT_TRUE(app.set_node_glb_scene_source(
+        "blank",
+        wz::engine::assets::SceneGLBSceneSource{
+            .path = "gltf/tank1.glb",
+            .scene_index = 0,
+            .consume_mode =
+                wz::engine::assets::SceneSourceConsumeMode::Instance,
+        }));
+    EXPECT_TRUE(app.node_has_glb_scene_source("blank"));
+    EXPECT_TRUE(app.node_local_translation("blank/body").has_value())
+        << "the GLB hierarchy was not grafted under the authored host";
+
+    // Clearing (empty path) drops the descriptor + the grafted children.
+    EXPECT_TRUE(app.set_node_glb_scene_source(
+        "blank", wz::engine::assets::SceneGLBSceneSource{ .path = "" }));
+    EXPECT_FALSE(app.node_has_glb_scene_source("blank"));
+    EXPECT_FALSE(app.node_local_translation("blank/body").has_value());
+
+    // The scene's own behavior binding (on "mover") survives the GLB authoring +
+    // the graft/rebuild it triggers: dispatch still moves the node.
+    const std::optional<wz::math::Vec3> before =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(before.has_value());
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FLOAT_EQ(after->y, before->y + 1.0f)
+        << "behavior dispatch must survive GLB scene-source authoring";
+}

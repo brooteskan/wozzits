@@ -1580,6 +1580,47 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_glb_scene_source(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        const char* glb_path_utf8,
+        uint32_t scene_index,
+        uint32_t consume_mode)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            // A null/empty GLB path is allowed: it clears the descriptor.
+            runtime->control.post_scene_node_glb_scene_source(
+                wz::app::SceneNodeGlbSceneSourceEdit{
+                    .node_id = node_id_utf8,
+                    .path = glb_path_utf8 ? glb_path_utf8 : "",
+                    .scene_index = scene_index,
+                    .consume_mode =
+                        consume_mode == WZ_SCENE_SOURCE_FLATTEN
+                            ? wz::engine::assets::SceneSourceConsumeMode::Flatten
+                            : wz::engine::assets::SceneSourceConsumeMode::Instance,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node glb scene source post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_behavior_enabled(
         WzHostRuntime* runtime,
         const char* node_id_utf8,

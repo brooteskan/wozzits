@@ -334,6 +334,17 @@ namespace wz::engine::assets
                 imported.scene_index,
                 glb_scene_bindings_hash(bindings));
 
+        // Content-addressed idempotency: the Scene key folds the GLB file +
+        // scene index + per-mesh bindings, so identical inputs produce the same
+        // key. If this Scene node is already registered (e.g. resolve_glb_scene_
+        // sources re-running within one registry lifetime — the editor's live
+        // set_node_glb_scene_source re-resolves WITHOUT the wholesale rebind wipe,
+        // issue #213), the existing node already carries the same dependency set;
+        // return it as a cache hit rather than failing the duplicate registration.
+        if (system_.is_registered(scene_key)) {
+            return SceneAsset{ .output = scene_key };
+        }
+
         wz::asset::AssetNode node;
         node.key = scene_key;
         node.type = kAssetTypeScene;

@@ -875,6 +875,36 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_scene_source(
     uint64_t asset_graph_node_id,
     uint32_t consume_mode);
 
+// Author the self-contained GLB scene-source DESCRIPTOR on node `node_id_utf8`
+// (issue #213, the asset-graph-INDEPENDENT route — the terrain/mesh-source model,
+// distinct from the node-ref verb above). The descriptor is plain data that
+// persists as JSON and is re-resolved on every load/rebind (no asset-graph node
+// involved): a `glb_path_utf8` (resource-relative, e.g. "gltf/tank1.glb"), the
+// `scene_index` within the GLB, and `consume_mode` (the same WZ_SCENE_SOURCE_*
+// tokens as the node-ref verb). At apply the engine re-resolves the descriptor
+// into a "Scene from GLB" asset and grafts (Instance) the host's children. An
+// empty/NULL `glb_path_utf8` CLEARS the descriptor. Phase 3a authors a single
+// default render style only (no per-component styling — that is Phase 3b).
+// DEFERRED (applied on the engine thread's next frame) and NON-BLOCKING, like the
+// node-ref scene-source verb. Marks the scene dirty. An unknown/missing node is a
+// logged engine-thread no-op.
+//
+// NOTE: like wz_host_runtime_set_node_scene_source this is a NEW exported function
+// with NO ABI snapshot struct change, so WZ_ABI_VERSION is unchanged. The scene
+// snapshot already surfaces the resulting glb_scene_source DESCRIPTOR summary
+// (#213 Phase 2, WzEditorSceneNode.scene_source), so the editor can read back what
+// this verb authored.
+//
+// HOST-CAPABILITY GATE: a mutation verb gated behind the host role
+// (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller.
+WZ_ABI_API WzResult wz_host_runtime_set_node_glb_scene_source(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    const char* glb_path_utf8,
+    uint32_t scene_index,
+    uint32_t consume_mode);
+
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node/binding id, or a non-host caller.

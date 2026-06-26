@@ -192,3 +192,90 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, FlattenExpandsPersistentlyAndDropsDescri
     EXPECT_FLOAT_EQ(after->y, before->y + 1.0f)
         << "a behavior could not drive a flattened GLB child";
 }
+
+// (c) Live authoring (issue #213 Phase 3a): the editor route. A plain host node
+// with no scene source gets a GLB scene-source DESCRIPTOR authored onto it via
+// WozzitsApp_v1::set_node_glb_scene_source — the apply behind the host-ABI verb
+// wz_host_runtime_set_node_glb_scene_source. The descriptor must resolve + graft
+// the GLB hierarchy under the host on the spot (no reload), and clearing it
+// (empty path) must drop both the descriptor and the grafted children. Guard:
+// authoring on a missing node fails closed.
+TEST_F(WozzitsAppGlbSceneSourceFixture, SetGlbSceneSourceAuthorsAndClearsLive)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+
+    wz::app::WozzitsAppSceneLoadDesc load_desc{};
+    load_desc.asset_graph = project.manifest.asset_graph_path;
+    load_desc.scene = project.manifest.scene_path;
+    load_desc.behavior_module_folder = project.manifest.behavior_module_folder;
+    ASSERT_TRUE(app.load_scene(load_desc));
+
+    // The plain "root" node carries no scene source out of the fixture.
+    EXPECT_FALSE(app.node_has_glb_scene_source("root"));
+    EXPECT_EQ(app.child_node_count("root/body"), 0u);
+
+    // Guard: authoring on a node that does not exist is a fail-closed no-op.
+    EXPECT_FALSE(app.set_node_glb_scene_source(
+        "does_not_exist",
+        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/tank1.glb" }));
+
+    // Author a single-default-style descriptor (no base_style/style_overrides —
+    // Phase 3a) onto "root": it resolves the GLB into a Scene and grafts the
+    // tank1 hierarchy (body -> turret -> gun) as root-namespaced children on the
+    // spot, with sub-scene parenting preserved.
+    EXPECT_TRUE(app.set_node_glb_scene_source(
+        "root",
+        wz::engine::assets::SceneGLBSceneSource{
+            .path = "gltf/tank1.glb",
+            .scene_index = 0,
+            .consume_mode =
+                wz::engine::assets::SceneSourceConsumeMode::Instance,
+        }));
+
+    EXPECT_TRUE(app.node_has_glb_scene_source("root"))
+        << "the authored descriptor was not recorded on the host";
+    EXPECT_TRUE(app.node_local_translation("root/body").has_value())
+        << "set_node_glb_scene_source did not graft the GLB body child";
+    EXPECT_TRUE(app.node_local_translation("root/turret").has_value())
+        << "set_node_glb_scene_source did not graft the GLB turret child";
+    EXPECT_TRUE(app.node_local_translation("root/gun").has_value())
+        << "set_node_glb_scene_source did not graft the GLB gun child";
+    // body nests under root and is itself a host for turret (parenting preserved).
+    EXPECT_EQ(app.child_node_count("root/body"), 1u)
+        << "turret should remain parented under body in the host namespace";
+
+    // A grafted child is behavior-addressable by its namespaced id (the graft
+    // rebuilt the behavior runtime), proving it is a live scene entity.
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("root/turret", "move_up_on_frame");
+    ASSERT_TRUE(added.ok) << added.error;
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // Clearing with an empty path drops the descriptor AND the grafted children
+    // (the host no longer resolves to a Scene, so graft removes the stale graft).
+    EXPECT_TRUE(app.set_node_glb_scene_source(
+        "root", wz::engine::assets::SceneGLBSceneSource{ .path = "" }));
+    EXPECT_FALSE(app.node_has_glb_scene_source("root"))
+        << "clearing must drop the glb_scene_source descriptor";
+    EXPECT_FALSE(app.node_local_translation("root/body").has_value())
+        << "clearing must remove the grafted GLB children";
+    EXPECT_FALSE(app.node_local_translation("root/turret").has_value());
+    EXPECT_FALSE(app.node_local_translation("root/gun").has_value());
+    // The behavior bound to the now-removed child is gone with it.
+    EXPECT_EQ(app.active_behavior_binding_count(), 0u)
+        << "removing the grafted child must drop its behavior binding";
+
+    // The fixture's OTHER descriptor node (tank_host) must be UNAFFECTED by
+    // authoring/clearing root's descriptor: set_node_glb_scene_source re-resolves
+    // every descriptor (no wholesale rebind wipe), so tank_host's already-
+    // registered Scene must re-resolve as a cache hit and keep its graft, not be
+    // dropped by a duplicate-registration failure (issue #213 idempotency).
+    EXPECT_TRUE(app.node_has_glb_scene_source("tank_host"));
+    EXPECT_TRUE(app.node_local_translation("tank_host/body").has_value())
+        << "authoring another node must not drop tank_host's grafted children";
+    EXPECT_TRUE(app.node_local_translation("tank_host/turret").has_value());
+    EXPECT_TRUE(app.node_local_translation("tank_host/gun").has_value());
+}

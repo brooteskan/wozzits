@@ -234,6 +234,25 @@ namespace wz::app
         // resolved. The editor calls this for the "flatten" consume mode.
         bool flatten_scene_source(const wz::scene::AuthoredEntityId& node_id);
 
+        // Apply behind the host ABI's set_node_glb_scene_source verb (issue #213,
+        // the asset-graph-INDEPENDENT route). Author the self-contained GLB
+        // scene-source DESCRIPTOR on the node — a resource-relative GLB path +
+        // scene_index + consume_mode (Phase 3a always supplies an empty
+        // base_style/style_overrides => the single built-in default style). An
+        // empty descriptor.path CLEARS the descriptor (detach_scene_source); any
+        // asset-graph-node scene-source route on the node is dropped so the node
+        // stays single-route. Marks the scene dirty on success and, if an asset
+        // library is present, re-materializes immediately so the change shows on
+        // the next frame: resolve_glb_scene_sources (re-register the GLB + Scene
+        // asset and write the resolved key), commit + resolve_all (compile the
+        // freshly registered assets), graft_scene_sources (graft/drop the host's
+        // children), then rebuild the behavior runtime (the grafted children
+        // change the entity set) — the same sequence load_scene runs for the
+        // descriptor route. Returns false (logged no-op) if the node is missing.
+        bool set_node_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneGLBSceneSource& descriptor);
+
         // True if node `node_id` currently carries the optional component `kind`.
         // False if the node is missing or the kind is unknown. Lets diagnostics
         // and the component-authoring test observe presence without a snapshot.

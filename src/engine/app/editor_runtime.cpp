@@ -379,6 +379,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_glb_scene_source(
+        SceneNodeGlbSceneSourceEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: a set then a clear must both land.
+        pending_glb_scene_source_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_glb_scene_sources(
+        const std::function<void(const SceneNodeGlbSceneSourceEdit&)>& applier)
+    {
+        std::vector<SceneNodeGlbSceneSourceEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_glb_scene_source_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_glb_scene_source_edits_);
+        }
+
+        for (const SceneNodeGlbSceneSourceEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -715,6 +740,22 @@ namespace wz::app
                             {
                                 app.flatten_scene_source(edit.node_id);
                             }
+                        });
+                    control->service_pending_scene_node_glb_scene_sources(
+                        [&app](const SceneNodeGlbSceneSourceEdit& edit) {
+                            // Author the GLB scene-source DESCRIPTOR (or clear it
+                            // when the path is empty); the apply re-resolves +
+                            // re-grafts the host's children (#213). The descriptor
+                            // carries consume_mode so a Flatten-authored load bakes
+                            // it (load_scene's flatten loop); flatten-on-set here
+                            // is deferred to 3b (Instance is the 3a path).
+                            app.set_node_glb_scene_source(
+                                edit.node_id,
+                                wz::engine::assets::SceneGLBSceneSource{
+                                    .path = edit.path,
+                                    .scene_index = edit.scene_index,
+                                    .consume_mode = edit.consume_mode,
+                                });
                         });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {
