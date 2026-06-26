@@ -1,5 +1,8 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+#include <engine/assets/key_factories/scene.h>
+#include <engine/assets/schema_ids.h>
+
 TEST(SceneAssetModule, ResolvesSceneFromJSON)
 {
     const wz::fs::Path root =
@@ -149,6 +152,77 @@ TEST(SceneAssetModule, ResolvesGLBSceneMeshAsRenderableAsset)
     ASSERT_TRUE(data->nodes[0].renderable_asset.has_value());
     EXPECT_FALSE(*data->nodes[0].renderable_asset == wz::asset::AssetKey{});
     EXPECT_FALSE(data->nodes[0].renderable.has_value());
+}
+
+// Piece 1 of the asset-graph "Subtree from asset" path (issue #213): a
+// graph-authored "Scene from GLB" node supplies only a source file + scene_index
+// (no per-mesh renderable bindings, unlike the imperative create_scene_from_glb).
+// It must still compile into the GLB's bare node hierarchy so a scene node can
+// reference it; mesh nodes come through WITHOUT a renderable (attached later via
+// the asset graph) instead of failing with "references unregistered mesh N".
+TEST(SceneAssetModule, CompilesGraphAuthoredGLBAsStructureWithoutBindings)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        WZ_TEST_FIXTURE_DIR };
+
+    using namespace wz::engine::assets;
+
+    // Register only the GLB file carrier — NOT the per-mesh meshes/renderables —
+    // mirroring a "Scene from GLB" asset-graph node whose sole input is the
+    // source_file (+ scene_index param).
+    const wz::asset::AssetKey file_key = assets.files().register_file_node(
+        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
+    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
+
+    const wz::asset::AssetKey scene_key =
+        make_scene_from_glb_key(file_key, 0u, wz::asset::Hash{});
+
+    wz::asset::AssetNode node;
+    node.key = scene_key;
+    node.type = kAssetTypeScene;
+    node.schema = kSceneFromGLBSchema;
+    node.stage = wz::asset::AssetStage::Source;
+    node.payload = std::vector<uint8_t>{};
+    // Empty mesh_renderables = the graph-authored shape (no bindings).
+    node.meta = SceneFromGLBCompileDesc{ .scene_index = 0u };
+    ASSERT_TRUE(
+        assets.system().register_asset(std::move(node), { file_key }));
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok()) << "resolve failures: " << report.failures.size();
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(SceneAsset{ .output = scene_key }));
+    ASSERT_NE(data, nullptr);
+
+    // The full GLB hierarchy is produced as bare structure: body -> turret -> gun,
+    // every node WITHOUT a renderable (no bindings were supplied).
+    ASSERT_EQ(data->nodes.size(), 3u);
+    for (const auto& scene_node : data->nodes) {
+        EXPECT_FALSE(scene_node.renderable_asset.has_value())
+            << "node '" << scene_node.id
+            << "' unexpectedly has a renderable binding";
+    }
+
+    const auto* body = find_scene_node(*data, "body");
+    ASSERT_NE(body, nullptr);
+    EXPECT_FALSE(body->parent_id.has_value());
+
+    const auto* turret = find_scene_node(*data, "turret");
+    ASSERT_NE(turret, nullptr);
+    ASSERT_TRUE(turret->parent_id.has_value());
+    EXPECT_EQ(*turret->parent_id, "body");
+
+    const auto* gun = find_scene_node(*data, "gun");
+    ASSERT_NE(gun, nullptr);
+    ASSERT_TRUE(gun->parent_id.has_value());
+    EXPECT_EQ(*gun->parent_id, "turret");
 }
 
 TEST(SceneAssetModule, ResolvesTankGLBHierarchyFixture)

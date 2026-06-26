@@ -5044,17 +5044,18 @@ namespace wz::engine::assets::internal
                 node.local = imported_node.local;
 
                 if (imported_node.mesh_index) {
-                    auto renderable = find_glb_renderable_binding(
-                        desc,
-                        *imported_node.mesh_index);
-                    if (!renderable) {
-                        logger.error(
-                            "GLB scene node '" + node.id
-                            + "' references unregistered mesh "
-                            + std::to_string(*imported_node.mesh_index));
-                        return std::nullopt;
+                    // Attach the per-mesh renderable only when the descriptor
+                    // supplies a binding. The imperative create_scene_from_glb
+                    // path builds one for every mesh; a graph-authored "Scene from
+                    // GLB" node supplies none, so the node compiles as bare
+                    // structure (no renderable) and the GLB hierarchy is still
+                    // produced. Renderables are attached later via the asset graph
+                    // (issue #213 submesh referencing).
+                    if (auto renderable = find_glb_renderable_binding(
+                            desc, *imported_node.mesh_index))
+                    {
+                        node.renderable_asset = *renderable;
                     }
-                    node.renderable_asset = *renderable;
                 }
 
                 scene.nodes.push_back(std::move(node));
