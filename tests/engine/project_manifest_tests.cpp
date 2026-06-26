@@ -2,6 +2,7 @@
 
 #include <asset/draft.h>
 #include <engine/abi/wozzits_abi.h>
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_snapshot.h>
 #include <engine/editor/project_snapshot.h>
@@ -9,6 +10,8 @@
 #include <engine/project/project_manifest.h>
 #include <engine/project/project_runtime_launch.h>
 #include <engine/editor/scene_snapshot.h>
+
+#include <file/filesystem.h>
 
 #include <algorithm>
 #include <chrono>
@@ -1030,4 +1033,101 @@ TEST(ProjectSnapshot, PacksCreateProjectResponseForEditorAbi)
     EXPECT_EQ(abi.status, WZ_EDITOR_PROJECT_STATUS_VALID);
     EXPECT_EQ(abi.created, 1u);
     EXPECT_TRUE(abi_string(blob, abi.error).empty());
+}
+
+namespace
+{
+    // tank1.glb (the glb_scene_source fixture's GLB) scene-0 hierarchy, observed
+    // by parsing the file: a depth-first single root chain body -> turret -> gun,
+    // each carrying a mesh. The same bytes ship in resources/gltf/tank1.glb; this
+    // exercises the on-demand import path that backs wz_import_glb_scene_hierarchy
+    // (read_file -> import_gltf_scene -> glb_scene_hierarchy_abi_blob) device-free.
+    const char* kTank1Glb = WZ_TEST_FIXTURE_DIR "/gltf/tank1.glb";
+
+    wz::engine::assets::ImportedGLTFScene import_glb_scene(
+        const std::string& path,
+        uint32_t scene_index,
+        std::string& error)
+    {
+        const auto file = wz::fs::read_file(path);
+        EXPECT_TRUE(static_cast<bool>(file)) << "failed to read " << path;
+        wz::engine::assets::ImportedGLTFScene imported{};
+        if (!file) {
+            error = "read failed";
+            return imported;
+        }
+        EXPECT_TRUE(wz::engine::assets::import_gltf_scene(
+            file.value.data(),
+            file.value.size(),
+            wz::engine::assets::GLTFSceneImportOptions{
+                .scene_index = scene_index,
+            },
+            imported,
+            &error)) << error;
+        return imported;
+    }
+}
+
+TEST(GlbSceneHierarchy, ImportsTank1SceneZeroHierarchy)
+{
+    std::string error;
+    const wz::engine::assets::ImportedGLTFScene imported =
+        import_glb_scene(kTank1Glb, 0u, error);
+
+    const std::vector<uint8_t> blob =
+        wz::engine::editor::glb_scene_hierarchy_abi_blob(true, "", imported);
+    ASSERT_GE(blob.size(), sizeof(WzEditorGlbSceneHierarchy));
+
+    const auto& root =
+        *reinterpret_cast<const WzEditorGlbSceneHierarchy*>(blob.data());
+    EXPECT_EQ(root.abi_version, WZ_ABI_VERSION);
+    EXPECT_EQ(root.ok, 1u);
+    EXPECT_TRUE(abi_string(blob, root.error).empty());
+    EXPECT_EQ(root.scene_index, 0u);
+    EXPECT_EQ(abi_string(blob, root.scene_name), "Scene");
+
+    ASSERT_EQ(root.components.count, 3u);
+    const auto* components =
+        abi_table<WzEditorGlbComponent>(blob, root.components);
+
+    // Depth-first order from the single root: body -> turret -> gun.
+    const WzEditorGlbComponent& body = components[0];
+    EXPECT_EQ(abi_string(blob, body.id), "body");
+    EXPECT_EQ(abi_string(blob, body.name), "body");
+    EXPECT_EQ(body.node_index, 2u);
+    EXPECT_EQ(body.flags & WZ_EDITOR_GLB_COMPONENT_HAS_PARENT, 0u);
+    EXPECT_NE(body.flags & WZ_EDITOR_GLB_COMPONENT_HAS_MESH, 0u);
+
+    const WzEditorGlbComponent& turret = components[1];
+    EXPECT_EQ(abi_string(blob, turret.id), "turret");
+    EXPECT_NE(turret.flags & WZ_EDITOR_GLB_COMPONENT_HAS_PARENT, 0u);
+    EXPECT_EQ(abi_string(blob, turret.parent_id), "body");
+    EXPECT_NE(turret.flags & WZ_EDITOR_GLB_COMPONENT_HAS_MESH, 0u);
+
+    const WzEditorGlbComponent& gun = components[2];
+    EXPECT_EQ(abi_string(blob, gun.id), "gun");
+    EXPECT_NE(gun.flags & WZ_EDITOR_GLB_COMPONENT_HAS_PARENT, 0u);
+    EXPECT_EQ(abi_string(blob, gun.parent_id), "turret");
+    EXPECT_NE(gun.flags & WZ_EDITOR_GLB_COMPONENT_HAS_MESH, 0u);
+}
+
+TEST(GlbSceneHierarchy, FailedImportYieldsNotOkBlob)
+{
+    // The ABI function packs this shape on a null/empty path, an unreadable file,
+    // or an import failure: ok=0, an error string, and an empty component table.
+    const std::vector<uint8_t> blob =
+        wz::engine::editor::glb_scene_hierarchy_abi_blob(
+            false,
+            "failed to read GLB file: does_not_exist.glb",
+            wz::engine::assets::ImportedGLTFScene{});
+    ASSERT_GE(blob.size(), sizeof(WzEditorGlbSceneHierarchy));
+
+    const auto& root =
+        *reinterpret_cast<const WzEditorGlbSceneHierarchy*>(blob.data());
+    EXPECT_EQ(root.abi_version, WZ_ABI_VERSION);
+    EXPECT_EQ(root.ok, 0u);
+    EXPECT_EQ(
+        abi_string(blob, root.error),
+        "failed to read GLB file: does_not_exist.glb");
+    EXPECT_EQ(root.components.count, 0u);
 }

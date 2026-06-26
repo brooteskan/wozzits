@@ -1,6 +1,7 @@
 #include <engine/editor/project_snapshot_abi.h>
 
 #include <engine/abi/wozzits_abi.h>
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/editor/asset_catalog.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/project_snapshot.h>
@@ -624,6 +625,46 @@ namespace wz::engine::editor
         root.abi_version = WZ_ABI_VERSION;
         root.ok = 1u;
         root.entries = builder.append_table(entries);
+
+        builder.patch_struct(root_offset, root);
+        return builder.take();
+    }
+
+    std::vector<uint8_t> glb_scene_hierarchy_abi_blob(
+        bool ok,
+        std::string_view error,
+        const wz::engine::assets::ImportedGLTFScene& scene)
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorGlbSceneHierarchy{});
+
+        std::vector<WzEditorGlbComponent> components;
+        components.reserve(scene.nodes.size());
+        for (const wz::engine::assets::ImportedGLTFSceneNode& node : scene.nodes)
+        {
+            WzEditorGlbComponent component{};
+            component.id = builder.append_string(node.id);
+            component.name = builder.append_string(node.name);
+            component.node_index = node.node_index;
+            if (node.parent_id) {
+                component.parent_id = builder.append_string(*node.parent_id);
+                component.flags |= WZ_EDITOR_GLB_COMPONENT_HAS_PARENT;
+            }
+            if (node.mesh_index) {
+                component.mesh_index = *node.mesh_index;
+                component.flags |= WZ_EDITOR_GLB_COMPONENT_HAS_MESH;
+            }
+            components.push_back(component);
+        }
+
+        WzEditorGlbSceneHierarchy root{};
+        root.abi_version = WZ_ABI_VERSION;
+        root.ok = ok ? 1u : 0u;
+        root.error = builder.append_string(error);
+        root.scene_name = builder.append_string(scene.name);
+        root.scene_index = scene.scene_index;
+        root.components = builder.append_table(components);
 
         builder.patch_struct(root_offset, root);
         return builder.take();

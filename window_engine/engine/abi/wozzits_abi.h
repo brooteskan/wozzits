@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 23u
+#define WZ_ABI_VERSION 24u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -365,6 +365,43 @@ typedef struct WzEditorAssetCatalog
     WzEditorTableSpan entries;      // WzEditorAssetCatalogEntry[]
 } WzEditorAssetCatalog;
 
+// ─── GLB scene-source hierarchy (issue #213, Phase 3b-1) ────────────────────
+// On-demand, READ-ONLY import of a GLB scene's component hierarchy so the editor
+// can show what a node's glb_scene_source descriptor will graft as children. The
+// grafted children are runtime-only and absent from the JSON-reparse snapshot, so
+// this is a separate query (wz_import_glb_scene_hierarchy) returning the flat node
+// list; the editor links the tree by parent_id. No styling/mutation (that is
+// Phase 3b-2) and no `local` transform is packed.
+
+typedef uint32_t WzEditorGlbComponentFlags;
+enum
+{
+    WZ_EDITOR_GLB_COMPONENT_HAS_PARENT = 1u << 0u,
+    WZ_EDITOR_GLB_COMPONENT_HAS_MESH = 1u << 1u,
+};
+
+typedef struct WzEditorGlbComponent
+{
+    WzEditorStringSpan id;
+    WzEditorStringSpan name;
+    WzEditorStringSpan parent_id;   // valid iff HAS_PARENT
+    WzEditorGlbComponentFlags flags;
+    uint32_t mesh_index;            // valid iff HAS_MESH
+    uint32_t node_index;
+    uint32_t reserved;
+} WzEditorGlbComponent;
+
+typedef struct WzEditorGlbSceneHierarchy
+{
+    uint32_t abi_version;
+    uint32_t ok;
+    WzEditorStringSpan error;
+    WzEditorStringSpan scene_name;
+    uint32_t scene_index;
+    uint32_t reserved;
+    WzEditorTableSpan components;    // WzEditorGlbComponent[] (flat; parent_id links the tree)
+} WzEditorGlbSceneHierarchy;
+
 #ifdef __cplusplus
 static_assert(sizeof(WzEditorStringSpan) == 16);
 static_assert(offsetof(WzEditorStringSpan, offset) == 0);
@@ -521,6 +558,24 @@ static_assert(offsetof(WzEditorAssetCatalogEntry, schemas) == 40);
 static_assert(sizeof(WzEditorAssetCatalog) == 24);
 static_assert(offsetof(WzEditorAssetCatalog, abi_version) == 0);
 static_assert(offsetof(WzEditorAssetCatalog, entries) == 8);
+
+static_assert(sizeof(WzEditorGlbComponent) == 64);
+static_assert(offsetof(WzEditorGlbComponent, id) == 0);
+static_assert(offsetof(WzEditorGlbComponent, name) == 16);
+static_assert(offsetof(WzEditorGlbComponent, parent_id) == 32);
+static_assert(offsetof(WzEditorGlbComponent, flags) == 48);
+static_assert(offsetof(WzEditorGlbComponent, mesh_index) == 52);
+static_assert(offsetof(WzEditorGlbComponent, node_index) == 56);
+static_assert(offsetof(WzEditorGlbComponent, reserved) == 60);
+
+static_assert(sizeof(WzEditorGlbSceneHierarchy) == 64);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, abi_version) == 0);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, ok) == 4);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, error) == 8);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, scene_name) == 24);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, scene_index) == 40);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, reserved) == 44);
+static_assert(offsetof(WzEditorGlbSceneHierarchy, components) == 48);
 #endif
 
 WZ_ABI_API uint32_t wz_abi_version(void);
@@ -530,6 +585,18 @@ WZ_ABI_API uint32_t wz_abi_version(void);
 // has not yet migrated to wozzits-rhi (#186). No project or session required.
 // The blob's byte 0 is a WzEditorAssetCatalog. Caller frees with wz_free_buffer.
 WZ_ABI_API WzResult wz_host_asset_catalog(WzBuffer* out_catalog);
+
+// Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue #213,
+// Phase 3b-1): reads the file at `glb_path_utf8` (an ABSOLUTE path the editor
+// builds by joining its resource root with the node's scene_source path), runs the
+// pure-CPU glTF scene importer for `scene_index`, and packs the flat component list
+// into a blob whose byte 0 is a WzEditorGlbSceneHierarchy. No runtime, project, or
+// host capability required — this only reads bytes and parses them. A null/empty
+// path, an unreadable file, or an import failure returns a blob with ok = 0 and an
+// `error` string (never crashes). Caller frees with wz_free_buffer.
+WZ_ABI_API WzBuffer wz_import_glb_scene_hierarchy(
+    const char* glb_path_utf8,
+    uint32_t scene_index);
 
 WZ_ABI_API WzResult wz_host_load_project_snapshot(
     const char* project_root_utf8,

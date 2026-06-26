@@ -1,6 +1,7 @@
 #include <engine/abi/wozzits_abi.h>
 
 #include <engine/app/editor_runtime.h>
+#include <engine/assets/gltf/gltf_importer.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_schema_registry.h>
@@ -8,6 +9,7 @@
 #include <engine/editor/project_snapshot.h>
 #include <engine/project/project_runtime_launch.h>
 
+#include <file/filesystem.h>
 #include <math/quaternion.h>
 
 #include <atomic>
@@ -75,6 +77,17 @@ namespace
         out->data = data;
         out->size = size;
         return result(WZ_RESULT_OK, "");
+    }
+
+    // Build a freshly malloc'd WzBuffer copy of `bytes` (the WzBuffer-returning
+    // analogue of copy_bytes_to_buffer, for the stateless functions that hand back
+    // a buffer by value). Returns { nullptr, 0 } if allocation fails; the caller
+    // frees a non-null buffer with wz_free_buffer.
+    WzBuffer make_buffer(const std::vector<uint8_t>& bytes)
+    {
+        WzBuffer buffer{ nullptr, 0u };
+        copy_bytes_to_buffer(bytes, &buffer);
+        return buffer;
     }
 
     WzResult validate_scene_edit_target(
@@ -280,6 +293,68 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "asset catalog build failed");
+        }
+    }
+
+    WzBuffer wz_import_glb_scene_hierarchy(
+        const char* glb_path_utf8,
+        uint32_t scene_index)
+    {
+        // Pack an ok=0 hierarchy blob carrying `message`; never throws past here
+        // so the editor always gets a well-formed buffer (or a null one only on
+        // allocation failure, which it treats as "couldn't read GLB").
+        auto failure = [](std::string_view message) -> WzBuffer {
+            try {
+                return make_buffer(
+                    wz::engine::editor::glb_scene_hierarchy_abi_blob(
+                        false,
+                        message,
+                        wz::engine::assets::ImportedGLTFScene{}));
+            }
+            catch (...) {
+                return WzBuffer{ nullptr, 0u };
+            }
+        };
+
+        if (!glb_path_utf8 || glb_path_utf8[0] == '\0') {
+            return failure("glb_path_utf8 must not be empty");
+        }
+
+        try {
+            const auto file = wz::fs::read_file(glb_path_utf8);
+            if (!file) {
+                return failure(
+                    std::string("failed to read GLB file: ") + glb_path_utf8);
+            }
+
+            wz::engine::assets::ImportedGLTFScene imported{};
+            std::string import_error;
+            if (!wz::engine::assets::import_gltf_scene(
+                    file.value.data(),
+                    file.value.size(),
+                    wz::engine::assets::GLTFSceneImportOptions{
+                        .scene_index = scene_index,
+                    },
+                    imported,
+                    &import_error))
+            {
+                return failure(
+                    import_error.empty()
+                        ? std::string("failed to import GLB scene")
+                        : import_error);
+            }
+
+            return make_buffer(
+                wz::engine::editor::glb_scene_hierarchy_abi_blob(
+                    true,
+                    std::string_view{},
+                    imported));
+        }
+        catch (const std::bad_alloc&) {
+            return WzBuffer{ nullptr, 0u };
+        }
+        catch (...) {
+            return failure("GLB scene import failed");
         }
     }
 
