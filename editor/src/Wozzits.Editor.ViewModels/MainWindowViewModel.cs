@@ -281,13 +281,35 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         Inspector.SetAvailableSceneSources(
             AssetGraph.Nodes
-                .Where(node => string.Equals(
-                    node.TypeName,
-                    SceneFromGlbTypeName,
-                    System.StringComparison.Ordinal))
+                .Where(IsSceneFromGlbNode)
                 .Select(node => new InspectorSceneSourceOptionViewModel(
                     node.Id,
                     node.DisplayName)));
+    }
+
+    // True for a "Scene from GLB" asset-graph node — the only graftable subtree
+    // source the picker offers (issue #213 piece 2).
+    //
+    // Matching by node.TypeName is WRONG: TypeName is the asset *type* display name
+    // ("Scene"), which a Scene-from-JSON node shares, so it never identifies the GLB
+    // schema and would also wrongly include scene-from-JSON. The stable per-schema
+    // discriminator is node.SchemaLabel (the engine's schema_tail — the low 32 bits
+    // of the SchemaID as hex; "e7000711" for kSceneFromGLBSchema 0xF11ECA55E7000711,
+    // distinct from scene-from-JSON's "e7000710"). We match on that first so a node
+    // renamed via its `name` param still resolves. The Scene-from-GLB schema declares
+    // no name/source_path param, so its DisplayName is deterministically the schema
+    // label "Scene from GLB" (engine display_name fallback) — a reliable secondary
+    // match that also survives a schema-id renumber on the engine side.
+    private static bool IsSceneFromGlbNode(AssetGraphNodeCardViewModel node)
+    {
+        return string.Equals(
+                node.SchemaLabel,
+                SceneFromGlbSchemaLabel,
+                System.StringComparison.Ordinal)
+            || string.Equals(
+                node.DisplayName,
+                SceneFromGlbDisplayName,
+                System.StringComparison.Ordinal);
     }
 
     // A scene-source reference/descriptor was assigned or cleared in the inspector
@@ -299,7 +321,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SceneTree.MergeGraftedNodes();
     }
 
-    // The asset-graph node type that produces a graftable scene hierarchy (issue
-    // #213); registered in the engine's type_extensions under this name.
-    private const string SceneFromGlbTypeName = "Scene from GLB";
+    // The stable schema discriminator for the "Scene from GLB" asset-graph node
+    // (issue #213): the engine serializes node.schema_label = schema_tail(schema) =
+    // low 32 bits of the SchemaID as 8 hex digits. kSceneFromGLBSchema is
+    // 0xF11ECA55E7000711, so its tail is "e7000711". Primary, rename-proof match.
+    private const string SceneFromGlbSchemaLabel = "e7000711";
+
+    // The engine's schema_display_name_view of the Scene-from-GLB schema. Because
+    // that schema declares no name/source_path param, a node's DisplayName falls
+    // back to this label deterministically — the secondary match that survives a
+    // schema-id renumber. Also the name shown on the node card.
+    private const string SceneFromGlbDisplayName = "Scene from GLB";
 }

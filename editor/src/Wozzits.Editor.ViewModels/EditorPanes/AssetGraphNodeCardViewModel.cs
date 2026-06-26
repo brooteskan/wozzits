@@ -20,6 +20,7 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
         DisplayName = node.DisplayName;
         TypeName = node.TypeName;
         SchemaDisplay = node.Schema;
+        SchemaLabel = node.Schema;
         CompileStatus = node.CompileStatus;
         Diagnostics = node.Diagnostics;
         Params = node.Params;
@@ -60,6 +61,11 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     public string TypeName { get; }
 
     public string SchemaDisplay { get; }
+
+    // The engine's stable schema discriminator (schema_label = schema_tail: the
+    // SchemaID's low 32 bits as hex). Same source as SchemaDisplay, exposed under a
+    // discriminator-oriented name for schema-based matching (issue #213 piece 2).
+    public string SchemaLabel { get; }
 
     public string CompileStatus { get; }
 

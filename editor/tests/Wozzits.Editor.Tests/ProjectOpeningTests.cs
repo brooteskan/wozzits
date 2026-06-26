@@ -720,88 +720,12 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("1.6", cameraEdit.Edit.Aspect);
     }
 
-    // Inspector "Scene Source" section (issue #213 Phase 3a): importing a GLB on a
-    // selected node roots the picked absolute path against the project directory
-    // and pushes it as an Instance import through the host verb; the descriptor a
-    // node already carries (Phase 2 snapshot) shows + clears.
-    [Fact]
-    public void InspectorImportsAndClearsGlbSceneSourceThroughEngineSession()
-    {
-        var editorSession = new RecordingEditorSession();
-        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-vm");
-        var viewModel = new MainWindowViewModel(
-            ProjectSnapshot(
-                scene: SceneSnapshot(
-                    Node(
-                        "root",
-                        children:
-                        [
-                            // A plain host node (no scene source yet).
-                            Node("host", parentId: "root", visible: true),
-                            // A node already carrying a GLB scene-source
-                            // descriptor (the Phase 2 snapshot summary).
-                            new EngineSceneNode
-                            {
-                                Id = "tank",
-                                DisplayName = "tank",
-                                ParentId = "root",
-                                Kind = "node",
-                                Visible = true,
-                                SceneSource = new EngineSceneNodeSceneSource
-                                {
-                                    Kind = "glb",
-                                    Path = "gltf/tank1.glb",
-                                    ConsumeMode = "instance",
-                                    SceneIndex = 0u,
-                                    StyleOverrideCount = 1u,
-                                    HasBaseStyle = true,
-                                },
-                            },
-                        ]))),
-            editorSession: editorSession,
-            projectDirectory: projectDir);
-
-        var root = Assert.Single(viewModel.SceneTree.Nodes);
-        var host = Assert.Single(root.Children, n => n.Id == "host");
-        var tank = Assert.Single(root.Children, n => n.Id == "tank");
-
-        // The plain host shows the import affordance, no descriptor.
-        viewModel.SceneTree.SelectNode(host);
-        Assert.False(viewModel.Inspector.HasSceneSource);
-        Assert.True(viewModel.Inspector.HasNoSceneSource);
-
-        // Importing a GLB under the project tree roots the path resource-relative
-        // (forward slashes) and pushes an Instance descriptor at scene_index 0.
-        var picked = Path.Combine(projectDir, "gltf", "tank1.glb");
-        viewModel.Inspector.ImportGlbSceneSource(picked);
-
-        var authored = Assert.Single(editorSession.GlbSceneSources);
-        Assert.Equal("host", authored.NodeId);
-        Assert.Equal("gltf/tank1.glb", authored.GlbPath);
-        Assert.Equal(0u, authored.SceneIndex);
-        Assert.Equal(0u, authored.ConsumeMode);   // WZ_SCENE_SOURCE_INSTANCE
-        Assert.True(viewModel.Inspector.HasSceneSource);
-        Assert.Equal("gltf/tank1.glb", viewModel.Inspector.SceneSourcePath);
-
-        // The node that already had a descriptor shows it, and Clear pushes the
-        // empty-path clear signal through the verb.
-        viewModel.SceneTree.SelectNode(tank);
-        Assert.True(viewModel.Inspector.HasSceneSource);
-        Assert.Equal("gltf/tank1.glb", viewModel.Inspector.SceneSourcePath);
-        Assert.Equal("instance", viewModel.Inspector.SceneSourceConsumeMode);
-
-        viewModel.Inspector.ClearSceneSourceCommand.Execute(null);
-
-        var cleared = editorSession.GlbSceneSources[^1];
-        Assert.Equal("tank", cleared.NodeId);
-        Assert.Equal(string.Empty, cleared.GlbPath);   // empty path = clear
-        Assert.False(viewModel.Inspector.HasSceneSource);
-    }
-
     // Inspector "Subtree from asset" section (issue #213 piece 2): the asset graph's
-    // "Scene from GLB" nodes are threaded into the picker; selecting one + applying
-    // points the scene node at it via SetNodeSceneSource (Instance / consumeMode 0)
-    // and shows the pick optimistically; Clear sends id 0 and drops the reference.
+    // "Scene from GLB" nodes are threaded into the picker (matched by schema, NOT by
+    // the shared asset-type name); "Add Component → subtree_from_asset" reveals the
+    // section; selecting one + applying points the scene node at it via
+    // SetNodeSceneSource (Instance / consumeMode 0) and shows the pick optimistically;
+    // Clear sends id 0 and drops the reference.
     [Fact]
     public void InspectorReferencesAndClearsSceneSourceSubtreeThroughEngineSession()
     {
@@ -815,13 +739,29 @@ public sealed partial class ProjectOpeningTests
                     {
                         Nodes =
                         [
-                            // The graftable source the picker should offer.
+                            // The graftable source the picker should offer. Its
+                            // TypeName is the shared asset-type label "Scene"; the
+                            // GLB schema is identified by SchemaLabel "e7000711"
+                            // (schema_tail of kSceneFromGLBSchema 0xF11ECA55E7000711).
                             new EngineAssetGraphNode
                             {
                                 Id = 42,
                                 Type = 80,
-                                TypeName = "Scene from GLB",
+                                TypeName = "Scene",
+                                Schema = "e7000711",
                                 DisplayName = "tank scene",
+                                CompileStatus = "ready",
+                            },
+                            // A Scene-from-JSON node: same asset-type name "Scene",
+                            // different schema -> must be excluded (the old TypeName
+                            // filter would have wrongly matched neither/both).
+                            new EngineAssetGraphNode
+                            {
+                                Id = 9,
+                                Type = 80,
+                                TypeName = "Scene",
+                                Schema = "e7000710",
+                                DisplayName = "Scene from JSON",
                                 CompileStatus = "ready",
                             },
                             // A non-scene node that must be filtered out.
@@ -830,6 +770,7 @@ public sealed partial class ProjectOpeningTests
                                 Id = 7,
                                 Type = 41,
                                 TypeName = "Renderable",
+                                Schema = "e7000707",
                                 DisplayName = "renderable",
                                 CompileStatus = "ready",
                             },
@@ -849,14 +790,22 @@ public sealed partial class ProjectOpeningTests
         var host = Assert.Single(root.Children, n => n.Id == "host");
 
         // Selecting the scene node threads only the Scene-from-GLB node into the
-        // picker, and nothing is referenced yet.
+        // picker (scene-from-JSON and the renderable are excluded), and nothing is
+        // referenced yet. The section starts hidden — it is attached on demand.
         viewModel.SceneTree.SelectNode(host);
         var option = Assert.Single(viewModel.Inspector.AvailableSceneSources);
         Assert.Equal(42ul, option.Id);
         Assert.Equal("tank scene", option.Label);
         Assert.True(viewModel.Inspector.HasAvailableSceneSources);
+        Assert.False(viewModel.Inspector.HasSubtreeSection);
         Assert.False(viewModel.Inspector.HasSubtreeReference);
         Assert.Equal("(none)", viewModel.Inspector.SubtreeReferenceDisplay);
+
+        // "Add Component → subtree_from_asset" reveals the picker section without
+        // calling the generic add-component verb (mirrors renderable).
+        viewModel.Inspector.AddComponentCommand.Execute("subtree_from_asset");
+        Assert.True(viewModel.Inspector.HasSubtreeSection);
+        Assert.Empty(editorSession.AddedComponents);
 
         // Picking + applying points the node at that graph node as an Instance
         // subtree source and shows the pick optimistically.
@@ -884,333 +833,105 @@ public sealed partial class ProjectOpeningTests
         Assert.Null(viewModel.Inspector.SelectedSceneSourceOption);
     }
 
-    // Selecting a node with a GLB scene-source descriptor fetches the GLB's
-    // component hierarchy and builds the read-only tree under the path (issue #213
-    // Phase 3b-1): the import is called with the descriptor path resolved against
-    // the project dir, and the flat component list is linked into a tree by parent
-    // id with the mesh marker preserved.
+    // issue #213 piece 2 (filter fix): the "Subtree from asset" picker matches
+    // Scene-from-GLB nodes by the stable schema discriminator (SchemaLabel
+    // "e7000711"), regardless of the asset-type name "Scene" it shares with
+    // scene-from-JSON, and falls back to the deterministic DisplayName "Scene from
+    // GLB" when present. Non-GLB nodes (renderable, scene-from-JSON) are excluded.
     [Fact]
-    public void InspectorBuildsGlbSceneSourceComponentTree()
+    public void SubtreeFromAssetPickerMatchesSceneFromGlbBySchemaNotTypeName()
     {
-        var editorSession = new RecordingEditorSession
-        {
-            GlbHierarchy = new EngineGlbSceneHierarchy
-            {
-                Ok = true,
-                SceneName = "Scene",
-                SceneIndex = 0u,
-                Components =
-                [
-                    new EngineGlbComponent
-                    {
-                        Id = "body",
-                        Name = "body",
-                        HasMesh = true,
-                        MeshIndex = 2u,
-                        NodeIndex = 2u,
-                    },
-                    new EngineGlbComponent
-                    {
-                        Id = "turret",
-                        Name = "turret",
-                        ParentId = "body",
-                        HasMesh = true,
-                        MeshIndex = 1u,
-                        NodeIndex = 1u,
-                    },
-                    new EngineGlbComponent
-                    {
-                        Id = "gun",
-                        Name = "gun",
-                        ParentId = "turret",
-                        HasMesh = true,
-                        MeshIndex = 0u,
-                        NodeIndex = 0u,
-                    },
-                ],
-            },
-        };
-        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-tree-vm");
         var viewModel = new MainWindowViewModel(
             ProjectSnapshot(
-                scene: SceneSnapshot(
-                    new EngineSceneNode
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
                     {
-                        Id = "tank",
-                        DisplayName = "tank",
-                        Kind = "node",
-                        Visible = true,
-                        SceneSource = new EngineSceneNodeSceneSource
-                        {
-                            Kind = "glb",
-                            Path = "gltf/tank1.glb",
-                            ConsumeMode = "instance",
-                            SceneIndex = 0u,
-                        },
-                    })),
-            editorSession: editorSession,
-            projectDirectory: projectDir);
+                        Nodes =
+                        [
+                            // Scene-from-GLB by schema label; carries an authored
+                            // name, so DisplayName is NOT "Scene from GLB" — the
+                            // schema match is what includes it.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 1u,
+                                TypeName = "Scene",
+                                Schema = "e7000711",
+                                DisplayName = "renamed tank",
+                            },
+                            // Scene-from-GLB matched via the DisplayName fallback
+                            // (e.g. a future/altered schema label): no name param =>
+                            // DisplayName is the schema's "Scene from GLB".
+                            new EngineAssetGraphNode
+                            {
+                                Id = 2u,
+                                TypeName = "Scene",
+                                Schema = "deadbeef",
+                                DisplayName = "Scene from GLB",
+                            },
+                            // Scene-from-JSON: same asset-type name "Scene", a
+                            // different schema and display => excluded.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 3u,
+                                TypeName = "Scene",
+                                Schema = "e7000710",
+                                DisplayName = "Scene from JSON",
+                            },
+                            // A renderable => excluded.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 4u,
+                                TypeName = "Renderable",
+                                Schema = "e7000707",
+                                DisplayName = "renderable",
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(Node("host", visible: true))),
+            editorSession: new RecordingEditorSession());
 
-        var tank = Assert.Single(viewModel.SceneTree.Nodes);
-        viewModel.SceneTree.SelectNode(tank);
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(host);
 
-        // The descriptor path was resolved against the project dir for the import.
-        var import = Assert.Single(editorSession.GlbHierarchyImports);
-        Assert.Equal(
-            Path.Combine(projectDir, "gltf/tank1.glb"),
-            import.Path);
-        Assert.Equal(0u, import.SceneIndex);
-
-        // body -> turret -> gun, linked by parent id; meshes marked.
-        Assert.True(viewModel.Inspector.HasSceneSourceComponents);
-        Assert.False(viewModel.Inspector.HasSceneSourceHierarchyError);
-        var body = Assert.Single(viewModel.Inspector.SceneSourceComponents);
-        Assert.Equal("body", body.Name);
-        Assert.True(body.HasMesh);
-        Assert.Equal("mesh", body.MeshBadge);
-        var turret = Assert.Single(body.Children);
-        Assert.Equal("turret", turret.Name);
-        var gun = Assert.Single(turret.Children);
-        Assert.Equal("gun", gun.Name);
-
-        // A failed import leaves the tree empty and shows a small error line.
-        editorSession.GlbHierarchy = new EngineGlbSceneHierarchy
-        {
-            Ok = false,
-            Error = "failed to read GLB file",
-        };
-        viewModel.SceneTree.ClearSelection();
-        viewModel.SceneTree.SelectNode(tank);
-        Assert.False(viewModel.Inspector.HasSceneSourceComponents);
-        Assert.True(viewModel.Inspector.HasSceneSourceHierarchyError);
-    }
-
-    // The per-component style editor (issue #213 Phase 3b-2) marshals each scope
-    // through the engine session: assign-to-component sets one per-mesh override,
-    // assign-to-base sets the base style, and clear-override clears one. The style
-    // subset (surface/wireframe enabled + RGBA) round-trips on the verb.
-    [Fact]
-    public void InspectorAssignsAndClearsGlbComponentStyleThroughEngineSession()
-    {
-        var editorSession = StyledGlbTreeSession();
-        var viewModel = StyledGlbTreeViewModel(editorSession, out var tank);
-        viewModel.SceneTree.SelectNode(tank);
-
-        var inspector = viewModel.Inspector;
-        var body = Assert.Single(inspector.SceneSourceComponents);
-        var turret = Assert.Single(body.Children);
-
-        // Select the turret (mesh_index 1) and author a surface-only style.
-        inspector.SelectedComponent = turret;
-        Assert.True(inspector.HasSelectedComponent);
-        inspector.StyleSurfaceEnabled = true;
-        inspector.StyleSurfaceR = "0.2";
-        inspector.StyleSurfaceG = "0.4";
-        inspector.StyleSurfaceB = "0.6";
-        inspector.StyleSurfaceA = "1";
-        inspector.StyleWireframeEnabled = false;
-        inspector.AssignStyleToComponentCommand.Execute(null);
-
-        var assign = Assert.Single(editorSession.GlbComponentStyles);
-        Assert.Equal("tank", assign.NodeId);
-        Assert.False(assign.TargetBase);
-        Assert.Equal(1u, assign.MeshIndex);
-        Assert.True(assign.SurfaceEnabled);
-        Assert.NotNull(assign.SurfaceRgba);
-        Assert.Equal(0.2f, assign.SurfaceRgba![0], 3);
-        Assert.Equal(0.6f, assign.SurfaceRgba[2], 3);
-        Assert.False(assign.WireframeEnabled);
-        // The override is marked on the component immediately (optimistic update).
-        Assert.True(turret.HasOverride);
-        Assert.True(inspector.HasSelectedComponentOverride);
-
-        // Assign-to-base targets the descriptor base style (target_base = true).
-        editorSession.GlbComponentStyles.Clear();
-        inspector.StyleWireframeEnabled = true;
-        inspector.StyleWireframeR = "1";
-        inspector.AssignStyleToBaseCommand.Execute(null);
-        var baseAssign = Assert.Single(editorSession.GlbComponentStyles);
-        Assert.True(baseAssign.TargetBase);
-        Assert.True(baseAssign.WireframeEnabled);
-        Assert.Equal(1f, baseAssign.WireframeRgba![0], 3);
-
-        // Clear the turret's override -> one clear verb, marker drops.
-        inspector.ClearComponentStyleCommand.Execute(null);
-        var clear = Assert.Single(editorSession.GlbStyleClears);
-        Assert.Equal("tank", clear.NodeId);
-        Assert.Equal(1u, clear.MeshIndex);
-        Assert.False(turret.HasOverride);
-    }
-
-    // Assign-to-subtree fans the style out to EVERY mesh under the selected
-    // component (issue #213 Phase 3b-2): selecting body (mesh 2, with turret mesh 1
-    // and gun mesh 0 beneath) sets an override for all three mesh indices.
-    [Fact]
-    public void InspectorAssignsGlbStyleToSubtreeFansOutToEveryMesh()
-    {
-        var editorSession = StyledGlbTreeSession();
-        var viewModel = StyledGlbTreeViewModel(editorSession, out var tank);
-        viewModel.SceneTree.SelectNode(tank);
-
-        var inspector = viewModel.Inspector;
-        var body = Assert.Single(inspector.SceneSourceComponents);
-
-        inspector.SelectedComponent = body;
-        inspector.StyleWireframeEnabled = true;
-        inspector.AssignStyleToSubtreeCommand.Execute(null);
-
-        // body(2) -> turret(1) -> gun(0): all three mesh indices get an override.
-        var meshes = editorSession.GlbComponentStyles
-            .Select(e => e.MeshIndex)
+        // Exactly the two Scene-from-GLB nodes (by schema and by display fallback),
+        // never the scene-from-JSON or the renderable.
+        var ids = viewModel.Inspector.AvailableSceneSources
+            .Select(o => o.Id)
             .OrderBy(i => i)
             .ToList();
-        Assert.Equal([0u, 1u, 2u], meshes);
-        Assert.All(editorSession.GlbComponentStyles, e => Assert.False(e.TargetBase));
-        // Every mesh-bearing component now shows the override marker.
-        Assert.True(body.HasOverride);
-        Assert.True(Assert.Single(body.Children).HasOverride);
+        Assert.Equal([1ul, 2ul], ids);
     }
 
-    // The style editor pre-fills from the read-back (issue #213 Phase 3b-2): a
-    // descriptor carrying a base style + a per-mesh override surfaces both — the
-    // override marks its component, and selecting it pre-fills the editor fields
-    // from the override (selecting base falls back to the base style).
+    // issue #213 piece 2 (reveal): "Add Component → subtree_from_asset" reveals the
+    // picker section by setting HasSubtreeSection, WITHOUT calling the generic
+    // add-component verb (mirroring how renderable reveals its section), and the
+    // section starts hidden on a freshly inspected node.
     [Fact]
-    public void InspectorPrefillsStyleEditorFromReadBack()
+    public void AddComponentSubtreeFromAssetRevealsPickerSectionWithoutVerb()
     {
-        var editorSession = StyledGlbTreeSession();
+        var session = new RecordingEditorSession();
         var viewModel = new MainWindowViewModel(
-            ProjectSnapshot(
-                scene: SceneSnapshot(
-                    new EngineSceneNode
-                    {
-                        Id = "tank",
-                        DisplayName = "tank",
-                        Kind = "node",
-                        Visible = true,
-                        SceneSource = new EngineSceneNodeSceneSource
-                        {
-                            Kind = "glb",
-                            Path = "gltf/tank1.glb",
-                            ConsumeMode = "instance",
-                            SceneIndex = 0u,
-                            HasBaseStyle = true,
-                            BaseStyle = new EngineGlbStyle
-                            {
-                                SurfaceEnabled = false,
-                                SurfaceRgba = [0.1f, 0.1f, 0.1f, 1f],
-                                WireframeEnabled = true,
-                                WireframeRgba = [0f, 1f, 0.15f, 1f],
-                            },
-                            StyleOverrideCount = 1u,
-                            StyleOverrides =
-                            [
-                                new EngineGlbStyleOverride
-                                {
-                                    MeshIndex = 1u,
-                                    Style = new EngineGlbStyle
-                                    {
-                                        SurfaceEnabled = true,
-                                        SurfaceRgba = [0.7f, 0.8f, 0.9f, 1f],
-                                        WireframeEnabled = false,
-                                        WireframeRgba = [1f, 0f, 0f, 1f],
-                                    },
-                                },
-                            ],
-                        },
-                    })),
-            editorSession: editorSession,
-            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-prefill"));
+            ProjectSnapshot(scene: SceneSnapshot(Node("host", visible: true))),
+            editorSession: session);
 
-        var tank = Assert.Single(viewModel.SceneTree.Nodes);
-        viewModel.SceneTree.SelectNode(tank);
-        var inspector = viewModel.Inspector;
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(host);
 
-        // The override (mesh 1 = turret) is marked; body (mesh 2) is not.
-        var body = Assert.Single(inspector.SceneSourceComponents);
-        var turret = Assert.Single(body.Children);
-        Assert.False(body.HasOverride);
-        Assert.True(turret.HasOverride);
+        // Hidden until attached (parallel to HasRenderableReference for a node with
+        // no renderable).
+        Assert.False(viewModel.Inspector.HasSubtreeSection);
 
-        // With nothing selected, the editor pre-fills from the BASE style.
-        Assert.False(inspector.StyleSurfaceEnabled);
-        Assert.True(inspector.StyleWireframeEnabled);
-        Assert.Equal("0.1", inspector.StyleSurfaceR);
+        viewModel.Inspector.AddComponentCommand.Execute("subtree_from_asset");
 
-        // Selecting the overridden component pre-fills from its OVERRIDE style.
-        inspector.SelectedComponent = turret;
-        Assert.True(inspector.StyleSurfaceEnabled);
-        Assert.Equal("0.7", inspector.StyleSurfaceR);
-        Assert.False(inspector.StyleWireframeEnabled);
-    }
-
-    private static RecordingEditorSession StyledGlbTreeSession()
-    {
-        return new RecordingEditorSession
-        {
-            GlbHierarchy = new EngineGlbSceneHierarchy
-            {
-                Ok = true,
-                SceneName = "Scene",
-                SceneIndex = 0u,
-                Components =
-                [
-                    new EngineGlbComponent
-                    {
-                        Id = "body",
-                        Name = "body",
-                        HasMesh = true,
-                        MeshIndex = 2u,
-                        NodeIndex = 2u,
-                    },
-                    new EngineGlbComponent
-                    {
-                        Id = "turret",
-                        Name = "turret",
-                        ParentId = "body",
-                        HasMesh = true,
-                        MeshIndex = 1u,
-                        NodeIndex = 1u,
-                    },
-                    new EngineGlbComponent
-                    {
-                        Id = "gun",
-                        Name = "gun",
-                        ParentId = "turret",
-                        HasMesh = true,
-                        MeshIndex = 0u,
-                        NodeIndex = 0u,
-                    },
-                ],
-            },
-        };
-    }
-
-    private static MainWindowViewModel StyledGlbTreeViewModel(
-        RecordingEditorSession editorSession,
-        out SceneTreeNodeViewModel tank)
-    {
-        var viewModel = new MainWindowViewModel(
-            ProjectSnapshot(
-                scene: SceneSnapshot(
-                    new EngineSceneNode
-                    {
-                        Id = "tank",
-                        DisplayName = "tank",
-                        Kind = "node",
-                        Visible = true,
-                        SceneSource = new EngineSceneNodeSceneSource
-                        {
-                            Kind = "glb",
-                            Path = "gltf/tank1.glb",
-                            ConsumeMode = "instance",
-                            SceneIndex = 0u,
-                        },
-                    })),
-            editorSession: editorSession,
-            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-style-vm"));
-        tank = Assert.Single(viewModel.SceneTree.Nodes);
-        return viewModel;
+        Assert.True(viewModel.Inspector.HasSubtreeSection);
+        // The engine rejects the generic verb for this kind, so it is never called.
+        Assert.Empty(session.AddedComponents);
+        Assert.DoesNotContain(
+            viewModel.Inspector.Components,
+            c => c.Kind == "subtree_from_asset");
     }
 
     // Smoke: the GLB scene-source host verb is reachable through the live v23 DLL
@@ -1647,10 +1368,12 @@ public sealed partial class ProjectOpeningTests
             {
                 Nodes =
                 [
+                    // Scene-from-GLB node, identified by its schema label.
                     new EngineAssetGraphNode
                     {
                         Id = 5u,
-                        TypeName = "Scene from GLB",
+                        TypeName = "Scene",
+                        Schema = "e7000711",
                         DisplayName = "tank scene",
                     },
                 ],

@@ -189,8 +189,11 @@
                              the Renderable Asset card's pick + Apply + ✕ shape, but the
                              reference is a Scene-from-GLB graph node chosen from a combo
                              of the available ones. The "Referencing" line is optimistic
-                             and session-local for now (snapshot read-back is piece 3). -->
-                        <Border Classes="InspectorSectionCard">
+                             and session-local for now (snapshot read-back is piece 3).
+                             Attached via "Add Component → Subtree from asset" (the card
+                             is gated on HasSubtreeSection), mirroring Renderable. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasSubtreeSection}">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Subtree from asset"
                                            Classes="InspectorSectionTitle"/>
@@ -244,196 +247,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- GLB scene source (issue #213 Phase 3a): import a GLB
-                             as a sub-tree under this node, or show/clear the one
-                             already authored. The Import button opens a file
-                             picker from code-behind (OnImportGlbSceneSourceClick),
-                             which roots the path and pushes it via the VM. -->
-                        <Border Classes="InspectorSectionCard">
-                            <StackPanel Classes="InspectorSection">
-                                <TextBlock Text="Scene Source"
-                                           Classes="InspectorSectionTitle"/>
-
-                                <Button Content="Import GLB…"
-                                        Click="OnImportGlbSceneSourceClick"
-                                        IsVisible="{Binding HasNoSceneSource}"
-                                        Classes="InspectorApplyButton"
-                                        ToolTip.Tip="Import a GLB scene under this node"/>
-
-                                <StackPanel IsVisible="{Binding HasSceneSource}"
-                                            Spacing="6">
-                                    <Grid ColumnDefinitions="Auto,*"
-                                          ColumnSpacing="10"
-                                          Classes="InspectorPropertyRow">
-                                        <TextBlock Text="GLB"
-                                                   Classes="InspectorPropertyName"/>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding SceneSourcePath}"
-                                                   TextWrapping="Wrap"
-                                                   Classes="InspectorPropertyValue"/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="Auto,*"
-                                          ColumnSpacing="10"
-                                          Classes="InspectorPropertyRow">
-                                        <TextBlock Text="Consume"
-                                                   Classes="InspectorPropertyName"/>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding SceneSourceConsumeMode}"
-                                                   Classes="InspectorPropertyValue"/>
-                                    </Grid>
-
-                                    <!-- Interactive component hierarchy of the
-                                         imported GLB (issue #213 Phase 3b-1/3b-2):
-                                         the nodes grafted under this one at runtime,
-                                         imported on demand and linked into a tree
-                                         from the flat list via parent id. Selecting
-                                         a component drives the per-component style
-                                         editor below; a "styled" badge marks
-                                         components carrying a per-mesh override. -->
-                                    <TextBlock Text="Components"
-                                               Classes="InspectorPropertyName"
-                                               IsVisible="{Binding HasSceneSourceComponents}"/>
-                                    <TreeView ItemsSource="{Binding SceneSourceComponents}"
-                                              SelectedItem="{Binding SelectedComponent, Mode=TwoWay}"
-                                              IsVisible="{Binding HasSceneSourceComponents}"
-                                              MaxHeight="220">
-                                        <TreeView.DataTemplates>
-                                            <TreeDataTemplate
-                                                DataType="panes:GlbComponentNodeViewModel"
-                                                ItemsSource="{Binding Children}">
-                                                <StackPanel Orientation="Horizontal"
-                                                            Spacing="8">
-                                                    <TextBlock Text="{Binding Name}"
-                                                               Classes="InspectorPropertyValue"/>
-                                                    <Border IsVisible="{Binding HasMesh}"
-                                                            Background="{DynamicResource WozzitsPanelInsetColor}"
-                                                            CornerRadius="3"
-                                                            Padding="4,0">
-                                                        <TextBlock Text="{Binding MeshBadge}"
-                                                                   Classes="InspectorPropertyName"/>
-                                                    </Border>
-                                                    <Border IsVisible="{Binding HasOverride}"
-                                                            Background="{DynamicResource WozzitsAccentColor}"
-                                                            CornerRadius="3"
-                                                            Padding="4,0">
-                                                        <TextBlock Text="{Binding OverrideBadge}"
-                                                                   Classes="InspectorPropertyName"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </TreeDataTemplate>
-                                        </TreeView.DataTemplates>
-                                    </TreeView>
-
-                                    <TextBlock Text="{Binding SceneSourceHierarchyError}"
-                                               IsVisible="{Binding HasSceneSourceHierarchyError}"
-                                               TextWrapping="Wrap"
-                                               Classes="InspectorPropertyName"/>
-
-                                    <!-- Per-component style editor (issue #213
-                                         Phase 3b-2): edit a surface + wireframe
-                                         look and assign it to the selected
-                                         component, its whole subtree, or all
-                                         components (the descriptor's base style).
-                                         RGBA channels are 0..1. -->
-                                    <Border Classes="InspectorSectionCard"
-                                            IsVisible="{Binding HasSceneSourceComponents}">
-                                        <StackPanel Spacing="6">
-                                            <TextBlock Text="Style"
-                                                       Classes="InspectorPropertyName"/>
-                                            <TextBlock Text="{Binding StyleTargetLabel}"
-                                                       Classes="InspectorPropertyValue"
-                                                       TextWrapping="Wrap"/>
-
-                                            <CheckBox Content="Surface"
-                                                      IsChecked="{Binding StyleSurfaceEnabled}"/>
-                                            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
-                                                  ColumnSpacing="4">
-                                                <TextBlock Text="R" VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="1"
-                                                         Text="{Binding StyleSurfaceR}"/>
-                                                <TextBlock Grid.Column="2" Text="G"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="3"
-                                                         Text="{Binding StyleSurfaceG}"/>
-                                                <TextBlock Grid.Column="4" Text="B"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="5"
-                                                         Text="{Binding StyleSurfaceB}"/>
-                                                <TextBlock Grid.Column="6" Text="A"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="7"
-                                                         Text="{Binding StyleSurfaceA}"/>
-                                            </Grid>
-
-                                            <CheckBox Content="Wireframe"
-                                                      IsChecked="{Binding StyleWireframeEnabled}"/>
-                                            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
-                                                  ColumnSpacing="4">
-                                                <TextBlock Text="R" VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="1"
-                                                         Text="{Binding StyleWireframeR}"/>
-                                                <TextBlock Grid.Column="2" Text="G"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="3"
-                                                         Text="{Binding StyleWireframeG}"/>
-                                                <TextBlock Grid.Column="4" Text="B"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="5"
-                                                         Text="{Binding StyleWireframeB}"/>
-                                                <TextBlock Grid.Column="6" Text="A"
-                                                           VerticalAlignment="Center"
-                                                           Classes="InspectorPropertyName"/>
-                                                <TextBox Grid.Column="7"
-                                                         Text="{Binding StyleWireframeA}"/>
-                                            </Grid>
-
-                                            <WrapPanel>
-                                                <Button Content="Assign to component"
-                                                        Command="{Binding AssignStyleToComponentCommand}"
-                                                        Classes="InspectorApplyButton"
-                                                        Margin="0,0,4,4"
-                                                        ToolTip.Tip="Set a per-mesh override for the selected component"/>
-                                                <Button Content="Assign to subtree"
-                                                        Command="{Binding AssignStyleToSubtreeCommand}"
-                                                        Classes="InspectorApplyButton"
-                                                        Margin="0,0,4,4"
-                                                        ToolTip.Tip="Set an override for every mesh under the selected component"/>
-                                                <Button Content="Assign to all (base)"
-                                                        Command="{Binding AssignStyleToBaseCommand}"
-                                                        Classes="InspectorApplyButton"
-                                                        Margin="0,0,4,4"
-                                                        ToolTip.Tip="Set the descriptor's base style (applies to all meshes)"/>
-                                                <Button Content="Clear override"
-                                                        Command="{Binding ClearComponentStyleCommand}"
-                                                        Classes="InspectorApplyButton"
-                                                        Margin="0,0,4,4"
-                                                        ToolTip.Tip="Clear the selected component's per-mesh override"/>
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="6">
-                                        <Button Content="Re-import GLB…"
-                                                Click="OnImportGlbSceneSourceClick"
-                                                Classes="InspectorApplyButton"/>
-                                        <Button Grid.Column="1"
-                                                Content="✕"
-                                                Command="{Binding ClearSceneSourceCommand}"
-                                                Classes="InspectorApplyButton"
-                                                ToolTip.Tip="Clear scene source"/>
-                                    </Grid>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <Grid ColumnDefinitions="*,Auto">
@@ -451,6 +264,9 @@
                                                 <MenuItem Header="Renderable"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="renderable"/>
+                                                <MenuItem Header="Subtree from asset"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="subtree_from_asset"/>
                                                 <MenuItem Header="Proximity"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="proximity"/>
