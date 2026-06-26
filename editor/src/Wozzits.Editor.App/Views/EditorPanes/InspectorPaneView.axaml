@@ -183,6 +183,67 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Subtree from asset (issue #213 piece 2): point this node
+                             at a "Scene from GLB" asset-graph node so the runtime
+                             grafts that GLB's hierarchy as the node's children. Mirrors
+                             the Renderable Asset card's pick + Apply + ✕ shape, but the
+                             reference is a Scene-from-GLB graph node chosen from a combo
+                             of the available ones. The "Referencing" line is optimistic
+                             and session-local for now (snapshot read-back is piece 3). -->
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Subtree from asset"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Scene from GLB"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableSceneSources}"
+                                              SelectedItem="{Binding SelectedSceneSourceOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a Scene from GLB node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableSceneSources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorSceneSourceOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <TextBlock Text="No Scene from GLB nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableSceneSources}"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Referencing"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SubtreeReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="6">
+                                    <Button Content="Reference subtree"
+                                            Command="{Binding ApplySceneSourceCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Graft the picked Scene-from-GLB hierarchy under this node"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding ClearSceneSourceReferenceCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Clear subtree reference"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
                         <!-- GLB scene source (issue #213 Phase 3a): import a GLB
                              as a sub-tree under this node, or show/clear the one
                              already authored. The Import button opens a file

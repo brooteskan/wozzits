@@ -412,6 +412,19 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetNodeRenderableAsset(runtime.Handle, nodeId, assetGraphNodeId);
     }
 
+    public EngineMutationResponse SetNodeSceneSource(
+        string nodeId,
+        ulong assetGraphNodeId,
+        uint consumeMode)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeSceneSource(
+            runtime.Handle, nodeId, assetGraphNodeId, consumeMode);
+    }
+
     public EngineMutationResponse SetNodeGlbSceneSource(
         string nodeId,
         string glbPath,

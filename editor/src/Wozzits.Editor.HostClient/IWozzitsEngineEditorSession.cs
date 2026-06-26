@@ -160,6 +160,15 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Point (0 clears) the node at a "Scene from GLB" asset-graph node by its node
+    // id; the runtime grafts that GLB's hierarchy as the node's children (issue
+    // #213 piece 2). consumeMode: 0 instance / 1 flatten. Live + host-gated, no-op
+    // success when no viewport is running.
+    EngineMutationResponse SetNodeSceneSource(
+        string nodeId,
+        ulong assetGraphNodeId,
+        uint consumeMode);
+
     // Author (empty glbPath clears) the node's GLB scene-source descriptor — the
     // asset-graph-independent route (issue #213 Phase 3a): a resource-relative GLB
     // path + scene index + consume mode (0 instance / 1 flatten). The engine

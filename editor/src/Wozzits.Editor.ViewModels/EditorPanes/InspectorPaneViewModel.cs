@@ -27,6 +27,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _renderableSourceKind = string.Empty;
     private string _renderableAssetGraphNodeId = string.Empty;
     private bool _hasRenderableReference;
+    // "Subtree from asset" section (issue #213 piece 2): the picked "Scene from GLB"
+    // asset-graph node and the optimistic "Referencing: …" label. The reference is
+    // session-local for now — reading it back from the snapshot is piece 3.
+    private InspectorSceneSourceOptionViewModel? _selectedSceneSourceOption;
+    private string _subtreeReferenceLabel = string.Empty;
     private bool _hasSceneSource;
     private string _sceneSourcePath = string.Empty;
     private string _sceneSourceConsumeMode = string.Empty;
@@ -103,6 +108,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RemoveCameraCommand = new RelayCommand(RemoveCameraComponent);
         ApplyRenderableCommand = new RelayCommand(ApplyRenderable);
         RemoveRenderableCommand = new RelayCommand(RemoveRenderable);
+        // "Subtree from asset" (issue #213 piece 2): pick a "Scene from GLB" node to
+        // reference, or clear it. Apply is gated on having a selection in the picker.
+        ApplySceneSourceCommand = new RelayCommand(
+            ApplySceneSource,
+            () => _selectedSceneSourceOption is not null);
+        ClearSceneSourceReferenceCommand = new RelayCommand(ClearSceneSourceReference);
         ClearSceneSourceCommand = new RelayCommand(ClearSceneSource);
         AssignStyleToComponentCommand =
             new RelayCommand(AssignStyleToComponent, () => HasSelectedComponent);
@@ -123,6 +134,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // separately and shown under the GLB path in the "Scene Source" card.
     public ObservableCollection<GlbComponentNodeViewModel> SceneSourceComponents
     { get; } = [];
+
+    // The "Scene from GLB" asset-graph nodes the "Subtree from asset" picker offers
+    // (issue #213 piece 2). Threaded in from MainWindowViewModel whenever a node is
+    // inspected (a snapshot-time list; live graph-edit refresh is out of scope).
+    public ObservableCollection<InspectorSceneSourceOptionViewModel>
+        AvailableSceneSources { get; } = [];
 
     // Registered behavior modules offered by the "+" add menu, refreshed from the
     // running engine each time a scene node is inspected. Each option carries its
@@ -151,6 +168,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveRenderableCommand { get; }
 
     public IRelayCommand ClearSceneSourceCommand { get; }
+
+    // "Subtree from asset" (issue #213 piece 2).
+    public IRelayCommand ApplySceneSourceCommand { get; }
+
+    public IRelayCommand ClearSceneSourceReferenceCommand { get; }
 
     // Per-component style editor (issue #213 Phase 3b-2).
     public IRelayCommand AssignStyleToComponentCommand { get; }
@@ -338,6 +360,44 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         get => _hasRenderableReference;
         private set => SetProperty(ref _hasRenderableReference, value);
     }
+
+    // The "Scene from GLB" node currently chosen in the "Subtree from asset" picker
+    // (issue #213 piece 2). Bound TwoWay to the ComboBox; gates Apply's can-execute.
+    public InspectorSceneSourceOptionViewModel? SelectedSceneSourceOption
+    {
+        get => _selectedSceneSourceOption;
+        set
+        {
+            if (SetProperty(ref _selectedSceneSourceOption, value))
+            {
+                ApplySceneSourceCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasAvailableSceneSources => AvailableSceneSources.Count > 0;
+
+    // Optimistic, session-local "Referencing: <node>" line for the chosen subtree
+    // source (issue #213 piece 2). Empty => "(none)" (no reference picked this
+    // session). Reading the persisted reference back from the snapshot is piece 3.
+    public string SubtreeReferenceLabel
+    {
+        get => _subtreeReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _subtreeReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(HasSubtreeReference));
+                OnPropertyChanged(nameof(SubtreeReferenceDisplay));
+            }
+        }
+    }
+
+    public bool HasSubtreeReference =>
+        !string.IsNullOrWhiteSpace(SubtreeReferenceLabel);
+
+    public string SubtreeReferenceDisplay =>
+        HasSubtreeReference ? $"Referencing: {SubtreeReferenceLabel}" : "(none)";
 
     // True when the selected node carries a GLB scene-source descriptor (Phase 2
     // snapshot field). Drives the "Scene Source" card between its show/clear state
@@ -616,6 +676,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 node.Renderable?.AssetGraphNodeId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
             SetSceneSourceFields(node.SceneSource);
+            // The subtree-from-asset reference is session-local in piece 2, so reset
+            // its optimistic state when switching nodes (piece 3 reads it back).
+            ResetSubtreeReferenceState();
 
             ComponentsHeader = $"{Header} Components";
             SetTransformFields(node.Transform);
@@ -855,6 +918,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RenderableSourceKind = string.Empty;
             RenderableAssetGraphNodeId = string.Empty;
             SetSceneSourceFields(null);
+            ResetSubtreeReferenceState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -1218,6 +1282,89 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
         HasRenderableReference = false;
         RenderableAssetGraphNodeId = string.Empty;
+    }
+
+    // ─── Subtree from asset (issue #213 piece 2) ─────────────────────────────────
+
+    // Replace the picker's options with the current "Scene from GLB" asset-graph
+    // nodes (threaded in from MainWindowViewModel). Preserves the active selection
+    // by id when the same node is still offered so re-inspecting a node doesn't drop
+    // the user's pick; otherwise resets the picker (the reference label is left as
+    // the session's optimistic record).
+    public void SetAvailableSceneSources(
+        IEnumerable<InspectorSceneSourceOptionViewModel> options)
+    {
+        var previousId = _selectedSceneSourceOption?.Id;
+        AvailableSceneSources.Clear();
+        InspectorSceneSourceOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableSceneSources.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        // Assign through the field (not the property) so swapping the option
+        // instances doesn't fight the ComboBox's own SelectedItem update.
+        _selectedSceneSourceOption = restored;
+        OnPropertyChanged(nameof(SelectedSceneSourceOption));
+        OnPropertyChanged(nameof(HasAvailableSceneSources));
+        ApplySceneSourceCommand.NotifyCanExecuteChanged();
+    }
+
+    // Point the selected scene node at the picked "Scene from GLB" node as an
+    // Instance subtree source. The reference is shown optimistically (session-local)
+    // — persistent read-back from the snapshot is piece 3.
+    private void ApplySceneSource()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (SelectedSceneSourceOption is not { } option)
+        {
+            LastEditError = "Pick a \"Scene from GLB\" asset to reference.";
+            return;
+        }
+
+        var response = _editorSession!.SetNodeSceneSource(
+            NodeId,
+            option.Id,
+            consumeMode: 0u);   // 0 = WZ_SCENE_SOURCE_INSTANCE
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        SubtreeReferenceLabel = option.Label;
+    }
+
+    private void ClearSceneSourceReference()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        // Asset-graph node id 0 clears the reference on the engine side.
+        var response = _editorSession!.SetNodeSceneSource(
+            NodeId, assetGraphNodeId: 0u, consumeMode: 0u);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        SelectedSceneSourceOption = null;
+        SubtreeReferenceLabel = string.Empty;
+    }
+
+    // Clear the picker selection + optimistic reference label (the reference is
+    // session-local in piece 2; switching nodes must not carry it across).
+    private void ResetSubtreeReferenceState()
+    {
+        SelectedSceneSourceOption = null;
+        SubtreeReferenceLabel = string.Empty;
     }
 
     // Read-only mirror of a node's GLB scene-source descriptor (Phase 2 snapshot)
@@ -1985,6 +2132,24 @@ public sealed class InspectorBehaviorModuleOptionViewModel
     public string Module { get; }
 
     public IRelayCommand AddCommand { get; }
+}
+
+// One "Scene from GLB" asset-graph node offered by the "Subtree from asset" picker
+// (issue #213 piece 2): its asset-graph node id and a human label. The label falls
+// back to the node id when the node has no display name so the combo is never blank.
+public sealed class InspectorSceneSourceOptionViewModel
+{
+    public InspectorSceneSourceOptionViewModel(ulong id, string? displayName)
+    {
+        Id = id;
+        Label = string.IsNullOrWhiteSpace(displayName)
+            ? $"#{id.ToString(CultureInfo.InvariantCulture)}"
+            : displayName!;
+    }
+
+    public ulong Id { get; }
+
+    public string Label { get; }
 }
 
 public sealed class InspectorBehaviorViewModel : ViewModelBase

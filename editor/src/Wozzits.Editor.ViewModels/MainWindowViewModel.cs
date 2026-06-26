@@ -229,6 +229,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 _syncingSelection = false;
             }
         }
+        RefreshInspectorSceneSources();
         Inspector.Inspect(node);
     }
 
@@ -250,6 +251,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 _syncingSelection = false;
             }
         }
+        RefreshInspectorSceneSources();
         Inspector.Inspect(node);
     }
+
+    // Thread the asset graph's "Scene from GLB" nodes into the inspector's "Subtree
+    // from asset" picker (issue #213 piece 2). Refreshed on each selection from the
+    // loaded snapshot — a snapshot-time list is sufficient for piece 2; it does not
+    // track live graph edits. The inspector takes plain option data, so it never
+    // depends on the asset-graph pane.
+    private void RefreshInspectorSceneSources()
+    {
+        Inspector.SetAvailableSceneSources(
+            AssetGraph.Nodes
+                .Where(node => string.Equals(
+                    node.TypeName,
+                    SceneFromGlbTypeName,
+                    System.StringComparison.Ordinal))
+                .Select(node => new InspectorSceneSourceOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+    }
+
+    // The asset-graph node type that produces a graftable scene hierarchy (issue
+    // #213); registered in the engine's type_extensions under this name.
+    private const string SceneFromGlbTypeName = "Scene from GLB";
 }

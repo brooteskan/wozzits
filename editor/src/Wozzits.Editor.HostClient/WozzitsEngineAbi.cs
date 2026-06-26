@@ -420,6 +420,20 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         ulong assetGraphNodeId);
 
+    // Point a node at a "Scene from GLB" asset-graph node so the runtime grafts
+    // that GLB's hierarchy as the node's children (issue #213 piece 2). The id is
+    // the asset-graph node's id (0 = clear); consumeMode uses the WZ_SCENE_SOURCE_*
+    // tokens (0 = instance, 1 = flatten).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_scene_source",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeSceneSource(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong assetGraphNodeId,
+        uint consumeMode);
+
     // Author (empty/null glbPathUtf8 clears) a node's GLB scene-source descriptor
     // — the asset-graph-independent route (issue #213 Phase 3a). consumeMode uses
     // the WZ_SCENE_SOURCE_* tokens (0 = instance, 1 = flatten).

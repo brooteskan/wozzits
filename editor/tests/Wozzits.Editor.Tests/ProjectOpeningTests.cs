@@ -754,6 +754,92 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.Inspector.HasSceneSource);
     }
 
+    // Inspector "Subtree from asset" section (issue #213 piece 2): the asset graph's
+    // "Scene from GLB" nodes are threaded into the picker; selecting one + applying
+    // points the scene node at it via SetNodeSceneSource (Instance / consumeMode 0)
+    // and shows the pick optimistically; Clear sends id 0 and drops the reference.
+    [Fact]
+    public void InspectorReferencesAndClearsSceneSourceSubtreeThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // The graftable source the picker should offer.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 42,
+                                Type = 80,
+                                TypeName = "Scene from GLB",
+                                DisplayName = "tank scene",
+                                CompileStatus = "ready",
+                            },
+                            // A non-scene node that must be filtered out.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 7,
+                                Type = 41,
+                                TypeName = "Renderable",
+                                DisplayName = "renderable",
+                                CompileStatus = "ready",
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("host", parentId: "root", visible: true),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var host = Assert.Single(root.Children, n => n.Id == "host");
+
+        // Selecting the scene node threads only the Scene-from-GLB node into the
+        // picker, and nothing is referenced yet.
+        viewModel.SceneTree.SelectNode(host);
+        var option = Assert.Single(viewModel.Inspector.AvailableSceneSources);
+        Assert.Equal(42ul, option.Id);
+        Assert.Equal("tank scene", option.Label);
+        Assert.True(viewModel.Inspector.HasAvailableSceneSources);
+        Assert.False(viewModel.Inspector.HasSubtreeReference);
+        Assert.Equal("(none)", viewModel.Inspector.SubtreeReferenceDisplay);
+
+        // Picking + applying points the node at that graph node as an Instance
+        // subtree source and shows the pick optimistically.
+        viewModel.Inspector.SelectedSceneSourceOption = option;
+        Assert.True(viewModel.Inspector.ApplySceneSourceCommand.CanExecute(null));
+        viewModel.Inspector.ApplySceneSourceCommand.Execute(null);
+
+        var referenced = Assert.Single(editorSession.SceneSources);
+        Assert.Equal("host", referenced.NodeId);
+        Assert.Equal(42ul, referenced.AssetGraphNodeId);
+        Assert.Equal(0u, referenced.ConsumeMode);   // WZ_SCENE_SOURCE_INSTANCE
+        Assert.True(viewModel.Inspector.HasSubtreeReference);
+        Assert.Equal(
+            "Referencing: tank scene",
+            viewModel.Inspector.SubtreeReferenceDisplay);
+
+        // Clear sends the id-0 clear signal and drops the optimistic reference.
+        viewModel.Inspector.ClearSceneSourceReferenceCommand.Execute(null);
+
+        var cleared = editorSession.SceneSources[^1];
+        Assert.Equal("host", cleared.NodeId);
+        Assert.Equal(0ul, cleared.AssetGraphNodeId);   // 0 = clear
+        Assert.Equal(0u, cleared.ConsumeMode);
+        Assert.False(viewModel.Inspector.HasSubtreeReference);
+        Assert.Null(viewModel.Inspector.SelectedSceneSourceOption);
+    }
+
     // Selecting a node with a GLB scene-source descriptor fetches the GLB's
     // component hierarchy and builds the read-only tree under the path (issue #213
     // Phase 3b-1): the import is called with the descriptor path resolved against
@@ -1135,6 +1221,74 @@ public sealed partial class ProjectOpeningTests
             // The empty-path clear form is equally reachable.
             var clear = editorSession.SetNodeGlbSceneSource(
                 "host", string.Empty, sceneIndex: 0u, consumeMode: 0u);
+            Assert.True(clear.Ok, clear.Error);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup of the temp project.
+            }
+        }
+    }
+
+    // Smoke: the "Subtree from asset" host verb (set_node_scene_source, issue #213
+    // piece 2) is reachable through the live v25 DLL. With no viewport runtime the
+    // native session reports a no-op success — this proves the new P/Invoke +
+    // session/client wiring marshals and the entry point resolves against the real
+    // engine ABI without throwing. Skips if the DLL isn't built.
+    [Fact]
+    public void NativeEngineClientSetSceneSourceVerbWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(abiPath))
+        {
+            return;
+        }
+
+        var projectRoot = Path.Combine(
+            Path.GetTempPath(),
+            "wozzits_editor_scene_source_verb_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, ".wozzits"));
+            File.WriteAllText(
+                Path.Combine(projectRoot, ".wozzits", "project.json"),
+                """
+                {
+                  "schema": "wozzits.project.v1",
+                  "formatVersion": 1,
+                  "name": "scene_source_verb_smoke",
+                  "asset_graph": "assets.graph.json"
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "assets.graph.json"),
+                """
+                {
+                  "schema": "wozzits.asset_graph.v2",
+                  "nodes": []
+                }
+                """);
+
+            using var session = new WozzitsEngineNativeClient()
+                .OpenEditorSession(projectRoot) as IDisposable;
+            var editorSession =
+                Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
+
+            // No runtime was started (startRuntime defaults false), so the verb is
+            // a no-op success — but it exercises the live DLL entry point.
+            var set = editorSession.SetNodeSceneSource(
+                "host", assetGraphNodeId: 42u, consumeMode: 0u);
+            Assert.True(set.Ok, set.Error);
+
+            // The id-0 clear form is equally reachable.
+            var clear = editorSession.SetNodeSceneSource(
+                "host", assetGraphNodeId: 0u, consumeMode: 0u);
             Assert.True(clear.Ok, clear.Error);
         }
         finally
@@ -1817,6 +1971,18 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             RenderableAssets.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, ulong AssetGraphNodeId, uint ConsumeMode)>
+            SceneSources { get; } = [];
+
+        public EngineMutationResponse SetNodeSceneSource(
+            string nodeId,
+            ulong assetGraphNodeId,
+            uint consumeMode)
+        {
+            SceneSources.Add((nodeId, assetGraphNodeId, consumeMode));
             return new EngineMutationResponse { Ok = true };
         }
 
