@@ -99,6 +99,32 @@ namespace wz::engine::assets
         };
     }
 
+    MeshAsset MeshAssetModule::create_mesh_from_glb_scene(
+        const MeshFromGLBSceneDesc& desc)
+    {
+        if (desc.scene == wz::asset::AssetKey{})
+            return {};
+        if (desc.node_id.empty())
+            return {};
+
+        const wz::asset::AssetKey mesh_key =
+            make_mesh_from_glb_scene_key(desc.scene, desc.node_id);
+
+        wz::asset::AssetNode node{};
+        node.key = mesh_key;
+        node.type = kAssetTypeMesh;
+        node.schema = kMeshFromGLBSceneSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.meta = desc;
+
+        if (!system_.register_asset(std::move(node), { desc.scene }))
+            return MeshAsset{ .output = mesh_key };
+
+        return MeshAsset{
+            .output = mesh_key,
+        };
+    }
+
     MeshAsset MeshAssetModule::create_decimated_mesh(
         const MeshDecimationAssetDesc& desc)
     {

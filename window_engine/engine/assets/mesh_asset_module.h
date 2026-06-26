@@ -49,6 +49,19 @@ namespace wz::engine::assets
         uint32_t mesh_index = 0;
     };
 
+    // "Mesh from GLB scene" extractor (issue #213): pull one node's RAW,
+    // OBJECT-SPACE mesh out of a "Scene from GLB" output as a standalone Mesh
+    // asset that can feed a render program. The source Scene embeds each node's
+    // geometry (SceneAssetData::glb_meshes); node_id selects the GLB scene node
+    // (e.g. "body"). No node transform is baked into the extracted mesh — the
+    // grafted scene node owns placement.
+    struct MeshFromGLBSceneDesc
+    {
+        std::string name;
+        wz::asset::AssetKey scene;
+        std::string node_id;
+    };
+
     struct MeshDecimationAssetDesc
     {
         std::string name;
@@ -122,6 +135,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] MeshAsset create_glb_mesh(
             const GLBMeshDesc& desc);
+
+        [[nodiscard]] MeshAsset create_mesh_from_glb_scene(
+            const MeshFromGLBSceneDesc& desc);
 
         [[nodiscard]] MeshAsset create_decimated_mesh(
             const MeshDecimationAssetDesc& desc);

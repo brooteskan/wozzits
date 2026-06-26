@@ -100,6 +100,26 @@ namespace wz::engine::assets
         };
     }
 
+    // "Mesh from GLB scene" extractor key (issue #213). Identity = the input
+    // Scene key (folded into deps_hash) + the selected node id (folded into
+    // content_hash), so distinct nodes of the same Scene produce distinct
+    // meshes and a change to the Scene propagates. deps[0] = source Scene.
+    [[nodiscard]] inline wz::asset::AssetKey make_mesh_from_glb_scene_key(
+        const wz::asset::AssetKey& scene_key,
+        std::string_view node_id) noexcept
+    {
+        const uint64_t content = detail::mix64(
+            kMeshFromGLBSceneSchema.value,
+            detail::fnv1a_64(node_id));
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(content),
+            .schema_hash = detail::hash_u64(kMeshFromGLBSceneSchema.value),
+            .compiler_hash = detail::hash_u64(kMeshFromGLBSceneCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(scene_key),
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_decimated_mesh_key(
         const wz::asset::AssetKey& source_mesh_key,
         const MeshDecimationAssetDesc& desc) noexcept

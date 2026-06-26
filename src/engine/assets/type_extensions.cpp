@@ -471,6 +471,7 @@ namespace wz::engine::assets
                 kProceduralClipmapLatticeMeshSchema,
                 "Procedural clipmap mesh");
             WZ_ADD_SCHEMA(kGLBMeshSchema, "GLB mesh");
+            WZ_ADD_SCHEMA(kMeshFromGLBSceneSchema, "Mesh from GLB scene");
             WZ_ADD_SCHEMA(kPlaceholderMeshSchema, "Placeholder mesh");
             WZ_ADD_SCHEMA(
                 kProceduralGaussianSplatCloudSchema,

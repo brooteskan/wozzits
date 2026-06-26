@@ -39,6 +39,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kJSONDocumentCompilerVersion = 1;
     inline constexpr uint64_t kTOMLDocumentCompilerVersion = 1;
     inline constexpr uint64_t kMeshCompilerVersion = 2;
+    inline constexpr uint64_t kMeshFromGLBSceneCompilerVersion = 1;
     inline constexpr uint64_t kMeshDerivedFieldCompilerVersion = 3;
     inline constexpr uint64_t kMeshWaveletAnalysisCompilerVersion = 2;
     inline constexpr uint64_t kBehaviorFieldPlaceholderCompilerVersion = 1;
