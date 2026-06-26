@@ -274,10 +274,28 @@ public sealed partial class WozzitsEngineNativeClient
                 bytes,
                 node.Behaviors,
                 ReadSceneBehavior),
+            SceneSource = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasSceneSource)
+                ? ReadSceneSceneSource(bytes, node.SceneSource)
+                : null,
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
                 ReadSceneNode),
+        };
+    }
+
+    private static EngineSceneNodeSceneSource ReadSceneSceneSource(
+        byte[] bytes,
+        WzEditorSceneSceneSourceAbi source)
+    {
+        return new EngineSceneNodeSceneSource
+        {
+            Kind = ReadString(bytes, source.Kind),
+            Path = ReadString(bytes, source.Path),
+            ConsumeMode = ReadString(bytes, source.ConsumeMode),
+            SceneIndex = source.SceneIndex,
+            StyleOverrideCount = source.StyleOverrideCount,
+            HasBaseStyle = source.HasBaseStyle != 0,
         };
     }
 

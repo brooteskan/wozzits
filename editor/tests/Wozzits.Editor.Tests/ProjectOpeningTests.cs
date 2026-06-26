@@ -931,6 +931,73 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal(2, browser.Types.Count);
     }
 
+    [Fact]
+    public void NativeEngineClientSurfacesGlbSceneSourceWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        // The fixture project is staged next to the engine DLL under
+        // build/<preset>/resources/projects/glb_scene_source_fixture.
+        var fixtureProject = Path.Combine(
+            Path.GetDirectoryName(abiPath) ?? string.Empty,
+            "resources",
+            "projects",
+            "glb_scene_source_fixture");
+
+        if (!File.Exists(abiPath) || !Directory.Exists(fixtureProject))
+        {
+            return;
+        }
+
+        var response = new WozzitsEngineNativeClient()
+            .LoadProjectSnapshot(fixtureProject);
+
+        Assert.True(response.IsValid, response.Error);
+        Assert.True(response.Scene.Ok, response.Scene.Error);
+
+        // Find the tank_host node anywhere in the tree (it sits under root).
+        var host = FindSceneNode(
+            response.Scene.Snapshot.Roots,
+            node => node.Id == "tank_host");
+        Assert.NotNull(host);
+
+        var sceneSource = host!.SceneSource;
+        Assert.NotNull(sceneSource);
+        Assert.Equal("glb", sceneSource!.Kind);
+        Assert.Equal("gltf/tank1.glb", sceneSource.Path);
+        Assert.Equal("instance", sceneSource.ConsumeMode);
+        Assert.Equal(0u, sceneSource.SceneIndex);
+        Assert.Equal(1u, sceneSource.StyleOverrideCount);
+        Assert.True(sceneSource.HasBaseStyle);
+
+        // A node without a glb_scene_source block must not carry one.
+        var plain = FindSceneNode(
+            response.Scene.Snapshot.Roots,
+            node => node.Id == "root");
+        Assert.NotNull(plain);
+        Assert.Null(plain!.SceneSource);
+    }
+
+    private static EngineSceneNode? FindSceneNode(
+        IEnumerable<EngineSceneNode> nodes,
+        Func<EngineSceneNode, bool> predicate)
+    {
+        foreach (var node in nodes)
+        {
+            if (predicate(node))
+            {
+                return node;
+            }
+
+            var found = FindSceneNode(node.Children, predicate);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private static EngineProjectSnapshotResponse ProjectSnapshot(
         string projectName = "test",
         EngineAssetGraphSnapshotResponse? assetGraph = null,

@@ -329,6 +329,8 @@ public sealed record EngineSceneNode
 
     public List<EngineSceneBehavior> Behaviors { get; init; } = [];
 
+    public EngineSceneNodeSceneSource? SceneSource { get; init; }
+
     public List<EngineSceneNode> Children { get; init; } = [];
 }
 
@@ -387,6 +389,25 @@ public sealed record EngineSceneRenderableSource
     public string Kind { get; init; } = string.Empty;
 
     public string DisplayName { get; init; } = string.Empty;
+}
+
+// Read-only summary of a node's GLB scene-source descriptor (issue #213),
+// present only when the node carries a glb_scene_source block. The full
+// MeshRenderStyleData is not surfaced: HasBaseStyle is a flag and
+// StyleOverrideCount is the override count.
+public sealed record EngineSceneNodeSceneSource
+{
+    public string Kind { get; init; } = string.Empty;
+
+    public string Path { get; init; } = string.Empty;
+
+    public string ConsumeMode { get; init; } = string.Empty;
+
+    public uint SceneIndex { get; init; }
+
+    public uint StyleOverrideCount { get; init; }
+
+    public bool HasBaseStyle { get; init; }
 }
 
 public sealed record EngineSceneComponent

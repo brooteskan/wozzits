@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 22;
+    internal const uint AbiVersion = 23;
 
     private static int _resolverRegistered;
 
@@ -666,6 +666,29 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableSourceAbi.DisplayName),
             16);
 
+        AssertSize<WzEditorSceneSceneSourceAbi>(64);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.Kind),
+            0);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.Path),
+            16);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.ConsumeMode),
+            32);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.SceneIndex),
+            48);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.StyleOverrideCount),
+            52);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.HasBaseStyle),
+            56);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.Reserved),
+            60);
+
         AssertSize<WzEditorSceneComponentAbi>(32);
         AssertOffset<WzEditorSceneComponentAbi>(
             nameof(WzEditorSceneComponentAbi.Kind),
@@ -697,7 +720,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneBehaviorAbi.Config),
             88);
 
-        AssertSize<WzEditorSceneNodeAbi>(448);
+        AssertSize<WzEditorSceneNodeAbi>(512);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -734,6 +757,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Children),
             432);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.SceneSource),
+            448);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1012,6 +1038,7 @@ internal readonly struct WzEditorSceneNodeAbi
     public readonly WzEditorTableSpanAbi Components;
     public readonly WzEditorTableSpanAbi Behaviors;
     public readonly WzEditorTableSpanAbi Children;
+    public readonly WzEditorSceneSceneSourceAbi SceneSource;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -1066,6 +1093,18 @@ internal readonly struct WzEditorSceneRenderableSourceAbi
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneSceneSourceAbi
+{
+    public readonly WzEditorStringSpanAbi Kind;          // "glb"
+    public readonly WzEditorStringSpanAbi Path;
+    public readonly WzEditorStringSpanAbi ConsumeMode;   // "instance" | "flatten"
+    public readonly uint SceneIndex;
+    public readonly uint StyleOverrideCount;
+    public readonly uint HasBaseStyle;                   // 0/1
+    public readonly uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal readonly struct WzEditorSceneComponentAbi
 {
     public readonly WzEditorStringSpanAbi Kind;
@@ -1094,6 +1133,7 @@ internal static class WzEditorSceneNodeFlags
     public const uint HasCamera = 1u << 4;
     public const uint HasRenderable = 1u << 5;
     public const uint RenderableHasAssetGraphNodeId = 1u << 6;
+    public const uint HasSceneSource = 1u << 7;
 }
 
 internal static class WzEditorSceneCameraFlags
