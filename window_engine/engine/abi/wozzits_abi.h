@@ -859,8 +859,10 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_asset(
 // the scene dirty. An unknown/missing node is a logged engine-thread no-op.
 //
 // NOTE: this is a NEW exported function (no ABI snapshot struct change). The
-// scene snapshot does not yet surface scene_source or the grafted children; that
-// (a struct change needing the C# mirror) is a separate editor slice.
+// scene snapshot surfaces the glb_scene_source DESCRIPTOR summary (#213 Phase 2,
+// WzEditorSceneNode.scene_source), but this verb's node-ref scene_source resolved
+// key and the runtime-grafted children are still not surfaced (the children are
+// runtime-only and absent from the JSON-reparse snapshot path).
 //
 // HOST-CAPABILITY GATE: a mutation verb gated behind the host role
 // (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
