@@ -114,8 +114,7 @@ namespace wz::engine::assets::internal
             registry,
             ctx.logger,
             ctx.json_table,
-            ctx.scene_table,
-            ctx.mesh_table);
+            ctx.scene_table);
 
         return registry;
     }

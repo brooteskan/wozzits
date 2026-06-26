@@ -102,13 +102,14 @@ namespace wz::engine::assets
     MeshAsset MeshAssetModule::create_mesh_from_glb_scene(
         const MeshFromGLBSceneDesc& desc)
     {
-        if (desc.scene == wz::asset::AssetKey{})
+        if (desc.source_file == wz::asset::AssetKey{})
             return {};
         if (desc.node_id.empty())
             return {};
 
         const wz::asset::AssetKey mesh_key =
-            make_mesh_from_glb_scene_key(desc.scene, desc.node_id);
+            make_mesh_from_glb_scene_key(
+                desc.source_file, desc.node_id, desc.scene_index);
 
         wz::asset::AssetNode node{};
         node.key = mesh_key;
@@ -117,7 +118,7 @@ namespace wz::engine::assets
         node.stage = wz::asset::AssetStage::Source;
         node.meta = desc;
 
-        if (!system_.register_asset(std::move(node), { desc.scene }))
+        if (!system_.register_asset(std::move(node), { desc.source_file }))
             return MeshAsset{ .output = mesh_key };
 
         return MeshAsset{

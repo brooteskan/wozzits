@@ -432,11 +432,11 @@ TEST(SceneAssetModule, GLBNoOverrideDefaultIsUniform)
     }
 }
 
-// Issue #213 (engine foundation for GLB mesh extraction): a "Scene from GLB"
-// output now embeds each mesh-bearing node's RAW, OBJECT-SPACE geometry
-// (SceneAssetData::glb_meshes) keyed by glTF mesh_index, and records each node's
-// mesh_index. The "Mesh from GLB scene" extractor then pulls one node's geometry
-// out as a standalone Mesh. Positive path: extract node "body" from tank1.glb and
+// Issue #213: the "Mesh from GLB scene" extractor is a standalone GLB->mesh
+// provider with NO Scene dependency. It imports the SAME source_file a "Scene
+// from GLB" node consumes, finds the node by id in the GLB hierarchy, and
+// outputs that node's mesh. Positive path: extract node "body" from tank1.glb
+// (via a kRawFileSchema file carrier, like the piece-1 structure test) and
 // confirm the output Mesh matches the raw body mesh straight from
 // import_glb_meshes (verbatim object-space — no node transform baked in).
 TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
@@ -451,17 +451,16 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
 
     using namespace wz::engine::assets;
 
-    // Build a "Scene from GLB" so its output carries the embedded geometry.
-    const auto scene_asset = assets.scenes().create_scene_from_glb({
-        .name = "tank1_extract",
-        .path = "gltf/tank1.glb",
-    });
-    ASSERT_TRUE(scene_asset.valid());
+    // Register the GLB file carrier — the SAME input a "Scene from GLB" node
+    // consumes — and point the extractor straight at it (no Scene dependency).
+    const wz::asset::AssetKey file_key = assets.files().register_file_node(
+        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
+    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
 
     // Extract the "body" node's mesh as a standalone Mesh asset.
     const auto body_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "tank1_body_mesh",
-        .scene = scene_asset.output,
+        .source_file = file_key,
         .node_id = "body",
     });
     ASSERT_TRUE(body_mesh.valid());
@@ -470,16 +469,6 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     const auto report = assets.resolve_all();
     ASSERT_TRUE(report.ok()) << "resolve failures: " << report.failures.size();
 
-    // The source scene embeds the per-mesh geometry and the node's mesh_index.
-    const auto* scene_data = assets.scenes().get_scene_data(
-        assets.scenes().get_scene(scene_asset));
-    ASSERT_NE(scene_data, nullptr);
-    const auto* body_node = find_scene_node(*scene_data, "body");
-    ASSERT_NE(body_node, nullptr);
-    ASSERT_TRUE(body_node->mesh_index.has_value());
-    EXPECT_FALSE(scene_data->glb_meshes.empty());
-    ASSERT_TRUE(scene_data->glb_meshes.count(*body_node->mesh_index) != 0u);
-
     // The extracted Mesh resolves and is valid.
     const auto handle = assets.meshes().get_mesh(body_mesh);
     ASSERT_TRUE(handle.valid());
@@ -487,13 +476,30 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     ASSERT_NE(extracted, nullptr);
     ASSERT_TRUE(extracted->valid());
 
-    // Independently import the raw GLB meshes and compare against the body
-    // node's mesh_index: the extracted geometry must match verbatim (same
-    // vertex/index counts and identical first-vertex object-space position —
-    // no node transform baked into the extracted mesh).
+    // Independently import the GLB hierarchy to find the "body" node's
+    // mesh_index, then the raw GLB meshes to compare against it: the extracted
+    // geometry must match verbatim (same vertex/index counts and identical
+    // first-vertex object-space position — no node transform baked in).
     const auto bytes = wz::fs::read_file(
         wz::fs::join(WZ_TEST_FIXTURE_DIR, "gltf/tank1.glb"));
     ASSERT_TRUE(static_cast<bool>(bytes));
+
+    ImportedGLTFScene scene{};
+    ASSERT_TRUE(import_gltf_scene(
+        bytes.value.data(),
+        bytes.value.size(),
+        GLTFSceneImportOptions{ .scene_index = 0u },
+        scene));
+    const ImportedGLTFSceneNode* body_node = nullptr;
+    for (const auto& candidate : scene.nodes) {
+        if (candidate.id == "body") {
+            body_node = &candidate;
+            break;
+        }
+    }
+    ASSERT_NE(body_node, nullptr);
+    ASSERT_TRUE(body_node->mesh_index.has_value());
+
     ImportedGLTFMeshSet imported{};
     ASSERT_TRUE(import_glb_meshes(
         bytes.value.data(), bytes.value.size(), GLTFImportOptions{}, imported));
@@ -526,15 +532,13 @@ TEST(SceneAssetModule, MeshFromGLBSceneUnknownNodeFails)
 
     using namespace wz::engine::assets;
 
-    const auto scene_asset = assets.scenes().create_scene_from_glb({
-        .name = "tank1_extract_unknown",
-        .path = "gltf/tank1.glb",
-    });
-    ASSERT_TRUE(scene_asset.valid());
+    const wz::asset::AssetKey file_key = assets.files().register_file_node(
+        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
+    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
 
     const auto bad_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "tank1_nope_mesh",
-        .scene = scene_asset.output,
+        .source_file = file_key,
         .node_id = "does_not_exist",
     });
     ASSERT_TRUE(bad_mesh.valid());
@@ -586,15 +590,13 @@ TEST(SceneAssetModule, MeshFromGLBSceneGroupNodeFails)
 
     const auto rel_path = write_scene_json(root, "group_hierarchy.gltf", gltf);
 
-    const auto scene_asset = assets.scenes().create_scene_from_glb({
-        .name = "group_import",
-        .path = rel_path,
-    });
-    ASSERT_TRUE(scene_asset.valid());
+    const wz::asset::AssetKey file_key = assets.files().register_file_node(
+        rel_path, kRawFileSchema, kAssetTypeRawFile);
+    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
 
     const auto group_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "group_body_mesh",
-        .scene = scene_asset.output,
+        .source_file = file_key,
         .node_id = "tank_body",
     });
     ASSERT_TRUE(group_mesh.valid());

@@ -423,13 +423,14 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000403ull
     };
 
-    // "Mesh from GLB scene" extractor recipe (issue #213). Compiled from one
-    // kAssetTypeScene dependency (a "Scene from GLB" output, which embeds each
-    // node's raw object-space geometry in SceneAssetData::glb_meshes). The
-    // "node_id" parameter selects the GLB scene node; the compiler outputs that
-    // node's MeshData verbatim — NO node transform is baked in, because the GLB
-    // nodes are grafted into the runtime scene tree WITH their transforms.
-    // Produces kAssetTypeMesh output.
+    // "Mesh from GLB scene" extractor recipe (issue #213). Standalone GLB->mesh
+    // provider compiled from one GLB file dependency (kAssetTypeBinaryBlob — the
+    // SAME source_file a "Scene from GLB" node consumes), with NO Scene
+    // dependency. It imports the GLB node hierarchy, selects the node named by
+    // the "node_id" parameter (within the glTF scene given by "scene_index"),
+    // and outputs that node's MeshData verbatim — NO node transform is baked in,
+    // because the GLB nodes are grafted into the runtime scene tree WITH their
+    // transforms. Produces kAssetTypeMesh output.
     inline constexpr wz::asset::SchemaID kMeshFromGLBSceneSchema{
     0xF11E'CA55'E7'000414ull
     };

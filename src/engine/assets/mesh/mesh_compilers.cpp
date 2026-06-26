@@ -328,6 +328,16 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        MeshFromGLBSceneDesc mesh_from_glb_scene_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            MeshFromGLBSceneDesc desc{};
+            desc.node_id = params.get<std::string>("node_id", desc.node_id);
+            desc.scene_index =
+                params.get<uint32_t>("scene_index", desc.scene_index);
+            return desc;
+        }
+
         MeshDecimationAssetDesc mesh_decimation_desc_from_params(
             const wz::asset::ParamBlock& params)
         {
@@ -530,6 +540,138 @@ namespace wz::engine::assets::internal
 
             wz::asset::ResourceHandle handle =
                 mesh_table.add(std::move(data));
+
+            return compiled_mesh_node(input, handle);
+        }
+
+        // "Mesh from GLB scene" extractor (issue #213). Standalone GLB->mesh
+        // provider with NO Scene dependency: it imports the SAME GLB file a
+        // "Scene from GLB" node consumes (so the editor picker and this
+        // extractor read the identical GLB import, hence consistent node ids),
+        // selects the node named by the "node_id" parameter (within the glTF
+        // scene given by "scene_index"), and outputs that node's RAW,
+        // OBJECT-SPACE mesh as a standalone Mesh asset. No node transform is
+        // baked in: the GLB nodes are grafted into the runtime scene tree WITH
+        // their transforms, so the scene node owns placement (baking here would
+        // double-transform). Single-node extraction only.
+        wz::asset::AssetNode compile_mesh_from_glb_scene_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::Logger& logger,
+            MeshTable& mesh_table)
+        {
+            if (dep_nodes.empty()) {
+                logger.error(
+                    "Mesh from GLB scene node has no file dependency");
+                return compile_failed_node(input);
+            }
+
+            const auto* bytes =
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+            if (!bytes || bytes->empty()) {
+                logger.error(
+                    "Mesh from GLB scene: GLB file dependency is invalid");
+                return compile_failed_node(input);
+            }
+
+            MeshFromGLBSceneDesc param_desc{};
+            const auto* desc =
+                std::any_cast<MeshFromGLBSceneDesc>(&input.meta);
+            if (!desc) {
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    param_desc =
+                        mesh_from_glb_scene_desc_from_params(*params);
+                    desc = &param_desc;
+                }
+            }
+            if (!desc) {
+                logger.error(
+                    "Mesh from GLB scene node missing compile descriptor");
+                return compile_failed_node(input);
+            }
+            if (desc->node_id.empty()) {
+                logger.error(
+                    "Mesh from GLB scene: node_id parameter is empty");
+                return compile_failed_node(input);
+            }
+
+            // Import the GLB node hierarchy to map node_id -> mesh_index.
+            ImportedGLTFScene imported_scene{};
+            std::string import_error;
+            if (!import_gltf_scene(
+                    bytes->data(),
+                    bytes->size(),
+                    GLTFSceneImportOptions{ .scene_index = desc->scene_index },
+                    imported_scene,
+                    &import_error))
+            {
+                logger.error(
+                    "Mesh from GLB scene: failed to import GLB scene: "
+                    + import_error);
+                return compile_failed_node(input);
+            }
+
+            const ImportedGLTFSceneNode* node = nullptr;
+            for (const auto& candidate : imported_scene.nodes) {
+                if (candidate.id == desc->node_id) {
+                    node = &candidate;
+                    break;
+                }
+            }
+            if (!node) {
+                logger.error(
+                    "Mesh from GLB scene: node '" + desc->node_id
+                    + "' not found in source GLB");
+                return compile_failed_node(input);
+            }
+
+            if (!node->mesh_index) {
+                logger.error(
+                    "Mesh from GLB scene: node '" + desc->node_id
+                    + "' has no mesh (group/structure node)");
+                return compile_failed_node(input);
+            }
+
+            // Import the per-mesh geometry from the same bytes and take this
+            // node's mesh verbatim (raw object-space — no node transform).
+            ImportedGLTFMeshSet imported_meshes{};
+            if (!import_glb_meshes(
+                    bytes->data(),
+                    bytes->size(),
+                    GLTFImportOptions{},
+                    imported_meshes))
+            {
+                logger.error("Mesh from GLB scene: failed to import GLB mesh");
+                return compile_failed_node(input);
+            }
+
+            if (*node->mesh_index >= imported_meshes.meshes.size()) {
+                logger.error(
+                    "Mesh from GLB scene: node '" + desc->node_id
+                    + "' mesh_index "
+                    + std::to_string(*node->mesh_index)
+                    + " is out of range");
+                return compile_failed_node(input);
+            }
+
+            MeshData data =
+                imported_meshes.meshes[*node->mesh_index].mesh;
+            if (!data.valid()) {
+                logger.error(
+                    "Mesh from GLB scene: geometry for node '"
+                    + desc->node_id + "' is invalid");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(data));
+            if (!handle.valid()) {
+                logger.error(
+                    "Mesh from GLB scene: failed to store extracted mesh");
+                return compile_failed_node(input);
+            }
 
             return compiled_mesh_node(input, handle);
         }
@@ -1004,6 +1146,43 @@ namespace wz::engine::assets::internal
             {
                 return compile_glb_mesh_node(
                     input, dep_nodes, logger, mesh_table, cache_settings);
+            }
+            });
+
+        // "Mesh from GLB scene" extractor (issue #213): standalone GLB->mesh
+        // provider. Same source_file input as the GLB mesh compiler above, but
+        // selects the source mesh by GLB node id (within scene_index) rather
+        // than by a flat mesh index — so it reads the identical GLB import the
+        // editor picker walks. No Scene dependency.
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kMeshFromGLBSceneSchema,
+            .output_type = kAssetTypeMesh,
+            .input_ports = {
+                { "source_file", kAssetTypeBinaryBlob },
+            },
+            .parameters = {
+                {
+                    .name = "node_id",
+                    .type = wz::asset::ParamType::String,
+                    .label = "GLB node id",
+                    .default_str = "",
+                },
+                {
+                    .name = "scene_index",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Scene index",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 64.0,
+                },
+            },
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                return compile_mesh_from_glb_scene_node(
+                    input, dep_nodes, logger, mesh_table);
             }
             });
 
