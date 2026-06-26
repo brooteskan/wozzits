@@ -114,6 +114,8 @@ namespace wz::engine::assets
                 node.renderable_asset_node_id.has_value();
             const bool has_scene_source =
                 node.scene_source_node_id.has_value();
+            const bool has_glb_scene_source =
+                node.glb_scene_source.has_value();
             const bool has_asset_reference = node.asset_reference.has_value();
             const bool has_camera = node.camera.has_value();
             const bool has_direct_light_source =
@@ -163,6 +165,7 @@ namespace wz::engine::assets
             fp.mix_value(has_inline_renderable);
             fp.mix_value(has_renderable_asset);
             fp.mix_value(has_scene_source);
+            fp.mix_value(has_glb_scene_source);
             fp.mix_value(has_asset_reference);
             fp.mix_value(has_camera);
             fp.mix_value(has_direct_light_source);
@@ -201,6 +204,42 @@ namespace wz::engine::assets
 
             if (node.scene_source_node_id) {
                 fp.mix_value(*node.scene_source_node_id);
+            }
+
+            // GLB scene-source descriptor (issue #213): mix the persisted
+            // authored intent (path + scene_index + consume_mode + the per-
+            // component style mapping's persisted visual fields), so an edit to
+            // any of them re-fingerprints the scene.
+            if (node.glb_scene_source) {
+                const auto& glb = *node.glb_scene_source;
+                const auto mix_render_style =
+                    [&fp](const MeshRenderStyleData& style) {
+                        const auto mix_layer =
+                            [&fp](const MeshRenderLayerStyle& layer) {
+                                fp.mix_value(layer.enabled);
+                                fp.mix_bytes(layer.color, sizeof(layer.color));
+                                fp.mix_value(layer.emissive_strength);
+                            };
+                        mix_layer(style.wireframe);
+                        mix_layer(style.surface);
+                        fp.mix_value(style.alpha);
+                        fp.mix_value(style.depth_test);
+                        fp.mix_value(style.depth_write);
+                        fp.mix_value(style.double_sided);
+                        fp.mix_value(style.hidden_line_prepass);
+                    };
+                fp.mix_string(glb.path);
+                fp.mix_value(glb.scene_index);
+                fp.mix_value(glb.consume_mode);
+                fp.mix_value(glb.base_style.has_value());
+                if (glb.base_style) {
+                    mix_render_style(*glb.base_style);
+                }
+                fp.mix_value(static_cast<uint64_t>(glb.style_overrides.size()));
+                for (const auto& ov : glb.style_overrides) {
+                    fp.mix_value(ov.mesh_index);
+                    mix_render_style(ov.style);
+                }
             }
 
             if (node.asset_reference) {

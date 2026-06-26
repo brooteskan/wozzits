@@ -1,0 +1,56 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "glb_scene_source_instance_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "tank_host",
+      "parent": "root",
+      "name": "tank_host",
+      "transform": {
+        "translation": [5, 0, -4],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "glb_scene_source": {
+        "path": "gltf/tank1.glb",
+        "scene_index": 0,
+        "consume_mode": "instance",
+        "base_style": {
+          "wireframe": { "enabled": true, "color": [0.0, 1.0, 0.15, 1.0], "emissive_strength": 1.0 },
+          "surface": { "enabled": false, "color": [0.25, 0.9, 0.35, 1.0], "emissive_strength": 0.0 },
+          "alpha": 1.0,
+          "depth_test": true,
+          "depth_write": false,
+          "double_sided": true,
+          "hidden_line_prepass": true
+        },
+        "style_overrides": [
+          {
+            "mesh_index": 1,
+            "style": {
+              "wireframe": { "enabled": false, "color": [1.0, 0.2, 0.05, 1.0], "emissive_strength": 1.0 },
+              "surface": { "enabled": true, "color": [0.6, 0.6, 0.62, 1.0], "emissive_strength": 0.0 },
+              "alpha": 1.0,
+              "depth_test": true,
+              "depth_write": true,
+              "double_sided": false,
+              "hidden_line_prepass": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "defaults": {}
+}

@@ -922,6 +922,46 @@ namespace wz::engine::assets
         Flatten,
     };
 
+    // Per-component render-style override for a GLB scene-source descriptor
+    // (issue #213). Keyed by GLB mesh index, mirroring
+    // wz::engine::assets::SceneFromGLBStyleOverride (the create_scene_from_glb
+    // input). Declared here — not reused from scene_asset_module.h — because
+    // scene_asset_module.h includes this header, so the dependency may only run
+    // one way; the materialize pass converts these into SceneFromGLBStyleOverride.
+    struct SceneGLBSceneSourceStyleOverride
+    {
+        uint32_t mesh_index = 0;
+        MeshRenderStyleData style{};
+    };
+
+    // GLB scene-source DESCRIPTOR (issue #213, the terrain_collision/mesh_source
+    // model). A host node carries this authored descriptor; the runtime resolves
+    // it AT scene materialization into a "Scene from GLB" asset and writes the
+    // resolved Scene key into SceneNodeAsset::scene_source — then the existing
+    // graft (instance) or flatten consumes it. Unlike scene_source_node_id (an
+    // asset-graph node reference resolved via the draft bridge), this descriptor
+    // is self-contained plain data: it survives rebinds (re-resolved every load /
+    // rebind — same content => same key => cache hit) and persists as plain JSON,
+    // independent of the asset graph. Precedence: if a node has glb_scene_source
+    // it produces scene_source; else scene_source_node_id (if set) does. One
+    // resolved key, one graft.
+    struct SceneGLBSceneSource
+    {
+        // Resource-relative GLB file path (mirrors SceneMeshSourceAsset::path).
+        std::string path;
+        uint32_t scene_index = 0;
+
+        // How the resolved Scene is consumed (instance graft vs persistent
+        // flatten); mirrors SceneFromGLBCompileDesc::consume_mode.
+        SceneSourceConsumeMode consume_mode = SceneSourceConsumeMode::Instance;
+
+        // Per-component style mapping, mirroring SceneFromGLBDesc: a base style
+        // applied to every imported mesh, plus sparse per-mesh-index overrides.
+        // Unset base_style => the built-in default MeshRenderStyleData.
+        std::optional<MeshRenderStyleData> base_style;
+        std::vector<SceneGLBSceneSourceStyleOverride> style_overrides;
+    };
+
     struct SceneNodeAsset
     {
         wz::scene::AuthoredEntityId id;
@@ -955,6 +995,13 @@ namespace wz::engine::assets
         // mode); flatten expands them in place once at author time.
         std::optional<wz::asset::AssetGraphDraftNodeId> scene_source_node_id;
         std::optional<wz::asset::AssetKey> scene_source;
+
+        // GLB scene-source descriptor (issue #213): the alternate, asset-graph-
+        // independent route to scene_source. Resolved at scene materialization
+        // (resolve_glb_scene_sources) into a create_scene_from_glb Scene asset,
+        // whose key is written into scene_source above; the existing graft /
+        // flatten then consumes it. Takes precedence over scene_source_node_id.
+        std::optional<SceneGLBSceneSource> glb_scene_source;
 
         std::optional<SceneAssetReferenceAsset> asset_reference;
         std::optional<SceneCameraAsset> camera;
@@ -1247,6 +1294,20 @@ namespace wz::engine::assets
     {
         node.scene_source_node_id.reset();
         node.scene_source.reset();
+        node.glb_scene_source.reset();
+    }
+
+    // GLB scene-source descriptor (issue #213): attach the authored descriptor;
+    // the resolved scene_source key is filled in at materialization. Clears the
+    // asset-graph-node route so the two scene-source routes never both drive one
+    // node (descriptor takes precedence by design, but keep the node single-route).
+    inline void attach_glb_scene_source(
+        SceneNodeAsset& node,
+        SceneGLBSceneSource source = {})
+    {
+        node.scene_source_node_id.reset();
+        node.scene_source.reset();
+        node.glb_scene_source = std::move(source);
     }
 
     inline void attach_asset_reference(

@@ -343,6 +343,36 @@ configure_file(
     "${WZ_BEHAVIOR_FIXTURE_DST}/scene.json"
     COPYONLY)
 
+# Self-contained fixture for the WozzitsApp_v1 GLB scene-source test (issue
+# #213): an empty asset graph + a scene whose host node carries a
+# glb_scene_source DESCRIPTOR pointing at the bundled gltf/tank1.glb (staged by
+# wz_stage_resources). The descriptor is resolved at materialization into a
+# create_scene_from_glb Scene asset and grafted as instanced children. Two
+# scenes are staged: scene.json (instance mode + per-component styles) and
+# scene_flatten.json (flatten/bake mode). It reuses the behavior fixture's
+# staged module dir so a behavior can be bound to a grafted child to prove
+# addressability.
+set(WZ_GLB_SCENE_SOURCE_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/glb_scene_source_fixture")
+set(WZ_GLB_SCENE_SOURCE_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/glb_scene_source_fixture")
+configure_file(
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_SRC}/.wozzits/project.json.in"
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/.wozzits/project.json"
+    @ONLY)
+configure_file(
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/assets.graph.json"
+    COPYONLY)
+configure_file(
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_SRC}/scene.json"
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/scene.json"
+    COPYONLY)
+configure_file(
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_SRC}/scene_flatten.json"
+    "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/scene_flatten.json"
+    COPYONLY)
+
 # ----------------------------
 # Test helpers
 # ----------------------------
@@ -760,6 +790,13 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             "${WZ_BEHAVIOR_FIXTURE_MODULE_DIR}/"
         COMMENT "Staging behavior module DLL into behavior_test_fixture")
     add_dependencies(render_wozzits_app_behavior_dispatch_tests
+        wozzits_app_behavior_test_plugin wz_stage_resources)
+
+    # WozzitsApp_v1 GLB scene-source test (issue #213). On-device: it loads the
+    # glb_scene_source_fixture, so it needs the staged resources (tank1.glb) and
+    # the behavior module DLL (to prove a grafted child is behavior-addressable).
+    rs_add_test_group(render wozzits_app_glb_scene_source_tests)
+    add_dependencies(render_wozzits_app_glb_scene_source_tests
         wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)

@@ -2001,3 +2001,126 @@ TEST(SceneAssetModule, BehaviorBindingConfigAndEventsRoundTripThroughSceneJSON)
         wz::json::serialize_json(export_scene_to_json_document(*data));
     EXPECT_EQ(reparsed_export, exported);
 }
+
+// Issue #213: the GLB scene-source DESCRIPTOR (path + scene_index +
+// consume_mode + per-component style mapping) round-trips through scene JSON.
+// This is the authored intent only — create_scene_from_json compiles the JSON
+// back to SceneAssetData; the descriptor is re-resolved into a Scene asset at
+// materialization (WozzitsApp_v1::resolve_glb_scene_sources), so scene_source
+// stays unset here. Mirrors the SceneImportSource round-trip above.
+TEST(SceneAssetModule, GlbSceneSourceDescriptorRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_glb_scene_source_descriptor_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "glb_scene_source_descriptor_roundtrip";
+
+    SceneNodeAsset host = make_scene_node("tank_host");
+
+    SceneGLBSceneSource source{};
+    source.path = "gltf/tank1.glb";
+    source.scene_index = 0u;
+    source.consume_mode = SceneSourceConsumeMode::Flatten;
+
+    // A non-default base style so the layer/alpha/depth fields are observable.
+    MeshRenderStyleData base{};
+    base.wireframe.enabled = false;
+    base.surface.enabled = true;
+    base.surface.color[0] = 0.10f;
+    base.surface.color[1] = 0.20f;
+    base.surface.color[2] = 0.30f;
+    base.surface.color[3] = 1.0f;
+    base.surface.emissive_strength = 0.5f;
+    base.alpha = 0.75f;
+    base.depth_test = true;
+    base.depth_write = true;
+    base.double_sided = false;
+    base.hidden_line_prepass = false;
+    source.base_style = base;
+
+    // One per-mesh-index override with distinct (steel-ish) values.
+    MeshRenderStyleData steel{};
+    steel.surface.enabled = true;
+    steel.surface.color[0] = 0.6f;
+    steel.surface.color[1] = 0.6f;
+    steel.surface.color[2] = 0.62f;
+    steel.surface.color[3] = 1.0f;
+    steel.wireframe.enabled = false;
+    steel.alpha = 1.0f;
+    source.style_overrides.push_back(
+        SceneGLBSceneSourceStyleOverride{ .mesh_index = 1u, .style = steel });
+
+    attach_glb_scene_source(host, std::move(source));
+    authored.nodes.push_back(std::move(host));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"glb_scene_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"gltf/tank1.glb\""), std::string::npos);
+    EXPECT_NE(exported.find("\"flatten\""), std::string::npos);
+    EXPECT_NE(exported.find("\"style_overrides\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "glb_scene_source.scene.json",
+        exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "glb_scene_source",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+    ASSERT_EQ(data->nodes.size(), 1u);
+
+    const auto* parsed = find_scene_node(*data, "tank_host");
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed->glb_scene_source.has_value());
+    // The descriptor is authored intent; the resolved Scene key is filled in at
+    // materialization, not by the JSON compiler.
+    EXPECT_FALSE(parsed->scene_source.has_value());
+    EXPECT_FALSE(parsed->scene_source_node_id.has_value());
+
+    const SceneGLBSceneSource& got = *parsed->glb_scene_source;
+    EXPECT_EQ(got.path, "gltf/tank1.glb");
+    EXPECT_EQ(got.scene_index, 0u);
+    EXPECT_EQ(got.consume_mode, SceneSourceConsumeMode::Flatten);
+
+    ASSERT_TRUE(got.base_style.has_value());
+    EXPECT_FALSE(got.base_style->wireframe.enabled);
+    EXPECT_TRUE(got.base_style->surface.enabled);
+    EXPECT_FLOAT_EQ(got.base_style->surface.color[0], 0.10f);
+    EXPECT_FLOAT_EQ(got.base_style->surface.color[2], 0.30f);
+    EXPECT_FLOAT_EQ(got.base_style->surface.emissive_strength, 0.5f);
+    EXPECT_FLOAT_EQ(got.base_style->alpha, 0.75f);
+    EXPECT_TRUE(got.base_style->depth_test);
+    EXPECT_TRUE(got.base_style->depth_write);
+    EXPECT_FALSE(got.base_style->double_sided);
+    EXPECT_FALSE(got.base_style->hidden_line_prepass);
+
+    ASSERT_EQ(got.style_overrides.size(), 1u);
+    EXPECT_EQ(got.style_overrides[0].mesh_index, 1u);
+    EXPECT_TRUE(got.style_overrides[0].style.surface.enabled);
+    EXPECT_FLOAT_EQ(got.style_overrides[0].style.surface.color[0], 0.6f);
+    EXPECT_FLOAT_EQ(got.style_overrides[0].style.surface.color[2], 0.62f);
+
+    // A second round trip stays lossless (export of the parsed scene matches).
+    const std::string reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data));
+    EXPECT_EQ(reparsed_export, exported);
+}

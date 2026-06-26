@@ -726,6 +726,59 @@ namespace wz::engine::assets::internal
             }
         }
 
+        // Raw MeshRenderStyleData layer reader (issue #213) — the
+        // MeshRenderLayerStyle counterpart of read_mesh_render_layer (which reads
+        // the SceneMeshRenderLayerAsset mirror). Mirrors that reader field-for-
+        // field; missing members leave the layer at its default.
+        void read_mesh_render_layer_style(
+            const wz::json::JSONValue& obj,
+            const char* field_name,
+            MeshRenderLayerStyle& layer)
+        {
+            const auto* layer_value = find_member(obj, field_name);
+            if (!layer_value
+                || layer_value->kind != wz::json::JSONValueKind::Object)
+            {
+                return;
+            }
+            if (auto enabled = read_bool(*layer_value, "enabled")) {
+                layer.enabled = *enabled;
+            }
+            read_float4(*layer_value, "color", layer.color);
+            if (auto emissive = read_number(*layer_value, "emissive_strength")) {
+                layer.emissive_strength = static_cast<float>(*emissive);
+            }
+        }
+
+        // Raw MeshRenderStyleData reader (issue #213): the parse counterpart of
+        // mesh_render_style_data_value. Reads only the persisted visual fields
+        // (layers + alpha/depth/sidedness); field_visualization + mask are not
+        // persisted by the GLB descriptor (see report) and keep their defaults.
+        MeshRenderStyleData read_mesh_render_style_data(
+            const wz::json::JSONValue& obj)
+        {
+            MeshRenderStyleData style{};
+            read_mesh_render_layer_style(obj, "wireframe", style.wireframe);
+            read_mesh_render_layer_style(obj, "surface", style.surface);
+            if (auto alpha = read_number(obj, "alpha")) {
+                style.alpha =
+                    static_cast<float>((std::clamp)(*alpha, 0.0, 1.0));
+            }
+            if (auto depth_test = read_bool(obj, "depth_test")) {
+                style.depth_test = *depth_test;
+            }
+            if (auto depth_write = read_bool(obj, "depth_write")) {
+                style.depth_write = *depth_write;
+            }
+            if (auto double_sided = read_bool(obj, "double_sided")) {
+                style.double_sided = *double_sided;
+            }
+            if (auto hidden_line = read_bool(obj, "hidden_line_prepass")) {
+                style.hidden_line_prepass = *hidden_line;
+            }
+            return style;
+        }
+
         bool apply_legacy_mesh_render_style_kind(
             std::string_view text,
             SceneMeshRenderStyleAsset& style,
@@ -1337,6 +1390,101 @@ namespace wz::engine::assets::internal
                             *node_id);
                     node.scene_source.reset();
                 }
+            }
+
+            // GLB scene-source DESCRIPTOR (issue #213): the asset-graph-
+            // independent route. Self-contained authored data (path +
+            // scene_index + consume_mode + per-component style mapping)
+            // re-resolved at materialization (resolve_glb_scene_sources). Mirrors
+            // mesh_source's parse (kind/path/mesh_index style) but for a whole
+            // sub-scene + styles.
+            if (const auto* glb =
+                    find_member(node_val, "glb_scene_source"))
+            {
+                if (glb->kind != wz::json::JSONValueKind::Object) {
+                    logger.error(
+                        "glb_scene_source on node '" + node.id
+                        + "' is not an object");
+                    return std::nullopt;
+                }
+                SceneGLBSceneSource source{};
+                if (auto path = read_string(*glb, "path")) {
+                    source.path = std::string(*path);
+                }
+                if (source.path.empty()) {
+                    logger.error(
+                        "glb_scene_source on node '" + node.id
+                        + "' missing 'path'");
+                    return std::nullopt;
+                }
+                if (auto scene_index = read_number(*glb, "scene_index")) {
+                    if (*scene_index < 0.0 || !std::isfinite(*scene_index)) {
+                        logger.error(
+                            "glb_scene_source on node '" + node.id
+                            + "' has invalid scene_index");
+                        return std::nullopt;
+                    }
+                    source.scene_index =
+                        static_cast<uint32_t>(*scene_index);
+                }
+                // consume_mode: "flatten" => persistent bake; anything else
+                // (incl. default/"instance") => live instance graft. Mirrors
+                // scene_from_glb_desc_from_params' convention.
+                if (auto consume_mode = read_string(*glb, "consume_mode")) {
+                    source.consume_mode = (*consume_mode == "flatten")
+                        ? SceneSourceConsumeMode::Flatten
+                        : SceneSourceConsumeMode::Instance;
+                }
+                if (const auto* base_style =
+                        find_member(*glb, "base_style");
+                    base_style
+                    && base_style->kind == wz::json::JSONValueKind::Object)
+                {
+                    source.base_style =
+                        read_mesh_render_style_data(*base_style);
+                }
+                if (const auto* overrides =
+                        find_member(*glb, "style_overrides");
+                    overrides
+                    && overrides->kind == wz::json::JSONValueKind::Array)
+                {
+                    for (const auto& entry_ptr : overrides->array_values) {
+                        if (!entry_ptr
+                            || entry_ptr->kind
+                                != wz::json::JSONValueKind::Object)
+                        {
+                            continue;
+                        }
+                        const wz::json::JSONValue& entry = *entry_ptr;
+                        SceneGLBSceneSourceStyleOverride ov{};
+                        if (auto mesh_index =
+                                read_number(entry, "mesh_index"))
+                        {
+                            if (*mesh_index < 0.0
+                                || !std::isfinite(*mesh_index))
+                            {
+                                logger.error(
+                                    "glb_scene_source style override on node '"
+                                    + node.id + "' has invalid mesh_index");
+                                return std::nullopt;
+                            }
+                            ov.mesh_index =
+                                static_cast<uint32_t>(*mesh_index);
+                        }
+                        if (const auto* style = find_member(entry, "style");
+                            style
+                            && style->kind == wz::json::JSONValueKind::Object)
+                        {
+                            ov.style = read_mesh_render_style_data(*style);
+                        }
+                        source.style_overrides.push_back(std::move(ov));
+                    }
+                }
+                // Descriptor route is exclusive of the asset-graph-node route
+                // (attach_glb_scene_source contract); clear the latter.
+                node.scene_source_node_id.reset();
+                node.scene_source.reset();
+                node.glb_scene_source = std::move(source);
             }
 
             const auto* asset_reference =

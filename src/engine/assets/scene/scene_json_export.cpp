@@ -611,6 +611,86 @@ namespace wz::engine::assets
             return obj;
         }
 
+        // Raw MeshRenderStyleData serialization (issue #213) — distinct from
+        // mesh_render_style_value, which serializes the SceneMeshRenderStyleAsset
+        // editor mirror. Covers the visually load-bearing fields the GLB import
+        // flow drives (layers + alpha/depth/sidedness). The field_visualization
+        // and mask sub-structs are intentionally NOT persisted here (see report).
+        JSONValuePtr mesh_render_layer_style_value(
+            const MeshRenderLayerStyle& layer)
+        {
+            auto obj = object_value();
+            add_member(*obj, "enabled", bool_value(layer.enabled));
+            add_member(*obj, "color", float_array(layer.color, 4));
+            add_member(*obj, "emissive_strength",
+                number_value(layer.emissive_strength));
+            return obj;
+        }
+
+        JSONValuePtr mesh_render_style_data_value(
+            const MeshRenderStyleData& style)
+        {
+            auto obj = object_value();
+            add_member(*obj, "wireframe",
+                mesh_render_layer_style_value(style.wireframe));
+            add_member(*obj, "surface",
+                mesh_render_layer_style_value(style.surface));
+            add_member(*obj, "alpha", number_value(style.alpha));
+            add_member(*obj, "depth_test", bool_value(style.depth_test));
+            add_member(*obj, "depth_write", bool_value(style.depth_write));
+            add_member(*obj, "double_sided", bool_value(style.double_sided));
+            add_member(*obj, "hidden_line_prepass",
+                bool_value(style.hidden_line_prepass));
+            return obj;
+        }
+
+        const char* scene_source_consume_mode_name(
+            SceneSourceConsumeMode mode)
+        {
+            switch (mode) {
+            case SceneSourceConsumeMode::Instance:
+                return "instance";
+            case SceneSourceConsumeMode::Flatten:
+                return "flatten";
+            }
+            return "instance";
+        }
+
+        // GLB scene-source DESCRIPTOR (issue #213): self-contained authored data
+        // (path + scene_index + consume_mode + per-component style mapping),
+        // re-resolved at materialization. Unlike scene_source (asset-graph node
+        // id), this persists fully; no asset-graph dependency.
+        JSONValuePtr glb_scene_source_value(const SceneGLBSceneSource& source)
+        {
+            auto obj = object_value();
+            add_member(*obj, "path", string_value(source.path));
+            add_member(*obj, "scene_index",
+                number_value(source.scene_index));
+            add_member(*obj, "consume_mode",
+                string_value(
+                    scene_source_consume_mode_name(source.consume_mode)));
+            if (source.base_style) {
+                add_member(*obj, "base_style",
+                    mesh_render_style_data_value(*source.base_style));
+            }
+            if (!source.style_overrides.empty()) {
+                auto overrides = array_value();
+                std::ranges::transform(
+                    source.style_overrides,
+                    std::back_inserter(overrides->array_values),
+                    [&](const SceneGLBSceneSourceStyleOverride& ov) {
+                        auto entry = object_value();
+                        add_member(*entry, "mesh_index",
+                            number_value(ov.mesh_index));
+                        add_member(*entry, "style",
+                            mesh_render_style_data_value(ov.style));
+                        return entry;
+                    });
+                add_member(*obj, "style_overrides", std::move(overrides));
+            }
+            return obj;
+        }
+
         JSONValuePtr asset_reference_value(
             const SceneAssetReferenceAsset& reference)
         {
@@ -1883,6 +1963,10 @@ namespace wz::engine::assets
             if (node.scene_source_node_id) {
                 add_member(*obj, "scene_source",
                     scene_source_value(*node.scene_source_node_id));
+            }
+            if (node.glb_scene_source) {
+                add_member(*obj, "glb_scene_source",
+                    glb_scene_source_value(*node.glb_scene_source));
             }
             if (node.asset_reference) {
                 add_member(*obj, "asset_reference",

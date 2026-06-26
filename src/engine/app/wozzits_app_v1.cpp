@@ -94,6 +94,17 @@ namespace wz::app
             return result;
         }
 
+        // Re-register the GLB scene-source descriptors NOW: after the draft's
+        // wholesale replace_registered_assets (commit_asset_graph_draft above)
+        // but before the DAG rebuild + resolve below, so their assets land in the
+        // freshly committed registered set and compile in the SAME resolve pass —
+        // present when graft_scene_sources() reads scene_source at the end. This
+        // is how they survive the wholesale replace (the GLB scenes are not part
+        // of the draft): they are re-registered on every (re)bind. On the first
+        // bind during load_scene, scene_nodes_ is still empty, so this is a no-op
+        // there; load_scene re-resolves after populating scene_nodes_.
+        resolve_glb_scene_sources();
+
         // Rebuild the DAG with the newly registered set (commit() only
         // rebuilds the graph; it does NOT run compilers). Through the library so
         // the app drives the engine API, not the raw AssetSystem.
@@ -298,18 +309,59 @@ namespace wz::app
         // graph keys. Populate scene_nodes_ even with graph/scene compile errors
         // so a later good rebind can render.
         scene_nodes_ = scene_data->nodes;
+        // Snapshot the authored node count now: the GLB scene-source resolve
+        // below runs a second commit() + resolve_all() which can invalidate the
+        // scene_data pointer (the scene table may move entries), so it must not
+        // be dereferenced afterwards (only this count is needed, for logging).
+        const std::size_t authored_scene_node_count = scene_data->nodes.size();
         scene_source_path_ = desc.scene;
         scene_dirty_ = false;
         grafted_node_ids_.clear();
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(
                 scene_nodes_, graph_draft_);
+        // Resolve GLB scene-source DESCRIPTORS now that scene_nodes_ is populated
+        // (#213, the descriptor route): register each glb_scene_source's GLB +
+        // produced Scene asset and write the Scene key into the node's
+        // scene_source. The scene-from-json commit/resolve above already ran
+        // (descriptors live on scene_nodes_, only available now), so compile the
+        // freshly registered GLB scenes with their own commit() + resolve_all()
+        // before grafting. Same content => same key => cache hit on re-load.
+        const std::size_t glb_sources_resolved = resolve_glb_scene_sources();
+        if (glb_sources_resolved > 0) {
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport glb_resolve =
+                ctx_.assets->resolve_all();
+            if (!glb_resolve.ok()) {
+                ctx_.logger.warn(
+                    "load_scene: GLB scene-source(s) resolved with errors="
+                    + std::to_string(glb_resolve.failures.size())
+                    + " (loaded anyway for editor recovery)");
+            }
+        }
         // Bridge scene-source references to live Scene keys, then graft each
         // referenced sub-scene's GLB-named nodes as children of its host (#213,
-        // instance mode) so they render and are behavior-addressable.
+        // instance mode) so they render and are behavior-addressable. The bridge
+        // only touches nodes with scene_source_node_id, so it leaves the keys
+        // resolve_glb_scene_sources just set on glb_scene_source nodes intact.
         const uint32_t scene_sources_bridged =
             wz::engine::assets::bridge_scene_source_keys(
                 scene_nodes_, graph_draft_);
+        // Flatten any glb_scene_source node authored with consume_mode=Flatten:
+        // expand persistently (and drop the descriptor), exactly like the editor
+        // "bake" action, so a Flatten-authored scene loads as real nodes. The
+        // remaining Instance descriptors are grafted as live children below.
+        for (const wz::engine::assets::SceneNodeAsset& node :
+             std::vector<wz::engine::assets::SceneNodeAsset>(scene_nodes_))
+        {
+            if (node.glb_scene_source
+                && node.glb_scene_source->consume_mode
+                    == wz::engine::assets::SceneSourceConsumeMode::Flatten
+                && node.scene_source)
+            {
+                flatten_scene_source(node.id);
+            }
+        }
         const std::size_t grafted = graft_scene_sources();
         if (scene_sources_bridged > 0 || grafted > 0) {
             ctx_.logger.info(
@@ -325,7 +377,7 @@ namespace wz::app
         }
         ctx_.logger.info(
             "load_scene: scene resolved (nodes="
-            + std::to_string(scene_data->nodes.size())
+            + std::to_string(authored_scene_node_count)
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
         // Load the project's behavior-module DLLs (if any) and register their
@@ -378,6 +430,68 @@ namespace wz::app
         ctx_.logger.info(
             "load_scene: loaded " + std::to_string(loaded)
             + " behavior module DLL(s) from " + resolved);
+    }
+
+    std::size_t WozzitsApp_v1::resolve_glb_scene_sources()
+    {
+        if (!ctx_.assets) {
+            return 0;
+        }
+
+        std::size_t resolved = 0;
+        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (!node.glb_scene_source) {
+                continue;
+            }
+            const wz::engine::assets::SceneGLBSceneSource& src =
+                *node.glb_scene_source;
+            if (src.path.empty()) {
+                ctx_.logger.warn(
+                    "resolve_glb_scene_sources: node '" + node.id
+                    + "' has an empty GLB scene-source path (skipped)");
+                node.scene_source.reset();
+                continue;
+            }
+
+            // Mirror SceneFromGLBDesc from the descriptor. create_scene_from_glb
+            // registers the GLB file itself, the per-mesh meshes/styled
+            // renderables, and the Scene asset, returning the resolved Scene key.
+            wz::engine::assets::SceneFromGLBDesc desc{};
+            desc.name = "glb_scene_source/" + node.id;
+            desc.path = src.path;
+            desc.scene_index = src.scene_index;
+            desc.base_style = src.base_style;
+            desc.style_overrides.reserve(src.style_overrides.size());
+            for (const auto& ov : src.style_overrides) {
+                desc.style_overrides.push_back(
+                    wz::engine::assets::SceneFromGLBStyleOverride{
+                        .mesh_index = ov.mesh_index,
+                        .style = ov.style,
+                    });
+            }
+
+            const wz::engine::assets::SceneAsset scene =
+                ctx_.assets->scenes().create_scene_from_glb(desc);
+            if (!scene.valid()) {
+                ctx_.logger.error(
+                    "resolve_glb_scene_sources: create_scene_from_glb failed "
+                    "for node '" + node.id + "' (path '" + src.path + "')");
+                // Clear so a stale key from a previous resolve does not graft.
+                node.scene_source.reset();
+                continue;
+            }
+
+            node.scene_source = scene.output;
+            ++resolved;
+        }
+
+        if (resolved > 0) {
+            ctx_.logger.info(
+                "resolve_glb_scene_sources: resolved "
+                + std::to_string(resolved)
+                + " GLB scene-source descriptor(s) to Scene keys");
+        }
+        return resolved;
     }
 
     std::size_t WozzitsApp_v1::graft_scene_sources()
@@ -1165,6 +1279,14 @@ namespace wz::app
             return std::nullopt;
         }
         return node->scene_source_node_id;
+    }
+
+    bool WozzitsApp_v1::node_has_glb_scene_source(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        return node && node->glb_scene_source.has_value();
     }
 
     bool WozzitsApp_v1::save_scene()

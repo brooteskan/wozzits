@@ -1,0 +1,33 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "glb_scene_source_flatten_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "tank_host",
+      "parent": "root",
+      "name": "tank_host",
+      "transform": {
+        "translation": [5, 0, -4],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "glb_scene_source": {
+        "path": "gltf/tank1.glb",
+        "scene_index": 0,
+        "consume_mode": "flatten"
+      }
+    }
+  ],
+  "defaults": {}
+}

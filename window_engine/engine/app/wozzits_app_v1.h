@@ -263,6 +263,15 @@ namespace wz::app
         node_scene_source_node_id(
             const wz::scene::AuthoredEntityId& node_id) const;
 
+        // True if node `node_id` currently carries a glb_scene_source DESCRIPTOR
+        // (issue #213, the asset-graph-independent route). Lets the GLB
+        // scene-source test observe the descriptor's lifecycle without a snapshot
+        // — notably that a Flatten-mode load DROPS it (the expansion is now the
+        // content) while an Instance-mode load KEEPS it (the live link persists).
+        // False if the node is missing.
+        [[nodiscard]] bool node_has_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id) const;
+
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when
         // no live edit happened since load/last save; false on write failure.
@@ -351,6 +360,20 @@ namespace wz::app
         // modules into registry_. No-op for an empty/missing folder. Reusable
         // across a scene/project swap (the plugin host reloads existing modules).
         void load_behavior_modules(const wz::fs::Path& module_folder);
+
+        // Resolve every node's glb_scene_source DESCRIPTOR into a Scene asset
+        // (issue #213, the descriptor route). For each scene node carrying a
+        // glb_scene_source, register the GLB file + call
+        // SceneAssetModule::create_scene_from_glb with the descriptor's
+        // scene_index + base_style + style_overrides, and write the returned
+        // Scene key into the node's scene_source. Registers the produced assets
+        // but does NOT compile them: the caller must commit() + resolve_all()
+        // afterwards (so they resolve in the same pass) and then graft. Re-run on
+        // every load + rebind so the GLB scenes survive the wholesale
+        // replace_registered_assets (same content => same key => cache hit).
+        // Returns the number of nodes whose scene_source was set. No-op (0) with
+        // no asset library or no glb_scene_source nodes.
+        std::size_t resolve_glb_scene_sources();
 
         // Graft every scene_source reference's sub-scene into scene_nodes_ as
         // children of its host (issue #213, instance mode). For each host node

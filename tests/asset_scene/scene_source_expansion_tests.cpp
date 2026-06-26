@@ -55,6 +55,34 @@ namespace
             assets.scenes().get_scene(out_asset));
     }
 
+    // Build the tank1.glb Scene asset with an explicit per-component style
+    // mapping (issue #213 phase): a base style + the given sparse overrides.
+    const SceneAssetData* build_tank_subscene_styled(
+        EngineAssetLibrary& assets,
+        SceneAsset& out_asset,
+        const std::optional<MeshRenderStyleData>& base_style,
+        const std::vector<SceneFromGLBStyleOverride>& overrides)
+    {
+        out_asset = assets.scenes().create_scene_from_glb({
+            .name = "tank_subscene_styled",
+            .path = "gltf/tank1.glb",
+            .base_style = base_style,
+            .style_overrides = overrides,
+        });
+        if (!out_asset.valid()) {
+            return nullptr;
+        }
+        if (!assets.commit()) {
+            return nullptr;
+        }
+        const auto report = assets.resolve_all();
+        if (!report.ok()) {
+            return nullptr;
+        }
+        return assets.scenes().get_scene_data(
+            assets.scenes().get_scene(out_asset));
+    }
+
     SceneNodeAsset make_host(const std::string& id)
     {
         SceneNodeAsset host{};
@@ -329,4 +357,83 @@ TEST(SceneSourceExpansion, BridgeResolvesAuthoredNodeIdToSceneKey)
     const uint32_t bridged_absent = bridge_scene_source_keys(nodes, draft);
     EXPECT_EQ(bridged_absent, 0u);
     EXPECT_FALSE(nodes[0].scene_source.has_value());
+}
+
+// Per-component style mapping (issue #213 phase): the SceneFromGLB compiler
+// builds mesh_renderables from a base style + sparse per-mesh-index overrides.
+// A per-mesh-index override produces a DISTINCT styled renderable for the nodes
+// using that mesh, while leaving the other nodes on the base style — proving the
+// component->style mapping is selective (not a single uniform style). Read from
+// the resolved Scene's nodes, where each node carries the renderable key folded
+// from its mesh + style; the grafted children inherit exactly these keys.
+TEST(SceneSourceExpansion, PerComponentStyleOverrideProducesDistinctRenderable)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, WZ_TEST_FIXTURE_DIR };
+
+    // Base style (all meshes) — a non-default, clearly distinct look.
+    MeshRenderStyleData base{};
+    base.wireframe.enabled = true;
+    base.surface.enabled = false;
+    base.surface.color[0] = 0.2f;
+    base.surface.color[1] = 0.4f;
+    base.surface.color[2] = 0.6f;
+
+    // Build A: base style only. Capture each node's resolved renderable key.
+    SceneAsset asset_base{};
+    const SceneAssetData* sub_base =
+        build_tank_subscene_styled(assets, asset_base, base, {});
+    ASSERT_NE(sub_base, nullptr);
+    ASSERT_EQ(sub_base->nodes.size(), 3u);
+
+    std::unordered_map<std::string, wz::asset::AssetKey> base_keys;
+    for (const SceneNodeAsset& n : sub_base->nodes) {
+        ASSERT_TRUE(n.renderable_asset.has_value())
+            << "every GLB mesh node should carry a styled renderable";
+        base_keys.emplace(n.id, *n.renderable_asset);
+    }
+
+    // Build B: same base + an override on mesh index 0 with a clearly different
+    // style. Only the node(s) bound to mesh 0 should change renderable key.
+    MeshRenderStyleData steel{};
+    steel.wireframe.enabled = false;
+    steel.surface.enabled = true;
+    steel.surface.color[0] = 0.7f;
+    steel.surface.color[1] = 0.7f;
+    steel.surface.color[2] = 0.72f;
+
+    SceneAsset asset_override{};
+    const SceneAssetData* sub_override =
+        build_tank_subscene_styled(
+            assets,
+            asset_override,
+            base,
+            { SceneFromGLBStyleOverride{ .mesh_index = 0u, .style = steel } });
+    ASSERT_NE(sub_override, nullptr);
+    ASSERT_EQ(sub_override->nodes.size(), 3u);
+
+    // The override changed the overall Scene (different content => different key).
+    EXPECT_FALSE(asset_override.output == asset_base.output)
+        << "a per-component style override must change the Scene asset";
+
+    std::size_t changed = 0;
+    std::size_t unchanged = 0;
+    for (const SceneNodeAsset& n : sub_override->nodes) {
+        ASSERT_TRUE(n.renderable_asset.has_value());
+        const auto it = base_keys.find(n.id);
+        ASSERT_NE(it, base_keys.end());
+        if (*n.renderable_asset == it->second) {
+            ++unchanged;
+        } else {
+            ++changed;
+        }
+    }
+
+    // Selective: at least one node re-styled (the overridden mesh is used), and
+    // at least one node left on the base style (the override is not global).
+    EXPECT_GE(changed, 1u)
+        << "the per-mesh override did not re-style any component";
+    EXPECT_GE(unchanged, 1u)
+        << "the per-mesh override changed every component (not selective)";
 }
