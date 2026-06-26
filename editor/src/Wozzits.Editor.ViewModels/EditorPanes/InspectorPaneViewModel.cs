@@ -1282,7 +1282,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (string.IsNullOrEmpty(glbPath))
         {
             GlbNodePickerHint =
-                "Connect a 'Scene from GLB' node to pick a GLB node.";
+                "Connect a GLB file to pick a GLB node.";
             return;
         }
 
@@ -1323,43 +1323,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     }
 
     // Walk the asset-graph edges from the selected "Mesh from GLB scene" node to the
-    // GLB file on disk: follow the `scene` input edge to the connected "Scene from
-    // GLB" node, then that node's `source_file` input edge to the file node, and read
-    // its `source_path` string param, resolved to an absolute path against the
-    // project directory. Returns empty when any link is missing.
+    // GLB file on disk: follow the extractor's OWN `source_file` input edge to the
+    // file node (ONE hop — the extractor is a standalone GLB->mesh provider with no
+    // Scene dependency, consuming the same source_file a "Scene from GLB" node does),
+    // and read its `source_path` string param, resolved to an absolute path against
+    // the project directory. Returns empty when any link is missing.
     private string ResolveConnectedGlbPath(AssetGraphNodeCardViewModel extractorNode)
     {
-        // The extractor's `scene` input port index (the port carries the connected
-        // Scene-from-GLB output). Fall back to a single sole input port.
-        var scenePortIndex = InputPortIndexByName(
-            extractorNode.InputPorts.Select(p => (p.Name, p.Index)),
-            "scene");
-        if (scenePortIndex is not { } sceneIndex)
-        {
-            return string.Empty;
-        }
-
-        var sceneNodeId = EdgeSourceInto(extractorNode.Id, sceneIndex);
-        if (sceneNodeId is not { } sceneFromGlbId)
-        {
-            return string.Empty;
-        }
-
-        var sceneFromGlbNode = FindSnapshotNode(sceneFromGlbId);
-        if (sceneFromGlbNode is null)
-        {
-            return string.Empty;
-        }
-
+        // The extractor's `source_file` input port index (the port carries the
+        // connected GLB file). Fall back to a single sole input port.
         var sourcePortIndex = InputPortIndexByName(
-            sceneFromGlbNode.InputPorts.Select(p => (p.Name, p.Index)),
+            extractorNode.InputPorts.Select(p => (p.Name, p.Index)),
             "source_file");
         if (sourcePortIndex is not { } sourceIndex)
         {
             return string.Empty;
         }
 
-        var fileNodeId = EdgeSourceInto(sceneFromGlbId, sourceIndex);
+        var fileNodeId = EdgeSourceInto(extractorNode.Id, sourceIndex);
         if (fileNodeId is not { } glbFileId)
         {
             return string.Empty;
