@@ -285,6 +285,48 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 .Select(node => new InspectorSceneSourceOptionViewModel(
                     node.Id,
                     node.DisplayName)));
+
+        // Thread the live asset-graph topology so the inspector's "GLB node" tree
+        // picker (issue #213) can walk the selected "Mesh from GLB scene" node's
+        // `scene` → `source_file` edges to the connected GLB file's source_path.
+        // Built from the live pane VMs (kept current across graph edits), projected
+        // back to the plain protocol shape the inspector consumes — only the fields
+        // the traversal reads (node id, input ports, params; edge endpoints + port).
+        RefreshInspectorAssetGraphTopology();
+    }
+
+    // Project the asset-graph pane's live node/edge VMs back to the minimal protocol
+    // records the inspector's GLB-node picker traversal needs, and hand them over.
+    private void RefreshInspectorAssetGraphTopology()
+    {
+        var nodes = AssetGraph.Nodes
+            .Select(node => new EngineAssetGraphNode
+            {
+                Id = node.Id,
+                Schema = node.SchemaLabel,
+                DisplayName = node.DisplayName,
+                InputPorts = node.InputPorts
+                    .Select(port => new EngineAssetGraphPort
+                    {
+                        Index = port.Index,
+                        Name = port.Name,
+                    })
+                    .ToList(),
+                Params = node.Params.ToList(),
+            })
+            .ToList();
+
+        var edges = AssetGraph.Edges
+            .Select(edge => new EngineAssetGraphEdge
+            {
+                Id = edge.Id,
+                From = edge.FromNodeId,
+                To = edge.ToNodeId,
+                ToInputPort = edge.ToInputPort,
+            })
+            .ToList();
+
+        Inspector.SetAssetGraphTopology(nodes, edges);
     }
 
     // True for a "Scene from GLB" asset-graph node — the only graftable subtree

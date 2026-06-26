@@ -586,6 +586,53 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- GLB node tree picker (issue #213): only for the "Mesh from
+                             GLB scene" node. Shows the connected GLB scene's hierarchy
+                             as an expandable tree; clicking a mesh-bearing node sets the
+                             node's node_id param (the generic text param above stays as
+                             the typed fallback). Group (mesh-less) nodes show for
+                             structure but are not pickable. A hint shows when the GLB
+                             could not be resolved/read. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasGlbNodePicker}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="GLB node"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="Pick the GLB node whose mesh this node extracts."
+                                           Classes="InspectorPropertyName"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding GlbNodePickerHint}"
+                                           Classes="PaneEmptyState"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasGlbNodePickerHint}"/>
+                                <TreeView ItemsSource="{Binding GlbNodes}"
+                                          IsVisible="{Binding HasGlbNodes}"
+                                          Classes="GlbNodeTree">
+                                    <TreeView.DataTemplates>
+                                        <TreeDataTemplate DataType="panes:InspectorGlbComponentNodeViewModel"
+                                                          ItemsSource="{Binding Children}">
+                                            <Button Classes="GlbNodePick"
+                                                    Classes.current="{Binding IsCurrentPick}"
+                                                    Command="{Binding PickCommand}"
+                                                    IsEnabled="{Binding IsSelectable}"
+                                                    ToolTip.Tip="{Binding Id}">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="◆ mesh"
+                                                               Classes="GlbNodeMeshMarker"
+                                                               IsVisible="{Binding HasMesh}"/>
+                                                    <TextBlock Text="▷ group"
+                                                               Classes="GlbNodeGroupMarker"
+                                                               IsVisible="{Binding IsGroup}"/>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </TreeDataTemplate>
+                                    </TreeView.DataTemplates>
+                                </TreeView>
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Diagnostics"

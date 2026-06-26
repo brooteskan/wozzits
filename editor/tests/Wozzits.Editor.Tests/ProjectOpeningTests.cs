@@ -1619,6 +1619,425 @@ public sealed partial class ProjectOpeningTests
         Assert.Null(plain!.SceneSource);
     }
 
+    // ─── "Mesh from GLB scene" GLB-node tree picker (issue #213) ─────────────────
+
+    // Selecting a "Mesh from GLB scene" node (schema e7000414) resolves the connected
+    // GLB by walking its `scene` edge to the Scene-from-GLB node (e7000711) and that
+    // node's `source_file` edge to the file node's source_path, imports the hierarchy
+    // (against the project dir), and shows it as a tree with mesh markers.
+    [Fact]
+    public void MeshFromGlbScenePickerPopulatesTreeFromConnectedGlb()
+    {
+        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-picker-vm");
+        var session = new RecordingEditorSession
+        {
+            // body -> turret -> gun, all mesh-bearing (turret/gun nested under body).
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                SceneName = "Scene",
+                Components =
+                [
+                    GlbComponent("body", hasMesh: true),
+                    GlbComponent("turret", hasMesh: true, parentId: "body"),
+                    GlbComponent("gun", hasMesh: true, parentId: "turret"),
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph()),
+            editorSession: session,
+            projectDirectory: projectDir);
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        Assert.True(viewModel.Inspector.HasGlbNodePicker);
+        Assert.True(viewModel.Inspector.HasGlbNodes);
+        Assert.False(viewModel.Inspector.HasGlbNodePickerHint);
+
+        // The hierarchy was imported against the resolved absolute GLB path.
+        var import = Assert.Single(session.GlbHierarchyImports);
+        Assert.Equal(0u, import.SceneIndex);
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(projectDir, "gltf/tank1.glb")),
+            import.Path);
+
+        // The tree mirrors the GLB hierarchy: a single body root -> turret -> gun.
+        var body = Assert.Single(viewModel.Inspector.GlbNodes);
+        Assert.Equal("body", body.Id);
+        Assert.True(body.HasMesh);
+        Assert.True(body.IsSelectable);
+        var turret = Assert.Single(body.Children);
+        Assert.Equal("turret", turret.Id);
+        var gun = Assert.Single(turret.Children);
+        Assert.Equal("gun", gun.Id);
+        Assert.True(gun.HasMesh);
+    }
+
+    // Clicking a mesh-bearing tree node sets the extractor's `node_id` param (the same
+    // param-set path as the text field) and moves the current-pick highlight to it.
+    [Fact]
+    public void MeshFromGlbScenePickClickSetsNodeIdParam()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                Components =
+                [
+                    GlbComponent("body", hasMesh: true),
+                    GlbComponent("turret", hasMesh: true, parentId: "body"),
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph()),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-pick-vm"));
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        var body = Assert.Single(viewModel.Inspector.GlbNodes);
+        var turret = Assert.Single(body.Children);
+        turret.PickCommand.Execute(null);
+
+        // The pick set node_id = the clicked node's id on the extractor (id 30).
+        var paramSet = Assert.Single(session.NodeParams);
+        Assert.Equal(30ul, paramSet.NodeId);
+        Assert.Equal("node_id", paramSet.Name);
+        Assert.Equal("turret", paramSet.Value);
+
+        // The highlight moved to the picked node.
+        Assert.True(turret.IsCurrentPick);
+        Assert.False(body.IsCurrentPick);
+    }
+
+    // A group (mesh-less) node is shown for structure but is not pickable: clicking it
+    // sets nothing (the engine extractor errors on a mesh-less node).
+    [Fact]
+    public void MeshFromGlbSceneGroupNodeIsNotPickable()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                Components =
+                [
+                    // A mesh-less group containing one mesh child.
+                    GlbComponent("rig", hasMesh: false),
+                    GlbComponent("body", hasMesh: true, parentId: "rig"),
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph()),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-group-vm"));
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        var rig = Assert.Single(viewModel.Inspector.GlbNodes);
+        Assert.False(rig.HasMesh);
+        Assert.False(rig.IsSelectable);
+        Assert.True(rig.IsGroup);
+
+        // Clicking the group is a no-op: no param set.
+        rig.PickCommand.Execute(null);
+        Assert.Empty(session.NodeParams);
+
+        // Its mesh child remains pickable.
+        var body = Assert.Single(rig.Children);
+        Assert.True(body.IsSelectable);
+    }
+
+    // The current `node_id` param value is reflected as the highlighted tree node.
+    [Fact]
+    public void MeshFromGlbScenePickerReflectsCurrentNodeIdAsSelected()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                Components =
+                [
+                    GlbComponent("body", hasMesh: true),
+                    GlbComponent("turret", hasMesh: true, parentId: "body"),
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            // The extractor already has node_id = "turret" authored.
+            ProjectSnapshot(assetGraph: GlbExtractorGraph(currentNodeId: "turret")),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-current-vm"));
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        var body = Assert.Single(viewModel.Inspector.GlbNodes);
+        var turret = Assert.Single(body.Children);
+        Assert.True(turret.IsCurrentPick);
+        Assert.False(body.IsCurrentPick);
+    }
+
+    // Defensive: an extractor not connected to a Scene-from-GLB shows the section with
+    // a hint (no tree, no import) and never throws. The text param stays the fallback.
+    [Fact]
+    public void MeshFromGlbScenePickerHintsWhenNotConnected()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy { Ok = true },
+        };
+        // Just the extractor node, with no incoming `scene` edge.
+        var graph = new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    MeshFromGlbSceneNode(id: 30u),
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: graph),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-unconn-vm"));
+
+        var extractor = Assert.Single(viewModel.AssetGraph.Nodes);
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        Assert.True(viewModel.Inspector.HasGlbNodePicker);
+        Assert.False(viewModel.Inspector.HasGlbNodes);
+        Assert.True(viewModel.Inspector.HasGlbNodePickerHint);
+        Assert.Contains("Scene from GLB", viewModel.Inspector.GlbNodePickerHint);
+        // Not connected => the GLB was never imported.
+        Assert.Empty(session.GlbHierarchyImports);
+        // The generic node_id text param is still present as the fallback.
+        Assert.Contains(
+            viewModel.Inspector.AssetGraphParams,
+            p => p.Name == "node_id");
+    }
+
+    // Defensive: when the import returns Ok=false the picker shows a "Couldn't read
+    // GLB" hint with no tree, and never throws.
+    [Fact]
+    public void MeshFromGlbScenePickerHintsWhenImportFails()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = false,
+                Error = "could not open GLB",
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph()),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-fail-vm"));
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        // The import was attempted (the connection resolved) but failed.
+        Assert.Single(session.GlbHierarchyImports);
+        Assert.True(viewModel.Inspector.HasGlbNodePicker);
+        Assert.False(viewModel.Inspector.HasGlbNodes);
+        Assert.True(viewModel.Inspector.HasGlbNodePickerHint);
+        Assert.Contains("Couldn't read GLB", viewModel.Inspector.GlbNodePickerHint);
+    }
+
+    // Selecting a different (non-extractor) asset-graph node hides the picker, so the
+    // section is scoped to the "Mesh from GLB scene" node only.
+    [Fact]
+    public void GlbNodePickerHiddenForNonExtractorNodes()
+    {
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy { Ok = true },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph()),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-other-vm"));
+
+        // The Scene-from-GLB node (e7000711) is not the extractor => no picker.
+        var sceneFromGlb = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000711");
+        viewModel.AssetGraph.SelectNode(sceneFromGlb);
+
+        Assert.False(viewModel.Inspector.HasGlbNodePicker);
+        Assert.False(viewModel.Inspector.HasGlbNodes);
+    }
+
+    // An asset graph wired file -> Scene-from-GLB (e7000711) -> Mesh-from-GLB-scene
+    // (e7000414): the file node carries source_path "gltf/tank1.glb"; the extractor's
+    // `scene` input is fed by the Scene-from-GLB node, whose `source_file` input is
+    // fed by the file node. currentNodeId, when set, authors the extractor's node_id.
+    private static EngineAssetGraphSnapshotResponse GlbExtractorGraph(
+        string? currentNodeId = null)
+    {
+        return new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    // The GLB file node (id 10): its source_path is the GLB on disk.
+                    new EngineAssetGraphNode
+                    {
+                        Id = 10u,
+                        TypeName = "GLB file",
+                        Schema = "e7000713",
+                        DisplayName = "tank1.glb",
+                        OutputPorts =
+                        [
+                            new EngineAssetGraphPort
+                            {
+                                Index = 0,
+                                Name = "output",
+                                Label = "GLB file",
+                            },
+                        ],
+                        Params =
+                        [
+                            new EngineAssetGraphParam
+                            {
+                                Name = "source_path",
+                                Kind = "filepath",
+                                Value = "gltf/tank1.glb",
+                            },
+                        ],
+                    },
+                    // The Scene-from-GLB node (id 20): `source_file` input <- file node.
+                    new EngineAssetGraphNode
+                    {
+                        Id = 20u,
+                        TypeName = "Scene",
+                        Schema = "e7000711",
+                        DisplayName = "Scene from GLB",
+                        InputPorts =
+                        [
+                            new EngineAssetGraphPort
+                            {
+                                Index = 0,
+                                Name = "source_file",
+                                Label = "GLB file",
+                            },
+                        ],
+                        OutputPorts =
+                        [
+                            new EngineAssetGraphPort
+                            {
+                                Index = 0,
+                                Name = "output",
+                                Label = "Scene",
+                            },
+                        ],
+                    },
+                    // The Mesh-from-GLB-scene extractor (id 30): `scene` input <- the
+                    // Scene-from-GLB node; carries the node_id param (the pick target).
+                    MeshFromGlbSceneNode(id: 30u, currentNodeId: currentNodeId),
+                ],
+                Edges =
+                [
+                    // file.output -> scene.source_file
+                    new EngineAssetGraphEdge
+                    {
+                        Id = 1u,
+                        From = 10u,
+                        To = 20u,
+                        ToInputPort = 0u,
+                    },
+                    // scene.output -> extractor.scene
+                    new EngineAssetGraphEdge
+                    {
+                        Id = 2u,
+                        From = 20u,
+                        To = 30u,
+                        ToInputPort = 0u,
+                    },
+                ],
+            },
+        };
+    }
+
+    private static EngineAssetGraphNode MeshFromGlbSceneNode(
+        ulong id,
+        string? currentNodeId = null)
+    {
+        return new EngineAssetGraphNode
+        {
+            Id = id,
+            TypeName = "Mesh",
+            Schema = "e7000414",
+            DisplayName = "Mesh from GLB scene",
+            InputPorts =
+            [
+                new EngineAssetGraphPort
+                {
+                    Index = 0,
+                    Name = "scene",
+                    Label = "Scene",
+                },
+            ],
+            OutputPorts =
+            [
+                new EngineAssetGraphPort
+                {
+                    Index = 0,
+                    Name = "output",
+                    Label = "Mesh",
+                },
+            ],
+            Params =
+            [
+                new EngineAssetGraphParam
+                {
+                    Name = "node_id",
+                    Kind = "string",
+                    Value = currentNodeId ?? string.Empty,
+                },
+            ],
+        };
+    }
+
+    private static EngineGlbComponent GlbComponent(
+        string id,
+        bool hasMesh,
+        string? parentId = null,
+        string? name = null)
+    {
+        return new EngineGlbComponent
+        {
+            Id = id,
+            Name = name ?? id,
+            ParentId = parentId,
+            HasMesh = hasMesh,
+        };
+    }
+
     private static EngineSceneNode? FindSceneNode(
         IEnumerable<EngineSceneNode> nodes,
         Func<EngineSceneNode, bool> predicate)

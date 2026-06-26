@@ -572,4 +572,65 @@
         <Setter Property="Foreground" Value="#EEE8D5"/>
         <Setter Property="SelectionBrush" Value="#2AA198"/>
     </Style>
+
+    <!-- "GLB node" tree picker for the "Mesh from GLB scene" node (issue #213). -->
+    <Style Selector="TreeView.GlbNodeTree">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="MaxHeight" Value="260"/>
+    </Style>
+
+    <Style Selector="TreeView.GlbNodeTree TreeViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="IsExpanded" Value="True"/>
+    </Style>
+
+    <!-- A pickable (mesh-bearing) GLB node: a flat, full-width clickable label. -->
+    <Style Selector="Button.GlbNodePick">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="4,1"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+
+    <Style Selector="Button.GlbNodePick:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+    </Style>
+
+    <!-- Group (mesh-less) GLB node: shown for structure, but not pickable. -->
+    <Style Selector="Button.GlbNodePick:disabled">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="Opacity" Value="0.7"/>
+        <Setter Property="Cursor" Value="Arrow"/>
+    </Style>
+
+    <!-- The node whose id is the extractor's current node_id pick. -->
+    <Style Selector="Button.GlbNodePick.current">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="Button.GlbNodePick.current /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.GlbNodeMeshMarker">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="TextBlock.GlbNodeGroupMarker">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
 </Styles>

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
@@ -61,6 +63,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _assetGraphNodeSchema = string.Empty;
     private string _assetGraphNodeCompileStatus = string.Empty;
     private string _assetGraphNodePosition = string.Empty;
+    // "GLB node" tree picker for the "Mesh from GLB scene" asset-graph node (issue
+    // #213): the connected GLB scene's component hierarchy, shown as an expandable
+    // tree so a node id can be picked instead of typed. Threaded asset-graph
+    // topology (the snapshot's nodes + edges) lets the inspector walk the selected
+    // extractor node's `scene` edge to the Scene-from-GLB node and that node's
+    // `source_file` edge to the GLB file node to recover its source_path.
+    private IReadOnlyList<EngineAssetGraphNode> _assetGraphNodes = [];
+    private IReadOnlyList<EngineAssetGraphEdge> _assetGraphEdges = [];
+    private bool _hasGlbNodePicker;
+    private string _glbNodePickerHint = string.Empty;
     private string _lastEditError = string.Empty;
     private string _newBehaviorModule = string.Empty;
     // While true, populating fields from a selected node must not echo back to
@@ -121,6 +133,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphDiagnosticViewModel> AssetGraphDiagnostics { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphParamViewModel> AssetGraphParams { get; } = [];
+
+    // Root nodes of the "GLB node" tree picker shown for the "Mesh from GLB scene"
+    // asset-graph node (issue #213). Each node may have Children; mesh-bearing nodes
+    // are pickable and set the node's `node_id` param. Empty unless that node is
+    // selected AND its connected GLB hierarchy resolved.
+    public ObservableCollection<InspectorGlbComponentNodeViewModel> GlbNodes { get; } = [];
 
     public IRelayCommand ApplyCameraCommand { get; }
 
@@ -436,6 +454,34 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public bool HasNoAssetGraphParams => !HasAssetGraphParams;
 
+    // True only while a "Mesh from GLB scene" asset-graph node is selected: gates the
+    // "GLB node" tree-picker section (issue #213). The generic `node_id` text param
+    // stays editable as the fallback regardless of this.
+    public bool HasGlbNodePicker
+    {
+        get => _hasGlbNodePicker;
+        private set => SetProperty(ref _hasGlbNodePicker, value);
+    }
+
+    public bool HasGlbNodes => GlbNodes.Count > 0;
+
+    // A short hint shown in the picker section when the GLB tree could not be built
+    // (not connected to a Scene-from-GLB with a resolvable source_path, or the import
+    // failed). Empty when the tree is present. The text param remains the fallback.
+    public string GlbNodePickerHint
+    {
+        get => _glbNodePickerHint;
+        private set
+        {
+            if (SetProperty(ref _glbNodePickerHint, value))
+            {
+                OnPropertyChanged(nameof(HasGlbNodePickerHint));
+            }
+        }
+    }
+
+    public bool HasGlbNodePickerHint => !string.IsNullOrWhiteSpace(GlbNodePickerHint);
+
     public string LastEditError
     {
         get => _lastEditError;
@@ -459,6 +505,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
         AssetGraphParams.Clear();
+        ClearGlbNodePicker();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -521,6 +568,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
         AssetGraphParams.Clear();
+        ClearGlbNodePicker();
         LastEditError = string.Empty;
 
         if (node is null)
@@ -571,6 +619,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             AssetGraphParams.Add(new InspectorAssetGraphParamViewModel(
                 param,
                 ApplyAssetGraphNodeParam));
+        }
+
+        // "Mesh from GLB scene" nodes get the "GLB node" tree picker (issue #213):
+        // resolve the connected GLB and show its hierarchy as a pickable tree.
+        if (IsMeshFromGlbSceneNode(node))
+        {
+            PopulateGlbNodePicker(node);
         }
 
         NotifyComponentStateChanged();
@@ -1197,6 +1252,329 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         HasSubtreeSection = false;
     }
 
+    // ─── GLB node tree picker (issue #213) ───────────────────────────────────────
+
+    // Thread the current asset-graph snapshot (nodes + edges) into the inspector so
+    // a "Mesh from GLB scene" node can resolve its connected GLB by walking edges
+    // (MainWindowViewModel calls this on every selection, mirroring how the "Scene
+    // from GLB" picker options are threaded). Plain snapshot data — no dependency on
+    // the asset-graph pane. If the topology changes while such a node is inspected,
+    // rebuild the tree so it stays in step.
+    public void SetAssetGraphTopology(
+        IEnumerable<EngineAssetGraphNode> nodes,
+        IEnumerable<EngineAssetGraphEdge> edges)
+    {
+        _assetGraphNodes = nodes as IReadOnlyList<EngineAssetGraphNode>
+            ?? nodes.ToList();
+        _assetGraphEdges = edges as IReadOnlyList<EngineAssetGraphEdge>
+            ?? edges.ToList();
+    }
+
+    // Build the "GLB node" tree for the selected "Mesh from GLB scene" node: resolve
+    // its connected GLB path via the asset-graph edges, import the hierarchy, and
+    // expose it as a pickable tree. Defensive throughout — any gap leaves the tree
+    // empty + a hint and keeps the generic `node_id` text param as the fallback.
+    private void PopulateGlbNodePicker(AssetGraphNodeCardViewModel node)
+    {
+        HasGlbNodePicker = true;
+
+        var glbPath = ResolveConnectedGlbPath(node);
+        if (string.IsNullOrEmpty(glbPath))
+        {
+            GlbNodePickerHint =
+                "Connect a 'Scene from GLB' node to pick a GLB node.";
+            return;
+        }
+
+        if (_editorSession is null)
+        {
+            GlbNodePickerHint = "Engine editor session is not available.";
+            return;
+        }
+
+        EngineGlbSceneHierarchy hierarchy;
+        try
+        {
+            hierarchy = _editorSession.ImportGlbSceneHierarchy(glbPath, 0u);
+        }
+        catch (Exception ex)
+        {
+            GlbNodePickerHint = $"Couldn't read GLB: {ex.Message}";
+            return;
+        }
+
+        if (hierarchy is null || !hierarchy.Ok)
+        {
+            GlbNodePickerHint = "Couldn't read GLB.";
+            return;
+        }
+
+        var currentNodeId = CurrentNodeIdParamValue();
+        foreach (var root in BuildGlbComponentTree(hierarchy.Components, currentNodeId))
+        {
+            GlbNodes.Add(root);
+        }
+
+        OnPropertyChanged(nameof(HasGlbNodes));
+        if (GlbNodes.Count == 0)
+        {
+            GlbNodePickerHint = "The connected GLB scene has no nodes.";
+        }
+    }
+
+    // Walk the asset-graph edges from the selected "Mesh from GLB scene" node to the
+    // GLB file on disk: follow the `scene` input edge to the connected "Scene from
+    // GLB" node, then that node's `source_file` input edge to the file node, and read
+    // its `source_path` string param, resolved to an absolute path against the
+    // project directory. Returns empty when any link is missing.
+    private string ResolveConnectedGlbPath(AssetGraphNodeCardViewModel extractorNode)
+    {
+        // The extractor's `scene` input port index (the port carries the connected
+        // Scene-from-GLB output). Fall back to a single sole input port.
+        var scenePortIndex = InputPortIndexByName(
+            extractorNode.InputPorts.Select(p => (p.Name, p.Index)),
+            "scene");
+        if (scenePortIndex is not { } sceneIndex)
+        {
+            return string.Empty;
+        }
+
+        var sceneNodeId = EdgeSourceInto(extractorNode.Id, sceneIndex);
+        if (sceneNodeId is not { } sceneFromGlbId)
+        {
+            return string.Empty;
+        }
+
+        var sceneFromGlbNode = FindSnapshotNode(sceneFromGlbId);
+        if (sceneFromGlbNode is null)
+        {
+            return string.Empty;
+        }
+
+        var sourcePortIndex = InputPortIndexByName(
+            sceneFromGlbNode.InputPorts.Select(p => (p.Name, p.Index)),
+            "source_file");
+        if (sourcePortIndex is not { } sourceIndex)
+        {
+            return string.Empty;
+        }
+
+        var fileNodeId = EdgeSourceInto(sceneFromGlbId, sourceIndex);
+        if (fileNodeId is not { } glbFileId)
+        {
+            return string.Empty;
+        }
+
+        var fileNode = FindSnapshotNode(glbFileId);
+        var sourcePath = fileNode?.Params
+            .FirstOrDefault(p => string.Equals(
+                p.Name, "source_path", StringComparison.Ordinal))
+            ?.Value;
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return string.Empty;
+        }
+
+        return ResolveProjectRelativePath(sourcePath!);
+    }
+
+    // The id of the node feeding `toInputPort` of `toNodeId` (the single provider an
+    // input port allows), or null when nothing is connected there.
+    private ulong? EdgeSourceInto(ulong toNodeId, uint toInputPort)
+    {
+        foreach (var edge in _assetGraphEdges)
+        {
+            if (edge.To == toNodeId && edge.ToInputPort == toInputPort)
+            {
+                return edge.From;
+            }
+        }
+
+        return null;
+    }
+
+    private EngineAssetGraphNode? FindSnapshotNode(ulong id)
+    {
+        foreach (var node in _assetGraphNodes)
+        {
+            if (node.Id == id)
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    // The index of the named input port; when no port carries that name but the node
+    // has exactly one input port, use it (the link is unambiguous).
+    private static uint? InputPortIndexByName(
+        IEnumerable<(string Name, uint Index)> ports,
+        string name)
+    {
+        var list = ports.ToList();
+        foreach (var port in list)
+        {
+            if (string.Equals(port.Name, name, StringComparison.Ordinal))
+            {
+                return port.Index;
+            }
+        }
+
+        return list.Count == 1 ? list[0].Index : null;
+    }
+
+    // Resolve a resource-relative GLB path (as authored on the file node's
+    // source_path param) to an absolute filesystem path against the project
+    // directory, the resource root the editor launches with (matching how the
+    // GLB scene-source descriptor paths are rooted). An already-absolute path is
+    // returned unchanged; with no project directory the path is returned as-is.
+    private string ResolveProjectRelativePath(string sourcePath)
+    {
+        var trimmed = sourcePath.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return string.Empty;
+        }
+
+        if (Path.IsPathRooted(trimmed))
+        {
+            return trimmed;
+        }
+
+        if (string.IsNullOrEmpty(_projectDirectory))
+        {
+            return trimmed;
+        }
+
+        return Path.GetFullPath(Path.Combine(_projectDirectory, trimmed));
+    }
+
+    // The currently authored `node_id` param value (the picked GLB node), used to
+    // highlight the matching tree node; empty when the param is unset/absent.
+    private string CurrentNodeIdParamValue()
+    {
+        return AssetGraphParams
+            .FirstOrDefault(p => string.Equals(
+                p.Name, "node_id", StringComparison.Ordinal))
+            ?.Value
+            ?? string.Empty;
+    }
+
+    // Assemble the flat GLB component list into a tree by ParentId, preserving the
+    // import order at each level. Each node closes over PickGlbNode so a click sets
+    // the extractor's node_id; the node matching currentNodeId is marked the current
+    // pick. Orphans (a ParentId not present) are surfaced as roots so nothing is lost.
+    private List<InspectorGlbComponentNodeViewModel> BuildGlbComponentTree(
+        IReadOnlyList<EngineGlbComponent> components,
+        string currentNodeId)
+    {
+        var byId = new Dictionary<string, InspectorGlbComponentNodeViewModel>(
+            StringComparer.Ordinal);
+        var roots = new List<InspectorGlbComponentNodeViewModel>();
+
+        // First pass: a VM per component (import order is the child order).
+        var created = new List<InspectorGlbComponentNodeViewModel>(components.Count);
+        foreach (var component in components)
+        {
+            var vm = new InspectorGlbComponentNodeViewModel(
+                component,
+                PickGlbNode,
+                isCurrentPick: string.Equals(
+                    component.Id, currentNodeId, StringComparison.Ordinal));
+            created.Add(vm);
+            if (!string.IsNullOrEmpty(component.Id))
+            {
+                byId[component.Id] = vm;
+            }
+        }
+
+        // Second pass: link children to parents; un-parented (or dangling) => root.
+        for (var i = 0; i < components.Count; i++)
+        {
+            var parentId = components[i].ParentId;
+            if (!string.IsNullOrEmpty(parentId)
+                && byId.TryGetValue(parentId!, out var parent)
+                && !ReferenceEquals(parent, created[i]))
+            {
+                parent.Children.Add(created[i]);
+            }
+            else
+            {
+                roots.Add(created[i]);
+            }
+        }
+
+        return roots;
+    }
+
+    // A tree node was clicked: only mesh-bearing GLB nodes are extractable, so a
+    // group click is ignored (the engine extractor errors on a mesh-less node).
+    // Setting node_id goes through the same param-set path as the text field, and the
+    // current-pick highlight is moved to the clicked node.
+    private void PickGlbNode(InspectorGlbComponentNodeViewModel node)
+    {
+        if (!node.IsSelectable)
+        {
+            return;
+        }
+
+        ApplyAssetGraphNodeParam("node_id", node.Id);
+        if (!HasLastEditError)
+        {
+            HighlightCurrentGlbPick(node.Id);
+            // Reflect the pick in the matching `node_id` text param so the fallback
+            // field and the tree agree.
+            var param = AssetGraphParams.FirstOrDefault(p => string.Equals(
+                p.Name, "node_id", StringComparison.Ordinal));
+            if (param is not null)
+            {
+                param.Value = node.Id;
+            }
+        }
+    }
+
+    private void HighlightCurrentGlbPick(string nodeId)
+    {
+        foreach (var root in GlbNodes)
+        {
+            HighlightCurrentGlbPick(root, nodeId);
+        }
+    }
+
+    private static void HighlightCurrentGlbPick(
+        InspectorGlbComponentNodeViewModel node,
+        string nodeId)
+    {
+        node.IsCurrentPick = string.Equals(node.Id, nodeId, StringComparison.Ordinal);
+        foreach (var child in node.Children)
+        {
+            HighlightCurrentGlbPick(child, nodeId);
+        }
+    }
+
+    private void ClearGlbNodePicker()
+    {
+        GlbNodes.Clear();
+        HasGlbNodePicker = false;
+        GlbNodePickerHint = string.Empty;
+        OnPropertyChanged(nameof(HasGlbNodes));
+    }
+
+    private static bool IsMeshFromGlbSceneNode(AssetGraphNodeCardViewModel node)
+    {
+        return string.Equals(
+            node.SchemaLabel,
+            MeshFromGlbSceneSchemaLabel,
+            StringComparison.Ordinal);
+    }
+
+    // The stable schema discriminator for the "Mesh from GLB scene" asset-graph node
+    // (issue #213): schema_tail (low 32 bits of the SchemaID as hex) of
+    // kMeshFromGLBSceneSchema 0xF11ECA55E7000414. Same field the "Scene from GLB"
+    // picker matches with "e7000711".
+    private const string MeshFromGlbSceneSchemaLabel = "e7000414";
+
 
     private static string FormatNullable(double? value)
     {
@@ -1283,6 +1661,57 @@ public sealed class InspectorSceneSourceOptionViewModel
     public ulong Id { get; }
 
     public string Label { get; }
+}
+
+// One node of the "GLB node" tree picker shown for the "Mesh from GLB scene"
+// asset-graph node (issue #213). Mirrors an imported EngineGlbComponent: its GLB
+// node id (what the extractor's `node_id` param is set to), display name, whether
+// it carries a mesh, and its children. Only mesh-bearing nodes are pickable
+// (IsSelectable) — the engine extractor errors on a mesh-less node — so group
+// nodes show for structure but a click on them is ignored. IsCurrentPick tracks
+// the node whose id is the node's current `node_id`, for highlighting. The Pick
+// command lives on the item so the TreeView's per-node template binds to it.
+public sealed class InspectorGlbComponentNodeViewModel : ViewModelBase
+{
+    private bool _isCurrentPick;
+
+    public InspectorGlbComponentNodeViewModel(
+        EngineGlbComponent component,
+        Action<InspectorGlbComponentNodeViewModel> pick,
+        bool isCurrentPick)
+    {
+        Id = component.Id;
+        Name = string.IsNullOrWhiteSpace(component.Name) ? component.Id : component.Name;
+        HasMesh = component.HasMesh;
+        MeshIndex = component.MeshIndex;
+        _isCurrentPick = isCurrentPick;
+        PickCommand = new RelayCommand(() => pick(this));
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public bool HasMesh { get; }
+
+    public uint MeshIndex { get; }
+
+    public ObservableCollection<InspectorGlbComponentNodeViewModel> Children { get; } = [];
+
+    // Only mesh-bearing nodes are extractable: the engine extracts that GLB node's
+    // raw mesh, and errors on a mesh-less (group) node.
+    public bool IsSelectable => HasMesh;
+
+    // Shown next to mesh-bearing nodes; group nodes are de-emphasized in the view.
+    public bool IsGroup => !HasMesh;
+
+    public bool IsCurrentPick
+    {
+        get => _isCurrentPick;
+        set => SetProperty(ref _isCurrentPick, value);
+    }
+
+    public IRelayCommand PickCommand { get; }
 }
 
 public sealed class InspectorBehaviorViewModel : ViewModelBase
