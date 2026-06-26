@@ -399,6 +399,90 @@ TEST(ProjectSceneSnapshot, LoadsSceneTreeFromManifest)
     EXPECT_EQ(mesh.renderable->source.display_name, "asset-node");
 }
 
+// issue #213: build_scene_snapshot_from_nodes maps live SceneNodeAssets (the
+// runtime-grafted instance sub-tree) into a SceneSnapshot the editor merges
+// under hosts. The grafted nodes mirror what graft_scene_sources produces: a
+// host-namespaced body (parent = the host, which is NOT in the grafted set) plus
+// nested turret/gun. The host id is absent from `nodes`, so body becomes a root
+// but KEEPS parent_id = the host so the editor can find where to graft.
+TEST(ProjectSceneSnapshot, BuildsSnapshotFromGraftedNodes)
+{
+    std::vector<wz::engine::assets::SceneNodeAsset> nodes;
+
+    wz::engine::assets::SceneNodeAsset body;
+    body.id = "host/body";
+    body.parent_id = "host";  // host is NOT in the set => body is a root
+    body.name = "body";
+    body.local.translation[0] = 1.0f;
+    body.local.translation[1] = 2.0f;
+    body.local.translation[2] = 3.0f;
+    // A grafted GLB child resolves a mesh-styled renderable (no asset-graph id).
+    body.renderable_asset = wz::asset::AssetKey{};
+    nodes.push_back(body);
+
+    wz::engine::assets::SceneNodeAsset turret;
+    turret.id = "host/body/turret";
+    turret.parent_id = "host/body";
+    turret.name = "turret";
+    nodes.push_back(turret);
+
+    wz::engine::assets::SceneNodeAsset gun;
+    gun.id = "host/body/turret/gun";
+    gun.parent_id = "host/body/turret";
+    gun.name = "gun";
+    gun.visible = false;
+    nodes.push_back(gun);
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes(nodes);
+
+    EXPECT_EQ(snapshot.schema, "wozzits.scene.v0");
+
+    // body is the sole root (its parent "host" is outside the set) and keeps its
+    // parent_id so the editor can graft the sub-tree under the host.
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& root = snapshot.roots[0];
+    EXPECT_EQ(root.id, "host/body");
+    EXPECT_EQ(root.display_name, "body");
+    EXPECT_EQ(root.parent_id, std::optional<std::string>("host"));
+    ASSERT_TRUE(root.visible);
+    EXPECT_TRUE(*root.visible);
+    // Renderable presence surfaces as a renderable node, source "scene-source".
+    EXPECT_EQ(root.kind, "renderable");
+    EXPECT_EQ(root.renderable_source.kind, "scene-source");
+    ASSERT_TRUE(root.transform);
+    EXPECT_EQ(root.transform->display.translation_x, "1");
+    EXPECT_EQ(root.transform->display.translation_y, "2");
+    EXPECT_EQ(root.transform->display.translation_z, "3");
+
+    // turret nests under body, gun nests under turret (parent_id chain).
+    ASSERT_EQ(root.children.size(), 1u);
+    const auto& turret_node = root.children[0];
+    EXPECT_EQ(turret_node.id, "host/body/turret");
+    EXPECT_EQ(turret_node.parent_id,
+        std::optional<std::string>("host/body"));
+    EXPECT_EQ(turret_node.kind, "node");  // no renderable => plain node
+
+    ASSERT_EQ(turret_node.children.size(), 1u);
+    const auto& gun_node = turret_node.children[0];
+    EXPECT_EQ(gun_node.id, "host/body/turret/gun");
+    EXPECT_EQ(gun_node.parent_id,
+        std::optional<std::string>("host/body/turret"));
+    ASSERT_TRUE(gun_node.visible);
+    EXPECT_FALSE(*gun_node.visible);
+}
+
+// issue #213: an empty grafted set yields a valid-but-empty snapshot (no roots),
+// which the editor treats as "nothing to merge" — never a crash or a fallback to
+// "everything is a root".
+TEST(ProjectSceneSnapshot, BuildsEmptySnapshotFromNoGraftedNodes)
+{
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({});
+    EXPECT_EQ(snapshot.schema, "wozzits.scene.v0");
+    EXPECT_TRUE(snapshot.roots.empty());
+}
+
 TEST(ProjectSnapshot, LoadsInitialEditorSnapshotFromProjectManifest)
 {
     TempProjectRoot temp;

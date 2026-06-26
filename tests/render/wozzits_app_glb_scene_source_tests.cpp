@@ -33,6 +33,10 @@
 #include <gpu/gpu.h>
 #include <input/input.h>
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 namespace
 {
     constexpr const char* kProjectRoot = "projects/glb_scene_source_fixture";
@@ -415,4 +419,75 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, ComponentStyleAuthorsBaseOverrideAndClea
 
     // Clearing a mesh index with no override is a success no-op.
     EXPECT_TRUE(app.clear_node_glb_mesh_style("tank_host", 99u));
+}
+
+// (e) Grafted-nodes accessor (issue #213, the editor scene-tree merge source):
+// after an instance-mode load, WozzitsApp_v1::grafted_scene_nodes() returns a
+// copy of exactly the runtime-grafted children (host-namespaced body/turret/gun
+// under tank_host), each carrying its parent_id so the editor can merge the
+// sub-tree under its host. Authored nodes (the host itself, "root") must NOT be
+// in the set.
+TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedSceneNodesReturnsInstanceGraft)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+
+    wz::app::WozzitsAppSceneLoadDesc load_desc{};
+    load_desc.asset_graph = project.manifest.asset_graph_path;
+    load_desc.scene = project.manifest.scene_path;
+    load_desc.behavior_module_folder = project.manifest.behavior_module_folder;
+    ASSERT_TRUE(app.load_scene(load_desc));
+
+    const std::vector<wz::engine::assets::SceneNodeAsset> grafted =
+        app.grafted_scene_nodes();
+
+    const auto has_id = [&grafted](const std::string& id) {
+        return std::any_of(
+            grafted.begin(),
+            grafted.end(),
+            [&id](const wz::engine::assets::SceneNodeAsset& n) {
+                return n.id == id;
+            });
+    };
+    const auto find_id = [&grafted](const std::string& id)
+        -> const wz::engine::assets::SceneNodeAsset* {
+        const auto it = std::find_if(
+            grafted.begin(),
+            grafted.end(),
+            [&id](const wz::engine::assets::SceneNodeAsset& n) {
+                return n.id == id;
+            });
+        return it == grafted.end() ? nullptr : &*it;
+    };
+
+    // Exactly the three grafted GLB children, nothing else.
+    EXPECT_EQ(grafted.size(), 3u);
+    EXPECT_TRUE(has_id("tank_host/body"));
+    EXPECT_TRUE(has_id("tank_host/turret"));
+    EXPECT_TRUE(has_id("tank_host/gun"));
+
+    // The authored host + the fixture's plain "root" node are NOT grafts.
+    EXPECT_FALSE(has_id("tank_host"));
+    EXPECT_FALSE(has_id("root"));
+
+    // The sub-scene root (body) reparents to the host; the deeper nodes keep
+    // their host-namespaced parents — this parent_id is what the editor merges on.
+    const wz::engine::assets::SceneNodeAsset* body = find_id("tank_host/body");
+    ASSERT_NE(body, nullptr);
+    ASSERT_TRUE(body->parent_id.has_value());
+    EXPECT_EQ(*body->parent_id, "tank_host");
+
+    const wz::engine::assets::SceneNodeAsset* turret =
+        find_id("tank_host/turret");
+    ASSERT_NE(turret, nullptr);
+    ASSERT_TRUE(turret->parent_id.has_value());
+    EXPECT_EQ(*turret->parent_id, "tank_host/body");
+
+    // Clearing the descriptor drops the graft, so the accessor returns empty.
+    EXPECT_TRUE(app.set_node_glb_scene_source(
+        "tank_host", wz::engine::assets::SceneGLBSceneSource{ .path = "" }));
+    EXPECT_TRUE(app.grafted_scene_nodes().empty())
+        << "clearing the scene source must empty the grafted-nodes set";
 }

@@ -327,6 +327,20 @@ namespace wz::app
         node_glb_scene_source(
             const wz::scene::AuthoredEntityId& node_id) const;
 
+        // A COPY of just the runtime-grafted scene nodes (issue #213): the
+        // entries of scene_nodes_ whose id is in grafted_node_ids_ — the
+        // instance-mode sub-trees appended by graft_scene_sources. These live
+        // only in the live runtime (an instanced scene_source re-imports from its
+        // reference; the children are never persisted as authored nodes), so the
+        // editor's JSON-sourced scene tree never has them. The host ABI surfaces
+        // this (as a scene snapshot) so the editor can merge the grafts under
+        // their hosts. Each entry keeps its parent_id (the host's id, or a deeper
+        // graft's id) so the merger can place it. Engine-thread only (reads
+        // scene_nodes_); the editor reaches it through the blocking
+        // request_grafted_scene_nodes handshake. Empty when nothing is grafted.
+        [[nodiscard]] std::vector<wz::engine::assets::SceneNodeAsset>
+        grafted_scene_nodes() const;
+
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when
         // no live edit happened since load/last save; false on write failure.

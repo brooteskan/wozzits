@@ -1109,6 +1109,28 @@ WZ_ABI_API WzResult wz_host_runtime_clear_node_behavior_config(
     const char* binding_id_utf8,
     const char* key_utf8);
 
+// Fetch the runtime's currently grafted scene nodes (issue #213) as a project
+// snapshot blob — the SAME WzEditorProjectSnapshot layout wz_host_load_project_
+// snapshot returns, so the editor decodes it with the existing reader. Only the
+// `scene` part is meaningful: its roots are the instance-grafted sub-trees, each
+// root carrying its host node's id as its parent (HAS_PARENT) so the editor can
+// merge the sub-tree under that host in its JSON-sourced tree. The `asset_graph`
+// part is ok-but-empty. These grafted nodes live only in the live runtime (an
+// instanced scene_source re-imports from its reference; they are never persisted
+// as authored nodes), so this is the only way the editor sees them.
+//
+// BLOCKING: like wz_host_runtime_add_child_node this blocks until the engine
+// thread services the request on its next frame and copies its grafted nodes.
+// A null or not-running runtime yields an ok blob with an EMPTY scene (never an
+// error, never a crash) so the editor degrades to its JSON tree. The caller owns
+// the returned buffer and frees it with wz_free_buffer.
+//
+// NOTE: a NEW exported function reusing the existing snapshot structs +
+// project_snapshot_abi_blob — NO ABI struct change and WZ_ABI_VERSION is
+// unchanged.
+WZ_ABI_API WzBuffer wz_host_runtime_grafted_scene_snapshot(
+    WzHostRuntime* runtime);
+
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
 #ifdef __cplusplus

@@ -550,6 +550,53 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    std::vector<wz::engine::assets::SceneNodeAsset>
+    EditorRuntimeControl::request_grafted_scene_nodes()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !has_grafted_request_ || finished_; });
+        if (finished_) {
+            return {};  // no runtime — caller falls back to its JSON tree
+        }
+
+        has_grafted_request_ = true;
+        has_grafted_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(lock, [this] { return has_grafted_result_ || finished_; });
+        if (!has_grafted_result_) {
+            has_grafted_request_ = false;
+            return {};  // engine stopped before servicing
+        }
+
+        has_grafted_result_ = false;
+        return std::move(grafted_result_);
+    }
+
+    void EditorRuntimeControl::service_pending_grafted_scene_nodes(
+        const std::function<
+            std::vector<wz::engine::assets::SceneNodeAsset>()>& provider)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_grafted_request_) {
+                return;
+            }
+            has_grafted_request_ = false;
+        }
+
+        // Build the copy outside the lock (it walks scene_nodes_); a request
+        // from the owner thread must never block on it.
+        std::vector<wz::engine::assets::SceneNodeAsset> nodes = provider();
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            grafted_result_ = std::move(nodes);
+            has_grafted_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
     void EditorRuntimeControl::mark_finished()
     {
         {
@@ -811,6 +858,13 @@ namespace wz::app
                             const wz::scene::AuthoredEntityId& node_id,
                             const std::string& module) {
                             return app.add_node_behavior(node_id, module);
+                        });
+                    control->service_pending_grafted_scene_nodes(
+                        [&app]() {
+                            // Hand back a copy of the runtime-only grafted nodes
+                            // so the editor can merge them under their hosts
+                            // (#213); the host node only stores the reference.
+                            return app.grafted_scene_nodes();
                         });
                     if (control->take_save_request()) {
                         app.save_scene();

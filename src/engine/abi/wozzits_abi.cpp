@@ -7,6 +7,7 @@
 #include <engine/editor/asset_graph_schema_registry.h>
 #include <engine/editor/project_snapshot_abi.h>
 #include <engine/editor/project_snapshot.h>
+#include <engine/editor/scene_snapshot.h>
 #include <engine/project/project_runtime_launch.h>
 
 #include <file/filesystem.h>
@@ -2025,6 +2026,48 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "clear node behavior config post failed");
+        }
+    }
+
+    WzBuffer wz_host_runtime_grafted_scene_snapshot(WzHostRuntime* runtime)
+    {
+        // Serialize a ProjectSnapshotLoadResult whose scene carries the grafted
+        // nodes (empty when there is no runtime), reusing the existing project-
+        // snapshot blob the editor already decodes. Valid + ok with an empty
+        // asset_graph so the editor reads only the scene part.
+        const auto build_blob =
+            [](wz::engine::editor::SceneSnapshot scene_snapshot) {
+                wz::engine::editor::ProjectSnapshotLoadResult snapshot{};
+                snapshot.ok = true;
+                snapshot.status =
+                    wz::engine::project::ProjectManifestProbeStatus::Valid;
+                snapshot.asset_graph.ok = true;
+                snapshot.scene.ok = true;
+                snapshot.scene.snapshot = std::move(scene_snapshot);
+                return make_buffer(
+                    wz::engine::editor::project_snapshot_abi_blob(snapshot));
+            };
+
+        try {
+            if (!runtime) {
+                return build_blob(wz::engine::editor::SceneSnapshot{});
+            }
+
+            // Blocking handshake: the engine thread copies its grafted nodes
+            // (empty vector if it is not running). Mirrors add_child_node.
+            const std::vector<wz::engine::assets::SceneNodeAsset> grafted =
+                runtime->control.request_grafted_scene_nodes();
+            return build_blob(
+                wz::engine::editor::build_scene_snapshot_from_nodes(grafted));
+        }
+        catch (...) {
+            // Never crash the editor over a read-back; hand back an empty scene.
+            try {
+                return build_blob(wz::engine::editor::SceneSnapshot{});
+            }
+            catch (...) {
+                return WzBuffer{ nullptr, 0u };
+            }
         }
     }
 

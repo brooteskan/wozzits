@@ -1,6 +1,7 @@
 #pragma once
 
 #include <asset/draft.h>
+#include <engine/assets/scene/scene_asset_data.h>
 #include <engine/project/project_manifest.h>
 
 #include <cstdint>
@@ -150,4 +151,16 @@ namespace wz::engine::editor
 
     SceneSnapshotLoadResult load_project_scene_snapshot(
         const wz::engine::project::ProjectManifestLoadDesc& desc);
+
+    // Build a SceneSnapshot directly from live SceneNodeAsset entries (issue
+    // #213), rather than from a scene.json file. Used to surface the runtime-only
+    // grafted scene nodes (WozzitsApp_v1::grafted_scene_nodes) so the editor can
+    // merge them under their hosts. Each SceneNodeAsset maps to a SceneSnapshotNode
+    // (id; display_name=name; parent_id; kind; visible; local transform; renderable
+    // presence). Parent/child is assembled like the file path: a node whose parent
+    // is not in `nodes` becomes a root but KEEPS its parent_id (that is how the
+    // editor finds the host to graft under). Grafted nodes are plain — no
+    // camera/components/behaviors are surfaced (they are not authored/editable).
+    SceneSnapshot build_scene_snapshot_from_nodes(
+        const std::vector<wz::engine::assets::SceneNodeAsset>& nodes);
 }

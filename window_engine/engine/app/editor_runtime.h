@@ -340,6 +340,23 @@ namespace wz::app
             const std::function<wz::engine::assets::SceneAddBehaviorResult(
                 const wz::scene::AuthoredEntityId&, const std::string&)>& adder);
 
+        // Owner thread: request the runtime-only grafted scene nodes (issue
+        // #213) and block until the engine thread produces a COPY of them,
+        // returning it. Like add_child this is a blocking request/response — the
+        // caller (the editor, reading them to merge under their hosts) needs the
+        // data back, and the engine thread owns scene_nodes_. Returns an empty
+        // vector if the runtime is not running (it never started, or stopped
+        // before servicing) so the editor degrades to its JSON tree.
+        std::vector<wz::engine::assets::SceneNodeAsset>
+        request_grafted_scene_nodes();
+
+        // Engine thread: if a grafted-nodes request is pending, run `provider`
+        // (which copies the live grafted nodes) and publish the result. Called
+        // once per frame from run_project_runtime, alongside the other services.
+        void service_pending_grafted_scene_nodes(
+            const std::function<
+                std::vector<wz::engine::assets::SceneNodeAsset>()>& provider);
+
         // Engine thread: mark the runtime done so a blocked bind fails instead
         // of hanging. Called after run_project_runtime returns (incl. the init-
         // failure path where the loop never ran).
@@ -394,6 +411,14 @@ namespace wz::app
         wz::scene::AuthoredEntityId pending_add_behavior_node_;
         std::string pending_add_behavior_module_;
         wz::engine::assets::SceneAddBehaviorResult add_behavior_result_;
+
+        // Blocking grafted-scene-nodes request/response (issue #213, mirrors the
+        // add-child handshake but with no request payload — the engine just
+        // copies its grafted nodes): the owner sets the request flag and blocks
+        // for the copied node list.
+        bool has_grafted_request_ = false;
+        bool has_grafted_result_ = false;
+        std::vector<wz::engine::assets::SceneNodeAsset> grafted_result_;
     };
 
     struct EditorRuntimeLogSink

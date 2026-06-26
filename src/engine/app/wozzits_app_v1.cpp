@@ -1461,6 +1461,25 @@ namespace wz::app
         return &*node->glb_scene_source;
     }
 
+    std::vector<wz::engine::assets::SceneNodeAsset>
+    WozzitsApp_v1::grafted_scene_nodes() const
+    {
+        if (grafted_node_ids_.empty()) {
+            return {};
+        }
+
+        const std::unordered_set<std::string> grafted(
+            grafted_node_ids_.begin(), grafted_node_ids_.end());
+        std::vector<wz::engine::assets::SceneNodeAsset> out;
+        out.reserve(grafted.size());
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (grafted.count(node.id) != 0) {
+                out.push_back(node);  // copy: the seam hands a snapshot back
+            }
+        }
+        return out;
+    }
+
     bool WozzitsApp_v1::save_scene()
     {
         if (!scene_dirty_) {

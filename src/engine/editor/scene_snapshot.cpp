@@ -447,6 +447,92 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Map a live SceneNodeAsset's local AuthoredTransform (issue #213) into a
+        // SceneSnapshotTransform, REUSING the same euler/display helpers the
+        // file-path reader uses so the two routes format identically.
+        SceneSnapshotTransform transform_from_authored(
+            const wz::engine::assets::AuthoredTransform& local)
+        {
+            std::vector<double> translation{
+                local.translation[0],
+                local.translation[1],
+                local.translation[2],
+            };
+            std::vector<double> rotation_quat{
+                local.rotation_quat[0],
+                local.rotation_quat[1],
+                local.rotation_quat[2],
+                local.rotation_quat[3],
+            };
+            std::vector<double> scale{
+                local.scale[0],
+                local.scale[1],
+                local.scale[2],
+            };
+            std::vector<double> rotation_euler_degrees =
+                rotation_euler_degrees_from_quat(rotation_quat);
+            return SceneSnapshotTransform{
+                .translation = translation,
+                .rotation_quat = rotation_quat,
+                .rotation_euler_degrees = rotation_euler_degrees,
+                .scale = scale,
+                .display = transform_display(
+                    translation,
+                    rotation_euler_degrees,
+                    scale),
+            };
+        }
+
+        // Build a flat snapshot node from a live SceneNodeAsset (issue #213): the
+        // lean projection of a runtime-grafted node — id/name/parent/visible/local
+        // transform + renderable presence. Grafted nodes are not authored/editable
+        // here, so camera/components/behaviors/scene_source are intentionally not
+        // surfaced.
+        FlatSceneSnapshotNode flat_node_from_asset(
+            const wz::engine::assets::SceneNodeAsset& source)
+        {
+            SceneSnapshotNode node;
+            node.id = source.id;
+            node.display_name = source.name.empty() ? source.id : source.name;
+            if (source.parent_id && !source.parent_id->empty()) {
+                node.parent_id = *source.parent_id;
+            }
+            node.visible = source.visible;
+            node.transform = transform_from_authored(source.local);
+
+            // Surface renderable presence so the row reads as a renderable (a
+            // grafted GLB child resolves a mesh-styled renderable that carries no
+            // asset-graph node id, so leave asset_graph_node_id unset).
+            const bool has_renderable =
+                source.renderable_asset_node_id.has_value()
+                || source.renderable_asset.has_value()
+                || source.renderable.has_value();
+            if (has_renderable) {
+                SceneSnapshotRenderable renderable;
+                renderable.asset_graph_node_id =
+                    source.renderable_asset_node_id;
+                renderable.source = renderable.asset_graph_node_id
+                    ? SceneSnapshotRenderableSource{
+                        .kind = "asset-graph-node",
+                        .display_name = "asset-node",
+                    }
+                    : SceneSnapshotRenderableSource{
+                        .kind = "scene-source",
+                        .display_name = "instanced",
+                    };
+                node.renderable = renderable;
+            }
+
+            node.kind = node_kind(node);
+            node.renderable_source = node.renderable
+                ? node.renderable->source
+                : SceneSnapshotRenderableSource{
+                    .kind = "none",
+                    .display_name = "none",
+                };
+            return FlatSceneSnapshotNode{ .node = std::move(node) };
+        }
+
         std::optional<FlatSceneSnapshotNode> read_node(
             const wz::json::JSONValue& value,
             std::string& error)
@@ -674,5 +760,51 @@ namespace wz::engine::editor
         result.snapshot = std::move(*snapshot);
         result.ok = true;
         return result;
+    }
+
+    SceneSnapshot build_scene_snapshot_from_nodes(
+        const std::vector<wz::engine::assets::SceneNodeAsset>& nodes)
+    {
+        SceneSnapshot snapshot;
+        snapshot.schema = "wozzits.scene.v0";
+
+        std::vector<FlatSceneSnapshotNode> entries;
+        entries.reserve(nodes.size());
+        std::unordered_map<std::string, size_t> entries_by_id;
+        for (const wz::engine::assets::SceneNodeAsset& node : nodes) {
+            if (node.id.empty()) {
+                continue;  // no stable id to address the node by
+            }
+            if (!entries_by_id.emplace(node.id, entries.size()).second) {
+                continue;  // ignore a duplicate id (keep the first)
+            }
+            entries.push_back(flat_node_from_asset(node));
+        }
+
+        // Parent/child assembly mirrors build_snapshot: a node whose parent is
+        // present in the set nests; a node whose parent is NOT in the set is a
+        // root but KEEPS its parent_id, which is how the editor finds the host to
+        // graft this sub-tree under. (Unlike build_snapshot we never fall back to
+        // "everything is a root" — an empty input simply yields no roots.)
+        std::unordered_map<std::string, std::vector<size_t>> children_by_parent;
+        std::vector<size_t> roots;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const auto& parent = entries[i].node.parent_id;
+            if (parent && entries_by_id.contains(*parent)) {
+                children_by_parent[*parent].push_back(i);
+            }
+            else {
+                roots.push_back(i);
+            }
+        }
+
+        snapshot.roots.reserve(roots.size());
+        std::unordered_set<std::string> ancestors;
+        for (const size_t root_index : roots) {
+            snapshot.roots.push_back(
+                build_node(entries, children_by_parent, root_index, ancestors));
+        }
+
+        return snapshot;
     }
 }
