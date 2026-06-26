@@ -180,7 +180,7 @@
     },
     {
       "node_id": 8,
-      "key": "asset-key:b253576d0f67c222:9e3779b97f4a7c15:f11eca55e7000707:0000000000000000:9e3779b97f4b8704:0000000000000000:03a0a348ada319a3:650712333150163a",
+      "key": "asset-key:b253576d0f67c222:9e3779b97f4a7c15:f11eca55e7000707:0000000000000000:9e3779b97f4b8704:0000000000000000:5037325f582d5d8e:640be92f83871c94",
       "type": 1048,
       "schema": "0xf11eca55e7000707",
       "stage": 0,
@@ -200,7 +200,7 @@
     },
     {
       "node_id": 9,
-      "key": "asset-key:ad8386d6949ea377:c8ca2f6a24cd846a:f11eca55e7000412:0000000000000000:9e3779b97f4b00c5:0000000000000000:4b00a8f5e95dd8b7:ebf0b2c6b3a116f6",
+      "key": "asset-key:ad8386d6949ea377:c8ca2f6a24cd846a:f11eca55e7000412:0000000000000000:9e3779b97f4b00c5:0000000000000000:53198cbf4d109726:b6cec782206a7ac7",
       "type": 537,
       "schema": "0xf11eca55e7000412",
       "stage": 0,
@@ -209,7 +209,7 @@
       "demand_root": 0,
       "deps": [
         {
-          "from_node_id": 6,
+          "from_node_id": 1,
           "to_input_port": 0
         }
       ],
@@ -656,153 +656,9 @@
     },
     {
       "node_id": 21,
-      "type": 131,
-      "schema": "0xf11eca55e7000501",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 13,
-          "to_input_port": 0
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "emit_threshold",
-            "type": "float",
-            "value": 0
-          },
-          {
-            "name": "height_scale",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "normalize_values",
-            "type": "bool",
-            "value": false
-          },
-          {
-            "name": "opacity",
-            "type": "float",
-            "value": 0.90000000000000002
-          },
-          {
-            "name": "splat_scale",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "step_x",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "step_z",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "subsample_step",
-            "type": "int",
-            "value": 16
-          },
-          {
-            "name": "use_threshold",
-            "type": "bool",
-            "value": true
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 22,
-      "key": "asset-key:9740d4280605f430:37fa3c8506e78f68:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
-      "type": 7,
-      "schema": "0xf11eca55e7000002",
-      "stage": 0,
-      "residency": 2,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "source_path",
-            "type": "string",
-            "value": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\shaders\\gaussian_splat\\gaussian_splat_field_cloud_vs.hlsl"
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 23,
-      "key": "asset-key:7bc09118e7351555:d57a3b37bb3e192d:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
-      "type": 7,
-      "schema": "0xf11eca55e7000002",
-      "stage": 0,
-      "residency": 2,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "source_path",
-            "type": "string",
-            "value": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\shaders\\gaussian_splat\\gaussian_splat_sphere_ps.hlsl"
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 24,
-      "key": "asset-key:e94154689eb5d88c:50b269856e66d290:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:d5d0c2c962e8883d:2ebb49e11d89310c",
-      "type": 4,
-      "schema": "0xf11eca55e7000100",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 22,
-          "to_input_port": 0
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "entry",
-            "type": "string",
-            "value": "main"
-          },
-          {
-            "name": "primary_source_index",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "stage",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "target",
-            "type": "string",
-            "value": "vs_5_1"
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 25,
-      "key": "asset-key:128bc31f02104228:06cea8b09d7316b5:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:05c356acf147f491:a95f1264814fe400",
-      "type": 4,
-      "schema": "0xf11eca55e7000100",
+      "key": "asset-key:e22f528ca66f7b60:3c6ef372fe94f869:f11eca55e7000711:0000000000000000:9e3779b97f4c7657:0000000000000000:b8f3ade9bf9813f1:5ba6abea1bff8ccc",
+      "type": 2049,
+      "schema": "0xf11eca55e7000711",
       "stage": 0,
       "residency": 1,
       "kind": 0,
@@ -816,96 +672,7 @@
       "meta": {
         "params": [
           {
-            "name": "entry",
-            "type": "string",
-            "value": "main"
-          },
-          {
-            "name": "primary_source_index",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "stage",
-            "type": "int",
-            "value": 1
-          },
-          {
-            "name": "target",
-            "type": "string",
-            "value": "ps_5_1"
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 26,
-      "key": "asset-key:9384cd1d234456b0:fac3740cc98159c2:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:c8bd00fe7f9011c6:64e635acce4e467a",
-      "type": 1049,
-      "schema": "0xf11eca55e7000103",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 24,
-          "to_input_port": 0
-        },
-        {
-          "from_node_id": 25,
-          "to_input_port": 1
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "binding_layout",
-            "type": "int",
-            "value": 3
-          },
-          {
-            "name": "binding_model",
-            "type": "int",
-            "value": 2
-          },
-          {
-            "name": "blend_mode",
-            "type": "int",
-            "value": 1
-          },
-          {
-            "name": "default_domain",
-            "type": "int",
-            "value": 4
-          },
-          {
-            "name": "default_policy_flags",
-            "type": "int",
-            "value": 4
-          },
-          {
-            "name": "depth_mode",
-            "type": "int",
-            "value": 2
-          },
-          {
-            "name": "input_layout",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "name",
-            "type": "string",
-            "value": "field_splat_program"
-          },
-          {
-            "name": "raster_mode",
-            "type": "int",
-            "value": 1
-          },
-          {
-            "name": "topology",
+            "name": "scene_index",
             "type": "int",
             "value": 0
           }
@@ -913,30 +680,21 @@
       }
     },
     {
-      "node_id": 27,
-      "key": "asset-key:2e0b8dcd0a6cce9c:7c288d0c982e9203:f11eca55e7000709:0000000000000000:9e3779b97f4b8704:0000000000000000:805567aeac18f3c7:f164c604ca0ecbec",
-      "type": 1048,
-      "schema": "0xf11eca55e7000709",
+      "node_id": 23,
+      "key": "asset-key:87fc86af34a9d207:17a23bd101ca2087:f11eca55e7000004:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
+      "type": 66,
+      "schema": "0xf11eca55e7000004",
       "stage": 0,
-      "residency": 1,
+      "residency": 2,
       "kind": 0,
       "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 21,
-          "to_input_port": 0
-        },
-        {
-          "from_node_id": 26,
-          "to_input_port": 1
-        }
-      ],
+      "deps": [],
       "meta": {
         "params": [
           {
-            "name": "splat_size",
-            "type": "float",
-            "value": 0.10000000000000001
+            "name": "source_path",
+            "type": "string",
+            "value": "\"C:\\Users\\david\\OneDrive\\Documents\\tank1.glb\""
           }
         ]
       }
@@ -1003,57 +761,57 @@
       {
         "node_id": 12,
         "x": 0,
-        "y": 1211.9881481287696
+        "y": 803.33149001637798
       },
       {
         "node_id": 13,
         "x": 326.98268852305512,
-        "y": 1210.0982206087158
+        "y": 801.4415624963242
       },
       {
         "node_id": 14,
-        "x": 661.69706792726492,
-        "y": 1437.2861543103816
+        "x": 627.76925845746632,
+        "y": 718.65269149664664
       },
       {
         "node_id": 15,
         "x": 2.0809825067057091,
-        "y": 1561.6289732610651
+        "y": 957.11632411847188
       },
       {
         "node_id": 17,
         "x": 272.20988764089498,
-        "y": 1564.5191634544456
+        "y": 960.00651431185213
       },
       {
         "node_id": 20,
-        "x": 1148.9171017985607,
-        "y": 1426.255300014752
+        "x": 925.30199392943257,
+        "y": 806.3209192949771
       },
       {
         "node_id": 19,
         "x": 585.30256132498926,
-        "y": 1614.9457186489722
+        "y": 1010.4330695063763
       },
       {
         "node_id": 18,
         "x": 262.32329680012958,
-        "y": 1704.390096785045
+        "y": 1099.8774476424433
       },
       {
         "node_id": 16,
         "x": 0,
-        "y": 1701.0848345989266
+        "y": 1096.5721854563249
       },
       {
         "node_id": 21,
-        "x": 668.88241276649001,
-        "y": 1166.5122113143532
+        "x": 274.0362353536093,
+        "y": 1266.8831282202236
       },
       {
         "node_id": 22,
         "x": 0,
-        "y": 855.97553843453795
+        "y": 1283.5606444222853
       },
       {
         "node_id": 25,
@@ -1077,10 +835,10 @@
       },
       {
         "node_id": 23,
-        "x": 0,
-        "y": 1027.5911683892625
+        "x": 1.91510009765625,
+        "y": 1268.00146484375
       }
     ],
-    "zoom": 0.86306780359827595
+    "zoom": 1.0443120423539141
   }
 }
