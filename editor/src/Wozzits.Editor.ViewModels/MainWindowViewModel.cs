@@ -1,7 +1,9 @@
 using System.Threading;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using Wozzits.Editor.Core.Behaviors;
 using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
@@ -16,6 +18,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly IDisposable? _editorLogSubscription;
     private readonly IWozzitsEngineEditorSession? _editorSession;
     private readonly Action<Action>? _dispatch;
+    private readonly string _projectDirectory;
+    private readonly BehaviorModuleBuilder _behaviorBuilder = new();
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -27,16 +31,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EngineProjectSnapshotResponse? projectSnapshot = null,
         IWozzitsEngineEditorSession? editorSession = null,
         EditorLogBuffer? editorLog = null,
-        Action<Action>? dispatch = null)
+        Action<Action>? dispatch = null,
+        string? projectDirectory = null)
     {
         _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
         _dispatch = dispatch;
+        _projectDirectory = projectDirectory ?? string.Empty;
         SaveAllCommand = new RelayCommand(SaveAll);
         RestartViewportCommand = new RelayCommand(RestartViewport, () => _editorSession is not null);
+        RebuildBehaviorsCommand = new AsyncRelayCommand(
+            RebuildBehaviorsAsync,
+            () => _editorSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
-        Inspector = new InspectorPaneViewModel(editorSession);
+        Inspector = new InspectorPaneViewModel(editorSession, AppendEditorLog);
         SceneTree = new SceneTreeEditorPaneViewModel(editorSession);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
@@ -64,6 +73,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRootDock EditorLayout { get; private set; } = null!;
     public IRelayCommand SaveAllCommand { get; }
     public IRelayCommand RestartViewportCommand { get; }
+    public IAsyncRelayCommand RebuildBehaviorsCommand { get; }
 
     public string EngineLogText => Console.LogText;
 
@@ -91,6 +101,49 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void RestartViewport()
     {
         _editorSession?.RestartRuntime();
+    }
+
+    // Recompile the project's behavior-module DLLs (cmake, streamed to the
+    // console) and, on success, hot-reload them into the running engine without
+    // restarting the viewport. Mirrors the imgui toolhost editor's Rebuild step.
+    // The command disables itself while running (AsyncRelayCommand default).
+    private async Task RebuildBehaviorsAsync()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+
+        AppendEditorLog("[editor] Rebuilding behavior modules...");
+
+        BehaviorBuildOutcome outcome;
+        try
+        {
+            outcome = await _behaviorBuilder.RebuildAsync(
+                _projectDirectory,
+                AppendEditorLog);
+        }
+        catch (Exception ex)
+        {
+            AppendEditorLog($"[editor] Behavior rebuild error: {ex.Message}");
+            return;
+        }
+
+        switch (outcome)
+        {
+            case BehaviorBuildOutcome.Failed:
+                AppendEditorLog(
+                    "[editor] Behavior rebuild failed; modules not reloaded.");
+                return;
+            case BehaviorBuildOutcome.Skipped:
+                // Nothing was built, so there is nothing to hot-reload.
+                return;
+        }
+
+        var reload = _editorSession.ReloadBehaviorModules();
+        AppendEditorLog(reload.Ok
+            ? "[editor] Behavior modules reloaded."
+            : $"[editor] Behavior reload skipped: {reload.Error}");
     }
 
     private void AppendEditorLog(string line)

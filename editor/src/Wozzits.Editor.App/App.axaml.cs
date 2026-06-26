@@ -97,7 +97,8 @@ public partial class App : Application
                         startRuntime: true,
                         logReceived: editorLog.AppendLine),
                     editorLog,
-                    dispatch: action => Dispatcher.UIThread.Post(action)));
+                    dispatch: action => Dispatcher.UIThread.Post(action),
+                    projectDirectory: projectDirectory.FullPath));
         }
 
         var project = new EngineProjectResponse

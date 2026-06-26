@@ -11,6 +11,7 @@ namespace Wozzits.Editor.ViewModels.EditorPanes;
 public sealed class InspectorPaneViewModel : ViewModelBase
 {
     private readonly IWozzitsEngineEditorSession? _editorSession;
+    private readonly Action<string>? _log;
     private string _emptyState = "No scene or asset graph node selected.";
     private string _header = string.Empty;
     private InspectorSelectionKind _selectionKind;
@@ -54,9 +55,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private SceneTreeNodeViewModel? _inspectedSceneNode;
 
     public InspectorPaneViewModel(
-        IWozzitsEngineEditorSession? editorSession = null)
+        IWozzitsEngineEditorSession? editorSession = null,
+        Action<string>? log = null)
     {
         _editorSession = editorSession;
+        _log = log;
         ApplyCameraCommand = new RelayCommand(
             ApplyCamera,
             () => HasSceneNodeSelection && HasCameraComponent);
@@ -74,6 +77,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
 
     public ObservableCollection<InspectorBehaviorViewModel> Behaviors { get; } = [];
+
+    // Registered behavior modules offered by the "+" add menu, refreshed from the
+    // running engine each time a scene node is inspected. Each option carries its
+    // own add command so the flyout binds without reaching out of the popup.
+    public ObservableCollection<InspectorBehaviorModuleOptionViewModel>
+        AvailableBehaviorModules { get; } = [];
 
     public ObservableCollection<InspectorAssetGraphPortViewModel> AssetGraphInputPorts { get; } = [];
 
@@ -237,6 +246,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public bool HasNoBehaviors => !HasBehaviors;
 
+    public bool HasAvailableBehaviorModules => AvailableBehaviorModules.Count > 0;
+
     public string ComponentsHeader
     {
         get => _componentsHeader;
@@ -355,6 +366,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         Components.Clear();
         Behaviors.Clear();
+        AvailableBehaviorModules.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
@@ -402,6 +414,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             _suppressLiveEdits = false;
         }
 
+        RefreshAvailableBehaviorModules();
         NotifyComponentStateChanged();
         NotifyAssetGraphPortStateChanged();
     }
@@ -410,6 +423,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         Components.Clear();
         Behaviors.Clear();
+        AvailableBehaviorModules.Clear();
         AssetGraphInputPorts.Clear();
         AssetGraphOutputPorts.Clear();
         AssetGraphDiagnostics.Clear();
@@ -734,16 +748,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RemoveBehavior);
     }
 
-    // Add a behavior binding for the typed module to the selected node, live on
-    // the running engine; on success mint a local row so reselection is stable.
+    // Add a behavior binding for the typed module to the selected node (the
+    // free-text fallback for a module not yet imported).
     private void AddBehavior()
+    {
+        AddBehaviorModule(NewBehaviorModule);
+    }
+
+    // Add a behavior binding for `moduleName` to the selected node, live on the
+    // running engine; on success mint a local row so reselection is stable. The
+    // shared core behind both the free-text Add and the "+"-from-modules menu.
+    private void AddBehaviorModule(string? moduleName)
     {
         if (!EnsureCanApply())
         {
             return;
         }
 
-        var module = NewBehaviorModule.Trim();
+        var module = (moduleName ?? string.Empty).Trim();
         if (string.IsNullOrEmpty(module))
         {
             LastEditError = "Enter a behavior module name to add.";
@@ -768,6 +790,41 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         Behaviors.Add(CreateBehaviorViewModel(added));
         NewBehaviorModule = string.Empty;
         NotifyComponentStateChanged();
+    }
+
+    // Re-query the engine's registered modules so the "+" add menu reflects the
+    // current set whenever it is opened. The engine loads modules asynchronously
+    // (the UI is live before load_scene finishes) and a behavior rebuild changes
+    // them, so the list captured at node-selection time can be stale or empty.
+    // The view calls this as the flyout opens.
+    public void RefreshBehaviorModuleCatalog()
+    {
+        if (HasSceneNodeSelection)
+        {
+            RefreshAvailableBehaviorModules();
+            _log?.Invoke(
+                $"[editor] behavior module picker: {AvailableBehaviorModules.Count} "
+                + "imported module(s)");
+        }
+    }
+
+    // Rebuild the "+"-menu options from the engine's registered modules. Each
+    // option closes over AddBehaviorModule so the MenuFlyout item binds to its
+    // own command (a flyout popup can't reach the inspector's DataContext).
+    private void RefreshAvailableBehaviorModules()
+    {
+        AvailableBehaviorModules.Clear();
+        if (_editorSession is not null)
+        {
+            foreach (var module in _editorSession.GetBehaviorModuleCatalog())
+            {
+                AvailableBehaviorModules.Add(
+                    new InspectorBehaviorModuleOptionViewModel(
+                        module,
+                        AddBehaviorModule));
+            }
+        }
+        OnPropertyChanged(nameof(HasAvailableBehaviorModules));
     }
 
     private void SetBehaviorEnabled(InspectorBehaviorViewModel behavior)
@@ -998,6 +1055,25 @@ public sealed class InspectorComponentViewModel
     public string Kind { get; }
 
     public IRelayCommand RemoveCommand { get; }
+}
+
+// One entry in the Behaviors "+" add menu: a registered module name plus the
+// command that binds it. The command lives on the item (not the inspector) so
+// the MenuFlyout — which renders in a popup outside the inspector's visual
+// tree — can bind to it directly.
+public sealed class InspectorBehaviorModuleOptionViewModel
+{
+    public InspectorBehaviorModuleOptionViewModel(
+        string module,
+        Action<string> add)
+    {
+        Module = module;
+        AddCommand = new RelayCommand(() => add(module));
+    }
+
+    public string Module { get; }
+
+    public IRelayCommand AddCommand { get; }
 }
 
 public sealed class InspectorBehaviorViewModel : ViewModelBase

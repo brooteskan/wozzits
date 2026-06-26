@@ -677,6 +677,92 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
+    public async Task RebuildBehaviorsSkipsReloadWhenNoBehaviorProject()
+    {
+        var projectDir = Path.Combine(
+            Path.GetTempPath(),
+            "wz-rebuild-vm-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(projectDir);
+        try
+        {
+            var session = new RecordingEditorSession();
+            var viewModel = new MainWindowViewModel(
+                ProjectSnapshot(),
+                editorSession: session,
+                projectDirectory: projectDir);
+
+            await viewModel.RebuildBehaviorsCommand.ExecuteAsync(null);
+
+            // The temp project has no behavior/CMakeLists.txt, so the build is
+            // skipped and the engine is never asked to reload (nothing was built).
+            Assert.Equal(0, session.ReloadBehaviorModulesCount);
+        }
+        finally
+        {
+            Directory.Delete(projectDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void InspectorOffersImportedBehaviorModulesAndAddsSelected()
+    {
+        var session = new RecordingEditorSession
+        {
+            BehaviorModuleCatalog = ["move_up_on_frame", "spin"],
+            NextAddedBehaviorId = "behavior.1",
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("root"))),
+            editorSession: session);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(root);
+
+        // The "+" add menu lists the engine's imported behavior modules.
+        Assert.Equal(
+            new[] { "move_up_on_frame", "spin" },
+            viewModel.Inspector.AvailableBehaviorModules.Select(o => o.Module));
+        Assert.True(viewModel.Inspector.HasAvailableBehaviorModules);
+
+        // Choosing one binds that module through the engine session and mints a
+        // local row so the selection stays stable.
+        var spin = viewModel.Inspector.AvailableBehaviorModules
+            .First(o => o.Module == "spin");
+        spin.AddCommand.Execute(null);
+
+        var added = Assert.Single(session.AddedBehaviors);
+        Assert.Equal("root", added.NodeId);
+        Assert.Equal("spin", added.Module);
+        Assert.Contains(viewModel.Inspector.Behaviors, b => b.Module == "spin");
+    }
+
+    [Fact]
+    public void RefreshBehaviorModuleCatalogPicksUpModulesLoadedAfterSelection()
+    {
+        // The engine loads behavior modules asynchronously, so a node can be
+        // selected before any are registered (or before a rebuild registers more).
+        var session = new RecordingEditorSession { BehaviorModuleCatalog = [] };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("root"))),
+            editorSession: session);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(root);
+        Assert.False(viewModel.Inspector.HasAvailableBehaviorModules);
+
+        // The engine finishes loading (or a rebuild registers modules); opening
+        // the "+" menu re-queries the catalog, so they now appear without needing
+        // to reselect the node.
+        session.BehaviorModuleCatalog = ["tank_controller"];
+        viewModel.Inspector.RefreshBehaviorModuleCatalog();
+
+        Assert.True(viewModel.Inspector.HasAvailableBehaviorModules);
+        Assert.Equal(
+            new[] { "tank_controller" },
+            viewModel.Inspector.AvailableBehaviorModules.Select(o => o.Module));
+    }
+
+    [Fact]
     public void SceneTreeAddChildInsertsMintedNodeUnderParent()
     {
         var session = new RecordingEditorSession { NextAddedChildId = "7" };
@@ -1271,6 +1357,21 @@ public sealed partial class ProjectOpeningTests
         {
             SaveSceneCount++;
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public int ReloadBehaviorModulesCount { get; private set; }
+
+        public EngineMutationResponse ReloadBehaviorModules()
+        {
+            ReloadBehaviorModulesCount++;
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public IReadOnlyList<string> BehaviorModuleCatalog { get; set; } = [];
+
+        public IReadOnlyList<string> GetBehaviorModuleCatalog()
+        {
+            return BehaviorModuleCatalog;
         }
 
         public EngineMutationResponse SetSceneNodeCamera(

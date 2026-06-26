@@ -239,6 +239,28 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SaveScene(runtime.Handle);
     }
 
+    public EngineMutationResponse ReloadBehaviorModules()
+    {
+        // Unlike the coalesced live edits, reloading is an explicit user action
+        // that is meaningless without a live engine, so surface that rather than
+        // silently succeeding.
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return WozzitsEngineNativeClient.InvalidMutation(
+                "Engine viewport is not running; cannot reload behavior modules.");
+        }
+        return _client.ReloadBehaviorModules(runtime.Handle);
+    }
+
+    public IReadOnlyList<string> GetBehaviorModuleCatalog()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return [];
+        }
+        return _client.GetBehaviorModuleCatalog(runtime.Handle);
+    }
+
     public EngineAddSceneNodeResponse AddChildNode(string parentId)
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

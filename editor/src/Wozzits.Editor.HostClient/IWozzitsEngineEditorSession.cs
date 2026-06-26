@@ -80,6 +80,20 @@ public interface IWozzitsEngineEditorSession
     // running). Also happens automatically when the runtime exits.
     EngineMutationResponse SaveScene();
 
+    // Reload the project's (freshly recompiled) behavior-module DLLs into the
+    // running engine without restarting it: the engine clears its behavior
+    // registry, re-registers built-ins, reloads the project DLLs, and rebuilds
+    // the behavior scene on its next frame. Errors when no viewport is running
+    // (there is nothing to reload into). Compiling the DLLs is a separate
+    // editor-side step (BehaviorModuleBuilder); this only reloads them.
+    EngineMutationResponse ReloadBehaviorModules();
+
+    // Names of the behavior modules currently registered in the running engine
+    // (built-ins + loaded project DLLs) — the set a node behavior binding may
+    // reference. Empty when no viewport is running. Used to offer "add a
+    // behavior" from the imported modules.
+    IReadOnlyList<string> GetBehaviorModuleCatalog();
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);

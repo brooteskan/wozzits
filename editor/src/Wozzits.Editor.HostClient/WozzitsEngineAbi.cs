@@ -288,6 +288,19 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_host_runtime_reload_behavior_modules")]
+    internal static partial WzResult WzEditorRuntimeReloadBehaviorModules(
+        IntPtr runtime);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_behavior_module_catalog")]
+    internal static partial WzResult WzEditorRuntimeBehaviorModuleCatalog(
+        IntPtr runtime,
+        out WzBuffer outModules);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_host_runtime_add_child_node",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeAddChildNode(

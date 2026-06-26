@@ -27,6 +27,8 @@
             <MenuItem Header="_Run">
                 <MenuItem Header="Restart _Viewport"
                           Command="{Binding RestartViewportCommand}"/>
+                <MenuItem Header="Rebuild Behavior _Modules"
+                          Command="{Binding RebuildBehaviorsCommand}"/>
             </MenuItem>
             <MenuItem Header="_Window"/>
         </Menu>

@@ -948,6 +948,74 @@ public sealed partial class WozzitsEngineNativeClient
             () => WozzitsEngineAbi.WzEditorRuntimeSaveScene(runtime));
     }
 
+    internal EngineMutationResponse ReloadBehaviorModules(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine viewport is not running.");
+        }
+
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeReloadBehaviorModules(runtime));
+    }
+
+    internal IReadOnlyList<string> GetBehaviorModuleCatalog(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorRuntimeBehaviorModuleCatalog(
+                runtime,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return [];
+            }
+
+            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            return string.IsNullOrEmpty(text)
+                ? []
+                : text.Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries
+                        | StringSplitOptions.TrimEntries);
+        }
+        catch (DllNotFoundException)
+        {
+            return [];
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return [];
+        }
+        catch (BadImageFormatException)
+        {
+            return [];
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeTransform(
         IntPtr runtime,
         string nodeId,

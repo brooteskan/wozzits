@@ -128,6 +128,26 @@
         <Setter Property="Padding" Value="12"/>
     </Style>
 
+    <!-- The inspector forgoes the single PaneSurface frame: each section gets its
+         own InspectorSectionCard instead. This flat surface only carries the
+         background so the cards read against it. -->
+    <Style Selector="Border.InspectorPaneSurface">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Padding" Value="2"/>
+    </Style>
+
+    <!-- Rounded rect around each inspector division (Scene Node, Transform,
+         Renderable Asset, Components, Behaviors, ...). -->
+    <Style Selector="Border.InspectorSectionCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
     <Style Selector="TextBlock.PaneEmptyState">
         <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
         <Setter Property="FontSize" Value="13"/>
