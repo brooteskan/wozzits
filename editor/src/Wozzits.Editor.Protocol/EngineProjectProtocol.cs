@@ -410,6 +410,38 @@ public sealed record EngineSceneNodeSceneSource
     public bool HasBaseStyle { get; init; }
 }
 
+// On-demand import of a GLB scene's component hierarchy (issue #213 Phase 3b-1):
+// the flat node list backing a node's glb_scene_source descriptor, decoded from
+// wz_import_glb_scene_hierarchy. Ok is false (with Error set) when the GLB could
+// not be read/imported. The inspector links the tree via Component.ParentId.
+public sealed record EngineGlbSceneHierarchy
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public string SceneName { get; init; } = string.Empty;
+
+    public uint SceneIndex { get; init; }
+
+    public List<EngineGlbComponent> Components { get; init; } = [];
+}
+
+public sealed record EngineGlbComponent
+{
+    public string Id { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public string? ParentId { get; init; }
+
+    public bool HasMesh { get; init; }
+
+    public uint MeshIndex { get; init; }
+
+    public uint NodeIndex { get; init; }
+}
+
 public sealed record EngineSceneComponent
 {
     public string Kind { get; init; } = string.Empty;

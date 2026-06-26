@@ -754,6 +754,107 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.Inspector.HasSceneSource);
     }
 
+    // Selecting a node with a GLB scene-source descriptor fetches the GLB's
+    // component hierarchy and builds the read-only tree under the path (issue #213
+    // Phase 3b-1): the import is called with the descriptor path resolved against
+    // the project dir, and the flat component list is linked into a tree by parent
+    // id with the mesh marker preserved.
+    [Fact]
+    public void InspectorBuildsGlbSceneSourceComponentTree()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                SceneName = "Scene",
+                SceneIndex = 0u,
+                Components =
+                [
+                    new EngineGlbComponent
+                    {
+                        Id = "body",
+                        Name = "body",
+                        HasMesh = true,
+                        MeshIndex = 2u,
+                        NodeIndex = 2u,
+                    },
+                    new EngineGlbComponent
+                    {
+                        Id = "turret",
+                        Name = "turret",
+                        ParentId = "body",
+                        HasMesh = true,
+                        MeshIndex = 1u,
+                        NodeIndex = 1u,
+                    },
+                    new EngineGlbComponent
+                    {
+                        Id = "gun",
+                        Name = "gun",
+                        ParentId = "turret",
+                        HasMesh = true,
+                        MeshIndex = 0u,
+                        NodeIndex = 0u,
+                    },
+                ],
+            },
+        };
+        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-tree-vm");
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    new EngineSceneNode
+                    {
+                        Id = "tank",
+                        DisplayName = "tank",
+                        Kind = "node",
+                        Visible = true,
+                        SceneSource = new EngineSceneNodeSceneSource
+                        {
+                            Kind = "glb",
+                            Path = "gltf/tank1.glb",
+                            ConsumeMode = "instance",
+                            SceneIndex = 0u,
+                        },
+                    })),
+            editorSession: editorSession,
+            projectDirectory: projectDir);
+
+        var tank = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(tank);
+
+        // The descriptor path was resolved against the project dir for the import.
+        var import = Assert.Single(editorSession.GlbHierarchyImports);
+        Assert.Equal(
+            Path.Combine(projectDir, "gltf/tank1.glb"),
+            import.Path);
+        Assert.Equal(0u, import.SceneIndex);
+
+        // body -> turret -> gun, linked by parent id; meshes marked.
+        Assert.True(viewModel.Inspector.HasSceneSourceComponents);
+        Assert.False(viewModel.Inspector.HasSceneSourceHierarchyError);
+        var body = Assert.Single(viewModel.Inspector.SceneSourceComponents);
+        Assert.Equal("body", body.Name);
+        Assert.True(body.HasMesh);
+        Assert.Equal("mesh", body.MeshBadge);
+        var turret = Assert.Single(body.Children);
+        Assert.Equal("turret", turret.Name);
+        var gun = Assert.Single(turret.Children);
+        Assert.Equal("gun", gun.Name);
+
+        // A failed import leaves the tree empty and shows a small error line.
+        editorSession.GlbHierarchy = new EngineGlbSceneHierarchy
+        {
+            Ok = false,
+            Error = "failed to read GLB file",
+        };
+        viewModel.SceneTree.ClearSelection();
+        viewModel.SceneTree.SelectNode(tank);
+        Assert.False(viewModel.Inspector.HasSceneSourceComponents);
+        Assert.True(viewModel.Inspector.HasSceneSourceHierarchyError);
+    }
+
     // Smoke: the GLB scene-source host verb is reachable through the live v23 DLL
     // (issue #213 Phase 3a). With no viewport runtime the native session reports a
     // no-op success — this proves the P/Invoke + session/client wiring round-trips
@@ -819,6 +920,57 @@ public sealed partial class ProjectOpeningTests
                 // Best-effort cleanup of the temp project.
             }
         }
+    }
+
+    // The read-only GLB hierarchy import (issue #213 Phase 3b-1) round-trips
+    // through the live v24 DLL: it imports tank1.glb (staged next to the engine
+    // DLL) and decodes the model. Also exercises a bad path -> Ok=false. The
+    // layout self-check (now v24) runs on first P/Invoke. Skips if the DLL or the
+    // staged GLB isn't built.
+    [Fact]
+    public void NativeEngineClientImportsGlbSceneHierarchyWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        // Resources are staged next to the engine DLL under
+        // build/<preset>/resources/gltf/tank1.glb.
+        var glbPath = Path.Combine(
+            Path.GetDirectoryName(abiPath) ?? string.Empty,
+            "resources",
+            "gltf",
+            "tank1.glb");
+
+        if (!File.Exists(abiPath) || !File.Exists(glbPath))
+        {
+            return;
+        }
+
+        var client = new WozzitsEngineNativeClient();
+
+        var hierarchy = client.ImportGlbSceneHierarchy(glbPath, sceneIndex: 0u);
+        Assert.True(hierarchy.Ok, hierarchy.Error);
+        Assert.Equal("Scene", hierarchy.SceneName);
+        Assert.Equal(0u, hierarchy.SceneIndex);
+
+        // tank1.glb scene 0 is a single chain body -> turret -> gun, all meshes.
+        Assert.Equal(3, hierarchy.Components.Count);
+        var body = Assert.Single(hierarchy.Components, c => c.Id == "body");
+        Assert.Null(body.ParentId);
+        Assert.True(body.HasMesh);
+        var turret = Assert.Single(hierarchy.Components, c => c.Id == "turret");
+        Assert.Equal("body", turret.ParentId);
+        var gun = Assert.Single(hierarchy.Components, c => c.Id == "gun");
+        Assert.Equal("turret", gun.ParentId);
+
+        // A bad path returns a well-formed Ok=false model (never throws).
+        var missing = client.ImportGlbSceneHierarchy(
+            Path.Combine(
+                Path.GetDirectoryName(abiPath) ?? string.Empty,
+                "resources",
+                "gltf",
+                "does_not_exist.glb"),
+            sceneIndex: 0u);
+        Assert.False(missing.Ok);
+        Assert.False(string.IsNullOrWhiteSpace(missing.Error));
     }
 
     [Fact]
@@ -1441,6 +1593,19 @@ public sealed partial class ProjectOpeningTests
         {
             GlbSceneSources.Add((nodeId, glbPath, sceneIndex, consumeMode));
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string Path, uint SceneIndex)> GlbHierarchyImports { get; } = [];
+
+        public EngineGlbSceneHierarchy GlbHierarchy { get; set; } =
+            new() { Ok = true };
+
+        public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
+            string absoluteGlbPath,
+            uint sceneIndex)
+        {
+            GlbHierarchyImports.Add((absoluteGlbPath, sceneIndex));
+            return GlbHierarchy;
         }
 
         public List<AddNodeEdit> AddedNodes { get; } = [];

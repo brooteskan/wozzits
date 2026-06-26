@@ -47,6 +47,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.LoadAssetCatalog();
     }
 
+    public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
+        string absoluteGlbPath,
+        uint sceneIndex)
+    {
+        // Read-only GLB import is device-free and project-independent (it only
+        // reads + parses the file), so it does not need a live native session.
+        return _client.ImportGlbSceneHierarchy(absoluteGlbPath, sceneIndex);
+    }
+
     public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
         ulong fromNodeId,
         ulong toNodeId,

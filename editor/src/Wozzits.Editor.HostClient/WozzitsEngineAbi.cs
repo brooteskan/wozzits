@@ -7,7 +7,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 23;
+    internal const uint AbiVersion = 24;
 
     private static int _resolverRegistered;
 
@@ -52,6 +52,18 @@ internal static partial class WozzitsEngineAbi
         LibraryName,
         EntryPoint = "wz_host_asset_catalog")]
     internal static partial WzResult WzEditorAssetCatalog(out WzBuffer outCatalog);
+
+    // Device-free, read-only import of a GLB scene's component hierarchy (issue
+    // #213 Phase 3b-1). glbPathUtf8 is an ABSOLUTE path; the returned WzBuffer's
+    // byte 0 is a WzEditorGlbSceneHierarchyAbi (ok=0 + error on failure). Free the
+    // buffer with WzFreeBuffer.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_import_glb_scene_hierarchy",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzBuffer WzImportGlbSceneHierarchy(
+        string glbPathUtf8,
+        uint sceneIndex);
 
     [LibraryImport(
         LibraryName,
@@ -846,6 +858,52 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorAssetCatalogAbi>(
             nameof(WzEditorAssetCatalogAbi.Entries),
             8);
+
+        AssertSize<WzEditorGlbComponentAbi>(64);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.Id),
+            0);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.Name),
+            16);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.ParentId),
+            32);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.Flags),
+            48);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.MeshIndex),
+            52);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.NodeIndex),
+            56);
+        AssertOffset<WzEditorGlbComponentAbi>(
+            nameof(WzEditorGlbComponentAbi.Reserved),
+            60);
+
+        AssertSize<WzEditorGlbSceneHierarchyAbi>(64);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.AbiVersion),
+            0);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.Ok),
+            4);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.Error),
+            8);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.SceneName),
+            24);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.SceneIndex),
+            40);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.Reserved),
+            44);
+        AssertOffset<WzEditorGlbSceneHierarchyAbi>(
+            nameof(WzEditorGlbSceneHierarchyAbi.Components),
+            48);
     }
 
     private static void AssertSize<T>(int expected)
@@ -1136,6 +1194,36 @@ internal readonly struct WzEditorSceneBehaviorAbi
     public readonly uint Reserved;
     public readonly WzEditorTableSpanAbi Events;   // WzEditorStringSpanAbi[]
     public readonly WzEditorTableSpanAbi Config;   // WzEditorAssetGraphParamAbi[]
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorGlbComponentAbi
+{
+    public readonly WzEditorStringSpanAbi Id;
+    public readonly WzEditorStringSpanAbi Name;
+    public readonly WzEditorStringSpanAbi ParentId;   // valid iff HasParent
+    public readonly uint Flags;
+    public readonly uint MeshIndex;                    // valid iff HasMesh
+    public readonly uint NodeIndex;
+    public readonly uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorGlbSceneHierarchyAbi
+{
+    public readonly uint AbiVersion;
+    public readonly uint Ok;
+    public readonly WzEditorStringSpanAbi Error;
+    public readonly WzEditorStringSpanAbi SceneName;
+    public readonly uint SceneIndex;
+    public readonly uint Reserved;
+    public readonly WzEditorTableSpanAbi Components;   // WzEditorGlbComponentAbi[]
+}
+
+internal static class WzEditorGlbComponentFlags
+{
+    public const uint HasParent = 1u << 0;
+    public const uint HasMesh = 1u << 1;
 }
 
 internal static class WzEditorSceneNodeFlags

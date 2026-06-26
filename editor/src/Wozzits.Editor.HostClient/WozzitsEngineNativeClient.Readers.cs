@@ -74,6 +74,42 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineGlbSceneHierarchy ReadGlbSceneHierarchy(WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty GLB scene hierarchy buffer.");
+        var hierarchy = ReadStruct<WzEditorGlbSceneHierarchyAbi>(bytes, offset: 0);
+        ValidateAbiVersion(hierarchy.AbiVersion);
+
+        return new EngineGlbSceneHierarchy
+        {
+            Ok = hierarchy.Ok != 0,
+            Error = ReadString(bytes, hierarchy.Error),
+            SceneName = ReadString(bytes, hierarchy.SceneName),
+            SceneIndex = hierarchy.SceneIndex,
+            Components = ReadTable<WzEditorGlbComponentAbi, EngineGlbComponent>(
+                bytes,
+                hierarchy.Components,
+                ReadGlbComponent),
+        };
+    }
+
+    private static EngineGlbComponent ReadGlbComponent(
+        byte[] bytes,
+        WzEditorGlbComponentAbi component)
+    {
+        return new EngineGlbComponent
+        {
+            Id = ReadString(bytes, component.Id),
+            Name = ReadString(bytes, component.Name),
+            ParentId = HasFlag(component.Flags, WzEditorGlbComponentFlags.HasParent)
+                ? ReadString(bytes, component.ParentId)
+                : null,
+            HasMesh = HasFlag(component.Flags, WzEditorGlbComponentFlags.HasMesh),
+            MeshIndex = component.MeshIndex,
+            NodeIndex = component.NodeIndex,
+        };
+    }
+
     private static EngineAssetGraphSnapshotResponse ReadAssetGraphSnapshot(WzBuffer buffer)
     {
         var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset graph snapshot buffer.");

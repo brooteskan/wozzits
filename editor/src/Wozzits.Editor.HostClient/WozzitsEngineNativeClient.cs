@@ -281,6 +281,63 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
+        string absoluteGlbPath,
+        uint sceneIndex)
+    {
+        if (string.IsNullOrWhiteSpace(absoluteGlbPath))
+        {
+            return new EngineGlbSceneHierarchy
+            {
+                Ok = false,
+                Error = "GLB path is empty.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            buffer = WozzitsEngineAbi.WzImportGlbSceneHierarchy(
+                absoluteGlbPath,
+                sceneIndex);
+            if (buffer.Data == IntPtr.Zero)
+            {
+                return new EngineGlbSceneHierarchy
+                {
+                    Ok = false,
+                    Error = "Engine ABI returned an empty GLB scene hierarchy buffer.",
+                };
+            }
+
+            return ReadGlbSceneHierarchy(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineGlbSceneHierarchy { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineGlbSceneHierarchy { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineGlbSceneHierarchy { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineGlbSceneHierarchy { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
     {
         if (session == IntPtr.Zero)

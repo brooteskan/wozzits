@@ -220,6 +220,45 @@
                                                    Text="{Binding SceneSourceConsumeMode}"
                                                    Classes="InspectorPropertyValue"/>
                                     </Grid>
+
+                                    <!-- Read-only component hierarchy of the
+                                         imported GLB (issue #213 Phase 3b-1): the
+                                         nodes grafted under this one at runtime,
+                                         imported on demand. Linked into a tree from
+                                         the flat list via parent id. -->
+                                    <TextBlock Text="Components"
+                                               Classes="InspectorPropertyName"
+                                               IsVisible="{Binding HasSceneSourceComponents}"/>
+                                    <TreeView ItemsSource="{Binding SceneSourceComponents}"
+                                              IsVisible="{Binding HasSceneSourceComponents}"
+                                              IsHitTestVisible="False"
+                                              Focusable="False"
+                                              MaxHeight="220">
+                                        <TreeView.DataTemplates>
+                                            <TreeDataTemplate
+                                                DataType="panes:GlbComponentNodeViewModel"
+                                                ItemsSource="{Binding Children}">
+                                                <StackPanel Orientation="Horizontal"
+                                                            Spacing="8">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Classes="InspectorPropertyValue"/>
+                                                    <Border IsVisible="{Binding HasMesh}"
+                                                            Background="{DynamicResource WozzitsPanelInsetColor}"
+                                                            CornerRadius="3"
+                                                            Padding="4,0">
+                                                        <TextBlock Text="{Binding MeshBadge}"
+                                                                   Classes="InspectorPropertyName"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </TreeDataTemplate>
+                                        </TreeView.DataTemplates>
+                                    </TreeView>
+
+                                    <TextBlock Text="{Binding SceneSourceHierarchyError}"
+                                               IsVisible="{Binding HasSceneSourceHierarchyError}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyName"/>
+
                                     <Grid ColumnDefinitions="*,Auto"
                                           ColumnSpacing="6">
                                         <Button Content="Re-import GLB…"

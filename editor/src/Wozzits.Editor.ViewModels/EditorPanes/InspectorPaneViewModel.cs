@@ -30,6 +30,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private bool _hasSceneSource;
     private string _sceneSourcePath = string.Empty;
     private string _sceneSourceConsumeMode = string.Empty;
+    private uint _sceneSourceSceneIndex;
+    private string _sceneSourceHierarchyError = string.Empty;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -87,6 +89,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
 
     public ObservableCollection<InspectorBehaviorViewModel> Behaviors { get; } = [];
+
+    // Read-only tree of the GLB scene-source's component hierarchy (issue #213
+    // Phase 3b-1), imported on demand for the selected node's descriptor. The
+    // grafted children are runtime-only and not in the snapshot, so this is fetched
+    // separately and shown under the GLB path in the "Scene Source" card.
+    public ObservableCollection<GlbComponentNodeViewModel> SceneSourceComponents
+    { get; } = [];
 
     // Registered behavior modules offered by the "+" add menu, refreshed from the
     // running engine each time a scene node is inspected. Each option carries its
@@ -218,6 +227,26 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         get => _sceneSourceConsumeMode;
         private set => SetProperty(ref _sceneSourceConsumeMode, value);
     }
+
+    public bool HasSceneSourceComponents => SceneSourceComponents.Count > 0;
+
+    // Set only when the descriptor is present but its GLB could not be imported
+    // (missing file, parse failure). Shown as a tiny line under the path; an empty
+    // hierarchy with no error simply renders nothing.
+    public string SceneSourceHierarchyError
+    {
+        get => _sceneSourceHierarchyError;
+        private set
+        {
+            if (SetProperty(ref _sceneSourceHierarchyError, value))
+            {
+                OnPropertyChanged(nameof(HasSceneSourceHierarchyError));
+            }
+        }
+    }
+
+    public bool HasSceneSourceHierarchyError =>
+        !string.IsNullOrWhiteSpace(SceneSourceHierarchyError);
 
     public bool HasTransform
     {
@@ -1053,12 +1082,127 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // Read-only mirror of a node's GLB scene-source descriptor (Phase 2 snapshot)
     // into the "Scene Source" card. null => no descriptor (the card shows its
-    // "Import GLB…" state instead).
+    // "Import GLB…" state instead). When a descriptor is present, also refresh the
+    // read-only component-hierarchy tree (Phase 3b-1).
     private void SetSceneSourceFields(EngineSceneNodeSceneSource? sceneSource)
     {
         HasSceneSource = sceneSource is not null;
         SceneSourcePath = sceneSource?.Path ?? string.Empty;
         SceneSourceConsumeMode = sceneSource?.ConsumeMode ?? string.Empty;
+        _sceneSourceSceneIndex = sceneSource?.SceneIndex ?? 0u;
+        RefreshSceneSourceHierarchy();
+    }
+
+    // Import + (re)build the read-only GLB component-hierarchy tree for the current
+    // descriptor (issue #213 Phase 3b-1). Defensive by construction: no descriptor,
+    // an empty path, an unavailable session, or an ok=0/throwing import all just
+    // leave the tree empty (with a tiny error line only when the import reported a
+    // reason). Never throws — a missing GLB must not break inspecting the node.
+    private void RefreshSceneSourceHierarchy()
+    {
+        SceneSourceComponents.Clear();
+        SceneSourceHierarchyError = string.Empty;
+
+        if (!HasSceneSource
+            || string.IsNullOrWhiteSpace(SceneSourcePath)
+            || _editorSession is null)
+        {
+            OnPropertyChanged(nameof(HasSceneSourceComponents));
+            return;
+        }
+
+        var absolutePath = ResolveSceneSourceAbsolutePath(SceneSourcePath);
+
+        EngineGlbSceneHierarchy hierarchy;
+        try
+        {
+            hierarchy = _editorSession.ImportGlbSceneHierarchy(
+                absolutePath,
+                _sceneSourceSceneIndex);
+        }
+        catch (Exception ex)
+        {
+            // The session forwards to a read-only native import that already
+            // fails closed; this is belt-and-suspenders so the inspector is
+            // never taken down by a bad GLB.
+            SceneSourceHierarchyError = ex.Message;
+            OnPropertyChanged(nameof(HasSceneSourceComponents));
+            return;
+        }
+
+        if (!hierarchy.Ok)
+        {
+            SceneSourceHierarchyError = string.IsNullOrWhiteSpace(hierarchy.Error)
+                ? "Couldn't read GLB."
+                : $"Couldn't read GLB: {hierarchy.Error}";
+            OnPropertyChanged(nameof(HasSceneSourceComponents));
+            return;
+        }
+
+        foreach (var root in BuildGlbComponentTree(hierarchy.Components))
+        {
+            SceneSourceComponents.Add(root);
+        }
+        OnPropertyChanged(nameof(HasSceneSourceComponents));
+    }
+
+    // Assemble the flat component list into a tree via ParentId. Components whose
+    // parent is missing (or null) become roots; child order follows the engine's
+    // depth-first list order. Defends against a cycle/dangling parent by treating
+    // any not-yet-seen parent as absent (so every component is placed exactly once).
+    private static List<GlbComponentNodeViewModel> BuildGlbComponentTree(
+        IReadOnlyList<EngineGlbComponent> components)
+    {
+        var byId = new Dictionary<string, GlbComponentNodeViewModel>(
+            StringComparer.Ordinal);
+        var roots = new List<GlbComponentNodeViewModel>();
+
+        // First pass: create a node per component, keyed by id (first id wins on
+        // the unlikely event of a duplicate).
+        foreach (var component in components)
+        {
+            var node = new GlbComponentNodeViewModel(component);
+            if (!string.IsNullOrEmpty(component.Id))
+            {
+                byId.TryAdd(component.Id, node);
+            }
+        }
+
+        // Second pass: attach each node to its parent (or promote to a root).
+        foreach (var component in components)
+        {
+            var node = !string.IsNullOrEmpty(component.Id)
+                && byId.TryGetValue(component.Id, out var existing)
+                    ? existing
+                    : new GlbComponentNodeViewModel(component);
+
+            if (!string.IsNullOrEmpty(component.ParentId)
+                && byId.TryGetValue(component.ParentId, out var parent)
+                && !ReferenceEquals(parent, node))
+            {
+                parent.Children.Add(node);
+            }
+            else
+            {
+                roots.Add(node);
+            }
+        }
+
+        return roots;
+    }
+
+    // Resolve the resource-relative descriptor path against the project directory
+    // (the resource root the editor launches with). An already-absolute path (or an
+    // unknown project dir) is returned unchanged — the native import treats an
+    // absolute path as-is. Mirrors ToProjectRelativeResourcePath in reverse.
+    private string ResolveSceneSourceAbsolutePath(string descriptorPath)
+    {
+        if (System.IO.Path.IsPathRooted(descriptorPath)
+            || string.IsNullOrEmpty(_projectDirectory))
+        {
+            return descriptorPath;
+        }
+        return System.IO.Path.Combine(_projectDirectory, descriptorPath);
     }
 
     // Author a GLB scene-source descriptor on the selected node from an absolute
@@ -1095,6 +1239,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         HasSceneSource = true;
         SceneSourcePath = resourcePath;
         SceneSourceConsumeMode = "instance";
+        _sceneSourceSceneIndex = 0u;
 
         // Refresh the cached model so re-selecting the node reflects the import
         // (mirrors the live transform-edit fix), without a snapshot reload.
@@ -1108,6 +1253,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 SceneIndex = 0u,
             };
         }
+
+        // Surface the freshly imported GLB's component hierarchy right away
+        // (Phase 3b-1), matching what re-selecting the node would show.
+        RefreshSceneSourceHierarchy();
     }
 
     private void ClearSceneSource()
@@ -1201,6 +1350,38 @@ public sealed class InspectorComponentViewModel
     public string Kind { get; }
 
     public IRelayCommand RemoveCommand { get; }
+}
+
+// One node in the read-only GLB scene-source component tree (issue #213 Phase
+// 3b-1). Display-only: a name, a mesh marker when the component carries a mesh,
+// and its child components (assembled from the flat list via parent_id). No
+// selection/mutation — Phase 3b-2 owns styling.
+public sealed class GlbComponentNodeViewModel
+{
+    public GlbComponentNodeViewModel(EngineGlbComponent component)
+    {
+        Id = component.Id;
+        Name = string.IsNullOrEmpty(component.Name) ? component.Id : component.Name;
+        HasMesh = component.HasMesh;
+        MeshIndex = component.MeshIndex;
+        NodeIndex = component.NodeIndex;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public bool HasMesh { get; }
+
+    public uint MeshIndex { get; }
+
+    public uint NodeIndex { get; }
+
+    // A small badge next to mesh-bearing components (empty when the component has
+    // no mesh, so the marker is hidden).
+    public string MeshBadge => HasMesh ? "mesh" : string.Empty;
+
+    public ObservableCollection<GlbComponentNodeViewModel> Children { get; } = [];
 }
 
 // One entry in the Behaviors "+" add menu: a registered module name plus the
