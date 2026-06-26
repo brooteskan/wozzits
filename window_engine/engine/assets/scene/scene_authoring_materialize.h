@@ -50,4 +50,30 @@ namespace wz::engine::assets
         std::span<SceneNodeAsset> nodes,
         const wz::asset::AssetGraphDraft& draft);
 
+    // Re-point each scene node's authored scene-source graph-node id at the
+    // resolved Scene AssetKey for that node in `draft` — the scene-source analogue
+    // of bridge_scene_renderable_keys (issue #213). Run on every (re)bind so a
+    // graph swap's new keys follow the authored intent. Returns the number of
+    // host nodes bridged to a live Scene key.
+    uint32_t bridge_scene_source_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft);
+
+    // Expand a referenced Scene asset (`sub_scene`) into the host's child
+    // SceneNodeAssets (issue #213), shared by the runtime instance graft and the
+    // author-time flatten. For each sub-scene node it produces a host child:
+    //   - id     = "<host.id>/<sub_node.id>" (GLB-named, namespaced under host)
+    //   - parent = a sub-scene ROOT reparents to host.id; a non-root reparents to
+    //              "<host.id>/<sub_parent.id>" (sub-scene parenting preserved)
+    //   - local  = the sub-scene node's local transform, UNCHANGED — the renderer
+    //              composes world = host_world * local via the parent walk, so the
+    //              host transform sizes/places the whole sub-tree and each child's
+    //              local stays independently drivable by the behavior API
+    //   - renderable_asset / renderable_asset_node_id carried through
+    // Nodes whose id is empty are skipped (can't form a stable namespaced id).
+    // The returned vector does NOT include the host itself.
+    std::vector<SceneNodeAsset> expand_scene_source_children(
+        const SceneNodeAsset& host,
+        const SceneAssetData& sub_scene);
+
 } // namespace wz::engine::assets

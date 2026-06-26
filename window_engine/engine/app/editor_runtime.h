@@ -125,6 +125,30 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
     };
 
+    // A live edit to a node's PREFERRED asset-graph-backed Scene-source
+    // component (issue #213), posted from the owner thread (editor UI) to the
+    // engine thread. Carries the authored asset-graph node id of a "Scene from
+    // GLB" node to bind (0 = clear/remove). Non-blocking and NOT coalesced
+    // (appended in order), matching the renderable/component edits. The engine
+    // applies it via WozzitsApp_v1::set_node_scene_source, which re-grafts the
+    // referenced sub-scene's children under the host on its next frame.
+    struct SceneNodeSceneSourceEdit
+    {
+        // How the engine consumes the reference once set (mirrors the ABI's
+        // WZ_SCENE_SOURCE_* tokens): Instance grafts a live sub-tree; Flatten
+        // expands once into authored nodes and drops the reference. Ignored when
+        // clearing (asset_graph_node_id == 0).
+        enum class ConsumeMode : uint8_t
+        {
+            Instance = 0,
+            Flatten,
+        };
+
+        wz::scene::AuthoredEntityId node_id;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+        ConsumeMode consume_mode = ConsumeMode::Instance;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -223,6 +247,14 @@ namespace wz::app
         void service_pending_scene_node_renderables(
             const std::function<void(const SceneNodeRenderableEdit&)>& applier);
 
+        // Owner thread: queue a set/clear of a node's preferred Scene source
+        // (non-blocking; appended in order — NOT coalesced). Applied on the
+        // engine thread's next frame, like the renderable edits (issue #213).
+        void post_scene_node_scene_source(SceneNodeSceneSourceEdit edit);
+
+        void service_pending_scene_node_scene_sources(
+            const std::function<void(const SceneNodeSceneSourceEdit&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -287,6 +319,7 @@ namespace wz::app
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
+        std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

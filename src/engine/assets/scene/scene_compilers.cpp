@@ -41,6 +41,14 @@ namespace wz::engine::assets::internal
             SceneFromGLBCompileDesc desc{};
             desc.scene_index =
                 params.get<uint32_t>("scene_index", desc.scene_index);
+            // consume_mode: how a host node expands this Scene asset (#213).
+            // "flatten" => one-time expansion; anything else (incl. the default
+            // and "instance") keeps the live-instance default.
+            const std::string consume_mode =
+                params.get<std::string>("consume_mode", "instance");
+            desc.consume_mode = (consume_mode == "flatten")
+                ? SceneSourceConsumeMode::Flatten
+                : SceneSourceConsumeMode::Instance;
             return desc;
         }
 

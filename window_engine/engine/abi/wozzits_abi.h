@@ -817,6 +817,35 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_asset(
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
 
+// Author the PREFERRED asset-graph-backed Scene-source component on node
+// `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"
+// asset-graph node `asset_graph_node_id`, or CLEAR the scene source when the id
+// is 0. `consume_mode` selects how the referenced Scene is consumed:
+//   0 (WZ_SCENE_SOURCE_INSTANCE) — keep a live reference; the engine grafts the
+//       referenced sub-scene's GLB-named nodes as children of the host each
+//       (re)bind (the host transform sizes/places the whole sub-tree; each child
+//       is a real scene entity, individually drivable by the behavior API).
+//   1 (WZ_SCENE_SOURCE_FLATTEN)  — expand the referenced sub-scene's nodes into
+//       the host's tree ONCE as real, editable nodes and drop the live reference.
+// consume_mode is ignored when clearing (id == 0). DEFERRED (applied on the
+// engine thread's next frame) and NON-BLOCKING, like the renderable verb. Marks
+// the scene dirty. An unknown/missing node is a logged engine-thread no-op.
+//
+// NOTE: this is a NEW exported function (no ABI snapshot struct change). The
+// scene snapshot does not yet surface scene_source or the grafted children; that
+// (a struct change needing the C# mirror) is a separate editor slice.
+//
+// HOST-CAPABILITY GATE: a mutation verb gated behind the host role
+// (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller.
+#define WZ_SCENE_SOURCE_INSTANCE 0u
+#define WZ_SCENE_SOURCE_FLATTEN 1u
+WZ_ABI_API WzResult wz_host_runtime_set_node_scene_source(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t asset_graph_node_id,
+    uint32_t consume_mode);
+
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
 // node/binding id, or a non-host caller.

@@ -909,6 +909,19 @@ namespace wz::engine::assets
 
     // ─────────────────────────────────────────────────────────────────────
 
+    // How a node consumes a referenced Scene asset (issue #213):
+    //   Instance — keep a live reference; the runtime grafts the sub-scene as
+    //              children of the host at load (re-imports cleanly, small json).
+    //   Flatten  — a one-time expansion of the sub-scene into real, editable
+    //              host scene nodes (no live link kept).
+    // Rides on the SceneFromGLB asset node's params (param "consume_mode"); the
+    // host node only stores the reference (scene_source_node_id / scene_source).
+    enum class SceneSourceConsumeMode : uint8_t
+    {
+        Instance = 0,
+        Flatten,
+    };
+
     struct SceneNodeAsset
     {
         wz::scene::AuthoredEntityId id;
@@ -932,6 +945,17 @@ namespace wz::engine::assets
         std::optional<wz::asset::AssetGraphDraftNodeId>
             renderable_asset_node_id;
         std::optional<wz::asset::AssetKey> renderable_asset;
+
+        // Preferred authored Scene-source component (issue #213): the host node
+        // consumes the output of a "Scene from GLB" asset node as a sub-tree.
+        // scene_source_node_id points at the authored asset-graph node (the
+        // intent); scene_source is the current resolved Scene key (bridged on
+        // every (re)bind, mirroring renderable_asset). The runtime grafts the
+        // referenced scene's named nodes as children of this host (instance
+        // mode); flatten expands them in place once at author time.
+        std::optional<wz::asset::AssetGraphDraftNodeId> scene_source_node_id;
+        std::optional<wz::asset::AssetKey> scene_source;
+
         std::optional<SceneAssetReferenceAsset> asset_reference;
         std::optional<SceneCameraAsset> camera;
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
@@ -1029,6 +1053,13 @@ namespace wz::engine::assets
     {
         uint32_t scene_index = 0;
         std::vector<SceneGLBMeshRenderableBinding> mesh_renderables;
+
+        // How a host node consuming this Scene asset expands it (issue #213).
+        // Authored via the node's "consume_mode" param; default = Instance.
+        // Note: the compiler itself is mode-agnostic (it always produces the
+        // full Scene asset); this is carried so a consumer can read the authored
+        // intent. The runtime/editor decides graft-as-children vs flatten.
+        SceneSourceConsumeMode consume_mode = SceneSourceConsumeMode::Instance;
     };
 
     struct SceneAssetAuthoringRecipeSummary
@@ -1200,6 +1231,22 @@ namespace wz::engine::assets
     {
         node.renderable_asset_node_id.reset();
         node.renderable_asset.reset();
+    }
+
+    // Scene-source reference (issue #213) — mirrors the renderable helpers.
+    inline void attach_scene_source_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        wz::asset::AssetKey scene_source = {})
+    {
+        node.scene_source_node_id = node_id;
+        node.scene_source = scene_source;
+    }
+
+    inline void detach_scene_source(SceneNodeAsset& node)
+    {
+        node.scene_source_node_id.reset();
+        node.scene_source.reset();
     }
 
     inline void attach_asset_reference(
@@ -2088,6 +2135,34 @@ namespace wz::engine::assets
         }
         // Drop the cached resolved key so it re-resolves from the node id.
         node->renderable_asset.reset();
+        return true;
+    }
+
+    // Author the PREFERRED asset-graph-backed Scene-source component on node
+    // `node_id` (issue #213): point scene_source_node_id at the authored
+    // asset-graph node `asset_graph_node_id` (a "Scene from GLB" node), or clear
+    // it (reset to nullopt) when the id is 0. Either way the resolved
+    // scene_source key is reset to nullopt so it re-resolves from the (new or
+    // absent) node id. Mirrors set_node_renderable_asset: returns false if the
+    // node is missing (fail closed); clearing an already-empty slot returns true
+    // (the requested post-state is reached), keeping the verb idempotent.
+    inline bool set_node_scene_source(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            node->scene_source_node_id = asset_graph_node_id;
+        }
+        else {
+            node->scene_source_node_id.reset();
+        }
+        // Drop the cached resolved key so it re-resolves from the node id.
+        node->scene_source.reset();
         return true;
     }
 

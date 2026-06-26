@@ -5207,4 +5207,81 @@ namespace wz::engine::assets
         return bridged;
     }
 
+    uint32_t bridge_scene_source_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        uint32_t bridged = 0;
+        for (SceneNodeAsset& node : nodes) {
+            if (!node.scene_source_node_id) {
+                continue;
+            }
+            // Clear first (same reasoning as renderables): a removed/renamed
+            // authored scene source must stop resolving the previous key.
+            node.scene_source.reset();
+            const auto it =
+                draft.node_index.find(*node.scene_source_node_id);
+            if (it != draft.node_index.end()) {
+                node.scene_source = draft.nodes[it->second].node.key;
+                ++bridged;
+            }
+        }
+        return bridged;
+    }
+
+    std::vector<SceneNodeAsset> expand_scene_source_children(
+        const SceneNodeAsset& host,
+        const SceneAssetData& sub_scene)
+    {
+        std::vector<SceneNodeAsset> children;
+        children.reserve(sub_scene.nodes.size());
+
+        // The set of sub-scene ids present, so a node whose parent is missing
+        // from the sub-scene is treated as a root (reparents to the host) rather
+        // than dangling under a non-existent "<host>/<gone>".
+        std::unordered_map<std::string, bool> sub_ids;
+        sub_ids.reserve(sub_scene.nodes.size());
+        for (const SceneNodeAsset& n : sub_scene.nodes) {
+            if (!n.id.empty()) {
+                sub_ids.emplace(n.id, true);
+            }
+        }
+
+        const auto namespaced =
+            [&host](const std::string& sub_id) -> std::string {
+                return host.id + "/" + sub_id;
+            };
+
+        for (const SceneNodeAsset& src : sub_scene.nodes) {
+            if (src.id.empty()) {
+                continue;  // no stable namespaced id can be formed
+            }
+
+            SceneNodeAsset child = src;  // carry name/local/renderable/etc.
+            child.id = namespaced(src.id);
+
+            const bool is_root =
+                !src.parent_id.has_value()
+                || src.parent_id->empty()
+                || sub_ids.find(*src.parent_id) == sub_ids.end();
+            if (is_root) {
+                // Sub-scene roots reparent to the host so the host transform
+                // composes onto the whole sub-tree.
+                child.parent_id = host.id;
+            }
+            else {
+                child.parent_id = namespaced(*src.parent_id);
+            }
+
+            // A grafted child is a fresh node in the host namespace; it must not
+            // also carry its own scene-source reference (it is the expansion).
+            child.scene_source_node_id.reset();
+            child.scene_source.reset();
+
+            children.push_back(std::move(child));
+        }
+
+        return children;
+    }
+
 } // namespace wz::engine::assets

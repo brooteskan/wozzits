@@ -681,3 +681,57 @@ TEST_F(WozzitsAppBehaviorFixture, BehaviorRemoveComponentRemovesAtFrameBoundary)
         << "the behavior's deferred remove_node_component did not remove the "
            "component";
 }
+
+// ─── Scene-source verbs (issue #213): the WozzitsApp_v1 apply layer ──────────
+// These exercise WozzitsApp_v1's scene-source authoring methods on-device — the
+// apply behind the host-ABI verb wz_host_runtime_set_node_scene_source +
+// flatten. The algorithmic graft/expand/flatten logic is covered device-free in
+// asset_scene/scene_source_expansion_tests; here we assert the app-level verbs'
+// observable state + guard (fail-closed) behavior on a real app, and that
+// authoring a scene source does not disturb the running behavior runtime.
+
+TEST_F(WozzitsAppBehaviorFixture, SceneSourceVerbsGuardAndStateOnApp)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // Guard: setting/flattening a scene source on a missing node fails closed.
+    EXPECT_FALSE(app.set_node_scene_source("does_not_exist", 7u));
+    EXPECT_FALSE(app.flatten_scene_source("does_not_exist"));
+
+    // A real node with no authored scene source: the accessor reports none, and
+    // flatten is a fail-closed no-op (nothing to expand).
+    EXPECT_FALSE(app.node_scene_source_node_id("blank").has_value());
+    EXPECT_FALSE(app.flatten_scene_source("blank"))
+        << "flatten with no scene source must be a no-op (fail closed)";
+
+    // Set an authored scene-source node id on "blank". The graph has no node
+    // with that id, so it bridges to no resolved key + grafts nothing — but the
+    // authored intent is recorded (and observable), mirroring the renderable
+    // verb's set-then-bridge contract.
+    EXPECT_TRUE(app.set_node_scene_source("blank", 1234u));
+    ASSERT_TRUE(app.node_scene_source_node_id("blank").has_value());
+    EXPECT_EQ(*app.node_scene_source_node_id("blank"), 1234u);
+    // No children grafted (the authored node id resolves to no Scene asset).
+    EXPECT_EQ(app.child_node_count("blank"), 0u);
+
+    // Clearing (id 0) removes the authored reference; idempotent.
+    EXPECT_TRUE(app.set_node_scene_source("blank", 0u));
+    EXPECT_FALSE(app.node_scene_source_node_id("blank").has_value());
+
+    // The behavior runtime is unaffected by the scene-source authoring + the
+    // rebuilds it triggers: the scene's one binding still dispatches.
+    const std::optional<wz::math::Vec3> before =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(before.has_value());
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FLOAT_EQ(after->y, before->y + 1.0f)
+        << "behavior dispatch must survive scene-source authoring";
+}

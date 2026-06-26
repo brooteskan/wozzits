@@ -31,7 +31,9 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace wz::app
 {
@@ -171,6 +173,14 @@ namespace wz::app
         // yet, so this is a no-op there and load_scene re-runs it after.)
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(scene_nodes_, draft);
+        // Re-bridge scene-source references + re-graft on every (re)bind so a
+        // graph swap's new Scene keys flow through to the grafted children (#213).
+        // On the first bind during load_scene the scene is not loaded yet, so
+        // this is a no-op there; load_scene re-runs it after populating nodes.
+        const uint32_t scene_sources_bridged =
+            wz::engine::assets::bridge_scene_source_keys(scene_nodes_, draft);
+        (void)scene_sources_bridged;
+        graft_scene_sources();
 
         result.ok = true;
         result.diagnostics = draft.validation_messages;
@@ -290,9 +300,23 @@ namespace wz::app
         scene_nodes_ = scene_data->nodes;
         scene_source_path_ = desc.scene;
         scene_dirty_ = false;
+        grafted_node_ids_.clear();
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(
                 scene_nodes_, graph_draft_);
+        // Bridge scene-source references to live Scene keys, then graft each
+        // referenced sub-scene's GLB-named nodes as children of its host (#213,
+        // instance mode) so they render and are behavior-addressable.
+        const uint32_t scene_sources_bridged =
+            wz::engine::assets::bridge_scene_source_keys(
+                scene_nodes_, graph_draft_);
+        const std::size_t grafted = graft_scene_sources();
+        if (scene_sources_bridged > 0 || grafted > 0) {
+            ctx_.logger.info(
+                "load_scene: scene sources bridged="
+                + std::to_string(scene_sources_bridged)
+                + " grafted children=" + std::to_string(grafted));
+        }
         if (!scene_resolve.ok()) {
             ctx_.logger.warn(
                 "load_scene: scene resolved with errors="
@@ -356,6 +380,78 @@ namespace wz::app
             + " behavior module DLL(s) from " + resolved);
     }
 
+    std::size_t WozzitsApp_v1::graft_scene_sources()
+    {
+        if (!ctx_.assets) {
+            return 0;
+        }
+
+        // Idempotent re-graft: drop the previously grafted children first so a
+        // re-bind/re-resolve (new Scene keys) or a scene-source edit re-expands
+        // cleanly rather than accumulating duplicates.
+        if (!grafted_node_ids_.empty()) {
+            std::unordered_set<std::string> stale(
+                grafted_node_ids_.begin(), grafted_node_ids_.end());
+            scene_nodes_.erase(
+                std::remove_if(
+                    scene_nodes_.begin(),
+                    scene_nodes_.end(),
+                    [&stale](const wz::engine::assets::SceneNodeAsset& n) {
+                        return stale.count(n.id) != 0;
+                    }),
+                scene_nodes_.end());
+            grafted_node_ids_.clear();
+        }
+
+        // Snapshot the host nodes carrying a resolved scene_source up front: we
+        // mutate scene_nodes_ (append children) while iterating, and grafted
+        // children never themselves carry a scene_source (the expander clears
+        // it), so a single non-recursive pass over the current hosts is enough.
+        struct HostRef
+        {
+            wz::engine::assets::SceneNodeAsset host;  // copy (stable across append)
+            wz::asset::AssetKey scene_source;
+        };
+        std::vector<HostRef> hosts;
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (node.scene_source) {
+                hosts.push_back(HostRef{ node, *node.scene_source });
+            }
+        }
+
+        std::size_t grafted = 0;
+        for (const HostRef& ref : hosts) {
+            const wz::engine::assets::SceneHandle handle =
+                ctx_.assets->scenes().get_scene(
+                    wz::engine::assets::SceneAsset{ .output = ref.scene_source });
+            const wz::engine::assets::SceneAssetData* sub =
+                ctx_.assets->scenes().get_scene_data(handle);
+            if (!sub) {
+                ctx_.logger.warn(
+                    "graft_scene_sources: scene_source for node '" + ref.host.id
+                    + "' did not resolve to a Scene asset (skipped)");
+                continue;
+            }
+
+            std::vector<wz::engine::assets::SceneNodeAsset> children =
+                wz::engine::assets::expand_scene_source_children(
+                    ref.host, *sub);
+            for (wz::engine::assets::SceneNodeAsset& child : children) {
+                grafted_node_ids_.push_back(child.id);
+                scene_nodes_.push_back(std::move(child));
+                ++grafted;
+            }
+        }
+
+        if (grafted > 0) {
+            ctx_.logger.info(
+                "graft_scene_sources: grafted "
+                + std::to_string(grafted) + " scene-source child node(s) from "
+                + std::to_string(hosts.size()) + " host(s)");
+        }
+        return grafted;
+    }
+
     void WozzitsApp_v1::rebuild_behavior_scene()
     {
         behavior_scene_.reset();
@@ -374,9 +470,21 @@ namespace wz::app
         // Materialize a runtime SceneInstance from the authored scene. The
         // renderable resolver is intentionally null: WozzitsApp_v1 renders from
         // scene_nodes_, so the instance is used only for its polytree + behavior
-        // tables (renderables in the instance are unused).
+        // tables (renderables in the instance are unused). Because instantiate_
+        // scene FAILS a node that carries a renderable_asset when no resolver is
+        // provided, strip the renderable references from the instance's node
+        // copies first — otherwise a renderable-carrying node (notably the
+        // GLB-grafted scene-source children, #213) would fail materialization and
+        // the whole behavior runtime (incl. those children's addressability)
+        // would not come up. The strip is on the COPY only; scene_nodes_ (the
+        // renderer's source of truth) keeps its renderables.
         wz::engine::assets::SceneAssetData scene_data;
         scene_data.nodes = scene_nodes_;
+        for (wz::engine::assets::SceneNodeAsset& node : scene_data.nodes) {
+            node.renderable.reset();
+            node.renderable_asset.reset();
+            node.renderable_asset_node_id.reset();
+        }
 
         wz::engine::assets::SceneInstantiateContext instantiate_ctx{
             .logger = &ctx_.logger,
@@ -891,6 +999,130 @@ namespace wz::app
         return ok;
     }
 
+    bool WozzitsApp_v1::set_node_scene_source(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_scene_source(
+            scene_nodes_, node_id, asset_graph_node_id);
+        if (!ok) {
+            ctx_.logger.warn(
+                "set_node_scene_source: no-op (node '" + node_id + "' missing)");
+            return false;
+        }
+        scene_dirty_ = true;
+        // Re-resolve the new (or absent) scene source against the bound graph,
+        // then re-graft so the host's children reflect the change immediately,
+        // and re-materialize the behavior runtime (the grafted children change
+        // the entity set). bridge_scene_source_keys clears the key when the
+        // authored node id was cleared, so graft_scene_sources drops the stale
+        // graft and adds nothing — the children disappear, as intended.
+        wz::engine::assets::bridge_scene_source_keys(scene_nodes_, graph_draft_);
+        graft_scene_sources();
+        rebuild_behavior_scene();
+        return true;
+    }
+
+    bool WozzitsApp_v1::flatten_scene_source(
+        const wz::scene::AuthoredEntityId& node_id)
+    {
+        if (!ctx_.assets) {
+            ctx_.logger.warn("flatten_scene_source: no asset library");
+            return false;
+        }
+
+        wz::engine::assets::SceneNodeAsset* host =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!host) {
+            ctx_.logger.warn(
+                "flatten_scene_source: no-op (node '" + node_id + "' missing)");
+            return false;
+        }
+
+        // Resolve the host's scene source: prefer the cached resolved key, else
+        // bridge from the authored node id against the bound graph.
+        if (!host->scene_source && host->scene_source_node_id) {
+            wz::engine::assets::bridge_scene_source_keys(
+                scene_nodes_, graph_draft_);
+            host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        }
+        if (!host || !host->scene_source) {
+            ctx_.logger.warn(
+                "flatten_scene_source: node '" + node_id
+                + "' has no resolvable scene source");
+            return false;
+        }
+
+        const wz::engine::assets::SceneHandle handle =
+            ctx_.assets->scenes().get_scene(
+                wz::engine::assets::SceneAsset{ .output = *host->scene_source });
+        const wz::engine::assets::SceneAssetData* sub =
+            ctx_.assets->scenes().get_scene_data(handle);
+        if (!sub) {
+            ctx_.logger.warn(
+                "flatten_scene_source: scene source for node '" + node_id
+                + "' did not resolve to a Scene asset");
+            return false;
+        }
+
+        // If this host currently has an INSTANCE graft live, drop those runtime
+        // children first so flatten does not duplicate them (the persistent
+        // expansion below replaces them as authored nodes with the same ids).
+        const std::string prefix = node_id + "/";
+        if (!grafted_node_ids_.empty()) {
+            std::unordered_set<std::string> stale;
+            for (const auto& id : grafted_node_ids_) {
+                if (id.rfind(prefix, 0) == 0) {
+                    stale.insert(id);
+                }
+            }
+            if (!stale.empty()) {
+                scene_nodes_.erase(
+                    std::remove_if(
+                        scene_nodes_.begin(),
+                        scene_nodes_.end(),
+                        [&stale](
+                            const wz::engine::assets::SceneNodeAsset& n) {
+                            return stale.count(n.id) != 0;
+                        }),
+                    scene_nodes_.end());
+                grafted_node_ids_.erase(
+                    std::remove_if(
+                        grafted_node_ids_.begin(),
+                        grafted_node_ids_.end(),
+                        [&stale](const wz::scene::AuthoredEntityId& id) {
+                            return stale.count(id) != 0;
+                        }),
+                    grafted_node_ids_.end());
+            }
+            host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        }
+
+        // Expand persistently: the children become real authored nodes (NOT
+        // tracked in grafted_node_ids_, so they persist + save), and the host's
+        // scene-source reference is dropped — the expansion is now the content.
+        // Snapshot the host BEFORE the appends (push_back may reallocate
+        // scene_nodes_ and invalidate `host`), then re-find it to detach.
+        const wz::engine::assets::SceneNodeAsset host_snapshot = *host;
+        std::vector<wz::engine::assets::SceneNodeAsset> children =
+            wz::engine::assets::expand_scene_source_children(host_snapshot, *sub);
+        const std::size_t count = children.size();
+        for (wz::engine::assets::SceneNodeAsset& child : children) {
+            scene_nodes_.push_back(std::move(child));
+        }
+        host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (host) {
+            wz::engine::assets::detach_scene_source(*host);
+        }
+
+        scene_dirty_ = true;
+        rebuild_behavior_scene();
+        ctx_.logger.info(
+            "flatten_scene_source: expanded " + std::to_string(count)
+            + " node(s) under '" + node_id + "' (scene source dropped)");
+        return true;
+    }
+
     bool WozzitsApp_v1::node_has_component(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& kind) const
@@ -923,6 +1155,18 @@ namespace wz::app
         return node->renderable_asset_node_id;
     }
 
+    std::optional<wz::asset::AssetGraphDraftNodeId>
+    WozzitsApp_v1::node_scene_source_node_id(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            return std::nullopt;
+        }
+        return node->scene_source_node_id;
+    }
+
     bool WozzitsApp_v1::save_scene()
     {
         if (!scene_dirty_) {
@@ -938,6 +1182,26 @@ namespace wz::app
             wz::fs::is_absolute(scene_source_path_) || resource_root.empty()
                 ? scene_source_path_
                 : wz::fs::join(resource_root, scene_source_path_);
+
+        // Exclude runtime-grafted instance children (#213): an instanced
+        // scene_source re-imports from its reference at load, so its grafted
+        // sub-tree must not be persisted as authored nodes (only the host node
+        // with its scene_source reference is). Flattened nodes are authored (not
+        // tracked here), so they persist normally.
+        std::vector<wz::engine::assets::SceneNodeAsset> persisted_nodes;
+        if (grafted_node_ids_.empty()) {
+            persisted_nodes = scene_nodes_;
+        }
+        else {
+            const std::unordered_set<std::string> grafted(
+                grafted_node_ids_.begin(), grafted_node_ids_.end());
+            persisted_nodes.reserve(scene_nodes_.size());
+            for (const wz::engine::assets::SceneNodeAsset& n : scene_nodes_) {
+                if (grafted.count(n.id) == 0) {
+                    persisted_nodes.push_back(n);
+                }
+            }
+        }
 
         // Read the existing scene so its non-node data (lights, defaults, sky)
         // is preserved; only the nodes array is replaced from the live edits.
@@ -956,12 +1220,13 @@ namespace wz::app
             }
         }
         if (document.root) {
-            wz::engine::assets::set_scene_document_nodes(document, scene_nodes_);
+            wz::engine::assets::set_scene_document_nodes(
+                document, persisted_nodes);
         }
         else {
             // No readable source — emit a fresh scene document from the nodes.
             wz::engine::assets::SceneAssetData snapshot;
-            snapshot.nodes = scene_nodes_;
+            snapshot.nodes = persisted_nodes;
             document =
                 wz::engine::assets::export_scene_to_json_document(snapshot);
         }

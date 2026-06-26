@@ -669,6 +669,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(asset_scene scene_authoring)
     rs_add_test_group(asset_scene scene_asset_compile_tests)
+    rs_add_test_group(asset_scene scene_source_expansion_tests)
     rs_add_test_group(asset_scene scene_instantiation_transform_tests)
     rs_add_test_group(asset_scene scene_runtime_component_roundtrip_tests)
     rs_add_test_group(asset_scene scene_descriptor_validation_tests)

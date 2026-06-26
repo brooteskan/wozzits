@@ -209,6 +209,31 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
 
+        // Apply behind the host ABI's set_node_scene_source verb (issue #213).
+        // Author the PREFERRED asset-graph-backed Scene-source component on the
+        // node: point it at the authored "Scene from GLB" asset-graph node
+        // `asset_graph_node_id`, or clear the scene source when the id is 0. The
+        // resolved Scene AssetKey is reset so it re-resolves; the renderable slot
+        // is left untouched. Marks the scene dirty on success and, if the graph
+        // is bound, re-bridges + re-grafts so the referenced sub-scene's named
+        // children appear under the host immediately (renderer reads scene_nodes_
+        // each frame; the behavior runtime is rebuilt so the children are
+        // addressable). Returns false (logged no-op) if the node is missing.
+        bool set_node_scene_source(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
+        // Flatten the node's referenced Scene asset into the live scene (#213):
+        // resolve the node's scene_source, expand its GLB-named nodes as real,
+        // persistent children of the node in scene_nodes_ (id "<host>/<glbname>",
+        // sub-scene parenting preserved, transforms composed under the host), and
+        // then DROP the node's scene_source reference (the expansion is now the
+        // authored content — fully editable, no live link). Marks the scene dirty
+        // and rebuilds the behavior runtime. Returns false (logged) if the node
+        // is missing, carries no scene_source, or the referenced scene can't be
+        // resolved. The editor calls this for the "flatten" consume mode.
+        bool flatten_scene_source(const wz::scene::AuthoredEntityId& node_id);
+
         // True if node `node_id` currently carries the optional component `kind`.
         // False if the node is missing or the kind is unknown. Lets diagnostics
         // and the component-authoring test observe presence without a snapshot.
@@ -229,6 +254,13 @@ namespace wz::app
         // snapshot (mirrors node_has_component).
         [[nodiscard]] std::optional<wz::asset::AssetGraphDraftNodeId>
         node_renderable_asset_node_id(
+            const wz::scene::AuthoredEntityId& node_id) const;
+
+        // The node's authored scene-source graph-node id, or nullopt if the node
+        // is missing or has no scene source. Lets the scene-source test observe
+        // set_node_scene_source without a snapshot (mirrors the renderable one).
+        [[nodiscard]] std::optional<wz::asset::AssetGraphDraftNodeId>
+        node_scene_source_node_id(
             const wz::scene::AuthoredEntityId& node_id) const;
 
         // Persist the current scene back to its source file: the nodes are
@@ -320,6 +352,17 @@ namespace wz::app
         // across a scene/project swap (the plugin host reloads existing modules).
         void load_behavior_modules(const wz::fs::Path& module_folder);
 
+        // Graft every scene_source reference's sub-scene into scene_nodes_ as
+        // children of its host (issue #213, instance mode). For each host node
+        // carrying a resolved scene_source key, resolve the referenced Scene
+        // asset and append its expanded GLB-named children (via
+        // expand_scene_source_children) so they render (scene_nodes_ is the
+        // renderer's source of truth) and are behavior-addressable. Idempotent
+        // within a load: previously grafted children (id "<host>/...") are
+        // removed first, so a re-bind/re-resolve re-grafts cleanly. Returns the
+        // number of children grafted. Caller rebuilds the behavior scene after.
+        std::size_t graft_scene_sources();
+
         // Materialize the live authored scene (scene_nodes_) into a runtime
         // SceneInstance and (re)initialize its behaviors against the registry.
         // Called from load_scene and after any structural scene edit so the
@@ -359,6 +402,14 @@ namespace wz::app
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).
         wz::asset::AssetGraphDraft                       graph_draft_{};
         std::vector<wz::engine::assets::SceneNodeAsset>  scene_nodes_{};
+
+        // Ids of scene nodes currently grafted from a scene_source reference
+        // (issue #213, instance mode). These are runtime-only children appended
+        // to scene_nodes_ by graft_scene_sources; tracked so a re-graft can drop
+        // the previous graft cleanly and so save_scene can exclude them (an
+        // instanced sub-scene re-imports from the reference, it is not persisted
+        // as authored nodes). NOT populated for flatten (those become authored).
+        std::vector<wz::scene::AuthoredEntityId>         grafted_node_ids_{};
 
         // Source scene file + a dirty flag, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};

@@ -354,6 +354,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_scene_source(
+        SceneNodeSceneSourceEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: a set then a clear must both land.
+        pending_scene_source_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_scene_sources(
+        const std::function<void(const SceneNodeSceneSourceEdit&)>& applier)
+    {
+        std::vector<SceneNodeSceneSourceEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_scene_source_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_scene_source_edits_);
+        }
+
+        for (const SceneNodeSceneSourceEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -673,6 +698,23 @@ namespace wz::app
                             // clear it when asset_graph_node_id == 0).
                             app.set_node_renderable_asset(
                                 edit.node_id, edit.asset_graph_node_id);
+                        });
+                    control->service_pending_scene_node_scene_sources(
+                        [&app](const SceneNodeSceneSourceEdit& edit) {
+                            // Author the preferred Scene source (or clear it
+                            // when asset_graph_node_id == 0); the apply re-grafts
+                            // the referenced sub-scene under the host (#213).
+                            app.set_node_scene_source(
+                                edit.node_id, edit.asset_graph_node_id);
+                            // Flatten mode: immediately expand the just-set
+                            // reference into authored nodes and drop the link.
+                            if (edit.asset_graph_node_id != 0
+                                && edit.consume_mode
+                                       == SceneNodeSceneSourceEdit::ConsumeMode::
+                                              Flatten)
+                            {
+                                app.flatten_scene_source(edit.node_id);
+                            }
                         });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {
