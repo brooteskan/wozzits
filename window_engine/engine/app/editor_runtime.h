@@ -167,6 +167,25 @@ namespace wz::app
             wz::engine::assets::SceneSourceConsumeMode::Instance;
     };
 
+    // A live edit to the per-component render styling inside a node's GLB
+    // scene-source DESCRIPTOR (issue #213 Phase 3b-2), posted from the owner
+    // thread (editor UI) to the engine thread. Either sets the base style
+    // (is_base), sets a per-mesh-index override, or clears a per-mesh override
+    // (clear). The full MeshRenderStyleData rides the seam (built from the ABI's
+    // surface/wireframe subset on the host side, defaults elsewhere) — it is
+    // trivially copyable, so it crosses the boundary by value. Non-blocking and
+    // NOT coalesced (appended in order): two assigns to different meshes, or an
+    // assign then a clear, must all land. The engine applies it via the matching
+    // WozzitsApp_v1 style mutator, which re-resolves + re-grafts on its next frame.
+    struct SceneNodeGlbStyleEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        bool is_base = false;       // true => set base; false => per-mesh override
+        bool clear = false;         // true => clear the per-mesh override
+        uint32_t mesh_index = 0;    // ignored when is_base
+        wz::engine::assets::MeshRenderStyleData style{};
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -282,6 +301,15 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeGlbSceneSourceEdit&)>& applier);
 
+        // Owner thread: queue an edit to a node's GLB scene-source per-component
+        // STYLE (set base / set per-mesh override / clear per-mesh override),
+        // non-blocking; appended in order — NOT coalesced. Applied on the engine
+        // thread's next frame, like the GLB descriptor edits (issue #213 3b-2).
+        void post_scene_node_glb_style(SceneNodeGlbStyleEdit edit);
+
+        void service_pending_scene_node_glb_styles(
+            const std::function<void(const SceneNodeGlbStyleEdit&)>& applier);
+
         // Owner thread: add a child node under `parent_id` (empty => top level)
         // in the running scene and block until the engine thread applies it,
         // returning the minted id (or an error). Unlike the transform queue this
@@ -348,6 +376,7 @@ namespace wz::app
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
+        std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the

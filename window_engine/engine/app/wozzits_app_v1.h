@@ -253,6 +253,33 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const wz::engine::assets::SceneGLBSceneSource& descriptor);
 
+        // ─── Per-component GLB render-style authoring (issue #213 Phase 3b-2) ──
+        // Mutate the styling baked into a node's glb_scene_source DESCRIPTOR, then
+        // re-materialize so the re-keyed Scene rebuilds with the new look (the
+        // descriptor's styles fold into create_scene_from_glb's content key, so a
+        // style change re-keys + rebuilds the per-mesh renderables). Each writes
+        // the style into the persisted descriptor so a headless load renders the
+        // same result with no editor — styling is DATA, never editor-only state.
+        // All return false (logged no-op) if the node has no glb_scene_source.
+
+        // Set the descriptor's base style (applied to every imported mesh unless a
+        // per-mesh override wins).
+        bool set_node_glb_base_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::MeshRenderStyleData& style);
+
+        // Set (replace-or-insert) the per-mesh-index override for `mesh_index`.
+        bool set_node_glb_mesh_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            uint32_t mesh_index,
+            const wz::engine::assets::MeshRenderStyleData& style);
+
+        // Clear the per-mesh-index override for `mesh_index` (the mesh falls back
+        // to the base style). A no-op-success if no such override exists.
+        bool clear_node_glb_mesh_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            uint32_t mesh_index);
+
         // True if node `node_id` currently carries the optional component `kind`.
         // False if the node is missing or the kind is unknown. Lets diagnostics
         // and the component-authoring test observe presence without a snapshot.
@@ -289,6 +316,15 @@ namespace wz::app
         // content) while an Instance-mode load KEEPS it (the live link persists).
         // False if the node is missing.
         [[nodiscard]] bool node_has_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id) const;
+
+        // The node's current GLB scene-source DESCRIPTOR (issue #213), or nullptr
+        // if the node is missing or has none. Lets the Phase 3b-2 style test
+        // observe the authored base_style / style_overrides without a snapshot
+        // round-trip (mirrors node_has_glb_scene_source). The pointer is into
+        // scene_nodes_ — valid only until the next scene mutation.
+        [[nodiscard]] const wz::engine::assets::SceneGLBSceneSource*
+        node_glb_scene_source(
             const wz::scene::AuthoredEntityId& node_id) const;
 
         // Persist the current scene back to its source file: the nodes are
@@ -393,6 +429,15 @@ namespace wz::app
         // Returns the number of nodes whose scene_source was set. No-op (0) with
         // no asset library or no glb_scene_source nodes.
         std::size_t resolve_glb_scene_sources();
+
+        // Re-materialize the GLB scene-source descriptors after one was edited
+        // (issue #213): re-resolve every descriptor into a Scene asset, compile
+        // the freshly registered assets (commit + resolve_all), then re-graft the
+        // hosts' children and rebuild the behavior runtime. The shared sequence
+        // set_node_glb_scene_source and the style mutators run after mutating a
+        // descriptor; factored out so the style edits reuse the exact 3a path.
+        // No-op without an asset library (resolve/graft are guarded).
+        void rematerialize_glb_scene_sources();
 
         // Graft every scene_source reference's sub-scene into scene_nodes_ as
         // children of its host (issue #213, instance mode). For each host node

@@ -404,6 +404,32 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_glb_style(
+        SceneNodeGlbStyleEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: distinct meshes / set-then-clear
+        // must all land.
+        pending_glb_style_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_glb_styles(
+        const std::function<void(const SceneNodeGlbStyleEdit&)>& applier)
+    {
+        std::vector<SceneNodeGlbStyleEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_glb_style_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_glb_style_edits_);
+        }
+
+        for (const SceneNodeGlbStyleEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
@@ -756,6 +782,25 @@ namespace wz::app
                                     .scene_index = edit.scene_index,
                                     .consume_mode = edit.consume_mode,
                                 });
+                        });
+                    control->service_pending_scene_node_glb_styles(
+                        [&app](const SceneNodeGlbStyleEdit& edit) {
+                            // Author per-component GLB styling into the node's
+                            // descriptor (set base / set-or-replace per-mesh
+                            // override / clear per-mesh override); the apply re-
+                            // resolves + re-grafts the re-keyed Scene (#213 3b-2).
+                            if (edit.is_base) {
+                                app.set_node_glb_base_style(
+                                    edit.node_id, edit.style);
+                            }
+                            else if (edit.clear) {
+                                app.clear_node_glb_mesh_style(
+                                    edit.node_id, edit.mesh_index);
+                            }
+                            else {
+                                app.set_node_glb_mesh_style(
+                                    edit.node_id, edit.mesh_index, edit.style);
+                            }
                         });
                     control->service_pending_add_child(
                         [&app](const wz::scene::AuthoredEntityId& parent_id) {

@@ -58,10 +58,32 @@ namespace wz::engine::editor
         std::string display_name;
     };
 
+    // The high-impact subset of a MeshRenderStyleData that the editor reads back
+    // and re-authors for a GLB component (issue #213 Phase 3b-2): surface +
+    // wireframe enabled flags and RGBA colors. The rest of MeshRenderStyleData is
+    // not surfaced (it stays at engine defaults; not editor-authorable here).
+    struct SceneSnapshotMeshStyle
+    {
+        bool surface_enabled = false;
+        float surface_rgba[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+        bool wireframe_enabled = false;
+        float wireframe_rgba[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+    };
+
+    // One per-mesh-index style override read back from a GLB scene-source
+    // descriptor's style_overrides[] (issue #213 Phase 3b-2).
+    struct SceneSnapshotMeshStyleOverride
+    {
+        uint32_t mesh_index = 0;
+        SceneSnapshotMeshStyle style;
+    };
+
     // Summary of a node's GLB scene-source descriptor (SceneGLBSceneSource),
-    // surfaced read-only so the editor can show that the node sources a GLB.
-    // Only the summary fields are carried here; the full MeshRenderStyleData
-    // (base_style / style_overrides) is not parsed, only counted/flagged.
+    // surfaced read-only so the editor can show that the node sources a GLB and
+    // (Phase 3b-2) pre-fill the per-component style editor from the existing
+    // assignments. Carries the summary fields plus the base style (when
+    // has_base_style) and the full per-mesh override table — the subset the editor
+    // can re-author.
     struct SceneSnapshotSceneSource
     {
         std::string kind;          // "glb" (only kind for now)
@@ -70,6 +92,8 @@ namespace wz::engine::editor
         uint32_t scene_index = 0;
         uint32_t style_override_count = 0;
         bool has_base_style = false;
+        SceneSnapshotMeshStyle base_style;  // meaningful iff has_base_style
+        std::vector<SceneSnapshotMeshStyleOverride> style_overrides;
     };
 
     // A single config entry of an authored behavior binding, mirroring the

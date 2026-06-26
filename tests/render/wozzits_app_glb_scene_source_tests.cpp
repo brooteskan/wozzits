@@ -279,3 +279,140 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, SetGlbSceneSourceAuthorsAndClearsLive)
     EXPECT_TRUE(app.node_local_translation("tank_host/turret").has_value());
     EXPECT_TRUE(app.node_local_translation("tank_host/gun").has_value());
 }
+
+// (d) Per-component styling (issue #213 Phase 3b-2): set a base style + a per-mesh
+// override on a GLB scene-source host via the app methods, assert the descriptor
+// reflects them and that the scene re-grafts (children still present after the
+// style-driven re-key), then clear the override and assert it is removed. The
+// style change folds into create_scene_from_glb's content key, so re-materialize
+// rebuilds the per-mesh renderables — observed here through descriptor state +
+// the graft surviving (the visual look is a render concern, not asserted here).
+TEST_F(WozzitsAppGlbSceneSourceFixture, ComponentStyleAuthorsBaseOverrideAndClears)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+
+    wz::app::WozzitsAppSceneLoadDesc load_desc{};
+    load_desc.asset_graph = project.manifest.asset_graph_path;
+    load_desc.scene = project.manifest.scene_path;
+    load_desc.behavior_module_folder = project.manifest.behavior_module_folder;
+    ASSERT_TRUE(app.load_scene(load_desc));
+
+    // tank_host carries a glb_scene_source descriptor + an instance graft. The
+    // fixture authors a base style + one override (mesh_index 1) already, so this
+    // test works in DELTAS against that starting state (a clean-slate assumption
+    // would be wrong — the fixture proves Phase 1 styling round-trips).
+    ASSERT_TRUE(app.node_has_glb_scene_source("tank_host"));
+    ASSERT_TRUE(app.node_local_translation("tank_host/turret").has_value());
+
+    ASSERT_NE(app.node_glb_scene_source("tank_host"), nullptr);
+    const std::size_t fixture_override_count =
+        app.node_glb_scene_source("tank_host")->style_overrides.size();
+
+    // Guard: a style edit on a node with no GLB scene source fails closed —
+    // "root" exists but has no descriptor; "does_not_exist" is absent entirely.
+    EXPECT_FALSE(app.set_node_glb_base_style(
+        "does_not_exist",
+        wz::engine::assets::MeshRenderStyleData{}));
+    EXPECT_FALSE(app.set_node_glb_mesh_style(
+        "root", 0u, wz::engine::assets::MeshRenderStyleData{}));
+
+    // Author a BASE style (surface on, a distinct color) onto tank_host. The
+    // override table is untouched by a base-style edit.
+    wz::engine::assets::MeshRenderStyleData base{};
+    base.surface.enabled = true;
+    base.surface.color[0] = 0.2f;
+    base.surface.color[1] = 0.4f;
+    base.surface.color[2] = 0.6f;
+    base.surface.color[3] = 1.0f;
+    base.wireframe.enabled = false;
+    EXPECT_TRUE(app.set_node_glb_base_style("tank_host", base));
+
+    {
+        const wz::engine::assets::SceneGLBSceneSource* desc =
+            app.node_glb_scene_source("tank_host");
+        ASSERT_NE(desc, nullptr);
+        ASSERT_TRUE(desc->base_style.has_value());
+        EXPECT_TRUE(desc->base_style->surface.enabled);
+        EXPECT_FLOAT_EQ(desc->base_style->surface.color[1], 0.4f);
+        EXPECT_EQ(desc->style_overrides.size(), fixture_override_count)
+            << "a base-style edit must not touch the override table";
+    }
+    // The scene re-grafted after the style-driven re-key: children persist.
+    EXPECT_TRUE(app.node_local_translation("tank_host/turret").has_value())
+        << "the graft must survive a base-style re-materialize";
+
+    // Author a per-mesh OVERRIDE for a NEW mesh_index (0, distinct from the
+    // fixture's mesh_index 1 override): the table grows by one.
+    wz::engine::assets::MeshRenderStyleData ov{};
+    ov.surface.enabled = false;
+    ov.wireframe.enabled = true;
+    ov.wireframe.color[0] = 1.0f;
+    ov.wireframe.color[1] = 0.0f;
+    ov.wireframe.color[2] = 0.0f;
+    ov.wireframe.color[3] = 1.0f;
+    EXPECT_TRUE(app.set_node_glb_mesh_style("tank_host", 0u, ov));
+
+    {
+        const wz::engine::assets::SceneGLBSceneSource* desc =
+            app.node_glb_scene_source("tank_host");
+        ASSERT_NE(desc, nullptr);
+        ASSERT_EQ(desc->style_overrides.size(), fixture_override_count + 1u);
+        const auto it = std::find_if(
+            desc->style_overrides.begin(),
+            desc->style_overrides.end(),
+            [](const wz::engine::assets::SceneGLBSceneSourceStyleOverride& o) {
+                return o.mesh_index == 0u;
+            });
+        ASSERT_NE(it, desc->style_overrides.end());
+        EXPECT_TRUE(it->style.wireframe.enabled);
+        EXPECT_FLOAT_EQ(it->style.wireframe.color[0], 1.0f);
+    }
+
+    // Replace-or-insert: re-authoring the SAME mesh_index updates in place (no
+    // duplicate entry — count is unchanged).
+    ov.wireframe.color[0] = 0.5f;
+    EXPECT_TRUE(app.set_node_glb_mesh_style("tank_host", 0u, ov));
+    {
+        const wz::engine::assets::SceneGLBSceneSource* desc =
+            app.node_glb_scene_source("tank_host");
+        ASSERT_NE(desc, nullptr);
+        ASSERT_EQ(desc->style_overrides.size(), fixture_override_count + 1u)
+            << "re-authoring the same mesh_index must replace, not append";
+        const auto it = std::find_if(
+            desc->style_overrides.begin(),
+            desc->style_overrides.end(),
+            [](const wz::engine::assets::SceneGLBSceneSourceStyleOverride& o) {
+                return o.mesh_index == 0u;
+            });
+        ASSERT_NE(it, desc->style_overrides.end());
+        EXPECT_FLOAT_EQ(it->style.wireframe.color[0], 0.5f);
+    }
+    EXPECT_TRUE(app.node_local_translation("tank_host/turret").has_value())
+        << "the graft must survive a per-mesh-override re-materialize";
+
+    // Clear the override we added: it is removed (back to the fixture count), and
+    // the base style remains.
+    EXPECT_TRUE(app.clear_node_glb_mesh_style("tank_host", 0u));
+    {
+        const wz::engine::assets::SceneGLBSceneSource* desc =
+            app.node_glb_scene_source("tank_host");
+        ASSERT_NE(desc, nullptr);
+        EXPECT_EQ(desc->style_overrides.size(), fixture_override_count)
+            << "clear must remove exactly the targeted per-mesh override";
+        const auto it = std::find_if(
+            desc->style_overrides.begin(),
+            desc->style_overrides.end(),
+            [](const wz::engine::assets::SceneGLBSceneSourceStyleOverride& o) {
+                return o.mesh_index == 0u;
+            });
+        EXPECT_EQ(it, desc->style_overrides.end());
+        ASSERT_TRUE(desc->base_style.has_value())
+            << "clearing an override must not drop the base style";
+    }
+
+    // Clearing a mesh index with no override is a success no-op.
+    EXPECT_TRUE(app.clear_node_glb_mesh_style("tank_host", 99u));
+}

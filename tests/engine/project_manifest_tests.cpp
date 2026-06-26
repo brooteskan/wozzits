@@ -699,12 +699,18 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
         "scene_index": 0,
         "consume_mode": "instance",
         "base_style": {
-          "alpha": 1.0
+          "alpha": 1.0,
+          "surface": { "enabled": true, "color": [0.1, 0.2, 0.3, 1.0] },
+          "wireframe": { "enabled": false, "color": [0.4, 0.5, 0.6, 1.0] }
         },
         "style_overrides": [
           {
             "mesh_index": 1,
-            "style": { "alpha": 1.0 }
+            "style": {
+              "alpha": 1.0,
+              "surface": { "enabled": false, "color": [0.7, 0.8, 0.9, 1.0] },
+              "wireframe": { "enabled": true, "color": [1.0, 0.0, 0.5, 0.25] }
+            }
           }
         ]
       }
@@ -736,6 +742,25 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
     EXPECT_EQ(host.scene_source->scene_index, 0u);
     EXPECT_EQ(host.scene_source->style_override_count, 1u);
     EXPECT_TRUE(host.scene_source->has_base_style);
+
+    // Phase 3b-2: the base style's surface/wireframe subset round-trips.
+    EXPECT_TRUE(host.scene_source->base_style.surface_enabled);
+    EXPECT_FLOAT_EQ(host.scene_source->base_style.surface_rgba[0], 0.1f);
+    EXPECT_FLOAT_EQ(host.scene_source->base_style.surface_rgba[1], 0.2f);
+    EXPECT_FLOAT_EQ(host.scene_source->base_style.surface_rgba[2], 0.3f);
+    EXPECT_FLOAT_EQ(host.scene_source->base_style.surface_rgba[3], 1.0f);
+    EXPECT_FALSE(host.scene_source->base_style.wireframe_enabled);
+    EXPECT_FLOAT_EQ(host.scene_source->base_style.wireframe_rgba[0], 0.4f);
+
+    // ...and the one per-mesh override (mesh_index 1) round-trips.
+    ASSERT_EQ(host.scene_source->style_overrides.size(), 1u);
+    const auto& ov = host.scene_source->style_overrides[0];
+    EXPECT_EQ(ov.mesh_index, 1u);
+    EXPECT_FALSE(ov.style.surface_enabled);
+    EXPECT_FLOAT_EQ(ov.style.surface_rgba[0], 0.7f);
+    EXPECT_TRUE(ov.style.wireframe_enabled);
+    EXPECT_FLOAT_EQ(ov.style.wireframe_rgba[0], 1.0f);
+    EXPECT_FLOAT_EQ(ov.style.wireframe_rgba[3], 0.25f);
 
     const auto& plain = root.children[1];
     EXPECT_EQ(plain.id, "plain");
@@ -776,6 +801,23 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
     EXPECT_EQ(abi_host.scene_source.scene_index, 0u);
     EXPECT_EQ(abi_host.scene_source.style_override_count, 1u);
     EXPECT_EQ(abi_host.scene_source.has_base_style, 1u);
+
+    // Phase 3b-2: the base style + override table round-trip through the ABI blob.
+    EXPECT_EQ(abi_host.scene_source.base_style.surface_enabled, 1u);
+    EXPECT_FLOAT_EQ(abi_host.scene_source.base_style.surface_rgba[0], 0.1f);
+    EXPECT_FLOAT_EQ(abi_host.scene_source.base_style.surface_rgba[2], 0.3f);
+    EXPECT_EQ(abi_host.scene_source.base_style.wireframe_enabled, 0u);
+    EXPECT_FLOAT_EQ(abi_host.scene_source.base_style.wireframe_rgba[0], 0.4f);
+
+    ASSERT_EQ(abi_host.scene_source.style_overrides.count, 1u);
+    const WzEditorGlbStyleOverride* abi_overrides =
+        abi_table<WzEditorGlbStyleOverride>(
+            blob, abi_host.scene_source.style_overrides);
+    EXPECT_EQ(abi_overrides[0].mesh_index, 1u);
+    EXPECT_EQ(abi_overrides[0].style.surface_enabled, 0u);
+    EXPECT_FLOAT_EQ(abi_overrides[0].style.surface_rgba[0], 0.7f);
+    EXPECT_EQ(abi_overrides[0].style.wireframe_enabled, 1u);
+    EXPECT_FLOAT_EQ(abi_overrides[0].style.wireframe_rgba[3], 0.25f);
 
     const WzEditorSceneNode& abi_plain = children[1];
     EXPECT_EQ(abi_string(blob, abi_plain.id), "plain");

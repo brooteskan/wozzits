@@ -189,6 +189,34 @@ namespace
         return result(WZ_RESULT_OK, "");
     }
 
+    // Build a MeshRenderStyleData from the ABI's high-impact subset (issue #213
+    // Phase 3b-2): surface + wireframe enabled flags and RGBA colors. All other
+    // fields (alpha, depth, double_sided, hidden_line_prepass, field/mask sub-
+    // structs) stay at MeshRenderStyleData's defaults — those are not authorable
+    // over this ABI. A NULL rgba leaves the layer's default color (the layer is
+    // still toggled by its *_enabled flag).
+    wz::engine::assets::MeshRenderStyleData mesh_render_style_from_abi(
+        uint32_t surface_enabled,
+        const float* surface_rgba,
+        uint32_t wireframe_enabled,
+        const float* wireframe_rgba)
+    {
+        wz::engine::assets::MeshRenderStyleData style{};
+        style.surface.enabled = surface_enabled != 0u;
+        if (surface_rgba) {
+            for (int i = 0; i < 4; ++i) {
+                style.surface.color[i] = surface_rgba[i];
+            }
+        }
+        style.wireframe.enabled = wireframe_enabled != 0u;
+        if (wireframe_rgba) {
+            for (int i = 0; i < 4; ++i) {
+                style.wireframe.color[i] = wireframe_rgba[i];
+            }
+        }
+        return style;
+    }
+
     // Parse the ABI config (kind, value) pair into a SceneBehaviorConfigValue.
     // kind is "bool" | "int" | "float" | "string"; int/float both store as a
     // Number. Returns false for an unknown kind. Malformed numeric text parses
@@ -1693,6 +1721,89 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "set node glb scene source post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_set_node_glb_component_style(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint32_t target_base,
+        uint32_t mesh_index,
+        uint32_t surface_enabled,
+        const float* surface_rgba,
+        uint32_t wireframe_enabled,
+        const float* wireframe_rgba)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            const wz::engine::assets::MeshRenderStyleData style =
+                mesh_render_style_from_abi(
+                    surface_enabled,
+                    surface_rgba,
+                    wireframe_enabled,
+                    wireframe_rgba);
+            runtime->control.post_scene_node_glb_style(
+                wz::app::SceneNodeGlbStyleEdit{
+                    .node_id = node_id_utf8,
+                    .is_base = target_base != 0u,
+                    .clear = false,
+                    .mesh_index = mesh_index,
+                    .style = style,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node glb component style post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_clear_node_glb_component_style(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint32_t mesh_index)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_glb_style(
+                wz::app::SceneNodeGlbStyleEdit{
+                    .node_id = node_id_utf8,
+                    .is_base = false,
+                    .clear = true,
+                    .mesh_index = mesh_index,
+                    .style = {},
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "clear node glb component style post failed");
         }
     }
 

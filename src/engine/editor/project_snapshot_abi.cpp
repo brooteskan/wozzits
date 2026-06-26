@@ -187,6 +187,21 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Pack the high-impact style subset (surface/wireframe enabled + rgba)
+        // for read-back (issue #213 Phase 3b-2). No blob strings/tables — plain
+        // POD copy — so it needs no AbiBlobBuilder.
+        WzEditorGlbStyle glb_style_abi(const SceneSnapshotMeshStyle& style)
+        {
+            WzEditorGlbStyle out{};
+            out.surface_enabled = style.surface_enabled ? 1u : 0u;
+            out.wireframe_enabled = style.wireframe_enabled ? 1u : 0u;
+            for (int i = 0; i < 4; ++i) {
+                out.surface_rgba[i] = style.surface_rgba[i];
+                out.wireframe_rgba[i] = style.wireframe_rgba[i];
+            }
+            return out;
+        }
+
         WzEditorTableSpan scene_nodes_abi(
             AbiBlobBuilder& builder,
             const std::vector<SceneSnapshotNode>& nodes);
@@ -285,6 +300,22 @@ namespace wz::engine::editor
 
             if (node.scene_source) {
                 out.flags |= WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE;
+
+                // Pack the per-mesh override table (Phase 3b-2). The base style is
+                // packed inline below; both carry the high-impact surface/wireframe
+                // subset so the editor can pre-fill its style editor.
+                std::vector<WzEditorGlbStyleOverride> overrides;
+                overrides.reserve(node.scene_source->style_overrides.size());
+                for (const SceneSnapshotMeshStyleOverride& ov :
+                     node.scene_source->style_overrides)
+                {
+                    overrides.push_back(WzEditorGlbStyleOverride{
+                        .mesh_index = ov.mesh_index,
+                        .reserved = 0u,
+                        .style = glb_style_abi(ov.style),
+                    });
+                }
+
                 out.scene_source = WzEditorSceneSceneSource{
                     .kind = builder.append_string(node.scene_source->kind),
                     .path = builder.append_string(node.scene_source->path),
@@ -296,6 +327,8 @@ namespace wz::engine::editor
                     .has_base_style =
                         node.scene_source->has_base_style ? 1u : 0u,
                     .reserved = 0u,
+                    .base_style = glb_style_abi(node.scene_source->base_style),
+                    .style_overrides = builder.append_table(overrides),
                 };
             }
 

@@ -362,11 +362,40 @@ namespace wz::engine::editor
             return behaviors;
         }
 
+        // Read the high-impact subset (surface/wireframe enabled + color) of a
+        // MeshRenderStyleData JSON object (issue #213 Phase 3b-2). The shape is
+        // written by scene_json_export.cpp::mesh_render_style_data_value: a
+        // "surface"/"wireframe" object each with an "enabled" bool + a 4-element
+        // "color" array. Tolerant: a missing layer/field leaves the default.
+        SceneSnapshotMeshStyle read_mesh_style(const wz::json::JSONValue& style)
+        {
+            SceneSnapshotMeshStyle out;
+            if (const auto* surface =
+                    wz::json::find_member(style, "surface");
+                surface && surface->kind == wz::json::JSONValueKind::Object)
+            {
+                out.surface_enabled =
+                    wz::json::read_bool(*surface, "enabled").value_or(false);
+                wz::json::read_float4(*surface, "color", out.surface_rgba);
+            }
+            if (const auto* wireframe =
+                    wz::json::find_member(style, "wireframe");
+                wireframe && wireframe->kind == wz::json::JSONValueKind::Object)
+            {
+                out.wireframe_enabled =
+                    wz::json::read_bool(*wireframe, "enabled").value_or(false);
+                wz::json::read_float4(*wireframe, "color", out.wireframe_rgba);
+            }
+            return out;
+        }
+
         // Summarize a node's `glb_scene_source` descriptor (issue #213). Read-
         // only and tolerant: a missing/malformed block is treated as absent (we
-        // return nullopt) rather than an error. We only surface the summary —
-        // path, consume_mode, scene_index, whether a base_style object exists,
-        // and the count of style_overrides — never the MeshRenderStyleData.
+        // return nullopt) rather than an error. Surfaces the summary — path,
+        // consume_mode, scene_index, whether a base_style object exists, and the
+        // count of style_overrides — plus the high-impact style subset (Phase
+        // 3b-2): the base style (when present) and the per-mesh override table, so
+        // the editor can pre-fill its per-component style editor.
         std::optional<SceneSnapshotSceneSource> read_scene_source(
             const wz::json::JSONValue& obj)
         {
@@ -384,14 +413,36 @@ namespace wz::engine::editor
                     .value_or("instance"));
             out.scene_index =
                 wz::json::read_uint(*source, "scene_index").value_or(0u);
-            out.has_base_style =
-                has_component_object(*source, "base_style");
+            if (const auto* base = wz::json::find_member(*source, "base_style");
+                base && base->kind == wz::json::JSONValueKind::Object)
+            {
+                out.has_base_style = true;
+                out.base_style = read_mesh_style(*base);
+            }
             if (const auto* overrides =
                     wz::json::find_member(*source, "style_overrides");
                 overrides && overrides->kind == wz::json::JSONValueKind::Array)
             {
                 out.style_override_count =
                     static_cast<uint32_t>(overrides->array_values.size());
+                out.style_overrides.reserve(overrides->array_values.size());
+                for (const auto& item : overrides->array_values) {
+                    if (!item
+                        || item->kind != wz::json::JSONValueKind::Object)
+                    {
+                        continue;
+                    }
+                    SceneSnapshotMeshStyleOverride ov;
+                    ov.mesh_index =
+                        wz::json::read_uint(*item, "mesh_index").value_or(0u);
+                    if (const auto* st =
+                            wz::json::find_member(*item, "style");
+                        st && st->kind == wz::json::JSONValueKind::Object)
+                    {
+                        ov.style = read_mesh_style(*st);
+                    }
+                    out.style_overrides.push_back(std::move(ov));
+                }
             }
             return out;
         }

@@ -1165,25 +1165,134 @@ namespace wz::app
         // descriptor-route sequence load_scene runs (NOT the node-ref bridge that
         // set_node_scene_source uses): re-resolve the descriptor into a Scene
         // asset, compile the freshly registered assets, then re-graft + rebuild.
+        rematerialize_glb_scene_sources();
+        return true;
+    }
+
+    void WozzitsApp_v1::rematerialize_glb_scene_sources()
+    {
         // Guarded by the asset library (resolve/graft are no-ops without it).
-        if (ctx_.assets) {
-            const std::size_t resolved = resolve_glb_scene_sources();
-            if (resolved > 0) {
-                ctx_.assets->commit();
-                const wz::engine::assets::ResolveReport glb_resolve =
-                    ctx_.assets->resolve_all();
-                if (!glb_resolve.ok()) {
-                    ctx_.logger.warn(
-                        "set_node_glb_scene_source: GLB scene-source resolved "
-                        "with errors=" + std::to_string(glb_resolve.failures.size()));
-                }
+        if (!ctx_.assets) {
+            return;
+        }
+
+        const std::size_t resolved = resolve_glb_scene_sources();
+        if (resolved > 0) {
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport glb_resolve =
+                ctx_.assets->resolve_all();
+            if (!glb_resolve.ok()) {
+                ctx_.logger.warn(
+                    "rematerialize_glb_scene_sources: GLB scene-source resolved "
+                    "with errors=" + std::to_string(glb_resolve.failures.size()));
             }
-            // Re-graft so the host's children reflect the change immediately (a
-            // cleared descriptor leaves no scene_source, so graft drops the stale
-            // children and adds nothing), then rebuild the behavior runtime since
-            // the grafted children change the addressable entity set.
-            graft_scene_sources();
-            rebuild_behavior_scene();
+        }
+        // Re-graft so the hosts' children reflect the change immediately (a
+        // cleared descriptor leaves no scene_source, so graft drops the stale
+        // children and adds nothing), then rebuild the behavior runtime since the
+        // grafted children change the addressable entity set.
+        graft_scene_sources();
+        rebuild_behavior_scene();
+    }
+
+    // ─── Per-component GLB render-style authoring (issue #213 Phase 3b-2) ──────
+    // Each style mutator edits the styling inside the node's glb_scene_source
+    // DESCRIPTOR (the persisted authored data), then runs the shared 3a re-
+    // materialize so the re-keyed Scene rebuilds with the new per-mesh look. The
+    // descriptor's base_style/style_overrides fold into create_scene_from_glb's
+    // content key, so a style change yields a different key => a rebuilt scene.
+    // Fail closed (logged no-op + false) when the node has no glb_scene_source.
+
+    bool WozzitsApp_v1::set_node_glb_base_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::MeshRenderStyleData& style)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            ctx_.logger.warn(
+                "set_node_glb_base_style: no-op (node '" + node_id
+                + "' has no GLB scene source)");
+            return false;
+        }
+
+        node->glb_scene_source->base_style = style;
+        scene_dirty_ = true;
+        rematerialize_glb_scene_sources();
+        return true;
+    }
+
+    bool WozzitsApp_v1::set_node_glb_mesh_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        uint32_t mesh_index,
+        const wz::engine::assets::MeshRenderStyleData& style)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            ctx_.logger.warn(
+                "set_node_glb_mesh_style: no-op (node '" + node_id
+                + "' has no GLB scene source)");
+            return false;
+        }
+
+        // Replace-or-insert the override for this mesh index.
+        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
+            overrides = node->glb_scene_source->style_overrides;
+        const auto it = std::find_if(
+            overrides.begin(),
+            overrides.end(),
+            [mesh_index](
+                const wz::engine::assets::SceneGLBSceneSourceStyleOverride& ov) {
+                return ov.mesh_index == mesh_index;
+            });
+        if (it != overrides.end()) {
+            it->style = style;
+        }
+        else {
+            overrides.push_back(
+                wz::engine::assets::SceneGLBSceneSourceStyleOverride{
+                    .mesh_index = mesh_index,
+                    .style = style,
+                });
+        }
+
+        scene_dirty_ = true;
+        rematerialize_glb_scene_sources();
+        return true;
+    }
+
+    bool WozzitsApp_v1::clear_node_glb_mesh_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        uint32_t mesh_index)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            ctx_.logger.warn(
+                "clear_node_glb_mesh_style: no-op (node '" + node_id
+                + "' has no GLB scene source)");
+            return false;
+        }
+
+        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
+            overrides = node->glb_scene_source->style_overrides;
+        const auto before = overrides.size();
+        overrides.erase(
+            std::remove_if(
+                overrides.begin(),
+                overrides.end(),
+                [mesh_index](
+                    const wz::engine::assets::SceneGLBSceneSourceStyleOverride&
+                        ov) { return ov.mesh_index == mesh_index; }),
+            overrides.end());
+
+        // Even a no-op clear (no such override) returns true: the requested state
+        // — "no override for this mesh" — holds. Only re-materialize + mark dirty
+        // when something actually changed.
+        if (overrides.size() != before) {
+            scene_dirty_ = true;
+            rematerialize_glb_scene_sources();
         }
         return true;
     }
@@ -1338,6 +1447,18 @@ namespace wz::app
         const wz::engine::assets::SceneNodeAsset* node =
             wz::engine::assets::find_scene_node(scene_nodes_, node_id);
         return node && node->glb_scene_source.has_value();
+    }
+
+    const wz::engine::assets::SceneGLBSceneSource*
+    WozzitsApp_v1::node_glb_scene_source(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            return nullptr;
+        }
+        return &*node->glb_scene_source;
     }
 
     bool WozzitsApp_v1::save_scene()

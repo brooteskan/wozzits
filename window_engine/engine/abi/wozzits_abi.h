@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 24u
+#define WZ_ABI_VERSION 25u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -250,10 +250,34 @@ typedef struct WzEditorSceneRenderableSource
     WzEditorStringSpan display_name;
 } WzEditorSceneRenderableSource;
 
+// The high-impact subset of a MeshRenderStyleData packed for read-back +
+// re-authoring of a GLB component's style (issue #213 Phase 3b-2): surface +
+// wireframe enabled flags (0/1) and RGBA colors. The rest of MeshRenderStyleData
+// is not surfaced (it stays at engine defaults; not editor-authorable here).
+typedef struct WzEditorGlbStyle
+{
+    uint32_t surface_enabled;     // 0/1
+    float surface_rgba[4];
+    uint32_t wireframe_enabled;   // 0/1
+    float wireframe_rgba[4];
+} WzEditorGlbStyle;
+
+// One per-mesh-index style override (issue #213 Phase 3b-2), an entry of
+// WzEditorSceneSceneSource.style_overrides. `mesh_index` is the GLB mesh index
+// (matching WzEditorGlbComponent.mesh_index) the override applies to.
+typedef struct WzEditorGlbStyleOverride
+{
+    uint32_t mesh_index;
+    uint32_t reserved;
+    WzEditorGlbStyle style;
+} WzEditorGlbStyleOverride;
+
 // Read-only summary of a node's GLB scene-source descriptor (issue #213),
 // present only when WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE is set on the node.
-// The full MeshRenderStyleData (base_style / per-mesh overrides) is not packed:
-// has_base_style is 0/1 and style_override_count is the override array size.
+// has_base_style is 0/1 and style_override_count is the override array size; the
+// editor-authorable style subset is also packed (Phase 3b-2): base_style (valid
+// iff has_base_style) and the style_overrides table of WzEditorGlbStyleOverride
+// (count matches style_override_count), so the editor pre-fills its style editor.
 typedef struct WzEditorSceneSceneSource
 {
     WzEditorStringSpan kind;          // "glb"
@@ -263,6 +287,8 @@ typedef struct WzEditorSceneSceneSource
     uint32_t style_override_count;
     uint32_t has_base_style;          // 0/1
     uint32_t reserved;
+    WzEditorGlbStyle base_style;      // valid iff has_base_style
+    WzEditorTableSpan style_overrides; // WzEditorGlbStyleOverride[]
 } WzEditorSceneSceneSource;
 
 typedef struct WzEditorSceneComponent
@@ -490,7 +516,18 @@ static_assert(sizeof(WzEditorSceneRenderableSource) == 32);
 static_assert(offsetof(WzEditorSceneRenderableSource, kind) == 0);
 static_assert(offsetof(WzEditorSceneRenderableSource, display_name) == 16);
 
-static_assert(sizeof(WzEditorSceneSceneSource) == 64);
+static_assert(sizeof(WzEditorGlbStyle) == 40);
+static_assert(offsetof(WzEditorGlbStyle, surface_enabled) == 0);
+static_assert(offsetof(WzEditorGlbStyle, surface_rgba) == 4);
+static_assert(offsetof(WzEditorGlbStyle, wireframe_enabled) == 20);
+static_assert(offsetof(WzEditorGlbStyle, wireframe_rgba) == 24);
+
+static_assert(sizeof(WzEditorGlbStyleOverride) == 48);
+static_assert(offsetof(WzEditorGlbStyleOverride, mesh_index) == 0);
+static_assert(offsetof(WzEditorGlbStyleOverride, reserved) == 4);
+static_assert(offsetof(WzEditorGlbStyleOverride, style) == 8);
+
+static_assert(sizeof(WzEditorSceneSceneSource) == 120);
 static_assert(offsetof(WzEditorSceneSceneSource, kind) == 0);
 static_assert(offsetof(WzEditorSceneSceneSource, path) == 16);
 static_assert(offsetof(WzEditorSceneSceneSource, consume_mode) == 32);
@@ -498,6 +535,8 @@ static_assert(offsetof(WzEditorSceneSceneSource, scene_index) == 48);
 static_assert(offsetof(WzEditorSceneSceneSource, style_override_count) == 52);
 static_assert(offsetof(WzEditorSceneSceneSource, has_base_style) == 56);
 static_assert(offsetof(WzEditorSceneSceneSource, reserved) == 60);
+static_assert(offsetof(WzEditorSceneSceneSource, base_style) == 64);
+static_assert(offsetof(WzEditorSceneSceneSource, style_overrides) == 104);
 
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
@@ -512,7 +551,7 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 512);
+static_assert(sizeof(WzEditorSceneNode) == 568);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -971,6 +1010,51 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_glb_scene_source(
     const char* glb_path_utf8,
     uint32_t scene_index,
     uint32_t consume_mode);
+
+// Assign a per-component RENDER STYLE into node `node_id_utf8`'s GLB scene-source
+// DESCRIPTOR (issue #213 Phase 3b-2 — the headline feature). The style is written
+// into the persisted descriptor (base_style / a style_overrides[] entry), so a
+// headless load of the saved scene.json renders the identical styled result with
+// no editor: styling is DATA resolved by create_scene_from_glb, never editor-only
+// state. `target_base` selects the scope:
+//   1 — set the descriptor's BASE style (applied to every imported mesh unless a
+//       per-mesh override wins); `mesh_index` is ignored.
+//   0 — set (replace-or-insert) the per-mesh OVERRIDE for GLB `mesh_index` (the
+//       mesh_index carried by each WzEditorGlbComponent in the hierarchy query).
+// Only a high-impact subset of MeshRenderStyleData is authored over the ABI; the
+// rest stay at engine defaults. `surface_enabled`/`wireframe_enabled` are 0/1 and
+// `surface_rgba`/`wireframe_rgba` are 4-float RGBA arrays (NULL => treated as the
+// default color, with the layer still toggled by the *_enabled flag). DEFERRED
+// (applied on the engine thread's next frame) and NON-BLOCKING. Marks the scene
+// dirty and re-materializes (the descriptor's styles fold into the Scene's content
+// key, so the per-mesh renderables rebuild with the new look). An unknown/missing
+// node — or one with no GLB scene source — is a logged engine-thread no-op.
+//
+// HOST-CAPABILITY GATE: a mutation verb gated behind the host role
+// (require_host_scene_authoring). WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller.
+WZ_ABI_API WzResult wz_host_runtime_set_node_glb_component_style(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint32_t target_base,
+    uint32_t mesh_index,
+    uint32_t surface_enabled,
+    const float* surface_rgba,
+    uint32_t wireframe_enabled,
+    const float* wireframe_rgba);
+
+// Clear the per-mesh-index render-style OVERRIDE for GLB `mesh_index` in node
+// `node_id_utf8`'s GLB scene-source descriptor (issue #213 Phase 3b-2): the mesh
+// falls back to the descriptor's base style. Clearing a mesh that has no override
+// is a success no-op. DEFERRED + NON-BLOCKING; marks the scene dirty + re-
+// materializes when something changed. An unknown/missing node, or one with no GLB
+// scene source, is a logged engine-thread no-op.
+//
+// HOST-CAPABILITY GATE: same as above.
+WZ_ABI_API WzResult wz_host_runtime_clear_node_glb_component_style(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint32_t mesh_index);
 
 // Set a behavior binding's enabled flag (non-blocking). A disabled binding does
 // not dispatch. WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty
