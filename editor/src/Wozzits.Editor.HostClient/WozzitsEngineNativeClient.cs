@@ -962,6 +962,58 @@ public sealed partial class WozzitsEngineNativeClient
             consumeMode));
     }
 
+    internal EngineMutationResponse SetNodeGlbComponentStyle(
+        IntPtr runtime,
+        string nodeId,
+        bool targetBase,
+        uint meshIndex,
+        bool surfaceEnabled,
+        float[]? surfaceRgba,
+        bool wireframeEnabled,
+        float[]? wireframeRgba)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() =>
+            WozzitsEngineAbi.WzEditorRuntimeSetNodeGlbComponentStyle(
+                runtime,
+                nodeId,
+                targetBase ? 1u : 0u,
+                meshIndex,
+                surfaceEnabled ? 1u : 0u,
+                surfaceRgba,
+                wireframeEnabled ? 1u : 0u,
+                wireframeRgba));
+    }
+
+    internal EngineMutationResponse ClearNodeGlbComponentStyle(
+        IntPtr runtime,
+        string nodeId,
+        uint meshIndex)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() =>
+            WozzitsEngineAbi.WzEditorRuntimeClearNodeGlbComponentStyle(
+                runtime,
+                nodeId,
+                meshIndex));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeProperties(
         IntPtr runtime,
         string nodeId,

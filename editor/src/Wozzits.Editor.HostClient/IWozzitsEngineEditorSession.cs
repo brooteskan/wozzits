@@ -171,6 +171,27 @@ public interface IWozzitsEngineEditorSession
         uint sceneIndex,
         uint consumeMode);
 
+    // Assign a per-component render style into the node's GLB scene-source
+    // descriptor (issue #213 Phase 3b-2). targetBase: true = the descriptor's base
+    // style (applies to all imported meshes); false = a per-mesh override for
+    // meshIndex. The style subset is surface/wireframe enabled + RGBA (a null rgba
+    // = engine-default color). The engine writes it into the persisted descriptor
+    // and re-materializes the re-keyed Scene. Live + host-gated, no-op success when
+    // no viewport is running.
+    EngineMutationResponse SetNodeGlbComponentStyle(
+        string nodeId,
+        bool targetBase,
+        uint meshIndex,
+        bool surfaceEnabled,
+        float[]? surfaceRgba,
+        bool wireframeEnabled,
+        float[]? wireframeRgba);
+
+    // Clear the per-mesh-index render-style override for meshIndex in the node's
+    // GLB scene-source descriptor (the mesh falls back to the base style). Live +
+    // host-gated, no-op success when no viewport is running (issue #213 3b-2).
+    EngineMutationResponse ClearNodeGlbComponentStyle(string nodeId, uint meshIndex);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

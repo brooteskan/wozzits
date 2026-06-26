@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace Wozzits.Editor.HostClient;
 
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 24;
+    internal const uint AbiVersion = 25;
 
     private static int _resolverRegistered;
 
@@ -433,6 +434,36 @@ internal static partial class WozzitsEngineAbi
         uint sceneIndex,
         uint consumeMode);
 
+    // Assign a per-component render style into a node's GLB scene-source
+    // descriptor (issue #213 Phase 3b-2). targetBase: 1 = base style, 0 = per-mesh
+    // override for meshIndex. The style subset is surface/wireframe enabled (0/1) +
+    // an RGBA float[4] each; a null array uses the engine-default color. The style
+    // is written into the persisted descriptor so a headless load renders it.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_glb_component_style",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeGlbComponentStyle(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        uint targetBase,
+        uint meshIndex,
+        uint surfaceEnabled,
+        [MarshalUsing(ConstantElementCount = 4)] float[]? surfaceRgba,
+        uint wireframeEnabled,
+        [MarshalUsing(ConstantElementCount = 4)] float[]? wireframeRgba);
+
+    // Clear the per-mesh-index render-style override for meshIndex in a node's GLB
+    // scene-source descriptor (issue #213 Phase 3b-2).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_clear_node_glb_component_style",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeClearNodeGlbComponentStyle(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        uint meshIndex);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }
@@ -692,7 +723,32 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableSourceAbi.DisplayName),
             16);
 
-        AssertSize<WzEditorSceneSceneSourceAbi>(64);
+        AssertSize<WzEditorGlbStyleAbi>(40);
+        AssertOffset<WzEditorGlbStyleAbi>(
+            nameof(WzEditorGlbStyleAbi.SurfaceEnabled),
+            0);
+        AssertOffset<WzEditorGlbStyleAbi>(
+            nameof(WzEditorGlbStyleAbi.SurfaceR),
+            4);
+        AssertOffset<WzEditorGlbStyleAbi>(
+            nameof(WzEditorGlbStyleAbi.WireframeEnabled),
+            20);
+        AssertOffset<WzEditorGlbStyleAbi>(
+            nameof(WzEditorGlbStyleAbi.WireframeR),
+            24);
+
+        AssertSize<WzEditorGlbStyleOverrideAbi>(48);
+        AssertOffset<WzEditorGlbStyleOverrideAbi>(
+            nameof(WzEditorGlbStyleOverrideAbi.MeshIndex),
+            0);
+        AssertOffset<WzEditorGlbStyleOverrideAbi>(
+            nameof(WzEditorGlbStyleOverrideAbi.Reserved),
+            4);
+        AssertOffset<WzEditorGlbStyleOverrideAbi>(
+            nameof(WzEditorGlbStyleOverrideAbi.Style),
+            8);
+
+        AssertSize<WzEditorSceneSceneSourceAbi>(120);
         AssertOffset<WzEditorSceneSceneSourceAbi>(
             nameof(WzEditorSceneSceneSourceAbi.Kind),
             0);
@@ -714,6 +770,12 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneSceneSourceAbi>(
             nameof(WzEditorSceneSceneSourceAbi.Reserved),
             60);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.BaseStyle),
+            64);
+        AssertOffset<WzEditorSceneSceneSourceAbi>(
+            nameof(WzEditorSceneSceneSourceAbi.StyleOverrides),
+            104);
 
         AssertSize<WzEditorSceneComponentAbi>(32);
         AssertOffset<WzEditorSceneComponentAbi>(
@@ -746,7 +808,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneBehaviorAbi.Config),
             88);
 
-        AssertSize<WzEditorSceneNodeAbi>(512);
+        AssertSize<WzEditorSceneNodeAbi>(568);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1164,6 +1226,34 @@ internal readonly struct WzEditorSceneRenderableSourceAbi
     public readonly WzEditorStringSpanAbi DisplayName;
 }
 
+// The high-impact subset of a MeshRenderStyleData packed for read-back +
+// re-authoring of a GLB component's style (issue #213 Phase 3b-2): surface +
+// wireframe enabled flags (0/1) and RGBA colors. Mirrors WzEditorGlbStyle.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorGlbStyleAbi
+{
+    public readonly uint SurfaceEnabled;     // 0/1
+    public readonly float SurfaceR;
+    public readonly float SurfaceG;
+    public readonly float SurfaceB;
+    public readonly float SurfaceA;
+    public readonly uint WireframeEnabled;   // 0/1
+    public readonly float WireframeR;
+    public readonly float WireframeG;
+    public readonly float WireframeB;
+    public readonly float WireframeA;
+}
+
+// One per-mesh-index style override (issue #213 Phase 3b-2). Mirrors
+// WzEditorGlbStyleOverride.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorGlbStyleOverrideAbi
+{
+    public readonly uint MeshIndex;
+    public readonly uint Reserved;
+    public readonly WzEditorGlbStyleAbi Style;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal readonly struct WzEditorSceneSceneSourceAbi
 {
@@ -1174,6 +1264,8 @@ internal readonly struct WzEditorSceneSceneSourceAbi
     public readonly uint StyleOverrideCount;
     public readonly uint HasBaseStyle;                   // 0/1
     public readonly uint Reserved;
+    public readonly WzEditorGlbStyleAbi BaseStyle;       // valid iff HasBaseStyle
+    public readonly WzEditorTableSpanAbi StyleOverrides; // WzEditorGlbStyleOverrideAbi[]
 }
 
 [StructLayout(LayoutKind.Sequential)]

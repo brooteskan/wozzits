@@ -32,6 +32,26 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _sceneSourceConsumeMode = string.Empty;
     private uint _sceneSourceSceneIndex;
     private string _sceneSourceHierarchyError = string.Empty;
+    // The selected GLB component in the Scene Source tree (Phase 3b-2), or null
+    // when the implicit "all/base" scope is targeted. Drives the style editor.
+    private GlbComponentNodeViewModel? _selectedComponent;
+    // The style-editor fields (the high-impact subset): surface/wireframe on +
+    // RGBA (0..1). Pre-filled from the read-back (the selected component's override
+    // if present, else the base style).
+    private bool _styleSurfaceEnabled;
+    private string _styleSurfaceR = "0";
+    private string _styleSurfaceG = "0";
+    private string _styleSurfaceB = "0";
+    private string _styleSurfaceA = "1";
+    private bool _styleWireframeEnabled;
+    private string _styleWireframeR = "0";
+    private string _styleWireframeG = "0";
+    private string _styleWireframeB = "0";
+    private string _styleWireframeA = "1";
+    // The current node's read-back descriptor (base + overrides), kept so the style
+    // editor pre-fills and the override markers/optimistic updates work without a
+    // snapshot reload.
+    private EngineSceneNodeSceneSource? _sceneSourceModel;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -84,6 +104,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         ApplyRenderableCommand = new RelayCommand(ApplyRenderable);
         RemoveRenderableCommand = new RelayCommand(RemoveRenderable);
         ClearSceneSourceCommand = new RelayCommand(ClearSceneSource);
+        AssignStyleToComponentCommand =
+            new RelayCommand(AssignStyleToComponent, () => HasSelectedComponent);
+        AssignStyleToSubtreeCommand =
+            new RelayCommand(AssignStyleToSubtree, () => HasSelectedComponent);
+        AssignStyleToBaseCommand = new RelayCommand(AssignStyleToBase);
+        ClearComponentStyleCommand =
+            new RelayCommand(ClearComponentStyle, () => HasSelectedComponentOverride);
     }
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
@@ -124,6 +151,119 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveRenderableCommand { get; }
 
     public IRelayCommand ClearSceneSourceCommand { get; }
+
+    // Per-component style editor (issue #213 Phase 3b-2).
+    public IRelayCommand AssignStyleToComponentCommand { get; }
+
+    public IRelayCommand AssignStyleToSubtreeCommand { get; }
+
+    public IRelayCommand AssignStyleToBaseCommand { get; }
+
+    public IRelayCommand ClearComponentStyleCommand { get; }
+
+    // The selected GLB component the style editor targets (null = the "all/base"
+    // scope). Bound to the TreeView's SelectedItem; selecting pre-fills the editor.
+    public GlbComponentNodeViewModel? SelectedComponent
+    {
+        get => _selectedComponent;
+        set
+        {
+            if (SetProperty(ref _selectedComponent, value))
+            {
+                OnSelectedComponentChanged();
+            }
+        }
+    }
+
+    public bool HasSelectedComponent => _selectedComponent is not null;
+
+    // True when the selected component carries a per-mesh override (enables the
+    // "Clear override" action). False for "all/base" or an unstyled component.
+    public bool HasSelectedComponentOverride =>
+        _selectedComponent is { HasMesh: true, HasOverride: true };
+
+    // Label describing the current style-editor target, e.g. "turret (mesh 2)" or
+    // "All components (base)".
+    public string StyleTargetLabel
+    {
+        get
+        {
+            if (_selectedComponent is null)
+            {
+                return "All components (base)";
+            }
+            return _selectedComponent.HasMesh
+                ? $"{_selectedComponent.Name} (mesh {_selectedComponent.MeshIndex})"
+                : $"{_selectedComponent.Name} (no mesh)";
+        }
+    }
+
+    // True when the style editor can author a per-component/subtree assignment:
+    // there is a descriptor and a selected component that (for the single-component
+    // assign) carries a mesh. Subtree assign is allowed on any selected component
+    // (it fans out to descendant meshes).
+    public bool CanAssignToComponent =>
+        HasSceneSource && _selectedComponent is { HasMesh: true };
+
+    public bool StyleSurfaceEnabled
+    {
+        get => _styleSurfaceEnabled;
+        set => SetProperty(ref _styleSurfaceEnabled, value);
+    }
+
+    public string StyleSurfaceR
+    {
+        get => _styleSurfaceR;
+        set => SetProperty(ref _styleSurfaceR, value);
+    }
+
+    public string StyleSurfaceG
+    {
+        get => _styleSurfaceG;
+        set => SetProperty(ref _styleSurfaceG, value);
+    }
+
+    public string StyleSurfaceB
+    {
+        get => _styleSurfaceB;
+        set => SetProperty(ref _styleSurfaceB, value);
+    }
+
+    public string StyleSurfaceA
+    {
+        get => _styleSurfaceA;
+        set => SetProperty(ref _styleSurfaceA, value);
+    }
+
+    public bool StyleWireframeEnabled
+    {
+        get => _styleWireframeEnabled;
+        set => SetProperty(ref _styleWireframeEnabled, value);
+    }
+
+    public string StyleWireframeR
+    {
+        get => _styleWireframeR;
+        set => SetProperty(ref _styleWireframeR, value);
+    }
+
+    public string StyleWireframeG
+    {
+        get => _styleWireframeG;
+        set => SetProperty(ref _styleWireframeG, value);
+    }
+
+    public string StyleWireframeB
+    {
+        get => _styleWireframeB;
+        set => SetProperty(ref _styleWireframeB, value);
+    }
+
+    public string StyleWireframeA
+    {
+        get => _styleWireframeA;
+        set => SetProperty(ref _styleWireframeA, value);
+    }
 
     public string NewBehaviorModule
     {
@@ -1090,7 +1230,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         SceneSourcePath = sceneSource?.Path ?? string.Empty;
         SceneSourceConsumeMode = sceneSource?.ConsumeMode ?? string.Empty;
         _sceneSourceSceneIndex = sceneSource?.SceneIndex ?? 0u;
+        _sceneSourceModel = sceneSource;
+        // Reset the style editor to the base scope when the selection changes node.
+        SelectedComponent = null;
         RefreshSceneSourceHierarchy();
+        PrefillStyleEditor();
     }
 
     // Import + (re)build the read-only GLB component-hierarchy tree for the current
@@ -1143,7 +1287,34 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             SceneSourceComponents.Add(root);
         }
+        MarkOverriddenComponents();
         OnPropertyChanged(nameof(HasSceneSourceComponents));
+    }
+
+    // Set HasOverride on every tree component whose mesh_index is in the
+    // descriptor's read-back override table (Phase 3b-2), so the UI marks styled
+    // components. Cheap linear walk over the (small) tree.
+    private void MarkOverriddenComponents()
+    {
+        var overridden = _sceneSourceModel is null
+            ? new HashSet<uint>()
+            : _sceneSourceModel.StyleOverrides
+                .Select(o => o.MeshIndex)
+                .ToHashSet();
+
+        void Walk(GlbComponentNodeViewModel node)
+        {
+            node.HasOverride = node.HasMesh && overridden.Contains(node.MeshIndex);
+            foreach (var child in node.Children)
+            {
+                Walk(child);
+            }
+        }
+
+        foreach (var root in SceneSourceComponents)
+        {
+            Walk(root);
+        }
     }
 
     // Assemble the flat component list into a tree via ParentId. Components whose
@@ -1242,21 +1413,28 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _sceneSourceSceneIndex = 0u;
 
         // Refresh the cached model so re-selecting the node reflects the import
-        // (mirrors the live transform-edit fix), without a snapshot reload.
+        // (mirrors the live transform-edit fix), without a snapshot reload. A
+        // freshly imported GLB carries no styling yet (base/overrides empty — the
+        // engine applies its built-in default style).
+        var imported = new EngineSceneNodeSceneSource
+        {
+            Kind = "glb",
+            Path = resourcePath,
+            ConsumeMode = "instance",
+            SceneIndex = 0u,
+        };
+        _sceneSourceModel = imported;
         if (_inspectedSceneNode is not null)
         {
-            _inspectedSceneNode.SceneSource = new EngineSceneNodeSceneSource
-            {
-                Kind = "glb",
-                Path = resourcePath,
-                ConsumeMode = "instance",
-                SceneIndex = 0u,
-            };
+            _inspectedSceneNode.SceneSource = imported;
         }
+        SelectedComponent = null;
 
         // Surface the freshly imported GLB's component hierarchy right away
-        // (Phase 3b-1), matching what re-selecting the node would show.
+        // (Phase 3b-1), matching what re-selecting the node would show, and reset
+        // the style editor to the base scope.
         RefreshSceneSourceHierarchy();
+        PrefillStyleEditor();
     }
 
     private void ClearSceneSource()
@@ -1278,6 +1456,368 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (_inspectedSceneNode is not null)
         {
             _inspectedSceneNode.SceneSource = null;
+        }
+    }
+
+    // ─── Per-component style editor (issue #213 Phase 3b-2) ───────────────────
+
+    // When the tree selection changes, refresh the editor's enable-state and
+    // pre-fill the fields from the new target's existing style (the selected
+    // component's override if present, else the base).
+    private void OnSelectedComponentChanged()
+    {
+        OnPropertyChanged(nameof(HasSelectedComponent));
+        OnPropertyChanged(nameof(HasSelectedComponentOverride));
+        OnPropertyChanged(nameof(CanAssignToComponent));
+        OnPropertyChanged(nameof(StyleTargetLabel));
+        AssignStyleToComponentCommand.NotifyCanExecuteChanged();
+        AssignStyleToSubtreeCommand.NotifyCanExecuteChanged();
+        ClearComponentStyleCommand.NotifyCanExecuteChanged();
+        PrefillStyleEditor();
+    }
+
+    // Pre-fill the style-editor fields from the read-back: the selected
+    // component's override if it has one, else the descriptor's base style, else
+    // engine-ish defaults. Suppress-free: these are plain field writes (no live
+    // echo — the style is only pushed on an explicit Assign).
+    private void PrefillStyleEditor()
+    {
+        EngineGlbStyle? style = null;
+        if (_sceneSourceModel is not null)
+        {
+            if (_selectedComponent is { HasMesh: true } sel)
+            {
+                style = _sceneSourceModel.StyleOverrides
+                    .FirstOrDefault(o => o.MeshIndex == sel.MeshIndex)?.Style;
+            }
+            style ??= _sceneSourceModel.HasBaseStyle
+                ? _sceneSourceModel.BaseStyle
+                : null;
+        }
+
+        StyleSurfaceEnabled = style?.SurfaceEnabled ?? false;
+        StyleWireframeEnabled = style?.WireframeEnabled ?? true;
+        SetRgbaFields(
+            style?.SurfaceRgba,
+            v => StyleSurfaceR = v,
+            v => StyleSurfaceG = v,
+            v => StyleSurfaceB = v,
+            v => StyleSurfaceA = v,
+            fallbackAlpha: "1");
+        SetRgbaFields(
+            style?.WireframeRgba,
+            v => StyleWireframeR = v,
+            v => StyleWireframeG = v,
+            v => StyleWireframeB = v,
+            v => StyleWireframeA = v,
+            fallbackAlpha: "1");
+    }
+
+    private static void SetRgbaFields(
+        float[]? rgba,
+        Action<string> setR,
+        Action<string> setG,
+        Action<string> setB,
+        Action<string> setA,
+        string fallbackAlpha)
+    {
+        setR(FormatChannel(rgba, 0, "0"));
+        setG(FormatChannel(rgba, 1, "0"));
+        setB(FormatChannel(rgba, 2, "0"));
+        setA(FormatChannel(rgba, 3, fallbackAlpha));
+    }
+
+    private static string FormatChannel(float[]? rgba, int index, string fallback)
+    {
+        if (rgba is null || index >= rgba.Length)
+        {
+            return fallback;
+        }
+        return rgba[index].ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    // Assign the editor's style as a per-mesh override for the selected component
+    // (Phase 3b-2). No-op (with a hint) if the selected component has no mesh.
+    private void AssignStyleToComponent()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (_selectedComponent is not { HasMesh: true } component)
+        {
+            LastEditError =
+                "Select a component with a mesh to assign a per-component style.";
+            return;
+        }
+
+        var (surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba) =
+            CurrentEditorStyle();
+        var response = _editorSession!.SetNodeGlbComponentStyle(
+            NodeId,
+            targetBase: false,
+            meshIndex: component.MeshIndex,
+            surfaceEnabled,
+            surfaceRgba,
+            wireframeEnabled,
+            wireframeRgba);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        ApplyOverrideOptimistically(
+            component.MeshIndex,
+            surfaceEnabled,
+            surfaceRgba,
+            wireframeEnabled,
+            wireframeRgba);
+    }
+
+    // Assign the editor's style as a per-mesh override for EVERY mesh under the
+    // selected component (the subtree fan-out, Phase 3b-2): collect descendant
+    // mesh indices from the hierarchy and set an override for each.
+    private void AssignStyleToSubtree()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (_selectedComponent is null)
+        {
+            LastEditError = "Select a component to assign a subtree style.";
+            return;
+        }
+
+        var meshIndices = _selectedComponent.CollectSubtreeMeshIndices()
+            .Distinct()
+            .ToList();
+        if (meshIndices.Count == 0)
+        {
+            LastEditError = "No meshes under the selected component.";
+            return;
+        }
+
+        var (surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba) =
+            CurrentEditorStyle();
+        foreach (var meshIndex in meshIndices)
+        {
+            var response = _editorSession!.SetNodeGlbComponentStyle(
+                NodeId,
+                targetBase: false,
+                meshIndex,
+                surfaceEnabled,
+                surfaceRgba,
+                wireframeEnabled,
+                wireframeRgba);
+            if (!response.Ok)
+            {
+                SetEditResponse(response);
+                return;
+            }
+            ApplyOverrideOptimistically(
+                meshIndex,
+                surfaceEnabled,
+                surfaceRgba,
+                wireframeEnabled,
+                wireframeRgba);
+        }
+        LastEditError = string.Empty;
+    }
+
+    // Assign the editor's style as the descriptor's BASE style (applies to every
+    // imported mesh that has no override). The "all / base" scope (Phase 3b-2).
+    private void AssignStyleToBase()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (!HasSceneSource)
+        {
+            LastEditError = "This node has no GLB scene source.";
+            return;
+        }
+
+        var (surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba) =
+            CurrentEditorStyle();
+        var response = _editorSession!.SetNodeGlbComponentStyle(
+            NodeId,
+            targetBase: true,
+            meshIndex: 0u,
+            surfaceEnabled,
+            surfaceRgba,
+            wireframeEnabled,
+            wireframeRgba);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        ApplyBaseStyleOptimistically(
+            surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba);
+    }
+
+    // Clear the selected component's per-mesh override (it falls back to base).
+    private void ClearComponentStyle()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (_selectedComponent is not { HasMesh: true } component)
+        {
+            return;
+        }
+
+        var response = _editorSession!.ClearNodeGlbComponentStyle(
+            NodeId, component.MeshIndex);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        RemoveOverrideOptimistically(component.MeshIndex);
+    }
+
+    // Build the engine-facing style from the editor fields: the two enable flags +
+    // RGBA float[4] arrays parsed from the channel text (out-of-range/garbage
+    // clamps to a sane default so a typo never sends NaN).
+    private (bool, float[], bool, float[]) CurrentEditorStyle()
+    {
+        var surfaceRgba = new[]
+        {
+            ParseChannel(StyleSurfaceR),
+            ParseChannel(StyleSurfaceG),
+            ParseChannel(StyleSurfaceB),
+            ParseChannel(StyleSurfaceA),
+        };
+        var wireframeRgba = new[]
+        {
+            ParseChannel(StyleWireframeR),
+            ParseChannel(StyleWireframeG),
+            ParseChannel(StyleWireframeB),
+            ParseChannel(StyleWireframeA),
+        };
+        return (StyleSurfaceEnabled, surfaceRgba, StyleWireframeEnabled, wireframeRgba);
+    }
+
+    private static float ParseChannel(string text)
+    {
+        if (float.TryParse(
+                text,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var value))
+        {
+            return Math.Clamp(value, 0f, 1f);
+        }
+        return 0f;
+    }
+
+    private static EngineGlbStyle BuildEngineStyle(
+        bool surfaceEnabled,
+        float[] surfaceRgba,
+        bool wireframeEnabled,
+        float[] wireframeRgba)
+    {
+        return new EngineGlbStyle
+        {
+            SurfaceEnabled = surfaceEnabled,
+            SurfaceRgba = (float[])surfaceRgba.Clone(),
+            WireframeEnabled = wireframeEnabled,
+            WireframeRgba = (float[])wireframeRgba.Clone(),
+        };
+    }
+
+    // Optimistic-update the cached descriptor model's override table + the tree
+    // marker so the assignment shows immediately (the viewport re-renders from the
+    // engine re-materialize; the JSON snapshot only catches up on save/reload).
+    private void ApplyOverrideOptimistically(
+        uint meshIndex,
+        bool surfaceEnabled,
+        float[] surfaceRgba,
+        bool wireframeEnabled,
+        float[] wireframeRgba)
+    {
+        LastEditError = string.Empty;
+        var style = BuildEngineStyle(
+            surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba);
+        UpdateCachedSceneSource(model =>
+        {
+            var overrides = model.StyleOverrides
+                .Where(o => o.MeshIndex != meshIndex)
+                .Append(new EngineGlbStyleOverride
+                {
+                    MeshIndex = meshIndex,
+                    Style = style,
+                })
+                .ToList();
+            return model with
+            {
+                StyleOverrides = overrides,
+                StyleOverrideCount = (uint)overrides.Count,
+            };
+        });
+        MarkOverriddenComponents();
+        OnPropertyChanged(nameof(HasSelectedComponentOverride));
+        ClearComponentStyleCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RemoveOverrideOptimistically(uint meshIndex)
+    {
+        LastEditError = string.Empty;
+        UpdateCachedSceneSource(model =>
+        {
+            var overrides = model.StyleOverrides
+                .Where(o => o.MeshIndex != meshIndex)
+                .ToList();
+            return model with
+            {
+                StyleOverrides = overrides,
+                StyleOverrideCount = (uint)overrides.Count,
+            };
+        });
+        MarkOverriddenComponents();
+        OnPropertyChanged(nameof(HasSelectedComponentOverride));
+        ClearComponentStyleCommand.NotifyCanExecuteChanged();
+        // Re-prefill so the editor now reflects the base (the override is gone).
+        PrefillStyleEditor();
+    }
+
+    private void ApplyBaseStyleOptimistically(
+        bool surfaceEnabled,
+        float[] surfaceRgba,
+        bool wireframeEnabled,
+        float[] wireframeRgba)
+    {
+        LastEditError = string.Empty;
+        var style = BuildEngineStyle(
+            surfaceEnabled, surfaceRgba, wireframeEnabled, wireframeRgba);
+        UpdateCachedSceneSource(model => model with
+        {
+            HasBaseStyle = true,
+            BaseStyle = style,
+        });
+    }
+
+    // Apply `mutate` to both the inspector's cached model (_sceneSourceModel) and
+    // the tree node's cached SceneSource so re-selecting the node reflects the
+    // edit without a snapshot reload (mirrors the live transform-edit fix).
+    private void UpdateCachedSceneSource(
+        Func<EngineSceneNodeSceneSource, EngineSceneNodeSceneSource> mutate)
+    {
+        if (_sceneSourceModel is null)
+        {
+            return;
+        }
+        _sceneSourceModel = mutate(_sceneSourceModel);
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.SceneSource = _sceneSourceModel;
         }
     }
 
@@ -1352,12 +1892,15 @@ public sealed class InspectorComponentViewModel
     public IRelayCommand RemoveCommand { get; }
 }
 
-// One node in the read-only GLB scene-source component tree (issue #213 Phase
-// 3b-1). Display-only: a name, a mesh marker when the component carries a mesh,
-// and its child components (assembled from the flat list via parent_id). No
-// selection/mutation — Phase 3b-2 owns styling.
-public sealed class GlbComponentNodeViewModel
+// One node in the GLB scene-source component tree (issue #213 Phase 3b-1/3b-2).
+// 3b-2 makes it interactive: the TreeView selects it (IsSelected drives the style
+// editor) and HasOverride marks components carrying a per-mesh style override. The
+// tree is assembled from the flat list via parent_id; CollectSubtreeMeshIndices
+// fans an assignment out over a whole subtree.
+public sealed class GlbComponentNodeViewModel : ViewModelBase
 {
+    private bool _hasOverride;
+
     public GlbComponentNodeViewModel(EngineGlbComponent component)
     {
         Id = component.Id;
@@ -1381,7 +1924,48 @@ public sealed class GlbComponentNodeViewModel
     // no mesh, so the marker is hidden).
     public string MeshBadge => HasMesh ? "mesh" : string.Empty;
 
+    // True when this mesh-bearing component currently carries a per-mesh style
+    // override in the descriptor (drives a small marker; Phase 3b-2). Derived from
+    // the read-back override table.
+    public bool HasOverride
+    {
+        get => _hasOverride;
+        set
+        {
+            if (SetProperty(ref _hasOverride, value))
+            {
+                OnPropertyChanged(nameof(OverrideBadge));
+            }
+        }
+    }
+
+    public string OverrideBadge => HasOverride ? "styled" : string.Empty;
+
     public ObservableCollection<GlbComponentNodeViewModel> Children { get; } = [];
+
+    // Every mesh_index at or under this component (depth-first), for fanning a
+    // "Assign to subtree" out over the whole branch. Components with no mesh
+    // contribute nothing themselves but their descendants still count.
+    public IReadOnlyList<uint> CollectSubtreeMeshIndices()
+    {
+        var indices = new List<uint>();
+        Collect(this, indices);
+        return indices;
+    }
+
+    private static void Collect(
+        GlbComponentNodeViewModel node,
+        List<uint> into)
+    {
+        if (node.HasMesh)
+        {
+            into.Add(node.MeshIndex);
+        }
+        foreach (var child in node.Children)
+        {
+            Collect(child, into);
+        }
+    }
 }
 
 // One entry in the Behaviors "+" add menu: a registered module name plus the

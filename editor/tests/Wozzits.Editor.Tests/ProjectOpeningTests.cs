@@ -855,6 +855,234 @@ public sealed partial class ProjectOpeningTests
         Assert.True(viewModel.Inspector.HasSceneSourceHierarchyError);
     }
 
+    // The per-component style editor (issue #213 Phase 3b-2) marshals each scope
+    // through the engine session: assign-to-component sets one per-mesh override,
+    // assign-to-base sets the base style, and clear-override clears one. The style
+    // subset (surface/wireframe enabled + RGBA) round-trips on the verb.
+    [Fact]
+    public void InspectorAssignsAndClearsGlbComponentStyleThroughEngineSession()
+    {
+        var editorSession = StyledGlbTreeSession();
+        var viewModel = StyledGlbTreeViewModel(editorSession, out var tank);
+        viewModel.SceneTree.SelectNode(tank);
+
+        var inspector = viewModel.Inspector;
+        var body = Assert.Single(inspector.SceneSourceComponents);
+        var turret = Assert.Single(body.Children);
+
+        // Select the turret (mesh_index 1) and author a surface-only style.
+        inspector.SelectedComponent = turret;
+        Assert.True(inspector.HasSelectedComponent);
+        inspector.StyleSurfaceEnabled = true;
+        inspector.StyleSurfaceR = "0.2";
+        inspector.StyleSurfaceG = "0.4";
+        inspector.StyleSurfaceB = "0.6";
+        inspector.StyleSurfaceA = "1";
+        inspector.StyleWireframeEnabled = false;
+        inspector.AssignStyleToComponentCommand.Execute(null);
+
+        var assign = Assert.Single(editorSession.GlbComponentStyles);
+        Assert.Equal("tank", assign.NodeId);
+        Assert.False(assign.TargetBase);
+        Assert.Equal(1u, assign.MeshIndex);
+        Assert.True(assign.SurfaceEnabled);
+        Assert.NotNull(assign.SurfaceRgba);
+        Assert.Equal(0.2f, assign.SurfaceRgba![0], 3);
+        Assert.Equal(0.6f, assign.SurfaceRgba[2], 3);
+        Assert.False(assign.WireframeEnabled);
+        // The override is marked on the component immediately (optimistic update).
+        Assert.True(turret.HasOverride);
+        Assert.True(inspector.HasSelectedComponentOverride);
+
+        // Assign-to-base targets the descriptor base style (target_base = true).
+        editorSession.GlbComponentStyles.Clear();
+        inspector.StyleWireframeEnabled = true;
+        inspector.StyleWireframeR = "1";
+        inspector.AssignStyleToBaseCommand.Execute(null);
+        var baseAssign = Assert.Single(editorSession.GlbComponentStyles);
+        Assert.True(baseAssign.TargetBase);
+        Assert.True(baseAssign.WireframeEnabled);
+        Assert.Equal(1f, baseAssign.WireframeRgba![0], 3);
+
+        // Clear the turret's override -> one clear verb, marker drops.
+        inspector.ClearComponentStyleCommand.Execute(null);
+        var clear = Assert.Single(editorSession.GlbStyleClears);
+        Assert.Equal("tank", clear.NodeId);
+        Assert.Equal(1u, clear.MeshIndex);
+        Assert.False(turret.HasOverride);
+    }
+
+    // Assign-to-subtree fans the style out to EVERY mesh under the selected
+    // component (issue #213 Phase 3b-2): selecting body (mesh 2, with turret mesh 1
+    // and gun mesh 0 beneath) sets an override for all three mesh indices.
+    [Fact]
+    public void InspectorAssignsGlbStyleToSubtreeFansOutToEveryMesh()
+    {
+        var editorSession = StyledGlbTreeSession();
+        var viewModel = StyledGlbTreeViewModel(editorSession, out var tank);
+        viewModel.SceneTree.SelectNode(tank);
+
+        var inspector = viewModel.Inspector;
+        var body = Assert.Single(inspector.SceneSourceComponents);
+
+        inspector.SelectedComponent = body;
+        inspector.StyleWireframeEnabled = true;
+        inspector.AssignStyleToSubtreeCommand.Execute(null);
+
+        // body(2) -> turret(1) -> gun(0): all three mesh indices get an override.
+        var meshes = editorSession.GlbComponentStyles
+            .Select(e => e.MeshIndex)
+            .OrderBy(i => i)
+            .ToList();
+        Assert.Equal([0u, 1u, 2u], meshes);
+        Assert.All(editorSession.GlbComponentStyles, e => Assert.False(e.TargetBase));
+        // Every mesh-bearing component now shows the override marker.
+        Assert.True(body.HasOverride);
+        Assert.True(Assert.Single(body.Children).HasOverride);
+    }
+
+    // The style editor pre-fills from the read-back (issue #213 Phase 3b-2): a
+    // descriptor carrying a base style + a per-mesh override surfaces both — the
+    // override marks its component, and selecting it pre-fills the editor fields
+    // from the override (selecting base falls back to the base style).
+    [Fact]
+    public void InspectorPrefillsStyleEditorFromReadBack()
+    {
+        var editorSession = StyledGlbTreeSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    new EngineSceneNode
+                    {
+                        Id = "tank",
+                        DisplayName = "tank",
+                        Kind = "node",
+                        Visible = true,
+                        SceneSource = new EngineSceneNodeSceneSource
+                        {
+                            Kind = "glb",
+                            Path = "gltf/tank1.glb",
+                            ConsumeMode = "instance",
+                            SceneIndex = 0u,
+                            HasBaseStyle = true,
+                            BaseStyle = new EngineGlbStyle
+                            {
+                                SurfaceEnabled = false,
+                                SurfaceRgba = [0.1f, 0.1f, 0.1f, 1f],
+                                WireframeEnabled = true,
+                                WireframeRgba = [0f, 1f, 0.15f, 1f],
+                            },
+                            StyleOverrideCount = 1u,
+                            StyleOverrides =
+                            [
+                                new EngineGlbStyleOverride
+                                {
+                                    MeshIndex = 1u,
+                                    Style = new EngineGlbStyle
+                                    {
+                                        SurfaceEnabled = true,
+                                        SurfaceRgba = [0.7f, 0.8f, 0.9f, 1f],
+                                        WireframeEnabled = false,
+                                        WireframeRgba = [1f, 0f, 0f, 1f],
+                                    },
+                                },
+                            ],
+                        },
+                    })),
+            editorSession: editorSession,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-prefill"));
+
+        var tank = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(tank);
+        var inspector = viewModel.Inspector;
+
+        // The override (mesh 1 = turret) is marked; body (mesh 2) is not.
+        var body = Assert.Single(inspector.SceneSourceComponents);
+        var turret = Assert.Single(body.Children);
+        Assert.False(body.HasOverride);
+        Assert.True(turret.HasOverride);
+
+        // With nothing selected, the editor pre-fills from the BASE style.
+        Assert.False(inspector.StyleSurfaceEnabled);
+        Assert.True(inspector.StyleWireframeEnabled);
+        Assert.Equal("0.1", inspector.StyleSurfaceR);
+
+        // Selecting the overridden component pre-fills from its OVERRIDE style.
+        inspector.SelectedComponent = turret;
+        Assert.True(inspector.StyleSurfaceEnabled);
+        Assert.Equal("0.7", inspector.StyleSurfaceR);
+        Assert.False(inspector.StyleWireframeEnabled);
+    }
+
+    private static RecordingEditorSession StyledGlbTreeSession()
+    {
+        return new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                SceneName = "Scene",
+                SceneIndex = 0u,
+                Components =
+                [
+                    new EngineGlbComponent
+                    {
+                        Id = "body",
+                        Name = "body",
+                        HasMesh = true,
+                        MeshIndex = 2u,
+                        NodeIndex = 2u,
+                    },
+                    new EngineGlbComponent
+                    {
+                        Id = "turret",
+                        Name = "turret",
+                        ParentId = "body",
+                        HasMesh = true,
+                        MeshIndex = 1u,
+                        NodeIndex = 1u,
+                    },
+                    new EngineGlbComponent
+                    {
+                        Id = "gun",
+                        Name = "gun",
+                        ParentId = "turret",
+                        HasMesh = true,
+                        MeshIndex = 0u,
+                        NodeIndex = 0u,
+                    },
+                ],
+            },
+        };
+    }
+
+    private static MainWindowViewModel StyledGlbTreeViewModel(
+        RecordingEditorSession editorSession,
+        out SceneTreeNodeViewModel tank)
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    new EngineSceneNode
+                    {
+                        Id = "tank",
+                        DisplayName = "tank",
+                        Kind = "node",
+                        Visible = true,
+                        SceneSource = new EngineSceneNodeSceneSource
+                        {
+                            Kind = "glb",
+                            Path = "gltf/tank1.glb",
+                            ConsumeMode = "instance",
+                            SceneIndex = 0u,
+                        },
+                    })),
+            editorSession: editorSession,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-glb-style-vm"));
+        tank = Assert.Single(viewModel.SceneTree.Nodes);
+        return viewModel;
+    }
+
     // Smoke: the GLB scene-source host verb is reachable through the live v23 DLL
     // (issue #213 Phase 3a). With no viewport runtime the native session reports a
     // no-op success — this proves the P/Invoke + session/client wiring round-trips
@@ -925,7 +1153,7 @@ public sealed partial class ProjectOpeningTests
     // The read-only GLB hierarchy import (issue #213 Phase 3b-1) round-trips
     // through the live v24 DLL: it imports tank1.glb (staged next to the engine
     // DLL) and decodes the model. Also exercises a bad path -> Ok=false. The
-    // layout self-check (now v24) runs on first P/Invoke. Skips if the DLL or the
+    // layout self-check (now v25) runs on first P/Invoke. Skips if the DLL or the
     // staged GLB isn't built.
     [Fact]
     public void NativeEngineClientImportsGlbSceneHierarchyWhenEngineAbiIsBuilt()
@@ -1266,6 +1494,16 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal(1u, sceneSource.StyleOverrideCount);
         Assert.True(sceneSource.HasBaseStyle);
 
+        // Phase 3b-2: the base style + the one per-mesh override round-trip through
+        // the v25 snapshot. The fixture's base style is wireframe-on/surface-off;
+        // its mesh-index-1 override is surface-on/wireframe-off.
+        Assert.True(sceneSource.BaseStyle.WireframeEnabled);
+        Assert.False(sceneSource.BaseStyle.SurfaceEnabled);
+        var fixtureOverride = Assert.Single(sceneSource.StyleOverrides);
+        Assert.Equal(1u, fixtureOverride.MeshIndex);
+        Assert.True(fixtureOverride.Style.SurfaceEnabled);
+        Assert.False(fixtureOverride.Style.WireframeEnabled);
+
         // A node without a glb_scene_source block must not carry one.
         var plain = FindSceneNode(
             response.Scene.Snapshot.Roots,
@@ -1592,6 +1830,47 @@ public sealed partial class ProjectOpeningTests
             uint consumeMode)
         {
             GlbSceneSources.Add((nodeId, glbPath, sceneIndex, consumeMode));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public record GlbStyleEdit(
+            string NodeId,
+            bool TargetBase,
+            uint MeshIndex,
+            bool SurfaceEnabled,
+            float[]? SurfaceRgba,
+            bool WireframeEnabled,
+            float[]? WireframeRgba);
+
+        public List<GlbStyleEdit> GlbComponentStyles { get; } = [];
+
+        public List<(string NodeId, uint MeshIndex)> GlbStyleClears { get; } = [];
+
+        public EngineMutationResponse SetNodeGlbComponentStyle(
+            string nodeId,
+            bool targetBase,
+            uint meshIndex,
+            bool surfaceEnabled,
+            float[]? surfaceRgba,
+            bool wireframeEnabled,
+            float[]? wireframeRgba)
+        {
+            GlbComponentStyles.Add(new GlbStyleEdit(
+                nodeId,
+                targetBase,
+                meshIndex,
+                surfaceEnabled,
+                surfaceRgba,
+                wireframeEnabled,
+                wireframeRgba));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse ClearNodeGlbComponentStyle(
+            string nodeId,
+            uint meshIndex)
+        {
+            GlbStyleClears.Add((nodeId, meshIndex));
             return new EngineMutationResponse { Ok = true };
         }
 

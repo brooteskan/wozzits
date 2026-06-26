@@ -332,6 +332,44 @@ public sealed partial class WozzitsEngineNativeClient
             SceneIndex = source.SceneIndex,
             StyleOverrideCount = source.StyleOverrideCount,
             HasBaseStyle = source.HasBaseStyle != 0,
+            BaseStyle = ReadGlbStyle(source.BaseStyle),
+            StyleOverrides =
+                ReadTable<WzEditorGlbStyleOverrideAbi, EngineGlbStyleOverride>(
+                    bytes,
+                    source.StyleOverrides,
+                    ReadGlbStyleOverride),
+        };
+    }
+
+    private static EngineGlbStyle ReadGlbStyle(WzEditorGlbStyleAbi style)
+    {
+        return new EngineGlbStyle
+        {
+            SurfaceEnabled = style.SurfaceEnabled != 0,
+            SurfaceRgba =
+                [style.SurfaceR, style.SurfaceG, style.SurfaceB, style.SurfaceA],
+            WireframeEnabled = style.WireframeEnabled != 0,
+            WireframeRgba =
+            [
+                style.WireframeR,
+                style.WireframeG,
+                style.WireframeB,
+                style.WireframeA,
+            ],
+        };
+    }
+
+    private static EngineGlbStyleOverride ReadGlbStyleOverride(
+        byte[] bytes,
+        WzEditorGlbStyleOverrideAbi over)
+    {
+        // bytes is unused (the override is plain POD — no blob strings/tables),
+        // but ReadTable requires the (bytes, abi) converter shape.
+        _ = bytes;
+        return new EngineGlbStyleOverride
+        {
+            MeshIndex = over.MeshIndex,
+            Style = ReadGlbStyle(over.Style),
         };
     }
 

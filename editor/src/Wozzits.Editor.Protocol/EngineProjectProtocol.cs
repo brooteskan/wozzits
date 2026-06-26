@@ -391,10 +391,35 @@ public sealed record EngineSceneRenderableSource
     public string DisplayName { get; init; } = string.Empty;
 }
 
+// The high-impact subset of a MeshRenderStyleData read back for a GLB component
+// (issue #213 Phase 3b-2): surface + wireframe enabled flags and RGBA colors.
+// Rgba is a 4-float array [r, g, b, a]. The editor pre-fills its style editor
+// from this and re-authors the same subset via the style verb.
+public sealed record EngineGlbStyle
+{
+    public bool SurfaceEnabled { get; init; }
+
+    public float[] SurfaceRgba { get; init; } = [0f, 0f, 0f, 0f];
+
+    public bool WireframeEnabled { get; init; }
+
+    public float[] WireframeRgba { get; init; } = [0f, 0f, 0f, 0f];
+}
+
+// One per-mesh-index style override read back from a GLB scene-source
+// descriptor (issue #213 Phase 3b-2). MeshIndex matches EngineGlbComponent.MeshIndex.
+public sealed record EngineGlbStyleOverride
+{
+    public uint MeshIndex { get; init; }
+
+    public EngineGlbStyle Style { get; init; } = new();
+}
+
 // Read-only summary of a node's GLB scene-source descriptor (issue #213),
-// present only when the node carries a glb_scene_source block. The full
-// MeshRenderStyleData is not surfaced: HasBaseStyle is a flag and
-// StyleOverrideCount is the override count.
+// present only when the node carries a glb_scene_source block. Carries the
+// summary fields plus the editor-authorable style subset (Phase 3b-2): the base
+// style (when HasBaseStyle) and the per-mesh override table, so the editor can
+// pre-fill its per-component style editor from the existing assignments.
 public sealed record EngineSceneNodeSceneSource
 {
     public string Kind { get; init; } = string.Empty;
@@ -408,6 +433,10 @@ public sealed record EngineSceneNodeSceneSource
     public uint StyleOverrideCount { get; init; }
 
     public bool HasBaseStyle { get; init; }
+
+    public EngineGlbStyle BaseStyle { get; init; } = new();
+
+    public List<EngineGlbStyleOverride> StyleOverrides { get; init; } = [];
 }
 
 // On-demand import of a GLB scene's component hierarchy (issue #213 Phase 3b-1):

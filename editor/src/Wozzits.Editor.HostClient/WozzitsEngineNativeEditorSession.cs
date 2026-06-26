@@ -426,6 +426,41 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, glbPath, sceneIndex, consumeMode);
     }
 
+    public EngineMutationResponse SetNodeGlbComponentStyle(
+        string nodeId,
+        bool targetBase,
+        uint meshIndex,
+        bool surfaceEnabled,
+        float[]? surfaceRgba,
+        bool wireframeEnabled,
+        float[]? wireframeRgba)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeGlbComponentStyle(
+            runtime.Handle,
+            nodeId,
+            targetBase,
+            meshIndex,
+            surfaceEnabled,
+            surfaceRgba,
+            wireframeEnabled,
+            wireframeRgba);
+    }
+
+    public EngineMutationResponse ClearNodeGlbComponentStyle(
+        string nodeId,
+        uint meshIndex)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.ClearNodeGlbComponentStyle(runtime.Handle, nodeId, meshIndex);
+    }
+
     public void Dispose()
     {
         // Stop the engine first, then close the authoring session.
