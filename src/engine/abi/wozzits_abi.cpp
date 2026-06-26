@@ -1251,6 +1251,56 @@ extern "C"
         return result(WZ_RESULT_OK, "");
     }
 
+    WzResult wz_host_runtime_reload_behavior_modules(WzHostRuntime* runtime)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        runtime->control.request_reload_behavior_modules();
+        return result(WZ_RESULT_OK, "");
+    }
+
+    WzResult wz_host_runtime_behavior_module_catalog(
+        WzHostRuntime* runtime,
+        WzBuffer* out_modules)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_modules, "out_modules");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            // Newline-delimited registered module names (matches how behavior
+            // event channels cross the ABI); the editor splits on '\n'. The
+            // names come from the engine-thread-owned registry via the
+            // control's published snapshot, so this read is lock-guarded and
+            // never touches the registry directly.
+            std::string joined;
+            const std::vector<std::string> modules =
+                runtime->control.behavior_modules();
+            for (const std::string& module : modules) {
+                if (!joined.empty()) {
+                    joined.push_back('\n');
+                }
+                joined += module;
+            }
+            const std::vector<uint8_t> bytes(joined.begin(), joined.end());
+            return copy_bytes_to_buffer(bytes, out_modules);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "behavior module catalog failed");
+        }
+    }
+
     WzResult wz_host_runtime_add_child_node(
         WzHostRuntime* runtime,
         const char* parent_id_utf8,

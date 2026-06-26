@@ -137,6 +137,21 @@ namespace wz::app
         // Engine thread: consume a pending save request (true once per request).
         [[nodiscard]] bool take_save_request();
 
+        // Owner thread: request the engine to reload the project's behavior-
+        // module DLLs (after the editor recompiled them) on its next frame.
+        // Non-blocking and coalescing (a flag): per-module results are logged.
+        void request_reload_behavior_modules();
+        // Engine thread: consume a pending reload request (true once per request).
+        [[nodiscard]] bool take_reload_behavior_modules_request();
+
+        // Engine thread: publish the names of the currently registered behavior
+        // modules (after load_scene and after a reload) so the owner can offer
+        // them for binding. Owner thread: read a copy any time. Guarded by mutex_;
+        // this is a small, rarely-changing list, so a published snapshot avoids a
+        // blocking cross-thread query.
+        void set_behavior_modules(std::vector<std::string> modules);
+        [[nodiscard]] std::vector<std::string> behavior_modules() const;
+
         // Owner thread: submit a draft to bind; blocks until the engine thread
         // binds it (or the engine stops). The draft is moved to the engine and
         // the bound draft (with resolved keys + validation) is moved back into
@@ -254,6 +269,8 @@ namespace wz::app
         std::condition_variable cv_;
         std::atomic_bool stop_{ false };
         std::atomic_bool save_requested_{ false };
+        std::atomic_bool reload_behaviors_requested_{ false };
+        std::vector<std::string> behavior_modules_;  // guarded by mutex_
         bool has_request_ = false;
         bool has_result_ = false;
         bool finished_ = false;

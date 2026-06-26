@@ -76,6 +76,30 @@ namespace wz::app
         return save_requested_.exchange(false, std::memory_order_acq_rel);
     }
 
+    void EditorRuntimeControl::request_reload_behavior_modules()
+    {
+        reload_behaviors_requested_.store(true, std::memory_order_release);
+    }
+
+    bool EditorRuntimeControl::take_reload_behavior_modules_request()
+    {
+        return reload_behaviors_requested_.exchange(
+            false, std::memory_order_acq_rel);
+    }
+
+    void EditorRuntimeControl::set_behavior_modules(
+        std::vector<std::string> modules)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        behavior_modules_ = std::move(modules);
+    }
+
+    std::vector<std::string> EditorRuntimeControl::behavior_modules() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return behavior_modules_;
+    }
+
     AssetGraphCompileResult EditorRuntimeControl::bind(
         wz::asset::AssetGraphDraft& draft)
     {
@@ -518,6 +542,12 @@ namespace wz::app
                 ctx.logger.error("load scene failed");
             }
 
+            // Publish the loaded behavior modules so the owner (editor) can offer
+            // them for binding (the registry is engine-thread-owned).
+            if (control) {
+                control->set_behavior_modules(app.behavior_module_names());
+            }
+
             // Free-fly camera input: raw keyboard/mouse feed the global input
             // event queue, drained per frame into an InputState that drives the
             // app's camera (and any future sim) via simulation_tick.
@@ -656,6 +686,10 @@ namespace wz::app
                         });
                     if (control->take_save_request()) {
                         app.save_scene();
+                    }
+                    if (control->take_reload_behavior_modules_request()) {
+                        app.reload_behavior_modules(behavior_module_folder);
+                        control->set_behavior_modules(app.behavior_module_names());
                     }
                 }
 

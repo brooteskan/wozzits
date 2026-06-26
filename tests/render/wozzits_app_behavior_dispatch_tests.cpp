@@ -126,6 +126,48 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
         << "behaviors did not dispatch on the second frame";
 }
 
+// reload_behavior_modules must rebuild the registry (built-ins + project DLLs)
+// and re-materialize the scene's behavior binding in place — without a restart —
+// and the reloaded behavior must still dispatch. This is the engine apply the
+// editor's "Rebuild Behavior Modules" verb (wz_host_runtime_reload_behavior_
+// modules) drives after it recompiles the project's behavior sources.
+TEST_F(WozzitsAppBehaviorFixture, ReloadBehaviorModulesRebuildsAndStillDispatches)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // The registered modules (built-ins + the project DLL) are listable for the
+    // editor's "add behavior" picker.
+    const std::vector<std::string> modules_before = app.behavior_module_names();
+    EXPECT_FALSE(modules_before.empty())
+        << "registered behavior modules should be listable";
+
+    // Reload from the same staged module folder: the registry is cleared and
+    // rebuilt (built-ins re-registered, the project DLL reloaded) and the
+    // behavior scene re-materialized. The one binding must survive — not vanish
+    // (lost built-ins / unbuilt scene) and not duplicate (stale registrations).
+    app.reload_behavior_modules(project.manifest.behavior_module_folder);
+    EXPECT_EQ(app.active_behavior_binding_count(), 1u)
+        << "reload must re-materialize exactly the scene's one binding";
+    EXPECT_EQ(app.behavior_module_names(), modules_before)
+        << "reload should restore the same registered modules";
+
+    // And the reloaded behavior still dispatches: one tick moves the node up.
+    const std::optional<wz::math::Vec3> before =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(before.has_value()) << "mover node missing from scene";
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FLOAT_EQ(after->y, before->y + 1.0f)
+        << "reloaded behavior did not dispatch after reload_behavior_modules";
+}
+
 // ─── Live behavior-binding authoring (the host-ABI verbs' engine-thread apply) ─
 // These exercise WozzitsApp_v1's behavior-authoring methods — the apply layer
 // the deferred host-ABI verbs (wz_host_runtime_*_node_behavior) call on the

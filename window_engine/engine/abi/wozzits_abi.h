@@ -706,6 +706,24 @@ WZ_ABI_API WzResult wz_host_runtime_remove_node(
 // runtime.
 WZ_ABI_API WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime);
 
+// Reload the project's behavior-module DLLs into the running runtime (after the
+// editor recompiled them), without restarting the engine: the engine clears its
+// behavior registry, re-registers the built-ins, reloads every DLL in the
+// project's behavior_module_folder, and rebuilds the behavior scene on its next
+// frame. Non-blocking; per-module load results are written to the engine log.
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime.
+WZ_ABI_API WzResult wz_host_runtime_reload_behavior_modules(
+    WzHostRuntime* runtime);
+
+// Names of every currently registered behavior module (built-ins + the project
+// DLLs), so the editor can offer them when adding a behavior binding. Returns a
+// newline-delimited UTF-8 list in out_modules (free with wz_free_buffer); an
+// empty buffer means no modules are registered. WZ_RESULT_INVALID_ARGUMENT for a
+// null runtime.
+WZ_ABI_API WzResult wz_host_runtime_behavior_module_catalog(
+    WzHostRuntime* runtime,
+    WzBuffer* out_modules);
+
 // Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
 // running scene, blocking until the engine thread applies it, and return the
 // minted counter id in out_new_id (UTF-8; free with wz_free_buffer).

@@ -236,6 +236,22 @@ namespace wz::app
         // no live edit happened since load/last save; false on write failure.
         bool save_scene();
 
+        // Reload the project's behavior-module DLLs from `module_folder` into a
+        // clean registry and re-materialize the behavior runtime, without
+        // restarting the engine. Used by the editor after it recompiles the
+        // project's behavior sources: clears registry_ + plugins_, re-registers
+        // the built-ins (they are otherwise only registered in the ctor), reloads
+        // every DLL in the folder (load_behavior_modules), then rebuilds the
+        // behavior scene. Per-module load results are logged. No-op-safe for an
+        // empty/missing folder (built-ins are still restored).
+        void reload_behavior_modules(const wz::fs::Path& module_folder);
+
+        // Names of every currently registered behavior module (built-ins + the
+        // project DLLs loaded from behavior_module_folder) — the set a scene-node
+        // behavior binding may reference. Lets the editor offer "add a behavior"
+        // from the imported modules. Order follows registration.
+        [[nodiscard]] std::vector<std::string> behavior_module_names() const;
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the

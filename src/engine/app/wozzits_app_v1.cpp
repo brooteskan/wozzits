@@ -403,6 +403,38 @@ namespace wz::app
             + std::to_string(behavior_scene_->behaviors.size()) + ")");
     }
 
+    void WozzitsApp_v1::reload_behavior_modules(
+        const wz::fs::Path& module_folder)
+    {
+        // Drop the previously loaded modules (built-ins + project DLLs) and the
+        // plugin host's dynamic libraries, then rebuild from scratch. Clearing
+        // first is required: load_behavior_modules only reloads same-path DLLs,
+        // so without a clear a renamed/removed module would linger, and the
+        // built-ins (registered only in the ctor) must be re-registered after
+        // the registry clear or the scene would lose them.
+        ctx_.logger.info(
+            "reload_behavior_modules: reloading behavior modules from "
+            + (module_folder.empty() ? std::string("<builtins only>")
+                                     : std::string(module_folder)));
+        registry_.clear();
+        plugins_.clear();
+        wz::engine::behavior::register_builtin_behaviors(
+            registry_, plugins_, ctx_.logger);
+        load_behavior_modules(module_folder);
+        rebuild_behavior_scene();
+    }
+
+    std::vector<std::string> WozzitsApp_v1::behavior_module_names() const
+    {
+        std::vector<std::string> names;
+        const auto modules = registry_.modules();
+        names.reserve(modules.size());
+        for (const auto& registration : modules) {
+            names.push_back(registration.module);
+        }
+        return names;
+    }
+
     void WozzitsApp_v1::dispatch_scene_behaviors(
         const wz::input::InputState& input, float dt)
     {
