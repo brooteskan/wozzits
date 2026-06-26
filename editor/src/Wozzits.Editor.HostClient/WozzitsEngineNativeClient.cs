@@ -338,6 +338,57 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // Fetch the live runtime's grafted scene nodes (issue #213) as a scene
+    // snapshot. The blob is the SAME project-snapshot layout LoadProjectSnapshot
+    // returns, so it is decoded with the same reader; only the scene part is
+    // meaningful (its roots are instance-grafted sub-trees, each carrying its host
+    // id as ParentId). A null/not-running runtime, or any failure, yields an empty
+    // snapshot so the caller leaves its JSON tree untouched.
+    internal EngineSceneSnapshot LoadRuntimeGraftedSceneNodes(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineSceneSnapshot();
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            buffer = WozzitsEngineAbi.WzEditorRuntimeGraftedSceneSnapshot(runtime);
+            if (buffer.Data == IntPtr.Zero)
+            {
+                return new EngineSceneSnapshot();
+            }
+
+            return ReadProjectSnapshot(buffer).Scene.Snapshot;
+        }
+        catch (DllNotFoundException)
+        {
+            return new EngineSceneSnapshot();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return new EngineSceneSnapshot();
+        }
+        catch (BadImageFormatException)
+        {
+            return new EngineSceneSnapshot();
+        }
+        catch (InvalidOperationException)
+        {
+            return new EngineSceneSnapshot();
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
     {
         if (session == IntPtr.Zero)

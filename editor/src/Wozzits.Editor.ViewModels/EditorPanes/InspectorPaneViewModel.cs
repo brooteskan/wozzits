@@ -124,6 +124,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             new RelayCommand(ClearComponentStyle, () => HasSelectedComponentOverride);
     }
 
+    // Raised after a scene-source reference/descriptor was set or cleared on the
+    // selected node (issue #213): the runtime's grafted children changed, so the
+    // host (MainWindowViewModel) re-merges them into the scene tree.
+    public event Action? SceneSourceChanged;
+
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
 
     public ObservableCollection<InspectorBehaviorViewModel> Behaviors { get; } = [];
@@ -1338,6 +1343,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
         SubtreeReferenceLabel = option.Label;
+        SceneSourceChanged?.Invoke();
     }
 
     private void ClearSceneSourceReference()
@@ -1357,6 +1363,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
         SelectedSceneSourceOption = null;
         SubtreeReferenceLabel = string.Empty;
+        SceneSourceChanged?.Invoke();
     }
 
     // Clear the picker selection + optimistic reference label (the reference is
@@ -1582,6 +1589,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // the style editor to the base scope.
         RefreshSceneSourceHierarchy();
         PrefillStyleEditor();
+        SceneSourceChanged?.Invoke();
     }
 
     private void ClearSceneSource()
@@ -1604,6 +1612,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             _inspectedSceneNode.SceneSource = null;
         }
+        SceneSourceChanged?.Invoke();
     }
 
     // ─── Per-component style editor (issue #213 Phase 3b-2) ───────────────────

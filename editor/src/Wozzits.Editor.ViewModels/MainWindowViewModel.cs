@@ -61,6 +61,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             projectAssetGraph,
             sessionAssetGraph));
         SceneTree.LoadSnapshot(projectSnapshot?.Scene);
+
+        // Merge the runtime's grafted "Subtree from asset" children under their
+        // hosts (issue #213). Deferred off the constructor: the query blocks on the
+        // engine thread until the runtime has loaded + grafted (seconds during a
+        // cold start), so posting it lets the window paint first. Falls back to a
+        // direct call when there is no dispatcher (design-time / tests).
+        if (_dispatch is not null)
+        {
+            _dispatch(() => SceneTree.MergeGraftedNodes());
+        }
+        else
+        {
+            SceneTree.MergeGraftedNodes();
+        }
     }
 
     public string WindowTitle { get; } = "Wozzits";
@@ -201,6 +215,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // selection shows no inspector.
         SceneTree.SelectedNodeChanged += OnSceneNodeSelected;
         AssetGraph.SelectedNodeChanged += OnAssetGraphNodeSelected;
+        // A "Subtree from asset" assign/clear changes the runtime's grafted
+        // children (issue #213); re-merge them into the scene tree under the host.
+        Inspector.SceneSourceChanged += OnInspectorSceneSourceChanged;
 
         var layoutFactory = new EditorDockLayoutFactory(this);
         DockFactory = layoutFactory.Factory;
@@ -271,6 +288,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 .Select(node => new InspectorSceneSourceOptionViewModel(
                     node.Id,
                     node.DisplayName)));
+    }
+
+    // A scene-source reference/descriptor was assigned or cleared in the inspector
+    // (issue #213): the runtime re-grafted, so re-merge its grafted children into
+    // the scene tree under their hosts. The merge re-queries the runtime and
+    // de-dupes its own previous grafts, so calling it after every change is safe.
+    private void OnInspectorSceneSourceChanged()
+    {
+        SceneTree.MergeGraftedNodes();
     }
 
     // The asset-graph node type that produces a graftable scene hierarchy (issue

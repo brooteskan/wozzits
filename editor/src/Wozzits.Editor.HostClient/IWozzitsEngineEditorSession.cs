@@ -106,6 +106,14 @@ public interface IWozzitsEngineEditorSession
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);
 
+    // The running scene's runtime-only GRAFTED nodes (issue #213): the instance-
+    // grafted sub-trees a "Subtree from asset" reference produces, which live only
+    // in the live runtime and are absent from the saved scene.json. Each returned
+    // root carries its host node's id as ParentId so the caller can merge the
+    // sub-tree under that host in the JSON-sourced tree. An empty snapshot (no
+    // roots) when no viewport is running or nothing is grafted.
+    EngineSceneSnapshot LoadGraftedSceneNodes();
+
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit);

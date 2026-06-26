@@ -283,6 +283,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.AddChildNode(runtime.Handle, parentId);
     }
 
+    public EngineSceneSnapshot LoadGraftedSceneNodes()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineSceneSnapshot();
+        }
+        return _client.LoadRuntimeGraftedSceneNodes(runtime.Handle);
+    }
+
     public EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit)

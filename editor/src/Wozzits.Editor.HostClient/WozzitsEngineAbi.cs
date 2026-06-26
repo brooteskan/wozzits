@@ -478,6 +478,19 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         uint meshIndex);
 
+    // Fetch the running runtime's grafted scene nodes (issue #213) as a project-
+    // snapshot blob — the SAME WzEditorProjectSnapshotAbi layout as
+    // WzEditorLoadProjectSnapshot, so the existing reader decodes it. Only the
+    // scene part is meaningful (its roots are instance-grafted sub-trees, each
+    // root carrying its host id as ParentId). BLOCKING (mirrors AddChildNode). A
+    // null/not-running runtime yields an ok blob with an empty scene. Free the
+    // returned buffer with WzFreeBuffer.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_grafted_scene_snapshot")]
+    internal static partial WzBuffer WzEditorRuntimeGraftedSceneSnapshot(
+        IntPtr runtime);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }

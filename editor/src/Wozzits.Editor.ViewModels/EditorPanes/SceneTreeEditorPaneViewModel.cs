@@ -9,6 +9,12 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
     private SceneTreeNodeViewModel? _selectedNode;
     private readonly IWozzitsEngineEditorSession? _editorSession;
 
+    // The graft roots currently merged into the tree (issue #213), so a re-merge
+    // (after a re-assign/clear) can drop the previous grafts before adding the
+    // fresh ones — otherwise re-assigning would duplicate the sub-tree. Each entry
+    // is the injected root VM; removing it drops its whole sub-tree.
+    private readonly List<SceneTreeNodeViewModel> _mergedGraftRoots = [];
+
     public SceneTreeEditorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null)
     {
@@ -45,6 +51,8 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
     {
         SetSelectedNode(null);
         Nodes.Clear();
+        // The previous tree (and any grafts merged into it) is gone.
+        _mergedGraftRoots.Clear();
 
         if (scene is null)
         {
@@ -69,6 +77,83 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(EmptyState));
         OnPropertyChanged(nameof(HasScene));
         OnPropertyChanged(nameof(HasNoScene));
+
+        // The grafted "Subtree from asset" children are merged separately (issue
+        // #213): the caller (MainWindowViewModel) invokes MergeGraftedNodes once
+        // the runtime is up, off the first-paint path, since that query blocks on
+        // the engine thread.
+    }
+
+    // Merge the live runtime's grafted scene nodes (issue #213) under their host
+    // nodes in the JSON-sourced tree. Defensive + idempotent: previously-merged
+    // grafts are removed first (so a re-assign/clear does not duplicate), then
+    // each returned root is appended under the authored host its ParentId names.
+    // A missing host or an empty result simply leaves the tree as-is — authored
+    // nodes keep their full data; this only ADDS grafts.
+    public void MergeGraftedNodes()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+
+        // Drop the prior grafts first (each tracked root removes its sub-tree).
+        if (_mergedGraftRoots.Count > 0)
+        {
+            foreach (var graft in _mergedGraftRoots)
+            {
+                RemoveFromTree(graft);
+            }
+            _mergedGraftRoots.Clear();
+        }
+
+        var grafted = _editorSession.LoadGraftedSceneNodes();
+        var changed = false;
+        foreach (var root in grafted.Roots)
+        {
+            // The graft root carries its host's id as ParentId; find that host in
+            // the authored tree. Skip a graft with no/unknown host (defensive).
+            if (string.IsNullOrEmpty(root.ParentId))
+            {
+                continue;
+            }
+            var host = FindNode(Nodes, root.ParentId);
+            if (host is null)
+            {
+                continue;
+            }
+
+            var injected = new SceneTreeNodeViewModel(root, isInstanced: true);
+            host.Children.Add(injected);
+            _mergedGraftRoots.Add(injected);
+            changed = true;
+        }
+
+        if (changed)
+        {
+            OnPropertyChanged(nameof(HasScene));
+            OnPropertyChanged(nameof(HasNoScene));
+        }
+    }
+
+    // Depth-first lookup of the tree node with `id`, or null if none.
+    private static SceneTreeNodeViewModel? FindNode(
+        IReadOnlyList<SceneTreeNodeViewModel> nodes,
+        string id)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Id == id)
+            {
+                return node;
+            }
+            var found = FindNode(node.Children, id);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+        return null;
     }
 
     public void SelectNode(SceneTreeNodeViewModel node)
@@ -238,7 +323,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     private string _displayName = string.Empty;
     private string? _parentId;
 
-    public SceneTreeNodeViewModel(EngineSceneNode node)
+    public SceneTreeNodeViewModel(EngineSceneNode node, bool isInstanced = false)
     {
         Id = node.Id;
         DisplayName = node.DisplayName;
@@ -253,8 +338,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         SceneSource = node.SceneSource;
         Components = node.Components;
         Behaviors = node.Behaviors;
+        IsInstanced = isInstanced;
         Children = new ObservableCollection<SceneTreeNodeViewModel>(
-            node.Children.Select(child => new SceneTreeNodeViewModel(child)));
+            node.Children.Select(
+                child => new SceneTreeNodeViewModel(child, isInstanced)));
     }
 
     public string Id { get; }
@@ -316,6 +403,12 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public ObservableCollection<SceneTreeNodeViewModel> Children { get; }
 
     public bool HasChildren => Children.Count > 0;
+
+    // True for a runtime-grafted "Subtree from asset" node (issue #213): merged
+    // into the tree from the live runtime, not authored in scene.json. These are
+    // read-only — not savable and not directly editable as authored nodes — so a
+    // row style can mark them and the editor must not treat them as authored.
+    public bool IsInstanced { get; }
 
     // True if `candidate` is this node or anywhere in its subtree — used to
     // reject reparenting a node onto itself or one of its own descendants.

@@ -162,6 +162,50 @@ public sealed partial class ProjectOpeningTests
         }
     }
 
+    // issue #213: the grafted-scene-nodes session method round-trips through the
+    // real engine ABI. A session opened without a viewport runtime has nothing
+    // grafted, so it returns an empty snapshot (no roots) and never throws —
+    // exercising the session/client wiring against the built DLL. Graceful-skip
+    // when the engine ABI is not built.
+    [Fact]
+    public void NativeEngineSessionGraftedSceneNodesIsEmptyWithoutRuntime()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        var sampleProject = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "wozzits-window-engine",
+            "window_engine",
+            "resources",
+            "projects",
+            "test_mesh_001"));
+
+        if (!File.Exists(abiPath) || !Directory.Exists(sampleProject))
+        {
+            return;
+        }
+
+        // startRuntime defaults false => no viewport, so the session short-circuits
+        // to an empty snapshot. (The populated path needs a GPU and is covered by
+        // the engine on-device test.)
+        var session = new WozzitsEngineNativeClient().OpenEditorSession(sampleProject);
+        try
+        {
+            var grafted = session.LoadGraftedSceneNodes();
+            Assert.NotNull(grafted);
+            Assert.Empty(grafted.Roots);
+        }
+        finally
+        {
+            (session as IDisposable)?.Dispose();
+        }
+    }
+
     [Fact]
     public void NativeEngineClientCreatesProjectFilesWhenEngineAbiIsBuilt()
     {
@@ -1473,6 +1517,191 @@ public sealed partial class ProjectOpeningTests
         Assert.Same(child, sceneTree.SelectedNode);
     }
 
+    // issue #213: the grafted "Subtree from asset" children (which live only in
+    // the runtime, not scene.json) are merged under their authored host, marked
+    // instanced, and a re-merge does not duplicate them.
+    [Fact]
+    public void SceneTreeMergesGraftedNodesUnderHost()
+    {
+        var session = new RecordingEditorSession
+        {
+            // body (root of the graft) parents to the host "tank_host"; turret
+            // nests under body. The graft roots carry the host id as ParentId.
+            GraftedScene = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "tank_host/body",
+                        DisplayName = "body",
+                        ParentId = "tank_host",
+                        Kind = "renderable",
+                        Children =
+                        [
+                            new EngineSceneNode
+                            {
+                                Id = "tank_host/body/turret",
+                                DisplayName = "turret",
+                                ParentId = "tank_host/body",
+                                Kind = "node",
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "tank_host",
+                        DisplayName = "tank_host",
+                        Kind = "node",
+                    },
+                ],
+            },
+        });
+
+        // LoadSnapshot no longer auto-merges; the host trigger does it.
+        sceneTree.MergeGraftedNodes();
+
+        var host = Assert.Single(sceneTree.Nodes);
+        Assert.Equal("tank_host", host.Id);
+        Assert.False(host.IsInstanced);  // the authored host is not a graft
+
+        var body = Assert.Single(host.Children);
+        Assert.Equal("tank_host/body", body.Id);
+        Assert.True(body.IsInstanced);   // grafted => marked instanced
+        var turret = Assert.Single(body.Children);
+        Assert.Equal("tank_host/body/turret", turret.Id);
+        Assert.True(turret.IsInstanced); // the whole sub-tree is instanced
+
+        // A re-merge (e.g. after a re-assign) drops the prior graft and re-adds it
+        // exactly once — no duplicate body under the host.
+        sceneTree.MergeGraftedNodes();
+        var hostAfter = Assert.Single(sceneTree.Nodes);
+        var bodyAfter = Assert.Single(hostAfter.Children);
+        Assert.Equal("tank_host/body", bodyAfter.Id);
+    }
+
+    // issue #213: a graft whose host is not in the tree is skipped (defensive), and
+    // an empty grafted result leaves the authored tree untouched.
+    [Fact]
+    public void SceneTreeMergeIgnoresUnknownHostAndEmptyGrafts()
+    {
+        var session = new RecordingEditorSession
+        {
+            GraftedScene = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "ghost/child",
+                        ParentId = "ghost",  // no such host in the tree
+                        Kind = "node",
+                    },
+                ],
+            },
+        };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots = [new EngineSceneNode { Id = "root", Kind = "node" }],
+            },
+        });
+
+        sceneTree.MergeGraftedNodes();
+
+        // Unknown host => nothing merged; the authored root stands alone.
+        var root = Assert.Single(sceneTree.Nodes);
+        Assert.Empty(root.Children);
+
+        // An empty graft result is a clean no-op too.
+        session.GraftedScene = new EngineSceneSnapshot();
+        sceneTree.MergeGraftedNodes();
+        Assert.Empty(Assert.Single(sceneTree.Nodes).Children);
+    }
+
+    // issue #213: assigning a "Subtree from asset" reference in the inspector
+    // re-merges the runtime's grafted children into the scene tree (the
+    // MainWindowViewModel wiring), so they appear under the host without a reload.
+    [Fact]
+    public void AssigningSceneSourceMergesGraftedChildrenIntoTree()
+    {
+        var session = new RecordingEditorSession();
+        var assetGraph = new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    new EngineAssetGraphNode
+                    {
+                        Id = 5u,
+                        TypeName = "Scene from GLB",
+                        DisplayName = "tank scene",
+                    },
+                ],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: assetGraph,
+                scene: SceneSnapshot(new EngineSceneNode
+                {
+                    Id = "host",
+                    DisplayName = "host",
+                    Kind = "node",
+                    Visible = true,
+                })),
+            editorSession: session,
+            projectDirectory: Path.Combine(Path.GetTempPath(), "wz-graft-merge-vm"));
+
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        Assert.Empty(host.Children);  // nothing grafted yet
+
+        // Selecting the host threads the "Scene from GLB" node into the picker.
+        viewModel.SceneTree.SelectNode(host);
+        var option = Assert.Single(viewModel.Inspector.AvailableSceneSources);
+
+        // The runtime now reports a graft for the host (as it would after the
+        // engine applies the assignment on its next frame).
+        session.GraftedScene = new EngineSceneSnapshot
+        {
+            Roots =
+            [
+                new EngineSceneNode
+                {
+                    Id = "host/body",
+                    DisplayName = "body",
+                    ParentId = "host",
+                    Kind = "renderable",
+                },
+            ],
+        };
+
+        viewModel.Inspector.SelectedSceneSourceOption = option;
+        viewModel.Inspector.ApplySceneSourceCommand.Execute(null);
+
+        // The assignment fired SceneSourceChanged, which re-merged the grafts.
+        var hostAfter = Assert.Single(viewModel.SceneTree.Nodes);
+        var body = Assert.Single(hostAfter.Children);
+        Assert.Equal("host/body", body.Id);
+        Assert.True(body.IsInstanced);
+    }
+
     [Fact]
     public void SceneTreeReparentMovesNodeAndRejectsCycle()
     {
@@ -2170,6 +2399,19 @@ public sealed partial class ProjectOpeningTests
                 Ok = true,
                 NodeId = NextAddedChildId,
             };
+        }
+
+        // The grafted-scene-nodes snapshot the editor merges into the tree
+        // (issue #213). Defaults to empty (nothing grafted). LoadGraftedCount lets
+        // a test assert the re-merge re-queried the runtime.
+        public EngineSceneSnapshot GraftedScene { get; set; } = new();
+
+        public int LoadGraftedCount { get; private set; }
+
+        public EngineSceneSnapshot LoadGraftedSceneNodes()
+        {
+            LoadGraftedCount++;
+            return GraftedScene;
         }
 
         public EngineMutationResponse ReparentNode(string nodeId, string newParentId)

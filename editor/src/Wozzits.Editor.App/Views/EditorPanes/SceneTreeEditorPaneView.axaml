@@ -34,6 +34,12 @@
                                            Classes="SceneTreeNodeKind"/>
                                 <TextBlock Text="{Binding DisplayText}"
                                            Classes="SceneTreeNodeName"/>
+                                <!-- Runtime-grafted "Subtree from asset" node
+                                     (issue #213): read-only, not authored. -->
+                                <TextBlock Text="instanced"
+                                           Opacity="0.6"
+                                           FontStyle="Italic"
+                                           IsVisible="{Binding IsInstanced}"/>
                             </StackPanel>
                         </TreeDataTemplate>
                     </TreeView.DataTemplates>
