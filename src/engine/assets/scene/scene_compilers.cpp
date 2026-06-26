@@ -1317,6 +1317,28 @@ namespace wz::engine::assets::internal
                 }
             }
 
+            // Scene-source reference (issue #213): mirror the renderable node-id
+            // read. Only the authored asset-graph node id is persisted; the
+            // resolved key (scene_source) is re-bridged on (re)bind.
+            if (const auto* scene_source =
+                    find_member(node_val, "scene_source"))
+            {
+                if (scene_source->kind != wz::json::JSONValueKind::Object) {
+                    logger.error(
+                        "scene_source on node '" + node.id
+                        + "' is not an object");
+                    return std::nullopt;
+                }
+                const auto node_id =
+                    read_number(*scene_source, "asset_graph_node_id");
+                if (node_id && *node_id > 0.0) {
+                    node.scene_source_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(
+                            *node_id);
+                    node.scene_source.reset();
+                }
+            }
+
             const auto* asset_reference =
                 find_member(node_val, "asset_reference");
             if (asset_reference

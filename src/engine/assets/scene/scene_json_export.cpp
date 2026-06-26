@@ -597,6 +597,20 @@ namespace wz::engine::assets
             return obj;
         }
 
+        // Scene-source reference (issue #213): persist only the authored
+        // asset-graph node id (the stable intent). The resolved scene_source key
+        // is re-bridged on every (re)bind, so it is intentionally not written.
+        JSONValuePtr scene_source_value(
+            wz::asset::AssetGraphDraftNodeId node_id)
+        {
+            auto obj = object_value();
+            add_member(
+                *obj,
+                "asset_graph_node_id",
+                number_value(static_cast<double>(node_id)));
+            return obj;
+        }
+
         JSONValuePtr asset_reference_value(
             const SceneAssetReferenceAsset& reference)
         {
@@ -1865,6 +1879,10 @@ namespace wz::engine::assets
             {
                 add_member(*obj, "renderable",
                     renderable_asset_value(*node.renderable_asset));
+            }
+            if (node.scene_source_node_id) {
+                add_member(*obj, "scene_source",
+                    scene_source_value(*node.scene_source_node_id));
             }
             if (node.asset_reference) {
                 add_member(*obj, "asset_reference",

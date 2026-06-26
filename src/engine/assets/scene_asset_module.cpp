@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wz::engine::assets
@@ -240,19 +241,50 @@ namespace wz::engine::assets
             return {};
         }
 
-        MeshRenderStyleAsset default_style{};
+        // Per-component style mapping (issue #213): a base style applied to every
+        // mesh, plus sparse per-mesh-index overrides referencing distinct styles.
+        // Default (no base, no overrides) reproduces prior behavior exactly: one
+        // "<name>/default_mesh_style" asset applied to every mesh.
+        MeshRenderStyleAsset base_style{};
         if (!imported.mesh_indices.empty()) {
-            MeshRenderStyleData style{};
-            default_style = mesh_render_styles_.create_mesh_render_style({
+            base_style = mesh_render_styles_.create_mesh_render_style({
                 .name = desc.name + "/default_mesh_style",
-                .style = style,
+                .style = desc.base_style.value_or(MeshRenderStyleData{}),
             });
-            if (!default_style.valid()) {
+            if (!base_style.valid()) {
                 logger_.error(
                     "failed to register GLB scene default style: "
                     + desc.name);
                 return {};
             }
+        }
+
+        // Resolve the override style asset for each overridden mesh index. Built
+        // lazily so unreferenced overrides cost nothing; an override naming a mesh
+        // index absent from the import is simply never looked up (ignored).
+        std::unordered_map<uint32_t, MeshRenderStyleAsset> override_styles;
+        for (const auto& style_override : desc.style_overrides) {
+            if (override_styles.count(style_override.mesh_index)) {
+                // Last writer wins for a repeated mesh index; warn and continue.
+                logger_.warn(
+                    "GLB scene '" + desc.name
+                    + "' has duplicate style override for mesh "
+                    + std::to_string(style_override.mesh_index));
+            }
+            MeshRenderStyleAsset style =
+                mesh_render_styles_.create_mesh_render_style({
+                    .name = desc.name + "/mesh_style_"
+                        + std::to_string(style_override.mesh_index),
+                    .style = style_override.style,
+                });
+            if (!style.valid()) {
+                logger_.error(
+                    "failed to register GLB scene style override for mesh "
+                    + std::to_string(style_override.mesh_index) + ": "
+                    + desc.name);
+                return {};
+            }
+            override_styles[style_override.mesh_index] = style;
         }
 
         std::vector<SceneGLBMeshRenderableBinding> bindings;
@@ -270,10 +302,18 @@ namespace wz::engine::assets
                 return {};
             }
 
+            // Resolve this mesh's style: the override for its index if present,
+            // else the base style.
+            const auto override_it = override_styles.find(mesh_index);
+            const MeshRenderStyleAsset& mesh_style =
+                override_it != override_styles.end()
+                    ? override_it->second
+                    : base_style;
+
             RenderableAsset renderable = renderables_.create_mesh_styled({
                 .name = desc.name + "/renderable_" + std::to_string(mesh_index),
                 .mesh = mesh,
-                .style = default_style,
+                .style = mesh_style,
             });
             if (!renderable.valid()) {
                 logger_.error("failed to register GLB renderable for scene: "
@@ -307,8 +347,13 @@ namespace wz::engine::assets
 
         std::vector<wz::asset::AssetKey> deps;
         append_unique_dependency(deps, file_key);
-        if (default_style.valid())
-            append_unique_dependency(deps, default_style.output);
+        if (base_style.valid())
+            append_unique_dependency(deps, base_style.output);
+        for (const auto& [mesh_index, style] : override_styles) {
+            (void)mesh_index;
+            if (style.valid())
+                append_unique_dependency(deps, style.output);
+        }
         for (const auto& binding : bindings) {
             append_unique_dependency(deps, binding.mesh_asset);
             append_unique_dependency(deps, binding.renderable_asset);

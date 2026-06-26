@@ -34,11 +34,29 @@ namespace wz::engine::assets
         std::vector<SceneAssetReferenceBinding> vector_field_asset_references;
     };
 
+    // Per-component render-style override for a GLB scene import (issue #213).
+    // Keyed by GLB mesh index (the common case: distinct meshes per part). An
+    // override naming a mesh index not present in the imported scene is ignored.
+    struct SceneFromGLBStyleOverride
+    {
+        uint32_t mesh_index = 0;
+        MeshRenderStyleData style{};
+    };
+
     struct SceneFromGLBDesc
     {
         std::string name;
         wz::fs::Path path;
         std::optional<uint32_t> scene_index;
+
+        // Per-component style mapping (issue #213): a base style applied to every
+        // mesh, plus sparse per-mesh-index overrides. When base_style is unset the
+        // built-in default MeshRenderStyleData is used (reproducing prior
+        // behavior). The resolved style for a mesh is the override for its index
+        // if present, else the base. The editor resolves GLB subtree -> mesh-index
+        // before building this mapping in a later phase.
+        std::optional<MeshRenderStyleData> base_style;
+        std::vector<SceneFromGLBStyleOverride> style_overrides;
     };
 
     struct SceneAsset

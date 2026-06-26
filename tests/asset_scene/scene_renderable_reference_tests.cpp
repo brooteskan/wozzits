@@ -813,3 +813,86 @@ TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
     EXPECT_EQ(compiled.scene.opaque.size(), 1u);
 }
 
+// Issue #213 (Phase 1): a host node's scene_source (the authored asset-graph
+// node id) round-trips losslessly through scene JSON. Mirrors the renderable
+// asset-graph-node-id persistence: export emits "scene_source" with
+// "asset_graph_node_id"; parse reads it back into scene_source_node_id.
+TEST(SceneAssetModule, SceneSourceReferenceRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_source_reference_json_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    SceneAssetData authored{};
+    authored.name = "scene_source_reference_scene";
+
+    // A host node that references a "Scene from GLB" authored asset-graph node.
+    SceneNodeAsset host{};
+    host.id = "tank_host";
+    attach_scene_source_node(host, 4242u);
+    authored.nodes.push_back(std::move(host));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"scene_source\""), std::string::npos);
+    EXPECT_NE(exported.find("\"asset_graph_node_id\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root,
+        "scene_source_reference.scene.json",
+        exported);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "scene_source_reference",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    const auto& parsed_node = scene_data->nodes[0];
+    EXPECT_EQ(parsed_node.id, "tank_host");
+    ASSERT_TRUE(parsed_node.scene_source_node_id.has_value());
+    EXPECT_EQ(*parsed_node.scene_source_node_id, 4242u);
+    // The resolved key is re-bridged on (re)bind, not persisted.
+    EXPECT_FALSE(parsed_node.scene_source.has_value());
+}
+
+// Issue #213 (Phase 1): a node WITHOUT a scene_source emits no "scene_source"
+// member (additive, no spurious output) and round-trips with the slot empty.
+TEST(SceneAssetModule, NoSceneSourceEmitsNoMemberAndRoundTrips)
+{
+    wz::Logger logger;
+
+    using namespace wz::engine::assets;
+
+    SceneAssetData authored{};
+    authored.name = "no_scene_source_scene";
+
+    SceneNodeAsset node{};
+    node.id = "plain";
+    authored.nodes.push_back(std::move(node));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_EQ(exported.find("\"scene_source\""), std::string::npos);
+}
+
