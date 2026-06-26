@@ -90,10 +90,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RemoveRenderableCommand = new RelayCommand(RemoveRenderable);
         // "Subtree from asset" (issue #213 piece 2): pick a "Scene from GLB" node to
         // reference, or clear it. Apply is gated on having a selection in the picker.
-        ApplySceneSourceCommand = new RelayCommand(
-            ApplySceneSource,
-            () => _selectedSceneSourceOption is not null);
-        ClearSceneSourceReferenceCommand = new RelayCommand(ClearSceneSourceReference);
+        RemoveSubtreeComponentCommand = new RelayCommand(RemoveSubtreeComponent);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -138,9 +135,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveRenderableCommand { get; }
 
     // "Subtree from asset" (issue #213 piece 2).
-    public IRelayCommand ApplySceneSourceCommand { get; }
-
-    public IRelayCommand ClearSceneSourceReferenceCommand { get; }
+    public IRelayCommand RemoveSubtreeComponentCommand { get; }
 
     public string NewBehaviorModule
     {
@@ -223,9 +218,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         get => _selectedSceneSourceOption;
         set
         {
-            if (SetProperty(ref _selectedSceneSourceOption, value))
+            // A user pick applies immediately (like editing a component field in the
+            // inspector): reference + graft the chosen Scene-from-GLB subtree, no
+            // separate Apply button. Programmatic restores (SetAvailableSceneSources)
+            // assign the field, not this setter, so they never re-apply; clearing sets
+            // null, which is skipped.
+            if (SetProperty(ref _selectedSceneSourceOption, value)
+                && value is not null)
             {
-                ApplySceneSourceCommand.NotifyCanExecuteChanged();
+                ApplySceneSource();
             }
         }
     }
@@ -1138,58 +1139,51 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _selectedSceneSourceOption = restored;
         OnPropertyChanged(nameof(SelectedSceneSourceOption));
         OnPropertyChanged(nameof(HasAvailableSceneSources));
-        ApplySceneSourceCommand.NotifyCanExecuteChanged();
     }
 
-    // Point the selected scene node at the picked "Scene from GLB" node as an
-    // Instance subtree source. The reference is shown optimistically (session-local)
-    // — persistent read-back from the snapshot is piece 3.
+    // Point the node at the picked "Scene from GLB" node as an Instance subtree
+    // source — invoked from the picker's selection setter, so choosing a node applies
+    // immediately (no separate button). Grafts the GLB hierarchy under the node; the
+    // scene-tree merge (via SceneSourceChanged) then shows it.
     private void ApplySceneSource()
     {
-        if (!EnsureCanApply())
+        if (!EnsureCanApply() || SelectedSceneSourceOption is not { } option)
         {
-            return;
-        }
-        if (SelectedSceneSourceOption is not { } option)
-        {
-            LastEditError = "Pick a \"Scene from GLB\" asset to reference.";
             return;
         }
 
         var response = _editorSession!.SetNodeSceneSource(
-            NodeId,
-            option.Id,
-            consumeMode: 0u);   // 0 = WZ_SCENE_SOURCE_INSTANCE
+            NodeId, option.Id, consumeMode: 0u);   // 0 = WZ_SCENE_SOURCE_INSTANCE
         SetEditResponse(response);
         if (!response.Ok)
         {
             return;
         }
-        // Keep the picker section revealed after referencing (it was already open to
-        // get here; this also covers a programmatic apply).
-        HasSubtreeSection = true;
         SubtreeReferenceLabel = option.Label;
         SceneSourceChanged?.Invoke();
     }
 
-    private void ClearSceneSourceReference()
+    // Remove the "Subtree from asset" component (the section's ✕), mirroring how the
+    // camera ✕ removes the camera: clear the engine reference (so the runtime drops
+    // the grafted subtree — the scene-tree merge removes it via SceneSourceChanged)
+    // and hide the section. Re-attach via "Add Component → Subtree from asset".
+    private void RemoveSubtreeComponent()
     {
-        if (!EnsureCanApply())
+        if (EnsureCanApply())
         {
-            return;
+            // Asset-graph node id 0 clears the reference on the engine side.
+            var response = _editorSession!.SetNodeSceneSource(
+                NodeId, assetGraphNodeId: 0u, consumeMode: 0u);
+            SetEditResponse(response);
+            if (response.Ok)
+            {
+                SceneSourceChanged?.Invoke();
+            }
         }
 
-        // Asset-graph node id 0 clears the reference on the engine side.
-        var response = _editorSession!.SetNodeSceneSource(
-            NodeId, assetGraphNodeId: 0u, consumeMode: 0u);
-        SetEditResponse(response);
-        if (!response.Ok)
-        {
-            return;
-        }
         SelectedSceneSourceOption = null;
         SubtreeReferenceLabel = string.Empty;
-        SceneSourceChanged?.Invoke();
+        HasSubtreeSection = false;
     }
 
     // Clear the picker selection + optimistic reference label and re-hide the

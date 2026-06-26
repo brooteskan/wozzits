@@ -807,11 +807,10 @@ public sealed partial class ProjectOpeningTests
         Assert.True(viewModel.Inspector.HasSubtreeSection);
         Assert.Empty(editorSession.AddedComponents);
 
-        // Picking + applying points the node at that graph node as an Instance
-        // subtree source and shows the pick optimistically.
+        // Picking a Scene-from-GLB node in the combo applies immediately (no Apply
+        // button): the node is pointed at that graph node as an Instance subtree
+        // source and the pick shows optimistically.
         viewModel.Inspector.SelectedSceneSourceOption = option;
-        Assert.True(viewModel.Inspector.ApplySceneSourceCommand.CanExecute(null));
-        viewModel.Inspector.ApplySceneSourceCommand.Execute(null);
 
         var referenced = Assert.Single(editorSession.SceneSources);
         Assert.Equal("host", referenced.NodeId);
@@ -822,14 +821,16 @@ public sealed partial class ProjectOpeningTests
             "Referencing: tank scene",
             viewModel.Inspector.SubtreeReferenceDisplay);
 
-        // Clear sends the id-0 clear signal and drops the optimistic reference.
-        viewModel.Inspector.ClearSceneSourceReferenceCommand.Execute(null);
+        // The ✕ removes the component: id-0 clear signal, the optimistic reference is
+        // dropped, and the section is hidden (re-attach via Add Component).
+        viewModel.Inspector.RemoveSubtreeComponentCommand.Execute(null);
 
         var cleared = editorSession.SceneSources[^1];
         Assert.Equal("host", cleared.NodeId);
         Assert.Equal(0ul, cleared.AssetGraphNodeId);   // 0 = clear
         Assert.Equal(0u, cleared.ConsumeMode);
         Assert.False(viewModel.Inspector.HasSubtreeReference);
+        Assert.False(viewModel.Inspector.HasSubtreeSection);
         Assert.Null(viewModel.Inspector.SelectedSceneSourceOption);
     }
 
@@ -1415,8 +1416,8 @@ public sealed partial class ProjectOpeningTests
             ],
         };
 
+        // Picking applies immediately (apply-on-select), firing SceneSourceChanged.
         viewModel.Inspector.SelectedSceneSourceOption = option;
-        viewModel.Inspector.ApplySceneSourceCommand.Execute(null);
 
         // The assignment fired SceneSourceChanged, which re-merged the grafts.
         var hostAfter = Assert.Single(viewModel.SceneTree.Nodes);

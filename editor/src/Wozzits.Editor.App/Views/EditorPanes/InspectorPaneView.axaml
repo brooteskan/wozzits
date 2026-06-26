@@ -183,20 +183,26 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Subtree from asset (issue #213 piece 2): point this node
-                             at a "Scene from GLB" asset-graph node so the runtime
-                             grafts that GLB's hierarchy as the node's children. Mirrors
-                             the Renderable Asset card's pick + Apply + ✕ shape, but the
-                             reference is a Scene-from-GLB graph node chosen from a combo
-                             of the available ones. The "Referencing" line is optimistic
-                             and session-local for now (snapshot read-back is piece 3).
-                             Attached via "Add Component → Subtree from asset" (the card
-                             is gated on HasSubtreeSection), mirroring Renderable. -->
+                        <!-- Subtree from asset (issue #213): point this node at a
+                             "Scene from GLB" asset-graph node so the runtime grafts that
+                             GLB's hierarchy as the node's children. Attached via "Add
+                             Component → Subtree from asset" (gated on HasSubtreeSection)
+                             and removed via the header ✕, mirroring the Camera component.
+                             Choosing a node in the combo applies immediately (no Apply
+                             button); the ✕ clears the reference + removes the grafted
+                             subtree from the tree + hides the section. -->
                         <Border Classes="InspectorSectionCard"
                                 IsVisible="{Binding HasSubtreeSection}">
                             <StackPanel Classes="InspectorSection">
-                                <TextBlock Text="Subtree from asset"
-                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Subtree from asset"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveSubtreeComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove subtree from asset"/>
+                                </Grid>
 
                                 <Grid ColumnDefinitions="Auto,*"
                                       ColumnSpacing="10"
@@ -232,18 +238,6 @@
                                                Classes="InspectorPropertyValue"/>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,Auto"
-                                      ColumnSpacing="6">
-                                    <Button Content="Reference subtree"
-                                            Command="{Binding ApplySceneSourceCommand}"
-                                            Classes="InspectorApplyButton"
-                                            ToolTip.Tip="Graft the picked Scene-from-GLB hierarchy under this node"/>
-                                    <Button Grid.Column="1"
-                                            Content="✕"
-                                            Command="{Binding ClearSceneSourceReferenceCommand}"
-                                            Classes="InspectorApplyButton"
-                                            ToolTip.Tip="Clear subtree reference"/>
-                                </Grid>
                             </StackPanel>
                         </Border>
 
