@@ -45,7 +45,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             () => _editorSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
-        Inspector = new InspectorPaneViewModel(editorSession, AppendEditorLog);
+        Inspector = new InspectorPaneViewModel(
+            editorSession, AppendEditorLog, _projectDirectory);
         SceneTree = new SceneTreeEditorPaneViewModel(editorSession);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);

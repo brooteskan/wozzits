@@ -403,6 +403,20 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetNodeRenderableAsset(runtime.Handle, nodeId, assetGraphNodeId);
     }
 
+    public EngineMutationResponse SetNodeGlbSceneSource(
+        string nodeId,
+        string glbPath,
+        uint sceneIndex,
+        uint consumeMode)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeGlbSceneSource(
+            runtime.Handle, nodeId, glbPath, sceneIndex, consumeMode);
+    }
+
     public void Dispose()
     {
         // Stop the engine first, then close the authoring session.

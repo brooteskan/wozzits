@@ -407,6 +407,20 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         ulong assetGraphNodeId);
 
+    // Author (empty/null glbPathUtf8 clears) a node's GLB scene-source descriptor
+    // — the asset-graph-independent route (issue #213 Phase 3a). consumeMode uses
+    // the WZ_SCENE_SOURCE_* tokens (0 = instance, 1 = flatten).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_glb_scene_source",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeGlbSceneSource(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string glbPathUtf8,
+        uint sceneIndex,
+        uint consumeMode);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]
     internal static partial void WzFreeBuffer(ref WzBuffer buffer);
 }

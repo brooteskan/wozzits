@@ -676,6 +676,151 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("1.6", cameraEdit.Edit.Aspect);
     }
 
+    // Inspector "Scene Source" section (issue #213 Phase 3a): importing a GLB on a
+    // selected node roots the picked absolute path against the project directory
+    // and pushes it as an Instance import through the host verb; the descriptor a
+    // node already carries (Phase 2 snapshot) shows + clears.
+    [Fact]
+    public void InspectorImportsAndClearsGlbSceneSourceThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-vm");
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            // A plain host node (no scene source yet).
+                            Node("host", parentId: "root", visible: true),
+                            // A node already carrying a GLB scene-source
+                            // descriptor (the Phase 2 snapshot summary).
+                            new EngineSceneNode
+                            {
+                                Id = "tank",
+                                DisplayName = "tank",
+                                ParentId = "root",
+                                Kind = "node",
+                                Visible = true,
+                                SceneSource = new EngineSceneNodeSceneSource
+                                {
+                                    Kind = "glb",
+                                    Path = "gltf/tank1.glb",
+                                    ConsumeMode = "instance",
+                                    SceneIndex = 0u,
+                                    StyleOverrideCount = 1u,
+                                    HasBaseStyle = true,
+                                },
+                            },
+                        ]))),
+            editorSession: editorSession,
+            projectDirectory: projectDir);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var host = Assert.Single(root.Children, n => n.Id == "host");
+        var tank = Assert.Single(root.Children, n => n.Id == "tank");
+
+        // The plain host shows the import affordance, no descriptor.
+        viewModel.SceneTree.SelectNode(host);
+        Assert.False(viewModel.Inspector.HasSceneSource);
+        Assert.True(viewModel.Inspector.HasNoSceneSource);
+
+        // Importing a GLB under the project tree roots the path resource-relative
+        // (forward slashes) and pushes an Instance descriptor at scene_index 0.
+        var picked = Path.Combine(projectDir, "gltf", "tank1.glb");
+        viewModel.Inspector.ImportGlbSceneSource(picked);
+
+        var authored = Assert.Single(editorSession.GlbSceneSources);
+        Assert.Equal("host", authored.NodeId);
+        Assert.Equal("gltf/tank1.glb", authored.GlbPath);
+        Assert.Equal(0u, authored.SceneIndex);
+        Assert.Equal(0u, authored.ConsumeMode);   // WZ_SCENE_SOURCE_INSTANCE
+        Assert.True(viewModel.Inspector.HasSceneSource);
+        Assert.Equal("gltf/tank1.glb", viewModel.Inspector.SceneSourcePath);
+
+        // The node that already had a descriptor shows it, and Clear pushes the
+        // empty-path clear signal through the verb.
+        viewModel.SceneTree.SelectNode(tank);
+        Assert.True(viewModel.Inspector.HasSceneSource);
+        Assert.Equal("gltf/tank1.glb", viewModel.Inspector.SceneSourcePath);
+        Assert.Equal("instance", viewModel.Inspector.SceneSourceConsumeMode);
+
+        viewModel.Inspector.ClearSceneSourceCommand.Execute(null);
+
+        var cleared = editorSession.GlbSceneSources[^1];
+        Assert.Equal("tank", cleared.NodeId);
+        Assert.Equal(string.Empty, cleared.GlbPath);   // empty path = clear
+        Assert.False(viewModel.Inspector.HasSceneSource);
+    }
+
+    // Smoke: the GLB scene-source host verb is reachable through the live v23 DLL
+    // (issue #213 Phase 3a). With no viewport runtime the native session reports a
+    // no-op success — this proves the P/Invoke + session/client wiring round-trips
+    // against the real engine ABI without throwing. Skips if the DLL isn't built.
+    [Fact]
+    public void NativeEngineClientSetGlbSceneSourceVerbWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(abiPath))
+        {
+            return;
+        }
+
+        var projectRoot = Path.Combine(
+            Path.GetTempPath(),
+            "wozzits_editor_glb_verb_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, ".wozzits"));
+            File.WriteAllText(
+                Path.Combine(projectRoot, ".wozzits", "project.json"),
+                """
+                {
+                  "schema": "wozzits.project.v1",
+                  "formatVersion": 1,
+                  "name": "glb_verb_smoke",
+                  "asset_graph": "assets.graph.json"
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "assets.graph.json"),
+                """
+                {
+                  "schema": "wozzits.asset_graph.v2",
+                  "nodes": []
+                }
+                """);
+
+            using var session = new WozzitsEngineNativeClient()
+                .OpenEditorSession(projectRoot) as IDisposable;
+            var editorSession =
+                Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
+
+            // No runtime was started (startRuntime defaults false), so the verb is
+            // a no-op success — but it exercises the live DLL entry point.
+            var set = editorSession.SetNodeGlbSceneSource(
+                "host", "gltf/tank1.glb", sceneIndex: 0u, consumeMode: 0u);
+            Assert.True(set.Ok, set.Error);
+
+            // The empty-path clear form is equally reachable.
+            var clear = editorSession.SetNodeGlbSceneSource(
+                "host", string.Empty, sceneIndex: 0u, consumeMode: 0u);
+            Assert.True(clear.Ok, clear.Error);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup of the temp project.
+            }
+        }
+    }
+
     [Fact]
     public async Task RebuildBehaviorsSkipsReloadWhenNoBehaviorProject()
     {
@@ -1282,6 +1427,19 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             RenderableAssets.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, string GlbPath, uint SceneIndex, uint ConsumeMode)>
+            GlbSceneSources { get; } = [];
+
+        public EngineMutationResponse SetNodeGlbSceneSource(
+            string nodeId,
+            string glbPath,
+            uint sceneIndex,
+            uint consumeMode)
+        {
+            GlbSceneSources.Add((nodeId, glbPath, sceneIndex, consumeMode));
             return new EngineMutationResponse { Ok = true };
         }
 

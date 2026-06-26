@@ -152,6 +152,17 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Author (empty glbPath clears) the node's GLB scene-source descriptor — the
+    // asset-graph-independent route (issue #213 Phase 3a): a resource-relative GLB
+    // path + scene index + consume mode (0 instance / 1 flatten). The engine
+    // re-resolves it into a Scene and grafts the GLB hierarchy under the node.
+    // Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeGlbSceneSource(
+        string nodeId,
+        string glbPath,
+        uint sceneIndex,
+        uint consumeMode);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

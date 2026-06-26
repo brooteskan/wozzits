@@ -250,6 +250,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         Transform = node.Transform;
         Camera = node.Camera;
         Renderable = node.Renderable;
+        SceneSource = node.SceneSource;
         Components = node.Components;
         Behaviors = node.Behaviors;
         Children = new ObservableCollection<SceneTreeNodeViewModel>(
@@ -300,6 +301,11 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public EngineSceneCamera? Camera { get; }
 
     public EngineSceneRenderable? Renderable { get; }
+
+    // GLB scene-source descriptor summary (issue #213 Phase 2 snapshot). Settable
+    // so the inspector's live import/clear keeps reselection consistent without a
+    // snapshot reload (mirrors Transform).
+    public EngineSceneNodeSceneSource? SceneSource { get; internal set; }
 
     public IReadOnlyList<EngineSceneComponent> Components { get; }
 

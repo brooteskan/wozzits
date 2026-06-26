@@ -879,6 +879,32 @@ public sealed partial class WozzitsEngineNativeClient
             assetGraphNodeId));
     }
 
+    internal EngineMutationResponse SetNodeGlbSceneSource(
+        IntPtr runtime,
+        string nodeId,
+        string glbPath,
+        uint sceneIndex,
+        uint consumeMode)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // An empty/whitespace path is the CLEAR signal (the engine drops the
+        // descriptor), so it is valid here — only the node id is required.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeGlbSceneSource(
+            runtime,
+            nodeId,
+            glbPath ?? string.Empty,
+            sceneIndex,
+            consumeMode));
+    }
+
     internal EngineMutationResponse SetRuntimeSceneNodeProperties(
         IntPtr runtime,
         string nodeId,

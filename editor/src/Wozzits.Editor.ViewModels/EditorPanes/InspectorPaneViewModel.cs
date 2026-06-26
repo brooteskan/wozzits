@@ -12,6 +12,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 {
     private readonly IWozzitsEngineEditorSession? _editorSession;
     private readonly Action<string>? _log;
+    // Project root the GLB import roots its path against (glb_scene_source.path is
+    // resource-relative, and the editor launches with the project dir as the
+    // resource root — issue #213 Phase 3a). Empty in design-time/test contexts.
+    private readonly string _projectDirectory;
     private string _emptyState = "No scene or asset graph node selected.";
     private string _header = string.Empty;
     private InspectorSelectionKind _selectionKind;
@@ -23,6 +27,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _renderableSourceKind = string.Empty;
     private string _renderableAssetGraphNodeId = string.Empty;
     private bool _hasRenderableReference;
+    private bool _hasSceneSource;
+    private string _sceneSourcePath = string.Empty;
+    private string _sceneSourceConsumeMode = string.Empty;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -56,10 +63,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public InspectorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        string? projectDirectory = null)
     {
         _editorSession = editorSession;
         _log = log;
+        _projectDirectory = projectDirectory ?? string.Empty;
         ApplyCameraCommand = new RelayCommand(
             ApplyCamera,
             () => HasSceneNodeSelection && HasCameraComponent);
@@ -72,6 +81,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RemoveCameraCommand = new RelayCommand(RemoveCameraComponent);
         ApplyRenderableCommand = new RelayCommand(ApplyRenderable);
         RemoveRenderableCommand = new RelayCommand(RemoveRenderable);
+        ClearSceneSourceCommand = new RelayCommand(ClearSceneSource);
     }
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
@@ -103,6 +113,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand ApplyRenderableCommand { get; }
 
     public IRelayCommand RemoveRenderableCommand { get; }
+
+    public IRelayCommand ClearSceneSourceCommand { get; }
 
     public string NewBehaviorModule
     {
@@ -176,6 +188,35 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _hasRenderableReference;
         private set => SetProperty(ref _hasRenderableReference, value);
+    }
+
+    // True when the selected node carries a GLB scene-source descriptor (Phase 2
+    // snapshot field). Drives the "Scene Source" card between its show/clear state
+    // and its "Import GLB…" state (issue #213 Phase 3a).
+    public bool HasSceneSource
+    {
+        get => _hasSceneSource;
+        private set
+        {
+            if (SetProperty(ref _hasSceneSource, value))
+            {
+                OnPropertyChanged(nameof(HasNoSceneSource));
+            }
+        }
+    }
+
+    public bool HasNoSceneSource => !_hasSceneSource;
+
+    public string SceneSourcePath
+    {
+        get => _sceneSourcePath;
+        private set => SetProperty(ref _sceneSourcePath, value);
+    }
+
+    public string SceneSourceConsumeMode
+    {
+        get => _sceneSourceConsumeMode;
+        private set => SetProperty(ref _sceneSourceConsumeMode, value);
     }
 
     public bool HasTransform
@@ -404,6 +445,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RenderableSourceKind = node.RenderableSource.Kind;
             RenderableAssetGraphNodeId =
                 node.Renderable?.AssetGraphNodeId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+            SetSceneSourceFields(node.SceneSource);
 
             ComponentsHeader = $"{Header} Components";
             SetTransformFields(node.Transform);
@@ -642,6 +685,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RenderableSource = string.Empty;
             RenderableSourceKind = string.Empty;
             RenderableAssetGraphNodeId = string.Empty;
+            SetSceneSourceFields(null);
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -1005,6 +1049,108 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
         HasRenderableReference = false;
         RenderableAssetGraphNodeId = string.Empty;
+    }
+
+    // Read-only mirror of a node's GLB scene-source descriptor (Phase 2 snapshot)
+    // into the "Scene Source" card. null => no descriptor (the card shows its
+    // "Import GLB…" state instead).
+    private void SetSceneSourceFields(EngineSceneNodeSceneSource? sceneSource)
+    {
+        HasSceneSource = sceneSource is not null;
+        SceneSourcePath = sceneSource?.Path ?? string.Empty;
+        SceneSourceConsumeMode = sceneSource?.ConsumeMode ?? string.Empty;
+    }
+
+    // Author a GLB scene-source descriptor on the selected node from an absolute
+    // picked file path (issue #213 Phase 3a). The View runs the file dialog and
+    // hands the absolute path here; we root it against the project directory (GLB
+    // descriptor paths are resource-relative, and the editor launches with the
+    // project dir as the resource root) and push it live as an Instance import at
+    // scene_index 0 with the single default render style (no per-component styling
+    // — that is Phase 3b). On success the snapshot refresh repopulates the card;
+    // we also set the local state so it reflects immediately.
+    public void ImportGlbSceneSource(string absolutePath)
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(absolutePath))
+        {
+            return;
+        }
+
+        var resourcePath = ToProjectRelativeResourcePath(absolutePath);
+
+        var response = _editorSession!.SetNodeGlbSceneSource(
+            NodeId,
+            resourcePath,
+            sceneIndex: 0u,
+            consumeMode: 0u);   // 0 = WZ_SCENE_SOURCE_INSTANCE
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        HasSceneSource = true;
+        SceneSourcePath = resourcePath;
+        SceneSourceConsumeMode = "instance";
+
+        // Refresh the cached model so re-selecting the node reflects the import
+        // (mirrors the live transform-edit fix), without a snapshot reload.
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.SceneSource = new EngineSceneNodeSceneSource
+            {
+                Kind = "glb",
+                Path = resourcePath,
+                ConsumeMode = "instance",
+                SceneIndex = 0u,
+            };
+        }
+    }
+
+    private void ClearSceneSource()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        // An empty path clears the descriptor on the engine side.
+        var response = _editorSession!.SetNodeGlbSceneSource(
+            NodeId, string.Empty, sceneIndex: 0u, consumeMode: 0u);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+        SetSceneSourceFields(null);
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.SceneSource = null;
+        }
+    }
+
+    // Root an absolute file path against the project directory using forward
+    // slashes (the convention for resource-relative paths like "gltf/tank1.glb").
+    // Files outside the project tree (or when the project dir is unknown) keep
+    // their absolute path — the engine resolves an absolute path as-is.
+    private string ToProjectRelativeResourcePath(string absolutePath)
+    {
+        if (string.IsNullOrEmpty(_projectDirectory))
+        {
+            return absolutePath;
+        }
+
+        var relative = System.IO.Path.GetRelativePath(
+            _projectDirectory, absolutePath);
+        if (relative.StartsWith("..", StringComparison.Ordinal)
+            || System.IO.Path.IsPathRooted(relative))
+        {
+            return absolutePath;
+        }
+        return relative.Replace('\\', '/');
     }
 
     private static string FormatNullable(double? value)

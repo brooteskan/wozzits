@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.App.Views.EditorPanes;
@@ -54,5 +55,45 @@ public partial class InspectorPaneView : UserControl
         }
 
         flyout.ShowAt(button);
+    }
+
+    // Import a GLB as a scene source under the selected node (issue #213 Phase
+    // 3a). The file dialog lives here (the View layer owns IStorageProvider; the
+    // VM stays Avalonia-free); the chosen absolute path is handed to the VM, which
+    // roots it and pushes the descriptor via the host verb. Filtered to .glb.
+    private async void OnImportGlbSceneSourceClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not InspectorPaneViewModel vm)
+        {
+            return;
+        }
+
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null)
+        {
+            return;
+        }
+
+        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import GLB Scene Source",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("glTF Binary (*.glb)")
+                {
+                    Patterns = ["*.glb"],
+                },
+            ],
+        });
+
+        var picked = files.Count > 0 ? files[0] : null;
+        var path = picked?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        vm.ImportGlbSceneSource(path);
     }
 }

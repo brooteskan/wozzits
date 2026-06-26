@@ -183,6 +183,58 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- GLB scene source (issue #213 Phase 3a): import a GLB
+                             as a sub-tree under this node, or show/clear the one
+                             already authored. The Import button opens a file
+                             picker from code-behind (OnImportGlbSceneSourceClick),
+                             which roots the path and pushes it via the VM. -->
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Scene Source"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Button Content="Import GLB…"
+                                        Click="OnImportGlbSceneSourceClick"
+                                        IsVisible="{Binding HasNoSceneSource}"
+                                        Classes="InspectorApplyButton"
+                                        ToolTip.Tip="Import a GLB scene under this node"/>
+
+                                <StackPanel IsVisible="{Binding HasSceneSource}"
+                                            Spacing="6">
+                                    <Grid ColumnDefinitions="Auto,*"
+                                          ColumnSpacing="10"
+                                          Classes="InspectorPropertyRow">
+                                        <TextBlock Text="GLB"
+                                                   Classes="InspectorPropertyName"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding SceneSourcePath}"
+                                                   TextWrapping="Wrap"
+                                                   Classes="InspectorPropertyValue"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*"
+                                          ColumnSpacing="10"
+                                          Classes="InspectorPropertyRow">
+                                        <TextBlock Text="Consume"
+                                                   Classes="InspectorPropertyName"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding SceneSourceConsumeMode}"
+                                                   Classes="InspectorPropertyValue"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto"
+                                          ColumnSpacing="6">
+                                        <Button Content="Re-import GLB…"
+                                                Click="OnImportGlbSceneSourceClick"
+                                                Classes="InspectorApplyButton"/>
+                                        <Button Grid.Column="1"
+                                                Content="✕"
+                                                Command="{Binding ClearSceneSourceCommand}"
+                                                Classes="InspectorApplyButton"
+                                                ToolTip.Tip="Clear scene source"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <Grid ColumnDefinitions="*,Auto">
