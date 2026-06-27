@@ -1,0 +1,8 @@
+{
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "terrain_constraint_fixture",
+  "rhi_render_path": true,
+  "scene": "scene.json",
+  "asset_graph": "assets.graph.json"
+}

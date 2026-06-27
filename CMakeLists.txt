@@ -381,6 +381,30 @@ configure_file(
     "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/scene_flatten.json"
     COPYONLY)
 
+# Self-contained, fully portable fixture for the WozzitsApp_v1 terrain-constraint
+# tick test (issue #216 work item B). An empty asset graph + a scene with a
+# heightfield terrain whose height field is an inline PROCEDURAL scalar field
+# (radial gradient, no external file), a constrain_movement constraint surface,
+# and two motion actors above the surface: one terrain_constrained (sticks) and
+# one control (does not). Proves the tick runs build_collision_frame +
+# apply_terrain_constraints even with no behaviors authored.
+set(WZ_TERRAIN_CONSTRAINT_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/terrain_constraint_fixture")
+set(WZ_TERRAIN_CONSTRAINT_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/terrain_constraint_fixture")
+configure_file(
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_SRC}/.wozzits/project.json"
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_DST}/.wozzits/project.json"
+    COPYONLY)
+configure_file(
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_DST}/assets.graph.json"
+    COPYONLY)
+configure_file(
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_SRC}/scene.json"
+    "${WZ_TERRAIN_CONSTRAINT_FIXTURE_DST}/scene.json"
+    COPYONLY)
+
 # ----------------------------
 # Test helpers
 # ----------------------------
@@ -840,6 +864,14 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(render wozzits_app_render_binding_tests)
     add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
+
+    # WozzitsApp_v1 terrain-constraint tick test (issue #216 work item B). On-
+    # device: loads the portable terrain_constraint_fixture (procedural scalar
+    # field + heightfield terrain constraint + motion actors); proves the tick
+    # runs build_collision_frame + apply_terrain_constraints so a
+    # terrain_constrained actor sticks to the surface with no behaviors authored.
+    rs_add_test_group(render wozzits_app_terrain_constraint_tests)
+    add_dependencies(render_wozzits_app_terrain_constraint_tests wz_stage_resources)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)

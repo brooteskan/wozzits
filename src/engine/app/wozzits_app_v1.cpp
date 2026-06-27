@@ -14,6 +14,7 @@
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
 #include <engine/behavior/builtin_behaviors.h>
+#include <engine/collision/collision_frame.h>
 
 #include <asset/system.h>
 
@@ -341,6 +342,51 @@ namespace wz::app
         // scene_data pointer (the scene table may move entries), so it must not
         // be dereferenced afterwards (only this count is needed, for logging).
         const std::size_t authored_scene_node_count = scene_data->nodes.size();
+
+        // Materialize the scene's authored DATA components into registered assets
+        // (#216): a node may author a terrain/collision/scalar-field SOURCE (e.g.
+        // a heightfield terrain with a constrain_movement constraint surface, or
+        // an inline procedural scalar field) rather than a pre-resolved asset key.
+        // create_scene_from_json only PARSES those sources; it does not build the
+        // backing assets — that is the editor's materialize step, which the
+        // runtime load path must run too so the per-frame constraint pipeline can
+        // resolve a surface. Renderable creation is intentionally OFF here: the
+        // RHI render path assembles renderables from graph bindings (above /
+        // below), not from these preview/terrain-debug recipes. Data-only, so a
+        // scene without any authored sources is a clean no-op.
+        {
+            wz::engine::assets::SceneAssetData materialize_scene;
+            materialize_scene.nodes = scene_nodes_;
+            const wz::engine::assets::SceneAuthoringMaterializeReport
+                materialize =
+                    wz::engine::assets::materialize_scene_authoring_components(
+                        materialize_scene,
+                        *ctx_.assets,
+                        wz::engine::assets::SceneAuthoringMaterializeOptions{
+                            .create_preview_renderables = false,
+                            .create_terrain_surface_renderables = false,
+                            .create_terrain_debug_renderables = false,
+                        });
+            if (!materialize.ok) {
+                ctx_.logger.warn(
+                    "load_scene: scene authoring materialize reported error: "
+                    + materialize.error + " (loaded anyway for editor recovery)");
+            }
+            // Adopt the resolved keys the materialize wrote back (terrain_asset,
+            // constraint_surface_asset, collision_asset, scalar_field_asset, ...)
+            // then compile the freshly registered assets so the instance + the
+            // collision frame can resolve them.
+            scene_nodes_ = std::move(materialize_scene.nodes);
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport materialize_resolve =
+                ctx_.assets->resolve_all();
+            if (!materialize_resolve.ok()) {
+                ctx_.logger.warn(
+                    "load_scene: materialized authoring asset(s) resolved with "
+                    "errors=" + std::to_string(materialize_resolve.failures.size())
+                    + " (loaded anyway for editor recovery)");
+            }
+        }
         scene_source_path_ = desc.scene;
         scene_dirty_ = false;
         grafted_node_ids_.clear();
@@ -920,14 +966,24 @@ namespace wz::app
     {
         behavior_scene_.reset();
 
-        // Nothing to run unless at least one node carries a behavior binding.
-        const bool has_behaviors = std::any_of(
+        // Build the runtime SceneInstance whenever ANY node carries something the
+        // per-frame simulation touches: a behavior binding, a motion (integrate_
+        // motion / terrain-stick), a terrain, or a constrain_movement collision
+        // (build_collision_frame + apply_terrain_constraints). A motion-only or
+        // constraint-only actor must still come up so it can stick to a surface
+        // even with no behaviors authored.
+        const bool needs_simulation = std::any_of(
             scene_nodes_.begin(),
             scene_nodes_.end(),
             [](const wz::engine::assets::SceneNodeAsset& node) {
-                return node.behavior.has_value() || !node.behaviors.empty();
+                return node.behavior.has_value()
+                    || !node.behaviors.empty()
+                    || node.motion.has_value()
+                    || node.terrain.has_value()
+                    || (node.collision.has_value()
+                        && node.collision->constrain_movement);
             });
-        if (!has_behaviors) {
+        if (!needs_simulation) {
             return;
         }
 
@@ -1010,9 +1066,16 @@ namespace wz::app
     void WozzitsApp_v1::dispatch_scene_behaviors(
         const wz::input::InputState& input, float dt)
     {
-        if (!behavior_scene_ || behavior_scene_->behaviors.empty()) {
+        // Run the per-frame simulation whenever a runtime scene exists — behaviors
+        // are OPTIONAL. A motion-only or constraint-only actor (no behaviors) still
+        // needs integrate_motion + the collision/terrain-constraint pipeline to run
+        // so it sticks to its surface. (Mirrors game_app's job order:
+        //   build_collision_frame -> [behaviors] -> integrate_motion
+        //   -> apply_terrain_constraints.)
+        if (!behavior_scene_) {
             return;
         }
+        const bool has_behaviors = !behavior_scene_->behaviors.empty();
 
         // World transforms must be current before dispatch: command application
         // (set_world_translation, motion integration) reads parent world
@@ -1020,20 +1083,19 @@ namespace wz::app
         // game_app this is the compile_scene job; here we propagate directly.
         wz::scene::propagate_all(behavior_scene_->storage.polytree);
 
-        // Build a minimal FrameContext carrying time + input. WozzitsApp_v1 has
-        // no collision/proximity/input-event subsystems wired (see report), so
-        // only frame.update and the held-input snapshot are populated. The empty
-        // frame_storage_ collision/input-event tables make those dispatch passes
-        // no-ops rather than fabricated events.
-        wz::engine::FrameContext frame_context{};
-        frame_context.input = input;
-        frame_context.frame.interval.start = 0;
-        frame_context.frame.interval.end = static_cast<wz::time::Tick>(
-            static_cast<double>(dt)
-            * static_cast<double>(wz::time::TimeSource::ticks_per_second()));
-        frame_context.frame.index = behavior_frame_index_++;
-
-        frame_storage_.behavior_commands.clear();
+        // Build the collision frame (collision world + terrain constraint surfaces)
+        // BEFORE motion/behaviors, exactly as game_app's job_build_collision_frame.
+        // apply_terrain_constraints below reads frame_storage_.collision to resolve
+        // the surface a terrain_constrained Motion actor sticks to. Guard the asset
+        // library; if absent, the collision frame is left whatever it was (empty),
+        // which makes the constraint pass a no-op rather than fabricating a surface.
+        if (ctx_.assets) {
+            wz::engine::collision::build_collision_frame(
+                *behavior_scene_,
+                ctx_.assets->collisions(),
+                frame_storage_.collision);
+        }
+        std::vector<wz::scene::RuntimeEntityId> changed_entities;
 
         // Per-frame deferred-authoring sink: behaviors queue cheap live
         // scene-ECS authoring edits (spawn-child) here mid-dispatch; they are
@@ -1044,28 +1106,42 @@ namespace wz::app
         // semantics #204 requires (no EditorRuntimeControl involved).
         wz::engine::behavior::BehaviorAuthoringBuffer authoring;
 
-        wz::engine::behavior::BehaviorFrameContext behavior_ctx{
-            .frame_context = &frame_context,
-            .frame_storage = &frame_storage_,
-            .scene = &*behavior_scene_,
-            .behavior_state = &behavior_scene_->behavior_state,
-            .commands = &frame_storage_.behavior_commands,
-            .gpu_compute = nullptr,
-            .authoring = &authoring,
-            .logger = &ctx_.logger,
-        };
-        wz::engine::behavior::dispatch_behaviors(
-            *behavior_scene_, registry_, behavior_ctx);
+        if (has_behaviors) {
+            // Build a minimal FrameContext carrying time + input. The collision
+            // frame above is now populated; the input-event tables remain empty,
+            // making that dispatch pass a no-op rather than fabricating events.
+            wz::engine::FrameContext frame_context{};
+            frame_context.input = input;
+            frame_context.frame.interval.start = 0;
+            frame_context.frame.interval.end = static_cast<wz::time::Tick>(
+                static_cast<double>(dt)
+                * static_cast<double>(
+                    wz::time::TimeSource::ticks_per_second()));
+            frame_context.frame.index = behavior_frame_index_++;
 
-        // Apply the produced command buffer + integrate motion, exactly as
-        // game_app's apply_behavior_commands job: transform/velocity commands
-        // mutate the instance polytree, then world Y etc. settle on the next
-        // propagate.
-        std::vector<wz::scene::RuntimeEntityId> changed_entities;
-        (void)wz::engine::behavior::apply_behavior_commands(
-            *behavior_scene_,
-            frame_storage_.behavior_commands.commands,
-            &changed_entities);
+            frame_storage_.behavior_commands.clear();
+
+            wz::engine::behavior::BehaviorFrameContext behavior_ctx{
+                .frame_context = &frame_context,
+                .frame_storage = &frame_storage_,
+                .scene = &*behavior_scene_,
+                .behavior_state = &behavior_scene_->behavior_state,
+                .commands = &frame_storage_.behavior_commands,
+                .gpu_compute = nullptr,
+                .authoring = &authoring,
+                .logger = &ctx_.logger,
+            };
+            wz::engine::behavior::dispatch_behaviors(
+                *behavior_scene_, registry_, behavior_ctx);
+
+            // Apply the produced command buffer, exactly as game_app's
+            // apply_behavior_commands job: transform/velocity commands mutate the
+            // instance polytree, then world Y etc. settle on the next propagate.
+            (void)wz::engine::behavior::apply_behavior_commands(
+                *behavior_scene_,
+                frame_storage_.behavior_commands.commands,
+                &changed_entities);
+        }
 
         std::vector<wz::scene::RuntimeEntityId> velocity_changed;
         (void)wz::engine::behavior::integrate_motion(
@@ -1074,6 +1150,21 @@ namespace wz::app
             changed_entities.end(),
             velocity_changed.begin(),
             velocity_changed.end());
+
+        // Snap terrain_constrained Motion actors to their constraint surface
+        // (from frame_storage_.collision built above), exactly as game_app's
+        // job_apply_terrain_constraints. Runs after integrate_motion so the
+        // constraint corrects the just-integrated position.
+        std::vector<wz::scene::RuntimeEntityId> constraint_changed;
+        (void)wz::engine::behavior::apply_terrain_constraints(
+            *behavior_scene_,
+            frame_storage_.collision,
+            &constraint_changed);
+        changed_entities.insert(
+            changed_entities.end(),
+            constraint_changed.begin(),
+            constraint_changed.end());
+
         std::sort(changed_entities.begin(), changed_entities.end());
         changed_entities.erase(
             std::unique(changed_entities.begin(), changed_entities.end()),

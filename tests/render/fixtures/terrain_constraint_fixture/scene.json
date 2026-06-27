@@ -1,0 +1,101 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "terrain_constraint_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "terrain",
+      "parent": "root",
+      "name": "terrain",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "terrain": {
+        "asset": "asset-key:00000000000000a1:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000001:0000000000000000:0000000000000000:0000000000000000",
+        "calculate_constraint_surface": true,
+        "visible": false,
+        "queryable": true,
+        "constrain_movement": true
+      },
+      "terrain_height_field_source": {
+        "mode": "scene_node",
+        "source_node": "field",
+        "origin": [-32, -32],
+        "size": [64, 64],
+        "vertical_scale": 10.0,
+        "base_height": 2.0
+      }
+    },
+    {
+      "id": "field",
+      "parent": "terrain",
+      "name": "field",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "scalar_field_source": {
+        "kind": "procedural_radial_gradient",
+        "width": 65,
+        "height": 65,
+        "depth": 1
+      }
+    },
+    {
+      "id": "actor",
+      "parent": "root",
+      "name": "actor",
+      "transform": {
+        "translation": [0, 50, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "motion": {
+        "linear_velocity": [0, 0, 0],
+        "angular_velocity": [0, 0, 0],
+        "space": "world",
+        "terrain_constrained": true,
+        "terrain_ride_height": 0.5,
+        "terrain_footprint_radius": 0.0,
+        "terrain_align_to_surface": false,
+        "enabled": true
+      }
+    },
+    {
+      "id": "control",
+      "parent": "root",
+      "name": "control",
+      "transform": {
+        "translation": [0, 50, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "motion": {
+        "linear_velocity": [0, 0, 0],
+        "angular_velocity": [0, 0, 0],
+        "space": "world",
+        "terrain_constrained": false,
+        "terrain_ride_height": 0.5,
+        "terrain_footprint_radius": 0.0,
+        "enabled": true
+      }
+    }
+  ],
+  "defaults": {}
+}
