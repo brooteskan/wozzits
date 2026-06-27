@@ -950,6 +950,32 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_asset(
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
 
+// Author the GEOMETRY half of node `node_id_utf8`'s renderable binding (issue
+// #213 increment 2): point it at the authored geometry asset-graph node
+// `asset_graph_node_id`, or clear it (the node stops drawing) when 0. DEFERRED
+// (applied on the engine's next frame) + NON-BLOCKING, like the renderable verb.
+// Marks the scene dirty; the engine re-assembles the binding (the render program
+// inherited down the scene tree) and the renderer reflects it next render. An
+// unknown/missing node is a logged engine-thread no-op. HOST-CAPABILITY GATE
+// (require_host_scene_authoring): WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller. NEW exported fn — WZ_ABI_VERSION
+// unchanged (no struct change).
+WZ_ABI_API WzResult wz_host_runtime_set_node_geometry_asset(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t asset_graph_node_id);
+
+// Author the RENDER-PROGRAM half of node `node_id_utf8`'s renderable binding
+// (issue #213 increment 2): point it at the authored render-program asset-graph
+// node `asset_graph_node_id`, or clear it when 0. The program is INHERITED down
+// the scene tree, so this cascades to descendants without their own program.
+// Same deferral, gating, and version note as
+// wz_host_runtime_set_node_geometry_asset.
+WZ_ABI_API WzResult wz_host_runtime_set_node_render_program(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t asset_graph_node_id);
+
 // Author the PREFERRED asset-graph-backed Scene-source component on node
 // `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"
 // asset-graph node `asset_graph_node_id`, or CLEAR the scene source when the id

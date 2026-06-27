@@ -354,6 +354,31 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_render_binding(
+        SceneNodeRenderBindingEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: a set then a clear must both land.
+        pending_render_binding_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_render_bindings(
+        const std::function<void(const SceneNodeRenderBindingEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderBindingEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_render_binding_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_render_binding_edits_);
+        }
+
+        for (const SceneNodeRenderBindingEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -811,6 +836,24 @@ namespace wz::app
                             // clear it when asset_graph_node_id == 0).
                             app.set_node_renderable_asset(
                                 edit.node_id, edit.asset_graph_node_id);
+                        });
+                    control->service_pending_scene_node_render_bindings(
+                        [&app](const SceneNodeRenderBindingEdit& edit) {
+                            // Author one ingredient of the node's renderable
+                            // binding (or clear it when asset_graph_node_id == 0);
+                            // the apply re-assembles the renderable, the program
+                            // inherited down the tree (#213 increment 2).
+                            if (edit.ingredient
+                                == SceneNodeRenderBindingEdit::Ingredient::
+                                       Geometry)
+                            {
+                                app.set_node_geometry_asset(
+                                    edit.node_id, edit.asset_graph_node_id);
+                            }
+                            else {
+                                app.set_node_render_program(
+                                    edit.node_id, edit.asset_graph_node_id);
+                            }
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

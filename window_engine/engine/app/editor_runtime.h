@@ -126,6 +126,26 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
     };
 
+    // A live edit to one ingredient of a node's renderable BINDING (issue #213
+    // increment 2): set/clear (id 0) the GEOMETRY asset-graph node or the
+    // RENDER-PROGRAM asset-graph node, posted from the owner thread (editor UI)
+    // to the engine thread. Non-blocking and NOT coalesced (appended in order),
+    // matching the renderable edits. Applied via WozzitsApp_v1's
+    // set_node_geometry_asset / set_node_render_program, which re-assemble the
+    // binding (program inherited down the tree) on the engine's next frame.
+    struct SceneNodeRenderBindingEdit
+    {
+        enum class Ingredient : uint8_t
+        {
+            Geometry = 0,
+            RenderProgram,
+        };
+
+        wz::scene::AuthoredEntityId node_id;
+        Ingredient ingredient = Ingredient::Geometry;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+    };
+
     // A live edit to a node's PREFERRED asset-graph-backed Scene-source
     // component (issue #213), posted from the owner thread (editor UI) to the
     // engine thread. Carries the authored asset-graph node id of a "Scene from
@@ -285,6 +305,16 @@ namespace wz::app
         void service_pending_scene_node_renderables(
             const std::function<void(const SceneNodeRenderableEdit&)>& applier);
 
+        // Owner thread: queue a set/clear of one ingredient (geometry or render
+        // program) of a node's renderable binding (non-blocking; appended in
+        // order — NOT coalesced). Applied on the engine thread's next frame, like
+        // the renderable edits (issue #213 increment 2).
+        void post_scene_node_render_binding(SceneNodeRenderBindingEdit edit);
+
+        void service_pending_scene_node_render_bindings(
+            const std::function<
+                void(const SceneNodeRenderBindingEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
         // engine thread's next frame, like the renderable edits (issue #213).
@@ -392,6 +422,7 @@ namespace wz::app
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
+        std::vector<SceneNodeRenderBindingEdit> pending_render_binding_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;
