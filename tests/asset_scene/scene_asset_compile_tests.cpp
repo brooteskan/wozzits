@@ -432,13 +432,13 @@ TEST(SceneAssetModule, GLBNoOverrideDefaultIsUniform)
     }
 }
 
-// Issue #213: the "Mesh from GLB scene" extractor is a standalone GLB->mesh
-// provider with NO Scene dependency. It imports the SAME source_file a "Scene
-// from GLB" node consumes, finds the node by id in the GLB hierarchy, and
-// outputs that node's mesh. Positive path: extract node "body" from tank1.glb
-// (via a kRawFileSchema file carrier, like the piece-1 structure test) and
-// confirm the output Mesh matches the raw body mesh straight from
-// import_glb_meshes (verbatim object-space — no node transform baked in).
+// Issue #213 (engine foundation for GLB mesh extraction): a "Scene from GLB"
+// output now embeds each mesh-bearing node's RAW, OBJECT-SPACE geometry
+// (SceneAssetData::glb_meshes) keyed by glTF mesh_index, and records each node's
+// mesh_index. The "Mesh from GLB scene" extractor then pulls one node's geometry
+// out as a standalone Mesh via a SCENE input. Positive path: extract node "body"
+// from tank1.glb and confirm the output Mesh matches the raw body mesh straight
+// from import_glb_meshes (verbatim object-space — no node transform baked in).
 TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
 {
     wz::Logger logger;
@@ -451,16 +451,17 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
 
     using namespace wz::engine::assets;
 
-    // Register the GLB file carrier — the SAME input a "Scene from GLB" node
-    // consumes — and point the extractor straight at it (no Scene dependency).
-    const wz::asset::AssetKey file_key = assets.files().register_file_node(
-        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
-    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
+    // Build a "Scene from GLB" so its output carries the embedded geometry.
+    const auto scene_asset = assets.scenes().create_scene_from_glb({
+        .name = "tank1_extract",
+        .path = "gltf/tank1.glb",
+    });
+    ASSERT_TRUE(scene_asset.valid());
 
     // Extract the "body" node's mesh as a standalone Mesh asset.
     const auto body_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "tank1_body_mesh",
-        .source_file = file_key,
+        .scene = scene_asset.output,
         .node_id = "body",
     });
     ASSERT_TRUE(body_mesh.valid());
@@ -469,6 +470,16 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     const auto report = assets.resolve_all();
     ASSERT_TRUE(report.ok()) << "resolve failures: " << report.failures.size();
 
+    // The source scene embeds the per-mesh geometry and the node's mesh_index.
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    const auto* body_node = find_scene_node(*scene_data, "body");
+    ASSERT_NE(body_node, nullptr);
+    ASSERT_TRUE(body_node->mesh_index.has_value());
+    EXPECT_FALSE(scene_data->glb_meshes.empty());
+    ASSERT_TRUE(scene_data->glb_meshes.count(*body_node->mesh_index) != 0u);
+
     // The extracted Mesh resolves and is valid.
     const auto handle = assets.meshes().get_mesh(body_mesh);
     ASSERT_TRUE(handle.valid());
@@ -476,30 +487,13 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     ASSERT_NE(extracted, nullptr);
     ASSERT_TRUE(extracted->valid());
 
-    // Independently import the GLB hierarchy to find the "body" node's
-    // mesh_index, then the raw GLB meshes to compare against it: the extracted
-    // geometry must match verbatim (same vertex/index counts and identical
-    // first-vertex object-space position — no node transform baked in).
+    // Independently import the raw GLB meshes and compare against the body
+    // node's mesh_index: the extracted geometry must match verbatim (same
+    // vertex/index counts and identical first-vertex object-space position —
+    // no node transform baked into the extracted mesh).
     const auto bytes = wz::fs::read_file(
         wz::fs::join(WZ_TEST_FIXTURE_DIR, "gltf/tank1.glb"));
     ASSERT_TRUE(static_cast<bool>(bytes));
-
-    ImportedGLTFScene scene{};
-    ASSERT_TRUE(import_gltf_scene(
-        bytes.value.data(),
-        bytes.value.size(),
-        GLTFSceneImportOptions{ .scene_index = 0u },
-        scene));
-    const ImportedGLTFSceneNode* body_node = nullptr;
-    for (const auto& candidate : scene.nodes) {
-        if (candidate.id == "body") {
-            body_node = &candidate;
-            break;
-        }
-    }
-    ASSERT_NE(body_node, nullptr);
-    ASSERT_TRUE(body_node->mesh_index.has_value());
-
     ImportedGLTFMeshSet imported{};
     ASSERT_TRUE(import_glb_meshes(
         bytes.value.data(), bytes.value.size(), GLTFImportOptions{}, imported));
@@ -532,13 +526,15 @@ TEST(SceneAssetModule, MeshFromGLBSceneUnknownNodeFails)
 
     using namespace wz::engine::assets;
 
-    const wz::asset::AssetKey file_key = assets.files().register_file_node(
-        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
-    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
+    const auto scene_asset = assets.scenes().create_scene_from_glb({
+        .name = "tank1_extract_unknown",
+        .path = "gltf/tank1.glb",
+    });
+    ASSERT_TRUE(scene_asset.valid());
 
     const auto bad_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "tank1_nope_mesh",
-        .source_file = file_key,
+        .scene = scene_asset.output,
         .node_id = "does_not_exist",
     });
     ASSERT_TRUE(bad_mesh.valid());
@@ -590,13 +586,15 @@ TEST(SceneAssetModule, MeshFromGLBSceneGroupNodeFails)
 
     const auto rel_path = write_scene_json(root, "group_hierarchy.gltf", gltf);
 
-    const wz::asset::AssetKey file_key = assets.files().register_file_node(
-        rel_path, kRawFileSchema, kAssetTypeRawFile);
-    ASSERT_FALSE(file_key == wz::asset::AssetKey{});
+    const auto scene_asset = assets.scenes().create_scene_from_glb({
+        .name = "group_import",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
 
     const auto group_mesh = assets.meshes().create_mesh_from_glb_scene({
         .name = "group_body_mesh",
-        .source_file = file_key,
+        .scene = scene_asset.output,
         .node_id = "tank_body",
     });
     ASSERT_TRUE(group_mesh.valid());
@@ -607,5 +605,45 @@ TEST(SceneAssetModule, MeshFromGLBSceneGroupNodeFails)
 
     const auto handle = assets.meshes().get_mesh(group_mesh);
     EXPECT_FALSE(handle.valid());
+}
+
+// Issue #213: FileCarrierAssetModule::resolve_path strips a single matched
+// surrounding pair of ASCII double-quotes before resolving. Windows Explorer's
+// "Copy as path" wraps a path in double-quotes ("C:\...\tank1.glb"), which then
+// can't be opened. A quote-wrapped path must resolve to the SAME result as the
+// unwrapped one; interior quotes and a lone unbalanced quote are left untouched.
+TEST(SceneAssetModule, ResolvePathStripsSurroundingQuotes)
+{
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        WZ_TEST_FIXTURE_DIR };
+
+    auto& files = assets.files();
+
+    // An already-absolute path is returned verbatim, so a quote-wrapped form must
+    // resolve to exactly the bare path (the surrounding pair removed).
+#ifdef _WIN32
+    const wz::fs::Path bare = "C:\\models\\tank1.glb";
+#else
+    const wz::fs::Path bare = "/models/tank1.glb";
+#endif
+    const wz::fs::Path quoted = "\"" + bare + "\"";
+    EXPECT_EQ(files.resolve_path(quoted), files.resolve_path(bare));
+    EXPECT_EQ(files.resolve_path(quoted), bare);
+
+    // A relative quote-wrapped path resolves identically to the unwrapped one
+    // (both joined against the resource root).
+    EXPECT_EQ(
+        files.resolve_path("\"gltf/tank1.glb\""),
+        files.resolve_path("gltf/tank1.glb"));
+
+    // Only a matched surrounding pair is stripped: a lone leading quote and
+    // interior quotes are preserved (the path is altered only at both ends).
+    EXPECT_EQ(files.resolve_path("\"only_leading"), files.resolve_path("\"only_leading"));
+    EXPECT_NE(files.resolve_path("\"only_leading"), files.resolve_path("only_leading"));
 }
 

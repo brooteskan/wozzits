@@ -6,6 +6,7 @@
 #include <asset/types.h>
 
 #include <engine/assets/light/light.h>
+#include <engine/assets/mesh/mesh.h>
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/mesh_render_style/mesh_render_style.h>
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
@@ -21,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1003,6 +1005,13 @@ namespace wz::engine::assets
         // flatten then consumes it. Takes precedence over scene_source_node_id.
         std::optional<SceneGLBSceneSource> glb_scene_source;
 
+        // Which glTF mesh this node uses, if any (issue #213). Set on the
+        // "Scene from GLB" graph-compile path so the geometry an extractor reads
+        // (SceneAssetData::glb_meshes) can be located by node id. This is purely
+        // a lookup key into the scene's embedded per-mesh geometry; the graft /
+        // flatten paths ignore it (renderables come through renderable_asset).
+        std::optional<uint32_t> mesh_index;
+
         std::optional<SceneAssetReferenceAsset> asset_reference;
         std::optional<SceneCameraAsset> camera;
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
@@ -1069,6 +1078,16 @@ namespace wz::engine::assets
         std::vector<SceneLightAsset> lights;
         std::vector<SceneSkyDrawAsset> sky_draws;
         SceneDefaults defaults{};
+
+        // Per-mesh raw, OBJECT-SPACE geometry imported from a GLB, keyed by the
+        // glTF mesh_index (issue #213). Populated only on the "Scene from GLB"
+        // graph-compile path; it is the geometry an extractor ("Mesh from GLB
+        // scene") reads to produce a standalone Mesh asset for a chosen node.
+        // The mesh is verbatim from import_glb_meshes — NO node transform is
+        // baked in: the GLB nodes are grafted into the runtime scene tree WITH
+        // their transforms, so the scene node owns placement. The graft / flatten
+        // paths ignore this map.
+        std::unordered_map<uint32_t, MeshData> glb_meshes;
 
         bool valid() const noexcept { return !nodes.empty(); }
     };

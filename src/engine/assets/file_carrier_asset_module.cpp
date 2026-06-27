@@ -54,7 +54,22 @@ namespace wz::engine::assets
     wz::fs::Path FileCarrierAssetModule::resolve_path(
         const wz::fs::Path& path) const
     {
-        return wz::fs::is_absolute(path) ? path : wz::fs::join(resource_root_, path);
+        // Strip a single matched surrounding pair of ASCII double-quotes before
+        // resolving. Windows Explorer's "Copy as path" wraps the path in double
+        // quotes (e.g. "C:\...\tank1.glb"), which is not openable as-is. Only a
+        // genuine leading+trailing pair is removed; interior quotes and an
+        // unbalanced single quote are left untouched.
+        wz::fs::Path cleaned = path;
+        if (cleaned.size() >= 2
+            && cleaned.front() == '"'
+            && cleaned.back() == '"')
+        {
+            cleaned = cleaned.substr(1, cleaned.size() - 2);
+        }
+
+        return wz::fs::is_absolute(cleaned)
+            ? cleaned
+            : wz::fs::join(resource_root_, cleaned);
     }
 
 } // namespace wz::engine::assets
