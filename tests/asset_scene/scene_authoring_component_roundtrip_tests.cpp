@@ -1280,6 +1280,90 @@ TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
     EXPECT_EQ(parsed_turret->behavior->module, "tank");
 }
 
+// Issue #213 increment 1a: the renderable binding by ingredients (a geometry
+// asset-graph node ref + a render-program asset-graph node ref on a scene node)
+// round-trips through scene JSON. Covers the three shapes the inheritance model
+// relies on: a program-only group node, a geometry-only child (program
+// inherited), and a node carrying both.
+TEST(SceneAssetModule, RenderBindingIngredientsRoundTripThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_render_binding_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "render_binding_roundtrip";
+
+    // Group node: carries only a render program (no geometry). Draws nothing
+    // itself; the program cascades to descendants at assembly.
+    SceneNodeAsset group = make_scene_node("tank");
+    attach_render_program_node(group, 10);
+    authored.nodes.push_back(std::move(group));
+
+    // Child: provides geometry, no program of its own (inherits the group's).
+    SceneNodeAsset part = make_scene_node("tank/body", "body");
+    part.parent_id = "tank";
+    attach_geometry_asset_node(part, 24);
+    authored.nodes.push_back(std::move(part));
+
+    // Standalone node carrying both its own geometry and program.
+    SceneNodeAsset solo = make_scene_node("solo");
+    attach_geometry_asset_node(solo, 9);
+    attach_render_program_node(solo, 19);
+    authored.nodes.push_back(std::move(solo));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"geometry\""), std::string::npos);
+    EXPECT_NE(exported.find("\"render_program\""), std::string::npos);
+
+    auto rel_path = write_scene_json(root, "render_binding.scene.json", exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "render_binding",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+    ASSERT_EQ(data->nodes.size(), 3u);
+
+    const auto* parsed_group = find_scene_node(*data, "tank");
+    ASSERT_NE(parsed_group, nullptr);
+    EXPECT_FALSE(parsed_group->geometry_asset_node_id.has_value());
+    ASSERT_TRUE(parsed_group->render_program_node_id.has_value());
+    EXPECT_EQ(*parsed_group->render_program_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 10 });
+
+    const auto* parsed_part = find_scene_node(*data, "tank/body");
+    ASSERT_NE(parsed_part, nullptr);
+    ASSERT_TRUE(parsed_part->geometry_asset_node_id.has_value());
+    EXPECT_EQ(*parsed_part->geometry_asset_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 24 });
+    EXPECT_FALSE(parsed_part->render_program_node_id.has_value());
+
+    const auto* parsed_solo = find_scene_node(*data, "solo");
+    ASSERT_NE(parsed_solo, nullptr);
+    ASSERT_TRUE(parsed_solo->geometry_asset_node_id.has_value());
+    EXPECT_EQ(*parsed_solo->geometry_asset_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 9 });
+    ASSERT_TRUE(parsed_solo->render_program_node_id.has_value());
+    EXPECT_EQ(*parsed_solo->render_program_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 19 });
+}
+
 TEST(SceneAssetModule, BehaviorApplyInEditorRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;

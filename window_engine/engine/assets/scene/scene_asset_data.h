@@ -988,6 +988,22 @@ namespace wz::engine::assets
             renderable_asset_node_id;
         std::optional<wz::asset::AssetKey> renderable_asset;
 
+        // Renderable binding by INGREDIENTS (issue #213): an alternative to the
+        // pre-assembled renderable_asset above. The node carries a GEOMETRY
+        // asset-graph node + a RENDER-PROGRAM asset-graph node, and the engine
+        // assembles the RhiRenderableRecipe at load (geometry routed to the
+        // recipe slot by its asset type). The render program is INHERITED down
+        // the scene tree: a node with geometry but no program of its own draws
+        // with its nearest ancestor's program; geometry is per-node. The *_asset
+        // keys are this node's own resolved keys (re-bridged each bind, like
+        // renderable_asset); the inherited program is resolved at assembly time,
+        // never stored. Takes precedence over renderable_asset when geometry is
+        // present.
+        std::optional<wz::asset::AssetGraphDraftNodeId> geometry_asset_node_id;
+        std::optional<wz::asset::AssetKey> geometry_asset;
+        std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
+        std::optional<wz::asset::AssetKey> render_program_asset;
+
         // Preferred authored Scene-source component (issue #213): the host node
         // consumes the output of a "Scene from GLB" asset node as a sub-tree.
         // scene_source_node_id points at the authored asset-graph node (the
@@ -1297,6 +1313,39 @@ namespace wz::engine::assets
     {
         node.renderable_asset_node_id.reset();
         node.renderable_asset.reset();
+    }
+
+    // Renderable-binding-by-ingredients helpers (issue #213) — mirror the
+    // renderable_asset_node helpers: geometry + render-program asset-graph node
+    // refs, each with its resolved key re-bridged on (re)bind.
+    inline void attach_geometry_asset_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        wz::asset::AssetKey geometry_asset = {})
+    {
+        node.geometry_asset_node_id = node_id;
+        node.geometry_asset = geometry_asset;
+    }
+
+    inline void detach_geometry_asset_node(SceneNodeAsset& node)
+    {
+        node.geometry_asset_node_id.reset();
+        node.geometry_asset.reset();
+    }
+
+    inline void attach_render_program_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        wz::asset::AssetKey render_program_asset = {})
+    {
+        node.render_program_node_id = node_id;
+        node.render_program_asset = render_program_asset;
+    }
+
+    inline void detach_render_program_node(SceneNodeAsset& node)
+    {
+        node.render_program_node_id.reset();
+        node.render_program_asset.reset();
     }
 
     // Scene-source reference (issue #213) — mirrors the renderable helpers.

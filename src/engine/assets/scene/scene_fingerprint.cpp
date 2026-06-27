@@ -112,6 +112,10 @@ namespace wz::engine::assets
             const bool has_inline_renderable = node.renderable.has_value();
             const bool has_renderable_asset =
                 node.renderable_asset_node_id.has_value();
+            const bool has_geometry_binding =
+                node.geometry_asset_node_id.has_value();
+            const bool has_render_program =
+                node.render_program_node_id.has_value();
             const bool has_scene_source =
                 node.scene_source_node_id.has_value();
             const bool has_glb_scene_source =
@@ -164,6 +168,8 @@ namespace wz::engine::assets
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
             fp.mix_value(has_renderable_asset);
+            fp.mix_value(has_geometry_binding);
+            fp.mix_value(has_render_program);
             fp.mix_value(has_scene_source);
             fp.mix_value(has_glb_scene_source);
             fp.mix_value(has_asset_reference);
@@ -200,6 +206,14 @@ namespace wz::engine::assets
 
             if (node.renderable_asset_node_id) {
                 fp.mix_value(*node.renderable_asset_node_id);
+            }
+
+            if (node.geometry_asset_node_id) {
+                fp.mix_value(*node.geometry_asset_node_id);
+            }
+
+            if (node.render_program_node_id) {
+                fp.mix_value(*node.render_program_node_id);
             }
 
             if (node.scene_source_node_id) {

@@ -1960,6 +1960,17 @@ namespace wz::engine::assets
                 add_member(*obj, "renderable",
                     renderable_asset_value(*node.renderable_asset));
             }
+            // Renderable binding by ingredients (issue #213): persist only the
+            // authored asset-graph node ids (geometry + render program); the
+            // resolved keys are re-bridged on (re)bind, mirroring scene_source.
+            if (node.geometry_asset_node_id) {
+                add_member(*obj, "geometry",
+                    renderable_asset_value(*node.geometry_asset_node_id));
+            }
+            if (node.render_program_node_id) {
+                add_member(*obj, "render_program",
+                    renderable_asset_value(*node.render_program_node_id));
+            }
             if (node.scene_source_node_id) {
                 add_member(*obj, "scene_source",
                     scene_source_value(*node.scene_source_node_id));

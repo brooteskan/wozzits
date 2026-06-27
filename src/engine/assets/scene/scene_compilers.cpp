@@ -1371,6 +1371,38 @@ namespace wz::engine::assets::internal
                 }
             }
 
+            // Renderable binding by ingredients (issue #213): geometry +
+            // render-program asset-graph node refs. Only the node ids are
+            // persisted; the resolved keys are re-bridged on (re)bind, and the
+            // render program is inherited down the tree at assembly time.
+            if (const auto* geometry = find_member(node_val, "geometry")) {
+                if (geometry->kind != wz::json::JSONValueKind::Object) {
+                    logger.error(
+                        "geometry on node '" + node.id + "' is not an object");
+                    return std::nullopt;
+                }
+                const auto gid = read_number(*geometry, "asset_graph_node_id");
+                if (gid && *gid > 0.0) {
+                    node.geometry_asset_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*gid);
+                    node.geometry_asset.reset();
+                }
+            }
+            if (const auto* program = find_member(node_val, "render_program")) {
+                if (program->kind != wz::json::JSONValueKind::Object) {
+                    logger.error(
+                        "render_program on node '" + node.id
+                        + "' is not an object");
+                    return std::nullopt;
+                }
+                const auto pid = read_number(*program, "asset_graph_node_id");
+                if (pid && *pid > 0.0) {
+                    node.render_program_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*pid);
+                    node.render_program_asset.reset();
+                }
+            }
+
             // Scene-source reference (issue #213): mirror the renderable node-id
             // read. Only the authored asset-graph node id is persisted; the
             // resolved key (scene_source) is re-bridged on (re)bind.
