@@ -376,7 +376,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
 
     public string KindLabel { get; }
 
-    public bool? Visible { get; }
+    // Settable so the inspector's live visibility edit is mirrored back onto the
+    // tree node (like DisplayName/Transform) — otherwise re-selecting the node
+    // re-reads the stale snapshot value and the checkbox reverts (issue #213).
+    public bool? Visible { get; internal set; }
 
     public EngineSceneRenderableSource RenderableSource { get; }
 

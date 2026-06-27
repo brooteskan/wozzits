@@ -701,6 +701,14 @@ public sealed partial class ProjectOpeningTests
         Assert.False(liveProps.Visible);
         Assert.Equal("mesh:renamed mesh", mesh.DisplayText);
 
+        // Visibility mirrors onto the tree node too (issue #213 fix): the node's
+        // Visible reflects the edit, so re-selecting it shows the edited value
+        // instead of reverting to the stale snapshot value.
+        Assert.False(mesh.Visible);
+        viewModel.SceneTree.SelectNode(camera);
+        viewModel.SceneTree.SelectNode(mesh);
+        Assert.False(viewModel.Inspector.NodeVisible);
+
         Assert.Empty(editorSession.NodeProperties);  // never hits the disk path
         Assert.Empty(editorSession.Transforms);
 

@@ -679,6 +679,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (_inspectedSceneNode is not null)
         {
             _inspectedSceneNode.DisplayName = NodeName;
+            // Mirror visibility back onto the tree node too, so re-selecting the
+            // node reflects the edit instead of reverting to the snapshot value
+            // (issue #213): the checkbox was reading the stale node.Visible.
+            _inspectedSceneNode.Visible = NodeVisible;
         }
 
         _editorSession.SetSceneNodePropertiesLive(NodeId, NodeName, NodeVisible);
