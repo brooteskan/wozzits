@@ -5155,6 +5155,65 @@ namespace wz::engine::assets
         }
         log_phase("terrain_assets", elapsed_ms_since(terrain_started));
 
+        // Materialize movement-constraint collision surfaces authored
+        // DIRECTLY from a scalar field heightfield (no TerrainAsset).
+        const auto collision_started = std::chrono::steady_clock::now();
+        for (auto& node : scene.nodes) {
+            if (!node.collision || !node.collision->height_field_source) {
+                continue;
+            }
+
+            auto& collision_component = *node.collision;
+            const auto& source = *collision_component.height_field_source;
+            if (source.scalar_field_asset == wz::asset::AssetKey{}) {
+                collision_component.collision_asset = {};
+                continue;
+            }
+
+            const std::string key =
+                "collision/constraint_heightfield/" + node.id;
+            CollisionAsset collision{};
+            if (const auto found = collisions.find(key);
+                found != collisions.end())
+            {
+                collision = found->second;
+            }
+            else {
+                collision = assets.collisions().create_from_height_field({
+                    .name =
+                        "scene_editor/collision/constraint_heightfield/"
+                        + node.id,
+                    .height_field = ScalarFieldAsset{
+                        .output = source.scalar_field_asset,
+                    },
+                    .origin = { source.origin[0], source.origin[1] },
+                    .size = { source.size[0], source.size[1] },
+                    .vertical_scale = source.vertical_scale,
+                    .base_height = source.base_height,
+                    .occupancy = CollisionOccupancyData{
+                        .kind = CollisionOccupancyKind::WalkableSurface,
+                        .blocks_movement = true,
+                        .queryable = true,
+                    },
+                    .projection_resolution_x =
+                        source.projection_resolution_x,
+                    .projection_resolution_y =
+                        source.projection_resolution_y,
+                });
+                if (!collision.valid()) {
+                    report.error =
+                        "heightfield constraint collision unavailable for "
+                        + node_log_name(node);
+                    return report;
+                }
+                collisions.emplace(key, collision);
+            }
+            collision_component.collision_asset = collision.output;
+        }
+        log_phase(
+            "collision_constraint_assets",
+            elapsed_ms_since(collision_started));
+
         report.ok = true;
         assets.logger().info(
             "scene authoring materialize complete nodes="

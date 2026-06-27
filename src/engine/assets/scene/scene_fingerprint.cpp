@@ -650,6 +650,20 @@ namespace wz::engine::assets
                 fp.mix_value(collision.collides_with_mask);
                 fp.mix_value(collision.is_trigger);
                 fp.mix_value(collision.enabled);
+                fp.mix_value(collision.constrain_movement);
+                fp.mix_value(collision.height_field_source.has_value());
+                if (collision.height_field_source) {
+                    const auto& source = *collision.height_field_source;
+                    mix_asset_key(fp, source.scalar_field_asset);
+                    fp.mix_value(source.origin[0]);
+                    fp.mix_value(source.origin[1]);
+                    fp.mix_value(source.size[0]);
+                    fp.mix_value(source.size[1]);
+                    fp.mix_value(source.vertical_scale);
+                    fp.mix_value(source.base_height);
+                    fp.mix_value(source.projection_resolution_x);
+                    fp.mix_value(source.projection_resolution_y);
+                }
             }
 
             if (node.proximity) {

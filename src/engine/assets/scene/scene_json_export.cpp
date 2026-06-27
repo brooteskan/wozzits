@@ -1706,6 +1706,30 @@ namespace wz::engine::assets
                 bool_value(collision.is_trigger));
             add_member(*obj, "enabled",
                 bool_value(collision.enabled));
+            add_member(*obj, "constrain_movement",
+                bool_value(collision.constrain_movement));
+            if (collision.height_field_source) {
+                const auto& source = *collision.height_field_source;
+                auto source_obj = object_value();
+                if (!(source.scalar_field_asset == wz::asset::AssetKey{})) {
+                    add_member(*source_obj, "asset",
+                        string_value(
+                            asset_key_string(source.scalar_field_asset)));
+                }
+                add_member(*source_obj, "origin",
+                    float_array(source.origin, 2));
+                add_member(*source_obj, "size",
+                    float_array(source.size, 2));
+                add_member(*source_obj, "vertical_scale",
+                    number_value(source.vertical_scale));
+                add_member(*source_obj, "base_height",
+                    number_value(source.base_height));
+                add_member(*source_obj, "projection_resolution_x",
+                    number_value(source.projection_resolution_x));
+                add_member(*source_obj, "projection_resolution_y",
+                    number_value(source.projection_resolution_y));
+                add_member(*obj, "height_field_source", std::move(source_obj));
+            }
             return obj;
         }
 

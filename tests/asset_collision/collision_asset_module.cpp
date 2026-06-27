@@ -334,6 +334,92 @@ TEST(CollisionAssetModule, TerrainCollisionUsesProjectDiskCache)
     EXPECT_EQ(second.accepted_triangle_count, first.accepted_triangle_count);
 }
 
+TEST(CollisionAssetModule, HeightFieldProducesConstraintCollisionAsset)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_height_field_direct_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    // GradientX over a 4-wide field gives column values x/(width-1):
+    // 0, 1/3, 2/3, 1 (constant across rows).
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/direct_height_field",
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    constexpr float kVerticalScale = 4.0f;
+    constexpr float kBaseHeight = -1.0f;
+
+    const auto collision = assets.collisions().create_from_height_field({
+        .name = "collision/direct_height_field_constraint",
+        .height_field = field,
+        .origin = { -2.0f, -3.0f },
+        .size = { 10.0f, 12.0f },
+        .vertical_scale = kVerticalScale,
+        .base_height = kBaseHeight,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(collision));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
+    EXPECT_EQ(data->occupancy.kind, CollisionOccupancyKind::WalkableSurface);
+    EXPECT_TRUE(data->supports_height_query);
+    EXPECT_TRUE(data->supports_ray_query);
+    EXPECT_EQ(data->height_field, field.output);
+    EXPECT_EQ(data->source_asset, field.output);
+    EXPECT_FLOAT_EQ(data->origin[0], -2.0f);
+    EXPECT_FLOAT_EQ(data->origin[1], -3.0f);
+    EXPECT_FLOAT_EQ(data->size[0], 10.0f);
+    EXPECT_FLOAT_EQ(data->size[1], 12.0f);
+    EXPECT_EQ(data->resolution_x, 4u);
+    EXPECT_EQ(data->resolution_y, 4u);
+    ASSERT_EQ(data->height_samples.size(), 16u);
+
+    // World Y is baked: vertical_scale=1, base_height=0 on the data, with the
+    // mapping folded into height_samples.
+    EXPECT_FLOAT_EQ(data->vertical_scale, 1.0f);
+    EXPECT_FLOAT_EQ(data->base_height, 0.0f);
+
+    // Each row repeats the same column ramp baked through the mapping.
+    for (uint32_t z = 0; z < 4u; ++z) {
+        for (uint32_t x = 0; x < 4u; ++x) {
+            const float field_value =
+                static_cast<float>(x) / 3.0f;
+            const float expected_world_y =
+                kBaseHeight + field_value * kVerticalScale;
+            EXPECT_FLOAT_EQ(
+                data->height_samples[static_cast<size_t>(z) * 4u + x],
+                expected_world_y)
+                << "x=" << x << " z=" << z;
+        }
+    }
+
+    EXPECT_FLOAT_EQ(data->min_height, kBaseHeight);
+    EXPECT_FLOAT_EQ(data->max_height, kBaseHeight + kVerticalScale);
+}
+
 TEST(CollisionAssetModule, MeshTerrainProducesRegularProjectionHeightField)
 {
     const wz::fs::Path root =

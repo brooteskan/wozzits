@@ -701,6 +701,41 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        CollisionFromHeightFieldCompileDesc
+        collision_from_height_field_desc_from_params(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            CollisionFromHeightFieldCompileDesc desc{};
+            if (!dep_nodes.empty()) {
+                desc.height_field = dep_nodes[0].key;
+            }
+            desc.origin[0] =
+                static_cast<float>(params.get<double>("origin_x", desc.origin[0]));
+            desc.origin[1] =
+                static_cast<float>(params.get<double>("origin_z", desc.origin[1]));
+            desc.size[0] =
+                static_cast<float>(params.get<double>("size_x", desc.size[0]));
+            desc.size[1] =
+                static_cast<float>(params.get<double>("size_z", desc.size[1]));
+            desc.vertical_scale =
+                static_cast<float>(
+                    params.get<double>("vertical_scale", desc.vertical_scale));
+            desc.base_height =
+                static_cast<float>(
+                    params.get<double>("base_height", desc.base_height));
+            desc.occupancy = occupancy_param(params, desc.occupancy);
+            desc.projection_resolution_x =
+                params.get<uint32_t>(
+                    "projection_resolution_x",
+                    desc.projection_resolution_x);
+            desc.projection_resolution_y =
+                params.get<uint32_t>(
+                    "projection_resolution_y",
+                    desc.projection_resolution_y);
+            return desc;
+        }
+
         void copy_mesh_bounds(
             float dst_min[3],
             float dst_max[3],
@@ -912,47 +947,6 @@ namespace wz::engine::assets::internal
                     static_cast<uint32_t>(
                         data.surface_grid.cell_triangle_indices.size()));
             }
-        }
-
-        float height_sample_at(
-            const TerrainAssetData& terrain,
-            uint32_t x,
-            uint32_t z) noexcept
-        {
-            const size_t index =
-                static_cast<size_t>(z) * terrain.resolution_x + x;
-            return index < terrain.height_samples.size()
-                ? terrain.base_height
-                    + terrain.height_samples[index] * terrain.vertical_scale
-                : terrain.base_height;
-        }
-
-        float bilinear_height_sample(
-            const TerrainAssetData& terrain,
-            float sample_x,
-            float sample_z) noexcept
-        {
-            if (terrain.resolution_x == 0u || terrain.resolution_y == 0u) {
-                return terrain.base_height;
-            }
-            const uint32_t x0 =
-                static_cast<uint32_t>(std::floor(sample_x));
-            const uint32_t z0 =
-                static_cast<uint32_t>(std::floor(sample_z));
-            const uint32_t x1 =
-                (std::min)(x0 + 1u, terrain.resolution_x - 1u);
-            const uint32_t z1 =
-                (std::min)(z0 + 1u, terrain.resolution_y - 1u);
-            const float tx = sample_x - static_cast<float>(x0);
-            const float tz = sample_z - static_cast<float>(z0);
-
-            const float h00 = height_sample_at(terrain, x0, z0);
-            const float h10 = height_sample_at(terrain, x1, z0);
-            const float h01 = height_sample_at(terrain, x0, z1);
-            const float h11 = height_sample_at(terrain, x1, z1);
-            const float h0 = h00 + (h10 - h00) * tx;
-            const float h1 = h01 + (h11 - h01) * tx;
-            return h0 + (h1 - h0) * tz;
         }
 
         bool triangle_height_at_xz(
@@ -1232,16 +1226,81 @@ namespace wz::engine::assets::internal
             return true;
         }
 
-        bool resample_heightfield_terrain(
+        // Mapping describing how a raw scalar-field heightfield grid projects
+        // into world space. World Y = value * vertical_scale + base_height.
+        struct HeightFieldGridMapping
+        {
+            wz::asset::AssetKey height_field{};
+            float origin[2]{ 0.0f, 0.0f };
+            float size[2]{ 1.0f, 1.0f };
+            float vertical_scale = 1.0f;
+            float base_height = 0.0f;
+        };
+
+        float grid_height_sample_at(
+            const std::vector<float>& values,
+            uint32_t src_w,
+            uint32_t src_h,
+            float vertical_scale,
+            float base_height,
+            uint32_t x,
+            uint32_t z) noexcept
+        {
+            const size_t index = static_cast<size_t>(z) * src_w + x;
+            (void)src_h;
+            return index < values.size()
+                ? base_height + values[index] * vertical_scale
+                : base_height;
+        }
+
+        float bilinear_grid_height_sample(
+            const std::vector<float>& values,
+            uint32_t src_w,
+            uint32_t src_h,
+            float vertical_scale,
+            float base_height,
+            float sample_x,
+            float sample_z) noexcept
+        {
+            if (src_w == 0u || src_h == 0u) {
+                return base_height;
+            }
+            const uint32_t x0 = static_cast<uint32_t>(std::floor(sample_x));
+            const uint32_t z0 = static_cast<uint32_t>(std::floor(sample_z));
+            const uint32_t x1 = (std::min)(x0 + 1u, src_w - 1u);
+            const uint32_t z1 = (std::min)(z0 + 1u, src_h - 1u);
+            const float tx = sample_x - static_cast<float>(x0);
+            const float tz = sample_z - static_cast<float>(z0);
+
+            const float h00 = grid_height_sample_at(
+                values, src_w, src_h, vertical_scale, base_height, x0, z0);
+            const float h10 = grid_height_sample_at(
+                values, src_w, src_h, vertical_scale, base_height, x1, z0);
+            const float h01 = grid_height_sample_at(
+                values, src_w, src_h, vertical_scale, base_height, x0, z1);
+            const float h11 = grid_height_sample_at(
+                values, src_w, src_h, vertical_scale, base_height, x1, z1);
+            const float h0 = h00 + (h10 - h00) * tx;
+            const float h1 = h01 + (h11 - h01) * tx;
+            return h0 + (h1 - h0) * tz;
+        }
+
+        // Resamples a raw heightfield grid (values + source resolution +
+        // world mapping) into a CollisionAssetData heightfield with world Y
+        // baked into height_samples (vertical_scale=1, base_height=0).
+        bool resample_heightfield_grid(
             CollisionAssetData& data,
-            const TerrainAssetData& terrain,
+            const std::vector<float>& src_values,
+            uint32_t src_w,
+            uint32_t src_h,
+            const HeightFieldGridMapping& mapping,
             uint32_t resolution_x,
             uint32_t resolution_y)
         {
             if (resolution_x < 2u
                 || resolution_y < 2u
-                || terrain.resolution_x == 0u
-                || terrain.resolution_y == 0u)
+                || src_w == 0u
+                || src_h == 0u)
             {
                 return false;
             }
@@ -1254,19 +1313,25 @@ namespace wz::engine::assets::internal
                 const float source_z =
                     resolution_y > 1u
                         ? static_cast<float>(z)
-                            * static_cast<float>(terrain.resolution_y - 1u)
+                            * static_cast<float>(src_h - 1u)
                             / static_cast<float>(resolution_y - 1u)
                         : 0.0f;
                 for (uint32_t x = 0; x < resolution_x; ++x) {
                     const float source_x =
                         resolution_x > 1u
                             ? static_cast<float>(x)
-                                * static_cast<float>(
-                                    terrain.resolution_x - 1u)
+                                * static_cast<float>(src_w - 1u)
                                 / static_cast<float>(resolution_x - 1u)
                             : 0.0f;
                     const float height =
-                        bilinear_height_sample(terrain, source_x, source_z);
+                        bilinear_grid_height_sample(
+                            src_values,
+                            src_w,
+                            src_h,
+                            mapping.vertical_scale,
+                            mapping.base_height,
+                            source_x,
+                            source_z);
                     samples[static_cast<size_t>(z) * resolution_x + x] =
                         height;
                     min_height = (std::min)(min_height, height);
@@ -1275,11 +1340,11 @@ namespace wz::engine::assets::internal
             }
 
             data.shape_kind = CollisionShapeKind::TerrainHeightField;
-            data.height_field = terrain.height_field;
-            data.origin[0] = terrain.origin[0];
-            data.origin[1] = terrain.origin[1];
-            data.size[0] = terrain.size[0];
-            data.size[1] = terrain.size[1];
+            data.height_field = mapping.height_field;
+            data.origin[0] = mapping.origin[0];
+            data.origin[1] = mapping.origin[1];
+            data.size[0] = mapping.size[0];
+            data.size[1] = mapping.size[1];
             data.resolution_x = resolution_x;
             data.resolution_y = resolution_y;
             data.vertical_scale = 1.0f;
@@ -1290,6 +1355,80 @@ namespace wz::engine::assets::internal
             data.supports_height_query = true;
             data.supports_ray_query = true;
             return true;
+        }
+
+        bool resample_heightfield_terrain(
+            CollisionAssetData& data,
+            const TerrainAssetData& terrain,
+            uint32_t resolution_x,
+            uint32_t resolution_y)
+        {
+            HeightFieldGridMapping mapping{};
+            mapping.height_field = terrain.height_field;
+            mapping.origin[0] = terrain.origin[0];
+            mapping.origin[1] = terrain.origin[1];
+            mapping.size[0] = terrain.size[0];
+            mapping.size[1] = terrain.size[1];
+            mapping.vertical_scale = terrain.vertical_scale;
+            mapping.base_height = terrain.base_height;
+            return resample_heightfield_grid(
+                data,
+                terrain.height_samples,
+                terrain.resolution_x,
+                terrain.resolution_y,
+                mapping,
+                resolution_x,
+                resolution_y);
+        }
+
+        CollisionAssetData collision_from_height_field(
+            const CollisionFromHeightFieldCompileDesc& desc,
+            const ScalarFieldData& field)
+        {
+            CollisionAssetData data{};
+            data.source_kind = CollisionSourceKind::Terrain;
+            data.source_asset = desc.height_field;
+            data.geometry_asset = desc.height_field;
+            data.occupancy = desc.occupancy;
+
+            const uint32_t resolution_x =
+                desc.projection_resolution_x == 0u
+                    ? field.width
+                    : desc.projection_resolution_x;
+            const uint32_t resolution_y =
+                desc.projection_resolution_y == 0u
+                    ? field.height
+                    : desc.projection_resolution_y;
+
+            HeightFieldGridMapping mapping{};
+            mapping.height_field = desc.height_field;
+            mapping.origin[0] = desc.origin[0];
+            mapping.origin[1] = desc.origin[1];
+            mapping.size[0] = desc.size[0];
+            mapping.size[1] = desc.size[1];
+            mapping.vertical_scale = desc.vertical_scale;
+            mapping.base_height = desc.base_height;
+
+            const bool projected = resample_heightfield_grid(
+                data,
+                field.values,
+                field.width,
+                field.height,
+                mapping,
+                resolution_x,
+                resolution_y);
+            if (!projected) {
+                data.source_asset = {};
+                return data;
+            }
+
+            data.bounds_min[0] = data.origin[0];
+            data.bounds_min[1] = data.min_height;
+            data.bounds_min[2] = data.origin[1];
+            data.bounds_max[0] = data.origin[0] + data.size[0];
+            data.bounds_max[1] = data.max_height;
+            data.bounds_max[2] = data.origin[1] + data.size[1];
+            return data;
         }
 
         CollisionAssetData collision_from_terrain(
@@ -1396,6 +1535,7 @@ namespace wz::engine::assets::internal
     void register_collision_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
+        ScalarFieldTable& scalar_fields_table,
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
         CollisionAssetTable& collision_table,
@@ -1614,6 +1754,187 @@ namespace wz::engine::assets::internal
                     collision_table.add(std::move(data));
                 if (!handle.valid()) {
                     logger.error("failed to store terrain collision asset");
+                    return compile_failed_node(input);
+                }
+
+                return compiled_collision_node(input, handle);
+            }
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kCollisionFromHeightFieldSchema,
+            .output_type = kAssetTypeCollisionAsset,
+            .input_ports = {
+                { "height_field", kAssetTypeScalarField },
+            },
+            .parameters = {
+                {
+                    .name = "origin_x",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Origin X",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "origin_z",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Origin Z",
+                    .default_num = 0.0,
+                },
+                {
+                    .name = "size_x",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Size X",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "size_z",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Size Z",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "vertical_scale",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Vertical scale",
+                    .default_num = 1.0,
+                    .min = -100000.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "base_height",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Base height",
+                    .default_num = 0.0,
+                    .min = -100000.0,
+                    .max = 100000.0,
+                },
+                {
+                    .name = "occupancy_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Occupancy",
+                    .default_num =
+                        static_cast<double>(
+                            CollisionOccupancyKind::WalkableSurface),
+                    .options = kCollisionOccupancyKindOptions,
+                },
+                {
+                    .name = "occupancy_blocks_movement",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Blocks movement",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "occupancy_queryable",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Queryable",
+                    .default_num = 1.0,
+                },
+                {
+                    .name = "projection_resolution_x",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Projection resolution X",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+                {
+                    .name = "projection_resolution_y",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Projection resolution Y",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+            },
+            .compile =
+                [&logger, &scalar_fields_table, &collision_table, cache_settings](
+                    const wz::asset::AssetNode& input,
+                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::ResourceHandle> dep_handles)
+                        -> wz::asset::AssetNode
+            {
+                CollisionFromHeightFieldCompileDesc param_desc{};
+                const auto* desc =
+                    std::any_cast<CollisionFromHeightFieldCompileDesc>(
+                        &input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(
+                                &input.meta))
+                    {
+                        param_desc =
+                            collision_from_height_field_desc_from_params(
+                                *params,
+                                dep_nodes);
+                        desc = &param_desc;
+                    }
+                }
+                if (!desc) {
+                    logger.error(
+                        "collision height field missing compile desc");
+                    return compile_failed_node(input);
+                }
+                if (dep_handles.size() != 1) {
+                    logger.error(
+                        "collision height field requires one scalar field "
+                        "dependency");
+                    return compile_failed_node(input);
+                }
+
+                const ScalarFieldData* field =
+                    scalar_fields_table.get(dep_handles[0]);
+                if (!field || !field->valid()) {
+                    logger.error(
+                        "collision height field source is invalid");
+                    return compile_failed_node(input);
+                }
+                if (field->depth != 1) {
+                    logger.error(
+                        "collision height field source must be 2D");
+                    return compile_failed_node(input);
+                }
+
+                CollisionAssetData cached_data{};
+                if (load_cached_terrain_collision_impl(
+                        cache_settings,
+                        input.key,
+                        logger,
+                        cached_data))
+                {
+                    wz::asset::ResourceHandle handle =
+                        collision_table.add(std::move(cached_data));
+                    if (!handle.valid()) {
+                        logger.error(
+                            "failed to store cached height field "
+                            "collision asset");
+                        return compile_failed_node(input);
+                    }
+                    return compiled_collision_node(input, handle);
+                }
+
+                CollisionAssetData data =
+                    collision_from_height_field(*desc, *field);
+                if (!data.valid()) {
+                    logger.error(
+                        "compiled height field collision asset is invalid");
+                    return compile_failed_node(input);
+                }
+
+                store_cached_terrain_collision(
+                    cache_settings,
+                    input.key,
+                    data,
+                    logger);
+
+                wz::asset::ResourceHandle handle =
+                    collision_table.add(std::move(data));
+                if (!handle.valid()) {
+                    logger.error(
+                        "failed to store height field collision asset");
                     return compile_failed_node(input);
                 }
 

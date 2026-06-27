@@ -131,7 +131,8 @@ namespace wz::engine::assets
                 internal::kTerrainVisualProxyDiskCacheKey.seed_lo,
                 internal::kTerrainVisualProxyDiskCacheKey.seed_hi);
         }
-        if (schema == kCollisionFromTerrainSchema
+        if ((schema == kCollisionFromTerrainSchema
+                || schema == kCollisionFromHeightFieldSchema)
             && type == kAssetTypeCollisionAsset)
         {
             return internal::disk_cache_asset_exists(
@@ -294,7 +295,8 @@ namespace wz::engine::assets
                 : std::nullopt;
         }
 
-        if (schema == kCollisionFromTerrainSchema
+        if ((schema == kCollisionFromTerrainSchema
+                || schema == kCollisionFromHeightFieldSchema)
             && type == kAssetTypeCollisionAsset)
         {
             CollisionAssetData data{};

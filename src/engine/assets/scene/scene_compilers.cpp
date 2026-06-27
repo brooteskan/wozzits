@@ -4276,6 +4276,92 @@ namespace wz::engine::assets::internal
                 if (enabled) {
                     component.enabled = *enabled;
                 }
+                auto constrain_movement =
+                    read_bool(*collision, "constrain_movement");
+                if (constrain_movement) {
+                    component.constrain_movement = *constrain_movement;
+                }
+
+                const auto* height_field_source =
+                    find_member(*collision, "height_field_source");
+                if (height_field_source
+                    && height_field_source->kind
+                        == wz::json::JSONValueKind::Object)
+                {
+                    SceneCollisionHeightFieldSource source{};
+
+                    auto asset = read_string(*height_field_source, "asset");
+                    if (asset && !asset->empty()) {
+                        auto key = parse_asset_key_string(*asset);
+                        if (!key) {
+                            const auto it =
+                                scalar_field_asset_references.find(
+                                    std::string(*asset));
+                            if (it == scalar_field_asset_references.end()) {
+                                logger.error(
+                                    "collision.height_field_source.asset on "
+                                    "node '" + node.id
+                                    + "' could not be resolved: "
+                                    + std::string(*asset));
+                                return std::nullopt;
+                            }
+                            key = it->second;
+                        }
+                        source.scalar_field_asset = *key;
+                    }
+
+                    if (find_member(*height_field_source, "origin")) {
+                        if (!read_float2(
+                                *height_field_source,
+                                "origin",
+                                source.origin))
+                        {
+                            logger.error(
+                                "collision.height_field_source on node '"
+                                + node.id + "' has invalid origin");
+                            return std::nullopt;
+                        }
+                    }
+                    if (find_member(*height_field_source, "size")) {
+                        if (!read_float2(
+                                *height_field_source,
+                                "size",
+                                source.size))
+                        {
+                            logger.error(
+                                "collision.height_field_source on node '"
+                                + node.id + "' has invalid size");
+                            return std::nullopt;
+                        }
+                    }
+
+                    auto vertical_scale =
+                        read_number(*height_field_source, "vertical_scale");
+                    if (vertical_scale) {
+                        source.vertical_scale =
+                            static_cast<float>(*vertical_scale);
+                    }
+                    auto base_height =
+                        read_number(*height_field_source, "base_height");
+                    if (base_height) {
+                        source.base_height =
+                            static_cast<float>(*base_height);
+                    }
+                    auto resolution_x = read_number(
+                        *height_field_source, "projection_resolution_x");
+                    if (resolution_x && *resolution_x >= 0.0) {
+                        source.projection_resolution_x =
+                            static_cast<uint32_t>(*resolution_x);
+                    }
+                    auto resolution_y = read_number(
+                        *height_field_source, "projection_resolution_y");
+                    if (resolution_y && *resolution_y >= 0.0) {
+                        source.projection_resolution_y =
+                            static_cast<uint32_t>(*resolution_y);
+                    }
+
+                    component.height_field_source = source;
+                }
 
                 node.collision = component;
             }

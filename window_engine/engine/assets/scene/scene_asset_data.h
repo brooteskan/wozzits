@@ -700,6 +700,21 @@ namespace wz::engine::assets
         bool constrain_movement = true;
     };
 
+    // Authoring recipe for a movement-constraint collision surface built
+    // DIRECTLY from a scalar field heightfield + world mapping (no
+    // TerrainAsset). When present and a scalar field is set, the scene
+    // materialize pass resolves it to SceneCollisionAsset::collision_asset.
+    struct SceneCollisionHeightFieldSource
+    {
+        wz::asset::AssetKey scalar_field_asset{};
+        float origin[2]{ 0.0f, 0.0f };
+        float size[2]{ 1.0f, 1.0f };
+        float vertical_scale = 1.0f;
+        float base_height = 0.0f;
+        uint32_t projection_resolution_x = 0;
+        uint32_t projection_resolution_y = 0;
+    };
+
     struct SceneCollisionAsset
     {
         wz::asset::AssetKey collision_asset{};
@@ -707,6 +722,10 @@ namespace wz::engine::assets
         uint32_t collides_with_mask = 0xffffffffu;
         bool is_trigger = false;
         bool enabled = true;
+        // When true, the runtime treats this collision as a terrain-style
+        // constraint surface that Motion actors stick to.
+        bool constrain_movement = false;
+        std::optional<SceneCollisionHeightFieldSource> height_field_source;
     };
 
     enum class SceneTerrainMeshHeightPolicy : uint8_t

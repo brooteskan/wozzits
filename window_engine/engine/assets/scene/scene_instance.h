@@ -78,6 +78,9 @@ namespace wz::engine::assets
         uint32_t collides_with_mask = 0xffffffffu;
         bool is_trigger = false;
         bool enabled = true;
+        // When true, the collision acts as a terrain-style movement
+        // constraint surface that Motion actors stick to.
+        bool constrain_movement = false;
     };
 
     struct AudioListenerComponent

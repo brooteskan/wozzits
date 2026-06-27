@@ -37,6 +37,27 @@ namespace wz::engine::assets
         uint32_t projection_resolution_y = 0;
     };
 
+    // Authoring recipe for a constraint surface built DIRECTLY from a scalar
+    // field heightfield + world mapping, bypassing TerrainAsset. World Y is
+    // baked as value * vertical_scale + base_height at the projection
+    // resolution (0 = use the source field resolution).
+    struct CollisionFromHeightFieldDesc
+    {
+        std::string name;
+        ScalarFieldAsset height_field;
+        float origin[2]{ 0.0f, 0.0f };
+        float size[2]{ 1.0f, 1.0f };
+        float vertical_scale = 1.0f;
+        float base_height = 0.0f;
+        CollisionOccupancyData occupancy{
+            CollisionOccupancyKind::WalkableSurface,
+            true,
+            true,
+        };
+        uint32_t projection_resolution_x = 0;
+        uint32_t projection_resolution_y = 0;
+    };
+
     struct CollisionAsset
     {
         wz::asset::AssetKey output{};
@@ -70,6 +91,9 @@ namespace wz::engine::assets
 
         [[nodiscard]] CollisionAsset create_from_terrain(
             const CollisionFromTerrainDesc& desc);
+
+        [[nodiscard]] CollisionAsset create_from_height_field(
+            const CollisionFromHeightFieldDesc& desc);
 
         [[nodiscard]] CollisionHandle get_collision(
             const CollisionAsset& asset) const;

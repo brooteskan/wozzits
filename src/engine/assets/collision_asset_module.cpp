@@ -106,6 +106,62 @@ namespace wz::engine::assets
         return CollisionAsset{ .output = key };
     }
 
+    CollisionAsset CollisionAssetModule::create_from_height_field(
+        const CollisionFromHeightFieldDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("height field collision asset has empty name");
+            return {};
+        }
+        if (!desc.height_field.valid()) {
+            logger_.error(
+                "height field collision asset has invalid source: "
+                + desc.name);
+            return {};
+        }
+
+        CollisionFromHeightFieldCompileDesc compile_desc{};
+        compile_desc.height_field = desc.height_field.output;
+        compile_desc.origin[0] = desc.origin[0];
+        compile_desc.origin[1] = desc.origin[1];
+        compile_desc.size[0] = desc.size[0];
+        compile_desc.size[1] = desc.size[1];
+        compile_desc.vertical_scale = desc.vertical_scale;
+        compile_desc.base_height = desc.base_height;
+        compile_desc.occupancy = desc.occupancy;
+        compile_desc.projection_resolution_x = desc.projection_resolution_x;
+        compile_desc.projection_resolution_y = desc.projection_resolution_y;
+
+        const wz::asset::AssetKey key =
+            make_collision_from_height_field_key(
+                desc.name,
+                desc.height_field.output,
+                desc.origin,
+                desc.size,
+                desc.vertical_scale,
+                desc.base_height,
+                desc.occupancy,
+                desc.projection_resolution_x,
+                desc.projection_resolution_y);
+
+        wz::asset::AssetNode node{};
+        node.key = key;
+        node.type = kAssetTypeCollisionAsset;
+        node.schema = kCollisionFromHeightFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = compile_desc;
+
+        if (!system_.register_asset(
+                std::move(node),
+                { desc.height_field.output }))
+        {
+            return CollisionAsset{ .output = key };
+        }
+
+        return CollisionAsset{ .output = key };
+    }
+
     CollisionHandle CollisionAssetModule::get_collision(
         const CollisionAsset& asset) const
     {

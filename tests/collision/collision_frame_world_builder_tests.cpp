@@ -185,6 +185,87 @@ TEST(CollisionFrameWorldBuilder, ResolvesTerrainConstraintSurfaceProxy)
         4.0f);
 }
 
+TEST(CollisionFrameWorldBuilder, ResolvesConstrainMovementCollisionSurface)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        test_root("wz_collision_world_constrain_movement_height_field");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "collision/constraint_height",
+            .width = 4,
+            .height = 4,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+        });
+    ASSERT_TRUE(field.valid());
+
+    // Constraint surface built DIRECTLY from the scalar field, no TerrainAsset.
+    const auto constraint_surface =
+        assets.collisions().create_from_height_field({
+            .name = "collision/constraint_height_surface",
+            .height_field = field,
+            .origin = { 0.0f, 0.0f },
+            .size = { 16.0f, 16.0f },
+            .vertical_scale = 2.0f,
+            .base_height = 0.0f,
+        });
+    ASSERT_TRUE(constraint_surface.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto collision_handle =
+        assets.collisions().get_collision(constraint_surface);
+    ASSERT_TRUE(collision_handle.valid());
+    const auto* collision_data =
+        assets.collisions().get_collision_data(collision_handle);
+    ASSERT_NE(collision_data, nullptr);
+
+    SceneAssetData scene{};
+    scene.name = "constrain_movement_collision_scene";
+    SceneNodeAsset node{};
+    node.id = "ground";
+    node.local.translation[0] = 5.0f;
+    node.local.translation[2] = 7.0f;
+    node.collision = SceneCollisionAsset{
+        .collision_asset = constraint_surface.output,
+        .constrain_movement = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("ground"));
+    const auto node_h = result.instance.authored_to_runtime["ground"];
+    ASSERT_EQ(result.instance.collisions.size(), 1u);
+    EXPECT_TRUE(result.instance.collisions[0].component.constrain_movement);
+
+    CollisionFrameStorage frame{};
+    build_collision_world(result.instance, assets.collisions(), frame);
+
+    ASSERT_EQ(frame.terrain_constraint_surfaces.size(), 1u);
+    EXPECT_EQ(frame.terrain_constraint_surfaces[0].entity, node_h);
+    EXPECT_EQ(
+        frame.terrain_constraint_surfaces[0].collision_asset,
+        constraint_surface.output);
+    EXPECT_EQ(frame.terrain_constraint_surfaces[0].resolved, collision_data);
+    EXPECT_TRUE(frame.terrain_constraint_surfaces[0].enabled);
+    EXPECT_FLOAT_EQ(
+        frame.terrain_constraint_surfaces[0].world_from_local.m[12],
+        5.0f);
+    EXPECT_FLOAT_EQ(
+        frame.terrain_constraint_surfaces[0].world_from_local.m[14],
+        7.0f);
+}
+
 TEST(CollisionFrameWorldBuilder, DisabledEntryEmitsExitWhenItDisappears)
 {
     using namespace wz::engine::assets;

@@ -311,6 +311,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000B01ull
     };
 
+    // Collision asset derived DIRECTLY from a scalar-field heightfield plus a
+    // world mapping, with no TerrainAsset intermediary. Produces a
+    // TerrainHeightField shape from kAssetTypeScalarField input.
+    // Produces kAssetTypeCollisionAsset output.
+    inline constexpr wz::asset::SchemaID kCollisionFromHeightFieldSchema{
+        0xF11E'CA55'E7'000B02ull
+    };
+
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema
     // dependency. header_mode ordinal is encoded in the key so the same file
     // compiled with different modes produces distinct asset keys.

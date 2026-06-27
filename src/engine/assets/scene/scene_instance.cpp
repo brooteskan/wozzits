@@ -766,6 +766,7 @@ namespace wz::engine::assets
                         .collides_with_mask = collision.collides_with_mask,
                         .is_trigger = collision.is_trigger,
                         .enabled = collision.enabled,
+                        .constrain_movement = collision.constrain_movement,
                     },
                 });
             }

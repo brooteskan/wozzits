@@ -964,6 +964,41 @@ namespace wz::engine::collision
                     .resolved = data,
                 });
         }
+
+        // Collision components authored as movement-constraint surfaces (e.g.
+        // a scalar-field heightfield collision with no TerrainAsset) also feed
+        // the terrain-constraint pipeline.
+        for (const auto& record : scene.collisions) {
+            const auto& component = record.component;
+            if (!component.constrain_movement
+                || component.collision_asset == wz::asset::AssetKey{}
+                || record.node == wz::scene::INVALID_RUNTIME_ENTITY
+                || record.node >= node_count)
+            {
+                continue;
+            }
+
+            const auto handle = collisions.find_collision(
+                wz::engine::assets::CollisionAsset{
+                    .output = component.collision_asset,
+                });
+            const auto* data = collisions.get_collision_data(handle);
+            if (!data || !data->supports_height_query) {
+                continue;
+            }
+
+            const auto& node = wz::core::graph::node_data(
+                scene.storage.polytree,
+                record.node);
+            storage.terrain_constraint_surfaces.push_back(
+                TerrainConstraintSurfaceEntry{
+                    .entity = record.node,
+                    .collision_asset = component.collision_asset,
+                    .world_from_local = node.world,
+                    .enabled = true,
+                    .resolved = data,
+                });
+        }
     }
 
     void build_collision_frame(

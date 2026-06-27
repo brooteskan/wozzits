@@ -1364,6 +1364,104 @@ TEST(SceneAssetModule, RenderBindingIngredientsRoundTripThroughSceneJSON)
         wz::asset::AssetGraphDraftNodeId{ 19 });
 }
 
+TEST(SceneAssetModule, CollisionHeightFieldConstraintRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_collision_constraint_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    // Fabricated resolved keys so the collision object is emitted on export.
+    wz::asset::AssetKey collision_key{};
+    collision_key.content_hash = { 0x11u, 0x22u };
+    collision_key.schema_hash = { 0x33u, 0x44u };
+    collision_key.compiler_hash = { 0x55u, 0x66u };
+    collision_key.deps_hash = { 0x77u, 0x88u };
+
+    wz::asset::AssetKey scalar_field_key{};
+    scalar_field_key.content_hash = { 0xAAu, 0xBBu };
+    scalar_field_key.schema_hash = { 0xCCu, 0xDDu };
+    scalar_field_key.compiler_hash = { 0xEEu, 0xFFu };
+    scalar_field_key.deps_hash = { 0x99u, 0x10u };
+
+    SceneCollisionHeightFieldSource source{};
+    source.scalar_field_asset = scalar_field_key;
+    source.origin[0] = -4.0f;
+    source.origin[1] = 6.0f;
+    source.size[0] = 32.0f;
+    source.size[1] = 48.0f;
+    source.vertical_scale = 5.0f;
+    source.base_height = -2.0f;
+    source.projection_resolution_x = 256u;
+    source.projection_resolution_y = 128u;
+
+    SceneAssetData authored{};
+    authored.name = "collision_constraint_roundtrip";
+
+    SceneNodeAsset ground = make_scene_node("ground");
+    ground.collision = SceneCollisionAsset{
+        .collision_asset = collision_key,
+        .layer_mask = 0x3u,
+        .collides_with_mask = 0x5u,
+        .is_trigger = false,
+        .enabled = true,
+        .constrain_movement = true,
+        .height_field_source = source,
+    };
+    authored.nodes.push_back(std::move(ground));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
+    EXPECT_NE(exported.find("\"height_field_source\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root, "collision_constraint.scene.json", exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "collision_constraint",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+    ASSERT_EQ(data->nodes.size(), 1u);
+
+    const auto* parsed = find_scene_node(*data, "ground");
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed->collision.has_value());
+    const auto& collision = *parsed->collision;
+    EXPECT_EQ(collision.collision_asset, collision_key);
+    EXPECT_EQ(collision.layer_mask, 0x3u);
+    EXPECT_EQ(collision.collides_with_mask, 0x5u);
+    EXPECT_FALSE(collision.is_trigger);
+    EXPECT_TRUE(collision.enabled);
+    EXPECT_TRUE(collision.constrain_movement);
+
+    ASSERT_TRUE(collision.height_field_source.has_value());
+    const auto& parsed_source = *collision.height_field_source;
+    EXPECT_EQ(parsed_source.scalar_field_asset, scalar_field_key);
+    EXPECT_FLOAT_EQ(parsed_source.origin[0], -4.0f);
+    EXPECT_FLOAT_EQ(parsed_source.origin[1], 6.0f);
+    EXPECT_FLOAT_EQ(parsed_source.size[0], 32.0f);
+    EXPECT_FLOAT_EQ(parsed_source.size[1], 48.0f);
+    EXPECT_FLOAT_EQ(parsed_source.vertical_scale, 5.0f);
+    EXPECT_FLOAT_EQ(parsed_source.base_height, -2.0f);
+    EXPECT_EQ(parsed_source.projection_resolution_x, 256u);
+    EXPECT_EQ(parsed_source.projection_resolution_y, 128u);
+}
+
 TEST(SceneAssetModule, IndexedGlbPartGeometryRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;
