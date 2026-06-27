@@ -447,6 +447,37 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         ulong assetGraphNodeId);
 
+    // Author a node's COLLISION component (terrain-stick track): point it at a
+    // Collision asset-graph node (0 = clear the reference) and toggle whether the
+    // node's movement is constrained by that collision data. Live + host-gated,
+    // no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_collision",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeCollision(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        uint assetGraphNodeId,
+        byte constrainMovement);
+
+    // Author a node's MOTION component terrain-constraint fields (terrain-stick
+    // track): whether the node sticks to the terrain surface, plus ride height,
+    // footprint radius, surface-alignment toggle, and alignment strength. Live +
+    // host-gated, no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_motion_terrain",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeMotionTerrain(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        byte terrainConstrained,
+        float rideHeight,
+        float footprintRadius,
+        byte alignToSurface,
+        float alignmentStrength);
+
     // Point a node at a "Scene from GLB" asset-graph node so the runtime grafts
     // that GLB's hierarchy as the node's children (issue #213 piece 2). The id is
     // the asset-graph node's id (0 = clear); consumeMode uses the WZ_SCENE_SOURCE_*

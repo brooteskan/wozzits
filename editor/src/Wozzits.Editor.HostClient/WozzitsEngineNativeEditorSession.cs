@@ -443,6 +443,41 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetNodeRenderProgram(runtime.Handle, nodeId, assetGraphNodeId);
     }
 
+    public EngineMutationResponse SetNodeCollision(
+        string nodeId,
+        uint assetGraphNodeId,
+        bool constrainMovement)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeCollision(
+            runtime.Handle, nodeId, assetGraphNodeId, constrainMovement);
+    }
+
+    public EngineMutationResponse SetNodeMotionTerrain(
+        string nodeId,
+        bool terrainConstrained,
+        float rideHeight,
+        float footprintRadius,
+        bool alignToSurface,
+        float alignmentStrength)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeMotionTerrain(
+            runtime.Handle,
+            nodeId,
+            terrainConstrained,
+            rideHeight,
+            footprintRadius,
+            alignToSurface,
+            alignmentStrength);
+    }
+
     public EngineMutationResponse SetNodeSceneSource(
         string nodeId,
         ulong assetGraphNodeId,

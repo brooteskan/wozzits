@@ -346,6 +346,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 .Select(node => new InspectorAssetGraphRefOptionViewModel(
                     node.Id,
                     node.DisplayName)));
+
+        // Thread the "Collision" picker (terrain-stick track) the same way: the
+        // inspector takes plain option data, filtered to Collision outputs.
+        RefreshInspectorCollisionSources();
+    }
+
+    // Thread the "Collision" picker (terrain-stick track) with the asset-graph
+    // nodes whose OUTPUT asset type is Collision (150). Filtering on the output
+    // port's asset type (not schema label) covers every schema that yields the type
+    // ("Collision from mesh"/"Collision from terrain"), exactly as the render-
+    // program picker does. Refreshed per selection from the snapshot.
+    private void RefreshInspectorCollisionSources()
+    {
+        Inspector.SetAvailableCollisionSources(
+            AssetGraph.Nodes
+                .Where(IsCollisionNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
     }
 
     // True when a node produces a render program the render-program component can
@@ -355,6 +374,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         node.OutputPorts.Any(port => port.Type == RenderProgramAssetTypeId);
 
     private const uint RenderProgramAssetTypeId = 1049;
+
+    // True when a node produces a Collision asset the Collision component can
+    // reference (kAssetTypeCollisionAsset = 150 in type_extensions.h).
+    private static bool IsCollisionNode(AssetGraphNodeCardViewModel node) =>
+        node.OutputPorts.Any(port => port.Type == CollisionAssetTypeId);
+
+    private const uint CollisionAssetTypeId = 150;
 
     // True for a "Scene from GLB" asset-graph node — the only graftable subtree
     // source the picker offers (issue #213 piece 2).

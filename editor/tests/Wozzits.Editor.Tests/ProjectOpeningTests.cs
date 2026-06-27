@@ -1151,6 +1151,193 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("(none)", viewModel.Inspector.RenderProgramReferenceDisplay);
     }
 
+    // Terrain-stick track: the "Collision" picker offers asset-graph nodes by their
+    // OUTPUT asset type (Collision = 150), not schema label. The section shows when
+    // the node has a Collision component; picking a node applies SetNodeCollision
+    // with the current constrain-movement flag, and toggling the flag re-applies it.
+    // The ✕ removes the component (generic verb) and hides the section.
+    [Fact]
+    public void InspectorAuthorsCollisionThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // A collision asset (output type 150) — the only kind the
+                            // picker offers.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 7,
+                                DisplayName = "terrain collision",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 150 },
+                                ],
+                            },
+                            // A render program (1049) — NOT collision, excluded.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 10,
+                                DisplayName = "lit program",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 1049 },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(Node("host", visible: true))),
+            editorSession: editorSession);
+
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(host);
+
+        // The picker lists only the collision node; the program is excluded. The
+        // section is hidden until the component is added.
+        var collision = Assert.Single(viewModel.Inspector.AvailableCollisionSources);
+        Assert.Equal(7ul, collision.Id);
+        Assert.Equal("terrain collision", collision.Label);
+        Assert.False(viewModel.Inspector.HasCollisionComponent);
+
+        // Adding the Collision component reveals the section AND calls the generic
+        // add-component verb (collision is a real removable component, unlike
+        // render_program).
+        viewModel.Inspector.AddComponentCommand.Execute("collision");
+        Assert.True(viewModel.Inspector.HasCollisionComponent);
+        Assert.Contains(editorSession.AddedComponents, c => c.Kind == "collision");
+
+        // Picking a collision node applies immediately with the current flag (off).
+        viewModel.Inspector.SelectedCollisionOption = collision;
+        var pick = Assert.Single(editorSession.Collisions);
+        Assert.Equal("host", pick.NodeId);
+        Assert.Equal(7u, pick.AssetGraphNodeId);
+        Assert.False(pick.ConstrainMovement);
+        Assert.Equal(
+            "Referencing: terrain collision",
+            viewModel.Inspector.CollisionReferenceDisplay);
+
+        // Toggling constrain-movement re-applies with the same selection + new flag.
+        viewModel.Inspector.CollisionConstrainMovement = true;
+        var toggled = editorSession.Collisions[^1];
+        Assert.Equal(7u, toggled.AssetGraphNodeId);
+        Assert.True(toggled.ConstrainMovement);
+
+        // The ✕ removes the component (generic verb) and hides the section.
+        viewModel.Inspector.RemoveCollisionComponentCommand.Execute(null);
+        Assert.Contains(editorSession.RemovedComponents, c => c.Kind == "collision");
+        Assert.False(viewModel.Inspector.HasCollisionComponent);
+        Assert.Null(viewModel.Inspector.SelectedCollisionOption);
+        Assert.Equal("(none)", viewModel.Inspector.CollisionReferenceDisplay);
+    }
+
+    // Terrain-stick track: the "Motion" section shows when the node has a Motion
+    // component; each terrain-constraint field edit applies live via
+    // SetNodeMotionTerrain. The ✕ removes the component and hides the section.
+    [Fact]
+    public void InspectorAuthorsMotionTerrainThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("tank", visible: true))),
+            editorSession: editorSession);
+
+        var tank = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(tank);
+
+        Assert.False(viewModel.Inspector.HasMotionComponent);
+
+        // Adding the Motion component reveals the section + calls the generic verb.
+        viewModel.Inspector.AddComponentCommand.Execute("motion");
+        Assert.True(viewModel.Inspector.HasMotionComponent);
+        Assert.Contains(editorSession.AddedComponents, c => c.Kind == "motion");
+
+        // Toggling "terrain constrained" applies live.
+        viewModel.Inspector.MotionTerrainConstrained = true;
+        var first = editorSession.MotionTerrains[^1];
+        Assert.Equal("tank", first.NodeId);
+        Assert.True(first.TerrainConstrained);
+
+        // Numeric fields parse + apply live.
+        viewModel.Inspector.MotionRideHeight = "1.5";
+        viewModel.Inspector.MotionFootprintRadius = "2.25";
+        viewModel.Inspector.MotionAlignToSurface = true;
+        viewModel.Inspector.MotionAlignmentStrength = "0.75";
+
+        var latest = editorSession.MotionTerrains[^1];
+        Assert.True(latest.TerrainConstrained);
+        Assert.Equal(1.5f, latest.RideHeight);
+        Assert.Equal(2.25f, latest.FootprintRadius);
+        Assert.True(latest.AlignToSurface);
+        Assert.Equal(0.75f, latest.AlignmentStrength);
+
+        // The ✕ removes the component and hides the section.
+        viewModel.Inspector.RemoveMotionComponentCommand.Execute(null);
+        Assert.Contains(editorSession.RemovedComponents, c => c.Kind == "motion");
+        Assert.False(viewModel.Inspector.HasMotionComponent);
+    }
+
+    // The terrain-stick sections reveal when the node already carries the component
+    // (Collision / Motion are real, persisted components surfaced in the snapshot):
+    // selecting such a node shows the section with no "Add Component" needed, and a
+    // node without them shows neither.
+    [Fact]
+    public void InspectorRevealsCollisionAndMotionSectionsWhenComponentPresent()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("plain", parentId: "root", visible: true),
+                            Node(
+                                "landscape",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component("collision", "Collision")]),
+                            Node(
+                                "vehicle",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component("motion", "Motion")]),
+                        ]))));
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var plain = Assert.Single(root.Children, n => n.Id == "plain");
+        var landscape = Assert.Single(root.Children, n => n.Id == "landscape");
+        var vehicle = Assert.Single(root.Children, n => n.Id == "vehicle");
+
+        // The collision host reveals the Collision section (and not Motion); it is
+        // NOT listed as a generic component row.
+        viewModel.SceneTree.SelectNode(landscape);
+        Assert.True(viewModel.Inspector.HasCollisionComponent);
+        Assert.False(viewModel.Inspector.HasMotionComponent);
+        Assert.DoesNotContain(
+            viewModel.Inspector.Components, c => c.Kind == "collision");
+
+        // The motion host reveals the Motion section (and not Collision).
+        viewModel.SceneTree.SelectNode(vehicle);
+        Assert.True(viewModel.Inspector.HasMotionComponent);
+        Assert.False(viewModel.Inspector.HasCollisionComponent);
+        Assert.DoesNotContain(
+            viewModel.Inspector.Components, c => c.Kind == "motion");
+
+        // A node with neither shows neither section.
+        viewModel.SceneTree.SelectNode(plain);
+        Assert.False(viewModel.Inspector.HasCollisionComponent);
+        Assert.False(viewModel.Inspector.HasMotionComponent);
+    }
+
     // The "Subtree from asset" and "Render program" sections are driven by the
     // node's PERSISTED state (issue #213, the v26 snapshot surfaces the authored
     // node ids): a node that already has them reveals + pre-selects them on select,
@@ -1442,6 +1629,87 @@ public sealed partial class ProjectOpeningTests
                 editorSession.SetNodeRenderProgram("host", 10u).Ok);
             Assert.True(
                 editorSession.SetNodeRenderProgram("host", 0u).Ok);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup of the temp project.
+            }
+        }
+    }
+
+    // Smoke: the terrain-stick host verbs (set_node_collision /
+    // set_node_motion_terrain) are reachable through the live engine DLL. With no
+    // viewport runtime the native session reports a no-op success — this proves the
+    // new P/Invoke + session/client wiring marshals (uint/byte/float blittables) and
+    // both entry points resolve against the real engine ABI without throwing. Skips
+    // if the DLL isn't built.
+    [Fact]
+    public void NativeEngineClientTerrainStickVerbsWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(abiPath))
+        {
+            return;
+        }
+
+        var projectRoot = Path.Combine(
+            Path.GetTempPath(),
+            "wozzits_editor_terrain_stick_verb_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, ".wozzits"));
+            File.WriteAllText(
+                Path.Combine(projectRoot, ".wozzits", "project.json"),
+                """
+                {
+                  "schema": "wozzits.project.v1",
+                  "formatVersion": 1,
+                  "name": "terrain_stick_verb_smoke",
+                  "asset_graph": "assets.graph.json"
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "assets.graph.json"),
+                """
+                {
+                  "schema": "wozzits.asset_graph.v2",
+                  "nodes": []
+                }
+                """);
+
+            using var session = new WozzitsEngineNativeClient()
+                .OpenEditorSession(projectRoot) as IDisposable;
+            var editorSession =
+                Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
+
+            // No runtime was started, so each verb is a no-op success — but it
+            // exercises the live DLL entry points (set + the id-0 clear form).
+            Assert.True(
+                editorSession.SetNodeCollision("host", 7u, constrainMovement: true).Ok);
+            Assert.True(
+                editorSession.SetNodeCollision("host", 0u, constrainMovement: false).Ok);
+            Assert.True(
+                editorSession.SetNodeMotionTerrain(
+                    "host",
+                    terrainConstrained: true,
+                    rideHeight: 1.5f,
+                    footprintRadius: 2.0f,
+                    alignToSurface: true,
+                    alignmentStrength: 0.5f).Ok);
+            Assert.True(
+                editorSession.SetNodeMotionTerrain(
+                    "host",
+                    terrainConstrained: false,
+                    rideHeight: 0f,
+                    footprintRadius: 0f,
+                    alignToSurface: false,
+                    alignmentStrength: 0f).Ok);
         }
         finally
         {
@@ -2803,6 +3071,46 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             RenderPrograms.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, uint AssetGraphNodeId, bool ConstrainMovement)>
+            Collisions { get; } = [];
+
+        public EngineMutationResponse SetNodeCollision(
+            string nodeId,
+            uint assetGraphNodeId,
+            bool constrainMovement)
+        {
+            Collisions.Add((nodeId, assetGraphNodeId, constrainMovement));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public record MotionTerrainEdit(
+            string NodeId,
+            bool TerrainConstrained,
+            float RideHeight,
+            float FootprintRadius,
+            bool AlignToSurface,
+            float AlignmentStrength);
+
+        public List<MotionTerrainEdit> MotionTerrains { get; } = [];
+
+        public EngineMutationResponse SetNodeMotionTerrain(
+            string nodeId,
+            bool terrainConstrained,
+            float rideHeight,
+            float footprintRadius,
+            bool alignToSurface,
+            float alignmentStrength)
+        {
+            MotionTerrains.Add(new MotionTerrainEdit(
+                nodeId,
+                terrainConstrained,
+                rideHeight,
+                footprintRadius,
+                alignToSurface,
+                alignmentStrength));
             return new EngineMutationResponse { Ok = true };
         }
 

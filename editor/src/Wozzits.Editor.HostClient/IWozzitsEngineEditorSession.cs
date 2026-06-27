@@ -184,6 +184,27 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Author the node's COLLISION component (terrain-stick track): point it at a
+    // Collision asset-graph node (0 clears the reference) + a constrain-movement
+    // flag (whether the node's movement is constrained by that collision data).
+    // Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeCollision(
+        string nodeId,
+        uint assetGraphNodeId,
+        bool constrainMovement);
+
+    // Author the node's MOTION component terrain-constraint fields (terrain-stick
+    // track): whether the node sticks to the terrain surface, ride height,
+    // footprint radius, surface-alignment toggle, and alignment strength. Live +
+    // host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeMotionTerrain(
+        string nodeId,
+        bool terrainConstrained,
+        float rideHeight,
+        float footprintRadius,
+        bool alignToSurface,
+        float alignmentStrength);
+
     // Point (0 clears) the node at a "Scene from GLB" asset-graph node by its node
     // id; the runtime grafts that GLB's hierarchy as the node's children (issue
     // #213 piece 2). consumeMode: 0 instance / 1 flatten. Live + host-gated, no-op

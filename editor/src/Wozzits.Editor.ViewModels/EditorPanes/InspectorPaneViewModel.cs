@@ -48,6 +48,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private InspectorAssetGraphRefOptionViewModel? _selectedRenderProgramOption;
     private string _renderProgramReferenceLabel = string.Empty;
     private bool _hasRenderProgramSection;
+    // "Collision" section (terrain-stick track): the Collision asset-graph node this
+    // node references + a constrain-movement flag. Like render program, the picked
+    // reference is session-local/optimistic for now (the snapshot does not yet
+    // surface collision_asset_node_id / constrain_movement) — reading it back is a
+    // deferred follow-up. The section is shown when the node HAS a collision
+    // component (added/removed via the generic Add-Component / header ✕).
+    private InspectorAssetGraphRefOptionViewModel? _selectedCollisionOption;
+    private string _collisionReferenceLabel = string.Empty;
+    private bool _hasCollisionComponent;
+    private bool _collisionConstrainMovement;
+    // "Motion" section (terrain-stick track): the terrain-constraint fields of the
+    // node's Motion component. Optimistic/session-local display, same as collision.
+    private bool _hasMotionComponent;
+    private bool _motionTerrainConstrained;
+    private string _motionRideHeight = string.Empty;
+    private string _motionFootprintRadius = string.Empty;
+    private bool _motionAlignToSurface;
+    private string _motionAlignmentStrength = string.Empty;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -115,6 +133,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // "Render program" (issue #213): pick a render-program node; the header ✕
         // clears it and hides the section, mirroring the camera.
         RemoveRenderProgramComponentCommand = new RelayCommand(RemoveRenderProgramComponent);
+        // "Collision" / "Motion" (terrain-stick track): the header ✕ removes the
+        // component via the generic remove verb and hides the section, like camera.
+        RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
+        RemoveMotionComponentCommand = new RelayCommand(RemoveMotionComponent);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -137,6 +159,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // filtered to RenderProgram outputs.
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableRenderPrograms { get; } = [];
+
+    // The Collision asset-graph nodes the "Collision" picker offers (terrain-stick
+    // track). Threaded in from MainWindowViewModel on every selection, filtered to
+    // Collision outputs (kAssetTypeCollisionAsset = 150).
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableCollisionSources { get; } = [];
 
     // Registered behavior modules offered by the "+" add menu, refreshed from the
     // running engine each time a scene node is inspected. Each option carries its
@@ -175,6 +203,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // "Render program" (issue #213).
     public IRelayCommand RemoveRenderProgramComponentCommand { get; }
+
+    // "Collision" / "Motion" (terrain-stick track).
+    public IRelayCommand RemoveCollisionComponentCommand { get; }
+
+    public IRelayCommand RemoveMotionComponentCommand { get; }
 
     public string NewBehaviorModule
     {
@@ -353,6 +386,108 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _hasRenderProgramSection;
         private set => SetProperty(ref _hasRenderProgramSection, value);
+    }
+
+    // ─── Collision (terrain-stick track) ─────────────────────────────────────────
+
+    // The Collision asset-graph node chosen in the picker. Bound TwoWay to the
+    // ComboBox; a user pick applies immediately (no Apply button), mirroring the
+    // render-program picker. Programmatic restores assign the field, not this setter.
+    public InspectorAssetGraphRefOptionViewModel? SelectedCollisionOption
+    {
+        get => _selectedCollisionOption;
+        set
+        {
+            if (SetProperty(ref _selectedCollisionOption, value)
+                && value is not null)
+            {
+                ApplyCollision();
+            }
+        }
+    }
+
+    public bool HasAvailableCollisionSources => AvailableCollisionSources.Count > 0;
+
+    // Optimistic "Referencing: <node>" line for the picked collision asset. Empty
+    // => "(none)". Reading the persisted reference back from the snapshot is a
+    // deferred follow-up (the engine does not yet surface it), exactly like the
+    // render-program picker shipped optimistic first.
+    public string CollisionReferenceLabel
+    {
+        get => _collisionReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _collisionReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(CollisionReferenceDisplay));
+            }
+        }
+    }
+
+    public string CollisionReferenceDisplay =>
+        string.IsNullOrWhiteSpace(CollisionReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {CollisionReferenceLabel}";
+
+    // Gates the "Collision" section: shown when the node HAS a collision component
+    // (added via Add-Component → Collision, removed via the section's ✕).
+    public bool HasCollisionComponent
+    {
+        get => _hasCollisionComponent;
+        private set => SetProperty(ref _hasCollisionComponent, value);
+    }
+
+    // Whether the node's movement is constrained by the referenced collision data.
+    // Toggling re-applies SetNodeCollision with the current selection (or 0).
+    public bool CollisionConstrainMovement
+    {
+        get => _collisionConstrainMovement;
+        set
+        {
+            if (SetProperty(ref _collisionConstrainMovement, value))
+            {
+                OnCollisionFieldEdited();
+            }
+        }
+    }
+
+    // ─── Motion (terrain-stick track) ────────────────────────────────────────────
+
+    // Gates the "Motion" section: shown when the node HAS a motion component.
+    public bool HasMotionComponent
+    {
+        get => _hasMotionComponent;
+        private set => SetProperty(ref _hasMotionComponent, value);
+    }
+
+    public bool MotionTerrainConstrained
+    {
+        get => _motionTerrainConstrained;
+        set { if (SetProperty(ref _motionTerrainConstrained, value)) OnMotionFieldEdited(); }
+    }
+
+    public string MotionRideHeight
+    {
+        get => _motionRideHeight;
+        set { if (SetProperty(ref _motionRideHeight, value)) OnMotionFieldEdited(); }
+    }
+
+    public string MotionFootprintRadius
+    {
+        get => _motionFootprintRadius;
+        set { if (SetProperty(ref _motionFootprintRadius, value)) OnMotionFieldEdited(); }
+    }
+
+    public bool MotionAlignToSurface
+    {
+        get => _motionAlignToSurface;
+        set { if (SetProperty(ref _motionAlignToSurface, value)) OnMotionFieldEdited(); }
+    }
+
+    public string MotionAlignmentStrength
+    {
+        get => _motionAlignmentStrength;
+        set { if (SetProperty(ref _motionAlignmentStrength, value)) OnMotionFieldEdited(); }
     }
 
     public bool HasTransform
@@ -883,6 +1018,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             SubtreeReferenceLabel = string.Empty;
             HasSubtreeSection = false;
             ResetRenderProgramState();
+            ResetCollisionState();
+            ResetMotionState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -944,8 +1081,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         foreach (var component in node.Components)
         {
-            // Camera is shown + removed via its own parameter section below.
-            if (string.Equals(component.Kind, "camera", StringComparison.Ordinal))
+            // Camera, Collision, and Motion are shown + removed via their own
+            // parameter sections below, not as generic rows.
+            if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "motion", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -954,6 +1094,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 component.Kind,
                 RemoveComponent));
         }
+
+        // Collision / Motion field sections (terrain-stick track): revealed when the
+        // node carries the component. The referenced collision asset + the field
+        // values are session-local/optimistic (not yet in the snapshot), so on a
+        // fresh select they reset to defaults unless this session set them — the
+        // cached tree-node VM is not consulted for them. Restore mirrors render
+        // program: only presence drives the reveal.
+        RestoreCollisionState(node);
+        RestoreMotionState(node);
 
         if (node.Camera is not null)
         {
@@ -1162,10 +1311,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         // Reflect immediately (the snapshot reconciles on its next refresh).
-        // Camera has its own parameter section; the rest list as removable rows.
-        // In every case mirror the add onto the cached tree-node VM, or re-selecting
-        // the node re-derives the components from the stale snapshot and the add
-        // reverts (the renderable-revert bug, generalized — mirrors Behaviors).
+        // Camera / Collision / Motion have their own parameter sections; the rest
+        // list as removable rows. In every case mirror the add onto the cached
+        // tree-node VM, or re-selecting the node re-derives the components from the
+        // stale snapshot and the add reverts (the renderable-revert bug, generalized
+        // — mirrors Behaviors).
         if (string.Equals(kind, "camera", StringComparison.Ordinal))
         {
             HasCameraComponent = true;
@@ -1173,6 +1323,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             {
                 cameraNode.Camera = new EngineSceneCamera();
             }
+        }
+        else if (string.Equals(kind, "collision", StringComparison.Ordinal))
+        {
+            HasCollisionComponent = true;
+            MirrorComponentAdded(kind);
+        }
+        else if (string.Equals(kind, "motion", StringComparison.Ordinal))
+        {
+            HasMotionComponent = true;
+            MirrorComponentAdded(kind);
         }
         else if (!Components.Any(
             c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
@@ -1537,6 +1697,195 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasRenderProgramSection = false;
         }
         OnPropertyChanged(nameof(SelectedRenderProgramOption));
+    }
+
+    // ─── Collision (terrain-stick track) ─────────────────────────────────────────
+
+    // Replace the collision picker's options with the current Collision asset-graph
+    // nodes (threaded in from MainWindowViewModel). Preserves the active selection by
+    // id when the same node is still offered so re-inspecting a node doesn't drop the
+    // pick; the field (not the setter) is assigned so the restore never re-applies.
+    public void SetAvailableCollisionSources(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedCollisionOption?.Id;
+        AvailableCollisionSources.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableCollisionSources.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedCollisionOption = restored;
+        OnPropertyChanged(nameof(SelectedCollisionOption));
+        OnPropertyChanged(nameof(HasAvailableCollisionSources));
+    }
+
+    // Apply the collision reference from the picked node — invoked from the picker's
+    // selection setter, so choosing a node applies immediately. Pushes the chosen
+    // asset-graph node id + the current constrain-movement flag.
+    private void ApplyCollision()
+    {
+        if (!EnsureCanApply() || SelectedCollisionOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeCollision(
+            NodeId, AssetGraphNodeIdAsUint(option.Id), CollisionConstrainMovement);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            CollisionReferenceLabel = option.Label;
+        }
+    }
+
+    // Re-push the collision binding when the constrain-movement flag toggles, with
+    // the current selection (or 0 when nothing is picked). Suppressed while a node's
+    // values are being loaded into the fields so selecting a node doesn't echo back.
+    private void OnCollisionFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var assetId = SelectedCollisionOption is { } option
+            ? AssetGraphNodeIdAsUint(option.Id)
+            : 0u;
+        SetEditResponse(_editorSession!.SetNodeCollision(
+            NodeId, assetId, CollisionConstrainMovement));
+    }
+
+    // Remove the Collision component (the section's ✕), mirroring the camera ✕:
+    // remove it on the engine via the generic verb and hide the section. Re-attach
+    // via "Add Component → Collision".
+    private void RemoveCollisionComponent()
+    {
+        if (EnsureCanApply())
+        {
+            var response = _editorSession!.RemoveNodeComponent(NodeId, "collision");
+            SetEditResponse(response);
+        }
+
+        MirrorComponentRemoved("collision");
+        ResetCollisionState();
+    }
+
+    // Reveal the "Collision" section when the node carries the component, else hide
+    // it. The referenced asset + constrain flag are session-local (not in the
+    // snapshot), so they reset to defaults on a fresh select.
+    private void RestoreCollisionState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(c.Kind, "collision", StringComparison.Ordinal));
+        if (has)
+        {
+            HasCollisionComponent = true;
+        }
+        else
+        {
+            ResetCollisionState();
+        }
+    }
+
+    private void ResetCollisionState()
+    {
+        _selectedCollisionOption = null;
+        OnPropertyChanged(nameof(SelectedCollisionOption));
+        CollisionReferenceLabel = string.Empty;
+        // Reset the flag without echoing a live edit.
+        _collisionConstrainMovement = false;
+        OnPropertyChanged(nameof(CollisionConstrainMovement));
+        HasCollisionComponent = false;
+    }
+
+    // ─── Motion (terrain-stick track) ────────────────────────────────────────────
+
+    // Re-push the motion terrain-constraint fields on any change. Suppressed while a
+    // node's values are being loaded into the fields; a mid-edit / unparseable
+    // numeric field is treated as 0 so typing doesn't error (mirrors the live
+    // transform's lenient parse).
+    private void OnMotionFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        SetEditResponse(_editorSession!.SetNodeMotionTerrain(
+            NodeId,
+            MotionTerrainConstrained,
+            ParseFloatOrZero(MotionRideHeight),
+            ParseFloatOrZero(MotionFootprintRadius),
+            MotionAlignToSurface,
+            ParseFloatOrZero(MotionAlignmentStrength)));
+    }
+
+    // Remove the Motion component (the section's ✕), mirroring the camera ✕.
+    private void RemoveMotionComponent()
+    {
+        if (EnsureCanApply())
+        {
+            var response = _editorSession!.RemoveNodeComponent(NodeId, "motion");
+            SetEditResponse(response);
+        }
+
+        MirrorComponentRemoved("motion");
+        ResetMotionState();
+    }
+
+    // Reveal the "Motion" section when the node carries the component, else hide it.
+    // The field values are session-local (not in the snapshot); they reset to
+    // defaults on a fresh select.
+    private void RestoreMotionState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(c.Kind, "motion", StringComparison.Ordinal));
+        if (has)
+        {
+            HasMotionComponent = true;
+        }
+        else
+        {
+            ResetMotionState();
+        }
+    }
+
+    private void ResetMotionState()
+    {
+        // Reset every field without echoing live edits.
+        _motionTerrainConstrained = false;
+        OnPropertyChanged(nameof(MotionTerrainConstrained));
+        _motionRideHeight = string.Empty;
+        OnPropertyChanged(nameof(MotionRideHeight));
+        _motionFootprintRadius = string.Empty;
+        OnPropertyChanged(nameof(MotionFootprintRadius));
+        _motionAlignToSurface = false;
+        OnPropertyChanged(nameof(MotionAlignToSurface));
+        _motionAlignmentStrength = string.Empty;
+        OnPropertyChanged(nameof(MotionAlignmentStrength));
+        HasMotionComponent = false;
+    }
+
+    // The Collision verb takes a uint asset-graph node id; clamp the option's ulong
+    // id to uint (ids are small counters, so this never loses information in
+    // practice — a value past uint is treated as 0/clear).
+    private static uint AssetGraphNodeIdAsUint(ulong id) =>
+        id <= uint.MaxValue ? (uint)id : 0u;
+
+    private static float ParseFloatOrZero(string text)
+    {
+        return float.TryParse(
+            text,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : 0f;
     }
 
     // ─── GLB node tree picker (issue #213) ───────────────────────────────────────

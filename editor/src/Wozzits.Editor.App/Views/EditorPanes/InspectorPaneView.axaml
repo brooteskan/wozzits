@@ -300,6 +300,129 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Collision (terrain-stick track): reference a Collision
+                             asset-graph node ("Collision from height field" / mesh)
+                             and toggle whether the node's movement is constrained by
+                             it. Shown when the node has a Collision component
+                             (HasCollisionComponent), removed via the header ✕.
+                             Choosing a node / toggling the flag applies immediately
+                             (no Apply button). The referenced node + flag are
+                             session-local/optimistic for now. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasCollisionComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Collision"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveCollisionComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove collision"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Collision asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableCollisionSources}"
+                                              SelectedItem="{Binding SelectedCollisionOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a collision node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableCollisionSources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding CollisionReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Constrain movement"
+                                          IsChecked="{Binding CollisionConstrainMovement}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No collision nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableCollisionSources}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Motion (terrain-stick track): the Motion component's
+                             terrain-constraint fields — whether the node sticks to the
+                             terrain, ride height, footprint radius, surface-alignment
+                             toggle, and alignment strength. Shown when the node has a
+                             Motion component (HasMotionComponent), removed via the
+                             header ✕. Every change applies live (no Apply button).
+                             Field values are session-local/optimistic for now. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasMotionComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Motion"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveMotionComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove motion"/>
+                                </Grid>
+
+                                <CheckBox Content="Terrain constrained"
+                                          IsChecked="{Binding MotionTerrainConstrained}"
+                                          Classes="InspectorCheck"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Ride height"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionRideHeight}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Footprint radius"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFootprintRadius}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <CheckBox Content="Align to surface"
+                                          IsChecked="{Binding MotionAlignToSurface}"
+                                          Classes="InspectorCheck"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Alignment strength"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionAlignmentStrength}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <Grid ColumnDefinitions="*,Auto">

@@ -1031,6 +1031,58 @@ public sealed partial class WozzitsEngineNativeClient
             assetGraphNodeId));
     }
 
+    internal EngineMutationResponse SetNodeCollision(
+        IntPtr runtime,
+        string nodeId,
+        uint assetGraphNodeId,
+        bool constrainMovement)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // assetGraphNodeId 0 clears the collision asset reference; the constrain
+        // flag is independent and applies regardless, so both forms are valid.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeCollision(
+            runtime,
+            nodeId,
+            assetGraphNodeId,
+            constrainMovement ? (byte)1 : (byte)0));
+    }
+
+    internal EngineMutationResponse SetNodeMotionTerrain(
+        IntPtr runtime,
+        string nodeId,
+        bool terrainConstrained,
+        float rideHeight,
+        float footprintRadius,
+        bool alignToSurface,
+        float alignmentStrength)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeMotionTerrain(
+            runtime,
+            nodeId,
+            terrainConstrained ? (byte)1 : (byte)0,
+            rideHeight,
+            footprintRadius,
+            alignToSurface ? (byte)1 : (byte)0,
+            alignmentStrength));
+    }
+
     internal EngineMutationResponse SetNodeSceneSource(
         IntPtr runtime,
         string nodeId,
