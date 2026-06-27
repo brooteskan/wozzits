@@ -8,6 +8,8 @@
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene_asset_module.h>
+#include <engine/assets/renderable_asset_module.h>
+#include <engine/assets/type_extensions.h>
 
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
@@ -320,6 +322,13 @@ namespace wz::app
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(
                 scene_nodes_, graph_draft_);
+        // Assemble renderables from geometry+program bindings now that
+        // scene_nodes_ is populated (#213 increment 1b): create the matching RHI
+        // renderable per geometry node + set renderable_asset, the render program
+        // inherited down the scene tree. The created assets compile in the shared
+        // commit()+resolve_all() below (alongside the GLB scene sources).
+        const std::size_t render_bindings_assembled =
+            assemble_render_bindings(graph_draft_);
         // Resolve GLB scene-source DESCRIPTORS now that scene_nodes_ is populated
         // (#213, the descriptor route): register each glb_scene_source's GLB +
         // produced Scene asset and write the Scene key into the node's
@@ -328,13 +337,14 @@ namespace wz::app
         // freshly registered GLB scenes with their own commit() + resolve_all()
         // before grafting. Same content => same key => cache hit on re-load.
         const std::size_t glb_sources_resolved = resolve_glb_scene_sources();
-        if (glb_sources_resolved > 0) {
+        if (glb_sources_resolved > 0 || render_bindings_assembled > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport glb_resolve =
                 ctx_.assets->resolve_all();
             if (!glb_resolve.ok()) {
                 ctx_.logger.warn(
-                    "load_scene: GLB scene-source(s) resolved with errors="
+                    "load_scene: GLB scene-source / render-binding asset(s) "
+                    "resolved with errors="
                     + std::to_string(glb_resolve.failures.size())
                     + " (loaded anyway for editor recovery)");
             }
@@ -492,6 +502,163 @@ namespace wz::app
                 + " GLB scene-source descriptor(s) to Scene keys");
         }
         return resolved;
+    }
+
+    std::size_t WozzitsApp_v1::assemble_render_bindings(
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        if (!ctx_.assets) {
+            return 0;
+        }
+
+        // Resolve a graph node id to its committed output key + asset type,
+        // mirroring bridge_scene_renderable_keys.
+        const auto resolve_graph_node =
+            [&draft](
+                wz::asset::AssetGraphDraftNodeId id,
+                wz::asset::AssetKey& out_key,
+                wz::asset::AssetType& out_type) -> bool {
+                const auto it = draft.node_index.find(id);
+                if (it == draft.node_index.end()) {
+                    return false;
+                }
+                out_key = draft.nodes[it->second].node.key;
+                out_type = draft.nodes[it->second].node.type;
+                return true;
+            };
+
+        // Nearest scene node with the given id (linear scan; scenes are small).
+        const auto find_node =
+            [this](const std::string& id)
+                -> const wz::engine::assets::SceneNodeAsset* {
+                for (const auto& n : scene_nodes_) {
+                    if (n.id == id) {
+                        return &n;
+                    }
+                }
+                return nullptr;
+            };
+
+        std::size_t assembled = 0;
+        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            // Resolve this node's OWN program ref (companion key), if any --
+            // independent of whether the node itself draws.
+            node.render_program_asset.reset();
+            if (node.render_program_node_id) {
+                wz::asset::AssetKey k{};
+                wz::asset::AssetType t{};
+                if (resolve_graph_node(*node.render_program_node_id, k, t)) {
+                    node.render_program_asset = k;
+                }
+            }
+
+            if (!node.geometry_asset_node_id) {
+                continue;  // no geometry -> draws nothing via the binding
+            }
+
+            // Geometry present: the binding owns this node's renderable. Clear
+            // any stale/pre-built key first so a removed geometry stops drawing.
+            node.geometry_asset.reset();
+            node.renderable_asset.reset();
+
+            wz::asset::AssetKey geometry_key{};
+            wz::asset::AssetType geometry_type{};
+            if (!resolve_graph_node(
+                    *node.geometry_asset_node_id, geometry_key, geometry_type))
+            {
+                ctx_.logger.warn(
+                    "assemble_render_bindings: node '" + node.id
+                    + "' geometry asset-graph node not found (skipped)");
+                continue;
+            }
+            node.geometry_asset = geometry_key;
+
+            // Effective render program: this node's own, else the nearest
+            // ancestor up parent_id that has one (inheritance down the tree).
+            // Bounded by the node count so a dangling/cyclic parent chain can't
+            // hang.
+            wz::asset::AssetKey program_key{};
+            bool has_program = false;
+            const wz::engine::assets::SceneNodeAsset* cur = &node;
+            for (std::size_t guard = 0;
+                 cur && guard <= scene_nodes_.size();
+                 ++guard)
+            {
+                if (cur->render_program_node_id) {
+                    wz::asset::AssetKey k{};
+                    wz::asset::AssetType t{};
+                    if (resolve_graph_node(*cur->render_program_node_id, k, t)) {
+                        program_key = k;
+                        has_program = true;
+                    }
+                    break;  // nearest authored program wins, even if unresolved
+                }
+                if (!cur->parent_id || cur->parent_id->empty()) {
+                    break;
+                }
+                cur = find_node(*cur->parent_id);
+            }
+            if (!has_program) {
+                ctx_.logger.warn(
+                    "assemble_render_bindings: node '" + node.id
+                    + "' has geometry but no render program (own or inherited);"
+                      " it will not draw");
+                continue;
+            }
+
+            // Route by the geometry asset's type to the matching RHI renderable.
+            wz::engine::assets::RenderableAsset renderable{};
+            if (geometry_type == wz::engine::assets::kAssetTypeMesh) {
+                renderable = ctx_.assets->renderables().create_rhi_pull_mesh(
+                    wz::engine::assets::RhiPullMeshRenderableDesc{
+                        .name = "render_binding/" + node.id,
+                        .mesh = wz::engine::assets::MeshAsset{
+                            .output = geometry_key },
+                        .program = wz::engine::assets::RenderProgramAsset{
+                            .key = program_key },
+                    });
+            }
+            else if (geometry_type
+                     == wz::engine::assets::kAssetTypeGpuSparseMesh)
+            {
+                renderable =
+                    ctx_.assets->renderables().create_gpu_sparse_mesh_renderable(
+                        wz::engine::assets::GpuSparseMeshRenderableDesc{
+                            .name = "render_binding/" + node.id,
+                            .sparse_mesh =
+                                wz::engine::assets::GpuSparseMeshAsset{
+                                    .output = geometry_key },
+                            .program = wz::engine::assets::RenderProgramAsset{
+                                .key = program_key },
+                        });
+            }
+            else {
+                ctx_.logger.warn(
+                    "assemble_render_bindings: node '" + node.id
+                    + "' geometry has an unsupported type for a renderable "
+                      "binding (type "
+                    + std::to_string(static_cast<uint32_t>(geometry_type))
+                    + "); it will not draw");
+                continue;
+            }
+
+            if (!renderable.valid()) {
+                ctx_.logger.error(
+                    "assemble_render_bindings: failed to create a renderable "
+                    "for node '" + node.id + "'");
+                continue;
+            }
+            node.renderable_asset = renderable.output;
+            ++assembled;
+        }
+
+        if (assembled > 0) {
+            ctx_.logger.info(
+                "assemble_render_bindings: assembled "
+                + std::to_string(assembled)
+                + " renderable(s) from geometry+program bindings");
+        }
+        return assembled;
     }
 
     std::size_t WozzitsApp_v1::graft_scene_sources()

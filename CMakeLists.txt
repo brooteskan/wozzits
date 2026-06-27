@@ -317,6 +317,14 @@ configure_file(
     "${WZ_REBIND_FIXTURE_SRC}/scene.json"
     "${WZ_REBIND_FIXTURE_DST}/scene.json"
     COPYONLY)
+# Issue #213 increment 1b: a second scene for the test_rebind_fixture graph that
+# drives renderables via geometry+program BINDINGS (reuses node 9 = geometry,
+# node 10 = render program) instead of a pre-built renderable node. Lives beside
+# the graph it references; consumed by the standalone-render binding test below.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/render_binding_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/render_binding.scene.json"
+    COPYONLY)
 
 # Self-contained fixture for the WozzitsApp_v1 behavior dispatch test: an empty
 # asset graph + a scene with one node bound to the project behavior module
@@ -567,6 +575,20 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --scene "${WZ_REBIND_FIXTURE_DST}/scene.json"
             --frames 5)
     set_tests_properties(wozzits_app_v1_standalone_render PROPERTIES
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
+    # Issue #213 increment 1b: same separate-process harness, but the scene drives
+    # its renderables via geometry+program BINDINGS (the engine assembles the
+    # recipe at load; the render program is inherited down the scene tree). Proves
+    # the binding renders standalone. Skips on no-GPU (exit 3).
+    add_test(NAME wozzits_app_v1_render_binding
+        COMMAND wozzits_app_v1
+            --resource-root "${CMAKE_BINARY_DIR}/resources"
+            --asset-graph "${WZ_REBIND_FIXTURE_DST}/assets.graph.json"
+            --scene "${WZ_REBIND_FIXTURE_DST}/render_binding.scene.json"
+            --frames 5)
+    set_tests_properties(wozzits_app_v1_render_binding PROPERTIES
         SKIP_RETURN_CODE 3
         LABELS "render")
 

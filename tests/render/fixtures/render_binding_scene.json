@@ -1,0 +1,73 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "render_binding_scene",
+  "note": "Issue #213 increment 1b: drives renderables via geometry+program BINDINGS (not a pre-built renderable node). Reuses test_rebind_fixture's asset graph: node 9 = gpu_sparse_mesh geometry, node 10 = render program. 'solo' carries its own program; 'inherited' carries only geometry and inherits the program from its parent 'group' -- proving the inheritance walk.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 2, -8],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "solo",
+      "parent": "root",
+      "name": "solo",
+      "transform": {
+        "translation": [-150, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 9 },
+      "render_program": { "asset_graph_node_id": 10 }
+    },
+    {
+      "id": "group",
+      "parent": "root",
+      "name": "group",
+      "transform": {
+        "translation": [150, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "render_program": { "asset_graph_node_id": 10 }
+    },
+    {
+      "id": "inherited",
+      "parent": "group",
+      "name": "inherited",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 9 }
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

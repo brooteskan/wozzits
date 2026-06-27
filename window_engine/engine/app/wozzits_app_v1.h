@@ -444,6 +444,22 @@ namespace wz::app
         // no asset library or no glb_scene_source nodes.
         std::size_t resolve_glb_scene_sources();
 
+        // Assemble renderables from geometry+program BINDINGS (issue #213
+        // increment 1b). For each scene node carrying geometry_asset_node_id:
+        // resolve the geometry node id to its committed key + asset type, resolve
+        // the EFFECTIVE render program (the node's own render_program_node_id,
+        // else the nearest ancestor up parent_id that has one -- inheritance down
+        // the scene tree), create the matching RHI renderable (kAssetTypeMesh ->
+        // create_rhi_pull_mesh; kAssetTypeGpuSparseMesh ->
+        // create_gpu_sparse_mesh_renderable), and set the node's renderable_asset
+        // so the existing renderer draws it. Mirrors bridge_scene_renderable_keys
+        // for resolution + resolve_glb_scene_sources for create-at-load: it
+        // REGISTERS the renderables but does not compile them -- the caller must
+        // commit() + resolve_all() afterwards. Returns the count assembled; no-op
+        // (0) with no asset library or no geometry bindings.
+        std::size_t assemble_render_bindings(
+            const wz::asset::AssetGraphDraft& draft);
+
         // Re-materialize the GLB scene-source descriptors after one was edited
         // (issue #213): re-resolve every descriptor into a Scene asset, compile
         // the freshly registered assets (commit + resolve_all), then re-graft the
