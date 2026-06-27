@@ -186,6 +186,25 @@ namespace wz::app
         // yet, so this is a no-op there and load_scene re-runs it after.)
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(scene_nodes_, draft);
+        // Re-assemble geometry+program bindings into renderables on every
+        // (re)bind (#213 increment 2): mirrors bridge for the binding path, AFTER
+        // it so the binding overrides a pre-built renderable on the same node. The
+        // created renderables need their own commit()+resolve_all() (the main
+        // resolve above already ran). No-op on the first bind during load_scene
+        // (scene_nodes_ empty); load_scene re-assembles after populating nodes.
+        const std::size_t render_bindings_assembled =
+            assemble_render_bindings(draft);
+        if (render_bindings_assembled > 0) {
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport binding_resolve =
+                ctx_.assets->resolve_all();
+            if (!binding_resolve.ok()) {
+                ctx_.logger.warn(
+                    "bind_asset_graph: render-binding asset(s) resolved with "
+                    "errors="
+                    + std::to_string(binding_resolve.failures.size()));
+            }
+        }
         // Re-bridge scene-source references + re-graft on every (re)bind so a
         // graph swap's new Scene keys flow through to the grafted children (#213).
         // On the first bind during load_scene the scene is not loaded yet, so
@@ -1302,6 +1321,83 @@ namespace wz::app
         graft_scene_sources();
         rebuild_behavior_scene();
         return true;
+    }
+
+    bool WozzitsApp_v1::set_node_geometry_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_geometry_asset: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_geometry_asset_node(
+                *node, asset_graph_node_id);
+        }
+        else {
+            wz::engine::assets::detach_geometry_asset_node(*node);
+            // No geometry => the binding no longer drives this node; drop the
+            // renderable it assembled so it stops drawing (the re-bridge in
+            // rematerialize restores a pre-built renderable_asset_node_id if any).
+            node->renderable_asset.reset();
+        }
+        scene_dirty_ = true;
+        rematerialize_render_bindings();
+        return true;
+    }
+
+    bool WozzitsApp_v1::set_node_render_program(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_render_program: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_render_program_node(
+                *node, asset_graph_node_id);
+        }
+        else {
+            wz::engine::assets::detach_render_program_node(*node);
+        }
+        scene_dirty_ = true;
+        // A program change cascades to descendants via inheritance, so
+        // re-assemble every binding (assemble walks ancestors per node).
+        rematerialize_render_bindings();
+        return true;
+    }
+
+    void WozzitsApp_v1::rematerialize_render_bindings()
+    {
+        if (!ctx_.assets) {
+            return;
+        }
+        // Re-bridge the pre-built renderables first (so a node that lost its
+        // geometry can fall back to renderable_asset_node_id if it has one), then
+        // re-assemble the ingredient bindings (which override for geometry nodes).
+        wz::engine::assets::bridge_scene_renderable_keys(
+            scene_nodes_, graph_draft_);
+        const std::size_t assembled = assemble_render_bindings(graph_draft_);
+        if (assembled > 0) {
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport resolve =
+                ctx_.assets->resolve_all();
+            if (!resolve.ok()) {
+                ctx_.logger.warn(
+                    "rematerialize_render_bindings: resolved with errors="
+                    + std::to_string(resolve.failures.size()));
+            }
+        }
     }
 
     bool WozzitsApp_v1::set_node_glb_scene_source(

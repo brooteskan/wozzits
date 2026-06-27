@@ -838,6 +838,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render wozzits_app_glb_scene_source_tests)
     add_dependencies(render_wozzits_app_glb_scene_source_tests
         wozzits_app_behavior_test_plugin wz_stage_resources)
+    rs_add_test_group(render wozzits_app_render_binding_tests)
+    add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)

@@ -223,6 +223,28 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
 
+        // Apply behind the host ABI's set_node_geometry_asset verb (issue #213
+        // increment 2). Author the GEOMETRY half of the node's renderable
+        // binding: point it at the authored geometry asset-graph node
+        // `asset_graph_node_id`, or clear it (the node stops drawing) when the id
+        // is 0. Re-assembles the binding (geometry + the effective, possibly
+        // inherited, render program) and re-resolves so the next render reflects
+        // it; marks the scene dirty. False (logged no-op) if the node is missing.
+        bool set_node_geometry_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
+        // Apply behind the host ABI's set_node_render_program verb (issue #213
+        // increment 2). Author the RENDER-PROGRAM half of the binding (inherited
+        // down the scene tree): point the node at the authored render-program
+        // asset-graph node `asset_graph_node_id`, or clear it when the id is 0.
+        // Re-assembles bindings for this node AND its descendants (a program
+        // change cascades via inheritance) and re-resolves; marks the scene
+        // dirty. False (logged no-op) if the node is missing.
+        bool set_node_render_program(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in scene_nodes_ (id "<host>/<glbname>",
@@ -459,6 +481,14 @@ namespace wz::app
         // (0) with no asset library or no geometry bindings.
         std::size_t assemble_render_bindings(
             const wz::asset::AssetGraphDraft& draft);
+
+        // Re-assemble renderable bindings after one was edited live (issue #213
+        // increment 2): re-bridge the pre-built renderables, re-run
+        // assemble_render_bindings against the bound graph, then compile the
+        // freshly created renderables (commit + resolve_all). The renderer reads
+        // scene_nodes_ each frame, so the next render reflects it. No-op without
+        // an asset library.
+        void rematerialize_render_bindings();
 
         // Re-materialize the GLB scene-source descriptors after one was edited
         // (issue #213): re-resolve every descriptor into a Scene asset, compile
