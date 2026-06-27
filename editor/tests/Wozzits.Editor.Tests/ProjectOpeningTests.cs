@@ -728,6 +728,132 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("1.6", cameraEdit.Edit.Aspect);
     }
 
+    // Removing the "Renderable Asset" reference must stay removed when the node is
+    // re-selected (the reported bug: it reappeared after refreshing the scene tree).
+    // The remove verb cleared the engine + the optimistic flag but not the cached
+    // tree-node VM, so Inspect re-derived HasRenderableReference from the stale
+    // snapshot renderable on the next select. The fix mirrors the cleared renderable
+    // onto the tree node (like the Visible fix), so it stays gone; applying a new
+    // reference likewise survives reselect.
+    [Fact]
+    public void InspectorRenderableRemovalSurvivesReselect()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("other", parentId: "root", visible: true),
+                            Node(
+                                "tank",
+                                parentId: "root",
+                                visible: true,
+                                renderableSource: new EngineSceneRenderableSource
+                                {
+                                    Kind = "asset-node",
+                                    DisplayName = "tank renderable",
+                                },
+                                renderable: new EngineSceneRenderable
+                                {
+                                    AssetGraphNodeId = 7u,
+                                }),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var tank = Assert.Single(root.Children, n => n.Id == "tank");
+        var other = Assert.Single(root.Children, n => n.Id == "other");
+
+        // The node starts with a renderable reference shown.
+        viewModel.SceneTree.SelectNode(tank);
+        Assert.True(viewModel.Inspector.HasRenderableReference);
+
+        // Remove it via the section ✕: the engine gets the id-0 clear and the
+        // section hides.
+        viewModel.Inspector.RemoveRenderableCommand.Execute(null);
+        var cleared = Assert.Single(editorSession.RenderableAssets);
+        Assert.Equal("tank", cleared.NodeId);
+        Assert.Equal(0ul, cleared.AssetGraphNodeId);
+        Assert.False(viewModel.Inspector.HasRenderableReference);
+
+        // Re-selecting the node (e.g. after refreshing the scene tree) must keep it
+        // removed — previously it came back from the stale cached snapshot.
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(tank);
+        Assert.False(viewModel.Inspector.HasRenderableReference);
+
+        // Applying a new reference likewise survives a reselect.
+        viewModel.Inspector.RenderableAssetGraphNodeId = "12";
+        viewModel.Inspector.ApplyRenderableCommand.Execute(null);
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(tank);
+        Assert.True(viewModel.Inspector.HasRenderableReference);
+        Assert.Equal("12", viewModel.Inspector.RenderableAssetGraphNodeId);
+    }
+
+    // The renderable-revert generalizes to the camera and the generic component rows
+    // (proximity/collision/motion): adding or removing a component must survive a
+    // reselect, not revert to the startup snapshot. Each mirrors the change onto the
+    // cached tree-node VM (like Behaviors), so Inspect re-derives the right state.
+    [Fact]
+    public void InspectorComponentAddRemoveSurvivesReselect()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("other", parentId: "root", visible: true),
+                            Node(
+                                "node",
+                                parentId: "root",
+                                visible: true,
+                                camera: new EngineSceneCamera { FieldOfViewY = 1.0 },
+                                components: [Component("camera", "Camera")]),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var node = Assert.Single(root.Children, n => n.Id == "node");
+        var other = Assert.Single(root.Children, n => n.Id == "other");
+
+        // Start with a camera and no proximity component.
+        viewModel.SceneTree.SelectNode(node);
+        Assert.True(viewModel.Inspector.HasCameraComponent);
+
+        // Add a proximity component, then remove the camera.
+        viewModel.Inspector.AddComponentCommand.Execute("proximity");
+        viewModel.Inspector.RemoveCameraCommand.Execute(null);
+        Assert.False(viewModel.Inspector.HasCameraComponent);
+        Assert.Contains(
+            viewModel.Inspector.Components,
+            c => c.Kind == "proximity");
+
+        // Reselect: the camera stays removed and the proximity component stays added
+        // (previously both reverted to the snapshot).
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(node);
+        Assert.False(viewModel.Inspector.HasCameraComponent);
+        Assert.Contains(
+            viewModel.Inspector.Components,
+            c => c.Kind == "proximity");
+
+        // And removing the proximity component also survives a reselect.
+        var proximity = viewModel.Inspector.Components.Single(c => c.Kind == "proximity");
+        proximity.RemoveCommand.Execute(null);
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(node);
+        Assert.DoesNotContain(
+            viewModel.Inspector.Components,
+            c => c.Kind == "proximity");
+    }
+
     // Inspector "Subtree from asset" section (issue #213 piece 2): the asset graph's
     // "Scene from GLB" nodes are threaded into the picker (matched by schema, NOT by
     // the shared asset-type name); "Add Component → subtree_from_asset" reveals the
@@ -943,6 +1069,189 @@ public sealed partial class ProjectOpeningTests
             c => c.Kind == "subtree_from_asset");
     }
 
+    // issue #213: the "Render program" picker offers asset-graph nodes by their
+    // OUTPUT asset type (RenderProgram = 1049), not schema label. Attaching the
+    // component reveals the section without the generic verb; picking a program
+    // applies it live via the dedicated verb; the ✕ clears it and hides the section.
+    // (The geometry picker was dropped — geometry is intrinsic to a grafted GLB part
+    // or supplied by a "Renderable" component.)
+    [Fact]
+    public void InspectorAuthorsRenderProgramThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // A render program (output type 1049) — the only kind the
+                            // picker offers.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 10,
+                                DisplayName = "lit program",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 1049 },
+                                ],
+                            },
+                            // A mesh node (537) — NOT a program, excluded.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 9,
+                                DisplayName = "tank body mesh",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 537 },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(Node("host", visible: true))),
+            editorSession: editorSession);
+
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(host);
+
+        // The picker lists only the render program; the mesh node is excluded. The
+        // section is hidden until attached.
+        var program = Assert.Single(viewModel.Inspector.AvailableRenderPrograms);
+        Assert.Equal(10ul, program.Id);
+        Assert.Equal("lit program", program.Label);
+        Assert.False(viewModel.Inspector.HasRenderProgramSection);
+
+        // "Add Component → render_program" reveals the section without the generic
+        // add-component verb (mirrors renderable/subtree).
+        viewModel.Inspector.AddComponentCommand.Execute("render_program");
+        Assert.True(viewModel.Inspector.HasRenderProgramSection);
+        Assert.Empty(editorSession.AddedComponents);
+
+        // Picking a program applies immediately via SetNodeRenderProgram.
+        viewModel.Inspector.SelectedRenderProgramOption = program;
+        var progEdit = Assert.Single(editorSession.RenderPrograms);
+        Assert.Equal("host", progEdit.NodeId);
+        Assert.Equal(10ul, progEdit.AssetGraphNodeId);
+        Assert.Equal(
+            "Referencing: lit program",
+            viewModel.Inspector.RenderProgramReferenceDisplay);
+
+        // The ✕ removes the component: the program is cleared (id 0) and the section
+        // is hidden.
+        viewModel.Inspector.RemoveRenderProgramComponentCommand.Execute(null);
+        Assert.Equal(0ul, editorSession.RenderPrograms[^1].AssetGraphNodeId);
+        Assert.False(viewModel.Inspector.HasRenderProgramSection);
+        Assert.Null(viewModel.Inspector.SelectedRenderProgramOption);
+        Assert.Equal("(none)", viewModel.Inspector.RenderProgramReferenceDisplay);
+    }
+
+    // The "Subtree from asset" and "Render program" sections are driven by the
+    // node's PERSISTED state (issue #213, the v26 snapshot surfaces the authored
+    // node ids): a node that already has them reveals + pre-selects them on select,
+    // with no "Add Component" needed — the component is the confirmation of what the
+    // node carries. The state survives a reselect (it reads from the snapshot, not a
+    // session toggle).
+    [Fact]
+    public void InspectorRevealsPersistedSubtreeAndRenderProgramOnSelect()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            new EngineAssetGraphNode
+                            {
+                                Id = 42,
+                                Schema = "e7000711",
+                                DisplayName = "tank scene",
+                                CompileStatus = "ready",
+                            },
+                            new EngineAssetGraphNode
+                            {
+                                Id = 9,
+                                DisplayName = "tank body mesh",
+                                CompileStatus = "ready",
+                                OutputPorts = [new EngineAssetGraphPort { Type = 537 }],
+                            },
+                            new EngineAssetGraphNode
+                            {
+                                Id = 10,
+                                DisplayName = "lit program",
+                                CompileStatus = "ready",
+                                OutputPorts = [new EngineAssetGraphPort { Type = 1049 }],
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("other", parentId: "root", visible: true),
+                            // A render-program host: persisted program ref.
+                            Node(
+                                "program",
+                                parentId: "root",
+                                visible: true,
+                                renderProgramNodeId: 10u),
+                            // A subtree host: persisted scene-source node ref.
+                            Node(
+                                "subtree",
+                                parentId: "root",
+                                visible: true,
+                                sceneSourceNodeId: 42u),
+                        ]))));
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var program = Assert.Single(root.Children, n => n.Id == "program");
+        var subtree = Assert.Single(root.Children, n => n.Id == "subtree");
+        var other = Assert.Single(root.Children, n => n.Id == "other");
+
+        // Selecting the render-program node reveals the section pre-selected from the
+        // persisted id — no Add Component.
+        viewModel.SceneTree.SelectNode(program);
+        Assert.True(viewModel.Inspector.HasRenderProgramSection);
+        Assert.Equal(10ul, viewModel.Inspector.SelectedRenderProgramOption?.Id);
+        Assert.Equal(
+            "Referencing: lit program",
+            viewModel.Inspector.RenderProgramReferenceDisplay);
+        // It is not a subtree host, so that section stays hidden.
+        Assert.False(viewModel.Inspector.HasSubtreeSection);
+
+        // Selecting the subtree node reveals its section pre-selected, and the
+        // render-program section is hidden for it.
+        viewModel.SceneTree.SelectNode(subtree);
+        Assert.True(viewModel.Inspector.HasSubtreeSection);
+        Assert.Equal(42ul, viewModel.Inspector.SelectedSceneSourceOption?.Id);
+        Assert.Equal(
+            "Referencing: tank scene",
+            viewModel.Inspector.SubtreeReferenceDisplay);
+        Assert.False(viewModel.Inspector.HasRenderProgramSection);
+
+        // Reselecting the render-program node still shows its state (snapshot-driven,
+        // not a one-shot reveal).
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(program);
+        Assert.True(viewModel.Inspector.HasRenderProgramSection);
+        Assert.Equal(10ul, viewModel.Inspector.SelectedRenderProgramOption?.Id);
+
+        // A node with neither shows neither section.
+        viewModel.SceneTree.SelectNode(other);
+        Assert.False(viewModel.Inspector.HasRenderProgramSection);
+        Assert.False(viewModel.Inspector.HasSubtreeSection);
+    }
+
     // Smoke: the GLB scene-source host verb is reachable through the live v23 DLL
     // (issue #213 Phase 3a). With no viewport runtime the native session reports a
     // no-op success — this proves the P/Invoke + session/client wiring round-trips
@@ -1064,6 +1373,75 @@ public sealed partial class ProjectOpeningTests
             var clear = editorSession.SetNodeSceneSource(
                 "host", assetGraphNodeId: 0u, consumeMode: 0u);
             Assert.True(clear.Ok, clear.Error);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(projectRoot, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup of the temp project.
+            }
+        }
+    }
+
+    // Smoke: the "Render binding" host verbs (set_node_geometry_asset /
+    // set_node_render_program, issue #213 increment 2) are reachable through the
+    // live engine DLL. With no viewport runtime the native session reports a no-op
+    // success — this proves the new P/Invoke + session/client wiring marshals and
+    // both entry points resolve against the real engine ABI without throwing. Skips
+    // if the DLL isn't built.
+    [Fact]
+    public void NativeEngineClientRenderBindingVerbsWhenEngineAbiIsBuilt()
+    {
+        var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(abiPath))
+        {
+            return;
+        }
+
+        var projectRoot = Path.Combine(
+            Path.GetTempPath(),
+            "wozzits_editor_render_binding_verb_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, ".wozzits"));
+            File.WriteAllText(
+                Path.Combine(projectRoot, ".wozzits", "project.json"),
+                """
+                {
+                  "schema": "wozzits.project.v1",
+                  "formatVersion": 1,
+                  "name": "render_binding_verb_smoke",
+                  "asset_graph": "assets.graph.json"
+                }
+                """);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "assets.graph.json"),
+                """
+                {
+                  "schema": "wozzits.asset_graph.v2",
+                  "nodes": []
+                }
+                """);
+
+            using var session = new WozzitsEngineNativeClient()
+                .OpenEditorSession(projectRoot) as IDisposable;
+            var editorSession =
+                Assert.IsAssignableFrom<IWozzitsEngineEditorSession>(session);
+
+            // No runtime was started, so each verb is a no-op success — but it
+            // exercises the live DLL entry points (set + the id-0 clear form).
+            Assert.True(
+                editorSession.SetNodeGeometryAsset("host", 9u).Ok);
+            Assert.True(
+                editorSession.SetNodeGeometryAsset("host", 0u).Ok);
+            Assert.True(
+                editorSession.SetNodeRenderProgram("host", 10u).Ok);
+            Assert.True(
+                editorSession.SetNodeRenderProgram("host", 0u).Ok);
         }
         finally
         {
@@ -2155,6 +2533,9 @@ public sealed partial class ProjectOpeningTests
         EngineSceneCamera? camera = null,
         EngineSceneRenderable? renderable = null,
         EngineSceneComponent[]? components = null,
+        ulong? sceneSourceNodeId = null,
+        ulong? geometryNodeId = null,
+        ulong? renderProgramNodeId = null,
         params EngineSceneNode[] children)
     {
         return new EngineSceneNode
@@ -2169,6 +2550,9 @@ public sealed partial class ProjectOpeningTests
             Camera = camera,
             Renderable = renderable,
             Components = components is null ? [] : [.. components],
+            SceneSourceNodeId = sceneSourceNodeId,
+            GeometryNodeId = geometryNodeId,
+            RenderProgramNodeId = renderProgramNodeId,
             Children = [.. children],
         };
     }
@@ -2399,6 +2783,26 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             RenderableAssets.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, ulong AssetGraphNodeId)> GeometryAssets { get; } = [];
+
+        public EngineMutationResponse SetNodeGeometryAsset(
+            string nodeId,
+            ulong assetGraphNodeId)
+        {
+            GeometryAssets.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, ulong AssetGraphNodeId)> RenderPrograms { get; } = [];
+
+        public EngineMutationResponse SetNodeRenderProgram(
+            string nodeId,
+            ulong assetGraphNodeId)
+        {
+            RenderPrograms.Add((nodeId, assetGraphNodeId));
             return new EngineMutationResponse { Ok = true };
         }
 

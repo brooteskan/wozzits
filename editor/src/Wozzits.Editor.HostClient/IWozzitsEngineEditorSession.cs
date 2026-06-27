@@ -168,6 +168,22 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Author (0 clears) the node's GEOMETRY ingredient — a Mesh / GpuSparseMesh
+    // asset-graph node by its node id. The engine assembles the RHI renderable
+    // from this geometry plus the node's effective render program (#213 increment
+    // 2). Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeGeometryAsset(
+        string nodeId,
+        ulong assetGraphNodeId);
+
+    // Author (0 clears) the node's RENDER-PROGRAM ingredient — a render-program
+    // asset-graph node by its node id. The program is INHERITED down the scene
+    // tree, so it cascades to descendants without their own program (#213
+    // increment 2). Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeRenderProgram(
+        string nodeId,
+        ulong assetGraphNodeId);
+
     // Point (0 clears) the node at a "Scene from GLB" asset-graph node by its node
     // id; the runtime grafts that GLB's hierarchy as the node's children (issue
     // #213 piece 2). consumeMode: 0 instance / 1 flatten. Live + host-gated, no-op

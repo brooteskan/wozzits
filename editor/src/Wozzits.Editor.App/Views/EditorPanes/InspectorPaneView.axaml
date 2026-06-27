@@ -241,6 +241,65 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Render program (issue #213): assign a render program to
+                             this node. The program is inherited down the scene tree, so
+                             setting it on a group host (e.g. a grafted GLB subtree's
+                             root) cascades one program over the whole subtree and the
+                             engine applies it to each part's geometry. Attached via
+                             "Add Component → Render program" (gated on
+                             HasRenderProgramSection), removed via the header ✕. Choosing
+                             a node in the combo applies immediately (no Apply button),
+                             mirroring the Camera/Subtree components. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderProgramSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Render program"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveRenderProgramComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove render program"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Program"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableRenderPrograms}"
+                                              SelectedItem="{Binding SelectedRenderProgramOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a render program node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableRenderPrograms}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding RenderProgramReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <TextBlock Text="No render-program nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableRenderPrograms}"/>
+
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <Grid ColumnDefinitions="*,Auto">
@@ -261,6 +320,9 @@
                                                 <MenuItem Header="Subtree from asset"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="subtree_from_asset"/>
+                                                <MenuItem Header="Render program"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="render_program"/>
                                                 <MenuItem Header="Proximity"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="proximity"/>

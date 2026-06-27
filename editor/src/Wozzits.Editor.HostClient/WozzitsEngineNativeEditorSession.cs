@@ -421,6 +421,28 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetNodeRenderableAsset(runtime.Handle, nodeId, assetGraphNodeId);
     }
 
+    public EngineMutationResponse SetNodeGeometryAsset(
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeGeometryAsset(runtime.Handle, nodeId, assetGraphNodeId);
+    }
+
+    public EngineMutationResponse SetNodeRenderProgram(
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderProgram(runtime.Handle, nodeId, assetGraphNodeId);
+    }
+
     public EngineMutationResponse SetNodeSceneSource(
         string nodeId,
         ulong assetGraphNodeId,

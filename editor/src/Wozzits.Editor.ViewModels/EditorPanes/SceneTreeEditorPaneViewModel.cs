@@ -336,6 +336,9 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         Camera = node.Camera;
         Renderable = node.Renderable;
         SceneSource = node.SceneSource;
+        SceneSourceNodeId = node.SceneSourceNodeId;
+        GeometryNodeId = node.GeometryNodeId;
+        RenderProgramNodeId = node.RenderProgramNodeId;
         Components = node.Components;
         Behaviors = node.Behaviors;
         IsInstanced = isInstanced;
@@ -388,16 +391,38 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     // from the startup snapshot and the edit appears to revert (fix 1).
     public EngineSceneTransform? Transform { get; internal set; }
 
-    public EngineSceneCamera? Camera { get; }
+    // Settable so the inspector's live add/remove of the camera component keeps
+    // reselection consistent: SetComponentFields derives HasCameraComponent from
+    // this, so a read-only field made it revert to the snapshot on reselect
+    // (mirrors Behaviors/Renderable).
+    public EngineSceneCamera? Camera { get; internal set; }
 
-    public EngineSceneRenderable? Renderable { get; }
+    // Settable so the inspector's live add/remove of the renderable reference keeps
+    // reselection consistent: Inspect derives HasRenderableReference from this, so a
+    // read-only field left it reverting to the startup snapshot on the next select
+    // (mirrors Transform/Visible).
+    public EngineSceneRenderable? Renderable { get; internal set; }
 
     // GLB scene-source descriptor summary (issue #213 Phase 2 snapshot). Settable
     // so the inspector's live import/clear keeps reselection consistent without a
     // snapshot reload (mirrors Transform).
     public EngineSceneNodeSceneSource? SceneSource { get; internal set; }
 
-    public IReadOnlyList<EngineSceneComponent> Components { get; }
+    // Authored render-binding refs (issue #213), settable so the inspector's live
+    // add/remove mirrors back and reselection reflects the change instead of
+    // reverting to the startup snapshot (mirrors Renderable): the "Subtree from
+    // asset" node ref + the render-binding geometry/render-program node ids.
+    public ulong? SceneSourceNodeId { get; internal set; }
+
+    public ulong? GeometryNodeId { get; internal set; }
+
+    public ulong? RenderProgramNodeId { get; internal set; }
+
+    // Mutable so the inspector's live add/remove of optional components keeps
+    // reselection consistent: SetComponentFields rebuilds the inspector rows from
+    // this list, so a read-only list made added/removed components revert on
+    // reselect (mirrors Behaviors).
+    public List<EngineSceneComponent> Components { get; }
 
     // Authored behavior bindings on this node. Mutable so the inspector's
     // live add/remove keeps reselection consistent without a snapshot reload.

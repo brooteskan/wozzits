@@ -987,6 +987,50 @@ public sealed partial class WozzitsEngineNativeClient
             assetGraphNodeId));
     }
 
+    internal EngineMutationResponse SetNodeGeometryAsset(
+        IntPtr runtime,
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // assetGraphNodeId 0 is the CLEAR signal (the engine drops the geometry
+        // ingredient and any assembled renderable), so it is valid here.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeGeometryAsset(
+            runtime,
+            nodeId,
+            assetGraphNodeId));
+    }
+
+    internal EngineMutationResponse SetNodeRenderProgram(
+        IntPtr runtime,
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // assetGraphNodeId 0 clears the program ingredient; descendants then fall
+        // back to their nearest ancestor's program (or stop drawing if none).
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderProgram(
+            runtime,
+            nodeId,
+            assetGraphNodeId));
+    }
+
     internal EngineMutationResponse SetNodeSceneSource(
         IntPtr runtime,
         string nodeId,

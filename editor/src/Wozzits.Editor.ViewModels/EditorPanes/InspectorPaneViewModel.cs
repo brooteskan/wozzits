@@ -39,6 +39,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // subtree_from_asset" (or revealed when a session reference already exists), not
     // shown unconditionally (issue #213 piece 2 review).
     private bool _hasSubtreeSection;
+    // "Render program" section (issue #213): the render-program asset-graph node
+    // assigned to this scene node, inherited down the tree to descendants without
+    // their own. The engine applies it to the node's geometry — intrinsic for a
+    // grafted GLB part, or supplied by a "Renderable" component otherwise. (The
+    // geometry-by-ingredients picker was dropped: geometry now comes from the graft
+    // or a pre-built renderable, so only the program is authored here.)
+    private InspectorAssetGraphRefOptionViewModel? _selectedRenderProgramOption;
+    private string _renderProgramReferenceLabel = string.Empty;
+    private bool _hasRenderProgramSection;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -103,6 +112,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // "Subtree from asset" (issue #213 piece 2): pick a "Scene from GLB" node to
         // reference, or clear it. Apply is gated on having a selection in the picker.
         RemoveSubtreeComponentCommand = new RelayCommand(RemoveSubtreeComponent);
+        // "Render program" (issue #213): pick a render-program node; the header ✕
+        // clears it and hides the section, mirroring the camera.
+        RemoveRenderProgramComponentCommand = new RelayCommand(RemoveRenderProgramComponent);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -119,6 +131,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // inspected (a snapshot-time list; live graph-edit refresh is out of scope).
     public ObservableCollection<InspectorSceneSourceOptionViewModel>
         AvailableSceneSources { get; } = [];
+
+    // The render-program asset-graph nodes the "Render program" picker offers
+    // (issue #213). Threaded in from MainWindowViewModel on every selection,
+    // filtered to RenderProgram outputs.
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableRenderPrograms { get; } = [];
 
     // Registered behavior modules offered by the "+" add menu, refreshed from the
     // running engine each time a scene node is inspected. Each option carries its
@@ -154,6 +172,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // "Subtree from asset" (issue #213 piece 2).
     public IRelayCommand RemoveSubtreeComponentCommand { get; }
+
+    // "Render program" (issue #213).
+    public IRelayCommand RemoveRenderProgramComponentCommand { get; }
 
     public string NewBehaviorModule
     {
@@ -282,6 +303,56 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _hasSubtreeSection;
         private set => SetProperty(ref _hasSubtreeSection, value);
+    }
+
+    // ─── Render program (issue #213) ─────────────────────────────────────────────
+
+    // The render-program node chosen in the "Render program" picker. Bound TwoWay to
+    // the ComboBox; a user pick applies immediately (no Apply button), mirroring the
+    // subtree picker. The program cascades to descendants without their own.
+    // Programmatic restores assign the field, not this setter.
+    public InspectorAssetGraphRefOptionViewModel? SelectedRenderProgramOption
+    {
+        get => _selectedRenderProgramOption;
+        set
+        {
+            if (SetProperty(ref _selectedRenderProgramOption, value)
+                && value is not null)
+            {
+                ApplyRenderProgram();
+            }
+        }
+    }
+
+    public bool HasAvailableRenderPrograms => AvailableRenderPrograms.Count > 0;
+
+    // Optimistic "Referencing: <node>" line for the picked program. Empty =>
+    // "(none)".
+    public string RenderProgramReferenceLabel
+    {
+        get => _renderProgramReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _renderProgramReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(RenderProgramReferenceDisplay));
+            }
+        }
+    }
+
+    public string RenderProgramReferenceDisplay =>
+        string.IsNullOrWhiteSpace(RenderProgramReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {RenderProgramReferenceLabel}";
+
+    // Gates the "Render program" section, mirroring HasSubtreeSection: attached via
+    // "Add Component → render_program" rather than always shown. Attaching it does
+    // NOT call the generic AddNodeComponent verb (the engine rejects it) — it just
+    // reveals the picker so the user references a render-program node.
+    public bool HasRenderProgramSection
+    {
+        get => _hasRenderProgramSection;
+        private set => SetProperty(ref _hasRenderProgramSection, value);
     }
 
     public bool HasTransform
@@ -540,10 +611,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RenderableAssetGraphNodeId =
                 node.Renderable?.AssetGraphNodeId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
-            // The subtree-from-asset reference + revealed section are session-local
-            // (issue #213 piece 2), so reset them when switching nodes — each node
-            // re-attaches the section via "Add Component → subtree_from_asset".
-            ResetSubtreeReferenceState();
+            // The "Subtree from asset" and "Render program" sections are driven by
+            // the node's persisted state (issue #213): reveal + pre-select them from
+            // the authored asset-graph node ids surfaced in the snapshot, so a node
+            // that has them shows them on (re)select instead of starting hidden.
+            RestoreSubtreeReferenceState(node);
+            RestoreRenderProgramState(node);
 
             ComponentsHeader = $"{Header} Components";
             SetTransformFields(node.Transform);
@@ -806,7 +879,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             RenderableSource = string.Empty;
             RenderableSourceKind = string.Empty;
             RenderableAssetGraphNodeId = string.Empty;
-            ResetSubtreeReferenceState();
+            SelectedSceneSourceOption = null;
+            SubtreeReferenceLabel = string.Empty;
+            HasSubtreeSection = false;
+            ResetRenderProgramState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -1068,6 +1144,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
+        // "Render program" is likewise an asset-graph reference, not a default-toggle
+        // component. Reveal its picker section; the dedicated program verb applies on
+        // pick, so do NOT call the generic verb (the engine rejects "render_program").
+        if (string.Equals(kind, "render_program", StringComparison.Ordinal))
+        {
+            HasRenderProgramSection = true;
+            LastEditError = string.Empty;
+            return;
+        }
+
         var response = _editorSession!.AddNodeComponent(NodeId, kind);
         SetEditResponse(response);
         if (!response.Ok)
@@ -1077,15 +1163,23 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         // Reflect immediately (the snapshot reconciles on its next refresh).
         // Camera has its own parameter section; the rest list as removable rows.
+        // In every case mirror the add onto the cached tree-node VM, or re-selecting
+        // the node re-derives the components from the stale snapshot and the add
+        // reverts (the renderable-revert bug, generalized — mirrors Behaviors).
         if (string.Equals(kind, "camera", StringComparison.Ordinal))
         {
             HasCameraComponent = true;
+            if (_inspectedSceneNode is { Camera: null } cameraNode)
+            {
+                cameraNode.Camera = new EngineSceneCamera();
+            }
         }
         else if (!Components.Any(
             c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
         {
             Components.Add(new InspectorComponentViewModel(
                 ComponentDisplayName(kind), kind, RemoveComponent));
+            MirrorComponentAdded(kind);
             NotifyComponentStateChanged();
         }
     }
@@ -1101,6 +1195,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (response.Ok)
         {
             HasCameraComponent = false;
+            // Clear the cached camera too, or reselect would read the stale snapshot
+            // camera and bring the section back.
+            if (_inspectedSceneNode is not null)
+            {
+                _inspectedSceneNode.Camera = null;
+            }
         }
     }
 
@@ -1119,12 +1219,36 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         Components.Remove(component);
+        MirrorComponentRemoved(component.Kind);
         // Removing the camera also hides its parameter section.
         if (string.Equals(component.Kind, "camera", StringComparison.Ordinal))
         {
             HasCameraComponent = false;
         }
         NotifyComponentStateChanged();
+    }
+
+    // Keep the cached tree-node VM's component list in step with a live add/remove,
+    // so re-selecting the node (which rebuilds the inspector rows from that list)
+    // reflects the change instead of reverting to the startup snapshot.
+    private void MirrorComponentAdded(string kind)
+    {
+        if (_inspectedSceneNode is { } node
+            && !node.Components.Any(
+                c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
+        {
+            node.Components.Add(new EngineSceneComponent
+            {
+                Kind = kind,
+                DisplayName = ComponentDisplayName(kind),
+            });
+        }
+    }
+
+    private void MirrorComponentRemoved(string kind)
+    {
+        _inspectedSceneNode?.Components.RemoveAll(
+            c => string.Equals(c.Kind, kind, StringComparison.Ordinal));
     }
 
     private static string ComponentDisplayName(string kind)
@@ -1134,6 +1258,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "camera" => "Camera",
             "renderable" => "Renderable",
             "subtree_from_asset" => "Subtree from asset",
+            "render_program" => "Render program",
             "proximity" => "Proximity",
             "collision" => "Collision",
             "motion" => "Motion",
@@ -1164,7 +1289,21 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        SetEditResponse(_editorSession!.SetNodeRenderableAsset(NodeId, id));
+        var response = _editorSession!.SetNodeRenderableAsset(NodeId, id);
+        SetEditResponse(response);
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        // Mirror the new reference onto the cached tree-node VM so re-selecting the
+        // node (which repopulates the inspector from that VM) keeps the renderable
+        // instead of reverting to the startup snapshot (mirrors the Visible fix).
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Renderable =
+                new EngineSceneRenderable { AssetGraphNodeId = id };
+        }
     }
 
     private void RemoveRenderable()
@@ -1182,6 +1321,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
         HasRenderableReference = false;
         RenderableAssetGraphNodeId = string.Empty;
+
+        // Clear the cached tree-node VM too, or re-selecting the node would read the
+        // stale snapshot renderable and bring the section back (the reported bug).
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Renderable = null;
+        }
     }
 
     // ─── Subtree from asset (issue #213 piece 2) ─────────────────────────────────
@@ -1231,6 +1377,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
         SubtreeReferenceLabel = option.Label;
+        // Mirror onto the cached tree-node VM so reselect re-reveals + re-selects.
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.SceneSourceNodeId = option.Id;
+        }
         SceneSourceChanged?.Invoke();
     }
 
@@ -1252,20 +1403,140 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             }
         }
 
+        // Clear the cached tree-node VM too, so reselect keeps it removed (the node
+        // no longer references a subtree source).
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.SceneSourceNodeId = null;
+        }
+
         SelectedSceneSourceOption = null;
         SubtreeReferenceLabel = string.Empty;
         HasSubtreeSection = false;
     }
 
-    // Clear the picker selection + optimistic reference label and re-hide the
-    // section (the reference is session-local in piece 2; switching nodes must not
-    // carry it — or the revealed section — across). The section is re-attached via
-    // "Add Component → subtree_from_asset" on the newly inspected node.
-    private void ResetSubtreeReferenceState()
+    // Reveal + pre-select the "Subtree from asset" section from the node's persisted
+    // scene-source ref (issue #213), or hide it when the node has none. The option
+    // field is assigned directly (not the setter) so revealing never re-applies.
+    private void RestoreSubtreeReferenceState(SceneTreeNodeViewModel node)
     {
-        SelectedSceneSourceOption = null;
-        SubtreeReferenceLabel = string.Empty;
-        HasSubtreeSection = false;
+        if (node.SceneSourceNodeId is { } id)
+        {
+            var option = AvailableSceneSources.FirstOrDefault(o => o.Id == id);
+            _selectedSceneSourceOption = option;
+            OnPropertyChanged(nameof(SelectedSceneSourceOption));
+            SubtreeReferenceLabel = option?.Label
+                ?? $"#{id.ToString(CultureInfo.InvariantCulture)}";
+            HasSubtreeSection = true;
+        }
+        else
+        {
+            _selectedSceneSourceOption = null;
+            OnPropertyChanged(nameof(SelectedSceneSourceOption));
+            SubtreeReferenceLabel = string.Empty;
+            HasSubtreeSection = false;
+        }
+    }
+
+    // ─── Render program (issue #213) ─────────────────────────────────────────────
+
+    // Replace the render-program picker's options with the current RenderProgram
+    // asset-graph nodes (threaded in from MainWindowViewModel). Preserves the active
+    // selection by id when the same node is still offered so re-inspecting a node
+    // doesn't drop the pick; the field (not the setter) is assigned so the restore
+    // never re-applies.
+    public void SetAvailableRenderPrograms(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedRenderProgramOption?.Id;
+        AvailableRenderPrograms.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableRenderPrograms.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedRenderProgramOption = restored;
+        OnPropertyChanged(nameof(SelectedRenderProgramOption));
+        OnPropertyChanged(nameof(HasAvailableRenderPrograms));
+    }
+
+    // Author the node's render program from the picked node — invoked from the
+    // picker's selection setter, so choosing a node applies immediately. The program
+    // is inherited by descendants without their own, so setting it on a group host
+    // (e.g. a grafted GLB subtree's root) cascades one program over the whole subtree
+    // and the engine applies it to each part's geometry.
+    private void ApplyRenderProgram()
+    {
+        if (!EnsureCanApply() || SelectedRenderProgramOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeRenderProgram(NodeId, option.Id);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            RenderProgramReferenceLabel = option.Label;
+            if (_inspectedSceneNode is not null)
+            {
+                _inspectedSceneNode.RenderProgramNodeId = option.Id;
+            }
+        }
+    }
+
+    // Remove the "Render program" component (the section's ✕), mirroring the camera
+    // ✕: clear the program on the engine side (id 0) and hide the section. Re-attach
+    // via "Add Component → Render program".
+    private void RemoveRenderProgramComponent()
+    {
+        if (EnsureCanApply())
+        {
+            SetEditResponse(_editorSession!.SetNodeRenderProgram(NodeId, 0));
+        }
+
+        // Clear the cached tree-node VM too, so reselect keeps the program removed.
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.RenderProgramNodeId = null;
+        }
+
+        ResetRenderProgramState();
+    }
+
+    // Clear the render-program picker selection + optimistic label and re-hide the
+    // section. Used by the ✕ remove path (the cached VM is cleared separately there).
+    private void ResetRenderProgramState()
+    {
+        SelectedRenderProgramOption = null;
+        RenderProgramReferenceLabel = string.Empty;
+        HasRenderProgramSection = false;
+    }
+
+    // Reveal + pre-select the "Render program" section from the node's persisted
+    // render-program ref (issue #213), or hide it when the node has none. The option
+    // field is assigned directly (not the setter) so revealing never re-applies.
+    private void RestoreRenderProgramState(SceneTreeNodeViewModel node)
+    {
+        if (node.RenderProgramNodeId is { } programId)
+        {
+            var option = AvailableRenderPrograms.FirstOrDefault(
+                o => o.Id == programId);
+            _selectedRenderProgramOption = option;
+            RenderProgramReferenceLabel = option?.Label
+                ?? $"#{programId.ToString(CultureInfo.InvariantCulture)}";
+            HasRenderProgramSection = true;
+        }
+        else
+        {
+            _selectedRenderProgramOption = null;
+            RenderProgramReferenceLabel = string.Empty;
+            HasRenderProgramSection = false;
+        }
+        OnPropertyChanged(nameof(SelectedRenderProgramOption));
     }
 
     // ─── GLB node tree picker (issue #213) ───────────────────────────────────────
@@ -1677,6 +1948,24 @@ public sealed class InspectorBehaviorModuleOptionViewModel
 public sealed class InspectorSceneSourceOptionViewModel
 {
     public InspectorSceneSourceOptionViewModel(ulong id, string? displayName)
+    {
+        Id = id;
+        Label = string.IsNullOrWhiteSpace(displayName)
+            ? $"#{id.ToString(CultureInfo.InvariantCulture)}"
+            : displayName!;
+    }
+
+    public ulong Id { get; }
+
+    public string Label { get; }
+}
+
+// One asset-graph node offered by the "Render program" picker (issue #213).
+// Carries the node id (what the render-program verb is pointed at) and a human
+// label, which falls back to the node id so the combo is never blank.
+public sealed class InspectorAssetGraphRefOptionViewModel
+{
+    public InspectorAssetGraphRefOptionViewModel(ulong id, string? displayName)
     {
         Id = id;
         Label = string.IsNullOrWhiteSpace(displayName)

@@ -313,6 +313,20 @@ public sealed partial class WozzitsEngineNativeClient
             SceneSource = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasSceneSource)
                 ? ReadSceneSceneSource(bytes, node.SceneSource)
                 : null,
+            // Authored render-binding refs (issue #213): the node id or null, so the
+            // inspector reveals + pre-selects these sections from persisted state.
+            SceneSourceNodeId =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasSceneSourceRef)
+                    ? node.SceneSourceNodeId
+                    : null,
+            GeometryNodeId =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasGeometry)
+                    ? node.GeometryNodeId
+                    : null,
+            RenderProgramNodeId =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasRenderProgram)
+                    ? node.RenderProgramNodeId
+                    : null,
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,

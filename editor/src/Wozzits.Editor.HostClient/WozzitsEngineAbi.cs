@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 25;
+    internal const uint AbiVersion = 26;
 
     private static int _resolverRegistered;
 
@@ -416,6 +416,33 @@ internal static partial class WozzitsEngineAbi
         EntryPoint = "wz_host_runtime_set_node_renderable_asset",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzResult WzEditorRuntimeSetNodeRenderableAsset(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong assetGraphNodeId);
+
+    // Author a node's GEOMETRY ingredient of its render binding — point it at a
+    // Mesh / GpuSparseMesh asset-graph node (0 = clear). The engine assembles the
+    // RHI renderable from this geometry plus the effective render program (#213
+    // increment 2). Live + host-gated, no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_geometry_asset",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeGeometryAsset(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong assetGraphNodeId);
+
+    // Author a node's RENDER-PROGRAM ingredient of its render binding — point it
+    // at a render-program asset-graph node (0 = clear). The program is INHERITED
+    // down the scene tree, so this cascades to descendants without their own
+    // program (#213 increment 2). Live + host-gated, no-op success when no
+    // viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_render_program",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderProgram(
         IntPtr runtime,
         string nodeIdUtf8,
         ulong assetGraphNodeId);
@@ -835,7 +862,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneBehaviorAbi.Config),
             88);
 
-        AssertSize<WzEditorSceneNodeAbi>(568);
+        AssertSize<WzEditorSceneNodeAbi>(592);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -875,6 +902,15 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.SceneSource),
             448);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.SceneSourceNodeId),
+            568);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.GeometryNodeId),
+            576);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.RenderProgramNodeId),
+            584);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1200,6 +1236,11 @@ internal readonly struct WzEditorSceneNodeAbi
     public readonly WzEditorTableSpanAbi Behaviors;
     public readonly WzEditorTableSpanAbi Children;
     public readonly WzEditorSceneSceneSourceAbi SceneSource;
+    // Authored render-binding refs (issue #213), each valid iff its HAS_* flag is
+    // set. Appended last to mirror the native struct.
+    public readonly ulong SceneSourceNodeId;
+    public readonly ulong GeometryNodeId;
+    public readonly ulong RenderProgramNodeId;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -1355,6 +1396,11 @@ internal static class WzEditorSceneNodeFlags
     public const uint HasRenderable = 1u << 5;
     public const uint RenderableHasAssetGraphNodeId = 1u << 6;
     public const uint HasSceneSource = 1u << 7;
+    // Authored render-binding refs (issue #213). HasSceneSourceRef is the "Subtree
+    // from asset" node ref, distinct from HasSceneSource (the GLB descriptor).
+    public const uint HasSceneSourceRef = 1u << 8;
+    public const uint HasGeometry = 1u << 9;
+    public const uint HasRenderProgram = 1u << 10;
 }
 
 internal static class WzEditorSceneCameraFlags

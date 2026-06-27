@@ -331,6 +331,16 @@ public sealed record EngineSceneNode
 
     public EngineSceneNodeSceneSource? SceneSource { get; init; }
 
+    // Authored render-binding refs (issue #213), null when the node has none: the
+    // "Subtree from asset" node ref and the render-binding geometry + render-program
+    // asset-graph node ids. The inspector reveals + pre-selects these sections from
+    // these, so live edits persist on reselect.
+    public ulong? SceneSourceNodeId { get; init; }
+
+    public ulong? GeometryNodeId { get; init; }
+
+    public ulong? RenderProgramNodeId { get; init; }
+
     public List<EngineSceneNode> Children { get; init; } = [];
 }
 

@@ -286,6 +286,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     node.Id,
                     node.DisplayName)));
 
+        // Thread the "Render program" candidates (issue #213) the same way: the
+        // inspector takes plain option data.
+        RefreshInspectorRenderProgramSources();
+
         // Thread the live asset-graph topology so the inspector's "GLB node" tree
         // picker (issue #213) can walk the selected "Mesh from GLB scene" node's
         // `scene` → `source_file` edges to the connected GLB file's source_path.
@@ -328,6 +332,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         Inspector.SetAssetGraphTopology(nodes, edges);
     }
+
+    // Thread the "Render program" picker (issue #213) with the asset-graph nodes
+    // whose OUTPUT asset type is RenderProgram (1049). Filtering on the output
+    // port's asset type (not schema label) covers every schema that yields the type
+    // and matches what the engine routes on when assembling the renderable.
+    // Refreshed per selection from the snapshot.
+    private void RefreshInspectorRenderProgramSources()
+    {
+        Inspector.SetAvailableRenderPrograms(
+            AssetGraph.Nodes
+                .Where(IsRenderProgramNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+    }
+
+    // True when a node produces a render program the render-program component can
+    // consume (RenderProgram = 1049 in type_extensions.h, the value the engine's
+    // assemble routes on).
+    private static bool IsRenderProgramNode(AssetGraphNodeCardViewModel node) =>
+        node.OutputPorts.Any(port => port.Type == RenderProgramAssetTypeId);
+
+    private const uint RenderProgramAssetTypeId = 1049;
 
     // True for a "Scene from GLB" asset-graph node — the only graftable subtree
     // source the picker offers (issue #213 piece 2).
