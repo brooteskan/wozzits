@@ -614,8 +614,20 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 new InspectorAssetGraphDiagnosticViewModel(diagnostic));
         }
 
+        // For the "Mesh from GLB scene" extractor (issue #213), the `node_id` param
+        // is set EXCLUSIVELY through the "GLB node" tree picker below, so it is hidden
+        // from the generic param editor (a free-typed id that doesn't match a GLB node
+        // just fails the compile). Every other param, and every other node, is listed
+        // unchanged.
+        var hideNodeIdParam = IsMeshFromGlbSceneNode(node);
         foreach (var param in node.Params)
         {
+            if (hideNodeIdParam
+                && string.Equals(param.Name, "node_id", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             AssetGraphParams.Add(new InspectorAssetGraphParamViewModel(
                 param,
                 ApplyAssetGraphNodeParam));
@@ -623,7 +635,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         // "Mesh from GLB scene" nodes get the "GLB node" tree picker (issue #213):
         // resolve the connected GLB and show its hierarchy as a pickable tree.
-        if (IsMeshFromGlbSceneNode(node))
+        if (hideNodeIdParam)
         {
             PopulateGlbNodePicker(node);
         }
@@ -1282,7 +1294,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (string.IsNullOrEmpty(glbPath))
         {
             GlbNodePickerHint =
-                "Connect a GLB file to pick a GLB node.";
+                "Connect a 'Scene from GLB' node to pick a GLB node.";
             return;
         }
 
@@ -1309,7 +1321,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        var currentNodeId = CurrentNodeIdParamValue();
+        var currentNodeId = CurrentNodeIdParamValue(node);
         foreach (var root in BuildGlbComponentTree(hierarchy.Components, currentNodeId))
         {
             GlbNodes.Add(root);
@@ -1323,24 +1335,43 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     }
 
     // Walk the asset-graph edges from the selected "Mesh from GLB scene" node to the
-    // GLB file on disk: follow the extractor's OWN `source_file` input edge to the
-    // file node (ONE hop — the extractor is a standalone GLB->mesh provider with no
-    // Scene dependency, consuming the same source_file a "Scene from GLB" node does),
-    // and read its `source_path` string param, resolved to an absolute path against
-    // the project directory. Returns empty when any link is missing.
+    // GLB file on disk: follow the `scene` input edge to the connected "Scene from
+    // GLB" node, then that node's `source_file` input edge to the file node, and read
+    // its `source_path` string param, resolved to an absolute path against the
+    // project directory. Returns empty when any link is missing.
     private string ResolveConnectedGlbPath(AssetGraphNodeCardViewModel extractorNode)
     {
-        // The extractor's `source_file` input port index (the port carries the
-        // connected GLB file). Fall back to a single sole input port.
-        var sourcePortIndex = InputPortIndexByName(
+        // The extractor's `scene` input port index (the port carries the connected
+        // Scene-from-GLB output). Fall back to a single sole input port.
+        var scenePortIndex = InputPortIndexByName(
             extractorNode.InputPorts.Select(p => (p.Name, p.Index)),
+            "scene");
+        if (scenePortIndex is not { } sceneIndex)
+        {
+            return string.Empty;
+        }
+
+        var sceneNodeId = EdgeSourceInto(extractorNode.Id, sceneIndex);
+        if (sceneNodeId is not { } sceneFromGlbId)
+        {
+            return string.Empty;
+        }
+
+        var sceneFromGlbNode = FindSnapshotNode(sceneFromGlbId);
+        if (sceneFromGlbNode is null)
+        {
+            return string.Empty;
+        }
+
+        var sourcePortIndex = InputPortIndexByName(
+            sceneFromGlbNode.InputPorts.Select(p => (p.Name, p.Index)),
             "source_file");
         if (sourcePortIndex is not { } sourceIndex)
         {
             return string.Empty;
         }
 
-        var fileNodeId = EdgeSourceInto(extractorNode.Id, sourceIndex);
+        var fileNodeId = EdgeSourceInto(sceneFromGlbId, sourceIndex);
         if (fileNodeId is not { } glbFileId)
         {
             return string.Empty;
@@ -1412,7 +1443,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // returned unchanged; with no project directory the path is returned as-is.
     private string ResolveProjectRelativePath(string sourcePath)
     {
-        var trimmed = sourcePath.Trim();
+        var trimmed = StripSurroundingQuotes(sourcePath.Trim());
         if (string.IsNullOrEmpty(trimmed))
         {
             return string.Empty;
@@ -1431,11 +1462,28 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         return Path.GetFullPath(Path.Combine(_projectDirectory, trimmed));
     }
 
-    // The currently authored `node_id` param value (the picked GLB node), used to
-    // highlight the matching tree node; empty when the param is unset/absent.
-    private string CurrentNodeIdParamValue()
+    // Strip a single matched surrounding pair of ASCII double-quotes (belt-and-
+    // suspenders with the engine's FileCarrierAssetModule::resolve_path): Windows
+    // Explorer's "Copy as path" wraps the path in double-quotes ("C:\...\tank1.glb"),
+    // so a source_path authored that way still imports. Only a genuine leading+
+    // trailing pair is removed; interior quotes and a lone unbalanced quote stay.
+    private static string StripSurroundingQuotes(string value)
     {
-        return AssetGraphParams
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+        {
+            return value[1..^1];
+        }
+
+        return value;
+    }
+
+    // The currently authored `node_id` param value (the picked GLB node), used to
+    // highlight the matching tree node; empty when the param is unset/absent. Read
+    // from the selected node's source params (the compiled value the engine reports),
+    // since `node_id` is hidden from the generic AssetGraphParams for this node.
+    private static string CurrentNodeIdParamValue(AssetGraphNodeCardViewModel node)
+    {
+        return node.Params
             .FirstOrDefault(p => string.Equals(
                 p.Name, "node_id", StringComparison.Ordinal))
             ?.Value
@@ -1491,7 +1539,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // A tree node was clicked: only mesh-bearing GLB nodes are extractable, so a
     // group click is ignored (the engine extractor errors on a mesh-less node).
-    // Setting node_id goes through the same param-set path as the text field, and the
+    // Setting node_id goes through the asset-graph param-set ABI (the tree is the
+    // ONLY way to set it — node_id is hidden from the generic param editor), and the
     // current-pick highlight is moved to the clicked node.
     private void PickGlbNode(InspectorGlbComponentNodeViewModel node)
     {
@@ -1504,14 +1553,6 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (!HasLastEditError)
         {
             HighlightCurrentGlbPick(node.Id);
-            // Reflect the pick in the matching `node_id` text param so the fallback
-            // field and the tree agree.
-            var param = AssetGraphParams.FirstOrDefault(p => string.Equals(
-                p.Name, "node_id", StringComparison.Ordinal));
-            if (param is not null)
-            {
-                param.Value = node.Id;
-            }
         }
     }
 

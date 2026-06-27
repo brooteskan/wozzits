@@ -1675,6 +1675,51 @@ public sealed partial class ProjectOpeningTests
         var gun = Assert.Single(turret.Children);
         Assert.Equal("gun", gun.Id);
         Assert.True(gun.HasMesh);
+
+        // The node_id param is NOT offered in the generic params for the extractor:
+        // the tree picker is the only way to set it.
+        Assert.DoesNotContain(
+            viewModel.Inspector.AssetGraphParams,
+            p => p.Name == "node_id");
+    }
+
+    // The file node's source_path may be a "Copy as path" value wrapped in double
+    // quotes ("...gltf/tank1.glb"); the picker strips a matched surrounding pair before
+    // resolving, so the hierarchy still imports against the bare path. (Belt-and-
+    // suspenders with the engine's resolve_path quote-stripping.)
+    [Fact]
+    public void MeshFromGlbScenePickerStripsQuotedSourcePath()
+    {
+        var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-quoted-vm");
+        var session = new RecordingEditorSession
+        {
+            GlbHierarchy = new EngineGlbSceneHierarchy
+            {
+                Ok = true,
+                Components = [GlbComponent("body", hasMesh: true)],
+            },
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GlbExtractorGraph(
+                sourcePath: "\"gltf/tank1.glb\"")),
+            editorSession: session,
+            projectDirectory: projectDir);
+
+        var extractor = Assert.Single(
+            viewModel.AssetGraph.Nodes,
+            n => n.SchemaLabel == "e7000414");
+        viewModel.AssetGraph.SelectNode(extractor);
+
+        // The picker imported against the bare (unquoted) resolved path, not a path
+        // with embedded quotes.
+        var import = Assert.Single(session.GlbHierarchyImports);
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(projectDir, "gltf/tank1.glb")),
+            import.Path);
+        Assert.DoesNotContain("\"", import.Path);
+
+        Assert.True(viewModel.Inspector.HasGlbNodes);
+        Assert.False(viewModel.Inspector.HasGlbNodePickerHint);
     }
 
     // Clicking a mesh-bearing tree node sets the extractor's `node_id` param (the same
@@ -1794,8 +1839,9 @@ public sealed partial class ProjectOpeningTests
         Assert.False(body.IsCurrentPick);
     }
 
-    // Defensive: an extractor not connected to a GLB file shows the section with a
-    // hint (no tree, no import) and never throws. The text param stays the fallback.
+    // Defensive: an extractor not connected to a Scene-from-GLB shows the section with
+    // a hint (no tree, no import) and never throws. The tree picker is the only way to
+    // set node_id, so node_id is NOT offered in the generic params even when unwired.
     [Fact]
     public void MeshFromGlbScenePickerHintsWhenNotConnected()
     {
@@ -1803,7 +1849,7 @@ public sealed partial class ProjectOpeningTests
         {
             GlbHierarchy = new EngineGlbSceneHierarchy { Ok = true },
         };
-        // Just the extractor node, with no incoming `source_file` edge.
+        // Just the extractor node, with no incoming `scene` edge.
         var graph = new EngineAssetGraphSnapshotResponse
         {
             Ok = true,
@@ -1826,11 +1872,12 @@ public sealed partial class ProjectOpeningTests
         Assert.True(viewModel.Inspector.HasGlbNodePicker);
         Assert.False(viewModel.Inspector.HasGlbNodes);
         Assert.True(viewModel.Inspector.HasGlbNodePickerHint);
-        Assert.Contains("GLB file", viewModel.Inspector.GlbNodePickerHint);
+        Assert.Contains("Scene from GLB", viewModel.Inspector.GlbNodePickerHint);
         // Not connected => the GLB was never imported.
         Assert.Empty(session.GlbHierarchyImports);
-        // The generic node_id text param is still present as the fallback.
-        Assert.Contains(
+        // The node_id param is hidden from the generic editor — the tree is the only
+        // way to set it.
+        Assert.DoesNotContain(
             viewModel.Inspector.AssetGraphParams,
             p => p.Name == "node_id");
     }
@@ -1890,15 +1937,13 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.Inspector.HasGlbNodes);
     }
 
-    // An asset graph where the file node feeds BOTH a Scene-from-GLB (e7000711) and
-    // the Mesh-from-GLB-scene extractor (e7000414) directly: the file node carries
-    // source_path "gltf/tank1.glb"; the extractor's OWN `source_file` input is fed by
-    // the file node (one hop — no Scene dependency). The Scene-from-GLB node is also
-    // present (fed by the same file) so the hidden-for-non-extractor case has an
-    // e7000711 node to select. currentNodeId, when set, authors the extractor's
-    // node_id.
+    // An asset graph wired file -> Scene-from-GLB (e7000711) -> Mesh-from-GLB-scene
+    // (e7000414): the file node carries source_path "gltf/tank1.glb"; the extractor's
+    // `scene` input is fed by the Scene-from-GLB node, whose `source_file` input is
+    // fed by the file node. currentNodeId, when set, authors the extractor's node_id.
     private static EngineAssetGraphSnapshotResponse GlbExtractorGraph(
-        string? currentNodeId = null)
+        string? currentNodeId = null,
+        string sourcePath = "gltf/tank1.glb")
     {
         return new EngineAssetGraphSnapshotResponse
         {
@@ -1929,7 +1974,7 @@ public sealed partial class ProjectOpeningTests
                             {
                                 Name = "source_path",
                                 Kind = "filepath",
-                                Value = "gltf/tank1.glb",
+                                Value = sourcePath,
                             },
                         ],
                     },
@@ -1959,8 +2004,8 @@ public sealed partial class ProjectOpeningTests
                             },
                         ],
                     },
-                    // The Mesh-from-GLB-scene extractor (id 30): `source_file` input <-
-                    // the file node directly; carries the node_id param (pick target).
+                    // The Mesh-from-GLB-scene extractor (id 30): `scene` input <- the
+                    // Scene-from-GLB node; carries the node_id param (the pick target).
                     MeshFromGlbSceneNode(id: 30u, currentNodeId: currentNodeId),
                 ],
                 Edges =
@@ -1973,11 +2018,11 @@ public sealed partial class ProjectOpeningTests
                         To = 20u,
                         ToInputPort = 0u,
                     },
-                    // file.output -> extractor.source_file
+                    // scene.output -> extractor.scene
                     new EngineAssetGraphEdge
                     {
                         Id = 2u,
-                        From = 10u,
+                        From = 20u,
                         To = 30u,
                         ToInputPort = 0u,
                     },
@@ -2001,8 +2046,8 @@ public sealed partial class ProjectOpeningTests
                 new EngineAssetGraphPort
                 {
                     Index = 0,
-                    Name = "source_file",
-                    Label = "GLB file",
+                    Name = "scene",
+                    Label = "Scene",
                 },
             ],
             OutputPorts =
