@@ -517,6 +517,63 @@ namespace wz::engine::rendering
         return world;
     }
 
+    // Effective (inherited) visibility: a node draws only if it AND every
+    // ancestor is visible, so hiding a parent hides its whole subtree (notably a
+    // scene-source host hiding its grafted children). Mirrors the parent-walk in
+    // compute_scene_node_world_transforms; a dangling/cyclic parent falls back to
+    // the node's own visibility (never spuriously hidden).
+    std::vector<std::uint8_t> compute_scene_node_effective_visibility(
+        std::span<const ea::SceneNodeAsset> nodes)
+    {
+        const std::size_t n = nodes.size();
+
+        std::unordered_map<std::string, std::size_t> index_by_id;
+        index_by_id.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            index_by_id.emplace(nodes[i].id, i);
+        }
+
+        std::vector<std::size_t> parent(n, n);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (!nodes[i].parent_id.has_value()) {
+                continue;
+            }
+            const auto it = index_by_id.find(*nodes[i].parent_id);
+            if (it != index_by_id.end() && it->second != i) {
+                parent[i] = it->second;
+            }
+        }
+
+        // effective = node.visible AND parent.effective, resolved parents-first
+        // (1 = effectively visible, 0 = hidden). Same cycle-safe chain unwind.
+        std::vector<std::uint8_t> effective(n, 1u);
+        std::vector<std::uint8_t> state(n, 0u);
+        std::vector<std::size_t> chain;
+        chain.reserve(n);
+        for (std::size_t start = 0; start < n; ++start) {
+            if (state[start] != 0u) {
+                continue;
+            }
+            chain.clear();
+            std::size_t cur = start;
+            while (cur != n && state[cur] == 0u) {
+                state[cur] = 1u;
+                chain.push_back(cur);
+                cur = parent[cur];
+            }
+            for (std::size_t k = chain.size(); k-- > 0;) {
+                const std::size_t i = chain[k];
+                const std::size_t p = parent[i];
+                const bool parent_visible = (p == n || state[p] != 2u)
+                    ? true
+                    : effective[p] != 0u;
+                effective[i] = (nodes[i].visible && parent_visible) ? 1u : 0u;
+                state[i] = 2u;
+            }
+        }
+        return effective;
+    }
+
     RhiSceneRenderer::RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger)
         : gpu_(gpu)
         , logger_(logger)
@@ -1057,9 +1114,15 @@ namespace wz::engine::rendering
         // camera, not the node).
         const std::vector<wz::math::Mat4> node_worlds =
             compute_scene_node_world_transforms(nodes);
+        // Inherited visibility: a hidden parent hides its whole subtree (e.g. a
+        // scene-source host hiding its grafted children), not just itself.
+        const std::vector<std::uint8_t> node_effective_visible =
+            compute_scene_node_effective_visibility(nodes);
 
         for (const ea::SceneNodeAsset& node : nodes) {
-            if (!node.visible || !node.renderable_asset) {
+            const std::size_t node_index =
+                static_cast<std::size_t>(&node - nodes.data());
+            if (!node_effective_visible[node_index] || !node.renderable_asset) {
                 continue;
             }
             RealizedRenderable* realized =

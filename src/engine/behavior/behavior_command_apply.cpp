@@ -497,6 +497,18 @@ namespace wz::engine::behavior
                     return true;
                 }
             }
+            // A movement-constraint Collision component (e.g. a scalar-field
+            // heightfield collision with no TerrainAsset, issue #216) is an
+            // equally valid constraint surface — build_collision_world feeds it
+            // into terrain_constraint_surfaces, so it must pass this sample-time
+            // filter too, or the surface is built and then silently discarded.
+            for (const auto& record : scene.collisions) {
+                if (record.node == entity
+                    && record.component.constrain_movement)
+                {
+                    return true;
+                }
+            }
             return false;
         }
 

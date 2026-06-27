@@ -1009,6 +1009,56 @@ TEST(BehaviorCommands, TerrainConstraintSetsActorHeightAndRideOffset)
     EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
 }
 
+// A movement-constraint surface authored as a COLLISION component (no terrain
+// component, issue #216 — e.g. the clipmap landscape's scalar-field heightfield
+// collision) must constrain an actor exactly like a terrain component does.
+// Before the entity_has_constraining_terrain fix this returned 0: the surface
+// was built but the sample-time filter only recognized terrain components.
+TEST(BehaviorCommands, TerrainConstraintAcceptsConstrainMovementCollisionComponent)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "collision_constraint_scene";
+
+    wz::engine::assets::SceneNodeAsset surface_node{};
+    surface_node.id = "landscape";
+    surface_node.collision = wz::engine::assets::SceneCollisionAsset{
+        .constrain_movement = true,
+    };
+    asset.nodes.push_back(std::move(surface_node));
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 2.0f;
+    actor.local.translation[1] = 12.0f;
+    actor.local.translation[2] = 3.0f;
+    actor.motion = wz::engine::assets::SceneMotionAsset{
+        .terrain_constrained = true,
+        .terrain_ride_height = 0.5f,
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor_id =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId surface_id =
+        result.instance.authored_to_runtime["landscape"];
+    const auto surface = flat_height_field_surface(4.0f);
+    const auto collision = collision_with_surface(surface_id, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, &changed),
+        1u);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0], actor_id);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor_id);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 4.5f);  // surface 4 + ride 0.5
+}
+
 TEST(BehaviorCommands, TerrainConstraintUsesNearestMeshSurfaceOnExactMiss)
 {
     auto asset = terrain_constraint_scene(

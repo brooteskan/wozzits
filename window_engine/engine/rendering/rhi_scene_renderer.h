@@ -229,4 +229,12 @@ namespace wz::engine::rendering
     // consumes this so nesting a node moves its children.
     std::vector<wz::math::Mat4> compute_scene_node_world_transforms(
         std::span<const wz::engine::assets::SceneNodeAsset> nodes);
+
+    // Effective (inherited) visibility per node: 1 iff the node AND every
+    // ancestor is visible, so hiding a parent hides its whole subtree (e.g. a
+    // scene-source host hiding its grafted children). Index-aligned with
+    // `nodes`; same self-contained parent_id walk as the world transforms (a
+    // dangling/cyclic parent falls back to the node's own visibility).
+    std::vector<std::uint8_t> compute_scene_node_effective_visibility(
+        std::span<const wz::engine::assets::SceneNodeAsset> nodes);
 }

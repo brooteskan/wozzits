@@ -122,3 +122,79 @@ TEST(SceneNodeWorld, EmptySceneYieldsEmpty)
     const auto world = er::compute_scene_node_world_transforms(nodes);
     EXPECT_TRUE(world.empty());
 }
+
+// ── Inherited visibility (compute_scene_node_effective_visibility) ──────────
+
+TEST(SceneNodeVisibility, HiddenParentHidesChildSubtree)
+{
+    std::vector<ea::SceneNodeAsset> nodes{
+        node("host", std::nullopt, 0.0f, 0.0f, 0.0f),
+        node("host/body", "host", 0.0f, 0.0f, 0.0f),
+        node("host/body/turret", "host/body", 0.0f, 0.0f, 0.0f),
+    };
+    nodes[0].visible = false;  // hide the host
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    ASSERT_EQ(vis.size(), 3u);
+    EXPECT_EQ(vis[0], 0u);  // host hidden
+    EXPECT_EQ(vis[1], 0u);  // child inherits hidden
+    EXPECT_EQ(vis[2], 0u);  // grandchild inherits hidden
+}
+
+TEST(SceneNodeVisibility, VisibleParentLeavesChildrenVisible)
+{
+    const std::vector<ea::SceneNodeAsset> nodes{
+        node("host", std::nullopt, 0.0f, 0.0f, 0.0f),
+        node("host/body", "host", 0.0f, 0.0f, 0.0f),
+    };
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    EXPECT_EQ(vis[0], 1u);
+    EXPECT_EQ(vis[1], 1u);
+}
+
+TEST(SceneNodeVisibility, OwnHiddenDoesNotHideSiblings)
+{
+    std::vector<ea::SceneNodeAsset> nodes{
+        node("root", std::nullopt, 0.0f, 0.0f, 0.0f),
+        node("a", "root", 0.0f, 0.0f, 0.0f),
+        node("b", "root", 0.0f, 0.0f, 0.0f),
+    };
+    nodes[1].visible = false;  // hide 'a' only
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    EXPECT_EQ(vis[0], 1u);  // root visible
+    EXPECT_EQ(vis[1], 0u);  // a hidden
+    EXPECT_EQ(vis[2], 1u);  // sibling b unaffected
+}
+
+TEST(SceneNodeVisibility, OrderIndependentChildBeforeHiddenParent)
+{
+    std::vector<ea::SceneNodeAsset> nodes{
+        node("c", "p", 0.0f, 0.0f, 0.0f),
+        node("p", std::nullopt, 0.0f, 0.0f, 0.0f),
+    };
+    nodes[1].visible = false;  // hide parent (listed after the child)
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    EXPECT_EQ(vis[0], 0u);  // child still inherits the hidden parent
+    EXPECT_EQ(vis[1], 0u);
+}
+
+TEST(SceneNodeVisibility, DanglingParentUsesOwnVisibility)
+{
+    std::vector<ea::SceneNodeAsset> nodes{
+        node("c", "missing", 0.0f, 0.0f, 0.0f),
+    };
+    nodes[0].visible = true;
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    ASSERT_EQ(vis.size(), 1u);
+    EXPECT_EQ(vis[0], 1u);  // no usable parent -> own visibility wins
+}
+
+TEST(SceneNodeVisibility, ParentCycleTerminates)
+{
+    std::vector<ea::SceneNodeAsset> nodes{
+        node("a", "b", 0.0f, 0.0f, 0.0f),
+        node("b", "a", 0.0f, 0.0f, 0.0f),
+    };
+    nodes[0].visible = false;
+    const auto vis = er::compute_scene_node_effective_visibility(nodes);
+    ASSERT_EQ(vis.size(), 2u);  // must not hang
+}
