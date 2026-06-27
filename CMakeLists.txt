@@ -552,6 +552,24 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine asset_catalog_tests)
     rs_add_test_group(engine asset_graph_json_roundtrip_tests)
     rs_add_test_group(engine editor_runtime_control_tests)
+
+    # Strict-isolation render check (issue #213): launch the standalone
+    # wozzits_app_v1 executable as a SEPARATE PROCESS on the portable render
+    # fixture and assert it renders (bounded --frames run, exit 0). This is the
+    # boundary guard for editor-authored scenes — no editor/test code in the
+    # render path — and it exercises the same binary that becomes the shippable
+    # app. Skips (not fails) when no GPU device is available
+    # (kRuntimeNoDeviceExitCode = 3).
+    add_test(NAME wozzits_app_v1_standalone_render
+        COMMAND wozzits_app_v1
+            --resource-root "${CMAKE_BINARY_DIR}/resources"
+            --asset-graph "${WZ_REBIND_FIXTURE_DST}/assets.graph.json"
+            --scene "${WZ_REBIND_FIXTURE_DST}/scene.json"
+            --frames 5)
+    set_tests_properties(wozzits_app_v1_standalone_render PROPERTIES
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)

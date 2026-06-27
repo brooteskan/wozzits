@@ -6,6 +6,7 @@
 
 #include <engine/app/editor_runtime.h>
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -16,6 +17,9 @@ namespace
         wz::fs::Path resource_root{ "resources" };
         wz::fs::Path asset_graph;
         wz::fs::Path scene;
+        // > 0 => render this many frames then exit with a verification exit code
+        // (the standalone-render check); 0 => run interactively until closed.
+        uint32_t max_frames = 0;
     };
 
     bool parse_options(
@@ -34,6 +38,16 @@ namespace
             }
             else if (arg == "--scene" && i + 1 < argc) {
                 out.scene = argv[++i];
+            }
+            else if (arg == "--frames" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                try {
+                    out.max_frames = static_cast<uint32_t>(std::stoul(value));
+                }
+                catch (...) {
+                    error = "invalid --frames value: " + value;
+                    return false;
+                }
             }
             else {
                 error = "unknown or incomplete option: " + arg;
@@ -60,7 +74,7 @@ int main(int argc, char** argv)
     if (!parse_options(argc, argv, options, error)) {
         std::cerr
             << "usage: wozzits_app_v1 --asset-graph <path> --scene <path> "
-               "[--resource-root <path>]\n"
+               "[--resource-root <path>] [--frames <n>]\n"
             << error << '\n';
         return 2;
     }
@@ -70,5 +84,8 @@ int main(int argc, char** argv)
         options.asset_graph,
         options.scene,
         options.resource_root,
-        nullptr);
+        nullptr,
+        {},  // log sink: none (logs go to stdout)
+        {},  // behavior module folder: built-ins only
+        wz::app::RuntimeRunOptions{ .max_frames = options.max_frames });
 }

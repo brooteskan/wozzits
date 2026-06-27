@@ -619,7 +619,8 @@ namespace wz::app
         const wz::fs::Path& resource_root,
         EditorRuntimeControl* control,
         EditorRuntimeLogSink log_sink,
-        const wz::fs::Path& behavior_module_folder)
+        const wz::fs::Path& behavior_module_folder,
+        const RuntimeRunOptions& run_options)
     {
         wz::engine::AppContext ctx;
 
@@ -628,7 +629,10 @@ namespace wz::app
         desc.resource_root = resource_root;
 
         if (!wz::engine::init(ctx, desc)) {
-            return 1;  // init logged the failure
+            // Bounded (verification) runs distinguish "no GPU device" from a real
+            // failure so a separate-process test can be SKIPPED rather than
+            // failed on a machine without a device.
+            return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
         }
         if (log_sink.write) {
             wz::logging::set_log_sink(
@@ -638,6 +642,10 @@ namespace wz::app
             ctx.logger.info("editor resident engine log sink attached");
         }
 
+        // Bounded-run exit code, computed inside the app scope below (it needs
+        // the live app to query resolved renderables) and returned after
+        // shutdown. Stays 0 for the unbounded interactive loop.
+        int exit_code = 0;
         {
             wz::app::WozzitsApp_v1 app(ctx);
 
@@ -656,12 +664,13 @@ namespace wz::app
                 wz::gpu::present(ctx.device);
             }
 
-            if (!app.load_scene(wz::app::WozzitsAppSceneLoadDesc{
+            const bool scene_loaded =
+                app.load_scene(wz::app::WozzitsAppSceneLoadDesc{
                     .asset_graph = asset_graph,
                     .scene = scene,
                     .behavior_module_folder = behavior_module_folder,
-                }))
-            {
+                });
+            if (!scene_loaded) {
                 ctx.logger.error("load scene failed");
             }
 
@@ -684,6 +693,12 @@ namespace wz::app
             // (RIDEV_INPUTSINK), so without an explicit arm the camera would react
             // to keystrokes meant for the editor window.
             bool camera_enabled = false;
+
+            // Bounded-run accounting (run_options.max_frames > 0): count
+            // presented frames + note any frame failure, so the exit code can
+            // report whether the project actually rendered.
+            uint32_t frames_presented = 0;
+            bool frame_error = false;
 
             while (!wz::window::window_should_close(ctx.window)
                 && !(control && control->stop_requested()))
@@ -930,19 +945,55 @@ namespace wz::app
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");
+                    frame_error = true;
                     break;
                 }
                 wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
                 if (!app.render_scene()) {
+                    frame_error = true;
                     break;
                 }
                 if (!wz::gpu::end_frame(ctx.device)) {
                     ctx.logger.error("end_frame failed");
+                    frame_error = true;
                     break;
                 }
                 if (!wz::gpu::present(ctx.device)) {
                     ctx.logger.error("present failed");
+                    frame_error = true;
                     break;
+                }
+
+                // Bounded (verification) run: stop after the requested number of
+                // presented frames.
+                ++frames_presented;
+                if (run_options.max_frames > 0
+                    && frames_presented >= run_options.max_frames)
+                {
+                    break;
+                }
+            }
+
+            // Bounded (verification) run: report whether the project actually
+            // rendered — the scene loaded, at least one renderable resolved, and
+            // all requested frames presented without error.
+            if (run_options.max_frames > 0) {
+                const bool rendered_ok =
+                    scene_loaded
+                    && !frame_error
+                    && frames_presented >= run_options.max_frames
+                    && app.resolved_renderable_node_count() > 0;
+                exit_code = rendered_ok ? 0 : 1;
+                if (!rendered_ok) {
+                    ctx.logger.error(
+                        "bounded run did not render: scene_loaded="
+                        + std::to_string(scene_loaded ? 1 : 0)
+                        + " frames=" + std::to_string(frames_presented) + "/"
+                        + std::to_string(run_options.max_frames)
+                        + " resolved_renderables="
+                        + std::to_string(app.resolved_renderable_node_count())
+                        + " frame_error="
+                        + std::to_string(frame_error ? 1 : 0));
                 }
             }
 
@@ -954,6 +1005,6 @@ namespace wz::app
         }
 
         wz::engine::shutdown(ctx);
-        return 0;
+        return exit_code;
     }
 }

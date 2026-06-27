@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -431,9 +432,31 @@ namespace wz::app
         void* user = nullptr;
     };
 
+    // Options for a BOUNDED, automatable runtime run (the standalone-render
+    // verification / app-shipping seed). Default (max_frames 0) keeps the
+    // unbounded interactive loop, so existing callers are unchanged.
+    struct RuntimeRunOptions
+    {
+        // 0  = run until the window closes / stop is requested (interactive).
+        // >0 = render exactly this many frames, then exit with a verification
+        //      exit code (see run_project_runtime). Used by a separate-process
+        //      test that loads a project and asserts it renders.
+        uint32_t max_frames = 0;
+    };
+
+    // Bounded-mode exit code meaning "the GPU device could not be created", so a
+    // separate-process test can treat it as SKIPPED (CTest SKIP_RETURN_CODE) on
+    // a machine with no GPU — distinct from a real render failure (1).
+    inline constexpr int kRuntimeNoDeviceExitCode = 3;
+
     // Runs a blocking render loop on the calling thread. `control` may be null
-    // (standalone runtime: only closing the window stops it, no binds). Returns
-    // a process-style exit code (0 = ok, non-zero = init/runtime failure).
+    // (standalone runtime: only closing the window stops it, no binds).
+    //
+    // Returns a process-style exit code. Unbounded (run_options.max_frames == 0):
+    // 0 on clean exit, non-zero on init/runtime failure. Bounded (max_frames>0):
+    // 0 only if the scene loaded, at least one renderable resolved, AND all
+    // requested frames presented without error; 1 on a load/render failure;
+    // kRuntimeNoDeviceExitCode if the device is unavailable.
     //
     // `behavior_module_folder` (the project manifest's behavior_module_folder)
     // is the directory of compiled behavior-module DLLs to load so the scene's
@@ -445,5 +468,6 @@ namespace wz::app
         const wz::fs::Path& resource_root,
         EditorRuntimeControl* control,
         EditorRuntimeLogSink log_sink = {},
-        const wz::fs::Path& behavior_module_folder = {});
+        const wz::fs::Path& behavior_module_folder = {},
+        const RuntimeRunOptions& run_options = {});
 }
