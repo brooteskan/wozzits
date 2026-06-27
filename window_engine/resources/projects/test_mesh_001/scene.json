@@ -31,9 +31,9 @@
       "name": "tank",
       "transform": {
         "translation": [
-          0,
-          0,
-          0
+          4,
+          20,
+          4
         ],
         "rotation_quat": [
           0,
@@ -48,8 +48,30 @@
         ]
       },
       "visible": true,
+      "render_program": {
+        "asset_graph_node_id": 10
+      },
       "scene_source": {
         "asset_graph_node_id": 21
+      },
+      "motion": {
+        "linear_velocity": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity": [
+          0,
+          0,
+          0
+        ],
+        "space": "world",
+        "terrain_constrained": true,
+        "terrain_ride_height": 0.10000000149011612,
+        "terrain_footprint_radius": 0.60000002384185791,
+        "terrain_align_to_surface": true,
+        "terrain_alignment_strength": 1,
+        "enabled": true
       }
     },
     {
@@ -77,6 +99,15 @@
       "visible": true,
       "renderable": {
         "asset_graph_node_id": 20
+      },
+      "collision": {
+        "asset": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:217b2e9ad5894042:aec4425e7852e753",
+        "layer_mask": 1,
+        "collides_with_mask": 4294967295,
+        "is_trigger": false,
+        "enabled": true,
+        "constrain_movement": true,
+        "collision_asset_node_id": 25
       }
     },
     {

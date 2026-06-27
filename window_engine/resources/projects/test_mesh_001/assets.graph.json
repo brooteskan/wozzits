@@ -3,17 +3,6 @@
   "version": 2,
   "nodes": [
     {
-      "node_id": 1,
-      "key": "asset-key:b252a549ffad464b:9e3779b97f4a7c15:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
-      "type": 130,
-      "schema": "0xf11eca55e7000402",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": []
-    },
-    {
       "node_id": 2,
       "key": "asset-key:4e0e36c67fc636de:fbabab7105a7c116:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
       "type": 7,
@@ -129,51 +118,6 @@
             "name": "target",
             "type": "string",
             "value": "ps_5_1"
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 6,
-      "key": "asset-key:08263970c78b9356:3c6ef372fe94f869:f11eca55e7000403:0000000000000000:9e3779b97f4a9c34:0000000000000000:0382fd8d0d212c20:df4123e6bb61723c",
-      "type": 130,
-      "schema": "0xf11eca55e7000403",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 7,
-          "to_input_port": 0
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "mesh_index",
-            "type": "int",
-            "value": 0
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 7,
-      "key": "asset-key:370d6551152d8693:fa4adcb410bf8f23:f11eca55e7000004:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
-      "type": 66,
-      "schema": "0xf11eca55e7000004",
-      "stage": 0,
-      "residency": 2,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "source_path",
-            "type": "string",
-            "value": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb"
           }
         ]
       }
@@ -708,6 +652,80 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 25,
+      "type": 150,
+      "schema": "0xf11eca55e7000b02",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 13,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "base_height",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "occupancy_blocks_movement",
+            "type": "bool",
+            "value": true
+          },
+          {
+            "name": "occupancy_kind",
+            "type": "int",
+            "value": 2
+          },
+          {
+            "name": "occupancy_queryable",
+            "type": "bool",
+            "value": true
+          },
+          {
+            "name": "origin_x",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "origin_z",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "projection_resolution_x",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "projection_resolution_y",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "size_x",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "size_z",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "vertical_scale",
+            "type": "float",
+            "value": 1
+          }
+        ]
+      }
     }
   ],
   "layout": {
@@ -760,8 +778,8 @@
       },
       {
         "node_id": 10,
-        "x": 894.98312202368675,
-        "y": 474.76908244551305
+        "x": 876.50942976738133,
+        "y": 446.03222782459346
       },
       {
         "node_id": 11,
@@ -780,8 +798,8 @@
       },
       {
         "node_id": 14,
-        "x": 627.76925845746632,
-        "y": 718.65269149664664
+        "x": 881.04035614951408,
+        "y": 814.83803134352615
       },
       {
         "node_id": 15,
@@ -795,8 +813,8 @@
       },
       {
         "node_id": 20,
-        "x": 925.30199392943257,
-        "y": 806.3209192949771
+        "x": 1168.9036659225876,
+        "y": 932.53237052262853
       },
       {
         "node_id": 19,
@@ -825,8 +843,8 @@
       },
       {
         "node_id": 25,
-        "x": 1262.7010746547271,
-        "y": 1324.8972608214588
+        "x": 880.24352077099718,
+        "y": 687.91674699859527
       },
       {
         "node_id": 27,
@@ -849,6 +867,6 @@
         "y": 238.43378805471559
       }
     ],
-    "zoom": 0.44289025000000015
+    "zoom": 0.71327917652750072
   }
 }
