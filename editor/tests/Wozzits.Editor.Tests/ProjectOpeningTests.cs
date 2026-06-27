@@ -1338,6 +1338,104 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.Inspector.HasMotionComponent);
     }
 
+    // Read-back gap fix: the Collision/Motion sections restore their PERSISTED field
+    // values from the snapshot (the v27 snapshot surfaces them), so selecting a node
+    // that carries the components shows the saved values — not defaults — and the
+    // state survives a reselect (snapshot-driven, not a session toggle).
+    [Fact]
+    public void InspectorRestoresCollisionAndMotionFieldValuesFromSnapshot()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // The collision asset the node references (output type
+                            // 150), so the picker can pre-select it by id.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 7,
+                                DisplayName = "terrain collision",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 150 },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("other", parentId: "root", visible: true),
+                            // A landscape-rider carrying both components with
+                            // persisted field values.
+                            Node(
+                                "vehicle",
+                                parentId: "root",
+                                visible: true,
+                                components:
+                                [
+                                    Component("collision", "Collision"),
+                                    Component("motion", "Motion"),
+                                ],
+                                collision: new EngineSceneNodeCollision
+                                {
+                                    CollisionAssetNodeId = 7u,
+                                    ConstrainMovement = true,
+                                },
+                                motion: new EngineSceneNodeMotion
+                                {
+                                    TerrainConstrained = true,
+                                    RideHeight = 2.5f,
+                                    FootprintRadius = 0.75f,
+                                    AlignToSurface = true,
+                                    AlignmentStrength = 0.5f,
+                                }),
+                        ]))));
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var vehicle = Assert.Single(root.Children, n => n.Id == "vehicle");
+        var other = Assert.Single(root.Children, n => n.Id == "other");
+
+        // Selecting the node restores the persisted Collision + Motion fields.
+        viewModel.SceneTree.SelectNode(vehicle);
+        Assert.True(viewModel.Inspector.HasCollisionComponent);
+        Assert.Equal(7ul, viewModel.Inspector.SelectedCollisionOption?.Id);
+        Assert.True(viewModel.Inspector.CollisionConstrainMovement);
+        Assert.Equal(
+            "Referencing: terrain collision",
+            viewModel.Inspector.CollisionReferenceDisplay);
+
+        Assert.True(viewModel.Inspector.HasMotionComponent);
+        Assert.True(viewModel.Inspector.MotionTerrainConstrained);
+        Assert.Equal("2.5", viewModel.Inspector.MotionRideHeight);
+        Assert.Equal("0.75", viewModel.Inspector.MotionFootprintRadius);
+        Assert.True(viewModel.Inspector.MotionAlignToSurface);
+        Assert.Equal("0.5", viewModel.Inspector.MotionAlignmentStrength);
+
+        // The values survive a reselect (snapshot-driven, not a one-shot reveal).
+        viewModel.SceneTree.SelectNode(other);
+        viewModel.SceneTree.SelectNode(vehicle);
+        Assert.Equal(7ul, viewModel.Inspector.SelectedCollisionOption?.Id);
+        Assert.True(viewModel.Inspector.CollisionConstrainMovement);
+        Assert.Equal("2.5", viewModel.Inspector.MotionRideHeight);
+        Assert.True(viewModel.Inspector.MotionAlignToSurface);
+        Assert.Equal("0.5", viewModel.Inspector.MotionAlignmentStrength);
+
+        // A node without the components shows neither section.
+        viewModel.SceneTree.SelectNode(other);
+        Assert.False(viewModel.Inspector.HasCollisionComponent);
+        Assert.False(viewModel.Inspector.HasMotionComponent);
+    }
+
     // The "Subtree from asset" and "Render program" sections are driven by the
     // node's PERSISTED state (issue #213, the v26 snapshot surfaces the authored
     // node ids): a node that already has them reveals + pre-selects them on select,
@@ -2804,6 +2902,8 @@ public sealed partial class ProjectOpeningTests
         ulong? sceneSourceNodeId = null,
         ulong? geometryNodeId = null,
         ulong? renderProgramNodeId = null,
+        EngineSceneNodeCollision? collision = null,
+        EngineSceneNodeMotion? motion = null,
         params EngineSceneNode[] children)
     {
         return new EngineSceneNode
@@ -2821,6 +2921,8 @@ public sealed partial class ProjectOpeningTests
             SceneSourceNodeId = sceneSourceNodeId,
             GeometryNodeId = geometryNodeId,
             RenderProgramNodeId = renderProgramNodeId,
+            Collision = collision,
+            Motion = motion,
             Children = [.. children],
         };
     }

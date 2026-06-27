@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 26;
+    internal const uint AbiVersion = 27;
 
     private static int _resolverRegistered;
 
@@ -893,7 +893,35 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneBehaviorAbi.Config),
             88);
 
-        AssertSize<WzEditorSceneNodeAbi>(592);
+        AssertSize<WzEditorSceneCollisionAbi>(8);
+        AssertOffset<WzEditorSceneCollisionAbi>(
+            nameof(WzEditorSceneCollisionAbi.CollisionAssetNodeId),
+            0);
+        AssertOffset<WzEditorSceneCollisionAbi>(
+            nameof(WzEditorSceneCollisionAbi.HasCollisionRef),
+            4);
+        AssertOffset<WzEditorSceneCollisionAbi>(
+            nameof(WzEditorSceneCollisionAbi.ConstrainMovement),
+            5);
+
+        AssertSize<WzEditorSceneMotionAbi>(16);
+        AssertOffset<WzEditorSceneMotionAbi>(
+            nameof(WzEditorSceneMotionAbi.TerrainConstrained),
+            0);
+        AssertOffset<WzEditorSceneMotionAbi>(
+            nameof(WzEditorSceneMotionAbi.AlignToSurface),
+            1);
+        AssertOffset<WzEditorSceneMotionAbi>(
+            nameof(WzEditorSceneMotionAbi.RideHeight),
+            4);
+        AssertOffset<WzEditorSceneMotionAbi>(
+            nameof(WzEditorSceneMotionAbi.FootprintRadius),
+            8);
+        AssertOffset<WzEditorSceneMotionAbi>(
+            nameof(WzEditorSceneMotionAbi.AlignmentStrength),
+            12);
+
+        AssertSize<WzEditorSceneNodeAbi>(616);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -942,6 +970,12 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.RenderProgramNodeId),
             584);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.Collision),
+            592);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.Motion),
+            600);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1272,6 +1306,36 @@ internal readonly struct WzEditorSceneNodeAbi
     public readonly ulong SceneSourceNodeId;
     public readonly ulong GeometryNodeId;
     public readonly ulong RenderProgramNodeId;
+    // Persisted Collision/Motion component field values (read-back gap fix), each
+    // valid iff its HAS_* flag is set. Appended last to mirror the native struct.
+    public readonly WzEditorSceneCollisionAbi Collision;
+    public readonly WzEditorSceneMotionAbi Motion;
+}
+
+// Authored Collision-component field values surfaced read-back (read-back gap
+// fix). Mirrors WzEditorSceneCollision. Present iff HasCollision.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneCollisionAbi
+{
+    public readonly uint CollisionAssetNodeId;
+    public readonly byte HasCollisionRef;
+    public readonly byte ConstrainMovement;
+    public readonly byte Reserved0;
+    public readonly byte Reserved1;
+}
+
+// Authored Motion-component field values surfaced read-back (read-back gap fix).
+// Mirrors WzEditorSceneMotion. Present iff HasMotion.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneMotionAbi
+{
+    public readonly byte TerrainConstrained;
+    public readonly byte AlignToSurface;
+    public readonly byte Reserved0;
+    public readonly byte Reserved1;
+    public readonly float RideHeight;
+    public readonly float FootprintRadius;
+    public readonly float AlignmentStrength;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -1432,6 +1496,11 @@ internal static class WzEditorSceneNodeFlags
     public const uint HasSceneSourceRef = 1u << 8;
     public const uint HasGeometry = 1u << 9;
     public const uint HasRenderProgram = 1u << 10;
+    // Persisted Collision/Motion component field values (read-back gap fix): when
+    // set, the node's Collision/Motion struct carries authored field values so the
+    // inspector restores them on select + after reload.
+    public const uint HasCollision = 1u << 11;
+    public const uint HasMotion = 1u << 12;
 }
 
 internal static class WzEditorSceneCameraFlags

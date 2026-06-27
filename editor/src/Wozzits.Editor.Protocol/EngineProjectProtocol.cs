@@ -341,7 +341,39 @@ public sealed record EngineSceneNode
 
     public ulong? RenderProgramNodeId { get; init; }
 
+    // Persisted Collision/Motion component field values (read-back gap fix), null
+    // when the node has no such component. The inspector restores these fields on
+    // select + after reload instead of resetting to defaults.
+    public EngineSceneNodeCollision? Collision { get; init; }
+
+    public EngineSceneNodeMotion? Motion { get; init; }
+
     public List<EngineSceneNode> Children { get; init; } = [];
+}
+
+// Authored Collision-component field values surfaced read-back (read-back gap
+// fix). CollisionAssetNodeId is the authored asset-graph collision node id (null
+// when none).
+public sealed record EngineSceneNodeCollision
+{
+    public ulong? CollisionAssetNodeId { get; init; }
+
+    public bool ConstrainMovement { get; init; }
+}
+
+// Authored Motion-component field values surfaced read-back (read-back gap fix):
+// the terrain-stick subset.
+public sealed record EngineSceneNodeMotion
+{
+    public bool TerrainConstrained { get; init; }
+
+    public float RideHeight { get; init; }
+
+    public float FootprintRadius { get; init; }
+
+    public bool AlignToSurface { get; init; }
+
+    public float AlignmentStrength { get; init; }
 }
 
 public sealed record EngineSceneTransform

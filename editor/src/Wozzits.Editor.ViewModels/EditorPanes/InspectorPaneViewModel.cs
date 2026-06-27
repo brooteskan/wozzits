@@ -1096,11 +1096,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         // Collision / Motion field sections (terrain-stick track): revealed when the
-        // node carries the component. The referenced collision asset + the field
-        // values are session-local/optimistic (not yet in the snapshot), so on a
-        // fresh select they reset to defaults unless this session set them — the
-        // cached tree-node VM is not consulted for them. Restore mirrors render
-        // program: only presence drives the reveal.
+        // node carries the component, with the persisted field values restored from
+        // the snapshot (read-back gap fix) so a fresh select / reload shows the saved
+        // values instead of resetting to defaults. Runs under _suppressLiveEdits
+        // (held by Inspect) so populating the fields doesn't echo a live edit.
         RestoreCollisionState(node);
         RestoreMotionState(node);
 
@@ -1741,6 +1740,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             CollisionReferenceLabel = option.Label;
         }
+        MirrorCollisionEdit();
     }
 
     // Re-push the collision binding when the constrain-movement flag toggles, with
@@ -1758,6 +1758,22 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             : 0u;
         SetEditResponse(_editorSession!.SetNodeCollision(
             NodeId, assetId, CollisionConstrainMovement));
+        MirrorCollisionEdit();
+    }
+
+    // Mirror the live collision edit onto the cached tree-node VM (visibility-
+    // revert fix pattern, f2da3c7) so an immediate reselect — before the next
+    // snapshot refresh — shows the edit instead of reverting to the snapshot.
+    private void MirrorCollisionEdit()
+    {
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Collision = new EngineSceneNodeCollision
+            {
+                CollisionAssetNodeId = SelectedCollisionOption?.Id,
+                ConstrainMovement = CollisionConstrainMovement,
+            };
+        }
     }
 
     // Remove the Collision component (the section's ✕), mirroring the camera ✕:
@@ -1775,21 +1791,41 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         ResetCollisionState();
     }
 
-    // Reveal the "Collision" section when the node carries the component, else hide
-    // it. The referenced asset + constrain flag are session-local (not in the
-    // snapshot), so they reset to defaults on a fresh select.
+    // Reveal the "Collision" section when the node carries the component and
+    // restore its persisted field values from the snapshot (read-back gap fix):
+    // pre-select the referenced collision asset option (matching by id, like
+    // RestoreRenderProgramState) and the constrain-movement flag. Runs under
+    // _suppressLiveEdits so populating the fields doesn't echo a live edit.
     private void RestoreCollisionState(SceneTreeNodeViewModel node)
     {
         var has = node.Components.Any(
             c => string.Equals(c.Kind, "collision", StringComparison.Ordinal));
-        if (has)
+        if (!has)
         {
-            HasCollisionComponent = true;
+            ResetCollisionState();
+            return;
+        }
+
+        HasCollisionComponent = true;
+
+        var collision = node.Collision;
+        if (collision?.CollisionAssetNodeId is { } assetNodeId)
+        {
+            var option = AvailableCollisionSources.FirstOrDefault(
+                o => o.Id == assetNodeId);
+            _selectedCollisionOption = option;
+            CollisionReferenceLabel = option?.Label
+                ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
         }
         else
         {
-            ResetCollisionState();
+            _selectedCollisionOption = null;
+            CollisionReferenceLabel = string.Empty;
         }
+        OnPropertyChanged(nameof(SelectedCollisionOption));
+
+        _collisionConstrainMovement = collision?.ConstrainMovement ?? false;
+        OnPropertyChanged(nameof(CollisionConstrainMovement));
     }
 
     private void ResetCollisionState()
@@ -1823,6 +1859,20 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ParseFloatOrZero(MotionFootprintRadius),
             MotionAlignToSurface,
             ParseFloatOrZero(MotionAlignmentStrength)));
+
+        // Mirror onto the cached tree-node VM (visibility-revert fix pattern,
+        // f2da3c7) so an immediate reselect shows the edit, not the stale snapshot.
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Motion = new EngineSceneNodeMotion
+            {
+                TerrainConstrained = MotionTerrainConstrained,
+                RideHeight = ParseFloatOrZero(MotionRideHeight),
+                FootprintRadius = ParseFloatOrZero(MotionFootprintRadius),
+                AlignToSurface = MotionAlignToSurface,
+                AlignmentStrength = ParseFloatOrZero(MotionAlignmentStrength),
+            };
+        }
     }
 
     // Remove the Motion component (the section's ✕), mirroring the camera ✕.
@@ -1838,22 +1888,42 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         ResetMotionState();
     }
 
-    // Reveal the "Motion" section when the node carries the component, else hide it.
-    // The field values are session-local (not in the snapshot); they reset to
-    // defaults on a fresh select.
+    // Reveal the "Motion" section when the node carries the component and restore
+    // its persisted terrain-stick field values from the snapshot (read-back gap
+    // fix). Runs under _suppressLiveEdits so populating doesn't echo a live edit.
     private void RestoreMotionState(SceneTreeNodeViewModel node)
     {
         var has = node.Components.Any(
             c => string.Equals(c.Kind, "motion", StringComparison.Ordinal));
-        if (has)
-        {
-            HasMotionComponent = true;
-        }
-        else
+        if (!has)
         {
             ResetMotionState();
+            return;
         }
+
+        HasMotionComponent = true;
+
+        var motion = node.Motion;
+        _motionTerrainConstrained = motion?.TerrainConstrained ?? false;
+        OnPropertyChanged(nameof(MotionTerrainConstrained));
+        _motionRideHeight = motion is not null
+            ? FormatFloat(motion.RideHeight)
+            : string.Empty;
+        OnPropertyChanged(nameof(MotionRideHeight));
+        _motionFootprintRadius = motion is not null
+            ? FormatFloat(motion.FootprintRadius)
+            : string.Empty;
+        OnPropertyChanged(nameof(MotionFootprintRadius));
+        _motionAlignToSurface = motion?.AlignToSurface ?? false;
+        OnPropertyChanged(nameof(MotionAlignToSurface));
+        _motionAlignmentStrength = motion is not null
+            ? FormatFloat(motion.AlignmentStrength)
+            : string.Empty;
+        OnPropertyChanged(nameof(MotionAlignmentStrength));
     }
+
+    private static string FormatFloat(float value) =>
+        value.ToString("0.###", CultureInfo.InvariantCulture);
 
     private void ResetMotionState()
     {

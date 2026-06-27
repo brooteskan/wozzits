@@ -313,6 +313,15 @@ public sealed partial class WozzitsEngineNativeClient
             SceneSource = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasSceneSource)
                 ? ReadSceneSceneSource(bytes, node.SceneSource)
                 : null,
+            // Persisted Collision/Motion component field values (read-back gap
+            // fix): the authored fields or null, so the inspector restores them on
+            // select + after reload instead of resetting to defaults.
+            Collision = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasCollision)
+                ? ReadSceneCollision(node.Collision)
+                : null,
+            Motion = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasMotion)
+                ? ReadSceneMotion(node.Motion)
+                : null,
             // Authored render-binding refs (issue #213): the node id or null, so the
             // inspector reveals + pre-selects these sections from persisted state.
             SceneSourceNodeId =
@@ -331,6 +340,31 @@ public sealed partial class WozzitsEngineNativeClient
                 bytes,
                 node.Children,
                 ReadSceneNode),
+        };
+    }
+
+    private static EngineSceneNodeCollision ReadSceneCollision(
+        WzEditorSceneCollisionAbi collision)
+    {
+        return new EngineSceneNodeCollision
+        {
+            CollisionAssetNodeId = collision.HasCollisionRef != 0
+                ? collision.CollisionAssetNodeId
+                : null,
+            ConstrainMovement = collision.ConstrainMovement != 0,
+        };
+    }
+
+    private static EngineSceneNodeMotion ReadSceneMotion(
+        WzEditorSceneMotionAbi motion)
+    {
+        return new EngineSceneNodeMotion
+        {
+            TerrainConstrained = motion.TerrainConstrained != 0,
+            RideHeight = motion.RideHeight,
+            FootprintRadius = motion.FootprintRadius,
+            AlignToSurface = motion.AlignToSurface != 0,
+            AlignmentStrength = motion.AlignmentStrength,
         };
     }
 

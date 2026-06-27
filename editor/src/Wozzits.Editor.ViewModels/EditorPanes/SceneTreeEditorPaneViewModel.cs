@@ -339,6 +339,8 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         SceneSourceNodeId = node.SceneSourceNodeId;
         GeometryNodeId = node.GeometryNodeId;
         RenderProgramNodeId = node.RenderProgramNodeId;
+        Collision = node.Collision;
+        Motion = node.Motion;
         Components = node.Components;
         Behaviors = node.Behaviors;
         IsInstanced = isInstanced;
@@ -417,6 +419,14 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public ulong? GeometryNodeId { get; internal set; }
 
     public ulong? RenderProgramNodeId { get; internal set; }
+
+    // Persisted Collision/Motion component field values (read-back gap fix).
+    // Settable so the inspector's live edits mirror back onto the cached node and
+    // an immediate reselect (before the next snapshot refresh) shows the edit
+    // instead of reverting to the startup snapshot (mirrors Transform/Visible).
+    public EngineSceneNodeCollision? Collision { get; internal set; }
+
+    public EngineSceneNodeMotion? Motion { get; internal set; }
 
     // Mutable so the inspector's live add/remove of optional components keeps
     // reselection consistent: SetComponentFields rebuilds the inspector rows from
