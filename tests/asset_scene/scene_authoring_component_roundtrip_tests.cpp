@@ -1364,6 +1364,74 @@ TEST(SceneAssetModule, RenderBindingIngredientsRoundTripThroughSceneJSON)
         wz::asset::AssetGraphDraftNodeId{ 19 });
 }
 
+TEST(SceneAssetModule, IndexedGlbPartGeometryRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_glb_part_geometry_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "glb_part_geometry_roundtrip";
+
+    // Host carries the program (inherited); each part references the same
+    // Scene-from-GLB node (id 21) but a different GLB part by name.
+    SceneNodeAsset host = make_scene_node("tank");
+    attach_render_program_node(host, 10);
+    authored.nodes.push_back(std::move(host));
+
+    SceneNodeAsset body = make_scene_node("tank/body", "body");
+    body.parent_id = "tank";
+    attach_geometry_glb_part(body, 21, "body");
+    authored.nodes.push_back(std::move(body));
+
+    SceneNodeAsset turret = make_scene_node("tank/turret", "turret");
+    turret.parent_id = "tank";
+    attach_geometry_glb_part(turret, 21, "turret");
+    authored.nodes.push_back(std::move(turret));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"glb_node_id\""), std::string::npos);
+
+    auto rel_path = write_scene_json(root, "glb_part.scene.json", exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "glb_part",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+
+    // Both parts share the Scene-from-GLB node id but select distinct GLB parts.
+    const auto* parsed_body = find_scene_node(*data, "tank/body");
+    ASSERT_NE(parsed_body, nullptr);
+    ASSERT_TRUE(parsed_body->geometry_asset_node_id.has_value());
+    EXPECT_EQ(*parsed_body->geometry_asset_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 21 });
+    ASSERT_TRUE(parsed_body->geometry_glb_node_id.has_value());
+    EXPECT_EQ(*parsed_body->geometry_glb_node_id, "body");
+
+    const auto* parsed_turret = find_scene_node(*data, "tank/turret");
+    ASSERT_NE(parsed_turret, nullptr);
+    EXPECT_EQ(*parsed_turret->geometry_asset_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 21 });
+    ASSERT_TRUE(parsed_turret->geometry_glb_node_id.has_value());
+    EXPECT_EQ(*parsed_turret->geometry_glb_node_id, "turret");
+}
+
 TEST(SceneAssetModule, BehaviorApplyInEditorRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;

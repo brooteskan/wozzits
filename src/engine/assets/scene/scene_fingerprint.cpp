@@ -212,6 +212,12 @@ namespace wz::engine::assets
                 fp.mix_value(*node.geometry_asset_node_id);
             }
 
+            // Indexed GLB-part geometry (issue #213 increment 3): the part name
+            // changes the assembled mesh, so it must re-key the scene.
+            if (node.geometry_glb_node_id) {
+                fp.mix_string(*node.geometry_glb_node_id);
+            }
+
             if (node.render_program_node_id) {
                 fp.mix_value(*node.render_program_node_id);
             }

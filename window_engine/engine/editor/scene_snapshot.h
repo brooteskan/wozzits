@@ -132,6 +132,15 @@ namespace wz::engine::editor
         std::vector<SceneSnapshotComponent> components;
         std::vector<SceneSnapshotBehavior> behaviors;
         std::optional<SceneSnapshotSceneSource> scene_source;
+        // Authored render-binding refs (issue #213) surfaced read-only so the
+        // editor's inspector reveals + pre-selects these sections from the node's
+        // persisted state (NOT a session toggle): the "Subtree from asset" node-ref
+        // (scene_source "asset_graph_node_id"), and the render-binding geometry +
+        // render-program node ids. Each is the authored asset-graph node id; the
+        // resolved keys are re-bridged on bind, so only the id is surfaced.
+        std::optional<wz::asset::AssetGraphDraftNodeId> scene_source_node_id;
+        std::optional<wz::asset::AssetGraphDraftNodeId> geometry_node_id;
+        std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
         std::vector<SceneSnapshotNode> children;
     };
 

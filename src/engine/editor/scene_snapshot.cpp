@@ -235,6 +235,26 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Read an authored asset-graph node ref of the form
+        // { "<member>": { "asset_graph_node_id": N } } — the persisted shape of the
+        // render-binding ingredients and the scene-source node ref (issue #213). The
+        // resolved key is intentionally not persisted, so only the node id surfaces.
+        std::optional<wz::asset::AssetGraphDraftNodeId> read_asset_graph_node_ref(
+            const wz::json::JSONValue& obj,
+            const char* member)
+        {
+            const auto* ref = wz::json::find_member(obj, member);
+            if (!ref || ref->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            const auto node_id =
+                wz::json::read_number(*ref, "asset_graph_node_id");
+            if (!node_id || *node_id < 0.0) {
+                return std::nullopt;
+            }
+            return static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+        }
+
         std::string node_kind(const SceneSnapshotNode& node)
         {
             if (node.camera) {
@@ -599,6 +619,14 @@ namespace wz::engine::editor
             }
             node.behaviors = read_behaviors(value);
             node.scene_source = read_scene_source(value);
+            // Authored render-binding refs (issue #213): surface the persisted
+            // node ids so the inspector reveals + pre-selects these sections.
+            node.scene_source_node_id =
+                read_asset_graph_node_ref(value, "scene_source");
+            node.geometry_node_id =
+                read_asset_graph_node_ref(value, "geometry");
+            node.render_program_node_id =
+                read_asset_graph_node_ref(value, "render_program");
             return FlatSceneSnapshotNode{ .node = std::move(node) };
         }
 

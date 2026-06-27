@@ -910,6 +910,117 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
         0u);
 }
 
+// The v26 snapshot surfaces the authored render-binding node ids (issue #213) —
+// the "Subtree from asset" scene_source ref and the render-binding geometry +
+// render-program refs — so the editor's inspector reveals + pre-selects those
+// sections from persisted state. A node with none keeps all three flags clear.
+TEST(ProjectSceneSnapshot, SurfacesRenderBindingRefsInAbiBlob)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "render_binding_ref_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Render Binding Refs",
+  "scene": "scene.json"
+})json");
+
+    // "binding" carries geometry + render_program refs; "subtree" a scene_source
+    // ref; "plain" none.
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "render_binding_scene",
+  "nodes": [
+    { "id": "root", "parent": null, "visible": true },
+    {
+      "id": "binding",
+      "parent": "root",
+      "geometry": { "asset_graph_node_id": 9 },
+      "render_program": { "asset_graph_node_id": 10 }
+    },
+    {
+      "id": "subtree",
+      "parent": "root",
+      "scene_source": { "asset_graph_node_id": 42 }
+    },
+    { "id": "plain", "parent": "root" }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& root = loaded.snapshot.roots[0];
+    ASSERT_EQ(root.children.size(), 3u);
+
+    const auto& binding = root.children[0];
+    EXPECT_EQ(binding.id, "binding");
+    ASSERT_TRUE(binding.geometry_node_id);
+    EXPECT_EQ(*binding.geometry_node_id, 9u);
+    ASSERT_TRUE(binding.render_program_node_id);
+    EXPECT_EQ(*binding.render_program_node_id, 10u);
+    EXPECT_EQ(binding.scene_source_node_id, std::nullopt);
+
+    const auto& subtree = root.children[1];
+    EXPECT_EQ(subtree.id, "subtree");
+    ASSERT_TRUE(subtree.scene_source_node_id);
+    EXPECT_EQ(*subtree.scene_source_node_id, 42u);
+    EXPECT_EQ(subtree.geometry_node_id, std::nullopt);
+
+    const auto& plain = root.children[2];
+    EXPECT_EQ(plain.id, "plain");
+    EXPECT_EQ(plain.geometry_node_id, std::nullopt);
+    EXPECT_EQ(plain.render_program_node_id, std::nullopt);
+    EXPECT_EQ(plain.scene_source_node_id, std::nullopt);
+
+    // Round-trip through the editor ABI blob: flags + ids.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    const WzEditorSceneNode* children =
+        abi_table<WzEditorSceneNode>(blob, roots[0].children);
+
+    const WzEditorSceneNode& abi_binding = children[0];
+    EXPECT_NE(abi_binding.flags & WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY, 0u);
+    EXPECT_NE(abi_binding.flags & WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM, 0u);
+    EXPECT_EQ(
+        abi_binding.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
+    EXPECT_EQ(abi_binding.geometry_node_id, 9u);
+    EXPECT_EQ(abi_binding.render_program_node_id, 10u);
+
+    const WzEditorSceneNode& abi_subtree = children[1];
+    EXPECT_NE(
+        abi_subtree.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
+    EXPECT_EQ(abi_subtree.flags & WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY, 0u);
+    EXPECT_EQ(abi_subtree.scene_source_node_id, 42u);
+
+    const WzEditorSceneNode& abi_plain = children[2];
+    EXPECT_EQ(abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY, 0u);
+    EXPECT_EQ(abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM, 0u);
+    EXPECT_EQ(
+        abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
+}
+
 TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
 {
     TempProjectRoot temp;

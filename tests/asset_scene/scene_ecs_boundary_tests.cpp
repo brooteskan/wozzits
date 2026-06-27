@@ -379,6 +379,83 @@ TEST(SceneECSBoundary, CountsLegacyAndAssetBackedRenderableComponents)
     EXPECT_EQ(summary.renderables, 2u);
 }
 
+// A node authored purely by the geometry+program INGREDIENTS (issue #213): it
+// assembles a Renderable at load, so it must report Kind::Renderable and count as
+// a renderable + a runtime-relevant component — like the legacy / asset-graph-node
+// forms. This is the drift the 2026-06-27 #80 audit flagged (check 3/4).
+TEST(SceneECSBoundary, CountsIngredientBoundRenderableComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "ingredient_bound_renderable";
+
+    // Geometry by asset-graph node id (the inherited program comes from an
+    // ancestor at assembly; the node itself carries only geometry).
+    SceneNodeAsset part{};
+    part.id = "tank/body";
+    attach_geometry_asset_node(part, 9);
+    EXPECT_TRUE(has_authored_renderable_component(part));
+    EXPECT_TRUE(has_runtime_relevant_components(part));
+    const auto part_components = authored_components_for_node(part);
+    EXPECT_EQ(std::count(
+        part_components.begin(),
+        part_components.end(),
+        wz::scene::SceneAuthoredComponentKind::Renderable), 1);
+    scene.nodes.push_back(std::move(part));
+
+    // Indexed GLB-part geometry is likewise an ingredient binding (increment 3).
+    SceneNodeAsset glb_part{};
+    glb_part.id = "tank/turret";
+    attach_geometry_glb_part(glb_part, 21, "turret");
+    EXPECT_TRUE(has_authored_renderable_component(glb_part));
+    scene.nodes.push_back(std::move(glb_part));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 2u);
+    EXPECT_EQ(summary.renderables, 2u);
+}
+
+// A node that sources a sub-scene to graft (issue #213) reports Kind::SceneSource,
+// counts in the authored summary, and is runtime-relevant (it grafts live in
+// instance mode). Covers all three scene-source forms.
+TEST(SceneECSBoundary, CountsSceneSourceComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "scene_source_inventory";
+
+    // Asset-graph node ref form.
+    SceneNodeAsset by_ref{};
+    by_ref.id = "host_ref";
+    attach_scene_source_node(by_ref, 42);
+    EXPECT_TRUE(has_runtime_relevant_components(by_ref));
+    const auto ref_components = authored_components_for_node(by_ref);
+    EXPECT_EQ(std::count(
+        ref_components.begin(),
+        ref_components.end(),
+        wz::scene::SceneAuthoredComponentKind::SceneSource), 1);
+    scene.nodes.push_back(std::move(by_ref));
+
+    // Inline GLB descriptor form.
+    SceneNodeAsset by_descriptor{};
+    by_descriptor.id = "host_descriptor";
+    attach_glb_scene_source(by_descriptor, SceneGLBSceneSource{
+        .path = "gltf/tank1.glb",
+    });
+    EXPECT_TRUE(has_runtime_relevant_components(by_descriptor));
+    scene.nodes.push_back(std::move(by_descriptor));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 2u);
+    EXPECT_EQ(summary.scene_sources, 2u);
+
+    // SceneSource is RuntimeRelevant (grafts live at runtime).
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::SceneSource));
+}
+
 TEST(SceneECSBoundary, AssetBackedRenderableDoesNotEmbedAssetDefinition)
 {
     using namespace wz::engine::assets;

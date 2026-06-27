@@ -5278,6 +5278,23 @@ namespace wz::engine::assets
             child.scene_source_node_id.reset();
             child.scene_source.reset();
 
+            // Intrinsic geometry (issue #213 increment 3): a mesh-bearing part
+            // gets an indexed GLB-part geometry binding pointing back at the host's
+            // "Scene from GLB" node + this part's name, so the whole subtree renders
+            // from a single render program assigned on the host (inherited down the
+            // tree) without the user wiring geometry per node. Skipped when the part
+            // already carries a renderable (the imperative create_scene_from_glb
+            // path supplies its own) or when the host uses the descriptor route
+            // (no asset-graph node id to reference).
+            if (host.scene_source_node_id
+                && src.mesh_index
+                && !child.renderable_asset
+                && !child.renderable)
+            {
+                attach_geometry_glb_part(
+                    child, *host.scene_source_node_id, src.id);
+            }
+
             children.push_back(std::move(child));
         }
 

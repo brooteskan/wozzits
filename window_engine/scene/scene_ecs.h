@@ -85,6 +85,13 @@ namespace wz::scene
         Behavior,
         ComputeKernel,
         RenderShader,
+        // A node that sources a sub-scene to graft as its children (issue #213):
+        // scene_source_node_id (asset-graph "Scene from GLB" ref), the resolved
+        // scene_source key, or the inline glb_scene_source descriptor. Grafts live
+        // at runtime (instance mode), so it is RuntimeRelevant; its runtime
+        // projection is the grafted child entities (folded into runtime_entities,
+        // like SkyVisual → sky_draws), so it needs no dedicated runtime field.
+        SceneSource,
     };
 
     constexpr SceneComponentDomain scene_component_domain(
@@ -143,6 +150,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::Proximity:
         case SceneAuthoredComponentKind::Motion:
         case SceneAuthoredComponentKind::Behavior:
+        case SceneAuthoredComponentKind::SceneSource:
             return SceneComponentDomain::RuntimeRelevant;
 
         case SceneAuthoredComponentKind::EditorHandle:
@@ -240,6 +248,7 @@ namespace wz::scene
         uint32_t render_shaders = 0;
         uint32_t auxiliary_visuals = 0;
         uint32_t editor_handles = 0;
+        uint32_t scene_sources = 0;
     };
 
     struct SceneRuntimeComponentSummary

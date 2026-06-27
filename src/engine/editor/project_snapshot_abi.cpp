@@ -332,6 +332,22 @@ namespace wz::engine::editor
                 };
             }
 
+            // Authored render-binding refs (issue #213): surface the persisted
+            // node ids + presence flags so the inspector reveals + pre-selects the
+            // "Subtree from asset" and "Render binding" sections from real state.
+            if (node.scene_source_node_id) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF;
+                out.scene_source_node_id = *node.scene_source_node_id;
+            }
+            if (node.geometry_node_id) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY;
+                out.geometry_node_id = *node.geometry_node_id;
+            }
+            if (node.render_program_node_id) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM;
+                out.render_program_node_id = *node.render_program_node_id;
+            }
+
             out.children = scene_nodes_abi(builder, node.children);
             return out;
         }

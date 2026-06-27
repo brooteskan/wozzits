@@ -1001,6 +1001,13 @@ namespace wz::engine::assets
         // present.
         std::optional<wz::asset::AssetGraphDraftNodeId> geometry_asset_node_id;
         std::optional<wz::asset::AssetKey> geometry_asset;
+        // Indexed GLB-part geometry (issue #213 increment 3, option b): when set,
+        // geometry_asset_node_id references a "Scene from GLB" node and this names
+        // the GLB part (glTF node id) to extract as this node's geometry. One shared
+        // Scene-from-GLB node then feeds every part by name, instead of one
+        // extractor graph node per part. The engine extracts the part mesh at
+        // assembly time (create_mesh_from_glb_scene) and routes it like any Mesh.
+        std::optional<std::string> geometry_glb_node_id;
         std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
         std::optional<wz::asset::AssetKey> render_program_asset;
 
@@ -1331,6 +1338,22 @@ namespace wz::engine::assets
     {
         node.geometry_asset_node_id.reset();
         node.geometry_asset.reset();
+        node.geometry_glb_node_id.reset();
+    }
+
+    // Indexed GLB-part geometry (issue #213 increment 3): point this node's
+    // geometry at a part (glTF node id) of the Scene the asset-graph node
+    // `scene_from_glb_node_id` produces. The engine extracts the part mesh at
+    // assembly time; one Scene-from-GLB node feeds many parts by name.
+    inline void attach_geometry_glb_part(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId scene_from_glb_node_id,
+        std::string glb_node_id,
+        wz::asset::AssetKey geometry_asset = {})
+    {
+        node.geometry_asset_node_id = scene_from_glb_node_id;
+        node.geometry_glb_node_id = std::move(glb_node_id);
+        node.geometry_asset = geometry_asset;
     }
 
     inline void attach_render_program_node(
@@ -1618,9 +1641,16 @@ namespace wz::engine::assets
         if (node.parent_id) {
             out.push_back(Kind::ParentLink);
         }
+        // Renderable includes the by-ingredients binding (geometry + inherited
+        // program, issue #213): a node authored purely by ingredients assembles a
+        // Renderable at load, so it reports Kind::Renderable like the legacy /
+        // asset-graph-node renderables. Mirrors has_authored_renderable_component
+        // (which is defined below; inlined here to keep the field list in step).
         if (node.renderable
             || node.renderable_asset_node_id
-            || node.renderable_asset) {
+            || node.renderable_asset
+            || node.geometry_asset_node_id
+            || node.geometry_asset) {
             out.push_back(Kind::Renderable);
         }
         if (node.asset_reference) {
@@ -1628,6 +1658,14 @@ namespace wz::engine::assets
         }
         if (node.scene_import_source) {
             out.push_back(Kind::SceneImportSource);
+        }
+        // Scene-source: grafts a sub-scene as this node's children (issue #213) —
+        // any of the asset-graph node ref, the resolved key, or the inline GLB
+        // descriptor.
+        if (node.scene_source_node_id
+            || node.scene_source
+            || node.glb_scene_source) {
+            out.push_back(Kind::SceneSource);
         }
         if (node.camera) {
             out.push_back(Kind::Camera);
@@ -1750,9 +1788,14 @@ namespace wz::engine::assets
     inline bool has_authored_renderable_component(
         const SceneNodeAsset& node) noexcept
     {
+        // Includes the by-ingredients binding (issue #213): geometry (+ inherited
+        // program) assembles a Renderable at load, so an ingredient-only node has a
+        // renderable component just like the legacy / asset-graph-node forms.
         return node.renderable.has_value()
             || node.renderable_asset_node_id.has_value()
-            || node.renderable_asset.has_value();
+            || node.renderable_asset.has_value()
+            || node.geometry_asset_node_id.has_value()
+            || node.geometry_asset.has_value();
     }
 
     inline bool has_authored_camera_component(
@@ -2580,7 +2623,12 @@ namespace wz::engine::assets
             || !node.behaviors.empty()
             || node.compute_kernel.has_value()
             || node.render_shader.has_value()
-            || node.debug_visual.has_value();
+            || node.debug_visual.has_value()
+            // Scene-source grafts children live at runtime (instance mode), so a
+            // pure graft-host node is runtime-relevant (issue #213).
+            || node.scene_source_node_id.has_value()
+            || node.scene_source.has_value()
+            || node.glb_scene_source.has_value();
     }
 
     inline SceneAssetAuthoringRecipeSummary
@@ -2726,6 +2774,11 @@ namespace wz::engine::assets
             }
             if (node.scene_import_source) {
                 ++out.scene_import_sources;
+            }
+            if (node.scene_source_node_id
+                || node.scene_source
+                || node.glb_scene_source) {
+                ++out.scene_sources;
             }
             if (has_authored_camera_component(node)) {
                 ++out.cameras;

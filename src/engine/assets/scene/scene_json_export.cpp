@@ -1964,8 +1964,14 @@ namespace wz::engine::assets
             // authored asset-graph node ids (geometry + render program); the
             // resolved keys are re-bridged on (re)bind, mirroring scene_source.
             if (node.geometry_asset_node_id) {
-                add_member(*obj, "geometry",
-                    renderable_asset_value(*node.geometry_asset_node_id));
+                auto geometry = renderable_asset_value(*node.geometry_asset_node_id);
+                // Indexed GLB-part geometry (issue #213 increment 3): the part name
+                // within the referenced Scene-from-GLB node.
+                if (node.geometry_glb_node_id) {
+                    add_member(*geometry, "glb_node_id",
+                        string_value(*node.geometry_glb_node_id));
+                }
+                add_member(*obj, "geometry", std::move(geometry));
             }
             if (node.render_program_node_id) {
                 add_member(*obj, "render_program",

@@ -148,6 +148,92 @@ TEST(SceneSourceExpansion, ExpandGraftsGlbNamedChildren)
         EXPECT_FALSE(child.scene_source_node_id.has_value());
         EXPECT_FALSE(child.scene_source.has_value());
     }
+
+    // These children already carry a renderable (the imperative create_scene_from_glb
+    // path supplied one), so the intrinsic-geometry binding (issue #213 increment 3)
+    // must NOT overwrite them. Also, this host has no scene_source_node_id, so even a
+    // renderable-less node would not get a binding here.
+    for (const auto& child : children) {
+        EXPECT_FALSE(child.geometry_asset_node_id.has_value());
+    }
+}
+
+// (a2) Intrinsic GLB-part geometry (issue #213 increment 3): when the host
+// references a "Scene from GLB" asset-graph node (scene_source_node_id) and the
+// sub-scene is structure-only (mesh_index set, no renderable — the graph-authored
+// route), each mesh-bearing grafted child gets an indexed GLB-part geometry binding
+// pointing back at that node + the part's name, so the subtree renders from a single
+// program assigned on the host. Mesh-less group nodes get none.
+TEST(SceneSourceExpansion, GraftAssignsIntrinsicGlbPartGeometry)
+{
+    using namespace wz::engine::assets;
+
+    // Hand-built structure-only sub-scene (no real GLB needed for the expander):
+    // body (mesh 0) -> turret (mesh 1); plus a mesh-less group node "rig".
+    SceneAssetData sub{};
+    sub.name = "structure_only_glb";
+    SceneNodeAsset body{};
+    body.id = "body";
+    body.name = "body";
+    body.mesh_index = 0u;
+    sub.nodes.push_back(body);
+    SceneNodeAsset turret{};
+    turret.id = "turret";
+    turret.name = "turret";
+    turret.parent_id = "body";
+    turret.mesh_index = 1u;
+    sub.nodes.push_back(turret);
+    SceneNodeAsset rig{};
+    rig.id = "rig";
+    rig.name = "rig";
+    rig.parent_id = "body";  // group node: no mesh_index
+    sub.nodes.push_back(rig);
+
+    SceneNodeAsset host = make_host("tank");
+    host.scene_source_node_id =
+        wz::asset::AssetGraphDraftNodeId{ 21 };  // the "Scene from GLB" node
+
+    const std::vector<SceneNodeAsset> children =
+        expand_scene_source_children(host, sub);
+    ASSERT_EQ(children.size(), 3u);
+
+    auto find = [&](const std::string& id) -> const SceneNodeAsset* {
+        for (const auto& n : children) {
+            if (n.id == id) return &n;
+        }
+        return nullptr;
+    };
+
+    // Each mesh-bearing part references the host's Scene-from-GLB node (21) + its
+    // own glTF part name; the resolved key stays empty (re-bridged at assembly).
+    const SceneNodeAsset* gbody = find("tank/body");
+    ASSERT_NE(gbody, nullptr);
+    ASSERT_TRUE(gbody->geometry_asset_node_id.has_value());
+    EXPECT_EQ(*gbody->geometry_asset_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 21 });
+    ASSERT_TRUE(gbody->geometry_glb_node_id.has_value());
+    EXPECT_EQ(*gbody->geometry_glb_node_id, "body");
+    // The resolved key is (re)bridged at assembly; the helper leaves it at the
+    // default empty key, like the sibling attach_geometry_asset_node.
+
+    const SceneNodeAsset* gturret = find("tank/turret");
+    ASSERT_NE(gturret, nullptr);
+    ASSERT_TRUE(gturret->geometry_glb_node_id.has_value());
+    EXPECT_EQ(*gturret->geometry_glb_node_id, "turret");
+
+    // The mesh-less group node is structural only — no geometry binding.
+    const SceneNodeAsset* grig = find("tank/rig");
+    ASSERT_NE(grig, nullptr);
+    EXPECT_FALSE(grig->geometry_asset_node_id.has_value());
+
+    // Descriptor route (no scene_source_node_id on the host) assigns no binding,
+    // even for mesh-bearing parts.
+    SceneNodeAsset descriptor_host = make_host("desc");
+    const std::vector<SceneNodeAsset> desc_children =
+        expand_scene_source_children(descriptor_host, sub);
+    for (const auto& child : desc_children) {
+        EXPECT_FALSE(child.geometry_asset_node_id.has_value());
+    }
 }
 
 // (b) Grafted children compose under the host transform: using the RHI

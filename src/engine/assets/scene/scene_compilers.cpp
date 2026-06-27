@@ -1386,6 +1386,14 @@ namespace wz::engine::assets::internal
                     node.geometry_asset_node_id =
                         static_cast<wz::asset::AssetGraphDraftNodeId>(*gid);
                     node.geometry_asset.reset();
+                    // Indexed GLB-part geometry (issue #213 increment 3): the part
+                    // name within the referenced Scene-from-GLB node, if present.
+                    if (const auto glb_node_id =
+                            read_string(*geometry, "glb_node_id");
+                        glb_node_id && !glb_node_id->empty())
+                    {
+                        node.geometry_glb_node_id = std::string(*glb_node_id);
+                    }
                 }
             }
             if (const auto* program = find_member(node_val, "render_program")) {

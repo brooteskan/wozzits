@@ -212,7 +212,13 @@ namespace wz::app
         const uint32_t scene_sources_bridged =
             wz::engine::assets::bridge_scene_source_keys(scene_nodes_, draft);
         (void)scene_sources_bridged;
-        graft_scene_sources();
+        const std::size_t bind_grafted = graft_scene_sources();
+        // Assemble the freshly grafted children's intrinsic geometry bindings
+        // (#213 increment 3) — the pre-graft assemble above ran before they
+        // existed, so the subtree would not draw without this second pass.
+        if (bind_grafted > 0) {
+            rematerialize_render_bindings();
+        }
 
         result.ok = true;
         result.diagnostics = draft.validation_messages;
@@ -397,6 +403,12 @@ namespace wz::app
                 "load_scene: scene sources bridged="
                 + std::to_string(scene_sources_bridged)
                 + " grafted children=" + std::to_string(grafted));
+        }
+        // Grafted children carry intrinsic GLB-part geometry bindings (#213
+        // increment 3); assemble them now (the pre-graft assemble above ran before
+        // these nodes existed) so the subtree renders under the host's program.
+        if (grafted > 0) {
+            rematerialize_render_bindings();
         }
         if (!scene_resolve.ok()) {
             ctx_.logger.warn(
@@ -589,6 +601,28 @@ namespace wz::app
                     "assemble_render_bindings: node '" + node.id
                     + "' geometry asset-graph node not found (skipped)");
                 continue;
+            }
+
+            // Indexed GLB-part geometry (issue #213 increment 3): the referenced
+            // node is a "Scene from GLB" output; extract this node's named part as
+            // a Mesh and route it like any pull mesh. One Scene-from-GLB node feeds
+            // every part by name (no per-part extractor graph node).
+            if (node.geometry_glb_node_id) {
+                const auto part = ctx_.assets->meshes().create_mesh_from_glb_scene(
+                    wz::engine::assets::MeshFromGLBSceneDesc{
+                        .name = "render_binding_part/" + node.id,
+                        .scene = geometry_key,
+                        .node_id = *node.geometry_glb_node_id,
+                    });
+                if (!part.valid()) {
+                    ctx_.logger.warn(
+                        "assemble_render_bindings: node '" + node.id
+                        + "' could not extract GLB part '"
+                        + *node.geometry_glb_node_id + "' (skipped)");
+                    continue;
+                }
+                geometry_key = part.output;
+                geometry_type = wz::engine::assets::kAssetTypeMesh;
             }
             node.geometry_asset = geometry_key;
 
@@ -1319,6 +1353,10 @@ namespace wz::app
         // graft and adds nothing — the children disappear, as intended.
         wz::engine::assets::bridge_scene_source_keys(scene_nodes_, graph_draft_);
         graft_scene_sources();
+        // The grafted children carry intrinsic GLB-part geometry bindings (#213
+        // increment 3); assemble them into renderables (inheriting the host's
+        // program) so the subtree draws.
+        rematerialize_render_bindings();
         rebuild_behavior_scene();
         return true;
     }
@@ -1455,6 +1493,9 @@ namespace wz::app
         // children and adds nothing), then rebuild the behavior runtime since the
         // grafted children change the addressable entity set.
         graft_scene_sources();
+        // Assemble the grafted children's intrinsic geometry bindings (#213
+        // increment 3) so they draw under the host's inherited program.
+        rematerialize_render_bindings();
         rebuild_behavior_scene();
     }
 

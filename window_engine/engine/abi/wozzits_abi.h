@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 25u
+#define WZ_ABI_VERSION 26u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -192,6 +192,13 @@ enum
     WZ_EDITOR_SCENE_NODE_HAS_RENDERABLE = 1u << 5u,
     WZ_EDITOR_SCENE_NODE_RENDERABLE_HAS_ASSET_GRAPH_NODE_ID = 1u << 6u,
     WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE = 1u << 7u,
+    // Authored render-binding refs (issue #213), surfaced so the inspector reveals
+    // + pre-selects these sections from persisted state. Distinct from
+    // HAS_SCENE_SOURCE (the GLB descriptor summary above): HAS_SCENE_SOURCE_REF is
+    // the "Subtree from asset" asset-graph node ref (scene_source_node_id).
+    WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF = 1u << 8u,
+    WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY = 1u << 9u,
+    WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM = 1u << 10u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -331,6 +338,14 @@ typedef struct WzEditorSceneNode
     WzEditorTableSpan behaviors; // WzEditorSceneBehavior[]
     WzEditorTableSpan children;
     WzEditorSceneSceneSource scene_source;
+    // Authored render-binding refs (issue #213), each valid iff its HAS_* flag is
+    // set: the "Subtree from asset" node ref and the render-binding geometry +
+    // render-program asset-graph node ids. Appended last so existing field offsets
+    // are unchanged. Only the authored node id is surfaced (resolved keys re-bridge
+    // on bind).
+    uint64_t scene_source_node_id;
+    uint64_t geometry_node_id;
+    uint64_t render_program_node_id;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -551,7 +566,7 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 568);
+static_assert(sizeof(WzEditorSceneNode) == 592);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -565,6 +580,9 @@ static_assert(offsetof(WzEditorSceneNode, components) == 400);
 static_assert(offsetof(WzEditorSceneNode, behaviors) == 416);
 static_assert(offsetof(WzEditorSceneNode, children) == 432);
 static_assert(offsetof(WzEditorSceneNode, scene_source) == 448);
+static_assert(offsetof(WzEditorSceneNode, scene_source_node_id) == 568);
+static_assert(offsetof(WzEditorSceneNode, geometry_node_id) == 576);
+static_assert(offsetof(WzEditorSceneNode, render_program_node_id) == 584);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);

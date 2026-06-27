@@ -26,14 +26,14 @@
       "visible": true
     },
     {
-      "id": "camera_01",
+      "id": "empty_1",
       "parent": "root",
-      "name": "Tank",
+      "name": "tank",
       "transform": {
         "translation": [
           0,
-          2,
-          -8
+          0,
+          0
         ],
         "rotation_quat": [
           0,
@@ -48,47 +48,8 @@
         ]
       },
       "visible": true,
-      "camera": {
-        "fov_y": 1.0471999645233154,
-        "near": 0.10000000149011612,
-        "far": 1000,
-        "aspect": 1.7777777910232544
-      },
-      "behaviors": [
-        {
-          "id": "camera_01.behavior.1",
-          "module": "tank_controller",
-          "name": "",
-          "enabled": true,
-          "apply_in_editor": false
-        }
-      ]
-    },
-    {
-      "id": "empty_1",
-      "parent": "root",
-      "name": "mesh",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          500,
-          1000,
-          500
-        ]
-      },
-      "visible": false,
-      "renderable": {
-        "asset_graph_node_id": 8
+      "scene_source": {
+        "asset_graph_node_id": 21
       }
     },
     {
@@ -144,29 +105,6 @@
       "renderable": {
         "asset_graph_node_id": 27
       }
-    },
-    {
-      "id": "1",
-      "parent": "camera_01",
-      "transform": {
-        "translation": [
-          0,
-          0,
-          0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true
     }
   ],
   "defaults": {
