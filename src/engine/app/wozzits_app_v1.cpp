@@ -15,6 +15,7 @@
 #include <engine/behavior/behavior_dispatch.h>
 #include <engine/behavior/builtin_behaviors.h>
 #include <engine/collision/collision_frame.h>
+#include <engine/input_events.h>
 
 #include <asset/system.h>
 
@@ -1108,6 +1109,18 @@ namespace wz::app
                 ctx_.assets->collisions(),
                 frame_storage_.collision);
         }
+        // Proximity events (proximity.* behaviors): same per-frame build +
+        // enter/stay/exit advance as game_app's job_build_collision_frame second
+        // half. Needs only the scene's proximity components (no asset library).
+        wz::engine::collision::build_proximity_frame(
+            *behavior_scene_, frame_storage_.collision);
+        // Input events (input.* behaviors, e.g. a controller-driven tank):
+        // convert this frame's input into routed events so dispatch fires the
+        // behavior's on_event. game_app does this in job_build_input_events; the
+        // new runtime had left these tables empty, so input-driven behaviors
+        // never received events.
+        wz::engine::input_events::build_input_event_frame(
+            input, *behavior_scene_, frame_storage_.input_events);
         std::vector<wz::scene::RuntimeEntityId> changed_entities;
 
         // Per-frame deferred-authoring sink: behaviors queue cheap live
@@ -1120,9 +1133,9 @@ namespace wz::app
         wz::engine::behavior::BehaviorAuthoringBuffer authoring;
 
         if (has_behaviors) {
-            // Build a minimal FrameContext carrying time + input. The collision
-            // frame above is now populated; the input-event tables remain empty,
-            // making that dispatch pass a no-op rather than fabricating events.
+            // Build a minimal FrameContext carrying time + input. The collision,
+            // proximity and input-event tables are populated above, so the
+            // dispatch routes real collision/proximity/input events to behaviors.
             wz::engine::FrameContext frame_context{};
             frame_context.input = input;
             frame_context.frame.interval.start = 0;

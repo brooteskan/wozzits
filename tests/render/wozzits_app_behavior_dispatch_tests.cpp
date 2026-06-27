@@ -126,6 +126,53 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
         << "behaviors did not dispatch on the second frame";
 }
 
+// An input-driven behavior ("input.*") must fire only when WozzitsApp_v1 builds
+// and routes input events in its tick. A controller-axis InputState moves the
+// bound node; an empty InputState does not. This proves the new runtime's
+// build_input_event_frame wiring (without it the tank controller never moves).
+TEST_F(WozzitsAppBehaviorFixture, InputEventDispatchDrivesInputBehavior)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    // Bind the input-subscribed behavior to "blank" (no other behavior on it).
+    const wz::engine::assets::SceneAddBehaviorResult added =
+        app.add_node_behavior("blank", "move_on_input");
+    ASSERT_TRUE(added.ok) << added.error;
+
+    const std::optional<wz::math::Vec3> before =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(before.has_value()) << "blank node missing from scene";
+    const float x0 = before->x;
+
+    // An empty input frame produces no input events, so the behavior never fires.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_empty =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_empty.has_value());
+    EXPECT_FLOAT_EQ(after_empty->x, x0)
+        << "input behavior moved with no input events (it shouldn't)";
+
+    // A connected controller with a changed axis generates a
+    // CONTROLLER_AXIS_CHANGED event; the runtime must build + route it so the
+    // behavior fires and moves the node +1 in X.
+    wz::input::InputState input{};
+    input.controllers.count = 1u;
+    input.controllers.controllers[0].connected = true;
+    input.controllers.controllers[0].axes_changed[1] = true;
+    input.controllers.controllers[0].axes[1] = 1.0f;
+    app.simulation_tick(input, 1.0f / 60.0f);
+
+    const std::optional<wz::math::Vec3> after_input =
+        app.node_local_translation("blank");
+    ASSERT_TRUE(after_input.has_value());
+    EXPECT_FLOAT_EQ(after_input->x, x0 + 1.0f)
+        << "input event was not built/routed to the behavior in the tick";
+}
+
 // reload_behavior_modules must rebuild the registry (built-ins + project DLLs)
 // and re-materialize the scene's behavior binding in place — without a restart —
 // and the reloaded behavior must still dispatch. This is the engine apply the

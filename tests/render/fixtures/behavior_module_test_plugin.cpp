@@ -185,6 +185,28 @@ namespace
         // apply path.
         wz_self_remove_node_component(facts, event, "proximity");
     }
+
+    // Subscribed to "input.*" (NOT frame.update): writes an add-local-translation
+    // of (+1, 0, 0) for each input event the runtime routes to it. The dispatch
+    // test ticks with a controller-axis InputState and asserts the bound node
+    // moves — proving WozzitsApp_v1 now builds + routes input events so an
+    // input-driven behavior (like the tank controller) actually fires. With no
+    // input, no event reaches it, so it does not move.
+    void move_on_input(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event || !facts->write_command) {
+            return;
+        }
+        const WzBehaviorCommand command{
+            .entity = event->entity,
+            .kind = WZ_BEHAVIOR_COMMAND_ADD_LOCAL_TRANSLATION,
+            .values = { 1.0f, 0.0f, 0.0f, 0.0f },
+        };
+        facts->write_command(facts->command_writer_user, &command);
+    }
 }
 
 extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
@@ -253,6 +275,15 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 1u,
         .module_user_data = nullptr,
     };
+    static const char* input_events[] = { "input.*" };
+    const WzBehaviorModuleDesc move_on_input_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "move_on_input",
+        .on_event = move_on_input,
+        .event_channels = input_events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
 
     const uint8_t move_ok =
         api->register_module_desc(api->user, &move_desc);
@@ -268,8 +299,11 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &add_proximity_desc);
     const uint8_t remove_proximity_ok =
         api->register_module_desc(api->user, &remove_proximity_desc);
+    const uint8_t move_on_input_ok =
+        api->register_module_desc(api->user, &move_on_input_desc);
     return (move_ok && spawn_ok && remove_ok && set_renderable_ok
-            && reparent_ok && add_proximity_ok && remove_proximity_ok)
+            && reparent_ok && add_proximity_ok && remove_proximity_ok
+            && move_on_input_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }
