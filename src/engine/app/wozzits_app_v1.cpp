@@ -770,10 +770,50 @@ namespace wz::app
             std::vector<wz::engine::assets::SceneNodeAsset> children =
                 wz::engine::assets::expand_scene_source_children(
                     ref.host, *sub);
+            // Re-apply this host's sticky per-child component overrides (issue
+            // #213) onto the freshly expanded children, keyed by the child's
+            // sub-scene id ("<host>/" suffix). Applied AFTER expansion so the
+            // authored program rides on the runtime child without being folded
+            // into the GLB Scene key.
+            const std::string host_prefix = ref.host.id + "/";
+            std::unordered_set<std::string> matched_overrides;
             for (wz::engine::assets::SceneNodeAsset& child : children) {
+                if (child.id.size() > host_prefix.size()
+                    && child.id.compare(
+                           0, host_prefix.size(), host_prefix) == 0)
+                {
+                    const std::string sub_id =
+                        child.id.substr(host_prefix.size());
+                    for (const wz::engine::assets::SceneSourceChildOverride& ov :
+                         ref.host.scene_source_child_overrides)
+                    {
+                        if (ov.child_id != sub_id) {
+                            continue;
+                        }
+                        if (ov.render_program_node_id) {
+                            child.render_program_node_id =
+                                ov.render_program_node_id;
+                        }
+                        matched_overrides.insert(sub_id);
+                        break;
+                    }
+                }
                 grafted_node_ids_.push_back(child.id);
                 scene_nodes_.push_back(std::move(child));
                 ++grafted;
+            }
+            // Sticky policy: an override whose child_id no longer expands (renamed
+            // / removed source node, or a transient resolve failure) is RETAINED,
+            // never deleted — only logged, so a later source fix re-attaches it.
+            for (const wz::engine::assets::SceneSourceChildOverride& ov :
+                 ref.host.scene_source_child_overrides)
+            {
+                if (matched_overrides.count(ov.child_id) == 0) {
+                    ctx_.logger.info(
+                        "graft_scene_sources: child override '" + ov.child_id
+                        + "' under host '" + ref.host.id
+                        + "' matched no expanded node (retained)");
+                }
             }
         }
 
@@ -784,6 +824,96 @@ namespace wz::app
                 + std::to_string(hosts.size()) + " host(s)");
         }
         return grafted;
+    }
+
+    void WozzitsApp_v1::capture_grafted_child_override(
+        const wz::scene::AuthoredEntityId& child_id)
+    {
+        // Only runtime-only grafted children need a sticky override; authored
+        // nodes persist their components directly.
+        if (std::find(
+                grafted_node_ids_.begin(), grafted_node_ids_.end(), child_id)
+            == grafted_node_ids_.end())
+        {
+            return;
+        }
+        const wz::engine::assets::SceneNodeAsset* child =
+            wz::engine::assets::find_scene_node(scene_nodes_, child_id);
+        if (!child) {
+            return;
+        }
+
+        // Walk up to the owning host: the first non-grafted ancestor (the node
+        // that carries the scene source this child was expanded from). All grafted
+        // children are descendants of their host, and the host is not grafted.
+        const std::unordered_set<std::string> grafted(
+            grafted_node_ids_.begin(), grafted_node_ids_.end());
+        wz::engine::assets::SceneNodeAsset* host = nullptr;
+        const wz::engine::assets::SceneNodeAsset* cursor = child;
+        for (std::size_t guard = 0;
+             cursor && guard <= scene_nodes_.size();
+             ++guard)
+        {
+            if (!cursor->parent_id || cursor->parent_id->empty()) {
+                break;
+            }
+            wz::engine::assets::SceneNodeAsset* parent =
+                wz::engine::assets::find_scene_node(
+                    scene_nodes_, *cursor->parent_id);
+            if (!parent) {
+                break;
+            }
+            if (grafted.count(parent->id) == 0) {
+                host = parent;  // first non-grafted ancestor = host
+                break;
+            }
+            cursor = parent;
+        }
+        if (!host) {
+            return;
+        }
+
+        // Sub-scene-relative key: strip the "<host>/" prefix the graft namespaced
+        // it with (child.id == host.id + "/" + src.id).
+        const std::string prefix = host->id + "/";
+        if (child_id.size() <= prefix.size()
+            || child_id.compare(0, prefix.size(), prefix) != 0)
+        {
+            return;
+        }
+        const std::string sub_id = child_id.substr(prefix.size());
+
+        // Upsert the override from the child's CURRENT authored state; an override
+        // that would carry nothing is erased (so clearing a child's program drops
+        // the entry rather than persisting an empty one).
+        std::vector<wz::engine::assets::SceneSourceChildOverride>& overrides =
+            host->scene_source_child_overrides;
+        const auto it = std::find_if(
+            overrides.begin(),
+            overrides.end(),
+            [&sub_id](const wz::engine::assets::SceneSourceChildOverride& ov) {
+                return ov.child_id == sub_id;
+            });
+
+        wz::engine::assets::SceneSourceChildOverride next{};
+        next.child_id = sub_id;
+        next.render_program_node_id = child->render_program_node_id;
+
+        const bool carries_nothing = !next.render_program_node_id.has_value();
+        if (carries_nothing) {
+            if (it != overrides.end()) {
+                overrides.erase(it);
+                scene_dirty_ = true;
+            }
+            return;
+        }
+        if (it != overrides.end()) {
+            *it = std::move(next);
+        }
+        else {
+            overrides.push_back(std::move(next));
+        }
+        scene_dirty_ = true;
     }
 
     void WozzitsApp_v1::rebuild_behavior_scene()
@@ -1409,6 +1539,10 @@ namespace wz::app
             wz::engine::assets::detach_render_program_node(*node);
         }
         scene_dirty_ = true;
+        // If this targets a runtime-only grafted scene-source child, mirror the
+        // program onto its host as a sticky override (issue #213) so it survives
+        // reload (save_scene excludes grafted children). No-op for authored nodes.
+        capture_grafted_child_override(node_id);
         // A program change cascades to descendants via inheritance, so
         // re-assemble every binding (assemble walks ancestors per node).
         rematerialize_render_bindings();

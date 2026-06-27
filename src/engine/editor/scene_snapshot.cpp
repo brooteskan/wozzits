@@ -543,6 +543,12 @@ namespace wz::engine::editor
                 node.renderable = renderable;
             }
 
+            // Surface the authored render-program ref so a grafted scene-source
+            // child whose program was re-applied from a host override (issue #213)
+            // reveals + pre-selects the "Render program" section in the inspector,
+            // matching the JSON node path (read_node).
+            node.render_program_node_id = source.render_program_node_id;
+
             node.kind = node_kind(node);
             node.renderable_source = node.renderable
                 ? node.renderable->source

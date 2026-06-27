@@ -964,6 +964,24 @@ namespace wz::engine::assets
         std::vector<SceneGLBSceneSourceStyleOverride> style_overrides;
     };
 
+    // Per-child authored-component override for a scene-source host (issue #213).
+    // A host node's scene source expands into runtime-only grafted children that
+    // save_scene excludes; without this, a component authored on a grafted child
+    // (e.g. a render program) is lost on reload. The host carries a sticky list of
+    // overrides keyed by the SOURCE node's stable id (child_id = the sub-scene id,
+    // i.e. the grafted child's `<host>/<child_id>` suffix). On every (re)graft the
+    // engine applies a matching override onto the expanded child AFTER expansion —
+    // these are scene-graph authoring patches, NOT folded into the GLB Scene key
+    // (unlike style_overrides). Overrides are applied opportunistically: an entry
+    // whose child_id is absent after expansion (renamed/removed source node, or a
+    // transient resolve failure) is RETAINED (logged), never auto-deleted, so a
+    // later source fix re-attaches it. Only an explicit clear removes one.
+    struct SceneSourceChildOverride
+    {
+        std::string child_id;
+        std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
+    };
+
     struct SceneNodeAsset
     {
         wz::scene::AuthoredEntityId id;
@@ -1027,6 +1045,13 @@ namespace wz::engine::assets
         // whose key is written into scene_source above; the existing graft /
         // flatten then consumes it. Takes precedence over scene_source_node_id.
         std::optional<SceneGLBSceneSource> glb_scene_source;
+
+        // Authored-component overrides for this host's grafted scene-source
+        // children (issue #213). Keyed by the source node's stable id; applied to
+        // the expanded child after every graft, persisted on the host, excluded
+        // children carry their authored components through reload via these. See
+        // SceneSourceChildOverride for the sticky/opportunistic apply policy.
+        std::vector<SceneSourceChildOverride> scene_source_child_overrides;
 
         // Which glTF mesh this node uses, if any (issue #213). Set on the
         // "Scene from GLB" graph-compile path so the geometry an extractor reads

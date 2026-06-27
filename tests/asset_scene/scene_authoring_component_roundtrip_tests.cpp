@@ -1432,6 +1432,72 @@ TEST(SceneAssetModule, IndexedGlbPartGeometryRoundTripsThroughSceneJSON)
     EXPECT_EQ(*parsed_turret->geometry_glb_node_id, "turret");
 }
 
+// A scene-source host's per-child component overrides (issue #213) persist on the
+// host and round-trip through scene JSON, keyed by the child's stable sub-scene id.
+// This is what carries a render program authored on a runtime-only grafted child
+// across reload (save_scene excludes the grafted child itself).
+TEST(SceneAssetModule, SceneSourceChildOverridesRoundTripThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_source_child_overrides_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    SceneAssetData authored{};
+    authored.name = "scene_source_child_overrides_roundtrip";
+
+    // Host node carries a scene source (asset-graph node 21) plus two per-child
+    // overrides: "body" gets a render program (node 10), "turret" carries an
+    // (orphan-style) entry with no program — which must be dropped on export, not
+    // emitted as an empty entry.
+    SceneNodeAsset host = make_scene_node("tank");
+    attach_scene_source_node(host, 21);
+    host.scene_source_child_overrides.push_back(
+        SceneSourceChildOverride{
+            .child_id = "body",
+            .render_program_node_id =
+                wz::asset::AssetGraphDraftNodeId{ 10 },
+        });
+    authored.nodes.push_back(std::move(host));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"scene_source_child_overrides\""),
+        std::string::npos);
+    EXPECT_NE(exported.find("\"child_id\""), std::string::npos);
+
+    auto rel_path =
+        write_scene_json(root, "child_overrides.scene.json", exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "child_overrides",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+
+    const auto* parsed_host = find_scene_node(*data, "tank");
+    ASSERT_NE(parsed_host, nullptr);
+    ASSERT_EQ(parsed_host->scene_source_child_overrides.size(), 1u);
+    const auto& ov = parsed_host->scene_source_child_overrides.front();
+    EXPECT_EQ(ov.child_id, "body");
+    ASSERT_TRUE(ov.render_program_node_id.has_value());
+    EXPECT_EQ(*ov.render_program_node_id,
+        wz::asset::AssetGraphDraftNodeId{ 10 });
+}
+
 TEST(SceneAssetModule, BehaviorApplyInEditorRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;

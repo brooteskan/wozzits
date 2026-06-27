@@ -1528,6 +1528,49 @@ namespace wz::engine::assets::internal
                 node.glb_scene_source = std::move(source);
             }
 
+            // Per-child authored-component overrides for a scene-source host
+            // (issue #213): re-applied to the grafted children after expansion.
+            // Keyed by the source node's stable id (child_id); render_program
+            // mirrors the node's own render_program shape. Sticky data — parsed
+            // verbatim, applied opportunistically at graft time.
+            if (const auto* child_overrides =
+                    find_member(node_val, "scene_source_child_overrides");
+                child_overrides
+                && child_overrides->kind == wz::json::JSONValueKind::Array)
+            {
+                for (const auto& entry_ptr : child_overrides->array_values) {
+                    if (!entry_ptr
+                        || entry_ptr->kind != wz::json::JSONValueKind::Object)
+                    {
+                        continue;
+                    }
+                    const wz::json::JSONValue& entry = *entry_ptr;
+                    const auto child_id = read_string(entry, "child_id");
+                    if (!child_id || child_id->empty()) {
+                        logger.error(
+                            "scene_source_child_overrides on node '" + node.id
+                            + "' has an entry missing 'child_id'");
+                        return std::nullopt;
+                    }
+                    SceneSourceChildOverride ov{};
+                    ov.child_id = std::string(*child_id);
+                    if (const auto* program =
+                            find_member(entry, "render_program");
+                        program
+                        && program->kind == wz::json::JSONValueKind::Object)
+                    {
+                        const auto pid =
+                            read_number(*program, "asset_graph_node_id");
+                        if (pid && *pid > 0.0) {
+                            ov.render_program_node_id =
+                                static_cast<wz::asset::AssetGraphDraftNodeId>(
+                                    *pid);
+                        }
+                    }
+                    node.scene_source_child_overrides.push_back(std::move(ov));
+                }
+            }
+
             const auto* asset_reference =
                 find_member(node_val, "asset_reference");
             if (asset_reference

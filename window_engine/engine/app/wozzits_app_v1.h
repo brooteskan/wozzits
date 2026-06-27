@@ -510,6 +510,16 @@ namespace wz::app
         // number of children grafted. Caller rebuilds the behavior scene after.
         std::size_t graft_scene_sources();
 
+        // Mirror a grafted scene-source child's authored components onto its host
+        // as a sticky override (issue #213), so an edit to a runtime-only grafted
+        // child (which save_scene excludes) survives reload. No-op when child_id
+        // is not a grafted node. Keyed by the child's sub-scene id (the "<host>/"
+        // suffix); upserts the override from the child's current authored state,
+        // erasing it when the child carries no overridable component. Re-applied
+        // to the expanded child by graft_scene_sources on the next (re)graft.
+        void capture_grafted_child_override(
+            const wz::scene::AuthoredEntityId& child_id);
+
         // Materialize the live authored scene (scene_nodes_) into a runtime
         // SceneInstance and (re)initialize its behaviors against the registry.
         // Called from load_scene and after any structural scene edit so the

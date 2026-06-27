@@ -262,6 +262,18 @@ namespace wz::engine::assets
                 }
             }
 
+            // Per-child authored-component overrides (issue #213): an edit re-keys
+            // the scene so the graft re-applies the new override set.
+            fp.mix_value(static_cast<uint64_t>(
+                node.scene_source_child_overrides.size()));
+            for (const auto& ov : node.scene_source_child_overrides) {
+                fp.mix_string(ov.child_id);
+                fp.mix_value(ov.render_program_node_id.has_value());
+                if (ov.render_program_node_id) {
+                    fp.mix_value(*ov.render_program_node_id);
+                }
+            }
+
             if (node.asset_reference) {
                 mix_asset_key(fp, node.asset_reference->asset);
                 fp.mix_string(node.asset_reference->stable_asset_id);

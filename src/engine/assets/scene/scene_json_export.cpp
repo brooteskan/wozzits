@@ -691,6 +691,30 @@ namespace wz::engine::assets
             return obj;
         }
 
+        // Per-child authored-component overrides for a scene-source host (issue
+        // #213): persisted on the host so a component authored on a runtime-only
+        // grafted child (which save excludes) survives reload. Keyed by the source
+        // node's stable id; render_program mirrors the node's own render_program
+        // shape ({ asset_graph_node_id }).
+        JSONValuePtr scene_source_child_overrides_value(
+            const std::vector<SceneSourceChildOverride>& overrides)
+        {
+            auto arr = array_value();
+            std::ranges::transform(
+                overrides,
+                std::back_inserter(arr->array_values),
+                [&](const SceneSourceChildOverride& ov) {
+                    auto entry = object_value();
+                    add_member(*entry, "child_id", string_value(ov.child_id));
+                    if (ov.render_program_node_id) {
+                        add_member(*entry, "render_program",
+                            scene_source_value(*ov.render_program_node_id));
+                    }
+                    return entry;
+                });
+            return arr;
+        }
+
         JSONValuePtr asset_reference_value(
             const SceneAssetReferenceAsset& reference)
         {
@@ -1984,6 +2008,11 @@ namespace wz::engine::assets
             if (node.glb_scene_source) {
                 add_member(*obj, "glb_scene_source",
                     glb_scene_source_value(*node.glb_scene_source));
+            }
+            if (!node.scene_source_child_overrides.empty()) {
+                add_member(*obj, "scene_source_child_overrides",
+                    scene_source_child_overrides_value(
+                        node.scene_source_child_overrides));
             }
             if (node.asset_reference) {
                 add_member(*obj, "asset_reference",

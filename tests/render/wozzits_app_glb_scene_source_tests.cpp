@@ -30,10 +30,13 @@
 #include <engine/app_context.h>
 #include <engine/project/project_manifest.h>
 
+#include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
 
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -490,4 +493,96 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedSceneNodesReturnsInstanceGraft)
         "tank_host", wz::engine::assets::SceneGLBSceneSource{ .path = "" }));
     EXPECT_TRUE(app.grafted_scene_nodes().empty())
         << "clearing the scene source must empty the grafted-nodes set";
+}
+
+// A render program authored on a runtime-only GRAFTED scene-source child is
+// excluded from save_scene as a node, but persists as a sticky per-child override
+// on the host (issue #213): it survives save + reload and is re-applied onto the
+// freshly expanded child, while an unedited sibling stays clean.
+TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedChildComponentOverridePersists)
+{
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+
+    // Save/reload through a TEMP scene file so the test never clobbers the staged
+    // fixture. The GLB ("gltf/tank1.glb") resolves against the resource root, so an
+    // absolute scene path elsewhere still finds it.
+    const wz::fs::Path staged_scene =
+        wz::fs::join(ctx.assets->resource_root(), project.manifest.scene_path);
+    std::string scene_text;
+    {
+        std::ifstream in(staged_scene, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "could not read staged fixture scene";
+        scene_text.assign(
+            std::istreambuf_iterator<char>(in),
+            std::istreambuf_iterator<char>());
+    }
+    const wz::fs::Path temp_scene = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wozzits_grafted_child_override_test.scene.json");
+    {
+        std::ofstream out(temp_scene, std::ios::binary);
+        ASSERT_TRUE(out.good());
+        out << scene_text;
+    }
+
+    wz::app::WozzitsAppSceneLoadDesc load_desc{};
+    load_desc.asset_graph = project.manifest.asset_graph_path;
+    load_desc.scene = temp_scene;  // absolute -> save_scene writes back here
+    load_desc.behavior_module_folder = project.manifest.behavior_module_folder;
+
+    constexpr wz::asset::AssetGraphDraftNodeId kProgram = 7;
+
+    // Author a render program on a grafted child, then save: capture mirrors it
+    // onto the host as a sticky override; the grafted child itself is not written.
+    {
+        wz::app::WozzitsApp_v1 app(ctx);
+        ASSERT_TRUE(app.load_scene(load_desc));
+        ASSERT_TRUE(app.set_node_render_program("tank_host/body", kProgram));
+        ASSERT_TRUE(app.save_scene());
+    }
+
+    // Reload in a FRESH engine context (a separate asset system) so the scene is
+    // re-read from disk rather than served from app1's in-process scene cache —
+    // this mirrors closing and reopening the project as a new process.
+    wz::engine::AppContext reload_ctx;
+    wz::engine::AppDesc reload_desc;
+    reload_desc.window = {
+        "wozzits_app_v1_grafted_override_reload", 256, 256, false, false };
+    reload_desc.resource_root = "resources";
+    ASSERT_TRUE(wz::engine::init(reload_ctx, reload_desc));
+    {
+        wz::app::WozzitsApp_v1 app(reload_ctx);
+        ASSERT_TRUE(app.load_scene(load_desc));
+
+        const std::vector<wz::engine::assets::SceneNodeAsset> grafted =
+            app.grafted_scene_nodes();
+        const auto find_id = [&grafted](const std::string& id)
+            -> const wz::engine::assets::SceneNodeAsset* {
+            const auto it = std::find_if(
+                grafted.begin(),
+                grafted.end(),
+                [&id](const wz::engine::assets::SceneNodeAsset& n) {
+                    return n.id == id;
+                });
+            return it == grafted.end() ? nullptr : &*it;
+        };
+
+        const wz::engine::assets::SceneNodeAsset* body =
+            find_id("tank_host/body");
+        ASSERT_NE(body, nullptr);
+        ASSERT_TRUE(body->render_program_node_id.has_value())
+            << "the render program authored on the grafted child was not "
+               "persisted/re-applied across reload";
+        EXPECT_EQ(*body->render_program_node_id, kProgram);
+
+        // A sibling that was never edited must not gain a program.
+        const wz::engine::assets::SceneNodeAsset* turret =
+            find_id("tank_host/turret");
+        ASSERT_NE(turret, nullptr);
+        EXPECT_FALSE(turret->render_program_node_id.has_value());
+    }
+    wz::engine::shutdown(reload_ctx);
+
+    wz::fs::remove_file(temp_scene);
 }
