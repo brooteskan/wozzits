@@ -725,6 +725,13 @@ namespace wz::engine::assets
         // When true, the runtime treats this collision as a terrain-style
         // constraint surface that Motion actors stick to.
         bool constrain_movement = false;
+        // Collision binding by REFERENCE (issue #216/#217): the node points at an
+        // authored asset-graph collision node (e.g. collision_from_height_field);
+        // collision_asset is the current resolved key, re-bridged on every
+        // (re)bind via bridge_scene_collision_keys, mirroring render_program_node_id.
+        // The persisted intent is the node id; the key is disposable. Takes
+        // precedence over the inline height_field_source materialize path.
+        std::optional<wz::asset::AssetGraphDraftNodeId> collision_asset_node_id;
         std::optional<SceneCollisionHeightFieldSource> height_field_source;
     };
 
@@ -1413,6 +1420,34 @@ namespace wz::engine::assets
     {
         node.render_program_node_id.reset();
         node.render_program_asset.reset();
+    }
+
+    // Author the collision binding by REFERENCE (issue #216/#217): point the
+    // node's Collision component at an authored asset-graph collision node, and
+    // set whether the resolved surface constrains Motion actors. Creates the
+    // Collision component if absent. The resolved key (collision_asset) is left
+    // for bridge_scene_collision_keys to fill on (re)bind. Mirrors
+    // attach_render_program_node.
+    inline void attach_collision_asset_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        bool constrain_movement)
+    {
+        if (!node.collision) {
+            node.collision.emplace();
+        }
+        node.collision->collision_asset_node_id = node_id;
+        node.collision->constrain_movement = constrain_movement;
+        node.collision->collision_asset = {};
+    }
+
+    inline void detach_collision_asset_node(SceneNodeAsset& node)
+    {
+        if (!node.collision) {
+            return;
+        }
+        node.collision->collision_asset_node_id.reset();
+        node.collision->collision_asset = {};
     }
 
     // Scene-source reference (issue #213) — mirrors the renderable helpers.

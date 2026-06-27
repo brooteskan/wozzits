@@ -1462,6 +1462,76 @@ TEST(SceneAssetModule, CollisionHeightFieldConstraintRoundTripsThroughSceneJSON)
     EXPECT_EQ(parsed_source.projection_resolution_y, 128u);
 }
 
+TEST(SceneAssetModule, CollisionAssetNodeRefRoundTripsThroughSceneJSON)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_collision_node_ref_roundtrip_test");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    // A collision authored by REFERENCE (issue #216/#217): the authored
+    // asset-graph node id + the constrain_movement toggle. We also fabricate a
+    // resolved collision_asset key so the scene asset RESOLVES (a bare collision
+    // with no resolved key compiles but does not resolve to scene data); the
+    // round-trip we assert is the NODE-REF + constrain_movement, which the export
+    // must persist and the parse must read back. (On (re)bind against a real
+    // graph the node-ref takes precedence and re-bridges the key; that precedence
+    // is covered by the on-device collision/motion authoring test.)
+    wz::asset::AssetKey collision_key{};
+    collision_key.content_hash = { 0x12u, 0x34u };
+    collision_key.schema_hash = { 0x56u, 0x78u };
+    collision_key.compiler_hash = { 0x9Au, 0xBCu };
+    collision_key.deps_hash = { 0xDEu, 0xF0u };
+
+    SceneAssetData authored{};
+    authored.name = "collision_node_ref_roundtrip";
+
+    SceneNodeAsset ground = make_scene_node("ground");
+    attach_collision_asset_node(ground, /*node_id=*/77u,
+        /*constrain_movement=*/true);
+    ground.collision->collision_asset = collision_key;
+    authored.nodes.push_back(std::move(ground));
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(authored));
+    EXPECT_NE(exported.find("\"collision_asset_node_id\""), std::string::npos);
+    EXPECT_NE(exported.find("\"constrain_movement\""), std::string::npos);
+
+    auto rel_path = write_scene_json(
+        root, "collision_node_ref.scene.json", exported);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto scene_asset = assets.scenes().create_scene_from_json({
+        .name = "collision_node_ref",
+        .path = rel_path,
+    });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(data, nullptr);
+    ASSERT_EQ(data->nodes.size(), 1u);
+
+    const auto* parsed = find_scene_node(*data, "ground");
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed->collision.has_value());
+    const auto& collision = *parsed->collision;
+    ASSERT_TRUE(collision.collision_asset_node_id.has_value());
+    EXPECT_EQ(*collision.collision_asset_node_id, 77u);
+    EXPECT_TRUE(collision.constrain_movement);
+    // The node-ref takes precedence: the parse clears the resolved key so it is
+    // re-bridged from the graph on (re)bind, not read from the JSON.
+    EXPECT_EQ(collision.collision_asset, wz::asset::AssetKey{});
+}
+
 TEST(SceneAssetModule, IndexedGlbPartGeometryRoundTripsThroughSceneJSON)
 {
     using namespace wz::engine::assets;

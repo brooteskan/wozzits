@@ -446,6 +446,9 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kTerrainVisualProxySchema, "Terrain visual proxy");
             WZ_ADD_SCHEMA(kCollisionFromMeshSchema, "Collision from mesh");
             WZ_ADD_SCHEMA(kCollisionFromTerrainSchema, "Collision from terrain");
+            WZ_ADD_SCHEMA(
+                kCollisionFromHeightFieldSchema,
+                "Collision from height field");
             WZ_ADD_SCHEMA(kCSVTableSchema, "CSV table");
             WZ_ADD_SCHEMA(kTextFileSchema, "Text file");
             WZ_ADD_SCHEMA(kBinaryBlobSchema, "Binary blob");

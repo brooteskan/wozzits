@@ -5162,6 +5162,12 @@ namespace wz::engine::assets
             if (!node.collision || !node.collision->height_field_source) {
                 continue;
             }
+            // Precedence (issue #216/#217): a graph collision reference wins over
+            // the inline heightfield materialize path; bridge_scene_collision_keys
+            // sets collision_asset from the node id, so skip the inline build.
+            if (node.collision->collision_asset_node_id) {
+                continue;
+            }
 
             auto& collision_component = *node.collision;
             const auto& source = *collision_component.height_field_source;
@@ -5282,6 +5288,29 @@ namespace wz::engine::assets
                 draft.node_index.find(*node.scene_source_node_id);
             if (it != draft.node_index.end()) {
                 node.scene_source = draft.nodes[it->second].node.key;
+                ++bridged;
+            }
+        }
+        return bridged;
+    }
+
+    uint32_t bridge_scene_collision_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        uint32_t bridged = 0;
+        for (SceneNodeAsset& node : nodes) {
+            if (!node.collision || !node.collision->collision_asset_node_id) {
+                continue;
+            }
+            // Clear first (same reasoning as renderables/scene sources): a
+            // removed/renamed authored collision must stop resolving the
+            // previous key.
+            node.collision->collision_asset = {};
+            const auto it =
+                draft.node_index.find(*node.collision->collision_asset_node_id);
+            if (it != draft.node_index.end()) {
+                node.collision->collision_asset = draft.nodes[it->second].node.key;
                 ++bridged;
             }
         }

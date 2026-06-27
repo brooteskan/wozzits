@@ -379,6 +379,56 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_collision(
+        SceneNodeCollisionEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: a set then a clear must both land.
+        pending_collision_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_collisions(
+        const std::function<void(const SceneNodeCollisionEdit&)>& applier)
+    {
+        std::vector<SceneNodeCollisionEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_collision_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_collision_edits_);
+        }
+
+        for (const SceneNodeCollisionEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
+    void EditorRuntimeControl::post_scene_node_motion_terrain(
+        SceneNodeMotionTerrainEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced.
+        pending_motion_terrain_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_motion_terrains(
+        const std::function<void(const SceneNodeMotionTerrainEdit&)>& applier)
+    {
+        std::vector<SceneNodeMotionTerrainEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_motion_terrain_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_motion_terrain_edits_);
+        }
+
+        for (const SceneNodeMotionTerrainEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -854,6 +904,30 @@ namespace wz::app
                                 app.set_node_render_program(
                                     edit.node_id, edit.asset_graph_node_id);
                             }
+                        });
+                    control->service_pending_scene_node_collisions(
+                        [&app](const SceneNodeCollisionEdit& edit) {
+                            // Author the node's Collision reference (or clear it
+                            // when asset_graph_node_id == 0) + constrain_movement;
+                            // the apply re-bridges + rebuilds the runtime scene so
+                            // the constraint surface takes effect (#216/#217).
+                            app.set_node_collision_asset(
+                                edit.node_id,
+                                edit.asset_graph_node_id,
+                                edit.constrain_movement);
+                        });
+                    control->service_pending_scene_node_motion_terrains(
+                        [&app](const SceneNodeMotionTerrainEdit& edit) {
+                            // Set the Motion terrain-stick fields; the apply
+                            // rebuilds the runtime scene so the constraint loop
+                            // sees them (#216/#217).
+                            app.set_node_motion_terrain_fields(
+                                edit.node_id,
+                                edit.terrain_constrained,
+                                edit.ride_height,
+                                edit.footprint_radius,
+                                edit.align_to_surface,
+                                edit.alignment_strength);
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

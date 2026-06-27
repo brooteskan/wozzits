@@ -1,0 +1,58 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "collision_ref_scene",
+  "note": "Issue #216/#217: drives the collision-by-REFERENCE + motion terrain-stick authoring verbs. Reuses test_rebind_fixture's asset graph (node 9 + node 10 are committed graph nodes with real keys). The collision reference bridge (bridge_scene_collision_keys) is asset-type-agnostic -- it resolves a node id to that node's committed key -- so node 9 stands in for an authored collision_from_height_field node here; the test asserts the bridge + verb + persistence, not the collision asset's contents (covered device-free elsewhere).",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 2, -8],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "landscape",
+      "parent": "root",
+      "name": "landscape",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "tank",
+      "parent": "root",
+      "name": "tank",
+      "transform": {
+        "translation": [0, 50, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

@@ -326,6 +326,14 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/render_binding.scene.json"
     COPYONLY)
 
+# Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
+# collision-by-reference + motion terrain-stick authoring verbs (a landscape
+# node + a tank node, both authored live by the test).
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/collision_ref_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/collision_ref.scene.json"
+    COPYONLY)
+
 # Self-contained fixture for the WozzitsApp_v1 behavior dispatch test: an empty
 # asset graph + a scene with one node bound to the project behavior module
 # "move_up_on_frame". The module DLL (behavior_module_test_plugin, defined with
@@ -872,6 +880,16 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     # terrain_constrained actor sticks to the surface with no behaviors authored.
     rs_add_test_group(render wozzits_app_terrain_constraint_tests)
     add_dependencies(render_wozzits_app_terrain_constraint_tests wz_stage_resources)
+
+    # WozzitsApp_v1 collision-by-reference + motion terrain-stick authoring test
+    # (issue #216/#217). On-device: loads test_rebind_fixture's graph paired with
+    # collision_ref.scene.json; proves set_node_collision_asset bridges the
+    # reference to the graph node's key + set_node_motion_terrain_fields sets the
+    # terrain fields, and both persist through save_scene + a fresh-AppContext
+    # reload.
+    rs_add_test_group(render wozzits_app_collision_motion_authoring_tests)
+    add_dependencies(render_wozzits_app_collision_motion_authoring_tests
+        wz_stage_resources)
     rs_add_test_group(scene_compile scene_compiler_test_2)
     rs_add_test_group(scene_compile scene_compiler_tests_3)
     rs_add_test_group(scene_compile scene_metadata_test_1)

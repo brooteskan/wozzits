@@ -207,6 +207,34 @@ namespace wz::app
         wz::engine::assets::MeshRenderStyleData style{};
     };
 
+    // A live edit to a node's Collision component by REFERENCE (issue #216/#217),
+    // posted from the owner thread (editor UI) to the engine thread. Carries the
+    // authored asset-graph collision node id (0 = clear) and the constrain_movement
+    // toggle. Non-blocking and NOT coalesced (appended in order), matching the
+    // render-binding edits. Applied via WozzitsApp_v1::set_node_collision_asset,
+    // which re-bridges the reference + rebuilds the runtime scene on the next frame.
+    struct SceneNodeCollisionEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+        bool constrain_movement = false;
+    };
+
+    // A live edit to a node's Motion terrain-stick fields (issue #216/#217),
+    // posted from the owner thread (editor UI) to the engine thread. Non-blocking
+    // and NOT coalesced (appended in order). Applied via WozzitsApp_v1::
+    // set_node_motion_terrain_fields, which rebuilds the runtime scene so
+    // integrate_motion + apply_terrain_constraints see the change on the next frame.
+    struct SceneNodeMotionTerrainEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        bool terrain_constrained = false;
+        float ride_height = 0.0f;
+        float footprint_radius = 0.0f;
+        bool align_to_surface = false;
+        float alignment_strength = 1.0f;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -314,6 +342,24 @@ namespace wz::app
         void service_pending_scene_node_render_bindings(
             const std::function<
                 void(const SceneNodeRenderBindingEdit&)>& applier);
+
+        // Owner thread: queue a set/clear of a node's Collision reference +
+        // constrain_movement toggle (non-blocking; appended in order — NOT
+        // coalesced). Applied on the engine thread's next frame, like the
+        // render-binding edits (issue #216/#217).
+        void post_scene_node_collision(SceneNodeCollisionEdit edit);
+
+        void service_pending_scene_node_collisions(
+            const std::function<void(const SceneNodeCollisionEdit&)>& applier);
+
+        // Owner thread: queue a set of a node's Motion terrain-stick fields
+        // (non-blocking; appended in order — NOT coalesced). Applied on the
+        // engine thread's next frame, like the collision edits (issue #216/#217).
+        void post_scene_node_motion_terrain(SceneNodeMotionTerrainEdit edit);
+
+        void service_pending_scene_node_motion_terrains(
+            const std::function<
+                void(const SceneNodeMotionTerrainEdit&)>& applier);
 
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
@@ -423,6 +469,8 @@ namespace wz::app
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
         std::vector<SceneNodeRenderBindingEdit> pending_render_binding_edits_;
+        std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
+        std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;

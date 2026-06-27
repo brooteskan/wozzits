@@ -4223,21 +4223,46 @@ namespace wz::engine::assets::internal
                 node.render_shader = std::move(component);
             }
 
-            std::optional<wz::asset::AssetKey> collision_asset;
-            if (!parse_asset_reference_object(
-                    node_val,
-                    node.id,
-                    "collision",
-                    logger,
-                    collision_asset_references,
-                    collision_asset))
+            // A collision component is present whenever the node carries a
+            // "collision" object — it no longer REQUIRES a resolved 'asset' key,
+            // because a collision can be authored purely by graph reference
+            // (collision_asset_node_id, issue #216/#217) or by an inline
+            // heightfield source, with the key re-bridged on (re)bind.
+            const auto* collision = find_member(node_val, "collision");
+            if (collision
+                && collision->kind == wz::json::JSONValueKind::Object)
             {
-                return std::nullopt;
-            }
-            if (collision_asset) {
-                const auto* collision = find_member(node_val, "collision");
                 SceneCollisionAsset component{};
-                component.collision_asset = *collision_asset;
+
+                // Optional pre-resolved key. Absent for a pure graph reference;
+                // when present it must still resolve (fail closed on a bad ref).
+                if (find_member(*collision, "asset")) {
+                    std::optional<wz::asset::AssetKey> collision_asset;
+                    if (!parse_asset_reference_object(
+                            node_val,
+                            node.id,
+                            "collision",
+                            logger,
+                            collision_asset_references,
+                            collision_asset))
+                    {
+                        return std::nullopt;
+                    }
+                    if (collision_asset) {
+                        component.collision_asset = *collision_asset;
+                    }
+                }
+
+                // Collision reference (issue #216/#217): the authored asset-graph
+                // node id, mirroring render_program. Only the id is persisted;
+                // collision_asset is re-bridged on (re)bind.
+                const auto cid =
+                    read_number(*collision, "collision_asset_node_id");
+                if (cid && *cid > 0.0) {
+                    component.collision_asset_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*cid);
+                    component.collision_asset = {};
+                }
 
                 auto layer_mask = read_number(*collision, "layer_mask");
                 if (layer_mask) {

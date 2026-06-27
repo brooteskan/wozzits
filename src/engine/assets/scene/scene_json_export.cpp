@@ -1708,6 +1708,14 @@ namespace wz::engine::assets
                 bool_value(collision.enabled));
             add_member(*obj, "constrain_movement",
                 bool_value(collision.constrain_movement));
+            // Collision reference (issue #216/#217): persist only the authored
+            // asset-graph node id (the stable intent); the resolved collision_asset
+            // key is re-bridged on every (re)bind, mirroring render_program.
+            if (collision.collision_asset_node_id) {
+                add_member(*obj, "collision_asset_node_id",
+                    number_value(static_cast<double>(
+                        *collision.collision_asset_node_id)));
+            }
             if (collision.height_field_source) {
                 const auto& source = *collision.height_field_source;
                 auto source_obj = object_value();
@@ -2156,8 +2164,16 @@ namespace wz::engine::assets
                 add_member(*obj, "vector_field_source",
                     vector_field_source_value(*node.vector_field_source));
             }
+            // Persist the collision component when it carries ANY authored
+            // intent: a resolved key, a graph reference (issue #216/#217 — the
+            // key may not be bridged yet), a constraint toggle, or an inline
+            // heightfield source. (A bare default-constructed collision with no
+            // key/ref is still skipped.)
             if (node.collision
-                && !(node.collision->collision_asset == wz::asset::AssetKey{}))
+                && (!(node.collision->collision_asset == wz::asset::AssetKey{})
+                    || node.collision->collision_asset_node_id
+                    || node.collision->constrain_movement
+                    || node.collision->height_field_source))
             {
                 add_member(*obj, "collision",
                     collision_value(*node.collision));

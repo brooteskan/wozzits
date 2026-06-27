@@ -59,6 +59,19 @@ namespace wz::engine::assets
         std::span<SceneNodeAsset> nodes,
         const wz::asset::AssetGraphDraft& draft);
 
+    // Re-point each scene node's authored collision graph-node id at the resolved
+    // collision AssetKey for that node in `draft` — the collision analogue of
+    // bridge_scene_renderable_keys (issue #216/#217). Run on every (re)bind so a
+    // graph swap's new keys follow the authored intent. Only touches nodes whose
+    // Collision component carries collision_asset_node_id; the inline
+    // height_field_source materialize path (and a pre-resolved key) are left
+    // untouched when no node id is set. Clears the key first so a removed/renamed
+    // authored collision stops resolving the previous graph's key. Returns the
+    // number of nodes bridged to a live collision key.
+    uint32_t bridge_scene_collision_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft);
+
     // Expand a referenced Scene asset (`sub_scene`) into the host's child
     // SceneNodeAssets (issue #213), shared by the runtime instance graft and the
     // author-time flatten. For each sub-scene node it produces a host child:

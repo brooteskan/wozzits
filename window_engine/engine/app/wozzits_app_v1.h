@@ -245,6 +245,35 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
 
+        // Apply behind the host ABI's set_node_collision verb (issue #216/#217).
+        // Author the node's Collision component by REFERENCE: point it at an
+        // authored asset-graph collision node `asset_graph_node_id` (e.g.
+        // collision_from_height_field) and set whether the resolved surface
+        // constrains Motion actors (constrain_movement). Id 0 clears the
+        // reference. Creates the Collision component if absent, re-bridges the
+        // reference to the bound graph's collision key, and rebuilds the runtime
+        // scene so the constraint surface takes effect; marks the scene dirty.
+        // False (logged no-op) if the node is missing.
+        bool set_node_collision_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id,
+            bool constrain_movement);
+
+        // Apply behind the host ABI's set_node_motion_terrain verb (issue
+        // #216/#217). Set the terrain-stick fields of the node's Motion
+        // component (creating it if absent): whether the actor is constrained to
+        // the terrain surface, its ride height + footprint radius, and whether/
+        // how strongly it aligns to the surface normal. Rebuilds the runtime
+        // scene so integrate_motion + apply_terrain_constraints see the change;
+        // marks the scene dirty. False (logged no-op) if the node is missing.
+        bool set_node_motion_terrain_fields(
+            const wz::scene::AuthoredEntityId& node_id,
+            bool terrain_constrained,
+            float ride_height,
+            float footprint_radius,
+            bool align_to_surface,
+            float alignment_strength);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in scene_nodes_ (id "<host>/<glbname>",
@@ -348,6 +377,21 @@ namespace wz::app
         [[nodiscard]] const wz::engine::assets::SceneGLBSceneSource*
         node_glb_scene_source(
             const wz::scene::AuthoredEntityId& node_id) const;
+
+        // The node's current Collision component (issue #216/#217), or nullptr if
+        // the node is missing or has none. Lets the collision-authoring test
+        // observe set_node_collision_asset's effect (the bridged collision_asset
+        // key + constrain_movement) without a snapshot. The pointer is into
+        // scene_nodes_ — valid only until the next scene mutation.
+        [[nodiscard]] const wz::engine::assets::SceneCollisionAsset*
+        node_collision(const wz::scene::AuthoredEntityId& node_id) const;
+
+        // The node's current Motion component (issue #216/#217), or nullptr if
+        // the node is missing or has none. Lets the motion-terrain test observe
+        // set_node_motion_terrain_fields without a snapshot. Same pointer-lifetime
+        // caveat as node_collision.
+        [[nodiscard]] const wz::engine::assets::SceneMotionAsset*
+        node_motion(const wz::scene::AuthoredEntityId& node_id) const;
 
         // A COPY of just the runtime-grafted scene nodes (issue #213): the
         // entries of scene_nodes_ whose id is in grafted_node_ids_ — the

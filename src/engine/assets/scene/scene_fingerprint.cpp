@@ -651,6 +651,10 @@ namespace wz::engine::assets
                 fp.mix_value(collision.is_trigger);
                 fp.mix_value(collision.enabled);
                 fp.mix_value(collision.constrain_movement);
+                fp.mix_value(collision.collision_asset_node_id.has_value());
+                if (collision.collision_asset_node_id) {
+                    fp.mix_value(*collision.collision_asset_node_id);
+                }
                 fp.mix_value(collision.height_field_source.has_value());
                 if (collision.height_field_source) {
                     const auto& source = *collision.height_field_source;

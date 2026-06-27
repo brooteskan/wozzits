@@ -994,6 +994,41 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_render_program(
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
 
+// Author node `node_id_utf8`'s Collision component by REFERENCE (issue
+// #216/#217): point it at an authored asset-graph collision node
+// `asset_graph_node_id` (e.g. collision_from_height_field), or CLEAR the
+// reference when the id is 0. `constrain_movement` (0/1) sets whether the
+// resolved surface constrains Motion actors (terrain-stick). Creates the
+// Collision component if absent. DEFERRED (applied on the engine thread's next
+// frame) and NON-BLOCKING, like the render-binding verbs; the engine re-bridges
+// the reference + rebuilds the runtime scene so the constraint surface takes
+// effect. Marks the scene dirty. An unknown/missing node is a logged
+// engine-thread no-op. HOST-CAPABILITY GATE (require_host_scene_authoring):
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty node id, or a non-host
+// caller. NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
+WZ_ABI_API WzResult wz_host_runtime_set_node_collision(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint32_t asset_graph_node_id,
+    uint8_t constrain_movement);
+
+// Set node `node_id_utf8`'s Motion terrain-stick fields (issue #216/#217):
+// whether the actor is constrained to the terrain surface
+// (`terrain_constrained`, 0/1), its `ride_height` + `footprint_radius`, and
+// whether/how strongly it aligns to the surface normal (`align_to_surface` 0/1,
+// `alignment_strength`). Creates the Motion component if absent. Same deferral,
+// gating, and version note as wz_host_runtime_set_node_collision; the engine
+// rebuilds the runtime scene so integrate_motion + apply_terrain_constraints see
+// the change.
+WZ_ABI_API WzResult wz_host_runtime_set_node_motion_terrain(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint8_t terrain_constrained,
+    float ride_height,
+    float footprint_radius,
+    uint8_t align_to_surface,
+    float alignment_strength);
+
 // Author the PREFERRED asset-graph-backed Scene-source component on node
 // `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"
 // asset-graph node `asset_graph_node_id`, or CLEAR the scene source when the id

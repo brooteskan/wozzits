@@ -213,6 +213,13 @@ namespace wz::app
         const uint32_t scene_sources_bridged =
             wz::engine::assets::bridge_scene_source_keys(scene_nodes_, draft);
         (void)scene_sources_bridged;
+        // Re-point authored collision references at the freshly committed graph's
+        // collision keys (issue #216/#217), mirroring the renderable/source
+        // bridges above. No-op on the first bind during load_scene (scene_nodes_
+        // empty); load_scene re-runs it after populating nodes.
+        const uint32_t collisions_bridged =
+            wz::engine::assets::bridge_scene_collision_keys(scene_nodes_, draft);
+        (void)collisions_bridged;
         const std::size_t bind_grafted = graft_scene_sources();
         // Assemble the freshly grafted children's intrinsic geometry bindings
         // (#213 increment 3) — the pre-graft assemble above ran before they
@@ -428,6 +435,12 @@ namespace wz::app
         const uint32_t scene_sources_bridged =
             wz::engine::assets::bridge_scene_source_keys(
                 scene_nodes_, graph_draft_);
+        // Re-point authored collision references at the bound graph's collision
+        // keys (issue #216/#217), mirroring the renderable/source bridges; the
+        // graph is committed by now (materialize ran above), so the referenced
+        // collision node's key resolves.
+        wz::engine::assets::bridge_scene_collision_keys(
+            scene_nodes_, graph_draft_);
         // Flatten any glb_scene_source node authored with consume_mode=Flatten:
         // expand persistently (and drop the descriptor), exactly like the editor
         // "bake" action, so a Flatten-authored scene loads as real nodes. The
@@ -1640,6 +1653,73 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_collision_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id,
+        bool constrain_movement)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_collision_asset: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_collision_asset_node(
+                *node, asset_graph_node_id, constrain_movement);
+        }
+        else {
+            wz::engine::assets::detach_collision_asset_node(*node);
+            // A cleared reference also clears constrain_movement so the node
+            // stops constraining (it has no surface to stick to).
+            if (node->collision) {
+                node->collision->constrain_movement = constrain_movement;
+            }
+        }
+        scene_dirty_ = true;
+        // Re-point the (possibly new) reference at the bound graph's collision
+        // key, then re-materialize so the runtime scene picks up the constraint
+        // surface (rebuild_behavior_scene rebuilds the SceneInstance whose
+        // collision world the constraint loop reads).
+        wz::engine::assets::bridge_scene_collision_keys(
+            scene_nodes_, graph_draft_);
+        rebuild_behavior_scene();
+        return true;
+    }
+
+    bool WozzitsApp_v1::set_node_motion_terrain_fields(
+        const wz::scene::AuthoredEntityId& node_id,
+        bool terrain_constrained,
+        float ride_height,
+        float footprint_radius,
+        bool align_to_surface,
+        float alignment_strength)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_motion_terrain_fields: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (!node->motion) {
+            node->motion.emplace();
+        }
+        node->motion->terrain_constrained = terrain_constrained;
+        node->motion->terrain_ride_height = ride_height;
+        node->motion->terrain_footprint_radius = footprint_radius;
+        node->motion->terrain_align_to_surface = align_to_surface;
+        node->motion->terrain_alignment_strength = alignment_strength;
+        scene_dirty_ = true;
+        // The Motion record participates in the runtime scene (integrate_motion
+        // + apply_terrain_constraints); rebuild so the change takes effect.
+        rebuild_behavior_scene();
+        return true;
+    }
+
     void WozzitsApp_v1::rematerialize_render_bindings()
     {
         if (!ctx_.assets) {
@@ -1988,6 +2068,30 @@ namespace wz::app
             return nullptr;
         }
         return &*node->glb_scene_source;
+    }
+
+    const wz::engine::assets::SceneCollisionAsset*
+    WozzitsApp_v1::node_collision(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->collision) {
+            return nullptr;
+        }
+        return &*node->collision;
+    }
+
+    const wz::engine::assets::SceneMotionAsset*
+    WozzitsApp_v1::node_motion(
+        const wz::scene::AuthoredEntityId& node_id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node || !node->motion) {
+            return nullptr;
+        }
+        return &*node->motion;
     }
 
     std::vector<wz::engine::assets::SceneNodeAsset>

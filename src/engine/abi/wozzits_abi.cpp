@@ -1714,6 +1714,82 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_collision(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint32_t asset_graph_node_id,
+        uint8_t constrain_movement)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_collision(
+                wz::app::SceneNodeCollisionEdit{
+                    .node_id = node_id_utf8,
+                    .asset_graph_node_id = asset_graph_node_id,
+                    .constrain_movement = constrain_movement != 0,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node collision post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_set_node_motion_terrain(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint8_t terrain_constrained,
+        float ride_height,
+        float footprint_radius,
+        uint8_t align_to_surface,
+        float alignment_strength)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_motion_terrain(
+                wz::app::SceneNodeMotionTerrainEdit{
+                    .node_id = node_id_utf8,
+                    .terrain_constrained = terrain_constrained != 0,
+                    .ride_height = ride_height,
+                    .footprint_radius = footprint_radius,
+                    .align_to_surface = align_to_surface != 0,
+                    .alignment_strength = alignment_strength,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node motion terrain post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_scene_source(
         WzHostRuntime* runtime,
         const char* node_id_utf8,
