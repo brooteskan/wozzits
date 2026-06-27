@@ -420,6 +420,52 @@ TEST(CollisionAssetModule, HeightFieldProducesConstraintCollisionAsset)
     EXPECT_FLOAT_EQ(data->max_height, kBaseHeight + kVerticalScale);
 }
 
+// A degenerate projection resolution (< 2, e.g. a stray 1 from the editor) must
+// fall back to the field's native resolution rather than failing to compile a
+// 1x1 heightfield (issue #216 — this was the "compiled height field collision
+// asset is invalid" CompileFailed the user hit).
+TEST(CollisionAssetModule, HeightFieldDegenerateProjectionResolutionFallsBackToNative)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_height_field_degenerate_projection_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/degenerate_projection_field",
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    const auto collision = assets.collisions().create_from_height_field({
+        .name = "collision/degenerate_projection_constraint",
+        .height_field = field,
+        .projection_resolution_x = 1u,  // degenerate -> native (4)
+        .projection_resolution_y = 1u,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    EXPECT_TRUE(assets.resolve_all().ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(collision));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->resolution_x, 4u);  // native, not 1
+    EXPECT_EQ(data->resolution_y, 4u);
+    EXPECT_EQ(data->height_samples.size(), 16u);
+}
+
 TEST(CollisionAssetModule, MeshTerrainProducesRegularProjectionHeightField)
 {
     const wz::fs::Path root =

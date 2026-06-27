@@ -1391,12 +1391,16 @@ namespace wz::engine::assets::internal
             data.geometry_asset = desc.height_field;
             data.occupancy = desc.occupancy;
 
+            // projection_resolution downsamples the constraint grid; 0 means
+            // "native field resolution". A heightfield needs >= 2 per axis to
+            // bilinear-sample, so any value < 2 (incl. a stray 1) falls back to
+            // native rather than producing a degenerate, invalid surface.
             const uint32_t resolution_x =
-                desc.projection_resolution_x == 0u
+                desc.projection_resolution_x < 2u
                     ? field.width
                     : desc.projection_resolution_x;
             const uint32_t resolution_y =
-                desc.projection_resolution_y == 0u
+                desc.projection_resolution_y < 2u
                     ? field.height
                     : desc.projection_resolution_y;
 
@@ -1455,12 +1459,14 @@ namespace wz::engine::assets::internal
             if (desc.build_method
                 == CollisionBuildMethod::TerrainProjectionHeightField)
             {
+                // < 2 (incl. 0 = native) falls back to the terrain's native
+                // resolution; a heightfield needs >= 2 per axis to sample.
                 const uint32_t resolution_x =
-                    desc.projection_resolution_x == 0u
+                    desc.projection_resolution_x < 2u
                         ? terrain.resolution_x
                         : desc.projection_resolution_x;
                 const uint32_t resolution_y =
-                    desc.projection_resolution_y == 0u
+                    desc.projection_resolution_y < 2u
                         ? terrain.resolution_y
                         : desc.projection_resolution_y;
                 const bool projected =
@@ -1920,7 +1926,11 @@ namespace wz::engine::assets::internal
                     collision_from_height_field(*desc, *field);
                 if (!data.valid()) {
                     logger.error(
-                        "compiled height field collision asset is invalid");
+                        "compiled height field collision asset is invalid "
+                        "(source field "
+                        + std::to_string(field->width) + "x"
+                        + std::to_string(field->height)
+                        + "; the height field must be at least 2x2)");
                     return compile_failed_node(input);
                 }
 
