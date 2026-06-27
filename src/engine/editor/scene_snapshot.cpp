@@ -467,6 +467,64 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Read the authored Collision-component field values from a node's
+        // "collision" object (read-back gap fix). Tolerant: a missing/malformed
+        // block is treated as absent (returns nullopt). Surfaces the editor-
+        // authorable subset: the collision asset-graph node ref (the persisted
+        // intent) and constrain_movement; these match scene_json_export's
+        // collision_value writer.
+        std::optional<SceneSnapshotCollision> read_collision(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* collision = wz::json::find_member(obj, "collision");
+            if (!collision
+                || collision->kind != wz::json::JSONValueKind::Object)
+            {
+                return std::nullopt;
+            }
+            SceneSnapshotCollision out;
+            if (const auto node_id =
+                    wz::json::read_number(*collision, "collision_asset_node_id");
+                node_id && *node_id >= 0.0)
+            {
+                out.collision_asset_node_id =
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+            }
+            out.constrain_movement =
+                wz::json::read_bool(*collision, "constrain_movement")
+                    .value_or(false);
+            return out;
+        }
+
+        // Read the authored Motion-component terrain-stick field values from a
+        // node's "motion" object (read-back gap fix). Tolerant: a missing block is
+        // absent (nullopt). Field names match scene_json_export's motion_value.
+        std::optional<SceneSnapshotMotion> read_motion(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* motion = wz::json::find_member(obj, "motion");
+            if (!motion || motion->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            SceneSnapshotMotion out;
+            out.terrain_constrained =
+                wz::json::read_bool(*motion, "terrain_constrained")
+                    .value_or(false);
+            out.ride_height = static_cast<float>(
+                wz::json::read_number(*motion, "terrain_ride_height")
+                    .value_or(0.0));
+            out.footprint_radius = static_cast<float>(
+                wz::json::read_number(*motion, "terrain_footprint_radius")
+                    .value_or(0.0));
+            out.align_to_surface =
+                wz::json::read_bool(*motion, "terrain_align_to_surface")
+                    .value_or(false);
+            out.alignment_strength = static_cast<float>(
+                wz::json::read_number(*motion, "terrain_alignment_strength")
+                    .value_or(1.0));
+            return out;
+        }
+
         // Map a live SceneNodeAsset's local AuthoredTransform (issue #213) into a
         // SceneSnapshotTransform, REUSING the same euler/display helpers the
         // file-path reader uses so the two routes format identically.
@@ -549,6 +607,28 @@ namespace wz::engine::editor
             // matching the JSON node path (read_node).
             node.render_program_node_id = source.render_program_node_id;
 
+            // Persisted Collision/Motion field values (read-back gap fix): the
+            // grafted/SceneNodeAsset path reads them off the asset structs so the
+            // inspector restores the same fields the JSON path surfaces.
+            if (source.collision) {
+                SceneSnapshotCollision collision;
+                collision.collision_asset_node_id =
+                    source.collision->collision_asset_node_id;
+                collision.constrain_movement =
+                    source.collision->constrain_movement;
+                node.collision = collision;
+            }
+            if (source.motion) {
+                node.motion = SceneSnapshotMotion{
+                    .terrain_constrained = source.motion->terrain_constrained,
+                    .ride_height = source.motion->terrain_ride_height,
+                    .footprint_radius = source.motion->terrain_footprint_radius,
+                    .align_to_surface = source.motion->terrain_align_to_surface,
+                    .alignment_strength =
+                        source.motion->terrain_alignment_strength,
+                };
+            }
+
             node.kind = node_kind(node);
             node.renderable_source = node.renderable
                 ? node.renderable->source
@@ -625,6 +705,10 @@ namespace wz::engine::editor
             }
             node.behaviors = read_behaviors(value);
             node.scene_source = read_scene_source(value);
+            // Persisted Collision/Motion component field values (read-back gap
+            // fix): surface so the inspector restores them on select + reload.
+            node.collision = read_collision(value);
+            node.motion = read_motion(value);
             // Authored render-binding refs (issue #213): surface the persisted
             // node ids so the inspector reveals + pre-selects these sections.
             node.scene_source_node_id =

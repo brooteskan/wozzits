@@ -59,6 +59,27 @@ namespace wz::engine::editor
         std::string display_name;
     };
 
+    // Authored Collision-component field values surfaced read-back so the editor
+    // inspector restores them on select + after reload (the read-back gap fix;
+    // previously collision was presence-only). collision_asset_node_id is the
+    // authored asset-graph collision node id (unset when absent).
+    struct SceneSnapshotCollision
+    {
+        std::optional<wz::asset::AssetGraphDraftNodeId> collision_asset_node_id;
+        bool constrain_movement = false;
+    };
+
+    // Authored Motion-component field values surfaced read-back so the editor
+    // inspector restores them (the terrain-stick subset).
+    struct SceneSnapshotMotion
+    {
+        bool terrain_constrained = false;
+        float ride_height = 0.0f;
+        float footprint_radius = 0.0f;
+        bool align_to_surface = false;
+        float alignment_strength = 1.0f;
+    };
+
     // The high-impact subset of a MeshRenderStyleData that the editor reads back
     // and re-authors for a GLB component (issue #213 Phase 3b-2): surface +
     // wireframe enabled flags and RGBA colors. The rest of MeshRenderStyleData is
@@ -141,6 +162,10 @@ namespace wz::engine::editor
         std::optional<wz::asset::AssetGraphDraftNodeId> scene_source_node_id;
         std::optional<wz::asset::AssetGraphDraftNodeId> geometry_node_id;
         std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
+        // Persisted Collision/Motion component field values (read-back gap fix),
+        // surfaced so the inspector restores them on select + after reload.
+        std::optional<SceneSnapshotCollision> collision;
+        std::optional<SceneSnapshotMotion> motion;
         std::vector<SceneSnapshotNode> children;
     };
 

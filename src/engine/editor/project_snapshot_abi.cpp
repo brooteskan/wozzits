@@ -348,6 +348,32 @@ namespace wz::engine::editor
                 out.render_program_node_id = *node.render_program_node_id;
             }
 
+            // Persisted Collision/Motion component field values (read-back gap
+            // fix): pack the field values + set the presence flag so the inspector
+            // restores them on select + after reload.
+            if (node.collision) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_COLLISION;
+                out.collision.has_collision_ref =
+                    node.collision->collision_asset_node_id ? 1u : 0u;
+                out.collision.collision_asset_node_id =
+                    node.collision->collision_asset_node_id
+                        ? static_cast<uint32_t>(
+                              *node.collision->collision_asset_node_id)
+                        : 0u;
+                out.collision.constrain_movement =
+                    node.collision->constrain_movement ? 1u : 0u;
+            }
+            if (node.motion) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_MOTION;
+                out.motion.terrain_constrained =
+                    node.motion->terrain_constrained ? 1u : 0u;
+                out.motion.align_to_surface =
+                    node.motion->align_to_surface ? 1u : 0u;
+                out.motion.ride_height = node.motion->ride_height;
+                out.motion.footprint_radius = node.motion->footprint_radius;
+                out.motion.alignment_strength = node.motion->alignment_strength;
+            }
+
             out.children = scene_nodes_abi(builder, node.children);
             return out;
         }

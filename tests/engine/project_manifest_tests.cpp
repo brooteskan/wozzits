@@ -1021,6 +1021,115 @@ TEST(ProjectSceneSnapshot, SurfacesRenderBindingRefsInAbiBlob)
         abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
 }
 
+// The v27 snapshot surfaces the persisted Collision/Motion component field values
+// (read-back gap fix) so the editor's inspector restores them on select + after
+// reload instead of resetting to defaults. A node with neither component keeps
+// both HAS_* flags clear.
+TEST(ProjectSceneSnapshot, SurfacesCollisionAndMotionFieldsInAbiBlob)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "collision_motion_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Collision Motion Fields",
+  "scene": "scene.json"
+})json");
+
+    // "actor" carries both collision (with a node ref + constrain_movement) and
+    // motion (terrain-stick fields); "plain" carries neither.
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "collision_motion_scene",
+  "nodes": [
+    { "id": "root", "parent": null, "visible": true },
+    {
+      "id": "actor",
+      "parent": "root",
+      "collision": {
+        "collision_asset_node_id": 17,
+        "constrain_movement": true
+      },
+      "motion": {
+        "terrain_constrained": true,
+        "terrain_ride_height": 2.5,
+        "terrain_footprint_radius": 0.75,
+        "terrain_align_to_surface": true,
+        "terrain_alignment_strength": 0.5
+      }
+    },
+    { "id": "plain", "parent": "root" }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& root = loaded.snapshot.roots[0];
+    ASSERT_EQ(root.children.size(), 2u);
+
+    const auto& actor = root.children[0];
+    EXPECT_EQ(actor.id, "actor");
+    ASSERT_TRUE(actor.collision);
+    ASSERT_TRUE(actor.collision->collision_asset_node_id);
+    EXPECT_EQ(*actor.collision->collision_asset_node_id, 17u);
+    EXPECT_TRUE(actor.collision->constrain_movement);
+    ASSERT_TRUE(actor.motion);
+    EXPECT_TRUE(actor.motion->terrain_constrained);
+    EXPECT_FLOAT_EQ(actor.motion->ride_height, 2.5f);
+    EXPECT_FLOAT_EQ(actor.motion->footprint_radius, 0.75f);
+    EXPECT_TRUE(actor.motion->align_to_surface);
+    EXPECT_FLOAT_EQ(actor.motion->alignment_strength, 0.5f);
+
+    const auto& plain = root.children[1];
+    EXPECT_EQ(plain.id, "plain");
+    EXPECT_EQ(plain.collision, std::nullopt);
+    EXPECT_EQ(plain.motion, std::nullopt);
+
+    // Round-trip through the editor ABI blob: flags + packed field values.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    const WzEditorSceneNode* children =
+        abi_table<WzEditorSceneNode>(blob, roots[0].children);
+
+    const WzEditorSceneNode& abi_actor = children[0];
+    EXPECT_NE(abi_actor.flags & WZ_EDITOR_SCENE_NODE_HAS_COLLISION, 0u);
+    EXPECT_NE(abi_actor.flags & WZ_EDITOR_SCENE_NODE_HAS_MOTION, 0u);
+    EXPECT_EQ(abi_actor.collision.has_collision_ref, 1u);
+    EXPECT_EQ(abi_actor.collision.collision_asset_node_id, 17u);
+    EXPECT_EQ(abi_actor.collision.constrain_movement, 1u);
+    EXPECT_EQ(abi_actor.motion.terrain_constrained, 1u);
+    EXPECT_EQ(abi_actor.motion.align_to_surface, 1u);
+    EXPECT_FLOAT_EQ(abi_actor.motion.ride_height, 2.5f);
+    EXPECT_FLOAT_EQ(abi_actor.motion.footprint_radius, 0.75f);
+    EXPECT_FLOAT_EQ(abi_actor.motion.alignment_strength, 0.5f);
+
+    const WzEditorSceneNode& abi_plain = children[1];
+    EXPECT_EQ(abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_COLLISION, 0u);
+    EXPECT_EQ(abi_plain.flags & WZ_EDITOR_SCENE_NODE_HAS_MOTION, 0u);
+}
+
 TEST(AssetGraphSnapshot, ShowsTypedPortsAndPersistsNodeLayout)
 {
     TempProjectRoot temp;

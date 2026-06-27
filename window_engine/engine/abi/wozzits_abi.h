@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 26u
+#define WZ_ABI_VERSION 27u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -199,6 +199,12 @@ enum
     WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF = 1u << 8u,
     WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY = 1u << 9u,
     WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM = 1u << 10u,
+    // Persisted Collision/Motion component field values (read-back gap fix): when
+    // set, the node's `collision`/`motion` struct carries the authored field
+    // values so the inspector restores them on select + after reload (without
+    // these the components surfaced presence-only, resetting fields to defaults).
+    WZ_EDITOR_SCENE_NODE_HAS_COLLISION = 1u << 11u,
+    WZ_EDITOR_SCENE_NODE_HAS_MOTION = 1u << 12u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -298,6 +304,35 @@ typedef struct WzEditorSceneSceneSource
     WzEditorTableSpan style_overrides; // WzEditorGlbStyleOverride[]
 } WzEditorSceneSceneSource;
 
+// Authored Collision-component field values surfaced read-back so the inspector
+// restores them on select + after reload (present iff WZ_EDITOR_SCENE_NODE_HAS_
+// COLLISION). `has_collision_ref` is 0/1; `collision_asset_node_id` is the
+// authored asset-graph collision node id (valid iff has_collision_ref).
+// `constrain_movement` is 0/1.
+typedef struct WzEditorSceneCollision
+{
+    uint32_t collision_asset_node_id;
+    uint8_t has_collision_ref;
+    uint8_t constrain_movement;
+    uint8_t reserved0;
+    uint8_t reserved1;
+} WzEditorSceneCollision;
+
+// Authored Motion-component field values surfaced read-back so the inspector
+// restores them on select + after reload (present iff WZ_EDITOR_SCENE_NODE_HAS_
+// MOTION). The terrain-stick subset: `terrain_constrained`/`align_to_surface`
+// are 0/1; ride/footprint/strength are floats.
+typedef struct WzEditorSceneMotion
+{
+    uint8_t terrain_constrained;
+    uint8_t align_to_surface;
+    uint8_t reserved0;
+    uint8_t reserved1;
+    float ride_height;
+    float footprint_radius;
+    float alignment_strength;
+} WzEditorSceneMotion;
+
 typedef struct WzEditorSceneComponent
 {
     WzEditorStringSpan kind;
@@ -346,6 +381,11 @@ typedef struct WzEditorSceneNode
     uint64_t scene_source_node_id;
     uint64_t geometry_node_id;
     uint64_t render_program_node_id;
+    // Persisted Collision/Motion component field values (read-back gap fix), each
+    // valid iff its HAS_* flag is set. Appended last so existing field offsets are
+    // unchanged.
+    WzEditorSceneCollision collision;
+    WzEditorSceneMotion motion;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -553,6 +593,22 @@ static_assert(offsetof(WzEditorSceneSceneSource, reserved) == 60);
 static_assert(offsetof(WzEditorSceneSceneSource, base_style) == 64);
 static_assert(offsetof(WzEditorSceneSceneSource, style_overrides) == 104);
 
+static_assert(sizeof(WzEditorSceneCollision) == 8);
+static_assert(offsetof(WzEditorSceneCollision, collision_asset_node_id) == 0);
+static_assert(offsetof(WzEditorSceneCollision, has_collision_ref) == 4);
+static_assert(offsetof(WzEditorSceneCollision, constrain_movement) == 5);
+static_assert(offsetof(WzEditorSceneCollision, reserved0) == 6);
+static_assert(offsetof(WzEditorSceneCollision, reserved1) == 7);
+
+static_assert(sizeof(WzEditorSceneMotion) == 16);
+static_assert(offsetof(WzEditorSceneMotion, terrain_constrained) == 0);
+static_assert(offsetof(WzEditorSceneMotion, align_to_surface) == 1);
+static_assert(offsetof(WzEditorSceneMotion, reserved0) == 2);
+static_assert(offsetof(WzEditorSceneMotion, reserved1) == 3);
+static_assert(offsetof(WzEditorSceneMotion, ride_height) == 4);
+static_assert(offsetof(WzEditorSceneMotion, footprint_radius) == 8);
+static_assert(offsetof(WzEditorSceneMotion, alignment_strength) == 12);
+
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
 static_assert(offsetof(WzEditorSceneComponent, display_name) == 16);
@@ -566,7 +622,7 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 592);
+static_assert(sizeof(WzEditorSceneNode) == 616);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -583,6 +639,8 @@ static_assert(offsetof(WzEditorSceneNode, scene_source) == 448);
 static_assert(offsetof(WzEditorSceneNode, scene_source_node_id) == 568);
 static_assert(offsetof(WzEditorSceneNode, geometry_node_id) == 576);
 static_assert(offsetof(WzEditorSceneNode, render_program_node_id) == 584);
+static_assert(offsetof(WzEditorSceneNode, collision) == 592);
+static_assert(offsetof(WzEditorSceneNode, motion) == 600);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
