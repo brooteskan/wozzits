@@ -149,3 +149,52 @@ TEST_F(WozzitsAppTerrainConstraintFixture, ConstrainedActorSticksWithNoBehaviors
     EXPECT_NEAR(actor_settled->y, settled_y, 1e-3f)
         << "constrained actor did not stay stuck on a second tick";
 }
+
+// #218 follow-up: editing a sim-driven node's SCALE (a DOF the terrain
+// constraint does not control) must survive the per-frame write-back. The edit
+// goes to scene_nodes_; the sim runs on a separate behavior_scene_ copy and
+// writes its full TRS back into scene_nodes_ each tick. set_node_transform now
+// mirrors the edit into the sim node, so the write-back preserves the authored
+// scale instead of reverting it to the sim node's stale value (~1). Without the
+// sync this asserts at scale ~1.
+TEST_F(WozzitsAppTerrainConstraintFixture, ConstrainedActorKeepsEditedScaleAcrossTick)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(load_desc()));
+
+    const auto start_t = app.node_local_translation("actor");
+    ASSERT_TRUE(start_t.has_value());
+
+    // Scale the constrained actor up, keeping its translation; rotation identity
+    // (the align-to-surface constraint will set rotation itself each frame).
+    wz::engine::assets::AuthoredTransform edited{};
+    edited.translation[0] = start_t->x;
+    edited.translation[1] = start_t->y;
+    edited.translation[2] = start_t->z;
+    edited.rotation_quat[0] = 0.0f;
+    edited.rotation_quat[1] = 0.0f;
+    edited.rotation_quat[2] = 0.0f;
+    edited.rotation_quat[3] = 1.0f;
+    edited.scale[0] = 5.0f;
+    edited.scale[1] = 5.0f;
+    edited.scale[2] = 5.0f;
+    ASSERT_TRUE(app.set_node_transform("actor", edited));
+
+    const wz::input::InputState input{};
+    app.simulation_tick(input, 1.0f / 60.0f);
+
+    // The authored scale survives the constraint write-back.
+    const auto after_s = app.node_local_scale("actor");
+    ASSERT_TRUE(after_s.has_value());
+    EXPECT_NEAR(after_s->x, 5.0f, 1e-3f)
+        << "edited scale was reverted by the per-frame sim write-back";
+    EXPECT_NEAR(after_s->y, 5.0f, 1e-3f);
+    EXPECT_NEAR(after_s->z, 5.0f, 1e-3f);
+
+    // And the actor still snaps to the surface — the scale edit didn't break the
+    // constraint (Y is driven down well below the start height).
+    const auto after_t = app.node_local_translation("actor");
+    ASSERT_TRUE(after_t.has_value());
+    EXPECT_LT(after_t->y, kStartHeight - 1.0f)
+        << "constrained actor stopped sticking after a scale edit";
+}

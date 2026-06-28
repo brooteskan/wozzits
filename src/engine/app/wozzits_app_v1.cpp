@@ -1357,6 +1357,21 @@ namespace wz::app
         };
     }
 
+    std::optional<wz::math::Vec3> WozzitsApp_v1::node_local_scale(
+        const wz::scene::AuthoredEntityId& id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, id);
+        if (!node) {
+            return std::nullopt;
+        }
+        return wz::math::Vec3{
+            node->local.scale[0],
+            node->local.scale[1],
+            node->local.scale[2],
+        };
+    }
+
     bool WozzitsApp_v1::set_node_transform(
         const wz::scene::AuthoredEntityId& id,
         const wz::engine::assets::AuthoredTransform& transform)
@@ -1368,6 +1383,46 @@ namespace wz::app
         }
         wz::engine::assets::set_transform(*node, transform);
         scene_dirty_ = true;
+
+        // Mirror the edit into the LIVE simulation graph (#218 follow-up).
+        // scene_nodes_ is the render/authoring copy; behavior_scene_ is the
+        // separate sim copy. For a node the sim drives each frame (e.g. a
+        // terrain_constrained actor), simulation_tick writes the sim node's full
+        // TRS back into scene_nodes_ — so an edit that only touched scene_nodes_
+        // is reverted next frame to the sim node's stale value. The constraint
+        // only controls translation+rotation, so it's the SCALE the user can't
+        // change. Push the authored transform into the sim node in place (not a
+        // full rebuild, so a per-keystroke drag doesn't reset motion/behavior
+        // state); the next tick's propagate_all settles world matrices, and the
+        // scale-preserving constraint keeps the authored scale.
+        if (behavior_scene_) {
+            const auto it = behavior_scene_->authored_to_runtime.find(id);
+            if (it != behavior_scene_->authored_to_runtime.end()) {
+                wz::math::Transform trs{};
+                trs.position = {
+                    transform.translation[0],
+                    transform.translation[1],
+                    transform.translation[2],
+                };
+                trs.rotation = {
+                    transform.rotation_quat[0],
+                    transform.rotation_quat[1],
+                    transform.rotation_quat[2],
+                    transform.rotation_quat[3],
+                };
+                trs.scale = {
+                    transform.scale[0],
+                    transform.scale[1],
+                    transform.scale[2],
+                };
+                // node_data is const-only; the constraint pipeline mutates the
+                // polytree the same way (const_cast in apply_terrain_constraints).
+                const_cast<wz::scene::TransformNode&>(
+                    wz::core::graph::node_data(
+                        behavior_scene_->storage.polytree, it->second))
+                    .local = wz::math::transform(trs);
+            }
+        }
         return true;
     }
 

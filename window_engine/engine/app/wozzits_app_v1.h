@@ -491,6 +491,13 @@ namespace wz::app
         [[nodiscard]] std::optional<wz::math::Vec3> node_local_translation(
             const wz::scene::AuthoredEntityId& id) const;
 
+        // Current authored local scale of the live scene node with `id`. Like
+        // node_local_translation, reflects the per-frame sim write-back, so a
+        // test can confirm a scale edit on a sim-driven (e.g. terrain
+        // constrained) node survives a simulation_tick (#218 follow-up).
+        [[nodiscard]] std::optional<wz::math::Vec3> node_local_scale(
+            const wz::scene::AuthoredEntityId& id) const;
+
     private:
         // The view-projection render_scene draws with: the override if set,
         // otherwise built from the free-fly camera + projection params + aspect.
