@@ -17,6 +17,10 @@ namespace
         wz::fs::Path resource_root{ "resources" };
         wz::fs::Path asset_graph;
         wz::fs::Path scene;
+        // Folder of project-authored behavior-module DLLs. Empty => built-ins
+        // only (the loader early-returns on an empty folder). Resolved against
+        // the asset resource root, matching the editor's resident runtime.
+        wz::fs::Path behavior_modules;
         // > 0 => render this many frames then exit with a verification exit code
         // (the standalone-render check); 0 => run interactively until closed.
         uint32_t max_frames = 0;
@@ -38,6 +42,9 @@ namespace
             }
             else if (arg == "--scene" && i + 1 < argc) {
                 out.scene = argv[++i];
+            }
+            else if (arg == "--behavior-modules" && i + 1 < argc) {
+                out.behavior_modules = argv[++i];
             }
             else if (arg == "--frames" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -74,7 +81,8 @@ int main(int argc, char** argv)
     if (!parse_options(argc, argv, options, error)) {
         std::cerr
             << "usage: wozzits_app_v1 --asset-graph <path> --scene <path> "
-               "[--resource-root <path>] [--frames <n>]\n"
+               "[--resource-root <path>] [--behavior-modules <dir>] "
+               "[--frames <n>]\n"
             << error << '\n';
         return 2;
     }
@@ -86,6 +94,6 @@ int main(int argc, char** argv)
         options.resource_root,
         nullptr,
         {},  // log sink: none (logs go to stdout)
-        {},  // behavior module folder: built-ins only
+        options.behavior_modules,  // empty => built-ins only
         wz::app::RuntimeRunOptions{ .max_frames = options.max_frames });
 }

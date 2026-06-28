@@ -229,6 +229,15 @@ namespace
             + L" --asset-graph " + quote_command_arg(launch.asset_graph_path)
             + L" --scene " + quote_command_arg(launch.scene_path);
 
+        // Forward the project's behavior-module folder so the standalone app
+        // loads project DLLs, not just built-ins — matching the editor's
+        // resident runtime (which passes manifest.behavior_module_folder into
+        // run_project_runtime). Empty => the app stays built-ins only.
+        if (!launch.manifest.behavior_module_folder.empty()) {
+            command += L" --behavior-modules "
+                + quote_command_arg(launch.manifest.behavior_module_folder);
+        }
+
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
         startup.dwFlags = STARTF_USESTDHANDLES;
