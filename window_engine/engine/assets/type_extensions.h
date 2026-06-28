@@ -179,6 +179,14 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeMeshClusterHierarchy =
         static_cast<wz::asset::AssetType>(158);
 
+    // Implemented: CPU-side world-space placement frame (origin, extent, base
+    // height). A generic frame describing where/how-large world data sits, free
+    // of terrain/heightfield/texel vocabulary. Runtime data is owned by
+    // PlacementTable. Distinct from kAssetTypePlacementSet (2066), which is a
+    // reserved *set* of placement instances for scattering — this is one frame.
+    inline constexpr wz::asset::AssetType kAssetTypePlacement =
+        static_cast<wz::asset::AssetType>(159);
+
     // Reserved CPU data asset type. Not implemented yet.
     inline constexpr wz::asset::AssetType kAssetTypePointCloud =
         static_cast<wz::asset::AssetType>(132);

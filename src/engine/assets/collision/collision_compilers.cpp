@@ -7,6 +7,7 @@
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
+#include <engine/assets/placement/placement.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -707,8 +708,17 @@ namespace wz::engine::assets::internal
             std::span<const wz::asset::AssetNode> dep_nodes)
         {
             CollisionFromHeightFieldCompileDesc desc{};
-            if (!dep_nodes.empty()) {
-                desc.height_field = dep_nodes[0].key;
+            // Locate the scalar field by TYPE, not positional index: the recipe
+            // now has an OPTIONAL placement port (issue #218), so dep ordering is
+            // not guaranteed and dep_nodes[0] could be the placement. This key is
+            // recorded as the collision's source_asset/geometry_asset identity,
+            // so it must be the scalar field. The common case (field at dep[0])
+            // is unchanged.
+            for (const auto& dep : dep_nodes) {
+                if (dep.type == kAssetTypeScalarField) {
+                    desc.height_field = dep.key;
+                    break;
+                }
             }
             desc.origin[0] =
                 static_cast<float>(params.get<double>("origin_x", desc.origin[0]));
@@ -1545,6 +1555,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
         CollisionAssetTable& collision_table,
+        PlacementTable& placement_table,
         const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
@@ -1772,6 +1783,16 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeCollisionAsset,
             .input_ports = {
                 { "height_field", kAssetTypeScalarField },
+                // Optional world-space frame (issue #218 Phase 1). When
+                // connected, the placement is authoritative for the collision's
+                // origin / size(=extent.xz) / vertical_scale(=extent.y) /
+                // base_height, overriding this recipe's own params. When absent,
+                // behaviour is unchanged (fully back-compatible).
+                {
+                    "placement",
+                    kAssetTypePlacement,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 {
@@ -1857,7 +1878,8 @@ namespace wz::engine::assets::internal
                 },
             },
             .compile =
-                [&logger, &scalar_fields_table, &collision_table, cache_settings](
+                [&logger, &scalar_fields_table, &collision_table,
+                 &placement_table, cache_settings](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -1884,20 +1906,58 @@ namespace wz::engine::assets::internal
                         "collision height field missing compile desc");
                     return compile_failed_node(input);
                 }
-                if (dep_handles.size() != 1) {
+
+                // Locate dependencies by asset TYPE, not positional index: the
+                // scalar field is required, the placement is an OPTIONAL second
+                // port (issue #218). dep_nodes and dep_handles are parallel, in
+                // DAG order, so we scan them together rather than assuming a
+                // fixed count/order.
+                const ScalarFieldData* field = nullptr;
+                const PlacementData* placement = nullptr;
+                for (size_t i = 0;
+                    i < dep_nodes.size() && i < dep_handles.size();
+                    ++i)
+                {
+                    if (dep_nodes[i].type == kAssetTypeScalarField) {
+                        if (!field) {
+                            field = scalar_fields_table.get(dep_handles[i]);
+                        }
+                    }
+                    else if (dep_nodes[i].type == kAssetTypePlacement) {
+                        if (!placement) {
+                            placement = placement_table.get(dep_handles[i]);
+                        }
+                    }
+                }
+
+                if (!field || !field->valid()) {
                     logger.error(
-                        "collision height field requires one scalar field "
+                        "collision height field requires a valid scalar field "
                         "dependency");
                     return compile_failed_node(input);
                 }
 
-                const ScalarFieldData* field =
-                    scalar_fields_table.get(dep_handles[0]);
-                if (!field || !field->valid()) {
-                    logger.error(
-                        "collision height field source is invalid");
-                    return compile_failed_node(input);
+                // A placement DEP overrides the recipe's own world mapping. The
+                // placement is authoritative; the param-derived values are left
+                // untouched when no placement is connected. Note the collision's
+                // AssetKey already folds the placement dep (deps participate in
+                // the key via key_to_dep_hash / combine_dep_hashes), so a
+                // placement change re-compiles the collision.
+                CollisionFromHeightFieldCompileDesc resolved_desc = *desc;
+                if (placement) {
+                    if (!placement->valid()) {
+                        logger.error(
+                            "collision height field placement is invalid");
+                        return compile_failed_node(input);
+                    }
+                    resolved_desc.origin[0] = placement->origin[0];
+                    resolved_desc.origin[1] = placement->origin[2];
+                    resolved_desc.size[0] = placement->extent[0];
+                    resolved_desc.size[1] = placement->extent[2];
+                    resolved_desc.vertical_scale = placement->extent[1];
+                    resolved_desc.base_height = placement->base_height;
                 }
+                desc = &resolved_desc;
                 if (field->depth != 1) {
                     logger.error(
                         "collision height field source must be 2D");

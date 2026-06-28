@@ -61,6 +61,11 @@ TEST(FoundationAssetTypes, StableNumericValues)
     EXPECT_EQ(static_cast<U>(wz::engine::assets::kAssetTypeExternalReference), static_cast<U>(71));
     EXPECT_EQ(static_cast<U>(wz::engine::assets::kAssetTypeDirectory), static_cast<U>(72));
     EXPECT_EQ(static_cast<U>(wz::engine::assets::kAssetTypeArchive), static_cast<U>(73));
+
+    // Placement frame (issue #218 Phase 1). 159 is the last free CPU-data slot
+    // (158 = MeshClusterHierarchy, 160 = texture-atlas range). These values are
+    // persisted in disk-cache keys — keep them stable.
+    EXPECT_EQ(static_cast<U>(wz::engine::assets::kAssetTypePlacement), static_cast<U>(159));
 }
 
 TEST(FoundationSchemas, StableNumericValues)
@@ -85,7 +90,11 @@ TEST(FoundationSchemas, StableNumericValues)
 
     EXPECT_EQ(wz::engine::assets::kJSONFileSchema.value,
         0xF11E'CA55'E7'00000Aull);
-    
+
+    // Placement frame recipe (issue #218 Phase 1) in the world-data range
+    // (0xA00-0xAFF; 0xA00/0xA01/0xA02 taken by terrain/visual-proxy schemas).
+    EXPECT_EQ(wz::engine::assets::kPlacementSchema.value,
+        0xF11E'CA55'E7'000A03ull);
 }
 
 TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)

@@ -6,6 +6,7 @@
 #include <engine/assets/asset_cache_settings.h>
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/placement/placement.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 #include <engine/assets/terrain/terrain.h>
 
@@ -20,6 +21,7 @@ namespace wz::engine::assets::internal
         MeshTable& mesh_table,
         TerrainAssetTable& terrain_table,
         CollisionAssetTable& collision_table,
+        PlacementTable& placement_table,
         const EngineAssetCacheSettings& cache_settings);
 
     bool load_cached_terrain_collision(

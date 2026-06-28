@@ -132,6 +132,13 @@ namespace wz::engine::assets
         compile_desc.projection_resolution_x = desc.projection_resolution_x;
         compile_desc.projection_resolution_y = desc.projection_resolution_y;
 
+        // The placement is an OPTIONAL second dependency. When present it is
+        // folded into the AssetKey (so a placement change re-compiles the
+        // collision) and registered as a graph edge AFTER the scalar field, so
+        // the compiler can locate it by type and the deps-hash ordering matches
+        // the key factory.
+        const bool has_placement = desc.placement.valid();
+
         const wz::asset::AssetKey key =
             make_collision_from_height_field_key(
                 desc.name,
@@ -142,7 +149,9 @@ namespace wz::engine::assets
                 desc.base_height,
                 desc.occupancy,
                 desc.projection_resolution_x,
-                desc.projection_resolution_y);
+                desc.projection_resolution_y,
+                has_placement ? desc.placement.output
+                              : wz::asset::AssetKey{});
 
         wz::asset::AssetNode node{};
         node.key = key;
@@ -152,10 +161,13 @@ namespace wz::engine::assets
         node.payload = std::vector<uint8_t>{};
         node.meta = compile_desc;
 
-        if (!system_.register_asset(
-                std::move(node),
-                { desc.height_field.output }))
-        {
+        std::vector<wz::asset::AssetKey> deps;
+        deps.push_back(desc.height_field.output);
+        if (has_placement) {
+            deps.push_back(desc.placement.output);
+        }
+
+        if (!system_.register_asset(std::move(node), deps)) {
             return CollisionAsset{ .output = key };
         }
 

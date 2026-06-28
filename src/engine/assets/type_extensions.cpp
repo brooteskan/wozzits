@@ -77,6 +77,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeMeshSparseOperator);
             WZ_ADD_TYPE(kAssetTypeGpuSparseMesh);
             WZ_ADD_TYPE(kAssetTypeMeshClusterHierarchy);
+            WZ_ADD_TYPE(kAssetTypePlacement);
             WZ_ADD_TYPE(kAssetTypePointCloud);
             WZ_ADD_TYPE(kAssetTypeVoxelGrid);
             WZ_ADD_TYPE(kAssetTypeCurve);
@@ -350,6 +351,7 @@ namespace wz::engine::assets
             WZ_SET_TYPE_NAME(
                 kAssetTypeMeshClusterHierarchy,
                 "Mesh cluster hierarchy");
+            WZ_SET_TYPE_NAME(kAssetTypePlacement, "Placement");
             WZ_SET_TYPE_NAME(kAssetTypeCSVTable, "CSV table");
             WZ_SET_TYPE_NAME(kAssetTypeJSONDocument, "JSON");
             WZ_SET_TYPE_NAME(kAssetTypeTOMLDocument, "TOML");
@@ -444,6 +446,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kTerrainFromHeightFieldSchema, "Terrain from height field");
             WZ_ADD_SCHEMA(kTerrainFromMeshSchema, "Terrain from mesh");
             WZ_ADD_SCHEMA(kTerrainVisualProxySchema, "Terrain visual proxy");
+            WZ_ADD_SCHEMA(kPlacementSchema, "Placement");
             WZ_ADD_SCHEMA(kCollisionFromMeshSchema, "Collision from mesh");
             WZ_ADD_SCHEMA(kCollisionFromTerrainSchema, "Collision from terrain");
             WZ_ADD_SCHEMA(

@@ -69,6 +69,13 @@ namespace wz::engine::assets
         };
     }
 
+    // deps_hash folds the scalar field dep, then (if present) the OPTIONAL
+    // placement dep — in the SAME order the module registers the graph edges
+    // (scalar field first, placement second). combine_dep_hashes is not
+    // commutative, so this ordering must match the registration order. Folding
+    // the placement here is what makes a placement change re-compile the
+    // collision (issue #218 Phase 1). A null/default placement key reproduces
+    // the original single-dep key exactly, so back-compat is preserved.
     [[nodiscard]] inline wz::asset::AssetKey
     make_collision_from_height_field_key(
         std::string_view name,
@@ -79,7 +86,8 @@ namespace wz::engine::assets
         float base_height,
         const CollisionOccupancyData& occupancy,
         uint32_t projection_resolution_x = 0,
-        uint32_t projection_resolution_y = 0) noexcept
+        uint32_t projection_resolution_y = 0,
+        const wz::asset::AssetKey& placement_key = {}) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, collision_hash_float(origin[0]));
@@ -92,12 +100,19 @@ namespace wz::engine::assets
         h = detail::mix64(h, projection_resolution_x);
         h = detail::mix64(h, projection_resolution_y);
 
+        wz::asset::Hash deps_hash = detail::key_to_dep_hash(scalar_field_key);
+        if (!(placement_key == wz::asset::AssetKey{})) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash,
+                detail::key_to_dep_hash(placement_key));
+        }
+
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
             .schema_hash =
                 detail::hash_u64(kCollisionFromHeightFieldSchema.value),
             .compiler_hash = detail::hash_u64(kCollisionCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(scalar_field_key),
+            .deps_hash = deps_hash,
         };
     }
 }

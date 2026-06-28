@@ -534,3 +534,189 @@ TEST(CollisionAssetModule, MeshTerrainProducesRegularProjectionHeightField)
     EXPECT_GT(data->source_triangle_count, 0u);
     EXPECT_GT(data->accepted_triangle_count, 0u);
 }
+
+// ─── Placement asset (issue #218 Phase 1) ───────────────────────────────────
+
+// A Placement frame compiles and round-trips its authored values. origin[1] is
+// a mirror of base_height (single source of truth), extent.xz is the footprint
+// and extent.y is the vertical scale.
+TEST(PlacementAssetModule, PlacementCompilesAndRoundTrips)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_placement_round_trip_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto placement = assets.placements().create_placement({
+        .name = "placement/frame",
+        .origin = { 10.0f, 0.0f, 20.0f },
+        .extent = { 500.0f, 30.0f, 600.0f },
+        .base_height = 5.0f,
+    });
+    ASSERT_TRUE(placement.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const PlacementData* data =
+        assets.placements().get_placement_data(
+            assets.placements().get_placement(placement));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_FLOAT_EQ(data->origin[0], 10.0f);
+    EXPECT_FLOAT_EQ(data->origin[1], 5.0f);   // mirror of base_height
+    EXPECT_FLOAT_EQ(data->origin[2], 20.0f);
+    EXPECT_FLOAT_EQ(data->extent[0], 500.0f);
+    EXPECT_FLOAT_EQ(data->extent[1], 30.0f);
+    EXPECT_FLOAT_EQ(data->extent[2], 600.0f);
+    EXPECT_FLOAT_EQ(data->base_height, 5.0f);
+}
+
+// When a Placement is connected, it is authoritative for the collision's
+// origin / size / vertical_scale / base_height, OVERRIDING the recipe's own
+// (deliberately different) params.
+TEST(CollisionAssetModule, HeightFieldHonoursConnectedPlacement)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_height_field_placement_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/placement_height_field",
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    // Placement: origin (10,_,20), footprint 500x600, vertical 30, base 5.
+    const auto placement = assets.placements().create_placement({
+        .name = "collision/placement_frame",
+        .origin = { 10.0f, 0.0f, 20.0f },
+        .extent = { 500.0f, 30.0f, 600.0f },
+        .base_height = 5.0f,
+    });
+    ASSERT_TRUE(placement.valid());
+
+    // The collision's OWN params are deliberately different from the placement.
+    const auto collision = assets.collisions().create_from_height_field({
+        .name = "collision/placement_constraint",
+        .height_field = field,
+        .placement = placement,
+        .origin = { -2.0f, -3.0f },
+        .size = { 10.0f, 12.0f },
+        .vertical_scale = 1.0f,
+        .base_height = -1.0f,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(collision));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
+
+    // The PLACEMENT's values win over the node's own params.
+    EXPECT_FLOAT_EQ(data->origin[0], 10.0f);   // placement origin.x
+    EXPECT_FLOAT_EQ(data->origin[1], 20.0f);   // placement origin.z (size mapping)
+    EXPECT_FLOAT_EQ(data->size[0], 500.0f);    // placement extent.x
+    EXPECT_FLOAT_EQ(data->size[1], 600.0f);    // placement extent.z
+
+    // World footprint reflects the placement, not the params.
+    EXPECT_FLOAT_EQ(data->bounds_min[0], 10.0f);
+    EXPECT_FLOAT_EQ(data->bounds_min[2], 20.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[0], 10.0f + 500.0f);
+    EXPECT_FLOAT_EQ(data->bounds_max[2], 20.0f + 600.0f);
+
+    // World Y baked from placement vertical_scale=30, base=5 over GradientX
+    // (values 0..1): min == base, max == base + vertical_scale.
+    EXPECT_FLOAT_EQ(data->min_height, 5.0f);
+    EXPECT_FLOAT_EQ(data->max_height, 5.0f + 30.0f);
+}
+
+// Back-compat: with NO placement connected, the collision uses its own params
+// exactly as before the Placement port existed.
+TEST(CollisionAssetModule, HeightFieldWithoutPlacementUsesOwnParams)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_height_field_no_placement_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{
+        device,
+        logger,
+        root,
+    };
+
+    using namespace wz::engine::assets;
+
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/no_placement_height_field",
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    constexpr float kVerticalScale = 4.0f;
+    constexpr float kBaseHeight = -1.0f;
+
+    const auto collision = assets.collisions().create_from_height_field({
+        .name = "collision/no_placement_constraint",
+        .height_field = field,
+        // no placement connected
+        .origin = { -2.0f, -3.0f },
+        .size = { 10.0f, 12.0f },
+        .vertical_scale = kVerticalScale,
+        .base_height = kBaseHeight,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(collision));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
+
+    // The node's OWN params are used (unchanged from pre-#218 behaviour).
+    EXPECT_FLOAT_EQ(data->origin[0], -2.0f);
+    EXPECT_FLOAT_EQ(data->origin[1], -3.0f);
+    EXPECT_FLOAT_EQ(data->size[0], 10.0f);
+    EXPECT_FLOAT_EQ(data->size[1], 12.0f);
+    EXPECT_FLOAT_EQ(data->min_height, kBaseHeight);
+    EXPECT_FLOAT_EQ(data->max_height, kBaseHeight + kVerticalScale);
+}

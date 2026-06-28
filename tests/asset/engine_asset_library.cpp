@@ -162,6 +162,7 @@ float4 main(PSIn input) : SV_TARGET
             { kProceduralCubeMeshSchema, kAssetTypeMesh },
             { kProceduralClipmapLatticeMeshSchema, kAssetTypeMesh },
             { kGLBMeshSchema, kAssetTypeMesh },
+            { kMeshFromGLBSceneSchema, kAssetTypeMesh },
             { kPlaceholderMeshSchema, kAssetTypeMesh },
             { kMeshDecimationSchema, kAssetTypeMesh },
             { kMeshDerivedFieldExplicitSchema, kAssetTypeMeshDerivedField },
@@ -216,6 +217,9 @@ float4 main(PSIn input) : SV_TARGET
             { kTerrainVisualProxySchema, kAssetTypeTerrainVisualProxy },
             { kCollisionFromMeshSchema, kAssetTypeCollisionAsset },
             { kCollisionFromTerrainSchema, kAssetTypeCollisionAsset },
+            { kCollisionFromHeightFieldSchema, kAssetTypeCollisionAsset },
+
+            { kPlacementSchema, kAssetTypePlacement },
 
             { kJSONDocumentSchema, kAssetTypeJSONDocument },
             { kTOMLDocumentSchema, kAssetTypeTOMLDocument },

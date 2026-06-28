@@ -294,6 +294,17 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A02ull
     };
 
+    // Placement recipe: a generic world-space frame (origin, extent, base
+    // height) compiled directly from authored parameters with no dependency.
+    // "World-data" range (0xA00-0xAFF) because a Placement describes where and
+    // how large world data sits, while staying free of any terrain/heightfield/
+    // texel vocabulary. Stores world extent (metres), never a derived
+    // metres-per-texel — consumers (e.g. the clipmap) derive that downstream.
+    // Produces kAssetTypePlacement output.
+    inline constexpr wz::asset::SchemaID kPlacementSchema{
+        0xF11E'CA55'E7'000A03ull
+    };
+
     // Collision schemas intentionally occupy 0x000B00-0x000B7F. These IDs
     // are persisted in disk-cache keys, so keep them stable; reserve
     // 0x000B80-0x000BFF for future audio schemas.

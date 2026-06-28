@@ -5,6 +5,7 @@
 #include <asset/system.h>
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/placement_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
 
 #include <logging/logger.h>
@@ -45,6 +46,12 @@ namespace wz::engine::assets
     {
         std::string name;
         ScalarFieldAsset height_field;
+        // Optional world-space frame (issue #218 Phase 1). When valid, it is
+        // connected as a second graph dependency and becomes authoritative for
+        // origin / size / vertical_scale / base_height at compile time,
+        // overriding the per-field values below. When invalid (default), the
+        // per-field values are used exactly as before (back-compatible).
+        PlacementAsset placement;
         float origin[2]{ 0.0f, 0.0f };
         float size[2]{ 1.0f, 1.0f };
         float vertical_scale = 1.0f;
