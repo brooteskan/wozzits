@@ -933,6 +933,18 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         MarkCompileResult(true);
     }
 
+    // Re-pull the graph (including node params) from the live engine session
+    // after an out-of-pane mutation — e.g. the inspector applying a node param
+    // (#218 Phase 3). Without this the cached node cards keep their pre-edit
+    // params and re-selecting the node shows the stale value. Reuses the
+    // layout-preserving reload the in-pane mutations already use, so positions,
+    // zoom and the current selection survive (and re-selecting re-inspects the
+    // refreshed card).
+    public void RefreshFromSession()
+    {
+        ReloadGraphFromSessionPreservingLayout();
+    }
+
     private bool ReloadGraphFromSessionPreservingLayout()
     {
         if (_editorSession is null)

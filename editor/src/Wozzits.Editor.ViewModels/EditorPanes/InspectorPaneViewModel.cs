@@ -144,6 +144,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // host (MainWindowViewModel) re-merges them into the scene tree.
     public event Action? SceneSourceChanged;
 
+    // Raised after an asset-graph node param is applied to the engine (#218
+    // Phase 3). The edit lands in the engine draft, but the asset-graph pane's
+    // cached node cards still hold their pre-edit params; without re-pulling the
+    // graph, re-selecting the node re-inspects the stale card and the value
+    // appears to "reset" to its default. The host (MainWindowViewModel) handles
+    // this by reloading the graph from the live session.
+    public event Action? AssetGraphNodeParamApplied;
+
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
 
     public ObservableCollection<InspectorBehaviorViewModel> Behaviors { get; } = [];
@@ -865,10 +873,19 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        SetEditResponse(_editorSession.SetAssetGraphNodeParamString(
+        var response = _editorSession.SetAssetGraphNodeParamString(
             _assetGraphNodeIdValue,
             name,
-            value));
+            value);
+        SetEditResponse(response);
+
+        // The engine draft now has the new value, but the graph pane's node card
+        // does not. Ask the host to re-pull the live graph so re-selecting the
+        // node shows the applied value instead of the stale default (#218 Phase 3).
+        if (response.Ok)
+        {
+            AssetGraphNodeParamApplied?.Invoke();
+        }
     }
 
     // Live properties push: as the name/visibility fields change, mirror them

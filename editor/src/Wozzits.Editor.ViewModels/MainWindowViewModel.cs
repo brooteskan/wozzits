@@ -218,6 +218,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // A "Subtree from asset" assign/clear changes the runtime's grafted
         // children (issue #213); re-merge them into the scene tree under the host.
         Inspector.SceneSourceChanged += OnInspectorSceneSourceChanged;
+        // Applying a node param in the inspector updates the engine draft but not
+        // the asset-graph pane's cached node cards; re-pull the graph so
+        // re-selecting the node shows the applied value (#218 Phase 3).
+        Inspector.AssetGraphNodeParamApplied += OnInspectorAssetGraphNodeParamApplied;
 
         var layoutFactory = new EditorDockLayoutFactory(this);
         DockFactory = layoutFactory.Factory;
@@ -414,6 +418,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnInspectorSceneSourceChanged()
     {
         SceneTree.MergeGraftedNodes();
+    }
+
+    // A node param was applied in the inspector (#218 Phase 3). The edit is in
+    // the engine draft; re-pull the graph from the live session so the cached
+    // node card picks up the new value. The reload preserves layout and
+    // re-selects the node, which re-inspects the refreshed card — so the applied
+    // value sticks instead of reverting to the schema default on re-selection.
+    private void OnInspectorAssetGraphNodeParamApplied()
+    {
+        AssetGraph.RefreshFromSession();
     }
 
     // The stable schema discriminator for the "Scene from GLB" asset-graph node
