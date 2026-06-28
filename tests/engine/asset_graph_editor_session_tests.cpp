@@ -6,7 +6,10 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/editor/asset_graph_snapshot.h>
+#include <engine/assets/placement/placement.h>
+#include <engine/assets/placement/placement_compilers.h>
 #include <external/json/json_parser.h>
+#include <logging/logger.h>
 
 #include <algorithm>
 #include <chrono>
@@ -531,4 +534,75 @@ TEST(AssetGraphEditorSession, CanReconnectAfterDisconnectingEdge)
     EXPECT_EQ(session->draft().edges[0].from, 1u);
     EXPECT_EQ(session->draft().edges[0].to, 2u);
     EXPECT_EQ(session->draft().edges[0].to_input_port, 0u);
+}
+
+namespace
+{
+    const wz::engine::editor::AssetGraphSnapshotParam* find_snapshot_param(
+        const wz::engine::editor::AssetGraphSnapshotNode& node,
+        std::string_view name)
+    {
+        const auto it = std::ranges::find_if(
+            node.params,
+            [name](const wz::engine::editor::AssetGraphSnapshotParam& param)
+            {
+                return param.name == name;
+            });
+        return it == node.params.end() ? nullptr : &*it;
+    }
+}
+
+// #218 Phase 3 regression: editing a newly-added Placement node's params through
+// the editor session must PERSIST and MERGE — a second edit must not wipe the
+// first back to defaults. This pins the engine half of the "placement params
+// reset automatically" report: a param-only asset type (no input ports) gets a
+// ParamBlock meta on add, set_node_param merges into it, and the live snapshot
+// (built from the session draft) reflects the authored values, not the schema
+// defaults. If this passes, any remaining reset is in the editor client / a
+// stale wozzits_abi.dll, not the engine.
+TEST(AssetGraphEditorSession, PlacementNodeParamEditsPersistAndMerge)
+{
+    TempProjectRoot temp;
+    write_project(temp.root);
+
+    wz::Logger logger;
+    wz::engine::assets::PlacementTable placement_table;
+    auto registry = make_registry();
+    wz::engine::assets::internal::register_placement_compilers(
+        registry, logger, placement_table);
+
+    auto session = open_session(temp.root, registry);
+    ASSERT_NE(session, nullptr);
+
+    const wz::asset::AssetGraphDraftNodeId node_id = session->add_node(
+        wz::engine::assets::kPlacementSchema,
+        wz::engine::assets::kAssetTypePlacement);
+    ASSERT_NE(node_id, wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE);
+
+    // First edit: one float param.
+    ASSERT_TRUE(session->set_node_param(node_id, "extent_x", "4096"));
+    {
+        const auto snapshot = session->snapshot();
+        const auto* node = find_snapshot_node(snapshot, node_id);
+        ASSERT_NE(node, nullptr);
+        const auto* extent_x = find_snapshot_param(*node, "extent_x");
+        const auto* extent_y = find_snapshot_param(*node, "extent_y");
+        ASSERT_NE(extent_x, nullptr);
+        ASSERT_NE(extent_y, nullptr);
+        EXPECT_DOUBLE_EQ(std::stod(extent_x->value), 4096.0); // edit persisted
+        EXPECT_DOUBLE_EQ(std::stod(extent_y->value), 1.0);    // sibling default,
+                                                              // NOT reset
+    }
+
+    // Second edit: a different param must MERGE, leaving the first intact.
+    ASSERT_TRUE(session->set_node_param(node_id, "extent_y", "300"));
+    {
+        const auto snapshot = session->snapshot();
+        const auto* node = find_snapshot_node(snapshot, node_id);
+        ASSERT_NE(node, nullptr);
+        EXPECT_DOUBLE_EQ(
+            std::stod(find_snapshot_param(*node, "extent_x")->value), 4096.0);
+        EXPECT_DOUBLE_EQ(
+            std::stod(find_snapshot_param(*node, "extent_y")->value), 300.0);
+    }
 }
