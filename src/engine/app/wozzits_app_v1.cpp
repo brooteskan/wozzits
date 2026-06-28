@@ -492,9 +492,14 @@ namespace wz::app
     }
 
     void WozzitsApp_v1::simulation_tick(
-        const wz::input::InputState& input, float dt)
+        const wz::input::InputState& input, float dt, bool drive_camera)
     {
-        wz::bench::update_flying_camera(camera_, input, dt);
+        // The fly-cam consumes input only when the host arms it (drive_camera);
+        // behaviors below always get the input, so a controller can drive the
+        // scene without panning the camera. aspect tracking is independent.
+        if (drive_camera) {
+            wz::bench::update_flying_camera(camera_, input, dt);
+        }
         if (input.window.width > 0 && input.window.height > 0) {
             aspect_ = static_cast<float>(input.window.width)
                 / static_cast<float>(input.window.height);

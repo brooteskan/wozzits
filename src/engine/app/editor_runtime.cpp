@@ -7,6 +7,7 @@
 #include <event/event.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
+#include <platform/win32/controller_win32.h>
 #include <logging/logger.h>
 #include <time/w_time.h>
 #include <window/window2.h>
@@ -759,6 +760,11 @@ namespace wz::app
             // event queue, drained per frame into an InputState that drives the
             // app's camera (and any future sim) via simulation_tick.
             wz::input::init_raw_input();
+            // Sample game controllers (XInput) each frame so controller-driven
+            // behaviors (e.g. a tank_controller reading the stick axes) receive
+            // input — without this the InputState has no controller signal and
+            // input.* behaviors never fire.
+            wz::platform::win32::controller_init();
             wz::input::InputState input{};
             wz::input::InputState prev_input{};
             wz::time::Tick last_ticks = wz::time::TimeSource::now_ticks();
@@ -1015,12 +1021,15 @@ namespace wz::app
                     frame_events.push_back(std::move(input_event));
                 }
                 prev_input = input;
+                wz::input::ControllerInputSample controller_sample{};
+                wz::platform::win32::controller_sample(controller_sample);
                 wz::input::build_input(
                     input,
                     prev_input,
                     frame_events.data(),
                     frame_events.size(),
-                    wz::time::Frame{});
+                    wz::time::Frame{},
+                    controller_sample);
 
                 const wz::time::Tick now_ticks =
                     wz::time::TimeSource::now_ticks();
@@ -1047,18 +1056,24 @@ namespace wz::app
                     }
                 }
 
-                // Feed the camera real input only when active; otherwise a neutral
-                // snapshot carrying just the window dimensions, so the aspect ratio
-                // still tracks resizes while the camera holds its pose.
-                wz::input::InputState camera_input{};
-                if (camera_enabled && input.window.focused) {
-                    camera_input = input;
+                // Behaviors get the real frame input whenever the viewport is
+                // FOCUSED — so a controller/keyboard drives scene behaviors (e.g.
+                // a tank) independent of the fly-cam. The fly-cam is a separate
+                // opt-in (ESC): it only gates whether the CAMERA also consumes
+                // that input, so panning the view and driving a behavior don't
+                // fight. Unfocused -> a neutral snapshot carrying just the window
+                // dimensions, so aspect still tracks resizes and the scene ignores
+                // input meant for the editor.
+                const bool drive_camera = camera_enabled && input.window.focused;
+                wz::input::InputState frame_input{};
+                if (input.window.focused) {
+                    frame_input = input;
                 }
                 else {
-                    camera_input.window = input.window;
+                    frame_input.window = input.window;
                 }
 
-                app.simulation_tick(camera_input, dt);
+                app.simulation_tick(frame_input, dt, drive_camera);
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");
@@ -1118,6 +1133,7 @@ namespace wz::app
             // the viewport window closing and the editor stopping the runtime).
             app.save_scene();
 
+            wz::platform::win32::controller_shutdown();
             wz::input::shutdown_raw_input();
         }
 

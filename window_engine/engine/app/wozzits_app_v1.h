@@ -432,8 +432,13 @@ namespace wz::app
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the
         // game-app-parity runtime camera); pass a default-constructed InputState
-        // to tick with no input.
-        void simulation_tick(const wz::input::InputState& input, float dt);
+        // to tick with no input. drive_camera gates the fly-cam's consumption of
+        // the input (the host arms it, e.g. on viewport focus); behaviors always
+        // receive the input so a controller can drive the scene independently.
+        void simulation_tick(
+            const wz::input::InputState& input,
+            float dt,
+            bool drive_camera = true);
         bool render_scene();      // record scene draws (between begin/end frame)
 
         // Editor override: while set, render_scene uses this view-projection
