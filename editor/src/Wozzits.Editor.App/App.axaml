@@ -29,7 +29,19 @@
         </DataTemplate>
         <local:ViewLocator/>
     </Application.DataTemplates>
-  
+
+    <!-- Active editor color theme. Blue (daylight) is the default; EditorTheme
+         swaps this merged dictionary for Themes/RedTheme.axaml at runtime when
+         the user picks View > Theme. The styles bind these keys via
+         DynamicResource, so the swap re-themes the UI live. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Wozzits.Editor.App/Themes/BlueTheme.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme>
             <FluentTheme.Palettes>

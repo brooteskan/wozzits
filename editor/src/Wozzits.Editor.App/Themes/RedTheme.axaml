@@ -1,0 +1,54 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Night-vision theme: muted reds on near-black, like a star chart under a
+         red lamp. Everything stays in the warm/red spectrum (no bright blue,
+         green, or white) so it doesn't undo dark adaptation at the telescope.
+         Mirrors BlueTheme key-for-key; EditorTheme swaps between them live. -->
+    <Color x:Key="WozzitsShellBackgroundColor">#160606</Color>
+    <Color x:Key="WozzitsPanelBackgroundColor">#230A0A</Color>
+    <Color x:Key="WozzitsPanelInsetColor">#2E0E0E</Color>
+    <Color x:Key="WozzitsPanelBorderColor">#471A1A</Color>
+    <!-- Text leans warm but stays light and low-saturation: saturated red on a
+         dark ground reads blurry (the eye focuses long-wavelength red poorly), so
+         a warm cream sharpens it while keeping blue low for dark adaptation. -->
+    <Color x:Key="WozzitsTextColor">#EBCBC3</Color>
+    <Color x:Key="WozzitsMutedTextColor">#B89C95</Color>
+    <Color x:Key="WozzitsAccentColor">#CB5E4D</Color>
+    <Color x:Key="WozzitsSuccessColor">#BC7A45</Color>
+    <Color x:Key="WozzitsWarningColor">#D98F33</Color>
+    <Color x:Key="WozzitsGraphWireColor">#B25845</Color>
+    <Color x:Key="WozzitsErrorColor">#E84A38</Color>
+
+    <SolidColorBrush x:Key="WozzitsShellBackgroundBrush"
+                     Color="{StaticResource WozzitsShellBackgroundColor}"/>
+    <SolidColorBrush x:Key="WozzitsPanelBackgroundBrush"
+                     Color="{StaticResource WozzitsPanelBackgroundColor}"/>
+    <SolidColorBrush x:Key="WozzitsPanelInsetBrush"
+                     Color="{StaticResource WozzitsPanelInsetColor}"/>
+    <SolidColorBrush x:Key="WozzitsPanelBorderBrush"
+                     Color="{StaticResource WozzitsPanelBorderColor}"/>
+    <SolidColorBrush x:Key="WozzitsTextBrush"
+                     Color="{StaticResource WozzitsTextColor}"/>
+    <SolidColorBrush x:Key="WozzitsMutedTextBrush"
+                     Color="{StaticResource WozzitsMutedTextColor}"/>
+    <SolidColorBrush x:Key="WozzitsAccentBrush"
+                     Color="{StaticResource WozzitsAccentColor}"/>
+    <SolidColorBrush x:Key="WozzitsSuccessBrush"
+                     Color="{StaticResource WozzitsSuccessColor}"/>
+    <SolidColorBrush x:Key="WozzitsWarningBrush"
+                     Color="{StaticResource WozzitsWarningColor}"/>
+    <SolidColorBrush x:Key="WozzitsGraphWireBrush"
+                     Color="{StaticResource WozzitsGraphWireColor}"/>
+    <SolidColorBrush x:Key="WozzitsErrorBrush"
+                     Color="{StaticResource WozzitsErrorColor}"/>
+
+    <!-- Translucent accent fill for the asset-graph rubber-band selection. -->
+    <SolidColorBrush x:Key="WozzitsSelectionOverlayBrush" Color="#33CB5E4D"/>
+
+    <!-- Compile-status dots, kept in the warm/red spectrum for this theme: a
+         brightness/hue ramp (dim amber -> amber -> bright red) so ready/changed/
+         error still read apart without a dark-adaptation-breaking green. -->
+    <SolidColorBrush x:Key="WozzitsDotReadyBrush" Color="#BC8A52"/>
+    <SolidColorBrush x:Key="WozzitsDotChangedBrush" Color="#E0A540"/>
+    <SolidColorBrush x:Key="WozzitsDotErrorBrush" Color="#E84A38"/>
+</ResourceDictionary>

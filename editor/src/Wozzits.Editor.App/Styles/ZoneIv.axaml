@@ -1,48 +1,10 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:dock="using:Dock.Avalonia.Controls">
-    <Styles.Resources>
-        <Color x:Key="WozzitsShellBackgroundColor">#002B36</Color>
-        <Color x:Key="WozzitsPanelBackgroundColor">#073642</Color>
-        <Color x:Key="WozzitsPanelInsetColor">#0B4655</Color>
-        <Color x:Key="WozzitsPanelBorderColor">#174C57</Color>
-        <Color x:Key="WozzitsTextColor">#EEE8D5</Color>
-        <Color x:Key="WozzitsMutedTextColor">#93A1A1</Color>
-        <Color x:Key="WozzitsAccentColor">#2AA198</Color>
-        <Color x:Key="WozzitsSuccessColor">#009900</Color>
-        <Color x:Key="WozzitsWarningColor">#EE8900</Color>
-        <Color x:Key="WozzitsGraphWireColor">#268BD2</Color>
-        <Color x:Key="WozzitsErrorColor">#EE322F</Color>
-
-        <SolidColorBrush x:Key="WozzitsShellBackgroundBrush"
-                         Color="{StaticResource WozzitsShellBackgroundColor}"/>
-        <SolidColorBrush x:Key="WozzitsPanelBackgroundBrush"
-                         Color="{StaticResource WozzitsPanelBackgroundColor}"/>
-        <SolidColorBrush x:Key="WozzitsPanelInsetBrush"
-                         Color="{StaticResource WozzitsPanelInsetColor}"/>
-        <SolidColorBrush x:Key="WozzitsPanelBorderBrush"
-                         Color="{StaticResource WozzitsPanelBorderColor}"/>
-        <SolidColorBrush x:Key="WozzitsTextBrush"
-                         Color="{StaticResource WozzitsTextColor}"/>
-        <SolidColorBrush x:Key="WozzitsMutedTextBrush"
-                         Color="{StaticResource WozzitsMutedTextColor}"/>
-        <SolidColorBrush x:Key="WozzitsAccentBrush"
-                         Color="{StaticResource WozzitsAccentColor}"/>
-        <SolidColorBrush x:Key="WozzitsSuccessBrush"
-                         Color="{StaticResource WozzitsSuccessColor}"/>
-        <SolidColorBrush x:Key="WozzitsWarningBrush"
-                         Color="{StaticResource WozzitsWarningColor}"/>
-        <SolidColorBrush x:Key="WozzitsGraphWireBrush"
-                         Color="{StaticResource WozzitsGraphWireColor}"/>
-        <SolidColorBrush x:Key="WozzitsErrorBrush"
-                         Color="{StaticResource WozzitsErrorColor}"/>
-
-        <!-- Compile-status dots: deliberately bright/saturated (a departure from
-             the muted theme) so ready/changed/error read apart at a glance. -->
-        <SolidColorBrush x:Key="WozzitsDotReadyBrush" Color="#22DD3C"/>
-        <SolidColorBrush x:Key="WozzitsDotChangedBrush" Color="#FFD60A"/>
-        <SolidColorBrush x:Key="WozzitsDotErrorBrush" Color="#FF3B30"/>
-    </Styles.Resources>
+    <!-- The Wozzits* color/brush resources these styles bind via DynamicResource
+         live in the swappable theme dictionaries (Themes/BlueTheme.axaml,
+         Themes/RedTheme.axaml), merged into Application.Resources and swapped at
+         runtime by EditorTheme (View > Theme). -->
 
     <Style Selector="Window">
         <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
@@ -370,7 +332,7 @@
     </Style>
 
     <Style Selector="Border.AssetGraphSelectionRectangle">
-        <Setter Property="Background" Value="#332AA198"/>
+        <Setter Property="Background" Value="{DynamicResource WozzitsSelectionOverlayBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="2"/>
@@ -561,7 +523,7 @@
     </Style>
 
     <Style Selector="Border.ConsoleSurface">
-        <Setter Property="Background" Value="#002B36"/>
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="10"/>
@@ -569,8 +531,8 @@
     </Style>
 
     <Style Selector="SelectableTextBlock.ConsoleLogText">
-        <Setter Property="Foreground" Value="#EEE8D5"/>
-        <Setter Property="SelectionBrush" Value="#2AA198"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
     </Style>
 
     <!-- "GLB node" tree picker for the "Mesh from GLB scene" node (issue #213). -->

@@ -33,6 +33,19 @@
                 <MenuItem Header="Launch _Standalone Play"
                           Command="{Binding LaunchStandaloneCommand}"/>
             </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="_Blue (Daylight)"
+                              x:Name="BlueThemeMenuItem"
+                              ToggleType="Radio"
+                              IsChecked="True"
+                              Click="OnSelectBlueTheme"/>
+                    <MenuItem Header="_Red (Night Vision)"
+                              x:Name="RedThemeMenuItem"
+                              ToggleType="Radio"
+                              Click="OnSelectRedTheme"/>
+                </MenuItem>
+            </MenuItem>
             <MenuItem Header="_Window"/>
         </Menu>
 
