@@ -29,6 +29,9 @@
                           Command="{Binding RestartViewportCommand}"/>
                 <MenuItem Header="Rebuild Behavior _Modules"
                           Command="{Binding RebuildBehaviorsCommand}"/>
+                <Separator/>
+                <MenuItem Header="Launch _Standalone Play"
+                          Command="{Binding LaunchStandaloneCommand}"/>
             </MenuItem>
             <MenuItem Header="_Window"/>
         </Menu>

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
@@ -20,6 +21,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly Action<Action>? _dispatch;
     private readonly string _projectDirectory;
     private readonly BehaviorModuleBuilder _behaviorBuilder = new();
+    private readonly StandaloneAppLauncher _standaloneLauncher = new();
+    private Process? _standaloneProcess;
     private bool _shutdown;
 
     public MainWindowViewModel()
@@ -43,6 +46,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         RebuildBehaviorsCommand = new AsyncRelayCommand(
             RebuildBehaviorsAsync,
             () => _editorSession is not null);
+        LaunchStandaloneCommand = new RelayCommand(
+            LaunchStandalone,
+            () => !string.IsNullOrWhiteSpace(_projectDirectory));
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(
@@ -89,6 +95,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand SaveAllCommand { get; }
     public IRelayCommand RestartViewportCommand { get; }
     public IAsyncRelayCommand RebuildBehaviorsCommand { get; }
+    public IRelayCommand LaunchStandaloneCommand { get; }
 
     public string EngineLogText => Console.LogText;
 
@@ -116,6 +123,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void RestartViewport()
     {
         _editorSession?.RestartRuntime();
+    }
+
+    // Launch the project as a SEPARATE process (the shipped-app play path),
+    // distinct from the in-process resident viewport. The standalone loads the
+    // project's behavior-module DLLs, so behaviors play faithfully. The play
+    // runs in its own window; closing the editor closes the host's stdin pipe,
+    // which ends the play gracefully.
+    private void LaunchStandalone()
+    {
+        _standaloneProcess = _standaloneLauncher.Launch(
+            _projectDirectory,
+            AppendEditorLog);
     }
 
     // Recompile the project's behavior-module DLLs (cmake, streamed to the
