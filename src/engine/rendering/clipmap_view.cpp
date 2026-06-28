@@ -165,28 +165,18 @@ namespace wz::engine::rendering
                 : 1.0f;
         out.lattice_world_cell_size = c0;
 
-        // Terrain world footprint = NODE SCALE X/Z. The node transform is the
-        // single source of horizontal sizing, so a collision-from-height-field on
-        // the same node (which uses the full node transform) auto-aligns with the
-        // clipmap — no manual world_size matching. (Previously world-absolute =
-        // c0 * heightmap_dims, which the collision could not know; c0 stays the
-        // lattice's finest-cell snap step. heightmap_width/height are no longer
-        // used here — the texel world size = world_size / dims is derived in
-        // compute_clipmap_view.) world_to_uv = 1/world_size; a non-positive scale
-        // falls back to a unit footprint so the mapping never divides by zero.
-        (void)heightmap_width;
-        (void)heightmap_height;
-        out.world_size[0] =
-            (std::isfinite(node_scale[0]) && node_scale[0] > 0.0f)
-                ? node_scale[0]
-                : 1.0f;
-        out.world_size[1] =
-            (std::isfinite(node_scale[2]) && node_scale[2] > 0.0f)
-                ? node_scale[2]
-                : 1.0f;
+        // Terrain world footprint = c0 * heightmap_dims (world_extent). This sets
+        // world_to_uv = 1/world_extent in compute_clipmap_view. Treat 0 dims as 1.
+        const uint32_t tex_w = heightmap_width == 0u ? 1u : heightmap_width;
+        const uint32_t tex_h = heightmap_height == 0u ? 1u : heightmap_height;
+        out.world_size[0] = c0 * static_cast<float>(tex_w);
+        out.world_size[1] = c0 * static_cast<float>(tex_h);
 
         // Node TRANSLATION places the terrain (XZ -> world origin, Y -> base
-        // height); node SCALE sizes it (X/Z footprint above, Y vertical).
+        // height). Node SCALE X/Z no longer sizes it (deliberate: the clipmap is
+        // world-absolute, extent comes from world_extent above). Vertical sizing
+        // is intentionally still node.scale.y for now (a follow-up turns it into
+        // a param); see the renderer's clipmap branch.
         out.world_origin[0] = node_translation[0];
         out.world_origin[1] = node_translation[2];
         out.vertical_scale = node_scale[1];
