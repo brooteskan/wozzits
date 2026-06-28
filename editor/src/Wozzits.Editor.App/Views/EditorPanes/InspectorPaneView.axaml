@@ -742,16 +742,12 @@
                                                                Text="{Binding Detail}"
                                                                Classes="InspectorPortDetail"/>
                                                 </Grid>
-                                                <Grid ColumnDefinitions="*,Auto"
-                                                      ColumnSpacing="6"
-                                                      IsVisible="{Binding IsTextEditable}">
-                                                    <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                             Classes="InspectorInput"/>
-                                                    <Button Grid.Column="1"
-                                                            Content="Apply"
-                                                            Command="{Binding ApplyCommand}"
-                                                            Classes="InspectorApplyButton"/>
-                                                </Grid>
+                                                <!-- Commit on edit-finished (LostFocus), not per keystroke and
+                                                     not via a separate Apply button (#218 Phase 3): the view
+                                                     model applies the value once the field loses focus. -->
+                                                <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         Classes="InspectorInput"
+                                                         IsVisible="{Binding IsTextEditable}"/>
                                                 <CheckBox Content="enabled"
                                                           IsChecked="{Binding BoolValue, Mode=TwoWay}"
                                                           Classes="InspectorCheck"

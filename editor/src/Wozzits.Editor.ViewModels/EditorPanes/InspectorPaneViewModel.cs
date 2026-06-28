@@ -2574,14 +2574,14 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
         _originalValue = param.Value;
         _value = param.Value;
         _apply = apply;
-        // Text-edited via a box + Apply: string, file paths, and numeric kinds
-        // (the engine converts the text to the declared ParamType).
+        // Text-edited via a box that commits on LostFocus: string, file paths,
+        // and numeric kinds (the engine converts the text to the declared
+        // ParamType). The Value setter applies the committed value — no button.
         IsTextEditable = Kind is "string" or "filepath" or "int" or "float"
             or "float3" or "color";
         IsBool = string.Equals(Kind, "bool", StringComparison.Ordinal);
         IsEnum = string.Equals(Kind, "enum", StringComparison.Ordinal);
         _boolValue = string.Equals(_value, "true", StringComparison.OrdinalIgnoreCase);
-        ApplyCommand = new RelayCommand(ApplyText, () => IsTextEditable);
         _initialized = true;
     }
 
@@ -2611,8 +2611,13 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(IsModified));
-            // Enums apply immediately on a dropdown selection.
-            if (_initialized && IsEnum && !string.IsNullOrEmpty(value))
+            // Apply once editing finishes — no separate Apply button (#218
+            // Phase 3). Enum/color dropdowns commit on selection; text/number
+            // fields commit on LostFocus (the TextBox uses UpdateSourceTrigger=
+            // LostFocus), so this setter fires once per finished edit, not per
+            // keystroke. Guarded by _initialized so populating the field on
+            // (re)selection does not echo a spurious apply back to the engine.
+            if (_initialized && (IsTextEditable || IsEnum) && value is not null)
             {
                 _apply(Name, value);
             }
@@ -2642,17 +2647,7 @@ public sealed class InspectorAssetGraphParamViewModel : ViewModelBase
         IsTextEditable
         && !string.Equals(_value, _originalValue, StringComparison.Ordinal);
 
-    public IRelayCommand ApplyCommand { get; }
-
     public string Detail => Kind;
-
-    private void ApplyText()
-    {
-        if (IsTextEditable)
-        {
-            _apply(Name, _value);
-        }
-    }
 }
 
 public sealed class InspectorAssetGraphPortViewModel
