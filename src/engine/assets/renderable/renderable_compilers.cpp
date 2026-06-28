@@ -77,6 +77,21 @@ namespace wz::engine::assets::internal
             return {};
         }
 
+        // Locate the first dependency of a given asset type. Used by recipes
+        // with optional ports (issue #218), where positional indexing is unsafe
+        // because dep ordering is not guaranteed once an optional port exists.
+        wz::asset::AssetKey dep_key_of_type(
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::asset::AssetType type)
+        {
+            for (const auto& dep : dep_nodes) {
+                if (dep.type == type) {
+                    return dep.key;
+                }
+            }
+            return {};
+        }
+
         void assign_float3(
             const wz::asset::ParamBlock& params,
             std::string_view name,
@@ -187,15 +202,21 @@ namespace wz::engine::assets::internal
         clipmap_landscape_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
         {
-            // Dependency order matches the create API + compiler input ports:
-            // lattice mesh, height scalar field, render program. The
-            // world-space settings are not recoverable from dependencies, so
-            // an editor-authored path supplies them through the typed compile
-            // desc (input.meta) instead of this fallback.
+            // Locate dependencies by TYPE, not positional index: the recipe now
+            // has an OPTIONAL placement port (issue #218 Phase 2), so dep
+            // ordering is not guaranteed. The world-space settings are not
+            // recoverable from dependencies, so an editor-authored path supplies
+            // them through the typed compile desc (input.meta) instead of this
+            // fallback.
             ClipmapLandscapeRenderableCompileDesc desc{};
-            desc.lattice_mesh_asset = dep_key(dep_nodes, 0);
-            desc.height_field_asset = dep_key(dep_nodes, 1);
-            desc.render_program_asset = dep_key(dep_nodes, 2);
+            desc.lattice_mesh_asset =
+                dep_key_of_type(dep_nodes, kAssetTypeMesh);
+            desc.height_field_asset =
+                dep_key_of_type(dep_nodes, kAssetTypeScalarField);
+            desc.render_program_asset =
+                dep_key_of_type(dep_nodes, kAssetTypeRenderProgram);
+            desc.placement_asset =
+                dep_key_of_type(dep_nodes, kAssetTypePlacement);
             return desc;
         }
 
@@ -549,6 +570,7 @@ namespace wz::engine::assets::internal
         auto* rhi_renderable_table = &ctx.rhi_renderable_table;
         auto* render_program_table = &ctx.render_program_table;
         auto* gpu_sparse_mesh_table = &ctx.gpu_sparse_mesh_table;
+        auto* placement_table = &ctx.placement_table;
 
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kMeshWireframeRenderableSchema,
@@ -1047,6 +1069,16 @@ namespace wz::engine::assets::internal
                 { "lattice", kAssetTypeMesh },
                 { "height_field", kAssetTypeScalarField },
                 { "program", kAssetTypeRenderProgram },
+                // Optional world-space frame (issue #218 Phase 2). When
+                // connected, the placement is authoritative for the texture->
+                // world footprint (world_origin/world_size/vertical_scale/
+                // base_height), overriding the authored settings. The lattice
+                // geometry snap (lattice_world_cell_size, c0) is unaffected.
+                {
+                    "placement",
+                    kAssetTypePlacement,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 { .name = "world_size_x", .type = wz::asset::ParamType::Float,
@@ -1076,7 +1108,8 @@ namespace wz::engine::assets::internal
                   .label = "View-snapped lattice", .default_num = 1.0 },
             },
             .compile = [logger, mesh_table, scalar_fields_table,
-                        render_program_table, rhi_renderable_table](
+                        render_program_table, placement_table,
+                        rhi_renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -1091,7 +1124,7 @@ namespace wz::engine::assets::internal
                     editor_desc =
                         clipmap_landscape_renderable_desc_from_deps(dep_nodes);
                     // Graph/editor authoring supplies the world settings via a
-                    // ParamBlock; the deps fallback only recovers the three keys.
+                    // ParamBlock; the deps fallback only recovers the keys.
                     if (const auto* params =
                             std::any_cast<wz::asset::ParamBlock>(&input.meta))
                     {
@@ -1100,41 +1133,63 @@ namespace wz::engine::assets::internal
                                 *params);
                     }
                     desc = &editor_desc;
+                }
 
-                    if (dep_handles.size() != 3) {
-                        logger->error(
-                            "clipmap landscape renderable missing compile desc");
-                        return compile_failed_node(input);
+                // Locate dependencies by asset TYPE, not positional index: the
+                // recipe now has an OPTIONAL placement port (issue #218 Phase 2),
+                // so dep ordering is not guaranteed. dep_nodes and dep_handles
+                // are parallel, in DAG order, so scan them together. lattice,
+                // height and program are REQUIRED; placement is OPTIONAL.
+                const MeshData* lattice = nullptr;
+                const ScalarFieldData* height = nullptr;
+                const RenderProgramData* program = nullptr;
+                const PlacementData* placement = nullptr;
+                for (size_t i = 0;
+                    i < dep_nodes.size() && i < dep_handles.size();
+                    ++i)
+                {
+                    switch (dep_nodes[i].type) {
+                    case kAssetTypeMesh:
+                        if (!lattice) {
+                            lattice = mesh_table->get(dep_handles[i]);
+                        }
+                        break;
+                    case kAssetTypeScalarField:
+                        if (!height) {
+                            height = scalar_fields_table->get(dep_handles[i]);
+                        }
+                        break;
+                    case kAssetTypeRenderProgram:
+                        if (!program) {
+                            program = render_program_table->get(dep_handles[i]);
+                        }
+                        break;
+                    case kAssetTypePlacement:
+                        if (!placement) {
+                            placement = placement_table->get(dep_handles[i]);
+                        }
+                        break;
+                    default:
+                        break;
                     }
                 }
 
-                if (dep_handles.size() != 3) {
-                    logger->error(
-                        "clipmap landscape renderable requires lattice mesh, "
-                        "height field and program dependencies");
-                    return compile_failed_node(input);
-                }
-
-                const MeshData* lattice = mesh_table->get(dep_handles[0]);
                 if (!lattice || !lattice->valid()) {
                     logger->error(
-                        "clipmap landscape renderable lattice mesh is invalid");
+                        "clipmap landscape renderable requires a valid lattice "
+                        "mesh dependency");
                     return compile_failed_node(input);
                 }
-
-                const ScalarFieldData* height =
-                    scalar_fields_table->get(dep_handles[1]);
                 if (!height || !height->valid()) {
                     logger->error(
-                        "clipmap landscape renderable height field is invalid");
+                        "clipmap landscape renderable requires a valid height "
+                        "field dependency");
                     return compile_failed_node(input);
                 }
-
-                const RenderProgramData* program =
-                    render_program_table->get(dep_handles[2]);
                 if (!program || !program->valid()) {
                     logger->error(
-                        "clipmap landscape renderable program is invalid");
+                        "clipmap landscape renderable requires a valid program "
+                        "dependency");
                     return compile_failed_node(input);
                 }
                 if (program->binding_model
@@ -1146,6 +1201,33 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                // A placement DEP overrides only the texture->world footprint
+                // (origin/size/vertical/base) and flags the recipe so the
+                // renderer uses the baked footprint verbatim instead of
+                // re-deriving it from the scene-node transform. The lattice
+                // geometry snap (lattice_world_cell_size, c0) and view_snapped
+                // are left untouched — c0 stays mesh-derived (issue #218 Phase
+                // 2 scope guard). The recipe key already folds the placement dep
+                // (deps participate in the key) so a placement change re-compiles
+                // the renderable. When no placement is connected, settings are
+                // left as authored (placement_authoritative stays false) =
+                // exactly today's behaviour.
+                ClipmapLandscapeRenderSettings settings = desc->settings;
+                if (placement) {
+                    if (!placement->valid()) {
+                        logger->error(
+                            "clipmap landscape renderable placement is invalid");
+                        return compile_failed_node(input);
+                    }
+                    settings.world_origin[0] = placement->origin[0];
+                    settings.world_origin[1] = placement->origin[2];
+                    settings.world_size[0] = placement->extent[0];
+                    settings.world_size[1] = placement->extent[2];
+                    settings.vertical_scale = placement->extent[1];
+                    settings.base_height = placement->base_height;
+                    settings.placement_authoritative = true;
+                }
+
                 // The lattice mesh (#198 step 2), height ScalarField (#197
                 // R32 texture), and program are already rhi-resident; emit an
                 // rhi renderable recipe binding them by identity plus the
@@ -1155,7 +1237,7 @@ namespace wz::engine::assets::internal
                         .mesh_key = desc->lattice_mesh_asset,
                         .program_key = desc->render_program_asset,
                         .height_texture_key = desc->height_field_asset,
-                        .clipmap = desc->settings,
+                        .clipmap = settings,
                     });
                 if (!handle.valid()) {
                     logger->error(

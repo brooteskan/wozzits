@@ -435,13 +435,22 @@ namespace wz::engine::assets
             return {};
         }
 
+        // The placement is an OPTIONAL 4th dependency (issue #218 Phase 2). When
+        // present it is folded into the AssetKey (so a placement change
+        // re-compiles the renderable) and registered as a graph edge AFTER the
+        // program, so the compiler can locate it by type and the deps-hash
+        // ordering matches the key factory.
+        const bool has_placement = desc.placement.valid();
+
         const wz::asset::AssetKey key =
             make_clipmap_landscape_renderable_key(
                 desc.name,
                 desc.lattice_mesh.output,
                 desc.height_field.output,
                 desc.program.key,
-                desc.settings);
+                desc.settings,
+                has_placement ? desc.placement.output
+                              : wz::asset::AssetKey{});
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -453,18 +462,23 @@ namespace wz::engine::assets
             .lattice_mesh_asset = desc.lattice_mesh.output,
             .height_field_asset = desc.height_field.output,
             .render_program_asset = desc.program.key,
+            .placement_asset =
+                has_placement ? desc.placement.output
+                              : wz::asset::AssetKey{},
             .settings = desc.settings,
         };
 
         // Dependency order must match the compiler's input ports:
-        // lattice mesh, height field, render program.
-        (void)system_.register_asset(
-            std::move(node),
-            {
-                desc.lattice_mesh.output,
-                desc.height_field.output,
-                desc.program.key,
-            });
+        // lattice mesh, height field, render program, [optional] placement.
+        std::vector<wz::asset::AssetKey> deps;
+        deps.push_back(desc.lattice_mesh.output);
+        deps.push_back(desc.height_field.output);
+        deps.push_back(desc.program.key);
+        if (has_placement) {
+            deps.push_back(desc.placement.output);
+        }
+
+        (void)system_.register_asset(std::move(node), std::move(deps));
 
         return RenderableAsset{ .output = key };
     }

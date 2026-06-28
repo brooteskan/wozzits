@@ -161,6 +161,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     TerrainAssetTable terrain_table;
     TerrainVisualProxyTable terrain_visual_proxy_table;
     CollisionAssetTable collision_table;
+    PlacementTable placement_table;
     GaussianSplatCloudTable gaussian_splat_cloud_table;
     GaussianSplatColorLODTable gaussian_splat_color_lod_table;
     DataTable data_table;
@@ -275,6 +276,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .terrain_table = terrain_table,
         .terrain_visual_proxy_table = terrain_visual_proxy_table,
         .collision_table = collision_table,
+        .placement_table = placement_table,
         .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
         .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table,
         .data_table = data_table,

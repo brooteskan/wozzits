@@ -60,7 +60,10 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kMeshStyledRenderableCompilerVersion = 4;
     inline constexpr uint64_t kRhiPullMeshRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGpuSparseMeshRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kClipmapLandscapeRenderableCompilerVersion = 1;
+    // Bumped 1 -> 2: the clipmap landscape renderable recipe now accepts an
+    // optional Placement input port that overrides the texture->world footprint
+    // when connected (issue #218 Phase 2). Bump invalidates stale caches.
+    inline constexpr uint64_t kClipmapLandscapeRenderableCompilerVersion = 2;
     inline constexpr uint64_t kGaussianSplatCloudRhiRenderableCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatDebugRenderableCompilerVersion = 2;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;

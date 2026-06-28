@@ -1143,7 +1143,20 @@ namespace wz::engine::rendering
                 // node.scale.y for now (a separate concern, see the flag below);
                 // view_snapped carries through from the recipe. The lattice still
                 // snaps to / follows the camera; node ROTATION is not applied.
-                const ea::ClipmapLandscapeRenderSettings placement =
+                //
+                // #218 Phase 2: when a Placement asset is connected, the
+                // recipe's baked settings are authoritative for the texture->
+                // world footprint (origin/size/vertical/base) — overriding the
+                // node-transform derivation so the visible terrain shares one
+                // world mapping with the collision (which reads the same
+                // Placement). We pass the baked settings as a footprint override
+                // to compute_clipmap_placement, which keeps c0 mesh-derived in
+                // ONE place (the placement never governs the lattice geometry
+                // snap). With no placement, the override is null and the
+                // node-transform path is used, exactly as before.
+                const bool placement_authoritative =
+                    realized->clipmap_settings.placement_authoritative;
+                ea::ClipmapLandscapeRenderSettings placement =
                     wz::engine::rendering::compute_clipmap_placement(
                         realized->clipmap_mesh_width_x,
                         ea::ClipmapLatticeParams{
@@ -1156,19 +1169,22 @@ namespace wz::engine::rendering
                         realized->heightmap_height,
                         node.local.translation,
                         node.local.scale,
-                        realized->clipmap_settings.view_snapped);
+                        realized->clipmap_settings.view_snapped,
+                        placement_authoritative
+                            ? &realized->clipmap_settings
+                            : nullptr);
 
-                // One-shot diagnostic: the clipmap is WORLD-ABSOLUTE — its XZ
-                // footprint is world_size = c0 * heightmap_dims (NOT node scale
-                // X/Z); only node.translation (origin) and node.scale.y (vertical)
-                // feed it. A collision-from-height-field on the same node uses the
-                // FULL node transform, so to align a terrain-stick constraint set
-                // the landscape node scale X/Z to this world_size (Y already
-                // matches as the shared vertical scale).
+                // One-shot diagnostic reporting where the footprint came from.
+                // With a connected Placement (#218 Phase 2) the footprint is the
+                // shared world mapping and a collision reading the same Placement
+                // auto-aligns. Without one, the footprint is node-transform
+                // derived (world-absolute: c0 * heightmap_dims, placed by
+                // node.translation) and aligning a collision still needs the
+                // node-scale hand-match.
                 if (!clipmap_placement_logged_) {
                     clipmap_placement_logged_ = true;
                     logger_.info(
-                        "clipmap placement: world_size=("
+                        std::string("clipmap placement: world_size=(")
                         + std::to_string(placement.world_size[0]) + ", "
                         + std::to_string(placement.world_size[1])
                         + ") world_origin=("
@@ -1176,12 +1192,13 @@ namespace wz::engine::rendering
                         + std::to_string(placement.world_origin[1])
                         + ") vertical_scale=" + std::to_string(
                             placement.vertical_scale)
-                        + " | node.scale=("
-                        + std::to_string(node.local.scale[0]) + ", "
-                        + std::to_string(node.local.scale[1]) + ", "
-                        + std::to_string(node.local.scale[2])
-                        + "). To align a collision constraint set node scale X/Z "
-                          "= world_size (node scale X/Z does NOT size the clipmap).");
+                        + " | footprint source: "
+                        + (placement_authoritative
+                            ? "Placement asset (auto-aligned with a collision "
+                              "reading the same Placement)."
+                            : "node transform (no Placement connected; to align "
+                              "a collision constraint connect a shared Placement "
+                              "asset, or set node scale X/Z = world_size)."));
                 }
 
                 const ClipmapDrawConstants constants =

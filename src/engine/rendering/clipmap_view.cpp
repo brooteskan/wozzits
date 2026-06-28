@@ -147,7 +147,8 @@ namespace wz::engine::rendering
         uint32_t heightmap_height,
         const float node_translation[3],
         const float node_scale[3],
-        bool view_snapped) noexcept
+        bool view_snapped,
+        const assets::ClipmapLandscapeRenderSettings* footprint_override) noexcept
     {
         assets::ClipmapLandscapeRenderSettings out{};
 
@@ -157,6 +158,11 @@ namespace wz::engine::rendering
         // generator's fine_extent and is independent of cell_size (passed in as 1
         // here — only level_count/base_resolution matter). Guard a non-finite /
         // non-positive width or a zero extent so the snap step stays sane.
+        //
+        // This is computed UNCONDITIONALLY — even with a footprint override
+        // (issue #218 Phase 2), c0 stays mesh-derived. The override governs only
+        // the texture->world footprint, never the lattice geometry snap, so this
+        // c0 math lives in exactly one place.
         const uint32_t grid_extent = clipmap_lattice_grid_extent(lattice);
         const float c0 =
             (std::isfinite(mesh_width_x) && mesh_width_x > 0.0f
@@ -164,6 +170,21 @@ namespace wz::engine::rendering
                 ? mesh_width_x / static_cast<float>(grid_extent)
                 : 1.0f;
         out.lattice_world_cell_size = c0;
+        out.view_snapped = view_snapped;
+
+        if (footprint_override != nullptr) {
+            // Authoritative footprint baked from a connected Placement: use it
+            // verbatim and do NOT consult the node transform or heightmap dims
+            // for the footprint. c0 (above) and view_snapped still hold.
+            out.world_origin[0] = footprint_override->world_origin[0];
+            out.world_origin[1] = footprint_override->world_origin[1];
+            out.world_size[0] = footprint_override->world_size[0];
+            out.world_size[1] = footprint_override->world_size[1];
+            out.vertical_scale = footprint_override->vertical_scale;
+            out.base_height = footprint_override->base_height;
+            out.placement_authoritative = true;
+            return out;
+        }
 
         // Terrain world footprint = c0 * heightmap_dims (world_extent). This sets
         // world_to_uv = 1/world_extent in compute_clipmap_view. Treat 0 dims as 1.
@@ -182,7 +203,6 @@ namespace wz::engine::rendering
         out.vertical_scale = node_scale[1];
         out.base_height = node_translation[1];
 
-        out.view_snapped = view_snapped;
         return out;
     }
 }

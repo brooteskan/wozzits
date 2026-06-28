@@ -156,6 +156,16 @@ namespace wz::engine::rendering
     //
     // node_translation / node_scale are 3-float xyz arrays (the node's
     // AuthoredTransform fields). heightmap dims of 0 are treated as 1.
+    //
+    // footprint_override (issue #218 Phase 2): when non-null, the texture->world
+    // footprint (world_origin/world_size/vertical_scale/base_height) is taken
+    // VERBATIM from the override instead of being derived from the node transform
+    // and heightmap dims, and placement_authoritative is set true on the result.
+    // c0 (lattice_world_cell_size) is STILL computed the mesh-derived way in this
+    // case — the override governs only the footprint, never the lattice snap, so
+    // the c0/mesh math lives in exactly one place. The node transform is not
+    // consulted for the footprint when an override is present. view_snapped still
+    // passes through from the recipe.
     [[nodiscard]] assets::ClipmapLandscapeRenderSettings compute_clipmap_placement(
         float mesh_width_x,
         const assets::ClipmapLatticeParams& lattice,
@@ -163,5 +173,7 @@ namespace wz::engine::rendering
         uint32_t heightmap_height,
         const float node_translation[3],
         const float node_scale[3],
-        bool view_snapped) noexcept;
+        bool view_snapped,
+        const assets::ClipmapLandscapeRenderSettings* footprint_override
+            = nullptr) noexcept;
 }

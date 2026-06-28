@@ -251,16 +251,29 @@ namespace wz::engine::assets
             h,
             clipmap_landscape_settings_float_bits(
                 settings.lattice_world_cell_size));
+        // placement_authoritative is part of identity (issue #218 Phase 2): a
+        // placement-driven footprint must produce a distinct recipe from an
+        // identically-valued authored one.
+        h = detail::mix64(
+            h, settings.placement_authoritative ? 1ull : 0ull);
         return h;
     }
 
+    // deps_hash folds lattice, height, program — then, if present, the OPTIONAL
+    // placement dep (issue #218 Phase 2), in the SAME order the module registers
+    // the graph edges (lattice, height, program, placement). combine_dep_hashes
+    // is not commutative, so this ordering must match registration order.
+    // Folding the placement here is what makes a placement change re-compile the
+    // renderable. A null/default placement key reproduces the original 3-dep
+    // key exactly, so back-compat is preserved.
     [[nodiscard]] inline wz::asset::AssetKey
     make_clipmap_landscape_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& lattice_mesh_key,
         const wz::asset::AssetKey& height_field_key,
         const wz::asset::AssetKey& render_program_key,
-        const ClipmapLandscapeRenderSettings& settings = {}) noexcept
+        const ClipmapLandscapeRenderSettings& settings = {},
+        const wz::asset::AssetKey& placement_key = {}) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = mix_clipmap_landscape_settings(h, settings);
@@ -272,20 +285,27 @@ namespace wz::engine::assets
         const wz::asset::Hash program_dep =
             detail::key_to_dep_hash(render_program_key);
 
+        wz::asset::Hash deps_hash = wz::asset::Hash{
+            detail::mix64(
+                detail::mix64(mesh_dep.lo, height_dep.lo),
+                program_dep.lo),
+            detail::mix64(
+                detail::mix64(mesh_dep.hi, height_dep.hi),
+                program_dep.hi),
+        };
+        if (!(placement_key == wz::asset::AssetKey{})) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash,
+                detail::key_to_dep_hash(placement_key));
+        }
+
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
             .schema_hash =
                 detail::hash_u64(kClipmapLandscapeRenderableSchema.value),
             .compiler_hash =
                 detail::hash_u64(kClipmapLandscapeRenderableCompilerVersion),
-            .deps_hash = wz::asset::Hash{
-                detail::mix64(
-                    detail::mix64(mesh_dep.lo, height_dep.lo),
-                    program_dep.lo),
-                detail::mix64(
-                    detail::mix64(mesh_dep.hi, height_dep.hi),
-                    program_dep.hi),
-            },
+            .deps_hash = deps_hash,
         };
     }
 

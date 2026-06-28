@@ -12,6 +12,7 @@
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
+#include <engine/assets/placement_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
 #include <engine/assets/terrain_visual_proxy_asset_module.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
@@ -110,6 +111,13 @@ namespace wz::engine::assets
         // Height source — a scalar field resident as an R32 Texture2D (#197).
         ScalarFieldAsset height_field{};
         RenderProgramAsset program{};
+        // Optional world-space frame (issue #218 Phase 2). When valid, it is
+        // connected as a 4th graph dependency and becomes authoritative for the
+        // texture->world footprint (world_origin/world_size/vertical_scale/
+        // base_height) at compile time, overriding the corresponding fields in
+        // settings below. lattice_world_cell_size is unaffected. When invalid
+        // (default), settings are used exactly as before (back-compatible).
+        PlacementAsset placement{};
         ClipmapLandscapeRenderSettings settings{};
     };
 
