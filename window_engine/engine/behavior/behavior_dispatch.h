@@ -22,6 +22,14 @@ namespace wz::engine::behavior
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context);
 
+    // One-shot WZ_EVENT_SCENE_LOADED dispatch (module on_event subscribers
+    // only). Run once after the scene is materialized, before the frame loop;
+    // the caller applies the produced command buffer (e.g. SET_ACTIVE_CAMERA).
+    void dispatch_scene_loaded(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context);
+
     void dispatch_behavior_event(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,

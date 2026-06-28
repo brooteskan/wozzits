@@ -220,6 +220,26 @@ namespace wz::engine::behavior
             }
         }
 
+        void dispatch_scene_loaded_events_to_modules(
+            const wz::engine::assets::SceneInstance& scene,
+            const BehaviorRegistry& registry,
+            BehaviorFrameContext& context)
+        {
+            for (const auto& record : scene.behaviors) {
+                const BehaviorEvent event{
+                    .kind = WZ_EVENT_SCENE_LOADED,
+                    .entity = record.node,
+                    .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                    .self_is_trigger = false,
+                };
+                dispatch_matching_module_event(
+                    registry,
+                    context,
+                    record.component,
+                    event);
+            }
+        }
+
         void dispatch_collision_events_to_modules(
             const wz::engine::assets::SceneInstance& scene,
             const BehaviorRegistry& registry,
@@ -584,5 +604,28 @@ namespace wz::engine::behavior
             context.behavior_state = &scene.behavior_state;
         }
         dispatch_event_to_modules(scene, registry, context, event);
+    }
+
+    void dispatch_scene_loaded(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context)
+    {
+        if (!context.commands) {
+            return;
+        }
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
+        }
+
+        // One-shot lifecycle pass: dispatch WZ_EVENT_SCENE_LOADED to subscribed
+        // modules only (no per-frame frame.update/input/etc., and not the legacy
+        // named-function loop). Callers run this once after the scene is
+        // materialized, before the frame loop, and apply the produced commands.
+        context.commands->clear();
+        dispatch_scene_loaded_events_to_modules(scene, registry, context);
     }
 }

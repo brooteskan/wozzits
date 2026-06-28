@@ -23,7 +23,22 @@
           1
         ]
       },
-      "visible": true
+      "visible": true,
+      "behaviors": [
+        {
+          "id": "root.behavior.1",
+          "module": "scene_camera",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": true,
+          "events": [
+            "scene.loaded"
+          ],
+          "config": {
+            "camera_name": "camera"
+          }
+        }
+      ]
     },
     {
       "id": "empty_1",
@@ -31,20 +46,20 @@
       "name": "tank",
       "transform": {
         "translation": [
-          36.926700592041016,
-          9.1557044982910156,
-          28.28538703918457
+          60.432998657226562,
+          26.873546600341797,
+          46.101001739501953
         ],
         "rotation_quat": [
-          -0.12925133109092712,
-          0.91643714904785156,
-          0.011940222233533859,
-          0.37854257225990295
+          -0.047698449343442917,
+          -0.19503404200077057,
+          -1.1596423064474948e-05,
+          0.97963595390319824
         ],
         "scale": [
-          1.0002506971359253,
-          0.99994391202926636,
-          1.0002299547195435
+          0.5,
+          0.5,
+          0.5
         ]
       },
       "visible": true,
@@ -68,7 +83,7 @@
         "space": "world",
         "terrain_constrained": true,
         "terrain_ride_height": 0.10000000149011612,
-        "terrain_footprint_radius": 0.60000002384185791,
+        "terrain_footprint_radius": 2,
         "terrain_align_to_surface": true,
         "terrain_alignment_strength": 1,
         "enabled": true
@@ -103,9 +118,9 @@
           1
         ],
         "scale": [
-          512,
-          300,
-          512
+          1,
+          1,
+          1
         ]
       },
       "visible": true,
@@ -113,7 +128,7 @@
         "asset_graph_node_id": 20
       },
       "collision": {
-        "asset": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:217b2e9ad5894042:aec4425e7852e753",
+        "asset": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:c5fe4e1fa014ffb0:b75c19da07c7373d",
         "layer_mask": 1,
         "collides_with_mask": 4294967295,
         "is_trigger": false,
@@ -155,15 +170,15 @@
       "name": "camera",
       "transform": {
         "translation": [
-          0,
-          0,
+          7,
+          3,
           0
         ],
         "rotation_quat": [
-          0,
-          0,
-          0,
-          1
+          -0.030843563377857208,
+          0.70643377304077148,
+          -0.030843563377857208,
+          -0.70643377304077148
         ],
         "scale": [
           1,
@@ -181,7 +196,7 @@
     }
   ],
   "defaults": {
-    "active_camera": "camera_01"
+    "active_camera": "1"
   },
   "scene_editor_metadata": {
     "schema": "wozzits.scene_editor_metadata.v1",

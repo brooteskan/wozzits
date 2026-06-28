@@ -216,3 +216,89 @@ TEST(Mat4, DecomposeTrsRejectsReflection)
     EXPECT_FALSE(decompose_trs(transform(t), decomposed));
 }
 
+// rigid_pose_from_matrix recovers the same translation + orientation as a clean
+// TRS, dropping (uniform) scale -- the steady-state scene-camera case where the
+// camera node sits under a scaled parent (e.g. the tank at scale 0.5).
+TEST(Mat4, RigidPoseFromMatrixRecoversPoseDroppingUniformScale)
+{
+    Transform t;
+    t.position = { 60.0f, 27.0f, 46.0f };
+    t.rotation = normalize(Quaternion{ -0.0308f, 0.7064f, -0.0308f, -0.7064f });
+    t.scale = { 0.5f, 0.5f, 0.5f };
+
+    const Transform pose = rigid_pose_from_matrix(transform(t));
+
+    EXPECT_NEAR(pose.position.x, t.position.x, EPS);
+    EXPECT_NEAR(pose.position.y, t.position.y, EPS);
+    EXPECT_NEAR(pose.position.z, t.position.z, EPS);
+
+    // Scale is always discarded (cameras don't scale the view).
+    EXPECT_NEAR(pose.scale.x, 1.0f, EPS);
+    EXPECT_NEAR(pose.scale.y, 1.0f, EPS);
+    EXPECT_NEAR(pose.scale.z, 1.0f, EPS);
+
+    // Orientation matches: compare the recovered and original rotations by their
+    // action on a probe vector (sidesteps quaternion double-cover sign).
+    const Vec3 probe{ 1.0f, 2.0f, 3.0f };
+    const Vec3 got = mul_vector(rotation(pose.rotation), probe);
+    const Vec3 want = mul_vector(rotation(t.rotation), probe);
+    EXPECT_NEAR(got.x, want.x, 1e-4f);
+    EXPECT_NEAR(got.y, want.y, 1e-4f);
+    EXPECT_NEAR(got.z, want.z, 1e-4f);
+}
+
+// REGRESSION (#219 scene-camera flip): a world matrix that decompose_trs REJECTS
+// on its strict orthogonality gate -- as the tank's per-frame terrain-alignment
+// rotation drift produces -- must STILL yield the node's translation and a valid
+// unit-quaternion orientation. The old camera path fed such a matrix through
+// decompose_trs, ignored the false return, and used the resulting identity pose,
+// snapping the camera to the origin (the intermittent "flip to free-fly").
+TEST(Mat4, RigidPoseFromMatrixPreservesPoseWhereDecomposeTrsRejects)
+{
+    // Rotation + uniform scale with a small shear added to one basis column,
+    // standing in for accumulated floating-point drift, plus a non-origin
+    // translation.
+    Transform base;
+    base.position = { 60.0f, 27.0f, 46.0f };
+    base.rotation = normalize(Quaternion{ -0.0308f, 0.7064f, -0.0308f, -0.7064f });
+    base.scale = { 0.5f, 0.5f, 0.5f };
+
+    Mat4 m = transform(base);
+    m.m[4] += 0.01f;   // perturb the Y basis column -> non-orthonormal basis
+
+    // Precondition: decompose_trs rejects this matrix (the old failure path).
+    Transform rejected{};
+    ASSERT_FALSE(decompose_trs(m, rejected));
+
+    // The robust extraction keeps the camera at the node, not the origin.
+    const Transform pose = rigid_pose_from_matrix(m);
+    EXPECT_NEAR(pose.position.x, 60.0f, EPS);
+    EXPECT_NEAR(pose.position.y, 27.0f, EPS);
+    EXPECT_NEAR(pose.position.z, 46.0f, EPS);
+
+    // And produces a finite, unit-length orientation (no NaN, no collapse).
+    const float qlen = std::sqrt(
+        pose.rotation.x * pose.rotation.x + pose.rotation.y * pose.rotation.y
+        + pose.rotation.z * pose.rotation.z + pose.rotation.w * pose.rotation.w);
+    EXPECT_NEAR(qlen, 1.0f, 1e-4f);
+}
+
+// A genuinely degenerate basis column carries no orientation, so the rotation
+// falls back to identity -- but the translation is still preserved (not origin).
+TEST(Mat4, RigidPoseFromMatrixDegenerateColumnFallsBackToIdentityRotation)
+{
+    Mat4 m = Mat4::identity();
+    m.m[0] = 0.0f; m.m[1] = 0.0f; m.m[2] = 0.0f;   // zero-length X column
+    m.m[12] = 5.0f; m.m[13] = 6.0f; m.m[14] = 7.0f;
+
+    const Transform pose = rigid_pose_from_matrix(m);
+    EXPECT_NEAR(pose.position.x, 5.0f, EPS);
+    EXPECT_NEAR(pose.position.y, 6.0f, EPS);
+    EXPECT_NEAR(pose.position.z, 7.0f, EPS);
+
+    EXPECT_NEAR(pose.rotation.x, 0.0f, EPS);
+    EXPECT_NEAR(pose.rotation.y, 0.0f, EPS);
+    EXPECT_NEAR(pose.rotation.z, 0.0f, EPS);
+    EXPECT_NEAR(pose.rotation.w, 1.0f, EPS);
+}
+

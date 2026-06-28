@@ -1,5 +1,6 @@
 #include <engine/behavior/builtin_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
+#include <engine/behavior/scene_camera_behaviors.h>
 
 #include <logging/logger.h>
 
@@ -87,6 +88,11 @@ namespace wz::engine::behavior
                 registry,
                 register_sample_collision_behaviors,
                 &logger);
+        const bool registered_scene_camera =
+            plugins.register_static_pack(
+                registry,
+                register_scene_camera_behaviors,
+                &logger);
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");
@@ -94,6 +100,11 @@ namespace wz::engine::behavior
         if (!registered_sample) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: sample");
+        }
+        if (!registered_scene_camera) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "scene_camera");
         }
     }
 }

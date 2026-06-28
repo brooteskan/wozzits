@@ -441,12 +441,14 @@ namespace wz::app
             bool drive_camera = true);
         bool render_scene();      // record scene draws (between begin/end frame)
 
-        // Editor override: while set, render_scene uses this view-projection
-        // instead of the app's free-fly camera, letting an editor drive the view
-        // without the app owning editor input. Clearing it returns control to the
-        // app camera.
-        void set_camera_override(const wz::math::Mat4& view_projection);
-        void clear_camera_override();
+        // Camera-source policy for this host. Standalone/play (no editor control)
+        // passes true so a scene-authored camera, once selected on load, drives
+        // the view; the editor edit viewport passes false so the free-fly camera
+        // stays active and you can navigate even when the scene authors a camera.
+        // Only gates whether selection FLIPS the active source to the scene
+        // camera -- the selection anchor is recorded either way, so a future
+        // "look through scene camera" editor toggle is a cheap source switch.
+        void set_prefer_scene_camera(bool prefer);
 
         // Number of GPU resources currently resident in the renderer's resource
         // registry. Stays flat across a graph swap (the outgoing graph's
@@ -499,9 +501,16 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id) const;
 
     private:
-        // The view-projection render_scene draws with: the override if set,
-        // otherwise built from the free-fly camera + projection params + aspect.
-        wz::math::Mat4 compute_view_projection() const;
+        // Materialize the single active view (view-projection + world position)
+        // render_scene draws with, from the currently selected camera source.
+        // Called once per simulation_tick after both sources are current (the
+        // free-fly camera was updated from input and behaviors moved the scene
+        // camera node). The Scene source reads the camera node's live world
+        // transform; if it can't be resolved this frame (e.g. mid-rebuild) the
+        // previous active view is kept rather than dropping to free-fly, so a
+        // transient invalid handle cannot flip the camera. No per-frame branch
+        // or validity guard survives into the render path.
+        void update_active_view();
 
         // Load every behavior-module DLL in `module_folder` and register its
         // modules into registry_. No-op for an empty/missing folder. Reusable
@@ -583,6 +592,26 @@ namespace wz::app
         // when there are no behavior bindings (nothing to run).
         void rebuild_behavior_scene();
 
+        // One-shot WZ_EVENT_SCENE_LOADED dispatch after the scene is
+        // materialized: lets a scene-setup behavior pick the active camera via
+        // SET_ACTIVE_CAMERA. Called once from load_scene, before the frame loop.
+        void select_scene_loaded_active_camera();
+
+        // Apply a SET_ACTIVE_CAMERA command: resolve the runtime entity to its
+        // authored node and record it as the scene-camera selection anchor
+        // (id + live polytree handle + SceneCameraAsset params). Flips
+        // camera_source_ to Scene only when prefer_scene_camera_ is set (play);
+        // in the editor the anchor is recorded but the free-fly source stays
+        // active. The view itself is built later by update_active_view().
+        void apply_scene_active_camera(wz::scene::RuntimeEntityId runtime_entity);
+
+        // Re-point active_camera_entity_ at active_camera_id_'s runtime entity in
+        // the current behavior scene. Called once after each rebuild (NOT per
+        // frame), so the Scene camera source survives a behavior-scene rebuild
+        // (e.g. a behavior spawning a child). No-op when no camera is selected or
+        // the node is gone.
+        void refresh_active_camera_entity();
+
         // One behavior tick: propagate transforms, dispatch frame/input events,
         // apply the produced command buffer + integrate motion, then write the
         // changed node transforms back into scene_nodes_ so the next
@@ -595,21 +624,57 @@ namespace wz::app
         uint32_t                                 graph_epoch_ = 0;  // last bound
 
 
-        // TODO: The app should not prefer its own free-fly camera. The editor should be
-        // able to use the free fly camera in place of the camera defined in the scene
-        // the app should use the camera in the scene first. if no camera is defined in
-        // the scene then it should use this free fly camera. 
-        // 
-        // The app's own free-fly camera (game-app parity): updated from input in
-        // simulation_tick and used to build the view-projection unless an editor
-        // override is set. Projection params mirror the scene camera defaults;
-        // aspect tracks the window reported by the latest input.
+        // The app's own free-fly camera (game-app parity), and the editor's edit
+        // camera: updated from input in simulation_tick (when the host arms
+        // drive_camera) and used as the FreeFly camera source. Projection params
+        // mirror the scene camera defaults; aspect tracks the window reported by
+        // the latest input.
         wz::bench::FlyingCamera        camera_{};
         float                          camera_fov_y_ = 1.0472f;       // ~60 deg
         float                          camera_near_  = 0.1f;
         float                          camera_far_   = 100000.0f;
         float                          aspect_       = 1280.0f / 720.0f;
-        std::optional<wz::math::Mat4>  camera_override_{};
+
+        // The single active view rendering consumes -- materialized each
+        // simulation_tick by update_active_view() from the selected source. The
+        // render path references THIS and nothing else (no override, no
+        // per-frame scene-tree lookup, no fallback branch).
+        struct ActiveView
+        {
+            wz::math::Mat4 view_projection = wz::math::Mat4::identity();
+            wz::math::Vec3 world_position{};   // clipmap lattice snap reads this
+        };
+        ActiveView active_view_{};
+
+        // Which source update_active_view() materializes from. FreeFly = the
+        // editor/standalone fly-cam (camera_); Scene = the selected scene-authored
+        // camera (active_camera_* below). Defaults to FreeFly; flipped to Scene
+        // only when a scene camera is selected AND prefer_scene_camera_ is set.
+        enum class CameraSource { FreeFly, Scene };
+        CameraSource camera_source_ = CameraSource::FreeFly;
+
+        // Diagnostic (#219): whether the Scene source resolved its handle the
+        // last time update_active_view() ran, so it logs only the transition
+        // edges (a flip to/from "holding last view") rather than per frame.
+        bool scene_source_resolved_ = false;
+
+        // Host policy (set_prefer_scene_camera): standalone/play sets this true so
+        // a selected scene camera becomes active on load; the editor leaves it
+        // false so the free-fly edit camera stays active.
+        bool prefer_scene_camera_ = false;
+
+        // Active scene-camera SELECTION ANCHOR, recorded when a scene-setup
+        // behavior selects it on WZ_EVENT_SCENE_LOADED (SET_ACTIVE_CAMERA).
+        // active_camera_id_ is the stable anchor; active_camera_entity_ is its
+        // live polytree handle, re-resolved only when the behavior scene is
+        // rebuilt (never per frame) so the Scene source survives a rebuild.
+        // Recorded regardless of camera_source_, so the editor can later switch
+        // the source to Scene to preview. Projection params are captured at
+        // selection (a reload re-reads them).
+        wz::scene::AuthoredEntityId          active_camera_id_{};
+        wz::scene::RuntimeEntityId           active_camera_entity_ =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        wz::engine::assets::SceneCameraAsset active_camera_params_{};
 
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).

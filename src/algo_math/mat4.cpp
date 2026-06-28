@@ -304,6 +304,51 @@ namespace wz::math
         return true;
     }
 
+    Transform rigid_pose_from_matrix(const Mat4& m)
+    {
+        Transform out{};
+        out.position = { m.m[12], m.m[13], m.m[14] };
+        out.scale = { 1.0f, 1.0f, 1.0f };
+
+        Vec3 x{ m.m[0], m.m[1], m.m[2] };
+        Vec3 y{ m.m[4], m.m[5], m.m[6] };
+        Vec3 z{ m.m[8], m.m[9], m.m[10] };
+
+        const float sx = length(x);
+        const float sy = length(y);
+        const float sz = length(z);
+
+        // A degenerate basis column carries no usable orientation; fall back to
+        // identity rotation rather than dividing by ~0.
+        constexpr float kMinAxis = 1e-6f;
+        if (sx <= kMinAxis || sy <= kMinAxis || sz <= kMinAxis) {
+            out.rotation = Quaternion::identity();
+            return out;
+        }
+
+        x = x / sx;
+        y = y / sy;
+        z = z / sz;
+
+        // Normalized basis columns -> rotation matrix -> quaternion. No
+        // orthogonality/determinant gate: from_rotation_matrix stays stable for
+        // a near-orthonormal basis, which is exactly the case decompose_trs
+        // rejects.
+        Mat4 rotation_matrix = Mat4::identity();
+        rotation_matrix.m[0] = x.x;
+        rotation_matrix.m[1] = x.y;
+        rotation_matrix.m[2] = x.z;
+        rotation_matrix.m[4] = y.x;
+        rotation_matrix.m[5] = y.y;
+        rotation_matrix.m[6] = y.z;
+        rotation_matrix.m[8] = z.x;
+        rotation_matrix.m[9] = z.y;
+        rotation_matrix.m[10] = z.z;
+
+        out.rotation = from_rotation_matrix(rotation_matrix);
+        return out;
+    }
+
     float max_scale(const Mat4& m)
     {
         // assumes column-major basis vectors

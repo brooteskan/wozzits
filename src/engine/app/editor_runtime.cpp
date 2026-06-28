@@ -725,6 +725,11 @@ namespace wz::app
         {
             wz::app::WozzitsApp_v1 app(ctx);
 
+            // Standalone/play (no editor control) prefers a scene-authored camera
+            // once selected on load; the editor edit viewport (non-null control)
+            // stays on the free-fly camera so you can navigate the scene.
+            app.set_prefer_scene_camera(control == nullptr);
+
             const auto binder =
                 [&app](wz::asset::AssetGraphDraft& draft)
             {

@@ -488,6 +488,12 @@ namespace wz::app
         load_behavior_modules(desc.behavior_module_folder);
         rebuild_behavior_scene();
 
+        // One-shot scene-load lifecycle pass: lets a scene-setup behavior pick
+        // the active camera (WZ_EVENT_SCENE_LOADED -> SET_ACTIVE_CAMERA) before
+        // the first frame renders. Runs only on initial load, not on the
+        // rebuild_behavior_scene calls that follow structural edits.
+        select_scene_loaded_active_camera();
+
         return graph_ok && scene_resolve.ok();
     }
 
@@ -512,6 +518,12 @@ namespace wz::app
         dispatch_scene_behaviors(input, dt);
 
         renderer_.simulation_tick();
+
+        // Both camera sources are now current (free-fly updated from input above;
+        // behaviors moved the scene-camera node in dispatch_scene_behaviors).
+        // Materialize the single active view render_scene reads -- no work happens
+        // in the render path.
+        update_active_view();
     }
 
     void WozzitsApp_v1::load_behavior_modules(
@@ -983,6 +995,16 @@ namespace wz::app
 
     void WozzitsApp_v1::rebuild_behavior_scene()
     {
+        // DIAGNOSTIC (#219): a rebuild while the scene camera is the active source
+        // renumbers polytree handles; refresh_active_camera_entity re-seats the
+        // handle below, but logging the event tells us whether an unexpected
+        // per-frame rebuild (not pure movement) is what correlates with the flip.
+        if (camera_source_ == CameraSource::Scene) {
+            ctx_.logger.warn(
+                "rebuild_behavior_scene while scene camera active (anchor='"
+                + active_camera_id_ + "')");
+        }
+
         behavior_scene_.reset();
 
         // Build the runtime SceneInstance whenever ANY node carries something the
@@ -1003,6 +1025,7 @@ namespace wz::app
                         && node.collision->constrain_movement);
             });
         if (!needs_simulation) {
+            refresh_active_camera_entity();
             return;
         }
 
@@ -1035,6 +1058,7 @@ namespace wz::app
             ctx_.logger.error(
                 "behavior scene instantiate failed: "
                 + instantiated.error_detail);
+            refresh_active_camera_entity();
             return;
         }
 
@@ -1048,6 +1072,112 @@ namespace wz::app
         ctx_.logger.info(
             "behavior scene initialized (bindings="
             + std::to_string(behavior_scene_->behaviors.size()) + ")");
+
+        // Re-point the active camera handle at the rebuilt scene's entities, so a
+        // selected scene camera survives a rebuild (e.g. a behavior spawning a
+        // child) without falling back to free-fly.
+        refresh_active_camera_entity();
+    }
+
+    void WozzitsApp_v1::select_scene_loaded_active_camera()
+    {
+        // One-shot WZ_EVENT_SCENE_LOADED pass: a scene-setup behavior (bound to
+        // e.g. the scene root) may emit SET_ACTIVE_CAMERA naming a camera node.
+        // Apply it here, before the first frame. The behavior only names the
+        // node; the camera math lives here so the convention matches the
+        // free-fly camera and the standalone driver hard-codes nothing.
+        if (!behavior_scene_) {
+            return;
+        }
+
+        frame_storage_.behavior_commands.clear();
+        wz::engine::behavior::BehaviorFrameContext ctx{
+            .frame_storage = &frame_storage_,
+            .scene = &*behavior_scene_,
+            .behavior_state = &behavior_scene_->behavior_state,
+            .commands = &frame_storage_.behavior_commands,
+            .logger = &ctx_.logger,
+        };
+        // Re-decide the active camera on every (re)load: drop the prior anchor
+        // and fall back to the free-fly source until a scene-setup behavior
+        // selects a camera (and, in play, prefer_scene_camera_ flips the source).
+        active_camera_id_.clear();
+        active_camera_entity_ = wz::scene::INVALID_RUNTIME_ENTITY;
+        camera_source_ = CameraSource::FreeFly;
+        wz::engine::behavior::dispatch_scene_loaded(
+            *behavior_scene_, registry_, ctx);
+
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             frame_storage_.behavior_commands.commands)
+        {
+            if (command.kind
+                == wz::engine::behavior::BehaviorCommandKind::SetActiveCamera)
+            {
+                apply_scene_active_camera(command.entity);
+            }
+        }
+
+        // Materialize the active view once now so the first render after a load
+        // (before the first simulation_tick) draws through the selected camera.
+        update_active_view();
+    }
+
+    void WozzitsApp_v1::apply_scene_active_camera(
+        wz::scene::RuntimeEntityId runtime_entity)
+    {
+        if (!behavior_scene_
+            || runtime_entity >= behavior_scene_->runtime_to_authored.size())
+        {
+            return;
+        }
+        const wz::scene::AuthoredEntityId& authored_id =
+            behavior_scene_->runtime_to_authored[runtime_entity];
+
+        // One-shot selection: capture the camera's projection params from its
+        // authored node (a single scan, here, not per frame) and remember the
+        // node by id + live polytree handle. update_active_view() then reads the
+        // node's already-maintained world transform through the handle.
+        const auto it = std::find_if(
+            scene_nodes_.begin(),
+            scene_nodes_.end(),
+            [&](const wz::engine::assets::SceneNodeAsset& node) {
+                return node.id == authored_id;
+            });
+        if (it == scene_nodes_.end() || !it->camera) {
+            ctx_.logger.warn(
+                "scene_camera: node '" + authored_id
+                + "' has no camera component; active camera unchanged");
+            return;
+        }
+
+        active_camera_id_ = authored_id;
+        active_camera_entity_ = runtime_entity;
+        active_camera_params_ = *it->camera;
+
+        // Play hosts (standalone) flip the active source to the scene camera; the
+        // editor records the anchor but stays on the free-fly edit camera so you
+        // can navigate (a later editor toggle can switch the source to Scene).
+        if (prefer_scene_camera_) {
+            camera_source_ = CameraSource::Scene;
+        }
+        ctx_.logger.info(
+            "scene_camera: active camera selected on node '" + authored_id
+            + "' (source="
+            + (camera_source_ == CameraSource::Scene ? "scene" : "free-fly")
+            + ")");
+    }
+
+    void WozzitsApp_v1::refresh_active_camera_entity()
+    {
+        if (active_camera_id_.empty() || !behavior_scene_) {
+            active_camera_entity_ = wz::scene::INVALID_RUNTIME_ENTITY;
+            return;
+        }
+        const auto it =
+            behavior_scene_->authored_to_runtime.find(active_camera_id_);
+        active_camera_entity_ = it != behavior_scene_->authored_to_runtime.end()
+            ? it->second
+            : wz::scene::INVALID_RUNTIME_ENTITY;
     }
 
     void WozzitsApp_v1::reload_behavior_modules(
@@ -2269,41 +2399,93 @@ namespace wz::app
         if (!ctx_.assets) {
             return true;
         }
-        // The clipmap landscape snaps its lattice to the camera world position.
-        // Use the free-fly camera's position; it matches compute_view_projection
-        // on the app-camera path. (When an editor camera override is active the
-        // view is driven externally and a matching override position is a future
-        // editor concern — see the camera TODO in the header.)
-        const wz::math::Vec3 camera_world_pos{
-            camera_.x, camera_.y, camera_.z };
+        // The single active view is kept current by update_active_view() each
+        // simulation_tick. render_scene just reads it -- no branch, no scene-tree
+        // lookup, no fallback. world_position drives the clipmap lattice snap and
+        // tracks whichever camera (free-fly or scene) is active.
         return renderer_.render_scene(
-            scene_nodes_, *ctx_.assets, compute_view_projection(),
-            camera_world_pos);
+            scene_nodes_, *ctx_.assets, active_view_.view_projection,
+            active_view_.world_position);
     }
 
-    void WozzitsApp_v1::set_camera_override(
-        const wz::math::Mat4& view_projection)
+    void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)
     {
-        camera_override_ = view_projection;
+        prefer_scene_camera_ = prefer;
     }
 
-    void WozzitsApp_v1::clear_camera_override()
+    void WozzitsApp_v1::update_active_view()
     {
-        camera_override_.reset();
-    }
+        if (camera_source_ == CameraSource::Scene) {
+            // Read the selected camera node's already-maintained world transform
+            // straight from the live scene graph through its handle. A camera
+            // parented under a moving node (e.g. a tank) follows it because the
+            // graph keeps that node's world matrix current. If the handle can't
+            // be resolved this frame (e.g. mid-rebuild), keep the previous active
+            // view rather than dropping to free-fly -- so a transient invalid
+            // handle cannot flip the camera.
+            const std::size_t node_count = behavior_scene_
+                ? wz::core::graph::node_count(behavior_scene_->storage.polytree)
+                : 0;
+            const bool resolved = behavior_scene_
+                && active_camera_entity_ != wz::scene::INVALID_RUNTIME_ENTITY
+                && active_camera_entity_ < node_count;
 
-    wz::math::Mat4 WozzitsApp_v1::compute_view_projection() const
-    {
-        if (camera_override_) {
-            return *camera_override_;
+            // DIAGNOSTIC (#219): log only the resolve/unresolve EDGES, so a flip
+            // shows up as a single line instead of per-frame spam.
+            if (resolved != scene_source_resolved_) {
+                ctx_.logger.warn(
+                    std::string("scene camera source ")
+                    + (resolved ? "RESOLVED" : "UNRESOLVED (holding last view)")
+                    + " entity=" + std::to_string(active_camera_entity_)
+                    + " node_count=" + std::to_string(node_count)
+                    + " behavior_scene="
+                    + (behavior_scene_ ? "live" : "null"));
+                scene_source_resolved_ = resolved;
+            }
+
+            if (resolved) {
+                const wz::math::Mat4& world = wz::core::graph::node_data(
+                    behavior_scene_->storage.polytree,
+                    active_camera_entity_).world;
+
+                // Extract the camera node's rigid pose from its world matrix
+                // robustly. decompose_trs is intentionally NOT used here -- its
+                // tight orthogonality/determinant gates reject the matrix on the
+                // tiny FP drift accumulated through the tank's per-frame terrain-
+                // alignment rotation, and a rejected decompose leaves an identity
+                // pose, snapping the camera to the origin (the intermittent
+                // "flip"). rigid_pose_from_matrix normalizes the basis (dropping
+                // the parent's scale, e.g. the tank's 0.5) without that gate.
+                const wz::math::Transform pose =
+                    wz::math::rigid_pose_from_matrix(world);
+
+                wz::bench::FlyingCamera cam{};
+                cam.x = pose.position.x;
+                cam.y = pose.position.y;
+                cam.z = pose.position.z;
+                cam.orientation = pose.rotation;
+
+                const wz::math::Mat4 view = wz::bench::view_matrix(cam);
+                const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
+                    active_camera_params_.fov_y,
+                    aspect_,
+                    active_camera_params_.near_plane,
+                    active_camera_params_.far_plane);
+                active_view_.view_projection = wz::math::mul(proj, view);
+                active_view_.world_position =
+                    wz::math::Vec3{ world.m[12], world.m[13], world.m[14] };
+            }
+            return;
         }
 
-        // Free-fly camera -> left-handed DX view-projection (the renderer's
+        // Free-fly source -> left-handed DX view-projection (the renderer's
         // convention). aspect tracks the window from the latest input.
         const wz::math::Mat4 view = wz::bench::view_matrix(camera_);
         const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
             camera_fov_y_, aspect_, camera_near_, camera_far_);
-        return wz::math::mul(proj, view);
+        active_view_.view_projection = wz::math::mul(proj, view);
+        active_view_.world_position =
+            wz::math::Vec3{ camera_.x, camera_.y, camera_.z };
     }
 
     std::size_t WozzitsApp_v1::resident_gpu_resource_count() const

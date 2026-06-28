@@ -219,6 +219,16 @@ enum
     WZ_BEHAVIOR_COMMAND_SET_LINEAR_VELOCITY = 8u,
     WZ_BEHAVIOR_COMMAND_SET_ANGULAR_VELOCITY = 9u,
     WZ_BEHAVIOR_COMMAND_SET_MOTION_SPACE = 10u,
+    /*
+     * Make `entity` the runtime's active camera. Unlike the transform/velocity
+     * commands above, this does not mutate the entity: the host reads the
+     * entity's world transform + its SceneCameraAsset (fov/near/far) and points
+     * the runtime camera at it. `values` are unused. Typically issued once by a
+     * scene-setup behavior on WZ_EVENT_SCENE_LOADED; the host applies it after
+     * the dispatch, before the frame loop. apply_behavior_commands ignores it
+     * (it is handled at the WozzitsApp_v1 level, which owns the camera).
+     */
+    WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA = 11u,
 };
 
 enum

@@ -159,6 +159,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetAngularVelocity;
             case WZ_BEHAVIOR_COMMAND_SET_MOTION_SPACE:
                 return BehaviorCommandKind::SetMotionSpace;
+            case WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA:
+                return BehaviorCommandKind::SetActiveCamera;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

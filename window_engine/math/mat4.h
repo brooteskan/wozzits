@@ -21,4 +21,15 @@ namespace wz::math
         const Mat4& m,
         Transform& out,
         float epsilon = 1e-6f);
+
+    // Extract a rigid pose (translation + rotation; scale discarded) from an
+    // affine matrix WITHOUT decompose_trs's strict validity gates. Normalizes
+    // the basis columns, so a uniformly-scaled and/or slightly non-orthonormal
+    // matrix -- e.g. floating-point drift accumulated through chained rotations
+    // -- still yields a stable rotation instead of being rejected. Intended for
+    // deriving a camera's view from its live world transform, where a hard
+    // rejection (as decompose_trs does) would leave an identity pose and snap
+    // the camera to the origin. The returned scale is always 1; rotation is
+    // identity only if a basis column is degenerate (near-zero length).
+    Transform rigid_pose_from_matrix(const Mat4& m);
 }

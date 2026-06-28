@@ -24,6 +24,11 @@ namespace wz::engine::behavior
         SetLinearVelocity,
         SetAngularVelocity,
         SetMotionSpace,
+        // Make `entity` the runtime's active camera. Not applied by
+        // apply_behavior_commands (it does not mutate the entity); the host
+        // (WozzitsApp_v1) reads the entity's transform + SceneCameraAsset and
+        // points the runtime camera at it. See WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA.
+        SetActiveCamera,
     };
 
     struct BehaviorCommand

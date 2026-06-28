@@ -887,6 +887,12 @@ namespace wz::engine::behavior
                 break;
             }
 
+            case BehaviorCommandKind::SetActiveCamera:
+                // Not a per-entity transform mutation: the host (WozzitsApp_v1)
+                // reads this command directly to point the runtime camera at the
+                // named node. Ignored here.
+                break;
+
             case BehaviorCommandKind::None:
                 break;
             }
