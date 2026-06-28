@@ -419,6 +419,20 @@ public sealed record EngineSceneCamera
     public double? FarPlane { get; init; }
 
     public double? Aspect { get; init; }
+
+    // Canonical defaults for a freshly added Camera component. They mirror the
+    // engine's SceneCameraAsset (and the runtime free-fly camera): ~60° vertical
+    // FOV, 0.1 near, 1000 far, 16:9. Seeding these instead of leaving the fields
+    // null keeps the inspector showing the engine's real defaults rather than
+    // blanks that would otherwise apply back as a degenerate zero-FOV camera
+    // (#220).
+    public static EngineSceneCamera CreateEngineDefaults() => new()
+    {
+        FieldOfViewY = 1.0472,
+        NearPlane = 0.1,
+        FarPlane = 1000.0,
+        Aspect = 16.0 / 9.0,
+    };
 }
 
 public sealed record EngineSceneRenderable

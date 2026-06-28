@@ -1335,10 +1335,19 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (string.Equals(kind, "camera", StringComparison.Ordinal))
         {
             HasCameraComponent = true;
+            // Seed the optimistic component with the engine's canonical camera
+            // defaults (which AddNodeComponent already applied engine-side), so
+            // the inspector shows real values instead of blanks that would apply
+            // back as a zero-FOV camera (#220).
+            var camera = EngineSceneCamera.CreateEngineDefaults();
             if (_inspectedSceneNode is { Camera: null } cameraNode)
             {
-                cameraNode.Camera = new EngineSceneCamera();
+                cameraNode.Camera = camera;
             }
+            CameraFovY = FormatNullable(camera.FieldOfViewY);
+            CameraNear = FormatNullable(camera.NearPlane);
+            CameraFar = FormatNullable(camera.FarPlane);
+            CameraAspect = FormatNullable(camera.Aspect);
         }
         else if (string.Equals(kind, "collision", StringComparison.Ordinal))
         {
