@@ -1158,32 +1158,6 @@ namespace wz::engine::rendering
                         node.local.scale,
                         realized->clipmap_settings.view_snapped);
 
-                // One-shot diagnostic: the clipmap is WORLD-ABSOLUTE — its XZ
-                // footprint is world_size = c0 * heightmap_dims (NOT node scale
-                // X/Z); only node.translation (origin) and node.scale.y (vertical)
-                // feed it. A collision-from-height-field on the same node uses the
-                // FULL node transform, so to align a terrain-stick constraint set
-                // the landscape node scale X/Z to this world_size (Y already
-                // matches as the shared vertical scale).
-                if (!clipmap_placement_logged_) {
-                    clipmap_placement_logged_ = true;
-                    logger_.info(
-                        "clipmap placement: world_size=("
-                        + std::to_string(placement.world_size[0]) + ", "
-                        + std::to_string(placement.world_size[1])
-                        + ") world_origin=("
-                        + std::to_string(placement.world_origin[0]) + ", "
-                        + std::to_string(placement.world_origin[1])
-                        + ") vertical_scale=" + std::to_string(
-                            placement.vertical_scale)
-                        + " | node.scale=("
-                        + std::to_string(node.local.scale[0]) + ", "
-                        + std::to_string(node.local.scale[1]) + ", "
-                        + std::to_string(node.local.scale[2])
-                        + "). To align a collision constraint set node scale X/Z "
-                          "= world_size (node scale X/Z does NOT size the clipmap).");
-                }
-
                 const ClipmapDrawConstants constants =
                     make_clipmap_draw_constants(
                         view_projection,

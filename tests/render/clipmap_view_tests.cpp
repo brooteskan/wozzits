@@ -271,11 +271,12 @@ TEST(ClipmapView, GridExtentMatchesLatticeGeometry)
 
 // ── compute_clipmap_placement: mesh (world-sized) + node transform ───────────
 //
-// The lattice mesh is now WORLD-SIZED (make_clipmap_lattice_mesh bakes cell_size
+// The lattice mesh is WORLD-SIZED (make_clipmap_lattice_mesh bakes cell_size
 // into the positions). compute_clipmap_placement recovers the finest cell world
-// size c0 from the mesh width (c0 = width_x / grid_extent), sizes the terrain
-// footprint as c0 * heightmap_dims, and PLACES it from the node translation —
-// node scale X/Z no longer sizes it. These tests lock that contract down.
+// size c0 from the mesh width (c0 = width_x / grid_extent) for the snap step,
+// sizes the terrain footprint from the NODE SCALE X/Z (so a collision on the
+// same node, which uses the full node transform, auto-aligns), and PLACES it
+// from the node translation. These tests lock that contract down.
 namespace
 {
     // The width helper run on a freshly generated lattice equals
@@ -328,10 +329,11 @@ TEST(ClipmapPlacement, InfersFinestCellSizeFromMesh)
     }
 }
 
-// world_size == c0 * heightmap_dims (the terrain world footprint), world_origin
-// == node translation XZ, base_height == translation.y, vertical_scale ==
-// node.scale.y. Node scale X/Z is deliberately IGNORED for horizontal sizing.
-TEST(ClipmapPlacement, FootprintFromMeshOriginAndVerticalFromNode)
+// world_size == node scale X/Z (the terrain world footprint), world_origin ==
+// node translation XZ, base_height == translation.y, vertical_scale ==
+// node.scale.y, and c0 is still mesh-derived (the snap step). Heightmap dims do
+// NOT size the footprint.
+TEST(ClipmapPlacement, FootprintFromNodeScaleOriginAndVerticalFromNode)
 {
     const float s = 2.0f;
     const ClipmapLatticeParams lattice{
@@ -340,7 +342,7 @@ TEST(ClipmapPlacement, FootprintFromMeshOriginAndVerticalFromNode)
     const uint32_t tex_w = 256u;
     const uint32_t tex_h = 128u;
     const float translation[3] = { 10.0f, -3.0f, -20.0f };
-    // Non-unit scale X/Z to prove they do NOT size the terrain; scale.y drives
+    // Distinct, non-unit X/Z to prove they size the footprint; scale.y drives
     // vertical.
     const float scale[3] = { 5.0f, 4.0f, 9.0f };
 
@@ -351,10 +353,11 @@ TEST(ClipmapPlacement, FootprintFromMeshOriginAndVerticalFromNode)
                 .level_count = 4u, .base_resolution = 8u, .cell_size = 1.0f },
             tex_w, tex_h, translation, scale, /*view_snapped*/ true);
 
-    // c0 == s, so footprint = s * dims, independent of node scale X/Z.
+    // c0 == s (mesh-derived snap step), independent of the footprint.
     EXPECT_NEAR(placement.lattice_world_cell_size, s, 1e-4f);
-    EXPECT_NEAR(placement.world_size[0], s * static_cast<float>(tex_w), 1e-3f);
-    EXPECT_NEAR(placement.world_size[1], s * static_cast<float>(tex_h), 1e-3f);
+    // Footprint = node scale X/Z, independent of the heightmap dims.
+    EXPECT_FLOAT_EQ(placement.world_size[0], 5.0f);   // scale.x
+    EXPECT_FLOAT_EQ(placement.world_size[1], 9.0f);   // scale.z
 
     // Placement from translation; vertical from translation.y / scale.y.
     EXPECT_FLOAT_EQ(placement.world_origin[0], 10.0f);
@@ -363,9 +366,10 @@ TEST(ClipmapPlacement, FootprintFromMeshOriginAndVerticalFromNode)
     EXPECT_FLOAT_EQ(placement.vertical_scale, 4.0f);      // scale.y
 }
 
-// Horizontal size is mesh-driven: changing node scale X/Z leaves c0 and
-// world_size unchanged (the regression the double-scaling fix targets).
-TEST(ClipmapPlacement, NodeScaleXZDoesNotSizeTheTerrain)
+// Horizontal size is node-scale-driven: changing node scale X/Z changes the
+// footprint (so a collision on the same node tracks it), while c0 (mesh-derived)
+// stays put.
+TEST(ClipmapPlacement, NodeScaleXZSizesTheTerrain)
 {
     const ClipmapLatticeParams lattice{
         .level_count = 4u, .base_resolution = 8u, .cell_size = 1.5f };
@@ -382,9 +386,13 @@ TEST(ClipmapPlacement, NodeScaleXZDoesNotSizeTheTerrain)
     const ClipmapLandscapeRenderSettings b = compute_clipmap_placement(
         width, grid, 64u, 64u, translation, scale_b, true);
 
+    // c0 (mesh-derived snap step) is unchanged by node scale.
     EXPECT_FLOAT_EQ(a.lattice_world_cell_size, b.lattice_world_cell_size);
-    EXPECT_FLOAT_EQ(a.world_size[0], b.world_size[0]);
-    EXPECT_FLOAT_EQ(a.world_size[1], b.world_size[1]);
+    // Footprint follows node scale X/Z.
+    EXPECT_FLOAT_EQ(a.world_size[0], 1.0f);
+    EXPECT_FLOAT_EQ(a.world_size[1], 1.0f);
+    EXPECT_FLOAT_EQ(b.world_size[0], 100.0f);
+    EXPECT_FLOAT_EQ(b.world_size[1], 0.01f);
 }
 
 // view_snapped passes through both ways.
@@ -401,7 +409,8 @@ TEST(ClipmapPlacement, ViewSnappedPassesThrough)
 }
 
 // A degenerate mesh width (empty mesh -> 0, or non-finite) falls back to c0 = 1
-// so the snap step / footprint stay sane instead of collapsing to zero.
+// so the snap step stays sane instead of collapsing to zero; the footprint is
+// node-scale-driven and unaffected.
 TEST(ClipmapPlacement, DegenerateMeshWidthFallsBackToUnitCell)
 {
     EXPECT_FLOAT_EQ(clipmap_lattice_mesh_width_x(MeshData{}), 0.0f);
@@ -409,11 +418,26 @@ TEST(ClipmapPlacement, DegenerateMeshWidthFallsBackToUnitCell)
     const ClipmapLatticeParams grid{
         .level_count = 4u, .base_resolution = 8u, .cell_size = 1.0f };
     const float translation[3] = { 0.0f, 0.0f, 0.0f };
-    const float scale[3] = { 1.0f, 1.0f, 1.0f };
+    const float scale[3] = { 7.0f, 1.0f, 7.0f };
     const ClipmapLandscapeRenderSettings placement =
         compute_clipmap_placement(
             0.0f, grid, 32u, 32u, translation, scale, true);
     EXPECT_FLOAT_EQ(placement.lattice_world_cell_size, 1.0f);
-    EXPECT_FLOAT_EQ(placement.world_size[0], 32.0f);  // 1.0 * 32
-    EXPECT_FLOAT_EQ(placement.world_size[1], 32.0f);
+    EXPECT_FLOAT_EQ(placement.world_size[0], 7.0f);  // node scale X
+    EXPECT_FLOAT_EQ(placement.world_size[1], 7.0f);  // node scale Z
+}
+
+// A non-positive / non-finite node scale X/Z falls back to a unit footprint so
+// world_to_uv never divides by zero.
+TEST(ClipmapPlacement, NonPositiveNodeScaleFallsBackToUnitFootprint)
+{
+    const ClipmapLatticeParams grid{
+        .level_count = 4u, .base_resolution = 8u, .cell_size = 1.0f };
+    const float translation[3] = { 0.0f, 0.0f, 0.0f };
+    const float scale[3] = { 0.0f, 1.0f, -5.0f };
+    const ClipmapLandscapeRenderSettings placement =
+        compute_clipmap_placement(
+            64.0f, grid, 64u, 64u, translation, scale, true);
+    EXPECT_FLOAT_EQ(placement.world_size[0], 1.0f);
+    EXPECT_FLOAT_EQ(placement.world_size[1], 1.0f);
 }

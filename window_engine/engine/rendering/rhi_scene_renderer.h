@@ -215,11 +215,6 @@ namespace wz::engine::rendering
         std::unordered_set<wz::asset::AssetKey, wz::asset::AssetKeyHash>
             failed_renderables_;
 
-        // One-shot guard so the clipmap world-placement diagnostic (footprint vs
-        // node scale, for aligning a terrain-stick collision) logs once, not per
-        // frame.
-        bool clipmap_placement_logged_ = false;
-
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
     };
