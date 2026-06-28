@@ -655,6 +655,7 @@
     },
     {
       "node_id": 25,
+      "key": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:217b2e9ad5894042:aec4425e7852e753",
       "type": 150,
       "schema": "0xf11eca55e7000b02",
       "stage": 0,
@@ -723,6 +724,51 @@
             "name": "vertical_scale",
             "type": "float",
             "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 26,
+      "key": "asset-key:c93c2352f5164387:33d63de20598484e:f11eca55e7000a03:0000000000000000:9e3779b97f4aa362:0000000000000000:0000000000000000:0000000000000000",
+      "type": 159,
+      "schema": "0xf11eca55e7000a03",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "base_height",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "extent_x",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "extent_y",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "extent_z",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "origin_x",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "origin_z",
+            "type": "float",
+            "value": 0
           }
         ]
       }
@@ -858,8 +904,8 @@
       },
       {
         "node_id": 26,
-        "x": 669.19674050178423,
-        "y": 947.53440324034568
+        "x": 24.018863378191895,
+        "y": 42.409761837248482
       },
       {
         "node_id": 23,
@@ -867,6 +913,6 @@
         "y": 238.43378805471559
       }
     ],
-    "zoom": 0.71327917652750072
+    "zoom": 0.58948692275000047
   }
 }

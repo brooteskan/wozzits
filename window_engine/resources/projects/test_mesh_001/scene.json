@@ -31,20 +31,20 @@
       "name": "tank",
       "transform": {
         "translation": [
-          4,
-          20,
-          4
+          36.926700592041016,
+          9.1557044982910156,
+          28.28538703918457
         ],
         "rotation_quat": [
-          0,
-          0,
-          0,
-          1
+          -0.12925133109092712,
+          0.91643714904785156,
+          0.011940222233533859,
+          0.37854257225990295
         ],
         "scale": [
-          1,
-          1,
-          1
+          1.0002506971359253,
+          0.99994391202926636,
+          1.0002299547195435
         ]
       },
       "visible": true,
@@ -72,7 +72,19 @@
         "terrain_align_to_surface": true,
         "terrain_alignment_strength": 1,
         "enabled": true
-      }
+      },
+      "behaviors": [
+        {
+          "id": "empty_1.behavior.1",
+          "module": "tank_controller",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "input.*"
+          ]
+        }
+      ]
     },
     {
       "id": "clipmap_landscape",
@@ -135,6 +147,36 @@
       "visible": true,
       "renderable": {
         "asset_graph_node_id": 27
+      }
+    },
+    {
+      "id": "1",
+      "parent": "empty_1",
+      "name": "camera",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
       }
     }
   ],

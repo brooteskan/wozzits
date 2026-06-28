@@ -115,7 +115,7 @@ namespace
                 state->right_tread_speed = value;
             }
 
-            wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
+            // wz_log_infof(facts, "frame %u axis %u controller %u value %.2f throttle %.2f turn %.2f",frame_index, axis, controller, value, state->throttle, state->turn);
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_PRESSED:
