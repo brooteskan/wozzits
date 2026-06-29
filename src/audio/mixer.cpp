@@ -79,6 +79,28 @@ namespace wz::audio {
         }
     }
 
+    void Mixer::fade_out_client(uint32_t client_id, uint32_t frames) noexcept
+    {
+        if (client_id == 0)
+            return;
+        for (Slot& slot : slots_) {
+            if (slot.voice.active() && slot.client_id == client_id)
+                slot.voice.fade_out(frames);
+        }
+    }
+
+    void Mixer::set_gain_client(uint32_t client_id,
+                                float gain,
+                                uint32_t ramp_frames) noexcept
+    {
+        if (client_id == 0)
+            return;
+        for (Slot& slot : slots_) {
+            if (slot.voice.active() && slot.client_id == client_id)
+                slot.voice.set_gain(gain, ramp_frames);
+        }
+    }
+
     void Mixer::stop_all() noexcept
     {
         for (Slot& slot : slots_)

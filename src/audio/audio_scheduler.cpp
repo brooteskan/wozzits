@@ -24,7 +24,13 @@ namespace wz::audio {
                         cmd.client_id);
             break;
         case AudioCommandType::Stop:
-            mixer_.stop_client(cmd.client_id);
+            if (cmd.ramp_frames == 0)
+                mixer_.stop_client(cmd.client_id);
+            else
+                mixer_.fade_out_client(cmd.client_id, cmd.ramp_frames);
+            break;
+        case AudioCommandType::SetGain:
+            mixer_.set_gain_client(cmd.client_id, cmd.value, cmd.ramp_frames);
             break;
         case AudioCommandType::SetMasterGain:
             mixer_.set_master_gain(cmd.value);

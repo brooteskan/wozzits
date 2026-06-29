@@ -117,6 +117,32 @@ namespace wz::audio::test {
         EXPECT_FLOAT_EQ(out[3], 0.0f);
     }
 
+    TEST(AudioSchedulerTests, StopWithFadeRampsOutInsteadOfClipping)
+    {
+        const std::vector<float> src(16, 1.0f);
+        AudioScheduler sched(8, 64);
+        ASSERT_TRUE(sched.post(
+            play_cmd(view(src, 1, 48000), /*at*/ 0, 1.0f, true, /*id*/ 7)));
+
+        AudioCommand stop;
+        stop.type = AudioCommandType::Stop;
+        stop.sample_time = 0;
+        stop.client_id = 7;
+        stop.ramp_frames = 4; // fade instead of hard cut
+        ASSERT_TRUE(sched.post(stop));
+
+        std::vector<float> out(6, 0.0f);
+        sched.process(out.data(), 6, 1, 48000);
+
+        // Play then fade both at offset 0: a smooth ramp to silence, no click.
+        EXPECT_FLOAT_EQ(out[0], 1.0f);
+        EXPECT_FLOAT_EQ(out[1], 0.75f);
+        EXPECT_FLOAT_EQ(out[2], 0.5f);
+        EXPECT_FLOAT_EQ(out[3], 0.25f);
+        EXPECT_FLOAT_EQ(out[4], 0.0f);
+        EXPECT_EQ(sched.mixer().active_voice_count(), 0u);
+    }
+
     TEST(AudioSchedulerTests, SetMasterGainAppliesAtOffset)
     {
         const std::vector<float> src(8, 1.0f);

@@ -142,6 +142,54 @@ namespace wz::audio::test {
         EXPECT_FLOAT_EQ(out[1], 2.0f);
     }
 
+    TEST(VoiceTests, SetGainRampInterpolatesToTarget)
+    {
+        const std::vector<float> src(8, 1.0f);
+        Voice v;
+        v.start(view(src, 1, 48000), /*gain*/ 1.0f, 1.0f, /*looping*/ true);
+        v.set_gain(0.0f, /*ramp_frames*/ 4); // 1.0 -> 0.0 over 4 frames
+
+        std::vector<float> out(5, 0.0f);
+        v.render_add(out.data(), 5, 1, 48000);
+
+        const std::vector<float> expected = { 1.0f, 0.75f, 0.5f, 0.25f, 0.0f };
+        for (size_t i = 0; i < expected.size(); ++i)
+            EXPECT_FLOAT_EQ(out[i], expected[i]) << "frame " << i;
+        EXPECT_TRUE(v.active()); // a gain ramp does not stop the voice
+    }
+
+    TEST(VoiceTests, FadeOutRampsToZeroThenDeactivates)
+    {
+        const std::vector<float> src(8, 1.0f);
+        Voice v;
+        v.start(view(src, 1, 48000), 1.0f, 1.0f, /*looping*/ true);
+        v.fade_out(/*frames*/ 4);
+
+        std::vector<float> out(6, 0.0f);
+        v.render_add(out.data(), 6, 1, 48000);
+
+        // Monotonic non-increasing ramp to zero, ending in silence; no hard cut.
+        const std::vector<float> expected =
+            { 1.0f, 0.75f, 0.5f, 0.25f, 0.0f, 0.0f };
+        for (size_t i = 0; i < expected.size(); ++i)
+            EXPECT_FLOAT_EQ(out[i], expected[i]) << "frame " << i;
+        EXPECT_FALSE(v.active());
+    }
+
+    TEST(VoiceTests, FadeOutZeroFramesStopsImmediately)
+    {
+        const std::vector<float> src(8, 1.0f);
+        Voice v;
+        v.start(view(src, 1, 48000), 1.0f, 1.0f, true);
+        v.fade_out(0); // degenerate -> hard stop
+        EXPECT_FALSE(v.active());
+
+        std::vector<float> out(4, 0.0f);
+        v.render_add(out.data(), 4, 1, 48000);
+        for (float s : out)
+            EXPECT_FLOAT_EQ(s, 0.0f);
+    }
+
     TEST(VoiceTests, InvalidSourceStaysInactive)
     {
         Voice v;

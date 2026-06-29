@@ -35,12 +35,20 @@ namespace wz::audio {
                    float pitch,
                    bool looping) noexcept;
 
-        // Silence and free this voice immediately.
+        // Silence and free this voice immediately (hard cut — may click; prefer
+        // fade_out for audible stops).
         void stop() noexcept;
+
+        // Ramp gain toward `target` over `ramp_frames` output frames (0 = jump).
+        // De-zippers volume changes on a live voice.
+        void set_gain(float target, uint32_t ramp_frames = 0) noexcept;
+
+        // Ramp gain to zero over `frames`, then deactivate. The de-click path for
+        // stop and steal (frames == 0 falls back to an immediate stop).
+        void fade_out(uint32_t frames) noexcept;
 
         bool active() const noexcept { return active_; }
 
-        void set_gain(float gain) noexcept { gain_ = gain; }
         void set_pitch(float pitch) noexcept { pitch_ = pitch; }
 
         // Accumulate this voice's contribution into the interleaved output buffer
@@ -65,7 +73,16 @@ namespace wz::audio {
         AudioBufferView src_{};
         double position_ = 0.0;   // current read position, in source frames
         double pitch_ = 1.0;
-        float gain_ = 1.0f;
+
+        // Gain is applied per-sample from gain_current_, which ramps toward
+        // gain_target_ by gain_step_ for gain_ramp_frames_ frames (then snaps to
+        // target). When fading_out_ and the ramp completes the voice deactivates.
+        float gain_current_ = 1.0f;
+        float gain_target_ = 1.0f;
+        float gain_step_ = 0.0f;
+        uint32_t gain_ramp_frames_ = 0;
+        bool fading_out_ = false;
+
         bool looping_ = false;
         bool active_ = false;
     };

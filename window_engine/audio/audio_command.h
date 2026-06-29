@@ -18,7 +18,8 @@ namespace wz::audio {
     enum class AudioCommandType : uint8_t
     {
         Play,           // start `source` (gain/pitch/looping/client_id)
-        Stop,           // stop the voice(s) tagged client_id
+        Stop,           // stop the voice(s) tagged client_id (ramp_frames = fade)
+        SetGain,        // ramp tagged voice(s) gain -> value over ramp_frames
         SetMasterGain,  // set master gain to `value`
     };
 
@@ -38,10 +39,14 @@ namespace wz::audio {
         bool looping = false;
 
         // Play: optional tag stored on the voice (0 = untagged).
-        // Stop: which tag to stop (0 = no-op).
+        // Stop / SetGain: which tag to target (0 = no-op).
         uint32_t client_id = 0;
 
-        // SetMasterGain target.
+        // Ramp length in output frames for Stop (fade-out; 0 = hard stop) and
+        // SetGain (0 = jump). Ignored by other types.
+        uint32_t ramp_frames = 0;
+
+        // SetGain / SetMasterGain target.
         float value = 1.0f;
     };
 

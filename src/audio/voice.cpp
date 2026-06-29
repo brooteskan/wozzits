@@ -13,7 +13,11 @@ namespace wz::audio {
     {
         src_ = src;
         position_ = 0.0;
-        gain_ = gain;
+        gain_current_ = gain;   // start at target: no attack ramp, exact output
+        gain_target_ = gain;
+        gain_step_ = 0.0f;
+        gain_ramp_frames_ = 0;
+        fading_out_ = false;
         pitch_ = pitch;
         looping_ = looping;
         active_ = src.valid();
@@ -24,6 +28,34 @@ namespace wz::audio {
         active_ = false;
         src_ = AudioBufferView{};
         position_ = 0.0;
+        gain_step_ = 0.0f;
+        gain_ramp_frames_ = 0;
+        fading_out_ = false;
+    }
+
+    void Voice::set_gain(float target, uint32_t ramp_frames) noexcept
+    {
+        gain_target_ = target;
+        if (ramp_frames == 0) {
+            gain_current_ = target;
+            gain_step_ = 0.0f;
+            gain_ramp_frames_ = 0;
+        }
+        else {
+            gain_step_ =
+                (target - gain_current_) / static_cast<float>(ramp_frames);
+            gain_ramp_frames_ = ramp_frames;
+        }
+    }
+
+    void Voice::fade_out(uint32_t frames) noexcept
+    {
+        if (frames == 0) {
+            stop();
+            return;
+        }
+        set_gain(0.0f, frames);
+        fading_out_ = true;
     }
 
     float Voice::lerp_at(uint64_t i0,
@@ -80,13 +112,14 @@ namespace wz::audio {
             }
 
             float* dst = out + static_cast<size_t>(f) * out_channels;
+            const float g = gain_current_;
 
             switch (mode) {
             case Mode::Broadcast: {
                 // Mono source: broadcast to every output channel.
                 const float m = lerp_at(i0, i1, t, 0);
                 for (uint32_t k = 0; k < out_channels; ++k)
-                    dst[k] += gain_ * m;
+                    dst[k] += g * m;
                 break;
             }
             case Mode::Downmix: {
@@ -94,17 +127,32 @@ namespace wz::audio {
                 float sum = 0.0f;
                 for (uint32_t c = 0; c < src_channels; ++c)
                     sum += lerp_at(i0, i1, t, c);
-                dst[0] += gain_ * sum * downmix_scale;
+                dst[0] += g * sum * downmix_scale;
                 break;
             }
             case Mode::PerChannel: {
                 // Surplus output channels clamp to the last source channel.
                 for (uint32_t k = 0; k < out_channels; ++k) {
                     const uint32_t sc = (k < src_channels) ? k : src_channels - 1;
-                    dst[k] += gain_ * lerp_at(i0, i1, t, sc);
+                    dst[k] += g * lerp_at(i0, i1, t, sc);
                 }
                 break;
             }
+            }
+
+            // Advance the per-sample gain ramp; snap to target on completion and
+            // deactivate if this was a fade-out.
+            if (gain_ramp_frames_ > 0) {
+                gain_current_ += gain_step_;
+                if (--gain_ramp_frames_ == 0) {
+                    gain_current_ = gain_target_;
+                    gain_step_ = 0.0f;
+                    if (fading_out_) {
+                        fading_out_ = false;
+                        active_ = false;
+                        break;
+                    }
+                }
             }
 
             position_ += step;

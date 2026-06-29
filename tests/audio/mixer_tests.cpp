@@ -115,6 +115,37 @@ namespace wz::audio::test {
             EXPECT_FLOAT_EQ(s, 0.0f); // silent after stop
     }
 
+    TEST(MixerTests, FadeOutClientRampsThenFreesSlot)
+    {
+        const std::vector<float> src(8, 1.0f);
+        Mixer mixer(8);
+        mixer.play(view(src, 1, 48000), 1.0f, 1.0f, /*looping*/ true, /*id*/ 5);
+
+        mixer.fade_out_client(5, /*frames*/ 4);
+
+        std::vector<float> out(6, 0.0f);
+        mixer.render(out.data(), 6, 1, 48000);
+
+        EXPECT_FLOAT_EQ(out[0], 1.0f);
+        EXPECT_FLOAT_EQ(out[3], 0.25f);
+        EXPECT_FLOAT_EQ(out[4], 0.0f);
+        EXPECT_EQ(mixer.active_voice_count(), 0u); // freed after the fade
+    }
+
+    TEST(MixerTests, SetGainClientAppliesInstantly)
+    {
+        const std::vector<float> src(8, 1.0f);
+        Mixer mixer(8);
+        mixer.play(view(src, 1, 48000), 1.0f, 1.0f, true, /*id*/ 3);
+
+        mixer.set_gain_client(3, 0.5f, /*ramp_frames*/ 0);
+
+        std::vector<float> out(4, 0.0f);
+        mixer.render(out.data(), 4, 1, 48000);
+        for (float s : out)
+            EXPECT_FLOAT_EQ(s, 0.5f);
+    }
+
     TEST(MixerTests, BudgetIsBoundedAndStealsOldest)
     {
         const std::vector<float> src(8, 1.0f);

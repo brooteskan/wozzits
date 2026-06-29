@@ -61,6 +61,16 @@ namespace wz::audio {
         // or none match).
         void stop_client(uint32_t client_id) noexcept;
 
+        // Fade out (then free) every active voice tagged with client_id over
+        // `frames` output frames — the de-click stop path (frames == 0 = hard).
+        void fade_out_client(uint32_t client_id, uint32_t frames) noexcept;
+
+        // Ramp the gain of every active voice tagged with client_id toward `gain`
+        // over `ramp_frames` (0 = jump). De-zippers volume changes.
+        void set_gain_client(uint32_t client_id,
+                             float gain,
+                             uint32_t ramp_frames) noexcept;
+
         // Stop every voice.
         void stop_all() noexcept;
 
