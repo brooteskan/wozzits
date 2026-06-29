@@ -1191,11 +1191,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         foreach (var component in node.Components)
         {
-            // Camera, Collision, and Motion are shown + removed via their own
-            // parameter sections below, not as generic rows.
+            // Camera, Collision, Motion, and Audio Source are shown + removed via
+            // their own parameter sections below, not as generic rows.
             if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
-                || string.Equals(component.Kind, "motion", StringComparison.Ordinal))
+                || string.Equals(component.Kind, "motion", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal))
             {
                 continue;
             }
