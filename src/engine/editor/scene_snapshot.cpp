@@ -525,6 +525,31 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Read the authored AudioSource-component field values from a node's
+        // "audio_source" object (read-back). Tolerant: a missing block is absent.
+        // Field names match scene_json_export's audio_source export.
+        std::optional<SceneSnapshotAudioSource> read_audio_source(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* source = wz::json::find_member(obj, "audio_source");
+            if (!source || source->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            SceneSnapshotAudioSource out;
+            if (const auto node_id = wz::json::read_number(
+                    *source, "audio_renderable_node_id");
+                node_id && *node_id > 0.0)
+            {
+                out.audio_renderable_node_id =
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+            }
+            out.auto_play =
+                wz::json::read_bool(*source, "auto_play").value_or(true);
+            out.enabled =
+                wz::json::read_bool(*source, "enabled").value_or(true);
+            return out;
+        }
+
         // Map a live SceneNodeAsset's local AuthoredTransform (issue #213) into a
         // SceneSnapshotTransform, REUSING the same euler/display helpers the
         // file-path reader uses so the two routes format identically.
@@ -628,6 +653,14 @@ namespace wz::engine::editor
                         source.motion->terrain_alignment_strength,
                 };
             }
+            if (source.audio_source) {
+                node.audio_source = SceneSnapshotAudioSource{
+                    .audio_renderable_node_id =
+                        source.audio_source->audio_renderable_node_id,
+                    .auto_play = source.audio_source->auto_play,
+                    .enabled = source.audio_source->enabled,
+                };
+            }
 
             node.kind = node_kind(node);
             node.renderable_source = node.renderable
@@ -709,6 +742,7 @@ namespace wz::engine::editor
             // fix): surface so the inspector restores them on select + reload.
             node.collision = read_collision(value);
             node.motion = read_motion(value);
+            node.audio_source = read_audio_source(value);
             // Authored render-binding refs (issue #213): surface the persisted
             // node ids so the inspector reveals + pre-selects these sections.
             node.scene_source_node_id =

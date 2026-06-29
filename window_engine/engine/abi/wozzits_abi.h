@@ -205,6 +205,7 @@ enum
     // these the components surfaced presence-only, resetting fields to defaults).
     WZ_EDITOR_SCENE_NODE_HAS_COLLISION = 1u << 11u,
     WZ_EDITOR_SCENE_NODE_HAS_MOTION = 1u << 12u,
+    WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE = 1u << 13u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -333,6 +334,21 @@ typedef struct WzEditorSceneMotion
     float alignment_strength;
 } WzEditorSceneMotion;
 
+// Authored AudioSource-component field values surfaced read-back so the inspector
+// restores them on select + after reload (present iff WZ_EDITOR_SCENE_NODE_HAS_
+// AUDIO_SOURCE). `has_renderable_ref` is 0/1; `audio_renderable_node_id` is the
+// authored audio-renderable asset-graph node id (valid iff has_renderable_ref).
+// `auto_play` / `enabled` are 0/1.
+typedef struct WzEditorSceneAudioSource
+{
+    uint64_t audio_renderable_node_id;
+    uint8_t has_renderable_ref;
+    uint8_t auto_play;
+    uint8_t enabled;
+    uint8_t reserved0;
+    uint32_t reserved1;
+} WzEditorSceneAudioSource;
+
 typedef struct WzEditorSceneComponent
 {
     WzEditorStringSpan kind;
@@ -386,6 +402,10 @@ typedef struct WzEditorSceneNode
     // unchanged.
     WzEditorSceneCollision collision;
     WzEditorSceneMotion motion;
+    // Persisted AudioSource component field values (read-back), valid iff
+    // WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE. Appended last so existing offsets
+    // are unchanged.
+    WzEditorSceneAudioSource audio_source;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -609,6 +629,14 @@ static_assert(offsetof(WzEditorSceneMotion, ride_height) == 4);
 static_assert(offsetof(WzEditorSceneMotion, footprint_radius) == 8);
 static_assert(offsetof(WzEditorSceneMotion, alignment_strength) == 12);
 
+static_assert(sizeof(WzEditorSceneAudioSource) == 16);
+static_assert(offsetof(WzEditorSceneAudioSource, audio_renderable_node_id) == 0);
+static_assert(offsetof(WzEditorSceneAudioSource, has_renderable_ref) == 8);
+static_assert(offsetof(WzEditorSceneAudioSource, auto_play) == 9);
+static_assert(offsetof(WzEditorSceneAudioSource, enabled) == 10);
+static_assert(offsetof(WzEditorSceneAudioSource, reserved0) == 11);
+static_assert(offsetof(WzEditorSceneAudioSource, reserved1) == 12);
+
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
 static_assert(offsetof(WzEditorSceneComponent, display_name) == 16);
@@ -622,7 +650,7 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 616);
+static_assert(sizeof(WzEditorSceneNode) == 632);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -641,6 +669,7 @@ static_assert(offsetof(WzEditorSceneNode, geometry_node_id) == 576);
 static_assert(offsetof(WzEditorSceneNode, render_program_node_id) == 584);
 static_assert(offsetof(WzEditorSceneNode, collision) == 592);
 static_assert(offsetof(WzEditorSceneNode, motion) == 600);
+static_assert(offsetof(WzEditorSceneNode, audio_source) == 616);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);

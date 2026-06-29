@@ -373,6 +373,20 @@ namespace wz::engine::editor
                 out.motion.footprint_radius = node.motion->footprint_radius;
                 out.motion.alignment_strength = node.motion->alignment_strength;
             }
+            if (node.audio_source) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE;
+                out.audio_source.has_renderable_ref =
+                    node.audio_source->audio_renderable_node_id ? 1u : 0u;
+                out.audio_source.audio_renderable_node_id =
+                    node.audio_source->audio_renderable_node_id
+                        ? static_cast<uint64_t>(
+                              *node.audio_source->audio_renderable_node_id)
+                        : 0ull;
+                out.audio_source.auto_play =
+                    node.audio_source->auto_play ? 1u : 0u;
+                out.audio_source.enabled =
+                    node.audio_source->enabled ? 1u : 0u;
+            }
 
             out.children = scene_nodes_abi(builder, node.children);
             return out;

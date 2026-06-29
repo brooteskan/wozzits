@@ -80,6 +80,16 @@ namespace wz::engine::editor
         float alignment_strength = 1.0f;
     };
 
+    // Authored AudioSource-component field values surfaced read-back so the editor
+    // inspector restores them on select + after reload. audio_renderable_node_id
+    // is the authored audio-renderable asset-graph node id (unset when absent).
+    struct SceneSnapshotAudioSource
+    {
+        std::optional<wz::asset::AssetGraphDraftNodeId> audio_renderable_node_id;
+        bool auto_play = true;
+        bool enabled = true;
+    };
+
     // The high-impact subset of a MeshRenderStyleData that the editor reads back
     // and re-authors for a GLB component (issue #213 Phase 3b-2): surface +
     // wireframe enabled flags and RGBA colors. The rest of MeshRenderStyleData is
@@ -166,6 +176,7 @@ namespace wz::engine::editor
         // surfaced so the inspector restores them on select + after reload.
         std::optional<SceneSnapshotCollision> collision;
         std::optional<SceneSnapshotMotion> motion;
+        std::optional<SceneSnapshotAudioSource> audio_source;
         std::vector<SceneSnapshotNode> children;
     };
 
