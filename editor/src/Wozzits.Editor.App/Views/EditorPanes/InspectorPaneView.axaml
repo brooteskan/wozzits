@@ -153,6 +153,77 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Components section heading + add menu. All optional
+                             component cards (camera/renderable/render program/
+                             subtree/collision/audio source/motion) and the simple
+                             marker rows (audio listener, proximity, ...) are listed
+                             beneath this heading. Transform/Visibility are core node
+                             state, not components, so they stay above. -->
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Components"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="+"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Add component">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Camera"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="camera"/>
+                                                <MenuItem Header="Renderable"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="renderable"/>
+                                                <MenuItem Header="Subtree from asset"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="subtree_from_asset"/>
+                                                <MenuItem Header="Render program"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="render_program"/>
+                                                <MenuItem Header="Proximity"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="proximity"/>
+                                                <MenuItem Header="Collision"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="collision"/>
+                                                <MenuItem Header="Motion"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="motion"/>
+                                                <MenuItem Header="Audio Source"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_source"/>
+                                                <MenuItem Header="Audio Listener"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_listener"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Text="No attached optional components."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoComponents}"/>
+                                <ItemsControl ItemsSource="{Binding Components}"
+                                              IsVisible="{Binding HasComponents}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorComponentViewModel">
+                                            <Grid ColumnDefinitions="*,Auto"
+                                                  ColumnSpacing="6">
+                                                <TextBlock Text="{Binding Name}"
+                                                           Classes="InspectorComponentName"/>
+                                                <Button Grid.Column="1"
+                                                        Content="✕"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        ToolTip.Tip="Remove component"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="InspectorSectionCard"
                                 IsVisible="{Binding HasRenderableReference}">
                             <StackPanel Classes="InspectorSection">
@@ -484,71 +555,6 @@
                                              Classes="InspectorInput"/>
                                 </Grid>
 
-                            </StackPanel>
-                        </Border>
-
-                        <Border Classes="InspectorSectionCard">
-                            <StackPanel Classes="InspectorSection">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="Components"
-                                               Classes="InspectorSectionTitle"/>
-                                    <Button Grid.Column="1"
-                                            Content="+"
-                                            Classes="InspectorApplyButton"
-                                            ToolTip.Tip="Add component">
-                                        <Button.Flyout>
-                                            <MenuFlyout>
-                                                <MenuItem Header="Camera"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="camera"/>
-                                                <MenuItem Header="Renderable"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="renderable"/>
-                                                <MenuItem Header="Subtree from asset"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="subtree_from_asset"/>
-                                                <MenuItem Header="Render program"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="render_program"/>
-                                                <MenuItem Header="Proximity"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="proximity"/>
-                                                <MenuItem Header="Collision"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="collision"/>
-                                                <MenuItem Header="Motion"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="motion"/>
-                                                <MenuItem Header="Audio Source"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="audio_source"/>
-                                                <MenuItem Header="Audio Listener"
-                                                          Command="{Binding AddComponentCommand}"
-                                                          CommandParameter="audio_listener"/>
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                </Grid>
-                                <TextBlock Text="No attached optional components."
-                                           Classes="PaneEmptyState"
-                                           IsVisible="{Binding HasNoComponents}"/>
-                                <ItemsControl ItemsSource="{Binding Components}"
-                                              IsVisible="{Binding HasComponents}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="panes:InspectorComponentViewModel">
-                                            <Grid ColumnDefinitions="*,Auto"
-                                                  ColumnSpacing="6">
-                                                <TextBlock Text="{Binding Name}"
-                                                           Classes="InspectorComponentName"/>
-                                                <Button Grid.Column="1"
-                                                        Content="✕"
-                                                        Command="{Binding RemoveCommand}"
-                                                        Classes="InspectorApplyButton"
-                                                        ToolTip.Tip="Remove component"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
                             </StackPanel>
                         </Border>
 
