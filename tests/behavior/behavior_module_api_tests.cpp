@@ -2030,6 +2030,18 @@ TEST(BehaviorModuleApi, SetGrainParamHelpersEncodeParamValueRamp)
                     static_cast<float>(WZ_GRAIN_PARAM_POSITION));
     EXPECT_FLOAT_EQ(probe.last.values[1], 0.25f);
 
+    // Blend helpers carry the blend ordinals + value + ramp.
+    ASSERT_EQ(wz_write_set_grain_blend_rate(&facts, 9u, 0.02f, 0.0f), 1u);
+    EXPECT_FLOAT_EQ(probe.last.values[0],
+                    static_cast<float>(WZ_GRAIN_PARAM_BLEND_RATE));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 0.02f);
+
+    ASSERT_EQ(wz_write_set_grain_blend_depth(&facts, 9u, 1.0f, 4800.0f), 1u);
+    EXPECT_FLOAT_EQ(probe.last.values[0],
+                    static_cast<float>(WZ_GRAIN_PARAM_BLEND_DEPTH));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 1.0f);
+    EXPECT_FLOAT_EQ(probe.last.values[2], 4800.0f);
+
     // Null facts => no-op for both forms.
     EXPECT_EQ(
         wz_write_set_grain_param(nullptr, 1u, WZ_GRAIN_PARAM_GAIN, 1.0f, 0.0f),

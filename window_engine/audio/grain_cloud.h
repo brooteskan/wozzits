@@ -51,6 +51,8 @@ namespace wz::audio {
         Density = 1,
         Position = 2,
         Pitch = 3,
+        BlendRate = 4,   // source-blend LFO cycles/sec
+        BlendDepth = 5,  // source-blend amount 0..1
     };
 
     // A trivially-copyable, self-contained description of a grain cloud — the form
@@ -140,8 +142,15 @@ namespace wz::audio {
 
         // Autonomous source-blend LFO: cycles the per-source selection weights so
         // the cloud crossfades between its sources without any external driver.
-        // rate_hz = cycles/sec (0 = off); depth = 0..1. See GrainCloudDesc.
+        // rate_hz = cycles/sec (0 = off); depth = 0..1. See GrainCloudDesc. Sets
+        // both as an immediate jump (used at configure/start).
         void set_blend(float rate_hz, float depth) noexcept;
+
+        // Live (ramped) control of the blend LFO — drivable per frame by a behavior
+        // (GrainParam::BlendRate / BlendDepth), e.g. to shift the texture when the
+        // player enters a new region. ramp_frames de-zippers the change (0 = jump).
+        void set_blend_rate(float rate_hz, uint32_t ramp_frames = 0) noexcept;
+        void set_blend_depth(float depth, uint32_t ramp_frames = 0) noexcept;
 
         // Begin / end emitting. stop() stops SPAWNING; in-flight grains finish so
         // the texture tails out click-free (active() stays true until they do).
@@ -217,8 +226,8 @@ namespace wz::audio {
         GrainWindow window_ = GrainWindow::Gaussian;
         float       window_param_ = 0.4f;
 
-        float    blend_rate_ = 0.0f;   // source-blend LFO cycles/sec (0 = off)
-        float    blend_depth_ = 0.0f;  // 0..1
+        Ramp     blend_rate_{};   // source-blend LFO cycles/sec (0 = off)
+        Ramp     blend_depth_{};  // 0..1
         double   blend_phase_ = 0.0;   // [0,1) LFO phase
 
         double   spawn_phase_ = 0.0;  // fractional grain-spawn accumulator

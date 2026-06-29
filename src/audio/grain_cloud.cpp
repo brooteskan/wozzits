@@ -76,8 +76,8 @@ namespace wz::audio {
 
         rng_state_ = (config.seed != 0u) ? config.seed : 1u;
         spawn_phase_ = 0.0;
-        blend_rate_ = 0.0f;
-        blend_depth_ = 0.0f;
+        blend_rate_ = Ramp{};
+        blend_depth_ = Ramp{};
         blend_phase_ = 0.0;
         emitting_ = false;
 
@@ -185,8 +185,19 @@ namespace wz::audio {
 
     void GrainCloud::set_blend(float rate_hz, float depth) noexcept
     {
-        blend_rate_ = (rate_hz > 0.0f) ? rate_hz : 0.0f;
-        blend_depth_ = std::clamp(depth, 0.0f, 1.0f);
+        // Immediate (config-time) set of both.
+        blend_rate_.set((rate_hz > 0.0f) ? rate_hz : 0.0f, 0u);
+        blend_depth_.set(std::clamp(depth, 0.0f, 1.0f), 0u);
+    }
+
+    void GrainCloud::set_blend_rate(float rate_hz, uint32_t ramp_frames) noexcept
+    {
+        blend_rate_.set((rate_hz > 0.0f) ? rate_hz : 0.0f, ramp_frames);
+    }
+
+    void GrainCloud::set_blend_depth(float depth, uint32_t ramp_frames) noexcept
+    {
+        blend_depth_.set(std::clamp(depth, 0.0f, 1.0f), ramp_frames);
     }
 
     void GrainCloud::start() noexcept { emitting_ = true; }
@@ -242,7 +253,8 @@ namespace wz::audio {
     float GrainCloud::effective_weight(uint32_t i) const noexcept
     {
         float w = weights_[i];
-        if (blend_depth_ > 0.0f && source_count_ > 1) {
+        const float depth = blend_depth_.current;
+        if (depth > 0.0f && source_count_ > 1) {
             // Sine LFO on the selection weight; sources are evenly staggered in
             // phase so they crossfade (2 clips) or rotate (N). depth 1 => a source
             // fully drops out at its trough.
@@ -250,7 +262,7 @@ namespace wz::audio {
                 + static_cast<double>(i) / static_cast<double>(source_count_);
             const float lfo =
                 0.5f + 0.5f * static_cast<float>(std::sin(2.0 * kPi * ph));
-            w *= (1.0f - blend_depth_) + blend_depth_ * lfo;
+            w *= (1.0f - depth) + depth * lfo;
         }
         return w;
     }
@@ -355,11 +367,13 @@ namespace wz::audio {
             density_.advance();
             position_.advance();
             pitch_.advance();
+            blend_rate_.advance();
+            blend_depth_.advance();
 
             // Advance the autonomous source-blend LFO phase (wraps in [0,1)).
-            if (blend_rate_ > 0.0f) {
+            if (blend_rate_.current > 0.0f) {
                 blend_phase_ +=
-                    static_cast<double>(blend_rate_) /
+                    static_cast<double>(blend_rate_.current) /
                     static_cast<double>(out_rate);
                 if (blend_phase_ >= 1.0) {
                     blend_phase_ -= std::floor(blend_phase_);

@@ -264,6 +264,8 @@ enum
     WZ_GRAIN_PARAM_DENSITY = 1u,
     WZ_GRAIN_PARAM_POSITION = 2u,
     WZ_GRAIN_PARAM_PITCH = 3u,
+    WZ_GRAIN_PARAM_BLEND_RATE = 4u,   /* source-blend LFO cycles/sec */
+    WZ_GRAIN_PARAM_BLEND_DEPTH = 5u,  /* source-blend amount 0..1 */
 };
 
 enum

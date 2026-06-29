@@ -1151,6 +1151,24 @@ static inline uint8_t wz_write_set_grain_pitch(
         facts, entity, WZ_GRAIN_PARAM_PITCH, multiplier, ramp_frames);
 }
 
+// Source-blend LFO: rate (cycles/sec, 0 = off) and depth (0..1). Ramp these to
+// shift the texture's blend when, say, the player enters a new region.
+static inline uint8_t wz_write_set_grain_blend_rate(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float rate_hz, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_BLEND_RATE, rate_hz, ramp_frames);
+}
+
+static inline uint8_t wz_write_set_grain_blend_depth(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float depth, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_BLEND_DEPTH, depth, ramp_frames);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and

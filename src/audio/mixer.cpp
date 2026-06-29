@@ -75,6 +75,10 @@ namespace wz::audio {
             case GrainParam::Density:  gs.cloud.set_density(value, ramp_frames); break;
             case GrainParam::Position: gs.cloud.set_position(value, ramp_frames); break;
             case GrainParam::Pitch:    gs.cloud.set_pitch(value, ramp_frames); break;
+            case GrainParam::BlendRate:
+                gs.cloud.set_blend_rate(value, ramp_frames); break;
+            case GrainParam::BlendDepth:
+                gs.cloud.set_blend_depth(value, ramp_frames); break;
             }
         }
     }

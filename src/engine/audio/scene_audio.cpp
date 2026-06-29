@@ -19,7 +19,9 @@ namespace wz::engine::audio {
         static_cast<uint8_t>(wz::audio::GrainParam::Gain) == 0
         && static_cast<uint8_t>(wz::audio::GrainParam::Density) == 1
         && static_cast<uint8_t>(wz::audio::GrainParam::Position) == 2
-        && static_cast<uint8_t>(wz::audio::GrainParam::Pitch) == 3,
+        && static_cast<uint8_t>(wz::audio::GrainParam::Pitch) == 3
+        && static_cast<uint8_t>(wz::audio::GrainParam::BlendRate) == 4
+        && static_cast<uint8_t>(wz::audio::GrainParam::BlendDepth) == 5,
         "GrainParam ordinals must match WZ_GRAIN_PARAM_* in the behavior ABI");
 
     namespace {

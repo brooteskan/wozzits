@@ -8,6 +8,7 @@
 
 #include <audio/mixer.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -285,6 +286,47 @@ namespace wz::audio::test {
         std::vector<float> tail(960, 0.0f);  // past the 10 ms grain length
         mixer.render(tail.data(), 960, 1, 48000);
         EXPECT_EQ(mixer.active_grain_cloud_count(), 0u);
+    }
+
+    // A live SetGrainParam(BlendDepth) command enables the source crossfade on a
+    // running cloud (region-change use case): steady while off, swinging once on.
+    TEST(MixerTests, SetGrainParamBlendDepthEnablesCrossfadeLive)
+    {
+        const std::vector<float> loud(48000, 1.0f);
+        const std::vector<float> silent(48000, 0.0f);
+        GrainCloudDesc d;
+        d.sources[0] = view(loud, 1, 48000);
+        d.sources[1] = view(silent, 1, 48000);
+        d.weights[0] = 1.0f;
+        d.weights[1] = 1.0f;
+        d.source_count = 2;
+        d.max_grains = 32;
+        d.seed = 99u;
+        d.density = 800.0f;
+        d.grain_ms = 5.0f;
+        d.blend_rate = 1.0f;   // LFO running...
+        d.blend_depth = 0.0f;  // ...but no blend yet
+
+        Mixer mixer(8, 4);
+        mixer.play_grain_cloud(d, /*client*/ 7u);
+
+        auto window_spread = [&]() {
+            std::vector<float> out(48000, 0.0f);  // 1 s = one cycle at 1 Hz
+            mixer.render(out.data(), 48000, 1, 48000);
+            double e[8] = { 0 };
+            for (size_t f = 0; f < out.size(); ++f) {
+                e[f / 6000] += std::abs(static_cast<double>(out[f]));
+            }
+            const double hi = *std::max_element(e, e + 8);
+            const double lo = *std::min_element(e, e + 8);
+            return hi / (lo + 1.0e-9);
+        };
+
+        EXPECT_LT(window_spread(), 1.5);  // depth 0 → steady 50/50
+
+        // Live: enable full blend depth by client id.
+        mixer.set_grain_param_client(7u, GrainParam::BlendDepth, 1.0f, 0u);
+        EXPECT_GT(window_spread(), 3.0);  // now the loud clip fades in and out
     }
 
     TEST(MixerTests, GrainCloudPoolStealsOldestWhenFull)
