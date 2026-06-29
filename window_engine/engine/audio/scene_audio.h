@@ -97,4 +97,20 @@ namespace wz::engine::audio {
         float v0,
         float v1);
 
+    // Ramp a live grain-cloud parameter on `entity`'s AudioSource (audio-track
+    // grain synth). `param_id` is a wz::audio::GrainParam / WZ_GRAIN_PARAM_*
+    // ordinal; value is the target, ramp_frames the de-zipper length (0 = jump).
+    // Resolves entity → AudioSource → stable client_id and posts a SetGrainParam.
+    // Returns true iff a command was posted; a no-op (false) when the entity has
+    // no AudioSource or the queue is full. Harmless if the source isn't a grain
+    // cloud — the mixer only finds matching grain slots, so it's ignored there.
+    // Producer-side; the param smooths on the audio thread, so per-frame is fine.
+    bool apply_grain_param_command(
+        const wz::engine::assets::SceneInstance& instance,
+        wz::audio::AudioScheduler& scheduler,
+        wz::scene::RuntimeEntityId entity,
+        uint8_t param_id,
+        float value,
+        uint32_t ramp_frames);
+
 } // namespace wz::engine::audio

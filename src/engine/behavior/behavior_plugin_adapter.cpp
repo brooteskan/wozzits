@@ -167,6 +167,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::StopSound;
             case WZ_BEHAVIOR_COMMAND_SET_SOUND_GAIN:
                 return BehaviorCommandKind::SetSoundGain;
+            case WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM:
+                return BehaviorCommandKind::SetGrainParam;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

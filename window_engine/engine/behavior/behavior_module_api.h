@@ -1095,6 +1095,62 @@ static inline uint8_t wz_write_set_sound_gain(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+// Ramp a live grain-cloud parameter on the entity's AudioSource (only takes
+// effect if its renderable is a grain cloud). `param` is a WZ_GRAIN_PARAM_*
+// ordinal; `value` is the target; `ramp_frames` de-zippers the change (0 = jump).
+// The smoothing runs on the audio thread, so this is safe to call every frame.
+static inline uint8_t wz_write_set_grain_param(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t param,
+    float value,
+    float ramp_frames)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM,
+        { (float)param, value, ramp_frames, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Typed conveniences for the lean live grain set.
+static inline uint8_t wz_write_set_grain_gain(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float gain, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_GAIN, gain, ramp_frames);
+}
+
+static inline uint8_t wz_write_set_grain_density(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float grains_per_second, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_DENSITY, grains_per_second, ramp_frames);
+}
+
+static inline uint8_t wz_write_set_grain_position(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float normalized, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_POSITION, normalized, ramp_frames);
+}
+
+static inline uint8_t wz_write_set_grain_pitch(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    float multiplier, float ramp_frames)
+{
+    return wz_write_set_grain_param(
+        facts, entity, WZ_GRAIN_PARAM_PITCH, multiplier, ramp_frames);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and

@@ -244,6 +244,26 @@ enum
     WZ_BEHAVIOR_COMMAND_STOP_SOUND = 13u,
     /* Ramp gain. values[0] = target gain, values[1] = ramp frames (0 = jump). */
     WZ_BEHAVIOR_COMMAND_SET_SOUND_GAIN = 14u,
+    /*
+     * Ramp a live grain-cloud parameter on the entity's AudioSource (only takes
+     * effect if its renderable is a grain cloud). values[0] = which param (a
+     * WZ_GRAIN_PARAM_* ordinal), values[1] = target value, values[2] = ramp
+     * frames (0 = jump). The smoothing happens on the audio thread, so this is
+     * safe to post every frame.
+     */
+    WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM = 15u,
+};
+
+/*
+ * Live grain-cloud parameters a behavior can drive per frame (the lean set).
+ * Ordinals MUST match wz::audio::GrainParam — they cross the audio command queue.
+ */
+enum
+{
+    WZ_GRAIN_PARAM_GAIN = 0u,
+    WZ_GRAIN_PARAM_DENSITY = 1u,
+    WZ_GRAIN_PARAM_POSITION = 2u,
+    WZ_GRAIN_PARAM_PITCH = 3u,
 };
 
 enum

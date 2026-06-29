@@ -1998,3 +1998,41 @@ TEST(BehaviorModuleApi, PlaySoundNamedNullFactsIsNoOp)
     EXPECT_EQ(wz_write_play_sound_named(nullptr, 1u, "x"), 0u);
     EXPECT_EQ(wz_write_play_sound_hashed(nullptr, 1u, 123u), 0u);
 }
+
+TEST(BehaviorModuleApi, SetGrainParamHelpersEncodeParamValueRamp)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Typed density helper: values = { param ordinal, value, ramp }.
+    ASSERT_EQ(wz_write_set_grain_density(&facts, 9u, 12.5f, 256.0f), 1u);
+    EXPECT_EQ(probe.last.entity, 9u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM);
+    EXPECT_FLOAT_EQ(probe.last.values[0],
+                    static_cast<float>(WZ_GRAIN_PARAM_DENSITY));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 12.5f);
+    EXPECT_FLOAT_EQ(probe.last.values[2], 256.0f);
+
+    // Generic helper with an explicit param ordinal.
+    ASSERT_EQ(
+        wz_write_set_grain_param(&facts, 9u, WZ_GRAIN_PARAM_POSITION, 0.25f, 0.0f),
+        1u);
+    EXPECT_FLOAT_EQ(probe.last.values[0],
+                    static_cast<float>(WZ_GRAIN_PARAM_POSITION));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 0.25f);
+
+    // Null facts => no-op for both forms.
+    EXPECT_EQ(
+        wz_write_set_grain_param(nullptr, 1u, WZ_GRAIN_PARAM_GAIN, 1.0f, 0.0f),
+        0u);
+    EXPECT_EQ(wz_write_set_grain_pitch(nullptr, 1u, 1.0f, 0.0f), 0u);
+}

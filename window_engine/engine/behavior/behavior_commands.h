@@ -35,6 +35,10 @@ namespace wz::engine::behavior
         PlaySound,
         StopSound,
         SetSoundGain,
+        // Ramp a live grain-cloud param on `entity`'s AudioSource. Also host-
+        // handled (not applied here). values[0] = WZ_GRAIN_PARAM_* ordinal,
+        // values[1] = target, values[2] = ramp frames.
+        SetGrainParam,
     };
 
     struct BehaviorCommand

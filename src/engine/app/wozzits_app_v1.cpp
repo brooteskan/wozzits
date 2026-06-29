@@ -1340,6 +1340,21 @@ namespace wz::app
                 for (const wz::engine::behavior::BehaviorCommand& command :
                      frame_storage_.behavior_commands.commands)
                 {
+                    // Grain-param control routes to a different scheduler path
+                    // (it targets a grain cloud, not a voice).
+                    if (command.kind == wz::engine::behavior::
+                            BehaviorCommandKind::SetGrainParam) {
+                        ea_audio::apply_grain_param_command(
+                            *behavior_scene_, audio_runtime_.scheduler(),
+                            command.entity,
+                            static_cast<uint8_t>(command.values[0]),
+                            command.values[1],
+                            static_cast<uint32_t>(
+                                command.values[2] > 0.0f ? command.values[2]
+                                                         : 0.0f));
+                        continue;
+                    }
+
                     ea_audio::AudioBehaviorVerb verb;
                     switch (command.kind) {
                     case wz::engine::behavior::BehaviorCommandKind::PlaySound:

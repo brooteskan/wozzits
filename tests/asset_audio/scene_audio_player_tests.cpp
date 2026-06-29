@@ -600,4 +600,65 @@ namespace wz::engine::assets::test {
         EXPECT_GT(e, 0.0);
     }
 
+    // A behavior SetGrainParam steers the running cloud by the source's client id.
+    TEST_F(SceneAudioPlayerTest, BehaviorGrainParamSteersRunningCloud)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_grain_renderable(/*density*/ 300.0f);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "ambience";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("ambience");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler, grain_store_).played,
+                  1u);
+
+        std::vector<float> before(2400, 0.0f);
+        scheduler.process(before.data(), 2400, 1, 48000);
+        double eb = 0.0;
+        for (float s : before) eb += std::abs(static_cast<double>(s));
+        ASSERT_GT(eb, 0.0);
+
+        // Behavior-side: ramp the cloud's gain to 0 (param 0 = Gain, jump).
+        EXPECT_TRUE(wz::engine::audio::apply_grain_param_command(
+            result.instance, scheduler, entity,
+            static_cast<uint8_t>(wz::audio::GrainParam::Gain), 0.0f, 0u));
+
+        std::vector<float> after(2400, 0.0f);
+        scheduler.process(after.data(), 2400, 1, 48000);
+        double ea = 0.0;
+        for (float s : after) ea += std::abs(static_cast<double>(s));
+        EXPECT_NEAR(ea, 0.0, 1.0e-4);
+    }
+
+    // No AudioSource on the entity => the grain-param command is a no-op.
+    TEST_F(SceneAudioPlayerTest, BehaviorGrainParamNoSourceIsNoOp)
+    {
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "silent";
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("silent");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        EXPECT_FALSE(wz::engine::audio::apply_grain_param_command(
+            result.instance, scheduler, entity,
+            static_cast<uint8_t>(wz::audio::GrainParam::Density), 10.0f, 0u));
+    }
+
 } // namespace wz::engine::assets::test

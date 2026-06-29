@@ -12,6 +12,16 @@
 
 namespace wz::engine::audio {
 
+    // The behavior ABI passes grain params as WZ_GRAIN_PARAM_* ordinals (0..3);
+    // pin GrainParam to the same values so the cast in apply_grain_param_command /
+    // the scheduler is correct.
+    static_assert(
+        static_cast<uint8_t>(wz::audio::GrainParam::Gain) == 0
+        && static_cast<uint8_t>(wz::audio::GrainParam::Density) == 1
+        && static_cast<uint8_t>(wz::audio::GrainParam::Position) == 2
+        && static_cast<uint8_t>(wz::audio::GrainParam::Pitch) == 3,
+        "GrainParam ordinals must match WZ_GRAIN_PARAM_* in the behavior ABI");
+
     namespace {
         // Which clip of a (possibly bank-backed) renderable to play. Default uses
         // the renderable's default_index (auto-play); Index selects by ordinal;
@@ -289,6 +299,37 @@ namespace wz::engine::audio {
             break;
         }
 
+        return scheduler.post(cmd);
+    }
+
+    bool apply_grain_param_command(
+        const wz::engine::assets::SceneInstance& instance,
+        wz::audio::AudioScheduler& scheduler,
+        wz::scene::RuntimeEntityId entity,
+        uint8_t param_id,
+        float value,
+        uint32_t ramp_frames)
+    {
+        using namespace wz::engine::assets;
+
+        const AudioSourceComponent* source = nullptr;
+        for (const auto& record : instance.audio_sources) {
+            if (record.node == entity) {
+                source = &record.component;
+                break;
+            }
+        }
+        if (source == nullptr) {
+            return false;
+        }
+
+        wz::audio::AudioCommand cmd{};
+        cmd.type = wz::audio::AudioCommandType::SetGrainParam;
+        cmd.sample_time = 0;  // apply on the next block
+        cmd.client_id = source->client_id;
+        cmd.grain_param = param_id;
+        cmd.value = value;
+        cmd.ramp_frames = ramp_frames;
         return scheduler.post(cmd);
     }
 
