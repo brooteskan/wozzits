@@ -39,11 +39,55 @@
 
 namespace wz::audio {
 
+    // The maximum number of source buffers a cloud blends between.
+    inline constexpr uint32_t kMaxGrainSources = 8;
+
+    // The cloud parameters a behavior can drive PER FRAME (the lean live set).
+    // Other params are authored on the renderable and set once at start. Ordinal
+    // values cross the audio command queue, so keep them stable.
+    enum class GrainParam : uint8_t
+    {
+        Gain = 0,
+        Density = 1,
+        Position = 2,
+        Pitch = 3,
+    };
+
+    // A trivially-copyable, self-contained description of a grain cloud — the form
+    // that crosses the sim->audio boundary (carried by pointer on a PlayGrainCloud
+    // command, like a clip's AudioBufferView). `sources` borrow PCM that must
+    // outlive playback; the desc itself need only outlive command consumption (the
+    // mixer copies it into a generator slot when it starts the cloud).
+    struct GrainCloudDesc
+    {
+        AudioBufferView sources[kMaxGrainSources]{};
+        float           weights[kMaxGrainSources]{};
+        uint32_t        source_count = 0;
+
+        uint32_t max_grains = 32;
+        uint32_t seed = 1;
+
+        // Live params (drivable per frame via SetGrainParam) — initial values.
+        float gain = 1.0f;
+        float density = 0.0f;   // grains/sec
+        float position = 0.0f;  // 0..1 playhead
+        float pitch = 1.0f;     // multiplier
+
+        // Authored / set-once params.
+        float       position_jitter = 0.0f;
+        float       pitch_jitter_semitones = 0.0f;
+        float       pan_center = 0.0f;
+        float       pan_spread = 0.0f;
+        float       grain_ms = 100.0f;
+        GrainWindow window = GrainWindow::Gaussian;
+        float       window_param = 0.4f;
+    };
+
     class GrainCloud
     {
     public:
         // The maximum number of source buffers a cloud blends between.
-        static constexpr uint32_t kMaxSources = 8;
+        static constexpr uint32_t kMaxSources = kMaxGrainSources;
 
         struct Config
         {
@@ -54,6 +98,14 @@ namespace wz::audio {
         // Allocate the grain pool and seed the PRNG. Call once off the audio thread
         // before rendering. Re-configuring resets all grains.
         void configure(const Config& config) noexcept;
+
+        // Re-arm an ALREADY-CONFIGURED cloud from a descriptor without allocating:
+        // deactivates in-flight grains, re-seeds, and sets every parameter (sources
+        // copied). The grain pool must already exist (a prior configure()); the
+        // desc's max_grains is clamped to that capacity. Does NOT start emitting —
+        // call start() after. This is the audio-thread-safe path the mixer uses to
+        // spin up a generator slot from a PlayGrainCloud command (no realtime heap).
+        void reset(const GrainCloudDesc& desc) noexcept;
 
         // Set the source buffers the cloud draws grains from, with per-source
         // weights (relative spawn probability; non-positive total => first source).
@@ -135,6 +187,7 @@ namespace wz::audio {
         float           weight_total_ = 0.0f;
 
         std::vector<Grain> grains_;
+        uint32_t           pool_limit_ = 0;  // usable grains (<= grains_.size())
 
         Ramp gain_{};
         Ramp density_{};   // grains/sec

@@ -72,6 +72,7 @@ namespace wz::audio {
     {
         const uint32_t max_grains = (config.max_grains == 0) ? 1u : config.max_grains;
         grains_.assign(max_grains, Grain{});
+        pool_limit_ = max_grains;
 
         rng_state_ = (config.seed != 0u) ? config.seed : 1u;
         spawn_phase_ = 0.0;
@@ -82,6 +83,37 @@ namespace wz::audio {
         pitch_ = Ramp{};     pitch_.current = pitch_.target = 1.0f;
         density_ = Ramp{};   // 0 grains/sec
         position_ = Ramp{};  // playhead at start
+    }
+
+    void GrainCloud::reset(const GrainCloudDesc& desc) noexcept
+    {
+        // No allocation: reuse the existing pool. Deactivate every grain, clamp the
+        // usable count to the pool capacity, and re-arm from the descriptor.
+        for (Grain& g : grains_) {
+            g.active = false;
+        }
+        const uint32_t cap = static_cast<uint32_t>(grains_.size());
+        pool_limit_ = (desc.max_grains < cap) ? desc.max_grains : cap;
+
+        rng_state_ = (desc.seed != 0u) ? desc.seed : 1u;
+        spawn_phase_ = 0.0;
+        emitting_ = false;
+
+        gain_ = Ramp{};      gain_.current = gain_.target = 1.0f;
+        pitch_ = Ramp{};     pitch_.current = pitch_.target = 1.0f;
+        density_ = Ramp{};
+        position_ = Ramp{};
+
+        set_sources(desc.sources, desc.weights, desc.source_count);
+        set_gain(desc.gain);
+        set_density(desc.density);
+        set_position(desc.position);
+        set_pitch(desc.pitch);
+        set_position_jitter(desc.position_jitter);
+        set_pitch_jitter(desc.pitch_jitter_semitones);
+        set_pan(desc.pan_center, desc.pan_spread);
+        set_grain_size(desc.grain_ms);
+        set_window(desc.window, desc.window_param);
     }
 
     void GrainCloud::set_sources(const AudioBufferView* views,
@@ -217,11 +249,11 @@ namespace wz::audio {
             return;
         }
 
-        // Find a free grain slot; drop the spawn if the pool is full.
+        // Find a free grain slot within the usable pool; drop the spawn if full.
         Grain* slot = nullptr;
-        for (Grain& g : grains_) {
-            if (!g.active) {
-                slot = &g;
+        for (uint32_t i = 0; i < pool_limit_; ++i) {
+            if (!grains_[i].active) {
+                slot = &grains_[i];
                 break;
             }
         }
@@ -279,7 +311,7 @@ namespace wz::audio {
             return;
         }
 
-        const uint32_t cap = static_cast<uint32_t>(grains_.size());
+        const uint32_t cap = pool_limit_;
 
         for (uint32_t f = 0; f < frames; ++f) {
             // Advance the per-frame smoothing of every cloud param.

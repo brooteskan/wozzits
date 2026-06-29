@@ -21,6 +21,7 @@
 // wz::audio pull callback).
 
 #include <audio/audio_buffer.h>
+#include <audio/grain_cloud.h>
 #include <audio/voice.h>
 
 #include <cstdint>
@@ -38,10 +39,25 @@ namespace wz::audio {
         bool valid() const noexcept { return generation != 0; }
     };
 
+    // Stable reference to a playing grain cloud (separate pool from voices).
+    struct GrainCloudHandle
+    {
+        uint32_t index = 0;
+        uint32_t generation = 0;
+
+        bool valid() const noexcept { return generation != 0; }
+    };
+
     class Mixer
     {
     public:
-        explicit Mixer(uint32_t max_voices = 64);
+        // Voices serve one-shots; grain clouds get their OWN pool so a dense
+        // texture never steals SFX voices and its CPU is bounded separately. Each
+        // cloud pre-allocates kGrainsPerCloud grains at construction (off-thread),
+        // so starting a cloud on the audio thread never allocates.
+        static constexpr uint32_t kGrainsPerCloud = 32;
+
+        explicit Mixer(uint32_t max_voices = 64, uint32_t max_grain_clouds = 8);
 
         // Start a voice on `src`. Returns a handle, or an invalid handle if the
         // source is invalid. When the pool is full the oldest voice is stolen.
@@ -53,6 +69,20 @@ namespace wz::audio {
                          float pitch = 1.0f,
                          bool looping = false,
                          uint32_t client_id = 0) noexcept;
+
+        // Start a grain cloud on the cloud pool from a descriptor (copied into the
+        // slot — the desc need not outlive this call, but its source PCM must
+        // outlive playback). When the cloud pool is full the oldest cloud is stolen.
+        // client_id tags the cloud so stop_client / set_gain_client /
+        // set_grain_param_client can address it.
+        GrainCloudHandle play_grain_cloud(const GrainCloudDesc& desc,
+                                          uint32_t client_id = 0) noexcept;
+
+        // Ramp a live grain-cloud parameter on every cloud tagged client_id.
+        void set_grain_param_client(uint32_t client_id,
+                                    GrainParam param,
+                                    float value,
+                                    uint32_t ramp_frames) noexcept;
 
         // Stop a specific voice (no-op if the handle is stale).
         void stop(VoiceHandle handle) noexcept;
@@ -82,6 +112,7 @@ namespace wz::audio {
             return static_cast<uint32_t>(slots_.size());
         }
         uint32_t active_voice_count() const noexcept;
+        uint32_t active_grain_cloud_count() const noexcept;
 
         // Render `frames` of interleaved output at `channels` x `sample_rate`.
         // Clears `out`, sums every active voice, applies master gain, then the
@@ -100,11 +131,24 @@ namespace wz::audio {
             uint32_t client_id = 0;   // caller tag for stop_client (0 = untagged)
         };
 
+        struct GrainSlot
+        {
+            GrainCloud cloud{};
+            uint32_t   generation = 0;
+            uint64_t   start_seq = 0;
+            uint32_t   client_id = 0;
+        };
+
         // Pick a slot for a new voice: a free one if available, otherwise steal
         // the oldest active voice. Returns the slot index.
         uint32_t acquire_slot() noexcept;
 
+        // Same policy for the grain-cloud pool (a slot whose cloud is inactive,
+        // else the oldest).
+        uint32_t acquire_grain_slot() noexcept;
+
         std::vector<Slot> slots_;
+        std::vector<GrainSlot> grain_slots_;
         float master_gain_ = 1.0f;
         uint64_t seq_ = 0;
     };

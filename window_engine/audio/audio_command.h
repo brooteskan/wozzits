@@ -15,12 +15,16 @@
 
 namespace wz::audio {
 
+    struct GrainCloudDesc;  // audio/grain_cloud.h — carried by pointer (stable mem)
+
     enum class AudioCommandType : uint8_t
     {
-        Play,           // start `source` (gain/pitch/looping/client_id)
-        Stop,           // stop the voice(s) tagged client_id (ramp_frames = fade)
-        SetGain,        // ramp tagged voice(s) gain -> value over ramp_frames
-        SetMasterGain,  // set master gain to `value`
+        Play,            // start `source` (gain/pitch/looping/client_id)
+        Stop,            // stop the voice(s)/cloud(s) tagged client_id (ramp = fade)
+        SetGain,         // ramp tagged voice(s)/cloud(s) gain -> value over ramp_frames
+        SetMasterGain,   // set master gain to `value`
+        PlayGrainCloud,  // start the grain cloud `grain` points at, tagged client_id
+        SetGrainParam,   // ramp tagged cloud(s) param `grain_param` -> value
     };
 
     struct AudioCommand
@@ -43,11 +47,18 @@ namespace wz::audio {
         uint32_t client_id = 0;
 
         // Ramp length in output frames for Stop (fade-out; 0 = hard stop) and
-        // SetGain (0 = jump). Ignored by other types.
+        // SetGain / SetGrainParam (0 = jump). Ignored by other types.
         uint32_t ramp_frames = 0;
 
-        // SetGain / SetMasterGain target.
+        // SetGain / SetMasterGain / SetGrainParam target.
         float value = 1.0f;
+
+        // PlayGrainCloud payload: a stable descriptor (its source PCM must outlive
+        // playback). nullptr for non-grain commands.
+        const GrainCloudDesc* grain = nullptr;
+
+        // SetGrainParam: which GrainParam to ramp (ordinal). Ignored otherwise.
+        uint8_t grain_param = 0;
     };
 
     static_assert(std::is_trivially_copyable_v<AudioCommand>,

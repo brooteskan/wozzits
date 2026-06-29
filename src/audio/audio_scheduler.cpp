@@ -35,6 +35,17 @@ namespace wz::audio {
         case AudioCommandType::SetMasterGain:
             mixer_.set_master_gain(cmd.value);
             break;
+        case AudioCommandType::PlayGrainCloud:
+            if (cmd.grain != nullptr)
+                mixer_.play_grain_cloud(*cmd.grain, cmd.client_id);
+            break;
+        case AudioCommandType::SetGrainParam:
+            mixer_.set_grain_param_client(
+                cmd.client_id,
+                static_cast<GrainParam>(cmd.grain_param),
+                cmd.value,
+                cmd.ramp_frames);
+            break;
         }
     }
 

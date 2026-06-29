@@ -10,6 +10,7 @@
 #include <audio/audio_scheduler.h>
 
 #include <atomic>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -230,6 +231,79 @@ namespace wz::audio::test {
         sched.process(out.data(), 32, 1, 48000);
 
         EXPECT_EQ(sched.mixer().active_voice_count(), kVoices);
+    }
+
+    // ─── Grain-cloud commands through the queue ───────────────────────────────────
+
+    TEST(AudioSchedulerTests, PlayGrainCloudCommandStartsGenerator)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        AudioScheduler sched(8);
+
+        // The descriptor is carried by pointer; keep it alive across process().
+        GrainCloudDesc desc;
+        desc.sources[0] = view(src, 1, 48000);
+        desc.weights[0] = 1.0f;
+        desc.source_count = 1;
+        desc.max_grains = 16;
+        desc.density = 300.0f;
+        desc.grain_ms = 10.0f;
+
+        AudioCommand c;
+        c.type = AudioCommandType::PlayGrainCloud;
+        c.sample_time = 0;
+        c.grain = &desc;
+        c.client_id = 5u;
+        ASSERT_TRUE(sched.post(c));
+
+        std::vector<float> out(2400, 0.0f);
+        sched.process(out.data(), 2400, 1, 48000);
+        EXPECT_EQ(sched.mixer().active_grain_cloud_count(), 1u);
+
+        double e = 0.0;
+        for (float s : out) e += std::abs(static_cast<double>(s));
+        EXPECT_GT(e, 0.0);
+    }
+
+    TEST(AudioSchedulerTests, SetGrainParamCommandRoutesToCloud)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        AudioScheduler sched(8);
+
+        GrainCloudDesc desc;
+        desc.sources[0] = view(src, 1, 48000);
+        desc.weights[0] = 1.0f;
+        desc.source_count = 1;
+        desc.max_grains = 16;
+        desc.density = 300.0f;
+        desc.grain_ms = 10.0f;
+
+        AudioCommand start;
+        start.type = AudioCommandType::PlayGrainCloud;
+        start.grain = &desc;
+        start.client_id = 5u;
+        ASSERT_TRUE(sched.post(start));
+
+        std::vector<float> a(2400, 0.0f);
+        sched.process(a.data(), 2400, 1, 48000);
+        double ea = 0.0;
+        for (float s : a) ea += std::abs(static_cast<double>(s));
+        ASSERT_GT(ea, 0.0);
+
+        // Gain -> 0 via SetGrainParam routed by client id silences the cloud.
+        AudioCommand mute;
+        mute.type = AudioCommandType::SetGrainParam;
+        mute.grain_param = static_cast<uint8_t>(GrainParam::Gain);
+        mute.value = 0.0f;
+        mute.ramp_frames = 0;
+        mute.client_id = 5u;
+        ASSERT_TRUE(sched.post(mute));
+
+        std::vector<float> b(2400, 0.0f);
+        sched.process(b.data(), 2400, 1, 48000);
+        double eb = 0.0;
+        for (float s : b) eb += std::abs(static_cast<double>(s));
+        EXPECT_NEAR(eb, 0.0, 1.0e-4);
     }
 
 } // namespace wz::audio::test

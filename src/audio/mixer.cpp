@@ -7,11 +7,76 @@
 
 namespace wz::audio {
 
-    Mixer::Mixer(uint32_t max_voices)
+    Mixer::Mixer(uint32_t max_voices, uint32_t max_grain_clouds)
     {
         if (max_voices == 0)
             max_voices = 1;
         slots_.resize(max_voices);
+
+        // Pre-allocate every cloud's grain pool here (off the audio thread) so that
+        // starting a cloud later via play_grain_cloud() only re-arms it (no heap).
+        grain_slots_.resize(max_grain_clouds);
+        for (GrainSlot& gs : grain_slots_) {
+            gs.cloud.configure(
+                GrainCloud::Config{ .max_grains = kGrainsPerCloud, .seed = 1u });
+        }
+    }
+
+    uint32_t Mixer::acquire_grain_slot() noexcept
+    {
+        for (uint32_t i = 0; i < grain_slots_.size(); ++i) {
+            if (!grain_slots_[i].cloud.active())
+                return i;
+        }
+        uint32_t oldest = 0;
+        uint64_t oldest_seq = grain_slots_[0].start_seq;
+        for (uint32_t i = 1; i < grain_slots_.size(); ++i) {
+            if (grain_slots_[i].start_seq < oldest_seq) {
+                oldest_seq = grain_slots_[i].start_seq;
+                oldest = i;
+            }
+        }
+        return oldest;
+    }
+
+    GrainCloudHandle Mixer::play_grain_cloud(const GrainCloudDesc& desc,
+                                             uint32_t client_id) noexcept
+    {
+        if (grain_slots_.empty() || desc.source_count == 0)
+            return GrainCloudHandle{};
+
+        const uint32_t index = acquire_grain_slot();
+        GrainSlot& gs = grain_slots_[index];
+
+        gs.generation += 1;
+        if (gs.generation == 0)
+            gs.generation = 1;
+
+        gs.start_seq = ++seq_;
+        gs.client_id = client_id;
+        gs.cloud.reset(desc);  // re-arm in place (no allocation)
+        gs.cloud.start();
+
+        return GrainCloudHandle{ .index = index, .generation = gs.generation };
+    }
+
+    void Mixer::set_grain_param_client(uint32_t client_id,
+                                       GrainParam param,
+                                       float value,
+                                       uint32_t ramp_frames) noexcept
+    {
+        if (client_id == 0)
+            return;
+        for (GrainSlot& gs : grain_slots_) {
+            if (!gs.cloud.active() || gs.client_id != client_id)
+                continue;
+            switch (param) {
+            case GrainParam::Gain:     gs.cloud.set_gain(value, ramp_frames); break;
+            case GrainParam::Density:  gs.cloud.set_density(value, ramp_frames); break;
+            case GrainParam::Position: gs.cloud.set_position(value, ramp_frames); break;
+            case GrainParam::Pitch:    gs.cloud.set_pitch(value, ramp_frames); break;
+            }
+        }
     }
 
     uint32_t Mixer::acquire_slot() noexcept
@@ -77,6 +142,12 @@ namespace wz::audio {
             if (slot.voice.active() && slot.client_id == client_id)
                 slot.voice.stop();
         }
+        // A grain cloud stops SPAWNING; its in-flight grains window out so the
+        // texture tails off click-free, then the slot frees itself.
+        for (GrainSlot& gs : grain_slots_) {
+            if (gs.cloud.active() && gs.client_id == client_id)
+                gs.cloud.stop();
+        }
     }
 
     void Mixer::fade_out_client(uint32_t client_id, uint32_t frames) noexcept
@@ -86,6 +157,12 @@ namespace wz::audio {
         for (Slot& slot : slots_) {
             if (slot.voice.active() && slot.client_id == client_id)
                 slot.voice.fade_out(frames);
+        }
+        for (GrainSlot& gs : grain_slots_) {
+            if (gs.cloud.active() && gs.client_id == client_id) {
+                gs.cloud.set_gain(0.0f, frames);
+                gs.cloud.stop();
+            }
         }
     }
 
@@ -99,12 +176,18 @@ namespace wz::audio {
             if (slot.voice.active() && slot.client_id == client_id)
                 slot.voice.set_gain(gain, ramp_frames);
         }
+        for (GrainSlot& gs : grain_slots_) {
+            if (gs.cloud.active() && gs.client_id == client_id)
+                gs.cloud.set_gain(gain, ramp_frames);
+        }
     }
 
     void Mixer::stop_all() noexcept
     {
         for (Slot& slot : slots_)
             slot.voice.stop();
+        for (GrainSlot& gs : grain_slots_)
+            gs.cloud.stop();
     }
 
     uint32_t Mixer::active_voice_count() const noexcept
@@ -112,6 +195,16 @@ namespace wz::audio {
         uint32_t count = 0;
         for (const Slot& slot : slots_) {
             if (slot.voice.active())
+                ++count;
+        }
+        return count;
+    }
+
+    uint32_t Mixer::active_grain_cloud_count() const noexcept
+    {
+        uint32_t count = 0;
+        for (const GrainSlot& gs : grain_slots_) {
+            if (gs.cloud.active())
                 ++count;
         }
         return count;
@@ -131,6 +224,12 @@ namespace wz::audio {
         for (Slot& slot : slots_) {
             if (slot.voice.active())
                 slot.voice.render_add(out, frames, channels, sample_rate);
+        }
+
+        // Grain clouds get their own pool but sum into the same bus.
+        for (GrainSlot& gs : grain_slots_) {
+            if (gs.cloud.active())
+                gs.cloud.render_add(out, frames, channels, sample_rate);
         }
 
         // Master gain + V1 safety limiter (hard clip). A soft-knee limiter is a

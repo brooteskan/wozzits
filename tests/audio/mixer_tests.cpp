@@ -8,6 +8,7 @@
 
 #include <audio/mixer.h>
 
+#include <cmath>
 #include <vector>
 
 namespace wz::audio::test {
@@ -182,6 +183,123 @@ namespace wz::audio::test {
         std::vector<float> out(4, 0.0f);
         mixer.render(out.data(), 4, 1, 48000);
         EXPECT_FLOAT_EQ(out[0], 1.0f); // B still audible
+    }
+
+    // ─── Grain-cloud generator pool ───────────────────────────────────────────────
+
+    namespace {
+        GrainCloudDesc grain_desc(const AudioBufferView& src,
+                                  float density,
+                                  float gain = 1.0f,
+                                  uint32_t seed = 1u)
+        {
+            GrainCloudDesc d;
+            d.sources[0] = src;
+            d.weights[0] = 1.0f;
+            d.source_count = 1;
+            d.max_grains = 16;
+            d.seed = seed;
+            d.gain = gain;
+            d.density = density;
+            d.grain_ms = 10.0f;
+            return d;
+        }
+
+        double abs_energy(const std::vector<float>& b)
+        {
+            double e = 0.0;
+            for (float s : b) e += std::abs(static_cast<double>(s));
+            return e;
+        }
+    }
+
+    TEST(MixerTests, PlayGrainCloudActivatesGeneratorWithoutTouchingVoices)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        Mixer mixer(8, 4);
+
+        const GrainCloudHandle h =
+            mixer.play_grain_cloud(grain_desc(view(src, 1, 48000), 300.0f));
+        EXPECT_TRUE(h.valid());
+        EXPECT_EQ(mixer.active_grain_cloud_count(), 1u);
+        EXPECT_EQ(mixer.active_voice_count(), 0u);  // separate pool
+
+        std::vector<float> out(2400, 0.0f);
+        mixer.render(out.data(), 2400, 1, 48000);
+        EXPECT_GT(abs_energy(out), 0.0);
+    }
+
+    TEST(MixerTests, GrainCloudAndVoiceSumOnTheSameBus)
+    {
+        const std::vector<float> voice_src(2400, 0.0f);  // silent voice
+        const std::vector<float> grain_src(4800, 1.0f);
+        Mixer mixer(8, 4);
+
+        mixer.play(view(voice_src, 1, 48000));
+        mixer.play_grain_cloud(grain_desc(view(grain_src, 1, 48000), 300.0f));
+        EXPECT_EQ(mixer.active_voice_count(), 1u);
+        EXPECT_EQ(mixer.active_grain_cloud_count(), 1u);
+
+        std::vector<float> out(2400, 0.0f);
+        mixer.render(out.data(), 2400, 1, 48000);
+        EXPECT_GT(abs_energy(out), 0.0);  // grain contribution present
+    }
+
+    TEST(MixerTests, NoSourcesYieldsInvalidGrainHandle)
+    {
+        Mixer mixer(8, 4);
+        GrainCloudDesc d;  // source_count == 0
+        const GrainCloudHandle h = mixer.play_grain_cloud(d);
+        EXPECT_FALSE(h.valid());
+        EXPECT_EQ(mixer.active_grain_cloud_count(), 0u);
+    }
+
+    TEST(MixerTests, SetGrainParamClientSilencesViaGain)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        Mixer mixer(8, 4);
+        mixer.play_grain_cloud(grain_desc(view(src, 1, 48000), 300.0f), /*client*/ 7u);
+
+        std::vector<float> a(2400, 0.0f);
+        mixer.render(a.data(), 2400, 1, 48000);
+        ASSERT_GT(abs_energy(a), 0.0);
+
+        // Drop the cloud's gain to 0 (jump) by client id; output goes silent.
+        mixer.set_grain_param_client(7u, GrainParam::Gain, 0.0f, 0u);
+        std::vector<float> b(2400, 0.0f);
+        mixer.render(b.data(), 2400, 1, 48000);
+        EXPECT_NEAR(abs_energy(b), 0.0, 1.0e-4);
+    }
+
+    TEST(MixerTests, StopClientStopsGrainCloudAfterTail)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        Mixer mixer(8, 4);
+        mixer.play_grain_cloud(grain_desc(view(src, 1, 48000), 300.0f), /*client*/ 7u);
+
+        std::vector<float> warm(2400, 0.0f);
+        mixer.render(warm.data(), 2400, 1, 48000);
+        ASSERT_EQ(mixer.active_grain_cloud_count(), 1u);
+
+        mixer.stop_client(7u);  // stop spawning; grains tail out
+        std::vector<float> tail(960, 0.0f);  // past the 10 ms grain length
+        mixer.render(tail.data(), 960, 1, 48000);
+        EXPECT_EQ(mixer.active_grain_cloud_count(), 0u);
+    }
+
+    TEST(MixerTests, GrainCloudPoolStealsOldestWhenFull)
+    {
+        const std::vector<float> src(4800, 1.0f);
+        Mixer mixer(8, 1);  // single cloud slot forces a steal
+
+        const GrainCloudHandle a =
+            mixer.play_grain_cloud(grain_desc(view(src, 1, 48000), 300.0f), 1u);
+        const GrainCloudHandle b =
+            mixer.play_grain_cloud(grain_desc(view(src, 1, 48000), 300.0f), 2u);
+        EXPECT_TRUE(a.valid());
+        EXPECT_TRUE(b.valid());
+        EXPECT_NE(a.generation, b.generation);     // same slot, bumped generation
+        EXPECT_EQ(mixer.active_grain_cloud_count(), 1u);
     }
 
 } // namespace wz::audio::test
