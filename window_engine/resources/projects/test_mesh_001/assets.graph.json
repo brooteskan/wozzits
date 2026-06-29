@@ -911,6 +911,132 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 31,
+      "type": 2141,
+      "schema": "0xf11eca55e7000b85",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "directory",
+            "type": "string",
+            "value": "D:/code/wozzits/wozzits-window-engine/window_engine/resources/projects/test_mesh_001/wav"
+          },
+          {
+            "name": "recursive",
+            "type": "bool",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 32,
+      "type": 2142,
+      "schema": "0xf11eca55e7000b84",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 31,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "default_index",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "gain",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "looping",
+            "type": "bool",
+            "value": false
+          },
+          {
+            "name": "pitch",
+            "type": "float",
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 33,
+      "type": 2141,
+      "schema": "0xf11eca55e7000b85",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "directory",
+            "type": "string",
+            "value": "\"D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\wav\""
+          },
+          {
+            "name": "recursive",
+            "type": "bool",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 34,
+      "type": 2142,
+      "schema": "0xf11eca55e7000b84",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 33,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "default_index",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "gain",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "looping",
+            "type": "bool",
+            "value": false
+          },
+          {
+            "name": "pitch",
+            "type": "float",
+            "value": 1
+          }
+        ]
+      }
     }
   ],
   "layout": {
@@ -1065,8 +1191,18 @@
         "node_id": 30,
         "x": 580.52176319700538,
         "y": 1684.0641827252816
+      },
+      {
+        "node_id": 33,
+        "x": 236.70984162737921,
+        "y": 1842.3537087830773
+      },
+      {
+        "node_id": 34,
+        "x": 533.67376373343154,
+        "y": 1837.2556156997116
       }
     ],
-    "zoom": 0.58948692275000047
+    "zoom": 0.78460709418025087
   }
 }

@@ -33,9 +33,11 @@ namespace wz::engine::assets
         std::vector<Item> items;
     };
 
-    // Describes an audio clip bank built by enumerating *.wav files under a
-    // directory. Files are imported as WAV clips, named by filename stem, and
-    // ordered lexicographically by resolved path for determinism.
+    // Describes an audio clip bank built from a directory of WAV files. Registers
+    // a single directory-import graph node (kAudioClipBankFromDirectorySchema); the
+    // enumeration + WAV decoding happens in that node's compiler at compile time,
+    // so the scan is captured in the asset graph rather than fanned out into clip
+    // nodes at authoring time. The directory is resolved to an absolute path.
     struct AudioClipBankFromDirectoryDesc
     {
         std::string directory;
@@ -68,13 +70,12 @@ namespace wz::engine::assets
     class AudioClipBankAssetModule
     {
     public:
-        // Constructed with the existing AudioClipAssetModule + FileCarrierAssetModule
-        // so it can register clips from files when building a bank from a directory.
+        // Constructed with the FileCarrierAssetModule so it can resolve an authored
+        // directory against the resource root before registering the import node.
         AudioClipBankAssetModule(
             wz::asset::AssetSystem& system,
             wz::Logger&             logger,
             AudioClipBankTable&     table,
-            AudioClipAssetModule&   clips,
             FileCarrierAssetModule& files
         );
 
@@ -83,10 +84,11 @@ namespace wz::engine::assets
         AudioClipBankAsset create_audio_clip_bank_from_clips(
             const AudioClipBankFromClipsDesc& desc);
 
-        // Enumerate *.wav under desc.directory (case-insensitive extension),
-        // import each as a clip (name = filename stem), sort by resolved path for
-        // determinism, and delegate to create_audio_clip_bank_from_clips. Returns
-        // an invalid asset if the directory is missing or has no WAVs.
+        // Register a directory-import bank node. The authored directory is resolved
+        // to an absolute path and stored on the node; the compiler enumerates and
+        // decodes the WAVs at compile time. Returns an invalid asset only if the
+        // directory string is empty (the directory's existence/contents are checked
+        // by the compiler, not here).
         AudioClipBankAsset create_audio_clip_bank_from_directory(
             const AudioClipBankFromDirectoryDesc& desc);
 
@@ -102,7 +104,6 @@ namespace wz::engine::assets
         wz::asset::AssetSystem& system_;
         wz::Logger&             logger_;
         AudioClipBankTable&     table_;
-        AudioClipAssetModule&   clips_;
         FileCarrierAssetModule& files_;
     };
 

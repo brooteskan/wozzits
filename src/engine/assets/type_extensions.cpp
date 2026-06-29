@@ -458,6 +458,9 @@ namespace wz::engine::assets
                 kAudioClipBankFromClipsSchema, "Audio clip bank from clips");
             WZ_ADD_SCHEMA(
                 kAudioClipBankRenderableSchema, "Audio clip bank renderable");
+            WZ_ADD_SCHEMA(
+                kAudioClipBankFromDirectorySchema,
+                "Audio clip bank from directory");
             WZ_ADD_SCHEMA(kCollisionFromMeshSchema, "Collision from mesh");
             WZ_ADD_SCHEMA(kCollisionFromTerrainSchema, "Collision from terrain");
             WZ_ADD_SCHEMA(

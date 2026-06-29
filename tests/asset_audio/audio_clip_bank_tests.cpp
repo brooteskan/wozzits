@@ -304,17 +304,72 @@ namespace wz::engine::assets::test {
         EXPECT_EQ(data->entries[1].name_hash, fnv1a_32("bravo"));
         EXPECT_EQ(data->entries[2].name_hash, fnv1a_32("charlie"));
         EXPECT_TRUE(data->valid());
+
+        // The directory recipe populates the parallel name vector (stems), unlike
+        // the from-clips recipe (which carries only hashes).
+        ASSERT_EQ(data->names.size(), 3u);
+        EXPECT_EQ(data->names[0], "alpha");
+        EXPECT_EQ(data->names[1], "bravo");
+        EXPECT_EQ(data->names[2], "charlie");
     }
 
-    TEST_F(AudioClipBankTest, MissingDirectoryProducesInvalidAsset)
+    TEST_F(AudioClipBankTest, FromDirectoryRecursiveDescendsSubfolders)
     {
+        const stdfs::path dir =
+            stdfs::path{ std::string(temp_dir_) } / "rwavs";
+        stdfs::create_directories(dir / "sub");
+        write_file(dir / "top.wav", tiny_wav());
+        write_file(dir / "sub" / "deep.wav", tiny_wav());
+
+        AudioClipBankFromDirectoryDesc desc{};
+        desc.directory = dir.string();
+        desc.recursive = true;
+        const AudioClipBankAsset bank =
+            library_->audio_clip_banks()
+                .create_audio_clip_bank_from_directory(desc);
+        ASSERT_TRUE(bank.valid());
+
+        ASSERT_TRUE(library_->commit());
+        ASSERT_TRUE(library_->resolve_all().ok());
+
+        const AudioClipBankData* data =
+            library_->audio_clip_banks().get_audio_clip_bank_data(
+                library_->audio_clip_banks().get_audio_clip_bank(bank));
+        ASSERT_NE(data, nullptr);
+        EXPECT_EQ(data->size(), 2u); // top.wav + sub/deep.wav
+    }
+
+    TEST_F(AudioClipBankTest, EmptyDirectoryStringRejectedAtAuthoring)
+    {
+        // An empty directory string is rejected up front (no node registered).
+        AudioClipBankFromDirectoryDesc desc{};
+        const AudioClipBankAsset bank =
+            library_->audio_clip_banks()
+                .create_audio_clip_bank_from_directory(desc);
+        EXPECT_FALSE(bank.valid());
+    }
+
+    TEST_F(AudioClipBankTest, NonexistentDirectoryFailsToCompile)
+    {
+        // A non-existent directory registers a node (valid key) but fails to
+        // compile — the directory check is the compiler's, not the module's.
         AudioClipBankFromDirectoryDesc desc{};
         desc.directory =
             (stdfs::path{ std::string(temp_dir_) } / "does_not_exist").string();
         const AudioClipBankAsset bank =
             library_->audio_clip_banks()
                 .create_audio_clip_bank_from_directory(desc);
-        EXPECT_FALSE(bank.valid());
+        ASSERT_TRUE(bank.valid());
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        // The bank node did not produce valid data.
+        const AudioClipBankHandle h =
+            library_->audio_clip_banks().get_audio_clip_bank(bank);
+        const AudioClipBankData* data =
+            library_->audio_clip_banks().get_audio_clip_bank_data(h);
+        EXPECT_TRUE(data == nullptr || !data->valid());
     }
 
 } // namespace wz::engine::assets::test

@@ -51,4 +51,28 @@ namespace wz::engine::assets {
         };
     }
 
+    // Key for a directory-import bank node. Identity = the authored directory path
+    // (canonical) + the recursive flag (content_hash). No deps — the compiler is
+    // the I/O boundary that scans the folder. NOTE: like a path-only file carrier,
+    // identity does NOT fold the folder's current contents, so adding/removing a
+    // WAV without changing the path does not change the key (matches make_file_key;
+    // a fresh compile re-scans regardless).
+    [[nodiscard]] inline wz::asset::AssetKey make_audio_clip_bank_from_directory_key(
+        std::string_view canonical_directory,
+        bool             recursive) noexcept
+    {
+        const wz::asset::Hash path_hash = detail::hash_str(canonical_directory);
+        return wz::asset::AssetKey{
+            .content_hash = {
+                detail::mix64(path_hash.lo, recursive ? 1ull : 0ull),
+                path_hash.hi,
+            },
+            .schema_hash =
+                detail::hash_u64(kAudioClipBankFromDirectorySchema.value),
+            .compiler_hash =
+                detail::hash_u64(kAudioClipBankFromDirectoryCompilerVersion),
+            .deps_hash = {},
+        };
+    }
+
 } // namespace wz::engine::assets

@@ -78,7 +78,7 @@ namespace
             state->ammo--;
             if (state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY) {
                 wz_log_info(facts, "[tank] played the canon");
-                wz_write_play_sound(facts, state->canon_audio);
+                wz_write_play_sound_named(facts, state->canon_audio, "Canon_a");
             }
         }
     }

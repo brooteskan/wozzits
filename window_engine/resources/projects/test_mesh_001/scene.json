@@ -53,8 +53,8 @@
         "rotation_quat": [
           -0.0055172774009406567,
           0.87291193008422852,
-          0.019885385408997536,
-          0.48744118213653564
+          0.019885387271642685,
+          0.48744121193885803
         ],
         "scale": [
           0.50011962652206421,
@@ -197,7 +197,7 @@
         "active": true
       },
       "audio_source": {
-        "audio_renderable_node_id": 30,
+        "audio_renderable_node_id": 34,
         "auto_play": true,
         "enabled": true
       }

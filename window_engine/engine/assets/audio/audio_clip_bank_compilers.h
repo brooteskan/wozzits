@@ -28,10 +28,15 @@ namespace wz::engine::assets {
 
 namespace wz::engine::assets::internal {
 
-    // Registers the audio clip bank compiler. Compiles N kAssetTypeAudioClip
-    // dependencies plus a parallel name-hash list into an AudioClipBankData stored
-    // in audio_clip_bank_table. audio_clip_table is used to validate each resolved
-    // source clip.
+    // Registers the audio clip bank compilers. Two recipes, both producing
+    // kAssetTypeAudioBank stored in audio_clip_bank_table:
+    //   • from-clips (kAudioClipBankFromClipsSchema): folds N kAssetTypeAudioClip
+    //     dependencies + a parallel name-hash list (audio_clip_table validates each
+    //     resolved source clip).
+    //   • from-directory (kAudioClipBankFromDirectorySchema): a no-dependency source
+    //     recipe that enumerates *.wav under an authored "directory" param, reads +
+    //     decodes each WAV inline (the I/O boundary), and adds the decoded clips to
+    //     audio_clip_table before building the bank.
     void register_audio_clip_bank_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,

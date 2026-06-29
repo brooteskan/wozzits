@@ -334,7 +334,7 @@ namespace wz::engine::assets {
     // half of the 0x000B00 block; collision owns 0x000B00-0x000B7F). These IDs
     // may appear in disk-cache keys later, so keep them stable. Allocated so far:
     // WAV=B80, ProceduralTone=B81, Renderable=B82, ClipBankFromClips=B83,
-    // ClipBankRenderable=B84.
+    // ClipBankRenderable=B84, ClipBankFromDirectory=B85.
     //
     // Audio clip decoded from a WAV (RIFF/WAVE) file dependency into interleaved
     // float32 PCM. Expects one kRawFileSchema dependency carrying the WAV bytes.
@@ -378,6 +378,17 @@ namespace wz::engine::assets {
     // can trigger many sounds.
     inline constexpr wz::asset::SchemaID kAudioClipBankRenderableSchema{
         0xF11E'CA55'E7'000B84ull
+    };
+
+    // Audio clip bank built directly from a directory of WAV files. A no-dependency
+    // source recipe: the compiler enumerates *.wav under an authored directory
+    // (sorted for determinism), reads + decodes each WAV inline (the I/O boundary,
+    // like a file carrier), and stores the clips in AudioClipTable + the bank.
+    // Carries "directory" (string) and "recursive" (bool) params; produces
+    // kAssetTypeAudioBank. This is the graph-authorable directory importer, vs.
+    // kAudioClipBankFromClipsSchema which folds already-imported clip deps.
+    inline constexpr wz::asset::SchemaID kAudioClipBankFromDirectorySchema{
+        0xF11E'CA55'E7'000B85ull
     };
 
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema
