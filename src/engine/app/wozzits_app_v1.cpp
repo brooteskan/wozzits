@@ -664,6 +664,29 @@ namespace wz::app
                 }
             }
 
+            // Resolve an AudioSource's stable renderable anchor to its compiled
+            // key (mirrors the visual renderable_asset_node_id bridge). Runtime
+            // playback resolves via the key, so a node-id-only source is silent
+            // until this fills it in. Independent of whether the node draws.
+            if (node.audio_source
+                && node.audio_source->audio_renderable_node_id) {
+                node.audio_source->audio_renderable = {};  // clear stale
+                wz::asset::AssetKey k{};
+                wz::asset::AssetType t{};
+                if (resolve_graph_node(
+                        *node.audio_source->audio_renderable_node_id, k, t)) {
+                    if (t == wz::engine::assets::kAssetTypeAudioRenderable) {
+                        node.audio_source->audio_renderable = k;
+                    }
+                    else {
+                        ctx_.logger.warn(
+                            "assemble_render_bindings: node '" + node.id
+                            + "' audio_renderable anchor is not an audio "
+                              "renderable (skipped)");
+                    }
+                }
+            }
+
             if (!node.geometry_asset_node_id) {
                 continue;  // no geometry -> draws nothing via the binding
             }
