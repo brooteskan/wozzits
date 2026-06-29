@@ -216,4 +216,34 @@ namespace wz::engine::assets::test {
         EXPECT_NE(scene_asset_fingerprint(scene), base);
     }
 
+    // The runtime client_id (the behavior-addressable voice tag, audio-track
+    // item 9) is derived at instantiate from the authored node id: never 0,
+    // stable across re-instantiation, and distinct per node id.
+    TEST(SceneAssetModule, AudioSourceClientIdIsNonzeroStableAndPerEntity)
+    {
+        const auto client_id_for = [](const char* node_id) -> uint32_t {
+            SceneAssetData scene{};
+            scene.name = "audio_source_client_id";
+            SceneNodeAsset node{};
+            node.id = node_id;
+            node.audio_source = SceneAudioSourceAsset{
+                .auto_play = true,
+                .enabled = true,
+            };
+            scene.nodes.push_back(std::move(node));
+
+            auto result = instantiate_scene(scene);
+            EXPECT_TRUE(result.ok());
+            return result.instance.audio_sources.at(0).component.client_id;
+        };
+
+        const uint32_t a1 = client_id_for("speaker_a");
+        const uint32_t a2 = client_id_for("speaker_a");  // re-instantiate
+        const uint32_t b = client_id_for("speaker_b");
+
+        EXPECT_NE(a1, 0u);   // never the mixer's "untagged" sentinel
+        EXPECT_EQ(a1, a2);   // deterministic / stable for the same node id
+        EXPECT_NE(a1, b);    // distinct per authored node id
+    }
+
 } // namespace wz::engine::assets::test

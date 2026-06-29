@@ -22,6 +22,22 @@ namespace wz::engine::assets
 {
     namespace
     {
+        // Stable per-entity audio voice tag derived from the authored node id, so
+        // a behavior addressing the entity later reads the same client_id to
+        // stop/retune its voice(s) (audio-track item 9). FNV-1a/32 over the id;
+        // mapped away from 0, which is the mixer's "untagged" sentinel. Derived
+        // from the STABLE authored id (not the volatile runtime index) so the tag
+        // survives a scene rebuild.
+        uint32_t audio_source_client_id(std::string_view authored_id) noexcept
+        {
+            uint32_t hash = 2166136261u;  // FNV-1a/32 offset basis
+            for (const char c : authored_id) {
+                hash ^= static_cast<uint8_t>(c);
+                hash *= 16777619u;        // FNV-1a/32 prime
+            }
+            return hash == 0u ? 1u : hash;
+        }
+
         // Build a view matrix from a camera node's world transform.
         // The view matrix is the inverse of the world matrix.  For a rigid-body
         // transform (rotation + translation, no non-uniform scale) this is:
@@ -805,6 +821,7 @@ namespace wz::engine::assets
                         .audio_renderable = node.audio_source->audio_renderable,
                         .auto_play = node.audio_source->auto_play,
                         .enabled = node.audio_source->enabled,
+                        .client_id = audio_source_client_id(node.id),
                     },
                 });
             }

@@ -47,7 +47,8 @@ namespace wz::engine::assets::test {
         }
 
         // Build + resolve a real audio-renderable so its key resolves at runtime.
-        wz::asset::AssetKey make_resolved_renderable(float gain)
+        wz::asset::AssetKey make_resolved_renderable(float gain,
+                                                     bool looping = false)
         {
             const AudioClipAsset clip =
                 library_->audio_clips().create_procedural_tone_audio_clip({
@@ -64,7 +65,7 @@ namespace wz::engine::assets::test {
                     .clip = clip,
                     .gain = gain,
                     .pitch = 1.0f,
-                    .looping = false,
+                    .looping = looping,
                     });
             EXPECT_TRUE(library_->commit());
             EXPECT_TRUE(library_->resolve_all().ok());
@@ -191,6 +192,116 @@ namespace wz::engine::assets::test {
 
         EXPECT_EQ(report.played, 0u);
         EXPECT_EQ(report.skipped_unresolved, 1u);
+    }
+
+    // ── Behavior-triggered audio (item 9) ──────────────────────────────────────
+
+    // A behavior PLAY triggers the entity's AudioSource even when auto_play is
+    // off (the "when" is the behavior; auto_play only governs play-on-load).
+    TEST_F(SceneAudioPlayerTest, BehaviorPlayVerbTriggersSourceIgnoringAutoPlay)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false, // not played on load
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        // Auto-play pass leaves it silent...
+        EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler).played, 0u);
+        // ...but a behavior Play triggers it.
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, entity, 0.0f, 0.0f));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_GT(peak(out), 0.0f);
+    }
+
+    // A behavior STOP silences the entity's voice (addressed by its client_id).
+    TEST_F(SceneAudioPlayerTest, BehaviorStopVerbSilencesTheEntitysVoice)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler).played, 1u);
+
+        std::vector<float> before(64, 0.0f);
+        scheduler.process(before.data(), 64, 1, 48000);
+        EXPECT_GT(peak(before), 0.0f); // audible before stop
+
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Stop, entity,
+            /*fade frames*/ 0.0f, 0.0f)); // hard cut
+
+        std::vector<float> after(64, 0.0f);
+        scheduler.process(after.data(), 64, 1, 48000);
+        EXPECT_FLOAT_EQ(peak(after), 0.0f); // silent after stop
+    }
+
+    // Addressing an entity with no AudioSource is a no-op (and silent).
+    TEST_F(SceneAudioPlayerTest, BehaviorVerbOnEntityWithoutAudioSourceIsNoOp)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset speaker{};
+        speaker.id = "speaker";
+        speaker.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(speaker));
+        SceneNodeAsset silent{};
+        silent.id = "silent"; // no audio_source
+        authored.nodes.push_back(std::move(silent));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto silent_entity =
+            result.instance.authored_to_runtime.at("silent");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        EXPECT_FALSE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, silent_entity,
+            0.0f, 0.0f));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_FLOAT_EQ(peak(out), 0.0f);
     }
 
 } // namespace wz::engine::assets::test

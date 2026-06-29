@@ -29,6 +29,12 @@ namespace wz::engine::behavior
         // (WozzitsApp_v1) reads the entity's transform + SceneCameraAsset and
         // points the runtime camera at it. See WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA.
         SetActiveCamera,
+        // Audio (audio-track item 9). Not applied by apply_behavior_commands; the
+        // host resolves `entity` → its AudioSource and posts to the audio
+        // scheduler. See WZ_BEHAVIOR_COMMAND_PLAY_SOUND / STOP_SOUND / SET_SOUND_GAIN.
+        PlaySound,
+        StopSound,
+        SetSoundGain,
     };
 
     struct BehaviorCommand

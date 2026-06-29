@@ -1329,6 +1329,37 @@ namespace wz::app
                 *behavior_scene_,
                 frame_storage_.behavior_commands.commands,
                 &changed_entities);
+
+            // Audio behavior commands (item 9): play/stop/set-gain the addressed
+            // entity's AudioSource through the realtime scheduler. Only while the
+            // audio runtime is live (play mode + a device); otherwise dropped (no
+            // device => no sound). apply_behavior_commands ignores these kinds —
+            // they don't mutate the entity, they post to the audio thread.
+            if (ctx_.assets && audio_runtime_.running()) {
+                namespace ea_audio = wz::engine::audio;
+                for (const wz::engine::behavior::BehaviorCommand& command :
+                     frame_storage_.behavior_commands.commands)
+                {
+                    ea_audio::AudioBehaviorVerb verb;
+                    switch (command.kind) {
+                    case wz::engine::behavior::BehaviorCommandKind::PlaySound:
+                        verb = ea_audio::AudioBehaviorVerb::Play;
+                        break;
+                    case wz::engine::behavior::BehaviorCommandKind::StopSound:
+                        verb = ea_audio::AudioBehaviorVerb::Stop;
+                        break;
+                    case wz::engine::behavior::BehaviorCommandKind::SetSoundGain:
+                        verb = ea_audio::AudioBehaviorVerb::SetGain;
+                        break;
+                    default:
+                        continue;
+                    }
+                    ea_audio::apply_audio_behavior_command(
+                        *ctx_.assets, *behavior_scene_,
+                        audio_runtime_.scheduler(), verb, command.entity,
+                        command.values[0], command.values[1]);
+                }
+            }
         }
 
         std::vector<wz::scene::RuntimeEntityId> velocity_changed;

@@ -888,9 +888,12 @@ namespace wz::engine::behavior
             }
 
             case BehaviorCommandKind::SetActiveCamera:
-                // Not a per-entity transform mutation: the host (WozzitsApp_v1)
-                // reads this command directly to point the runtime camera at the
-                // named node. Ignored here.
+            case BehaviorCommandKind::PlaySound:
+            case BehaviorCommandKind::StopSound:
+            case BehaviorCommandKind::SetSoundGain:
+                // Not per-entity transform mutations: the host (WozzitsApp_v1)
+                // reads these directly — camera selection / audio scheduler.
+                // Ignored here.
                 break;
 
             case BehaviorCommandKind::None:

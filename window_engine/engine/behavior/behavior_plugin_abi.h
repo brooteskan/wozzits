@@ -229,6 +229,21 @@ enum
      * (it is handled at the WozzitsApp_v1 level, which owns the camera).
      */
     WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA = 11u,
+    /*
+     * Audio commands (audio-track item 9). Like SET_ACTIVE_CAMERA, these do not
+     * mutate `entity`: the host resolves it to the node's AudioSource component
+     * and posts to the realtime audio scheduler (apply_behavior_commands ignores
+     * them — handled at the WozzitsApp_v1 level, which owns the audio runtime).
+     * `entity` is the node carrying the AudioSource (self, a node found by name,
+     * or an event entity); a no-op if it has none. One AudioSource per node, so
+     * the entity is a complete address.
+     */
+    /* Play the entity's AudioSource (its renderable's baked gain/pitch/loop). */
+    WZ_BEHAVIOR_COMMAND_PLAY_SOUND = 12u,
+    /* Stop the entity's AudioSource. values[0] = fade-out frames (0 = hard cut). */
+    WZ_BEHAVIOR_COMMAND_STOP_SOUND = 13u,
+    /* Ramp gain. values[0] = target gain, values[1] = ramp frames (0 = jump). */
+    WZ_BEHAVIOR_COMMAND_SET_SOUND_GAIN = 14u,
 };
 
 enum

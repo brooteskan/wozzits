@@ -161,6 +161,12 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetMotionSpace;
             case WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA:
                 return BehaviorCommandKind::SetActiveCamera;
+            case WZ_BEHAVIOR_COMMAND_PLAY_SOUND:
+                return BehaviorCommandKind::PlaySound;
+            case WZ_BEHAVIOR_COMMAND_STOP_SOUND:
+                return BehaviorCommandKind::StopSound;
+            case WZ_BEHAVIOR_COMMAND_SET_SOUND_GAIN:
+                return BehaviorCommandKind::SetSoundGain;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

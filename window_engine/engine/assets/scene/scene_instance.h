@@ -93,6 +93,13 @@ namespace wz::engine::assets
         wz::asset::AssetKey audio_renderable{};
         bool auto_play = true;
         bool enabled = true;
+
+        // Stable per-entity voice tag, DERIVED at instantiate from the authored
+        // node id (not authored, not on the renderable). The runtime plays this
+        // source's voice(s) tagged with it, and a behavior addressing the same
+        // entity computes/reads the same id to stop/retune them (audio-track
+        // item 9). Never 0 (0 is the mixer's "untagged" sentinel).
+        uint32_t client_id = 0;
     };
 
     struct EventListenerComponent

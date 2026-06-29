@@ -954,6 +954,66 @@ static inline uint8_t wz_write_set_motion_space(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+// Audio (audio-track item 9). `entity` is the node carrying the AudioSource
+// component — find it with wz_find_entity_by_authored_id / wz_find_entity_by_name
+// (or pass self). The host resolves it to that AudioSource and posts to the audio
+// scheduler; a no-op if the entity has no AudioSource. One AudioSource per node,
+// so the entity is the whole address. Audio plays in PLAY mode only.
+
+// Play the entity's AudioSource (uses the renderable's baked gain/pitch/looping).
+static inline uint8_t wz_write_play_sound(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_PLAY_SOUND,
+        { 0.0f, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Stop the entity's AudioSource. fade_frames > 0 ramps it out (de-click); 0 cuts.
+static inline uint8_t wz_write_stop_sound(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float fade_frames)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_STOP_SOUND,
+        { fade_frames, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Ramp the entity's AudioSource gain to `gain` over `ramp_frames` (0 = jump).
+static inline uint8_t wz_write_set_sound_gain(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float gain,
+    float ramp_frames)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_SOUND_GAIN,
+        { gain, ramp_frames, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and

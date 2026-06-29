@@ -8,6 +8,8 @@
 // to the realtime scheduler. This is the sim-side step that makes a scene audible
 // — the "hello sound" path.
 
+#include <scene/scene_ecs.h>  // RuntimeEntityId
+
 #include <cstdint>
 
 namespace wz::engine::assets {
@@ -40,5 +42,29 @@ namespace wz::engine::audio {
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
         wz::audio::AudioScheduler& scheduler);
+
+    // Behavior-triggered audio (audio-track item 9). The host translates a
+    // PLAY/STOP/SET_SOUND_GAIN behavior command into one of these and applies it
+    // to `entity`'s AudioSource: Play resolves the renderable→clip and posts a
+    // Play tagged with the source's stable client_id; Stop/SetGain address that
+    // tag. The behavior names the entity; this maps it to the AudioSource.
+    enum class AudioBehaviorVerb { Play, Stop, SetGain };
+
+    // Apply one behavior audio verb to `entity`'s AudioSource via the scheduler.
+    // Returns true iff a command was posted; a no-op (false) when the entity has
+    // no AudioSource, (Play) its renderable doesn't resolve to a clip, or the
+    // queue is full. `enabled`/`auto_play` are NOT consulted — a behavior trigger
+    // is an explicit play regardless of the auto-play policy.
+    //   Stop:    v0 = fade-out frames (0 = hard cut); v1 unused.
+    //   SetGain: v0 = target gain, v1 = ramp frames (0 = jump).
+    //   Play:    v0/v1 unused (uses the renderable's baked gain/pitch/looping).
+    bool apply_audio_behavior_command(
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::SceneInstance& instance,
+        wz::audio::AudioScheduler& scheduler,
+        AudioBehaviorVerb verb,
+        wz::scene::RuntimeEntityId entity,
+        float v0,
+        float v1);
 
 } // namespace wz::engine::audio
