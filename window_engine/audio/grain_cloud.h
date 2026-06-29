@@ -81,6 +81,15 @@ namespace wz::audio {
         float       grain_ms = 100.0f;
         GrainWindow window = GrainWindow::Gaussian;
         float       window_param = 0.4f;
+
+        // Autonomous source-blend LFO (no behavior / per-frame command needed): a
+        // slow oscillator cycles the per-source selection weights so the cloud
+        // crossfades between its sources on its own. Sources are evenly staggered
+        // in phase, so two clips give an A<->B crossfade and N clips rotate
+        // through them. blend_rate = cycles/sec (0 = off, static weights);
+        // blend_depth = 0..1 (1 = a source fully drops out at its trough).
+        float blend_rate = 0.0f;
+        float blend_depth = 0.0f;
     };
 
     class GrainCloud
@@ -128,6 +137,11 @@ namespace wz::audio {
         void set_pan(float center, float spread) noexcept;     // center/spread in [-1, 1]
         void set_grain_size(float milliseconds) noexcept;      // grain duration
         void set_window(GrainWindow window, float param) noexcept;
+
+        // Autonomous source-blend LFO: cycles the per-source selection weights so
+        // the cloud crossfades between its sources without any external driver.
+        // rate_hz = cycles/sec (0 = off); depth = 0..1. See GrainCloudDesc.
+        void set_blend(float rate_hz, float depth) noexcept;
 
         // Begin / end emitting. stop() stops SPAWNING; in-flight grains finish so
         // the texture tails out click-free (active() stays true until they do).
@@ -178,7 +192,8 @@ namespace wz::audio {
         float    rng_unit() noexcept;      // [0, 1)
         float    rng_bipolar() noexcept;   // [-1, 1)
 
-        uint32_t pick_source() noexcept;   // weighted by source weights
+        float    effective_weight(uint32_t i) const noexcept;  // base x blend LFO
+        uint32_t pick_source() noexcept;   // weighted by effective source weights
         void spawn_grain(uint32_t out_rate) noexcept;
 
         AudioBufferView sources_[kMaxSources]{};
@@ -201,6 +216,10 @@ namespace wz::audio {
         float       grain_ms_ = 100.0f;
         GrainWindow window_ = GrainWindow::Gaussian;
         float       window_param_ = 0.4f;
+
+        float    blend_rate_ = 0.0f;   // source-blend LFO cycles/sec (0 = off)
+        float    blend_depth_ = 0.0f;  // 0..1
+        double   blend_phase_ = 0.0;   // [0,1) LFO phase
 
         double   spawn_phase_ = 0.0;  // fractional grain-spawn accumulator
         uint32_t rng_state_ = 1;

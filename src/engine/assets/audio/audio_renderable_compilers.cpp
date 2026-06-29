@@ -50,6 +50,8 @@ namespace wz::engine::assets::internal
             // Only Gaussian exists today; the param is reserved for future shapes.
             g.window = wz::audio::GrainWindow::Gaussian;
             g.window_param = params.get<float>("window_param", g.window_param);
+            g.blend_rate = params.get<float>("blend_rate", g.blend_rate);
+            g.blend_depth = params.get<float>("blend_depth", g.blend_depth);
             return g;
         }
     }
@@ -335,6 +337,12 @@ namespace wz::engine::assets::internal
                 { .name = "window_param", .type = wz::asset::ParamType::Float,
                   .label = "Window width", .default_num = 0.4, .min = 0.01,
                   .max = 0.5 },
+                { .name = "blend_rate", .type = wz::asset::ParamType::Float,
+                  .label = "Blend rate (Hz)", .default_num = 0.0, .min = 0.0,
+                  .max = 10.0 },
+                { .name = "blend_depth", .type = wz::asset::ParamType::Float,
+                  .label = "Blend depth", .default_num = 0.0, .min = 0.0,
+                  .max = 1.0 },
                 { .name = "max_grains", .type = wz::asset::ParamType::Int,
                   .label = "Max grains", .default_num = 32, .min = 1,
                   .max = 32 },

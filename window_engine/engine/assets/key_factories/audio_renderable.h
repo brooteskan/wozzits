@@ -111,6 +111,8 @@ namespace wz::engine::assets {
         hi = detail::mix_f32(hi, g.grain_ms);
         hi = detail::mix64(hi, static_cast<uint64_t>(g.window));
         hi = detail::mix_f32(hi, g.window_param);
+        hi = detail::mix_f32(hi, g.blend_rate);
+        hi = detail::mix_f32(hi, g.blend_depth);
 
         return wz::asset::AssetKey{
             .content_hash = { lo, hi },

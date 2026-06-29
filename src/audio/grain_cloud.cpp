@@ -76,6 +76,9 @@ namespace wz::audio {
 
         rng_state_ = (config.seed != 0u) ? config.seed : 1u;
         spawn_phase_ = 0.0;
+        blend_rate_ = 0.0f;
+        blend_depth_ = 0.0f;
+        blend_phase_ = 0.0;
         emitting_ = false;
 
         // Usable defaults: unity gain/pitch, no grains until density is set.
@@ -97,6 +100,7 @@ namespace wz::audio {
 
         rng_state_ = (desc.seed != 0u) ? desc.seed : 1u;
         spawn_phase_ = 0.0;
+        blend_phase_ = 0.0;
         emitting_ = false;
 
         gain_ = Ramp{};      gain_.current = gain_.target = 1.0f;
@@ -114,6 +118,7 @@ namespace wz::audio {
         set_pan(desc.pan_center, desc.pan_spread);
         set_grain_size(desc.grain_ms);
         set_window(desc.window, desc.window_param);
+        set_blend(desc.blend_rate, desc.blend_depth);
     }
 
     void GrainCloud::set_sources(const AudioBufferView* views,
@@ -178,6 +183,12 @@ namespace wz::audio {
         window_param_ = param;
     }
 
+    void GrainCloud::set_blend(float rate_hz, float depth) noexcept
+    {
+        blend_rate_ = (rate_hz > 0.0f) ? rate_hz : 0.0f;
+        blend_depth_ = std::clamp(depth, 0.0f, 1.0f);
+    }
+
     void GrainCloud::start() noexcept { emitting_ = true; }
     void GrainCloud::stop() noexcept { emitting_ = false; }
 
@@ -228,14 +239,39 @@ namespace wz::audio {
 
     // ─── Spawning ───────────────────────────────────────────────────────────────
 
+    float GrainCloud::effective_weight(uint32_t i) const noexcept
+    {
+        float w = weights_[i];
+        if (blend_depth_ > 0.0f && source_count_ > 1) {
+            // Sine LFO on the selection weight; sources are evenly staggered in
+            // phase so they crossfade (2 clips) or rotate (N). depth 1 => a source
+            // fully drops out at its trough.
+            const double ph = blend_phase_
+                + static_cast<double>(i) / static_cast<double>(source_count_);
+            const float lfo =
+                0.5f + 0.5f * static_cast<float>(std::sin(2.0 * kPi * ph));
+            w *= (1.0f - blend_depth_) + blend_depth_ * lfo;
+        }
+        return w;
+    }
+
     uint32_t GrainCloud::pick_source() noexcept
     {
-        if (source_count_ <= 1 || weight_total_ <= 0.0f) {
+        if (source_count_ <= 1) {
             return 0u;
         }
-        float r = rng_unit() * weight_total_;
+        float w[kMaxSources];
+        float total = 0.0f;
         for (uint32_t i = 0; i < source_count_; ++i) {
-            r -= weights_[i];
+            w[i] = effective_weight(i);
+            total += w[i];
+        }
+        if (total <= 0.0f) {
+            return 0u;
+        }
+        float r = rng_unit() * total;
+        for (uint32_t i = 0; i < source_count_; ++i) {
+            r -= w[i];
             if (r <= 0.0f) {
                 return i;
             }
@@ -319,6 +355,16 @@ namespace wz::audio {
             density_.advance();
             position_.advance();
             pitch_.advance();
+
+            // Advance the autonomous source-blend LFO phase (wraps in [0,1)).
+            if (blend_rate_ > 0.0f) {
+                blend_phase_ +=
+                    static_cast<double>(blend_rate_) /
+                    static_cast<double>(out_rate);
+                if (blend_phase_ >= 1.0) {
+                    blend_phase_ -= std::floor(blend_phase_);
+                }
+            }
 
             // Spawn grains for this frame at the current density (grains/sec),
             // bounded so a runaway rate can't loop unbounded.

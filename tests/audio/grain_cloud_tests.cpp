@@ -11,6 +11,7 @@
 #include <audio/grain_cloud.h>
 #include <audio/grain_window.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -265,6 +266,48 @@ namespace wz::audio::test {
     }
 
     // ─── CPU bound + stop tail ────────────────────────────────────────────────────
+
+    // The autonomous blend LFO cycles source selection over time with NO external
+    // driver — energy swings as the loud clip fades in and out, vs. steady when off.
+    TEST(GrainCloudTests, BlendLfoCyclesSourceSelectionAutonomously)
+    {
+        const std::vector<float> loud(48000, 1.0f);   // clip A: DC 1.0
+        const std::vector<float> silent(48000, 0.0f); // clip B: DC 0.0 (valid)
+        const AudioBufferView views[2] = {
+            view(loud, 1, 48000), view(silent, 1, 48000),
+        };
+        const float weights[2] = { 1.0f, 1.0f };
+
+        auto windowed_energy = [&](float rate, float depth) {
+            GrainCloud cloud;
+            cloud.configure(GrainCloud::Config{ .max_grains = 32, .seed = 99u });
+            cloud.set_sources(views, weights, 2);
+            cloud.set_density(800.0f);   // dense → many grains per window
+            cloud.set_grain_size(5.0f);  // short grains track the LFO closely
+            cloud.set_blend(rate, depth);
+            cloud.start();
+            std::vector<float> out(48000, 0.0f);  // 1 s = one full 1 Hz cycle
+            cloud.render_add(out.data(), 48000, 1, 48000);
+            std::vector<double> e(8, 0.0);         // 8 windows
+            for (size_t f = 0; f < out.size(); ++f) {
+                e[f / 6000] += std::abs(static_cast<double>(out[f]));
+            }
+            return e;
+        };
+
+        // Blend ON (1 Hz, full depth): A dominates for part of the cycle (loud) and
+        // B (silent) for another → big energy swing across the windows.
+        const auto on = windowed_energy(1.0f, 1.0f);
+        const double on_max = *std::max_element(on.begin(), on.end());
+        const double on_min = *std::min_element(on.begin(), on.end());
+        EXPECT_GT(on_max, on_min * 3.0);
+
+        // Blend OFF: a steady 50/50 selection → roughly even energy per window.
+        const auto off = windowed_energy(0.0f, 0.0f);
+        const double off_max = *std::max_element(off.begin(), off.end());
+        const double off_min = *std::min_element(off.begin(), off.end());
+        EXPECT_LT(off_max, off_min * 1.5);
+    }
 
     TEST(GrainCloudTests, GrainPoolCapsActiveGrains)
     {

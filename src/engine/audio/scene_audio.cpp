@@ -133,6 +133,8 @@ namespace wz::engine::audio {
             out.grain_ms = g.grain_ms;
             out.window = g.window;
             out.window_param = g.window_param;
+            out.blend_rate = g.blend_rate;
+            out.blend_depth = g.blend_depth;
 
             uint32_t n = 0;
             for (size_t i = 0;

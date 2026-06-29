@@ -53,6 +53,12 @@ namespace wz::engine::assets {
         float                grain_ms = 100.0f;
         wz::audio::GrainWindow window = wz::audio::GrainWindow::Gaussian;
         float                window_param = 0.4f;
+
+        // Autonomous source-blend LFO (no behavior needed): slowly cycles the
+        // per-source selection weights so the cloud crossfades between its clips
+        // on its own. blend_rate = cycles/sec (0 = off); blend_depth = 0..1.
+        float                blend_rate = 0.0f;
+        float                blend_depth = 0.0f;
     };
 
     // ─── AudioRenderableData ──────────────────────────────────────────────────────
