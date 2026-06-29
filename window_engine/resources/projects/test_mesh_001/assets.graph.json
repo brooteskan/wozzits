@@ -876,6 +876,41 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 30,
+      "key": "asset-key:f5487269fc70b255:8bb53fbbbdaf9e15:f11eca55e7000b82:0000000000000000:9e3779b97f4c9df3:0000000000000000:4d570cca05e30cf2:52e908657931ea84",
+      "type": 2142,
+      "schema": "0xf11eca55e7000b82",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 28,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "gain",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "looping",
+            "type": "bool",
+            "value": false
+          },
+          {
+            "name": "pitch",
+            "type": "float",
+            "value": 1
+          }
+        ]
+      }
     }
   ],
   "layout": {
@@ -1025,8 +1060,13 @@
         "node_id": 29,
         "x": 252.00412087747634,
         "y": 1553.0369263020734
+      },
+      {
+        "node_id": 30,
+        "x": 757.64226214583823,
+        "y": 1546.5484441959716
       }
     ],
-    "zoom": 0.78460709418025087
+    "zoom": 0.86306780359827606
   }
 }

@@ -192,6 +192,14 @@
         "near": 0.10000000149011612,
         "far": 1000,
         "aspect": 1.7777777910232544
+      },
+      "audio_listener": {
+        "active": true
+      },
+      "audio_source": {
+        "audio_renderable_node_id": 30,
+        "auto_play": true,
+        "enabled": true
       }
     }
   ],

@@ -736,6 +736,18 @@ namespace wz::engine::editor
                     .display_name = "Motion",
                 });
             }
+            if (has_component_object(value, "audio_source")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "audio_source",
+                    .display_name = "Audio Source",
+                });
+            }
+            if (has_component_object(value, "audio_listener")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "audio_listener",
+                    .display_name = "Audio Listener",
+                });
+            }
             node.behaviors = read_behaviors(value);
             node.scene_source = read_scene_source(value);
             // Persisted Collision/Motion component field values (read-back gap
