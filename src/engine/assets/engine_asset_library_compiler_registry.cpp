@@ -80,6 +80,7 @@ namespace wz::engine::assets::internal
         register_terrain_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.cache_settings);
         register_terrain_visual_proxy_compilers(registry, ctx.logger, ctx.terrain_table, ctx.terrain_visual_proxy_table, ctx.cache_settings);
         register_placement_compilers(registry, ctx.logger, ctx.placement_table);
+        register_audio_clip_compilers(registry, ctx.logger, ctx.audio_clip_table);
         register_collision_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.collision_table, ctx.placement_table, ctx.cache_settings);
         register_gaussian_splat_compilers(
             registry,

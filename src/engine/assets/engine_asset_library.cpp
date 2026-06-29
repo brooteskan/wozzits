@@ -239,6 +239,7 @@ namespace wz::engine::assets
         , terrain_visual_proxy_table_{}
         , collision_table_{}
         , placement_table_{}
+        , audio_clip_table_{}
         , gaussian_splat_cloud_table_{}
         , gaussian_splat_color_lod_table_{}
         , data_table_{}
@@ -282,6 +283,7 @@ namespace wz::engine::assets
                 .terrain_visual_proxy_table = terrain_visual_proxy_table_,
                 .collision_table           = collision_table_,
                 .placement_table           = placement_table_,
+                .audio_clip_table          = audio_clip_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
                 .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table_,
                 .data_table = data_table_,
@@ -333,6 +335,7 @@ namespace wz::engine::assets
         , terrain_visual_proxies_(system_, logger_, terrain_visual_proxy_table_)
         , collisions_(system_, logger_, collision_table_)
         , placements_(system_, logger_, placement_table_)
+        , audio_clips_(system_, logger_, files_, audio_clip_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)
         , data_tables_(system_, logger_, data_table_)

@@ -159,6 +159,7 @@ TEST(RenderableAssetModule, ClipmapLandscapeRenderableRecipeCarriesKeysAndSettin
     TerrainVisualProxyTable terrain_visual_proxy_table;
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
+    AudioClipTable audio_clip_table;
     GaussianSplatCloudTable gaussian_splat_cloud_table;
     GaussianSplatColorLODTable gaussian_splat_color_lod_table;
     DataTable data_table;
@@ -266,6 +267,7 @@ TEST(RenderableAssetModule, ClipmapLandscapeRenderableRecipeCarriesKeysAndSettin
         .terrain_visual_proxy_table = terrain_visual_proxy_table,
         .collision_table = collision_table,
         .placement_table = placement_table,
+        .audio_clip_table = audio_clip_table,
         .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
         .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table,
         .data_table = data_table,
@@ -469,6 +471,7 @@ TEST(RenderableAssetModule, ClipmapLandscapeRenderablePlacementDrivesFootprint)
     TerrainVisualProxyTable terrain_visual_proxy_table;
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
+    AudioClipTable audio_clip_table;
     GaussianSplatCloudTable gaussian_splat_cloud_table;
     GaussianSplatColorLODTable gaussian_splat_color_lod_table;
     DataTable data_table;
@@ -593,6 +596,7 @@ TEST(RenderableAssetModule, ClipmapLandscapeRenderablePlacementDrivesFootprint)
         .terrain_visual_proxy_table = terrain_visual_proxy_table,
         .collision_table = collision_table,
         .placement_table = placement_table,
+        .audio_clip_table = audio_clip_table,
         .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
         .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table,
         .data_table = data_table,

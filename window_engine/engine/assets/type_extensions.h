@@ -243,7 +243,9 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeShaderReflection =
         static_cast<wz::asset::AssetType>(145);
 
-    // Reserved CPU data asset type. Not implemented yet.
+    // Implemented: immutable CPU-side decoded PCM audio (interleaved float32).
+    // Runtime data is owned by AudioClipTable. Multiple source schemas may produce
+    // this type, including WAV file imports and procedural tone recipes.
     inline constexpr wz::asset::AssetType kAssetTypeAudioClip =
         static_cast<wz::asset::AssetType>(146);
 

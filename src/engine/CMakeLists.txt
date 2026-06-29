@@ -92,6 +92,11 @@ target_sources(window_engine PRIVATE
     assets/placement/placement_compilers.cpp
     assets/placement_asset_module.cpp
 
+    assets/audio/audio_clip.cpp
+    assets/audio/wav_decoder.cpp
+    assets/audio/audio_clip_compilers.cpp
+    assets/audio_clip_asset_module.cpp
+
     assets/gaussian_splat/gaussian_splat.cpp
     assets/gaussian_splat/gaussian_splat_decode.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp

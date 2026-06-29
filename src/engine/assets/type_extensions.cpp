@@ -352,6 +352,7 @@ namespace wz::engine::assets
                 kAssetTypeMeshClusterHierarchy,
                 "Mesh cluster hierarchy");
             WZ_SET_TYPE_NAME(kAssetTypePlacement, "Placement");
+            WZ_SET_TYPE_NAME(kAssetTypeAudioClip, "Audio clip");
             WZ_SET_TYPE_NAME(kAssetTypeCSVTable, "CSV table");
             WZ_SET_TYPE_NAME(kAssetTypeJSONDocument, "JSON");
             WZ_SET_TYPE_NAME(kAssetTypeTOMLDocument, "TOML");
@@ -447,6 +448,8 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kTerrainFromMeshSchema, "Terrain from mesh");
             WZ_ADD_SCHEMA(kTerrainVisualProxySchema, "Terrain visual proxy");
             WZ_ADD_SCHEMA(kPlacementSchema, "Placement");
+            WZ_ADD_SCHEMA(kAudioClipFromWavSchema, "Audio clip from WAV");
+            WZ_ADD_SCHEMA(kAudioClipProceduralToneSchema, "Procedural tone");
             WZ_ADD_SCHEMA(kCollisionFromMeshSchema, "Collision from mesh");
             WZ_ADD_SCHEMA(kCollisionFromTerrainSchema, "Collision from terrain");
             WZ_ADD_SCHEMA(

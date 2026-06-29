@@ -96,4 +96,5 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kDirectLightCompilerVersion = 1;
     inline constexpr uint64_t kAmbientLightingCompilerVersion = 1;
     inline constexpr uint64_t kHDRIEnvironmentCompilerVersion = 4;
+    inline constexpr uint64_t kAudioClipCompilerVersion = 1;
 }

@@ -330,6 +330,25 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000B02ull
     };
 
+    // Audio schemas occupy the reserved 0x000B80-0x000BFF sub-range (the upper
+    // half of the 0x000B00 block; collision owns 0x000B00-0x000B7F). These IDs
+    // may appear in disk-cache keys later, so keep them stable.
+    //
+    // Audio clip decoded from a WAV (RIFF/WAVE) file dependency into interleaved
+    // float32 PCM. Expects one kRawFileSchema dependency carrying the WAV bytes.
+    // Produces kAssetTypeAudioClip output.
+    inline constexpr wz::asset::SchemaID kAudioClipFromWavSchema{
+        0xF11E'CA55'E7'000B80ull
+    };
+
+    // Procedural tone audio clip: a band-unlimited V1 oscillator (sine/square/
+    // saw/triangle) generated from parameters alone, no file dependency. A clean
+    // file-free path for tests and an early sound source ahead of the wavetable
+    // asset. Produces kAssetTypeAudioClip output.
+    inline constexpr wz::asset::SchemaID kAudioClipProceduralToneSchema{
+        0xF11E'CA55'E7'000B81ull
+    };
+
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema
     // dependency. header_mode ordinal is encoded in the key so the same file
     // compiled with different modes produces distinct asset keys.
