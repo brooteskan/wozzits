@@ -2204,9 +2204,17 @@ namespace wz::engine::assets
             }
             if (node.audio_source) {
                 auto source = object_value();
-                add_member(*source, "audio_renderable",
-                    string_value(asset_key_string(
-                        node.audio_source->audio_renderable)));
+                // Prefer the stable authored node id; otherwise the resolved key.
+                if (node.audio_source->audio_renderable_node_id) {
+                    add_member(*source, "audio_renderable_node_id",
+                        number_value(static_cast<double>(
+                            *node.audio_source->audio_renderable_node_id)));
+                }
+                else {
+                    add_member(*source, "audio_renderable",
+                        string_value(asset_key_string(
+                            node.audio_source->audio_renderable)));
+                }
                 add_member(*source, "auto_play",
                     bool_value(node.audio_source->auto_play));
                 add_member(*source, "enabled",

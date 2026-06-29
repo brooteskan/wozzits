@@ -4966,7 +4966,16 @@ namespace wz::engine::assets::internal
             const auto* as = find_member(node_val, "audio_source");
             if (as && as->kind == wz::json::JSONValueKind::Object) {
                 SceneAudioSourceAsset source{};
-                if (auto renderable = read_string(*as, "audio_renderable")) {
+                // Prefer the stable authored asset-graph node id; fall back to a
+                // resolved key for runtime-ready scenes. Mirrors the renderable.
+                const auto node_id =
+                    read_number(*as, "audio_renderable_node_id");
+                if (node_id && *node_id > 0.0) {
+                    source.audio_renderable_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                }
+                else if (auto renderable =
+                             read_string(*as, "audio_renderable")) {
                     if (auto key = parse_asset_key_string(*renderable)) {
                         source.audio_renderable = *key;
                     }

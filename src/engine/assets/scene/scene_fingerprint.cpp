@@ -753,7 +753,18 @@ namespace wz::engine::assets
             }
 
             if (node.audio_source) {
-                mix_asset_key(fp, node.audio_source->audio_renderable);
+                // Authored identity is the stable node id when present; the
+                // resolved key is transient (re-derived at bind), so it only
+                // contributes when no node id anchors the reference.
+                const bool has_node_id =
+                    node.audio_source->audio_renderable_node_id.has_value();
+                fp.mix_value(has_node_id);
+                if (has_node_id) {
+                    fp.mix_value(*node.audio_source->audio_renderable_node_id);
+                }
+                else {
+                    mix_asset_key(fp, node.audio_source->audio_renderable);
+                }
                 fp.mix_value(node.audio_source->auto_play);
                 fp.mix_value(node.audio_source->enabled);
             }

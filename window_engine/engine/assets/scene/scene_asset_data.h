@@ -789,8 +789,17 @@ namespace wz::engine::assets
     // Authored audio source: references an audio-renderable terminal (the audio
     // analog of renderable_asset) plus per-entity play policy. The node transform
     // supplies spatial data (pan/attenuation vs the listener) — see item 8.
+    //
+    // Reference identity mirrors the visual renderable's (node_id + key) pairing:
+    // audio_renderable_node_id is the STABLE authored asset-graph anchor that
+    // survives re-authoring (a renderable's content AssetKey changes when its
+    // clip/gain/pitch change), while audio_renderable is the current resolved key
+    // re-derived at bind time. Authored scenes should prefer the node id; the key
+    // is the runtime-ready resolved form. (See the authored-vs-resolved identity
+    // rule.) An empty audio_renderable key means "unresolved / node-id only".
     struct SceneAudioSourceAsset
     {
+        std::optional<wz::asset::AssetGraphDraftNodeId> audio_renderable_node_id;
         wz::asset::AssetKey audio_renderable{};
         bool auto_play = true;  // start playing when the scene instantiates
         bool enabled = true;    // participate at all

@@ -86,6 +86,74 @@ namespace wz::engine::assets::test {
         EXPECT_TRUE(scene_data->nodes[0].audio_source->enabled);
     }
 
+    TEST(SceneAssetModule, AudioSourceNodeIdReferenceRoundTripsAndAnchorsIdentity)
+    {
+        const wz::fs::Path root =
+            wz::fs::join(wz::fs::temp_directory_path(),
+                         "wozzits_scene_audio_source_nodeid_test");
+        ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+        wz::Logger logger;
+        wz::gpu::Device device{};
+        EngineAssetLibrary assets{ device, logger, root };
+
+        SceneAssetData authored{};
+        authored.name = "audio_source_nodeid_scene";
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable_node_id = 42u, // stable authored anchor
+            .audio_renderable = {},
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        // Export prefers the stable node id over a resolved key.
+        const std::string exported =
+            wz::json::serialize_json(export_scene_to_json_document(authored));
+        EXPECT_NE(exported.find("\"audio_renderable_node_id\""),
+                  std::string::npos);
+        EXPECT_EQ(exported.find("asset-key:"), std::string::npos);
+
+        auto rel_path =
+            write_scene_json(root, "audio_source_nodeid.scene.json", exported);
+        const auto scene_asset =
+            assets.scenes().create_scene_from_json({
+                .name = "audio_source_nodeid",
+                .path = rel_path,
+                });
+        ASSERT_TRUE(scene_asset.valid());
+        ASSERT_TRUE(assets.commit());
+        ASSERT_TRUE(assets.resolve_all().ok());
+
+        const auto* scene_data = assets.scenes().get_scene_data(
+            assets.scenes().get_scene(scene_asset));
+        ASSERT_NE(scene_data, nullptr);
+        ASSERT_EQ(scene_data->nodes.size(), 1u);
+        ASSERT_TRUE(scene_data->nodes[0].audio_source.has_value());
+        ASSERT_TRUE(
+            scene_data->nodes[0].audio_source->audio_renderable_node_id
+                .has_value());
+        EXPECT_EQ(
+            *scene_data->nodes[0].audio_source->audio_renderable_node_id, 42u);
+
+        // The stable node id anchors fingerprint identity: changing it shifts the
+        // hash, proving the authored reference (not just the transient key) drives
+        // identity.
+        SceneAssetData fp_scene{};
+        SceneNodeAsset fp_node{};
+        fp_node.id = "speaker";
+        fp_node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable_node_id = 42u,
+        };
+        fp_scene.nodes.push_back(fp_node);
+        const uint64_t base = scene_asset_fingerprint(fp_scene);
+
+        fp_scene.nodes[0].audio_source->audio_renderable_node_id = 43u;
+        EXPECT_NE(scene_asset_fingerprint(fp_scene), base);
+    }
+
     TEST(SceneAssetModule, AudioSourceInstantiatesIntoRuntimeTable)
     {
         SceneAssetData authored{};
