@@ -1829,6 +1829,11 @@ TEST(BehaviorPluginAbi, SceneQueryAndConfigCallbacksReadAuthoredSceneData)
     EXPECT_EQ(probe.find_terrain_by_name, 1u);
     EXPECT_EQ(probe.player_entity, scene.authored_to_runtime.at("player"));
     EXPECT_EQ(probe.terrain_entity, scene.authored_to_runtime.at("terrain"));
+    // "id:name" suffix: resolves to the same entity as the bare id when the name
+    // matches, and fails (0) when the name doesn't.
+    EXPECT_EQ(probe.find_player_by_id_name, 1u);
+    EXPECT_EQ(probe.player_by_id_name, scene.authored_to_runtime.at("player"));
+    EXPECT_EQ(probe.find_player_wrong_name, 0u);
     EXPECT_EQ(probe.enabled_read, 1u);
     EXPECT_EQ(probe.enabled_value, 1u);
     EXPECT_EQ(probe.speed_read, 1u);

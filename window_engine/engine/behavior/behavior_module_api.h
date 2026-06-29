@@ -13,6 +13,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <new>          // placement new (wz_instance_state)
+#include <type_traits>  // is_trivially_copyable
+
 #if defined(_WIN32)
 #define WZ_BEHAVIOR_MODULE_EXPORT __declspec(dllexport)
 #else
@@ -1235,6 +1238,45 @@ static inline void* wz_get_instance_state(
         : nullptr;
 }
 
+// Typed instance state — the idiomatic way to hold a behavior's per-node state.
+//
+//   void tank_init(const WzBehaviorInitFacts* facts, WzBehaviorEntityId, void*) {
+//       TankState* s = wz_instance_state<TankState>(facts);   // constructed
+//       if (s) wz_find_entity_by_authored_id(facts, "1:camera", &s->canon_audio);
+//   }
+//   void on_event(const WzBehaviorFrameFacts* facts, ...) {
+//       TankState* s = wz_instance_state<TankState>(facts);   // fetched
+//       if (!s) return;
+//   }
+//
+// From on_init this allocates the block ON FIRST init and constructs T in place,
+// so T's default member initializers actually run (unlike a raw void* cast). On a
+// later init (hot reload) the preserved block is returned AS-IS — state survives
+// the reload and is NOT re-initialized. From a frame fact it just fetches the
+// existing block. Returns nullptr if no state is available.
+//
+// T must be trivially copyable: instance state is plain data the host preserves
+// as raw bytes across reloads — it is never destructed, so no RAII members.
+template <typename T>
+static inline T* wz_instance_state(const WzBehaviorInitFacts* facts)
+{
+    static_assert(std::is_trivially_copyable<T>::value,
+        "behavior instance state must be trivially copyable (plain data)");
+
+    if (void* existing = wz_get_instance_state(facts)) {
+        return static_cast<T*>(existing);  // reuse preserved block (reload)
+    }
+    void* raw = wz_alloc_instance_state(
+        facts, (uint32_t)sizeof(T), (uint32_t)alignof(T));
+    return raw ? new (raw) T{} : nullptr;  // first init: construct (defaults run)
+}
+
+template <typename T>
+static inline T* wz_instance_state(const WzBehaviorFrameFacts* facts)
+{
+    return static_cast<T*>(wz_get_instance_state(facts));
+}
+
 static inline void* wz_create_shared_state(
     const WzBehaviorInitFacts* facts,
     const char* key,
@@ -2086,6 +2128,11 @@ static inline uint8_t wz_find_entity_by_name(
         out_entity);
 }
 
+// Resolve a node by its authored id. `authored_id` may carry an optional ":name"
+// suffix for readability, e.g. "1:camera": the id (before ':') is the stable key
+// that's matched; if a name follows, the node's current name must also match
+// (a typo or post-rename mismatch returns 0 instead of the wrong node). Returns 1
+// and writes out_entity on a match, 0 otherwise.
 static inline uint8_t wz_find_entity_by_authored_id(
     const WzBehaviorFrameFacts* facts,
     const char* authored_id,

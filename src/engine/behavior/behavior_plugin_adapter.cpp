@@ -1088,13 +1088,31 @@ namespace wz::engine::behavior
                 return 0;
             }
 
-            const auto it =
-                context->scene->authored_to_runtime.find(authored_id);
+            // Accept an optional ":name" suffix for readability, e.g. "1:camera".
+            // The id (before the first ':') is the authoritative stable key; when
+            // a name follows, the node's CURRENT name must also match, so a typo
+            // or a stale reference (after a rename) fails loudly instead of
+            // resolving the wrong node. A plain id with no ':' matches as before.
+            const std::string key{ authored_id };
+            const std::size_t colon = key.find(':');
+            const std::string id_part =
+                (colon == std::string::npos) ? key : key.substr(0, colon);
+
+            const auto it = context->scene->authored_to_runtime.find(id_part);
             if (it == context->scene->authored_to_runtime.end()) {
                 return 0;
             }
+            const WzBehaviorEntityId entity = it->second;
 
-            *out_entity = it->second;
+            if (colon != std::string::npos) {
+                const std::string name_part = key.substr(colon + 1);
+                const auto& names = context->scene->runtime_names;
+                if (entity >= names.size() || names[entity] != name_part) {
+                    return 0;  // ":name" doesn't match the node's current name
+                }
+            }
+
+            *out_entity = entity;
             return 1;
         }
 

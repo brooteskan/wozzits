@@ -297,6 +297,11 @@ namespace
         uint32_t terrain_id_required = 0;
         uint8_t terrain_id_read = 0;
         uint8_t missing_read = 1;
+
+        // "id:name" suffix form of find_entity_by_authored_id.
+        uint8_t find_player_by_id_name = 0;
+        WzBehaviorEntityId player_by_id_name = WZ_INVALID_BEHAVIOR_ENTITY;
+        uint8_t find_player_wrong_name = 1;  // id matches, name doesn't -> expect 0
     };
 
     SceneQueryConfigProbe* g_scene_query_config_probe = nullptr;
@@ -315,6 +320,15 @@ namespace
             facts,
             "player",
             &probe->player_entity);
+        probe->find_player_by_id_name = wz_find_entity_by_authored_id(
+            facts,
+            "player:PlayerCube",  // id + matching name -> resolves
+            &probe->player_by_id_name);
+        WzBehaviorEntityId discard = WZ_INVALID_BEHAVIOR_ENTITY;
+        probe->find_player_wrong_name = wz_find_entity_by_authored_id(
+            facts,
+            "player:NotTheName",  // id matches but name does not -> 0
+            &discard);
         probe->find_terrain_by_name = wz_find_entity_by_name(
             facts,
             "Landscape",

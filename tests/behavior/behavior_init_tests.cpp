@@ -145,6 +145,42 @@ namespace
             : 0u;
     }
 
+    // Idiomatic typed instance state via wz_instance_state<T> (the constructing
+    // helper). magic has a non-zero default member initializer that only takes
+    // effect if the block is actually CONSTRUCTED (a raw alloc + cast leaves 0).
+    struct IdiomaticState
+    {
+        uint32_t magic = 0xABCDu;
+        uint32_t init_count = 0;
+        uint32_t sentinel = 0;
+    };
+
+    void on_idiomatic_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        auto* state = wz_instance_state<IdiomaticState>(facts);
+        if (!state) {
+            return;
+        }
+        ++state->init_count;
+    }
+
+    uint8_t register_idiomatic_pack(WzBehaviorPluginApi* api)
+    {
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "idiomatic",
+            .on_event = nullptr,
+            .on_init = on_idiomatic_init,
+        };
+        return api && api->version == WZ_BEHAVIOR_ABI_VERSION
+            && api->register_module_desc
+            ? api->register_module_desc(api->user, &desc)
+            : 0u;
+    }
+
     void on_event_only_event(
         const WzBehaviorFrameFacts*,
         const WzBehaviorEvent*,
@@ -978,6 +1014,54 @@ TEST(BehaviorInit, CompatibleInstanceStateSurvivesRepeatedInit)
     EXPECT_EQ(state->init_count, 2u);
     EXPECT_EQ(state->event_count, 1u);
     EXPECT_EQ(state->sentinel, 0xc0ffeeu);
+}
+
+TEST(BehaviorInit, IdiomaticInstanceStateConstructsOnceAndPreservesOnReinit)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_init_idiomatic";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "actor_state",
+        .module = "idiomatic",
+    };
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    auto& scene = result.instance;
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry,
+        register_idiomatic_pack));
+
+    initialize_behaviors(scene, registry);
+
+    auto* first_block =
+        scene.behavior_state.find_instance_state("actor_state");
+    ASSERT_NE(first_block, nullptr);
+    auto* state = static_cast<IdiomaticState*>(first_block->data);
+    ASSERT_NE(state, nullptr);
+    // Constructed on first init: the non-zero default member initializer ran.
+    EXPECT_EQ(state->magic, 0xABCDu);
+    EXPECT_EQ(state->init_count, 1u);
+
+    state->sentinel = 0xc0ffeeu;
+
+    // Re-init (hot reload): the preserved block is reused, NOT re-constructed.
+    initialize_behaviors(scene, registry);
+
+    auto* second_block =
+        scene.behavior_state.find_instance_state("actor_state");
+    ASSERT_NE(second_block, nullptr);
+    EXPECT_EQ(second_block->data, first_block->data);  // same block
+    EXPECT_EQ(state->init_count, 2u);                  // init ran again...
+    EXPECT_EQ(state->sentinel, 0xc0ffeeu);             // ...state preserved
+    EXPECT_EQ(state->magic, 0xABCDu);                  // not re-constructed
 }
 
 TEST(BehaviorInit, LabelOnlyAuthoringRebuildPreservesBindingState)
