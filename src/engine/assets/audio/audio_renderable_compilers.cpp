@@ -5,10 +5,16 @@
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <algorithm>
+
 namespace wz::engine::assets::internal
 {
     namespace
     {
+        // A pitch of 0 would freeze the read head (step 0 -> never advances, never
+        // finishes). Floor it to a small positive value on every path.
+        constexpr float kMinPitch = 0.01f;
+
         AudioRenderableCompileDesc renderable_desc_from_params(
             const wz::asset::ParamBlock& params)
         {
@@ -50,7 +56,7 @@ namespace wz::engine::assets::internal
                     .type = wz::asset::ParamType::Float,
                     .label = "Pitch",
                     .default_num = 1.0,
-                    .min = 0.0,
+                    .min = static_cast<double>(kMinPitch),
                     .max = 8.0,
                 },
                 {
@@ -104,7 +110,7 @@ namespace wz::engine::assets::internal
                     audio_renderable_table.add(AudioRenderableData{
                         .clip = dep_handles[0],
                         .gain = desc->gain,
-                        .pitch = desc->pitch,
+                        .pitch = std::max(desc->pitch, kMinPitch),
                         .looping = desc->looping,
                     });
                 if (!handle.valid()) {
