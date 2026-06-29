@@ -797,123 +797,8 @@
       }
     },
     {
-      "node_id": 27,
-      "key": "asset-key:4fb653a4a9ccae48:fadd5de2005434eb:f11eca55e7000b81:0000000000000000:9e3779b97f4aa028:0000000000000000:0000000000000000:0000000000000000",
-      "type": 146,
-      "schema": "0xf11eca55e7000b81",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "amplitude",
-            "type": "float",
-            "value": 0.5
-          },
-          {
-            "name": "channels",
-            "type": "int",
-            "value": 1
-          },
-          {
-            "name": "duration_seconds",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "frequency",
-            "type": "float",
-            "value": 440
-          },
-          {
-            "name": "sample_rate",
-            "type": "int",
-            "value": 48000
-          },
-          {
-            "name": "waveform",
-            "type": "int",
-            "value": 1
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 28,
-      "key": "asset-key:b252ae104da908a5:9e3779b97f4a7c15:f11eca55e7000b80:0000000000000000:9e3779b97f4aa028:0000000000000000:07e88fe268e7cb14:a4213e9ec7278f23",
-      "type": 146,
-      "schema": "0xf11eca55e7000b80",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 29,
-          "to_input_port": 0
-        }
-      ]
-    },
-    {
-      "node_id": 29,
-      "key": "asset-key:3ebadf2658af7b6f:70c69f468da80c6f:f11eca55e7000001:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
-      "type": 64,
-      "schema": "0xf11eca55e7000001",
-      "stage": 0,
-      "residency": 2,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [],
-      "meta": {
-        "params": [
-          {
-            "name": "source_path",
-            "type": "string",
-            "value": "\"D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\wav\\Canon_b.wav\""
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 30,
-      "key": "asset-key:f5487269fc70b255:8bb53fbbbdaf9e15:f11eca55e7000b82:0000000000000000:9e3779b97f4c9df3:0000000000000000:4d570cca05e30cf2:52e908657931ea84",
-      "type": 2142,
-      "schema": "0xf11eca55e7000b82",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 28,
-          "to_input_port": 0
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "gain",
-            "type": "float",
-            "value": 1
-          },
-          {
-            "name": "looping",
-            "type": "bool",
-            "value": false
-          },
-          {
-            "name": "pitch",
-            "type": "float",
-            "value": 1
-          }
-        ]
-      }
-    },
-    {
       "node_id": 31,
+      "key": "asset-key:30ccac9477b147ce:21c1128fde9abb3e:f11eca55e7000b85:0000000000000000:9e3779b97f4c9d30:0000000000000000:0000000000000000:0000000000000000",
       "type": 2141,
       "schema": "0xf11eca55e7000b85",
       "stage": 0,
@@ -938,6 +823,7 @@
     },
     {
       "node_id": 32,
+      "key": "asset-key:79446eb021afa885:587a6785163a5d39:f11eca55e7000b84:0000000000000000:9e3779b97f4c9df3:0000000000000000:5537ba271b08072a:c0f3703a32ee5a6f",
       "type": 2142,
       "schema": "0xf11eca55e7000b84",
       "stage": 0,
@@ -977,6 +863,7 @@
     },
     {
       "node_id": 33,
+      "key": "asset-key:dfd6f5b4ec6e4cee:9583453d0cbab2c0:f11eca55e7000b85:0000000000000000:9e3779b97f4c9d30:0000000000000000:0000000000000000:0000000000000000",
       "type": 2141,
       "schema": "0xf11eca55e7000b85",
       "stage": 0,
@@ -992,6 +879,11 @@
             "value": "\"D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\wav\""
           },
           {
+            "name": "name",
+            "type": "string",
+            "value": "AudioClips"
+          },
+          {
             "name": "recursive",
             "type": "bool",
             "value": false
@@ -1001,6 +893,7 @@
     },
     {
       "node_id": 34,
+      "key": "asset-key:d38de9372f53f3b3:0c980963c68a148c:f11eca55e7000b84:0000000000000000:9e3779b97f4c9df3:0000000000000000:fcecf54795f2f584:f082d0205792b603",
       "type": 2142,
       "schema": "0xf11eca55e7000b84",
       "stage": 0,
@@ -1031,9 +924,128 @@
             "value": false
           },
           {
+            "name": "name",
+            "type": "string",
+            "value": "SoundEffects"
+          },
+          {
             "name": "pitch",
             "type": "float",
             "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 36,
+      "key": "asset-key:dfd6f5b4ec6e4cee:6ce61b736154613f:f11eca55e7000b85:0000000000000000:9e3779b97f4c9d30:0000000000000000:0000000000000000:0000000000000000",
+      "type": 2141,
+      "schema": "0xf11eca55e7000b85",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "directory",
+            "type": "string",
+            "value": "\"D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\wav\\Drones\""
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "Drones"
+          },
+          {
+            "name": "recursive",
+            "type": "bool",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 38,
+      "type": 2142,
+      "schema": "0xf11eca55e7000b86",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 36,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "density",
+            "type": "float",
+            "value": 1.7
+          },
+          {
+            "name": "gain",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "grain_ms",
+            "type": "float",
+            "value": 2500
+          },
+          {
+            "name": "max_grains",
+            "type": "int",
+            "value": 16
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "Drones Renderable"
+          },
+          {
+            "name": "pan_center",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "pan_spread",
+            "type": "float",
+            "value": 0.10000000000000001
+          },
+          {
+            "name": "pitch",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "pitch_jitter_semitones",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "position",
+            "type": "float",
+            "value": 0.34999999999999998
+          },
+          {
+            "name": "position_jitter",
+            "type": "float",
+            "value": 0.40000000000000002
+          },
+          {
+            "name": "seed",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "window_param",
+            "type": "float",
+            "value": 0.84999999999999998
           }
         ]
       }
@@ -1194,15 +1206,35 @@
       },
       {
         "node_id": 33,
-        "x": 236.70984162737921,
-        "y": 1842.3537087830773
+        "x": 86.515914147986791,
+        "y": 1716.8208137448221
       },
       {
         "node_id": 34,
-        "x": 533.67376373343154,
-        "y": 1837.2556156997116
+        "x": 364.54363352648465,
+        "y": 1699.8479873470264
+      },
+      {
+        "node_id": 35,
+        "x": 126.31791790457675,
+        "y": 39.619583509547624
+      },
+      {
+        "node_id": 36,
+        "x": 83.366058614936037,
+        "y": 1856.6094937268606
+      },
+      {
+        "node_id": 37,
+        "x": 365.78871530976971,
+        "y": 1854.8585664026109
+      },
+      {
+        "node_id": 38,
+        "x": 370.91714204698133,
+        "y": 1847.324349539359
       }
     ],
-    "zoom": 0.78460709418025087
+    "zoom": 0.71327917652750072
   }
 }
