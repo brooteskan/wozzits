@@ -786,6 +786,16 @@ namespace wz::engine::assets
         bool active = true;
     };
 
+    // Authored audio source: references an audio-renderable terminal (the audio
+    // analog of renderable_asset) plus per-entity play policy. The node transform
+    // supplies spatial data (pan/attenuation vs the listener) — see item 8.
+    struct SceneAudioSourceAsset
+    {
+        wz::asset::AssetKey audio_renderable{};
+        bool auto_play = true;  // start playing when the scene instantiates
+        bool enabled = true;    // participate at all
+    };
+
     struct SceneEventListenerAsset
     {
         std::vector<std::string> channels;
@@ -1127,6 +1137,7 @@ namespace wz::engine::assets
         std::optional<SceneTerrainHeightFieldSourceAsset>
             terrain_height_field_source;
         std::optional<SceneAudioListenerAsset> audio_listener;
+        std::optional<SceneAudioSourceAsset> audio_source;
         std::optional<SceneEventListenerAsset> event_listener;
         std::optional<SceneEventTriggerAsset> event_trigger;
         std::optional<SceneProximityAsset> proximity;
@@ -1832,6 +1843,9 @@ namespace wz::engine::assets
         }
         if (node.audio_listener) {
             out.push_back(Kind::AudioListener);
+        }
+        if (node.audio_source) {
+            out.push_back(Kind::AudioSource);
         }
         if (node.event_listener) {
             out.push_back(Kind::EventListener);
@@ -2695,6 +2709,7 @@ namespace wz::engine::assets
             || node.collision.has_value()
             || node.terrain.has_value()
             || node.audio_listener.has_value()
+            || node.audio_source.has_value()
             || node.event_listener.has_value()
             || node.proximity.has_value()
             || node.motion.has_value()
@@ -2945,6 +2960,9 @@ namespace wz::engine::assets
             }
             if (node.audio_listener) {
                 ++out.audio_listeners;
+            }
+            if (node.audio_source) {
+                ++out.audio_sources;
             }
             if (node.event_listener) {
                 ++out.event_listeners;

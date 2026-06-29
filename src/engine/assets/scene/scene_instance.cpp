@@ -433,6 +433,8 @@ namespace wz::engine::assets
                 instance.terrains.size()),
             .audio_listeners = static_cast<uint32_t>(
                 instance.audio_listeners.size()),
+            .audio_sources = static_cast<uint32_t>(
+                instance.audio_sources.size()),
             .event_listeners = static_cast<uint32_t>(
                 instance.event_listeners.size()),
             .proximities = static_cast<uint32_t>(
@@ -792,6 +794,17 @@ namespace wz::engine::assets
                     .node = h,
                     .component = AudioListenerComponent{
                         .active = node.audio_listener->active,
+                    },
+                });
+            }
+
+            if (node.audio_source) {
+                inst.audio_sources.push_back({
+                    .node = h,
+                    .component = AudioSourceComponent{
+                        .audio_renderable = node.audio_source->audio_renderable,
+                        .auto_play = node.audio_source->auto_play,
+                        .enabled = node.audio_source->enabled,
                     },
                 });
             }

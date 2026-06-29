@@ -2202,6 +2202,17 @@ namespace wz::engine::assets
                     bool_value(node.audio_listener->active));
                 add_member(*obj, "audio_listener", std::move(audio));
             }
+            if (node.audio_source) {
+                auto source = object_value();
+                add_member(*source, "audio_renderable",
+                    string_value(asset_key_string(
+                        node.audio_source->audio_renderable)));
+                add_member(*source, "auto_play",
+                    bool_value(node.audio_source->auto_play));
+                add_member(*source, "enabled",
+                    bool_value(node.audio_source->enabled));
+                add_member(*obj, "audio_source", std::move(source));
+            }
             if (node.event_listener) {
                 add_member(*obj, "event_listener",
                     event_listener_value(*node.event_listener));

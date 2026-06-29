@@ -752,6 +752,12 @@ namespace wz::engine::assets
                 fp.mix_value(node.audio_listener->active);
             }
 
+            if (node.audio_source) {
+                mix_asset_key(fp, node.audio_source->audio_renderable);
+                fp.mix_value(node.audio_source->auto_play);
+                fp.mix_value(node.audio_source->enabled);
+            }
+
             if (node.event_listener) {
                 fp.mix_value(node.event_listener->channels.size());
                 for (const auto& channel : node.event_listener->channels) {

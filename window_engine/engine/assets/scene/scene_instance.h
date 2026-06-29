@@ -88,6 +88,13 @@ namespace wz::engine::assets
         bool active = true;
     };
 
+    struct AudioSourceComponent
+    {
+        wz::asset::AssetKey audio_renderable{};
+        bool auto_play = true;
+        bool enabled = true;
+    };
+
     struct EventListenerComponent
     {
         std::vector<std::string> channels;
@@ -397,6 +404,7 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<CollisionComponent>> collisions;
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
+        std::vector<SceneComponentRecord<AudioSourceComponent>> audio_sources;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<ProximityComponent>> proximities;
         std::vector<SceneComponentRecord<MotionComponent>> motions;

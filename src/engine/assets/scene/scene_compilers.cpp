@@ -4963,6 +4963,23 @@ namespace wz::engine::assets::internal
                 node.audio_listener = listener;
             }
 
+            const auto* as = find_member(node_val, "audio_source");
+            if (as && as->kind == wz::json::JSONValueKind::Object) {
+                SceneAudioSourceAsset source{};
+                if (auto renderable = read_string(*as, "audio_renderable")) {
+                    if (auto key = parse_asset_key_string(*renderable)) {
+                        source.audio_renderable = *key;
+                    }
+                }
+                if (auto auto_play = read_bool(*as, "auto_play")) {
+                    source.auto_play = *auto_play;
+                }
+                if (auto enabled = read_bool(*as, "enabled")) {
+                    source.enabled = *enabled;
+                }
+                node.audio_source = source;
+            }
+
             const auto* el = find_member(node_val, "event_listener");
             if (el && el->kind == wz::json::JSONValueKind::Object) {
                 const auto* channels = find_member(*el, "channels");

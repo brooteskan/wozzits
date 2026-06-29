@@ -76,6 +76,7 @@ namespace wz::scene
         TerrainMeshSource,
         TerrainHeightFieldSource,
         AudioListener,
+        AudioSource,
         EventListener,
         EventTrigger,
         AuxiliaryVisual,
@@ -146,6 +147,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::Collision:
         case SceneAuthoredComponentKind::Terrain:
         case SceneAuthoredComponentKind::AudioListener:
+        case SceneAuthoredComponentKind::AudioSource:
         case SceneAuthoredComponentKind::EventListener:
         case SceneAuthoredComponentKind::Proximity:
         case SceneAuthoredComponentKind::Motion:
@@ -239,6 +241,7 @@ namespace wz::scene
         uint32_t terrain_mesh_sources = 0;
         uint32_t terrain_height_field_sources = 0;
         uint32_t audio_listeners = 0;
+        uint32_t audio_sources = 0;
         uint32_t event_listeners = 0;
         uint32_t event_triggers = 0;
         uint32_t proximities = 0;
@@ -267,6 +270,7 @@ namespace wz::scene
         uint32_t collisions = 0;
         uint32_t terrains = 0;
         uint32_t audio_listeners = 0;
+        uint32_t audio_sources = 0;
         uint32_t event_listeners = 0;
         uint32_t proximities = 0;
         uint32_t motions = 0;
