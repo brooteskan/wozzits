@@ -987,6 +987,50 @@ public sealed partial class WozzitsEngineNativeClient
             assetGraphNodeId));
     }
 
+    internal EngineMutationResponse SetNodeAudioRenderable(
+        IntPtr runtime,
+        string nodeId,
+        ulong assetGraphNodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // assetGraphNodeId 0 clears the AudioSource's renderable reference (the
+        // component remains), so it is valid here.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeAudioRenderable(
+            runtime,
+            nodeId,
+            assetGraphNodeId));
+    }
+
+    internal EngineMutationResponse SetNodeAudioSourcePlay(
+        IntPtr runtime,
+        string nodeId,
+        bool autoPlay,
+        bool enabled)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeAudioSourcePlay(
+            runtime,
+            nodeId,
+            autoPlay ? (byte)1 : (byte)0,
+            enabled ? (byte)1 : (byte)0));
+    }
+
     internal EngineMutationResponse SetNodeGeometryAsset(
         IntPtr runtime,
         string nodeId,

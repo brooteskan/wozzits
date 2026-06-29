@@ -168,6 +168,21 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Set (0 clears) the node's AudioSource renderable reference by the
+    // audio-renderable asset-graph node id it points at (creating the component
+    // on a non-zero pick); live + host-gated, no-op success when no viewport is
+    // running.
+    EngineMutationResponse SetNodeAudioRenderable(
+        string nodeId,
+        ulong assetGraphNodeId);
+
+    // Set an AudioSource's per-entity play policy (auto_play / enabled). Live +
+    // host-gated; no-op if the node has no AudioSource component.
+    EngineMutationResponse SetNodeAudioSourcePlay(
+        string nodeId,
+        bool autoPlay,
+        bool enabled);
+
     // Author (0 clears) the node's GEOMETRY ingredient — a Mesh / GpuSparseMesh
     // asset-graph node by its node id. The engine assembles the RHI renderable
     // from this geometry plus the node's effective render program (#213 increment

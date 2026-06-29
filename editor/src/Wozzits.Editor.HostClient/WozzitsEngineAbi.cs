@@ -420,6 +420,31 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         ulong assetGraphNodeId);
 
+    // Author a node's AUDIO SOURCE renderable reference (audio-track item 10):
+    // point its AudioSource at an audio-renderable asset-graph node (0 = clear),
+    // creating the component on a non-zero pick. Live + host-gated, no-op success
+    // when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_audio_renderable",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeAudioRenderable(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong assetGraphNodeId);
+
+    // Set an AudioSource's per-entity play policy (auto_play / enabled). Live +
+    // host-gated; no-op on the engine thread if the node has no AudioSource.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_audio_source_play",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeAudioSourcePlay(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        byte autoPlay,
+        byte enabled);
+
     // Author a node's GEOMETRY ingredient of its render binding — point it at a
     // Mesh / GpuSparseMesh asset-graph node (0 = clear). The engine assembles the
     // RHI renderable from this geometry plus the effective render program (#213

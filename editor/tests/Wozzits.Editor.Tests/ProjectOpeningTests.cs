@@ -3156,6 +3156,28 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, ulong AssetGraphNodeId)> AudioRenderables { get; } = [];
+
+        public EngineMutationResponse SetNodeAudioRenderable(
+            string nodeId,
+            ulong assetGraphNodeId)
+        {
+            AudioRenderables.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, bool AutoPlay, bool Enabled)>
+            AudioSourcePlays { get; } = [];
+
+        public EngineMutationResponse SetNodeAudioSourcePlay(
+            string nodeId,
+            bool autoPlay,
+            bool enabled)
+        {
+            AudioSourcePlays.Add((nodeId, autoPlay, enabled));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public List<(string NodeId, ulong AssetGraphNodeId)> GeometryAssets { get; } = [];
 
         public EngineMutationResponse SetNodeGeometryAsset(
