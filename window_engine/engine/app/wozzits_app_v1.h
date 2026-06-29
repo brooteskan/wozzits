@@ -28,6 +28,7 @@
 
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_instance.h>
+#include <engine/audio/audio_runtime.h>
 #include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/frame_storage.h>
@@ -597,6 +598,13 @@ namespace wz::app
         // SET_ACTIVE_CAMERA. Called once from load_scene, before the frame loop.
         void select_scene_loaded_active_camera();
 
+        // One-shot scene-audio start: in play mode (prefer_scene_camera_), open
+        // the output device if needed and auto-play the materialized scene's
+        // AudioSources through the mixer. No-op in the editor (silent until an
+        // audition path lands) or when no device is available. Called once from
+        // load_scene after the behavior scene is materialized.
+        void start_scene_audio();
+
         // Apply a SET_ACTIVE_CAMERA command: resolve the runtime entity to its
         // authored node and record it as the scene-camera selection anchor
         // (id + live polytree handle + SceneCameraAsset params). Flips
@@ -710,5 +718,10 @@ namespace wz::app
         wz::engine::FrameStorage                 frame_storage_{};
         std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
         uint64_t                                 behavior_frame_index_ = 0;
+
+        // Play-mode audio runtime: owns the realtime scheduler and (when started)
+        // the output device. Started lazily on the first play-mode scene load and
+        // stopped when leaving play; the editor leaves it idle.
+        wz::engine::audio::AudioRuntime          audio_runtime_{};
     };
 }

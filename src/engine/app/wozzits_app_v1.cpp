@@ -10,6 +10,7 @@
 #include <engine/assets/scene_asset_module.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/type_extensions.h>
+#include <engine/audio/scene_audio.h>
 
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
@@ -493,6 +494,9 @@ namespace wz::app
         // the first frame renders. Runs only on initial load, not on the
         // rebuild_behavior_scene calls that follow structural edits.
         select_scene_loaded_active_camera();
+
+        // One-shot: in play mode, open the device and auto-play scene audio.
+        start_scene_audio();
 
         return graph_ok && scene_resolve.ok();
     }
@@ -2411,6 +2415,40 @@ namespace wz::app
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)
     {
         prefer_scene_camera_ = prefer;
+
+        // Leaving play silences the runtime; entering play defers device start to
+        // the next scene load (start_scene_audio).
+        if (!prefer) {
+            audio_runtime_.stop();
+        }
+    }
+
+    void WozzitsApp_v1::start_scene_audio()
+    {
+        // Editor stays silent (audition is a later editor path); only play mode
+        // auto-plays. Audio is optional — a missing device must not fail the app.
+        if (!prefer_scene_camera_)
+            return;
+        if (!ctx_.assets || !behavior_scene_)
+            return;
+
+        if (!audio_runtime_.running()) {
+            if (!audio_runtime_.start()) {
+                ctx_.logger.warn(
+                    "audio device unavailable; scene audio disabled");
+                return;
+            }
+        }
+
+        const wz::engine::audio::ScenePlaybackReport report =
+            wz::engine::audio::play_scene_audio_sources(
+                *ctx_.assets, *behavior_scene_, audio_runtime_.scheduler());
+
+        ctx_.logger.info(
+            "scene audio: played " + std::to_string(report.played)
+            + " source(s), skipped " + std::to_string(report.skipped_disabled)
+            + " disabled / " + std::to_string(report.skipped_unresolved)
+            + " unresolved");
     }
 
     void WozzitsApp_v1::update_active_view()
