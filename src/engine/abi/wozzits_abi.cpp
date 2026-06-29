@@ -1547,7 +1547,7 @@ extern "C"
             return dynamic_error(
                 WZ_RESULT_INVALID_ARGUMENT,
                 std::string("unknown component kind '") + kind_utf8
-                    + "' (expected camera|proximity|collision|motion)");
+                    + "' (expected camera|proximity|collision|motion|audio_source|audio_listener)");
         }
 
         try {
@@ -1590,7 +1590,7 @@ extern "C"
             return dynamic_error(
                 WZ_RESULT_INVALID_ARGUMENT,
                 std::string("unknown component kind '") + kind_utf8
-                    + "' (expected camera|proximity|collision|motion)");
+                    + "' (expected camera|proximity|collision|motion|audio_source|audio_listener)");
         }
 
         try {

@@ -2283,13 +2283,15 @@ namespace wz::engine::assets
     // backed renderable (renderable_asset_node_id) is authored by the dedicated
     // set_node_renderable_asset() helper below, not these generic verbs.
 
-    // True if `kind` names one of the four editor-managed optional components.
+    // True if `kind` names one of the editor-managed optional components.
     inline bool is_optional_component_kind(std::string_view kind) noexcept
     {
         return kind == "camera"
             || kind == "proximity"
             || kind == "collision"
-            || kind == "motion";
+            || kind == "motion"
+            || kind == "audio_source"
+            || kind == "audio_listener";
     }
 
     // True if node `node_id` currently carries the optional component `kind`.
@@ -2315,6 +2317,12 @@ namespace wz::engine::assets
         }
         if (kind == "motion") {
             return node->motion.has_value();
+        }
+        if (kind == "audio_source") {
+            return node->audio_source.has_value();
+        }
+        if (kind == "audio_listener") {
+            return node->audio_listener.has_value();
         }
         return false;
     }
@@ -2349,6 +2357,14 @@ namespace wz::engine::assets
             node->motion = SceneMotionAsset{};
             return true;
         }
+        if (kind == "audio_source") {
+            node->audio_source = SceneAudioSourceAsset{};
+            return true;
+        }
+        if (kind == "audio_listener") {
+            node->audio_listener = SceneAudioListenerAsset{};
+            return true;
+        }
         return false;
     }
 
@@ -2381,6 +2397,14 @@ namespace wz::engine::assets
             node->motion.reset();
             return true;
         }
+        if (kind == "audio_source") {
+            node->audio_source.reset();
+            return true;
+        }
+        if (kind == "audio_listener") {
+            node->audio_listener.reset();
+            return true;
+        }
         return false;
     }
 
@@ -2409,6 +2433,53 @@ namespace wz::engine::assets
         }
         // Drop the cached resolved key so it re-resolves from the node id.
         node->renderable_asset.reset();
+        return true;
+    }
+
+    // Author an AudioSource's renderable reference by STABLE asset-graph node id
+    // (the editor picker target), mirroring set_node_renderable_asset. A non-zero
+    // id points audio_renderable_node_id at the authored audio-renderable node and
+    // creates the AudioSource component if absent (so picking a renderable is
+    // enough to author the source); id 0 clears the reference but leaves the
+    // component in place. Either way the resolved key is dropped so it re-resolves
+    // from the node id at bind. Returns false only if the node is missing.
+    inline bool set_node_audio_renderable(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node) {
+            return false;
+        }
+        if (asset_graph_node_id != 0) {
+            if (!node->audio_source) {
+                node->audio_source = SceneAudioSourceAsset{};
+            }
+            node->audio_source->audio_renderable_node_id = asset_graph_node_id;
+            node->audio_source->audio_renderable = {};
+        }
+        else if (node->audio_source) {
+            node->audio_source->audio_renderable_node_id.reset();
+            node->audio_source->audio_renderable = {};
+        }
+        return true;
+    }
+
+    // Set an AudioSource's per-entity play policy. No-op (false) if the node is
+    // missing or has no AudioSource component (the editor adds it first).
+    inline bool set_node_audio_source_play(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& node_id,
+        bool auto_play,
+        bool enabled)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, node_id);
+        if (!node || !node->audio_source) {
+            return false;
+        }
+        node->audio_source->auto_play = auto_play;
+        node->audio_source->enabled = enabled;
         return true;
     }
 
