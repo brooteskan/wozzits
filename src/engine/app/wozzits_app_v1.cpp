@@ -1797,6 +1797,44 @@ namespace wz::app
         return ok;
     }
 
+    bool WozzitsApp_v1::set_node_audio_renderable(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_audio_renderable(
+            scene_nodes_, node_id, asset_graph_node_id);
+        if (ok) {
+            scene_dirty_ = true;
+            // The node id resolves to the audio_renderable key in
+            // assemble_render_bindings on the next bind; nothing to draw, so no
+            // immediate rematerialize is needed (mirrors set_node_renderable_asset).
+        }
+        else {
+            ctx_.logger.warn(
+                "set_node_audio_renderable: no-op (node '" + node_id
+                + "' missing)");
+        }
+        return ok;
+    }
+
+    bool WozzitsApp_v1::set_node_audio_source_play(
+        const wz::scene::AuthoredEntityId& node_id,
+        bool auto_play,
+        bool enabled)
+    {
+        const bool ok = wz::engine::assets::set_node_audio_source_play(
+            scene_nodes_, node_id, auto_play, enabled);
+        if (ok) {
+            scene_dirty_ = true;
+        }
+        else {
+            ctx_.logger.warn(
+                "set_node_audio_source_play: no-op (node '" + node_id
+                + "' missing or has no AudioSource)");
+        }
+        return ok;
+    }
+
     bool WozzitsApp_v1::set_node_scene_source(
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)

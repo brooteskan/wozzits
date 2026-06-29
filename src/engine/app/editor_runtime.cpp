@@ -355,6 +355,54 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_audio_renderable(
+        SceneNodeAudioRenderableEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_audio_renderable_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_audio_renderables(
+        const std::function<void(const SceneNodeAudioRenderableEdit&)>& applier)
+    {
+        std::vector<SceneNodeAudioRenderableEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_audio_renderable_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_audio_renderable_edits_);
+        }
+
+        for (const SceneNodeAudioRenderableEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
+    void EditorRuntimeControl::post_scene_node_audio_source_play(
+        SceneNodeAudioSourcePlayEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_audio_source_play_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_audio_source_plays(
+        const std::function<void(const SceneNodeAudioSourcePlayEdit&)>& applier)
+    {
+        std::vector<SceneNodeAudioSourcePlayEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_audio_source_play_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_audio_source_play_edits_);
+        }
+
+        for (const SceneNodeAudioSourcePlayEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_render_binding(
         SceneNodeRenderBindingEdit edit)
     {
@@ -897,6 +945,18 @@ namespace wz::app
                             // clear it when asset_graph_node_id == 0).
                             app.set_node_renderable_asset(
                                 edit.node_id, edit.asset_graph_node_id);
+                        });
+                    control->service_pending_scene_node_audio_renderables(
+                        [&app](const SceneNodeAudioRenderableEdit& edit) {
+                            // Author the AudioSource's renderable reference (or
+                            // clear it when asset_graph_node_id == 0).
+                            app.set_node_audio_renderable(
+                                edit.node_id, edit.asset_graph_node_id);
+                        });
+                    control->service_pending_scene_node_audio_source_plays(
+                        [&app](const SceneNodeAudioSourcePlayEdit& edit) {
+                            app.set_node_audio_source_play(
+                                edit.node_id, edit.auto_play, edit.enabled);
                         });
                     control->service_pending_scene_node_render_bindings(
                         [&app](const SceneNodeRenderBindingEdit& edit) {

@@ -1026,6 +1026,30 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_asset(
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
 
+// Author an AudioSource's renderable reference (the audio analog of
+// set_node_renderable_asset): bind `node_id_utf8` to the authored audio-renderable
+// asset-graph node `asset_graph_node_id`, creating the AudioSource component on a
+// non-zero pick, or CLEAR the reference when 0 (the component remains). The
+// resolved key re-resolves from the node id at bind. DEFERRED + NON-BLOCKING;
+// marks the scene dirty. HOST-CAPABILITY GATE (require_host_scene_authoring):
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime, empty node id, or non-host
+// caller. NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
+WZ_ABI_API WzResult wz_host_runtime_set_node_audio_renderable(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t asset_graph_node_id);
+
+// Set an AudioSource's per-entity play policy (auto_play / enabled). DEFERRED +
+// NON-BLOCKING; marks the scene dirty. No-op on the engine thread if the node has
+// no AudioSource. HOST-CAPABILITY GATE (require_host_scene_authoring):
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime, empty node id, or non-host
+// caller. NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
+WZ_ABI_API WzResult wz_host_runtime_set_node_audio_source_play(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint8_t auto_play,
+    uint8_t enabled);
+
 // Author the GEOMETRY half of node `node_id_utf8`'s renderable binding (issue
 // #213 increment 2): point it at the authored geometry asset-graph node
 // `asset_graph_node_id`, or clear it (the node stops drawing) when 0. DEFERRED

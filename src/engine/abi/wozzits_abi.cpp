@@ -1644,6 +1644,74 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_audio_renderable(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint64_t asset_graph_node_id)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_audio_renderable(
+                wz::app::SceneNodeAudioRenderableEdit{
+                    .node_id = node_id_utf8,
+                    .asset_graph_node_id = asset_graph_node_id,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node audio renderable post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_set_node_audio_source_play(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint8_t auto_play,
+        uint8_t enabled)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_audio_source_play(
+                wz::app::SceneNodeAudioSourcePlayEdit{
+                    .node_id = node_id_utf8,
+                    .auto_play = auto_play != 0,
+                    .enabled = enabled != 0,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node audio source play post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_geometry_asset(
         WzHostRuntime* runtime,
         const char* node_id_utf8,

@@ -210,6 +210,22 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
 
+        // Apply behind the host ABI's audio authoring verbs. set_node_audio_-
+        // renderable points the node's AudioSource at the authored audio-renderable
+        // asset-graph node (creating the component on a non-zero pick; clearing
+        // the reference on 0); the resolved key re-resolves at bind.
+        // set_node_audio_source_play sets the AudioSource's auto_play/enabled (no-op
+        // if the node has no AudioSource). Both mark the scene dirty on success and
+        // return false (logged no-op) if the node is missing.
+        bool set_node_audio_renderable(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
+        bool set_node_audio_source_play(
+            const wz::scene::AuthoredEntityId& node_id,
+            bool auto_play,
+            bool enabled);
+
         // Apply behind the host ABI's set_node_scene_source verb (issue #213).
         // Author the PREFERRED asset-graph-backed Scene-source component on the
         // node: point it at the authored "Scene from GLB" asset-graph node

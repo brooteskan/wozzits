@@ -126,6 +126,25 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
     };
 
+    // A live edit to a node's AudioSource renderable reference (the audio analog
+    // of SceneNodeRenderableEdit): bind the authored audio-renderable asset-graph
+    // node id (0 = clear). Creates the AudioSource component on a non-zero pick.
+    // Non-blocking, NOT coalesced.
+    struct SceneNodeAudioRenderableEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+    };
+
+    // A live edit to an AudioSource's per-entity play policy. Non-blocking, NOT
+    // coalesced. No-op if the node has no AudioSource component.
+    struct SceneNodeAudioSourcePlayEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        bool auto_play = true;
+        bool enabled = true;
+    };
+
     // A live edit to one ingredient of a node's renderable BINDING (issue #213
     // increment 2): set/clear (id 0) the GEOMETRY asset-graph node or the
     // RENDER-PROGRAM asset-graph node, posted from the owner thread (editor UI)
@@ -333,6 +352,22 @@ namespace wz::app
         void service_pending_scene_node_renderables(
             const std::function<void(const SceneNodeRenderableEdit&)>& applier);
 
+        // Owner thread: queue a set/clear of a node's AudioSource renderable
+        // reference, and a set of its play policy (non-blocking; NOT coalesced;
+        // applied on the engine thread's next frame, like the renderable edits).
+        void post_scene_node_audio_renderable(SceneNodeAudioRenderableEdit edit);
+
+        void service_pending_scene_node_audio_renderables(
+            const std::function<
+                void(const SceneNodeAudioRenderableEdit&)>& applier);
+
+        void post_scene_node_audio_source_play(
+            SceneNodeAudioSourcePlayEdit edit);
+
+        void service_pending_scene_node_audio_source_plays(
+            const std::function<
+                void(const SceneNodeAudioSourcePlayEdit&)>& applier);
+
         // Owner thread: queue a set/clear of one ingredient (geometry or render
         // program) of a node's renderable binding (non-blocking; appended in
         // order — NOT coalesced). Applied on the engine thread's next frame, like
@@ -468,6 +503,8 @@ namespace wz::app
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
+        std::vector<SceneNodeAudioRenderableEdit> pending_audio_renderable_edits_;
+        std::vector<SceneNodeAudioSourcePlayEdit> pending_audio_source_play_edits_;
         std::vector<SceneNodeRenderBindingEdit> pending_render_binding_edits_;
         std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
         std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
