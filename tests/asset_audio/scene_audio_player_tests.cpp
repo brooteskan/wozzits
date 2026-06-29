@@ -114,6 +114,42 @@ namespace wz::engine::assets::test {
             return rend.output;
         }
 
+        // Build + resolve a grain-cloud renderable over a small clip bank (an
+        // environmental bed). density > 0 so it actually emits grains.
+        wz::asset::AssetKey make_resolved_grain_renderable(float density)
+        {
+            AudioClipBankFromClipsDesc bank_desc{};
+            for (int i = 0; i < 2; ++i) {
+                const AudioClipAsset clip =
+                    library_->audio_clips().create_procedural_tone_audio_clip({
+                        .name = "scene_audio/grain_" + std::to_string(i),
+                        .sample_rate = 48000,
+                        .channels = 1,
+                        .waveform = AudioToneWaveform::Sine,
+                        .frequency = 220.0f,
+                        .duration_seconds = 0.2f,
+                        .amplitude = 0.5f,
+                        });
+                bank_desc.items.push_back(
+                    { "grain_" + std::to_string(i), clip });
+            }
+            const AudioClipBankAsset bank =
+                library_->audio_clip_banks()
+                    .create_audio_clip_bank_from_clips(bank_desc);
+
+            GrainCloudParams params{};
+            params.density = density;
+            params.grain_ms = 10.0f;
+            const AudioRenderableAsset rend =
+                library_->audio_renderables().create_audio_grain_cloud_renderable({
+                    .bank = bank,
+                    .params = params,
+                    });
+            EXPECT_TRUE(library_->commit());
+            EXPECT_TRUE(library_->resolve_all().ok());
+            return rend.output;
+        }
+
         static float peak(const std::vector<float>& buf)
         {
             float m = 0.0f;
@@ -125,6 +161,7 @@ namespace wz::engine::assets::test {
         wz::Logger        logger_{};
         wz::fs::Path      temp_dir_{};
         std::unique_ptr<EngineAssetLibrary> library_;
+        wz::engine::audio::GrainCloudDescStore grain_store_;
     };
 
 
@@ -147,7 +184,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         const auto report = wz::engine::audio::play_scene_audio_sources(
-            *library_, result.instance, scheduler);
+            *library_, result.instance, scheduler, grain_store_);
 
         EXPECT_EQ(report.played, 1u);
         EXPECT_EQ(report.skipped_disabled, 0u);
@@ -177,7 +214,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         const auto report = wz::engine::audio::play_scene_audio_sources(
-            *library_, result.instance, scheduler);
+            *library_, result.instance, scheduler, grain_store_);
 
         EXPECT_EQ(report.played, 0u);
         EXPECT_EQ(report.skipped_disabled, 1u);
@@ -206,7 +243,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         const auto report = wz::engine::audio::play_scene_audio_sources(
-            *library_, result.instance, scheduler);
+            *library_, result.instance, scheduler, grain_store_);
 
         EXPECT_EQ(report.played, 0u);
         EXPECT_EQ(report.skipped_disabled, 0u);
@@ -230,7 +267,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         const auto report = wz::engine::audio::play_scene_audio_sources(
-            *library_, result.instance, scheduler);
+            *library_, result.instance, scheduler, grain_store_);
 
         EXPECT_EQ(report.played, 0u);
         EXPECT_EQ(report.skipped_unresolved, 1u);
@@ -262,7 +299,7 @@ namespace wz::engine::assets::test {
         wz::audio::AudioScheduler scheduler(16, 64);
         // Auto-play pass leaves it silent...
         EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
-                      *library_, result.instance, scheduler).played, 0u);
+                      *library_, result.instance, scheduler, grain_store_).played, 0u);
         // ...but a behavior Play triggers it.
         EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
             *library_, result.instance, scheduler,
@@ -295,7 +332,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
-                      *library_, result.instance, scheduler).played, 1u);
+                      *library_, result.instance, scheduler, grain_store_).played, 1u);
 
         std::vector<float> before(64, 0.0f);
         scheduler.process(before.data(), 64, 1, 48000);
@@ -370,7 +407,7 @@ namespace wz::engine::assets::test {
 
         wz::audio::AudioScheduler scheduler(16, 64);
         ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
-                      *library_, result.instance, scheduler).played, 1u);
+                      *library_, result.instance, scheduler, grain_store_).played, 1u);
 
         std::vector<float> out(64, 0.0f);
         scheduler.process(out.data(), 64, 1, 48000);
@@ -523,6 +560,44 @@ namespace wz::engine::assets::test {
         std::vector<float> out(64, 0.0f);
         scheduler.process(out.data(), 64, 1, 48000);
         EXPECT_NEAR(peak(out), 0.5f, 0.05f); // default clip (index 1)
+    }
+
+    // ── Grain-cloud renderable auto-plays as an environmental bed ───────────────
+
+    TEST_F(SceneAudioPlayerTest, GrainCloudRenderableAutoPlaysAsBed)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_grain_renderable(/*density*/ 300.0f);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "ambience";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        // Auto-play posts one PlayGrainCloud command (carrying a stable desc).
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler, grain_store_).played,
+                  1u);
+        EXPECT_GE(grain_store_.size(), 1u);
+
+        std::vector<float> out(2400, 0.0f);  // 50 ms
+        scheduler.process(out.data(), 2400, 1, 48000);
+
+        // The command started a grain cloud on its own pool, and it sounds.
+        EXPECT_EQ(scheduler.mixer().active_grain_cloud_count(), 1u);
+        EXPECT_EQ(scheduler.mixer().active_voice_count(), 0u);
+        double e = 0.0;
+        for (float s : out) e += std::abs(static_cast<double>(s));
+        EXPECT_GT(e, 0.0);
     }
 
 } // namespace wz::engine::assets::test

@@ -8,9 +8,12 @@
 // to the realtime scheduler. This is the sim-side step that makes a scene audible
 // — the "hello sound" path.
 
+#include <audio/grain_cloud.h>  // GrainCloudDesc
+
 #include <scene/scene_ecs.h>  // RuntimeEntityId
 
 #include <cstdint>
+#include <deque>
 
 namespace wz::engine::assets {
     class EngineAssetLibrary;
@@ -25,23 +28,45 @@ namespace wz::engine::audio {
 
     struct ScenePlaybackReport
     {
-        uint32_t played = 0;             // Play commands posted
+        uint32_t played = 0;             // Play / PlayGrainCloud commands posted
         uint32_t skipped_disabled = 0;   // AudioSource.enabled == false
         uint32_t skipped_unresolved = 0; // empty/unresolvable renderable or clip
     };
 
-    // Post a Play for every enabled, auto_play AudioSource in `instance` whose
-    // audio-renderable resolves to a valid clip. Sources that are disabled,
-    // not auto_play, or unresolved are not played (the first two are honored, the
-    // last is reported). Playback uses the renderable's baked gain/pitch/looping;
-    // each voice is tagged with a per-source client id so it can be stopped later.
+    // Stable owner of the GrainCloudDesc objects a grain-cloud AudioSource posts to
+    // the audio thread. A PlayGrainCloud command carries a POINTER to a desc, so the
+    // desc must outlive the command's consumption — this store (a std::deque, so
+    // addresses never move) holds them for the scene's playback lifetime. The owner
+    // (the app) clears it when reloading a scene, AFTER the audio runtime is stopped.
+    class GrainCloudDescStore
+    {
+    public:
+        wz::audio::GrainCloudDesc& allocate()
+        {
+            descs_.emplace_back();
+            return descs_.back();
+        }
+        void clear() noexcept { descs_.clear(); }
+        std::size_t size() const noexcept { return descs_.size(); }
+
+    private:
+        std::deque<wz::audio::GrainCloudDesc> descs_;
+    };
+
+    // Post a start command for every enabled, auto_play AudioSource in `instance`
+    // whose audio-renderable resolves: a clip renderable posts a voice Play; a
+    // grain-cloud renderable builds a GrainCloudDesc (in `grain_store`) and posts a
+    // PlayGrainCloud. Sources that are disabled, not auto_play, or unresolved are
+    // not played (the first two honored, the last reported). Each is tagged with a
+    // per-source client id so it can be stopped/steered later.
     //
     // Producer-side (sim thread): only posts commands, never touches the audio
     // thread. Safe to call once when a scene starts.
     ScenePlaybackReport play_scene_audio_sources(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
-        wz::audio::AudioScheduler& scheduler);
+        wz::audio::AudioScheduler& scheduler,
+        GrainCloudDescStore& grain_store);
 
     // Behavior-triggered audio (audio-track item 9). The host translates a
     // PLAY/STOP/SET_SOUND_GAIN behavior command into one of these and applies it

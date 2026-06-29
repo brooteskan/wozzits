@@ -14,11 +14,46 @@
 // AudioRenderableTable, owned by EngineAssetLibrary.
 
 #include <asset/types.h>
+#include <audio/grain_window.h>
 
 #include <cstdint>
 #include <vector>
 
 namespace wz::engine::assets {
+
+    // Which kind of terminal an AudioRenderableData is — a discriminator so one
+    // AudioSource references either flavor identically. Clip = play a source as a
+    // mixer Voice (by index/name); GrainCloud = run the source clips through the
+    // granular generator (an evolving bed). The mixer-execution path differs; the
+    // scene reference does not.
+    enum class AudioRenderableKind : uint8_t
+    {
+        Clip = 0,
+        GrainCloud = 1,
+    };
+
+    // Authored granular parameters baked into a GrainCloud renderable. The source
+    // clips are the renderable's `clips` (the bank); these are everything else the
+    // generator needs. The live subset (gain/density/position/pitch) can be driven
+    // per frame by a behavior; the rest are set once at start.
+    struct GrainCloudParams
+    {
+        uint32_t max_grains = 32;
+        uint32_t seed = 1;
+
+        float gain = 1.0f;
+        float density = 0.0f;   // grains/sec
+        float position = 0.0f;  // 0..1 playhead
+        float pitch = 1.0f;
+
+        float                position_jitter = 0.0f;
+        float                pitch_jitter_semitones = 0.0f;
+        float                pan_center = 0.0f;
+        float                pan_spread = 0.0f;
+        float                grain_ms = 100.0f;
+        wz::audio::GrainWindow window = wz::audio::GrainWindow::Gaussian;
+        float                window_param = 0.4f;
+    };
 
     // ─── AudioRenderableData ──────────────────────────────────────────────────────
     //
@@ -37,6 +72,8 @@ namespace wz::engine::assets {
 
     struct AudioRenderableData
     {
+        AudioRenderableKind kind = AudioRenderableKind::Clip;
+
         std::vector<wz::asset::ResourceHandle> clips;  // source clips in AudioClipTable
         std::vector<uint32_t> clip_name_hashes;        // parallel to clips, may be empty
         uint32_t default_index = 0;
@@ -44,10 +81,18 @@ namespace wz::engine::assets {
         float pitch = 1.0f;
         bool looping = false;
 
+        // Meaningful only when kind == GrainCloud (the clips are its sources).
+        GrainCloudParams grain{};
+
         bool valid() const noexcept
         {
-            return !clips.empty()
-                && default_index < clips.size()
+            if (clips.empty()) {
+                return false;
+            }
+            if (kind == AudioRenderableKind::GrainCloud) {
+                return clips[0].valid();  // the bank guarantees the rest
+            }
+            return default_index < clips.size()
                 && clips[default_index].valid();
         }
 

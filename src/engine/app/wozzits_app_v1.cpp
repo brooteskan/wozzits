@@ -2532,9 +2532,14 @@ namespace wz::app
             }
         }
 
+        // Drop any descs from a prior scene (the runtime was stopped on scene
+        // exit, so the audio thread no longer references them), then repopulate.
+        grain_desc_store_.clear();
+
         const wz::engine::audio::ScenePlaybackReport report =
             wz::engine::audio::play_scene_audio_sources(
-                *ctx_.assets, *behavior_scene_, audio_runtime_.scheduler());
+                *ctx_.assets, *behavior_scene_, audio_runtime_.scheduler(),
+                grain_desc_store_);
 
         ctx_.logger.info(
             "scene audio: played " + std::to_string(report.played)

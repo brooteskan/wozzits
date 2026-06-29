@@ -29,6 +29,7 @@
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/audio/audio_runtime.h>
+#include <engine/audio/scene_audio.h>
 #include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/frame_storage.h>
@@ -739,5 +740,10 @@ namespace wz::app
         // the output device. Started lazily on the first play-mode scene load and
         // stopped when leaving play; the editor leaves it idle.
         wz::engine::audio::AudioRuntime          audio_runtime_{};
+
+        // Stable owner of grain-cloud descriptors posted to the audio thread (a
+        // PlayGrainCloud command carries a pointer into this). Cleared on scene
+        // load after the runtime is (re)started.
+        wz::engine::audio::GrainCloudDescStore    grain_desc_store_{};
     };
 }

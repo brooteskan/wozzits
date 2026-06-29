@@ -39,6 +39,14 @@ namespace wz::engine::assets
         bool looping = false;
     };
 
+    // Describes a grain-cloud renderable: a source clip bank run through the
+    // granular generator with the given parameters (an evolving environmental bed).
+    struct AudioGrainCloudRenderableDesc
+    {
+        AudioClipBankAsset bank;
+        GrainCloudParams   params;
+    };
+
     struct AudioRenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -74,6 +82,11 @@ namespace wz::engine::assets
         // desc.bank. The terminal holds the bank's whole clip table.
         AudioRenderableAsset create_audio_clip_bank_renderable(
             const AudioClipBankRenderableDesc& desc);
+
+        // Register a grain-cloud renderable in the DAG, depending on desc.bank.
+        // The terminal runs the bank's clips through the granular generator.
+        AudioRenderableAsset create_audio_grain_cloud_renderable(
+            const AudioGrainCloudRenderableDesc& desc);
 
         AudioRenderableHandle get_audio_renderable(
             const AudioRenderableAsset& asset) const;

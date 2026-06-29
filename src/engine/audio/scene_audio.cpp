@@ -82,12 +82,73 @@ namespace wz::engine::audio {
             looping = renderable->looping;
             return true;
         }
+
+        // Resolve an AudioSource's referenced renderable terminal (any kind), or
+        // nullptr if the reference is empty/unresolvable.
+        const wz::engine::assets::AudioRenderableData* fetch_renderable(
+            const wz::engine::assets::EngineAssetLibrary& assets,
+            const wz::engine::assets::AudioSourceComponent& source)
+        {
+            using namespace wz::engine::assets;
+            if (source.audio_renderable == wz::asset::AssetKey{}) {
+                return nullptr;
+            }
+            return assets.audio_renderables().get_audio_renderable_data(
+                assets.audio_renderables().get_audio_renderable(
+                    AudioRenderableAsset{ .output = source.audio_renderable }));
+        }
+
+        // Fill a GrainCloudDesc from a GrainCloud renderable: resolve its clip
+        // handles into PCM views (the generator's sources) and copy the authored
+        // granular params. False if no source clip resolves.
+        bool build_grain_cloud_desc(
+            const wz::engine::assets::EngineAssetLibrary& assets,
+            const wz::engine::assets::AudioRenderableData& renderable,
+            wz::audio::GrainCloudDesc& out)
+        {
+            using namespace wz::engine::assets;
+
+            out = wz::audio::GrainCloudDesc{};
+            const GrainCloudParams& g = renderable.grain;
+            out.max_grains = g.max_grains;
+            out.seed = g.seed;
+            out.gain = g.gain;
+            out.density = g.density;
+            out.position = g.position;
+            out.pitch = g.pitch;
+            out.position_jitter = g.position_jitter;
+            out.pitch_jitter_semitones = g.pitch_jitter_semitones;
+            out.pan_center = g.pan_center;
+            out.pan_spread = g.pan_spread;
+            out.grain_ms = g.grain_ms;
+            out.window = g.window;
+            out.window_param = g.window_param;
+
+            uint32_t n = 0;
+            for (size_t i = 0;
+                 i < renderable.clips.size() && n < wz::audio::kMaxGrainSources;
+                 ++i)
+            {
+                const AudioClipData* clip =
+                    assets.audio_clips().get_audio_clip_data(
+                        AudioClipHandle{ renderable.clips[i] });
+                if (clip == nullptr || !clip->valid()) {
+                    continue;
+                }
+                out.sources[n] = clip->view();
+                out.weights[n] = 1.0f;
+                ++n;
+            }
+            out.source_count = n;
+            return n > 0;
+        }
     }
 
     ScenePlaybackReport play_scene_audio_sources(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
-        wz::audio::AudioScheduler& scheduler)
+        wz::audio::AudioScheduler& scheduler,
+        GrainCloudDescStore& grain_store)
     {
         using namespace wz::engine::assets;
 
@@ -96,7 +157,7 @@ namespace wz::engine::audio {
         for (const auto& record : instance.audio_sources) {
             const AudioSourceComponent& source = record.component;
             // Stable per-entity tag (derived at instantiate from the node id) so a
-            // behavior addressing this entity can stop/retune the same voice.
+            // behavior addressing this entity can stop/retune the same voice/cloud.
             const uint32_t client_id = source.client_id;
 
             if (!source.enabled) {
@@ -109,13 +170,40 @@ namespace wz::engine::audio {
                 continue;
             }
 
-            // Resolve renderable→clip (empty/unresolvable key => node-id-only
-            // authoring not yet materialized, or a missing renderable/clip).
+            const AudioRenderableData* renderable =
+                fetch_renderable(assets, source);
+            if (renderable == nullptr || !renderable->valid()) {
+                ++report.skipped_unresolved;
+                continue;
+            }
+
+            if (renderable->kind == AudioRenderableKind::GrainCloud) {
+                // Build a stable desc (the command carries a pointer) and start the
+                // cloud as a continuous bed tagged with the source's client id.
+                wz::audio::GrainCloudDesc& desc = grain_store.allocate();
+                if (!build_grain_cloud_desc(assets, *renderable, desc)) {
+                    ++report.skipped_unresolved;
+                    continue;
+                }
+                wz::audio::AudioCommand cmd{};
+                cmd.type = wz::audio::AudioCommandType::PlayGrainCloud;
+                cmd.sample_time = 0;
+                cmd.client_id = client_id;
+                cmd.grain = &desc;
+                if (scheduler.post(cmd)) {
+                    ++report.played;
+                }
+                else {
+                    ++report.skipped_unresolved;
+                }
+                continue;
+            }
+
+            // Clip renderable: post a voice Play using the default clip.
             wz::audio::AudioCommand cmd{};
             cmd.type = wz::audio::AudioCommandType::Play;
             cmd.sample_time = 0;            // play as soon as the next block runs
             cmd.client_id = client_id;
-            // Auto-play uses the renderable's default_index.
             if (!resolve_source_voice(assets, source, ClipSelector{},
                                       cmd.source, cmd.gain, cmd.pitch,
                                       cmd.looping)) {

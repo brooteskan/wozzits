@@ -95,6 +95,36 @@ namespace wz::engine::assets
         return out;
     }
 
+    AudioRenderableAsset AudioRenderableAssetModule::create_audio_grain_cloud_renderable(
+        const AudioGrainCloudRenderableDesc& desc)
+    {
+        AudioRenderableAsset out{};
+
+        if (!desc.bank.valid()) {
+            logger_.error("grain cloud renderable requires a valid source bank");
+            return out;
+        }
+
+        const wz::asset::AssetKey bank_key = desc.bank.output;
+
+        const wz::asset::AssetKey key =
+            make_audio_grain_cloud_renderable_key(bank_key, desc.params);
+
+        wz::asset::AssetNode node;
+        node.key     = key;
+        node.type    = kAssetTypeAudioRenderable;
+        node.schema  = kAudioGrainCloudRenderableSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = desc.params;
+
+        if (!system_.register_asset(std::move(node), { bank_key }))
+            return AudioRenderableAsset{ .output = key };
+
+        out.output = key;
+        return out;
+    }
+
     AudioRenderableHandle AudioRenderableAssetModule::get_audio_renderable(
         const AudioRenderableAsset& asset) const
     {

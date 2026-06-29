@@ -334,7 +334,7 @@ namespace wz::engine::assets {
     // half of the 0x000B00 block; collision owns 0x000B00-0x000B7F). These IDs
     // may appear in disk-cache keys later, so keep them stable. Allocated so far:
     // WAV=B80, ProceduralTone=B81, Renderable=B82, ClipBankFromClips=B83,
-    // ClipBankRenderable=B84, ClipBankFromDirectory=B85.
+    // ClipBankRenderable=B84, ClipBankFromDirectory=B85, GrainCloudRenderable=B86.
     //
     // Audio clip decoded from a WAV (RIFF/WAVE) file dependency into interleaved
     // float32 PCM. Expects one kRawFileSchema dependency carrying the WAV bytes.
@@ -389,6 +389,15 @@ namespace wz::engine::assets {
     // kAudioClipBankFromClipsSchema which folds already-imported clip deps.
     inline constexpr wz::asset::SchemaID kAudioClipBankFromDirectorySchema{
         0xF11E'CA55'E7'000B85ull
+    };
+
+    // Grain-cloud audio renderable: a terminal that runs its source clips through
+    // the granular generator (an evolving environmental bed) instead of playing one
+    // as a voice. Compiled from one kAssetTypeAudioBank dependency plus granular
+    // params; produces kAssetTypeAudioRenderable with kind == GrainCloud. The audio
+    // analog of a particle-system renderable.
+    inline constexpr wz::asset::SchemaID kAudioGrainCloudRenderableSchema{
+        0xF11E'CA55'E7'000B86ull
     };
 
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema

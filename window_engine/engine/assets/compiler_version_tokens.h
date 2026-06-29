@@ -101,4 +101,5 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kAudioClipBankCompilerVersion = 1;
     inline constexpr uint64_t kAudioClipBankRenderableCompilerVersion = 1;
     inline constexpr uint64_t kAudioClipBankFromDirectoryCompilerVersion = 1;
+    inline constexpr uint64_t kAudioGrainCloudRenderableCompilerVersion = 1;
 }

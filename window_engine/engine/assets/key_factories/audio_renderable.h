@@ -9,10 +9,21 @@
 #include <engine/assets/engine_asset_key_core.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/audio/audio_renderable.h>
 
+#include <cstdint>
 #include <cstring>
 
 namespace wz::engine::assets {
+
+    namespace detail {
+        [[nodiscard]] inline uint64_t mix_f32(uint64_t acc, float f) noexcept
+        {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &f, sizeof(float));
+            return mix64(acc, static_cast<uint64_t>(bits));
+        }
+    }
 
     [[nodiscard]] inline wz::asset::AssetKey make_audio_renderable_key(
         const wz::asset::AssetKey& source_clip_key,
@@ -73,6 +84,40 @@ namespace wz::engine::assets {
                 detail::hash_u64(kAudioClipBankRenderableSchema.value),
             .compiler_hash =
                 detail::hash_u64(kAudioClipBankRenderableCompilerVersion),
+            .deps_hash = detail::key_to_dep_hash(bank_key),
+        };
+    }
+
+    // Key for a grain-cloud renderable. Identity = the bank dependency (deps_hash)
+    // + every granular parameter (content_hash), folded field-by-field so padding
+    // never leaks into identity.
+    [[nodiscard]] inline wz::asset::AssetKey make_audio_grain_cloud_renderable_key(
+        const wz::asset::AssetKey& bank_key,
+        const GrainCloudParams&    g) noexcept
+    {
+        uint64_t lo = 1469598103934665603ull;
+        lo = detail::mix64(lo, g.max_grains);
+        lo = detail::mix64(lo, g.seed);
+        lo = detail::mix_f32(lo, g.gain);
+        lo = detail::mix_f32(lo, g.density);
+        lo = detail::mix_f32(lo, g.position);
+        lo = detail::mix_f32(lo, g.pitch);
+
+        uint64_t hi = 1099511628211ull;
+        hi = detail::mix_f32(hi, g.position_jitter);
+        hi = detail::mix_f32(hi, g.pitch_jitter_semitones);
+        hi = detail::mix_f32(hi, g.pan_center);
+        hi = detail::mix_f32(hi, g.pan_spread);
+        hi = detail::mix_f32(hi, g.grain_ms);
+        hi = detail::mix64(hi, static_cast<uint64_t>(g.window));
+        hi = detail::mix_f32(hi, g.window_param);
+
+        return wz::asset::AssetKey{
+            .content_hash = { lo, hi },
+            .schema_hash =
+                detail::hash_u64(kAudioGrainCloudRenderableSchema.value),
+            .compiler_hash =
+                detail::hash_u64(kAudioGrainCloudRenderableCompilerVersion),
             .deps_hash = detail::key_to_dep_hash(bank_key),
         };
     }
