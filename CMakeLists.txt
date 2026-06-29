@@ -702,6 +702,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_audio scene_audio_player_tests)
 
     rs_add_test_group(audio voice_tests)
+    rs_add_test_group(audio grain_cloud_tests)
     rs_add_test_group(audio mixer_tests)
     rs_add_test_group(audio audio_scheduler_tests)
     rs_add_test_group(audio audio_output_tests)
