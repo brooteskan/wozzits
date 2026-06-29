@@ -37,7 +37,8 @@ namespace wz::audio {
     VoiceHandle Mixer::play(const AudioBufferView& src,
                             float gain,
                             float pitch,
-                            bool looping) noexcept
+                            bool looping,
+                            uint32_t client_id) noexcept
     {
         if (!src.valid())
             return VoiceHandle{};
@@ -52,6 +53,7 @@ namespace wz::audio {
             slot.generation = 1;
 
         slot.start_seq = ++seq_;
+        slot.client_id = client_id;
         slot.voice.start(src, gain, pitch, looping);
 
         return VoiceHandle{ .index = index, .generation = slot.generation };
@@ -65,6 +67,16 @@ namespace wz::audio {
         Slot& slot = slots_[handle.index];
         if (slot.generation == handle.generation)
             slot.voice.stop();
+    }
+
+    void Mixer::stop_client(uint32_t client_id) noexcept
+    {
+        if (client_id == 0)
+            return;
+        for (Slot& slot : slots_) {
+            if (slot.voice.active() && slot.client_id == client_id)
+                slot.voice.stop();
+        }
     }
 
     void Mixer::stop_all() noexcept

@@ -700,6 +700,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(audio voice_tests)
     rs_add_test_group(audio mixer_tests)
+    rs_add_test_group(audio audio_scheduler_tests)
 
     rs_add_test_group(asset_mesh mesh_table)
     rs_add_test_group(asset_mesh mesh_key_factory)

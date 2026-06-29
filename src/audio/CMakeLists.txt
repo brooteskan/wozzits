@@ -3,4 +3,5 @@ target_sources(window_engine PRIVATE
 	rtaudio_device.cpp
 	voice.cpp
 	mixer.cpp
+	audio_scheduler.cpp
 )

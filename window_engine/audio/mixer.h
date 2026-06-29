@@ -45,13 +45,21 @@ namespace wz::audio {
 
         // Start a voice on `src`. Returns a handle, or an invalid handle if the
         // source is invalid. When the pool is full the oldest voice is stolen.
+        // client_id is an optional caller tag (0 = untagged) used by stop_client()
+        // to address a voice without a handle round-trip — needed when control is
+        // posted across a thread boundary (item 3a).
         VoiceHandle play(const AudioBufferView& src,
                          float gain = 1.0f,
                          float pitch = 1.0f,
-                         bool looping = false) noexcept;
+                         bool looping = false,
+                         uint32_t client_id = 0) noexcept;
 
         // Stop a specific voice (no-op if the handle is stale).
         void stop(VoiceHandle handle) noexcept;
+
+        // Stop every active voice tagged with client_id (no-op if client_id == 0
+        // or none match).
+        void stop_client(uint32_t client_id) noexcept;
 
         // Stop every voice.
         void stop_all() noexcept;
@@ -79,6 +87,7 @@ namespace wz::audio {
             Voice    voice{};
             uint32_t generation = 0;  // bumped on each (re)allocation; 0 = never used
             uint64_t start_seq = 0;   // monotonically increasing; oldest = smallest
+            uint32_t client_id = 0;   // caller tag for stop_client (0 = untagged)
         };
 
         // Pick a slot for a new voice: a free one if available, otherwise steal
