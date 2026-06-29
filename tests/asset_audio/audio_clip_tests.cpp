@@ -10,6 +10,8 @@
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/key_factories/audio_clip.h>
 
+#include <audio/mixer.h>
+
 #include <file/filesystem.h>
 #include <logging/logger.h>
 
@@ -291,6 +293,57 @@ namespace wz::engine::assets::test {
         ASSERT_EQ(data->samples.size(), samples.size());
         for (size_t i = 0; i < samples.size(); ++i)
             EXPECT_FLOAT_EQ(data->samples[i], samples[i]);
+    }
+
+
+    // ─── End-to-end: clip -> view -> mixer ──────────────────────────────────────────
+    //
+    // Proves item 1 (AudioClipData) and item 3 (Voice/Mixer) connect through the
+    // AudioClipData::view() adapter: a resolved clip played at matching rate and
+    // unity gain/pitch reproduces its own samples at the mixer output.
+
+    TEST_F(AudioClipTest, ResolvedClipPlaysThroughMixer)
+    {
+        const AudioClipAsset asset =
+            library_->audio_clips().create_procedural_tone_audio_clip({
+                .name = "debug/bridge_tone",
+                .sample_rate = 48000,
+                .channels = 1,
+                .waveform = AudioToneWaveform::Sine,
+                .frequency = 1000.0f,
+                .duration_seconds = 0.01f, // 480 frames
+                .amplitude = 0.5f,
+                });
+
+        ASSERT_TRUE(asset.valid());
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const AudioClipHandle handle =
+            library_->audio_clips().get_audio_clip(asset);
+        ASSERT_TRUE(handle.valid());
+        const AudioClipData* data =
+            library_->audio_clips().get_audio_clip_data(handle);
+        ASSERT_NE(data, nullptr);
+
+        wz::audio::Mixer mixer(8);
+        const wz::audio::VoiceHandle vh =
+            mixer.play(data->view(), /*gain*/ 1.0f, /*pitch*/ 1.0f, false);
+        ASSERT_TRUE(vh.valid());
+
+        const uint32_t frames = static_cast<uint32_t>(data->frame_count);
+        // Render one extra frame so the voice observes the end and deactivates.
+        std::vector<float> out(frames + 1, 0.0f);
+        mixer.render(out.data(), frames + 1, /*channels*/ 1, /*rate*/ 48000);
+
+        // Unity gain/pitch, matching rate, amplitude 0.5 < limiter ceiling:
+        // the output is the clip verbatim.
+        for (uint32_t i = 0; i < frames; ++i)
+            EXPECT_FLOAT_EQ(out[i], data->samples[i]) << "frame " << i;
+
+        // Past the end is silence, and the exhausted voice has freed its slot.
+        EXPECT_FLOAT_EQ(out[frames], 0.0f);
+        EXPECT_EQ(mixer.active_voice_count(), 0u);
     }
 
 

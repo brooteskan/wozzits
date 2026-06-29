@@ -23,6 +23,7 @@
 //    intentionally absent from the procedural compile descriptor)
 
 #include <asset/types.h>
+#include <audio/audio_buffer.h>
 
 #include <cstdint>
 #include <vector>
@@ -99,6 +100,22 @@ namespace wz::engine::assets {
         float at(uint64_t frame, uint32_t ch = 0) const
         {
             return samples[static_cast<size_t>(frame) * channels + ch];
+        }
+
+        // Non-owning view for the mixer voice. The returned view borrows this
+        // clip's sample storage, so the AudioClipData (owned by AudioClipTable)
+        // must outlive any voice playing it. Because AudioClipTable is append-only
+        // and a moved std::vector keeps its heap buffer, a view taken from a
+        // resolved clip stays valid across table growth — but a raw pointer to the
+        // AudioClipData struct would not, so hold the view, not the struct.
+        wz::audio::AudioBufferView view() const noexcept
+        {
+            return wz::audio::AudioBufferView{
+                .samples = samples.data(),
+                .frame_count = frame_count,
+                .sample_rate = sample_rate,
+                .channels = channels,
+            };
         }
     };
 
